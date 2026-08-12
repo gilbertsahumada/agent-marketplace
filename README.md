@@ -34,9 +34,25 @@ Discover → Understand → Compare → Configure → Quote → Fund → Run →
 
 ## Current status
 
-Gate 0: repository and provenance setup.
+Gate 1: the ERC-8183 buyer CLI, safety guards, receipts, and read-only BSC
+Testnet verification are implemented. The remaining gate is one funded run
+against a live seller through onchain `SUBMITTED`.
 
-The first technical milestone is an ERC-8183 buyer spike. A complete visual marketplace will not be built until the hiring lifecycle works end to end.
+A complete visual marketplace will not be built until that hiring lifecycle
+works end to end.
+
+The Gate 1 CLI is available without a frontend:
+
+```bash
+npm install
+npm run gate1 -- preflight --agent-id <numeric-bsc-testnet-id>
+npm run gate1 -- run --agent-id <numeric-bsc-testnet-id>
+npm run gate1 -- resume --job-id <erc8183-job-id>
+```
+
+`run` is a dry run unless `--execute` is supplied. Execution is locked to BSC
+Testnet and an existing TWAK wallet pinned by `BUYER_ADDRESS`; raw private-key
+environment variables and contract overrides are rejected.
 
 See:
 
