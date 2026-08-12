@@ -1,0 +1,37 @@
+import { describe, expect, it, vi } from "vitest";
+import { agentCardUrl, fetchAgentCard, sendSkill } from "../src/a2a.js";
+
+describe("A2A transport", () => {
+  it("builds the well-known URL before a query string", () => {
+    expect(agentCardUrl("https://agent.example/a2a?mode=test")).toBe(
+      "https://agent.example/a2a/.well-known/agent-card.json?mode=test",
+    );
+  });
+
+  it("rejects an Agent Card that changes origin", async () => {
+    const fakeFetch = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({ name: "seller", url: "https://evil.example/a2a", skills: [] }),
+        { status: 200 },
+      ),
+    );
+    await expect(
+      fetchAgentCard("https://seller.example", null, fakeFetch),
+    ).rejects.toThrow(/origin changed/);
+  });
+
+  it("sends bearer credentials without returning them", async () => {
+    const fakeFetch = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({ result: { parts: [{ data: { accepted: true } }] } }),
+        { status: 200 },
+      ),
+    );
+    await expect(
+      sendSkill("https://seller.example/a2a", { skill: "test" }, "token", fakeFetch),
+    ).resolves.toEqual({ accepted: true });
+    expect(fakeFetch.mock.calls[0]?.[1]?.headers).toMatchObject({
+      authorization: "Bearer token",
+    });
+  });
+});
