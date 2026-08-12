@@ -1,0 +1,27 @@
+{
+  "name": "bnb-agent-marketplace",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "check": "npm run typecheck && npm test && npm run build",
+    "gate1": "tsx src/cli.ts",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@bnbagent/sdk": "0.5.0",
+    "@trustwallet/cli": "0.20.0",
+    "viem": "2.55.13"
+  },
+  "devDependencies": {
+    "@types/node": "22.17.2",
+    "tsx": "4.20.5",
+    "typescript": "5.9.2",
+    "vitest": "4.1.10"
+  }
+}
