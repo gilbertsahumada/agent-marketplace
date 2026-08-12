@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.gate1/
+.env
+.env.*
+!.env.example
+/*.md
+!/README.md
+/docs/
