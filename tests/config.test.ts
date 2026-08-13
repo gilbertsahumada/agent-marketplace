@@ -28,12 +28,16 @@ describe("Gate 1 configuration guards", () => {
         NETWORK: "bsc-testnet",
         AGENT_ID: "42",
         BUYER_ADDRESS: "0x0000000000000000000000000000000000000001",
+        BUYER_WALLET_PASSWORD: "<redacted-test-value>",
+        BUYER_WALLETS_DIR: ".gate1/test-wallets",
       },
     );
     expect(config.agentId).toBe(42);
     expect(config.buyerAddress).toBe(
       "0x0000000000000000000000000000000000000001",
     );
+    expect(config.buyerWalletPassword).toBe("<redacted-test-value>");
+    expect(config.buyerWalletsDir).toBe(".gate1/test-wallets");
   });
 
   it("loads resume configuration without an agent ID", () => {

@@ -6,6 +6,8 @@ export const TESTNET_CHAIN_ID = 97;
 export interface Gate1Config {
   agentId: number;
   buyerAddress: Address | null;
+  buyerWalletPassword: string | null;
+  buyerWalletsDir?: string;
   bearerToken: string | null;
   pollIntervalMs: number;
   submittedTimeoutMs: number;
@@ -44,7 +46,7 @@ export function assertSafeEnvironment(env: NodeJS.ProcessEnv): void {
   const rawKeys = FORBIDDEN_SECRET_ENV.filter((key) => Boolean(env[key]));
   if (rawKeys.length > 0) {
     throw new Error(
-      `Raw private-key variables are forbidden: ${rawKeys.join(", ")}. Use an existing TWAK wallet.`,
+      `Raw private-key variables are forbidden: ${rawKeys.join(", ")}. Use an existing encrypted keystore.`,
     );
   }
 }
@@ -77,6 +79,10 @@ export function loadConfig(
     buyerAddress: env.BUYER_ADDRESS
       ? getAddress(env.BUYER_ADDRESS)
       : null,
+    buyerWalletPassword: env.BUYER_WALLET_PASSWORD || null,
+    ...(env.BUYER_WALLETS_DIR?.trim()
+      ? { buyerWalletsDir: env.BUYER_WALLETS_DIR.trim() }
+      : {}),
     bearerToken: env.AGENT_BEARER_TOKEN?.trim() || null,
     pollIntervalMs: positiveInteger(env.GATE1_POLL_INTERVAL_MS, 15_000),
     submittedTimeoutMs: positiveInteger(

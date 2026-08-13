@@ -41,6 +41,17 @@ against a live seller through onchain `SUBMITTED`.
 A complete visual marketplace will not be built until that hiring lifecycle
 works end to end.
 
+Gate 1 can use the included controlled seller fixture instead of waiting for a
+third-party seller. It is test infrastructure derived from the official BNB
+Agent SDK A2A example; it is not a marketplace agent or an official reference
+agent. It requires an existing encrypted seller keystore and a temporary public
+HTTPS URL:
+
+```bash
+npm run gate1:seller -- serve
+npm run gate1:seller -- register
+```
+
 The Gate 1 CLI is available without a frontend:
 
 ```bash
@@ -51,8 +62,15 @@ npm run gate1 -- resume --job-id <erc8183-job-id>
 ```
 
 `run` is a dry run unless `--execute` is supplied. Execution is locked to BSC
-Testnet and an existing TWAK wallet pinned by `BUYER_ADDRESS`; raw private-key
-environment variables and contract overrides are rejected.
+Testnet and an existing encrypted EVM keystore pinned by `BUYER_ADDRESS`;
+raw private-key environment variables, wallet auto-creation, and contract
+overrides are rejected. Supply `BUYER_WALLET_PASSWORD` through an external
+secret mechanism only.
+
+TWAK is not an ERC-8183 or A2A requirement. The buyer calls the SDK's generic
+`ERC8183Client` through an injectable wallet factory; Gate 1 uses
+`EVMWalletProvider` with an existing encrypted Keystore V3 by default. A future
+TWAK factory can be added without changing the buyer protocol or lifecycle.
 
 See:
 
