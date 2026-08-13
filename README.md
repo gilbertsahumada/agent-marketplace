@@ -62,15 +62,15 @@ npm run gate1 -- resume --job-id <erc8183-job-id>
 ```
 
 `run` is a dry run unless `--execute` is supplied. Execution is locked to BSC
-Testnet and an existing TWAK wallet pinned by `BUYER_ADDRESS`; raw private-key
-environment variables and contract overrides are rejected.
+Testnet and an existing encrypted EVM keystore pinned by `BUYER_ADDRESS`;
+raw private-key environment variables, wallet auto-creation, and contract
+overrides are rejected. Supply `BUYER_WALLET_PASSWORD` through an external
+secret mechanism only.
 
-TWAK is a custody choice in this buyer implementation, not an ERC-8183 or A2A
-requirement. The buyer calls the SDK's generic `ERC8183Client`, which also
-accepts an `EVMWalletProvider` backed by an encrypted standard keystore. Moving
-the buyer to that provider would require a small local wiring and configuration
-change, but no protocol adapter. Gate 1 keeps TWAK unchanged until the fixture
-PR is reviewed.
+TWAK is not an ERC-8183 or A2A requirement. The buyer calls the SDK's generic
+`ERC8183Client` through an injectable wallet factory; Gate 1 uses
+`EVMWalletProvider` with an existing encrypted Keystore V3 by default. A future
+TWAK factory can be added without changing the buyer protocol or lifecycle.
 
 See:
 

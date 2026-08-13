@@ -4,7 +4,6 @@ import {
   buildJobDescription,
   verifyQuoteSignature,
 } from "@bnbagent/sdk/erc8183";
-import { TWAKProvider } from "@bnbagent/sdk/wallets";
 import { formatUnits, getAddress } from "viem";
 import {
   fetchAgentCard,
@@ -13,6 +12,10 @@ import {
   type QuoteEnvelope,
 } from "./a2a.js";
 import type { Gate1Config, ReceiptConfig } from "./config.js";
+import {
+  createEvmBuyerWallet,
+  type BuyerWalletFactory,
+} from "./buyer-wallet.js";
 import { resolveIdentity } from "./identity.js";
 import {
   receiptPath,
@@ -173,7 +176,10 @@ function txHash(result: { transactionHash: string }): string {
   return result.transactionHash;
 }
 
-export async function execute(config: Gate1Config): Promise<Gate1Receipt> {
+export async function execute(
+  config: Gate1Config,
+  walletFactory: BuyerWalletFactory = createEvmBuyerWallet,
+): Promise<Gate1Receipt> {
   if (!config.buyerAddress) {
     throw new Error("BUYER_ADDRESS is required for --execute wallet pinning");
   }
@@ -181,13 +187,15 @@ export async function execute(config: Gate1Config): Promise<Gate1Receipt> {
   if (result.buyerBalance === null || result.buyerBalance < result.price) {
     throw new Error("Buyer has insufficient testnet settlement-token balance");
   }
-  const wallet = new TWAKProvider({
-    chain: "bsctestnet",
-    expectedAddress: config.buyerAddress,
-    autoCreate: false,
+  const wallet = walletFactory({
+    address: config.buyerAddress,
+    password: config.buyerWalletPassword,
+    ...(config.buyerWalletsDir
+      ? { walletsDir: config.buyerWalletsDir }
+      : {}),
   });
   if (getAddress(wallet.address) !== config.buyerAddress) {
-    throw new Error("TWAK wallet address does not match BUYER_ADDRESS");
+    throw new Error("Buyer wallet address does not match BUYER_ADDRESS");
   }
   const client = await ERC8183Client.create({
     walletProvider: wallet,
