@@ -17,6 +17,7 @@ import {
   type BuyerWalletFactory,
 } from "./buyer-wallet.js";
 import { resolveIdentity } from "./identity.js";
+import { GATE1_NETWORK } from "./network.js";
 import {
   receiptPath,
   writeReceipt,
@@ -64,7 +65,12 @@ function quoteTerms(quote: QuoteEnvelope): {
 }
 
 export async function preflight(config: Gate1Config): Promise<PreflightResult> {
-  const erc8183 = await ERC8183Client.create({ network: "bsc-testnet" });
+  const erc8183 = await ERC8183Client.create({ network: GATE1_NETWORK });
+  if (!(await erc8183.router.policyWhitelist(erc8183.policy.address))) {
+    throw new Error(
+      `Configured policy is not whitelisted by the Testnet Router: ${erc8183.policy.address}`,
+    );
+  }
   const identity = await resolveIdentity(erc8183.publicClient, config.agentId);
   const card = await fetchAgentCard(identity.a2aEndpoint, config.bearerToken);
   const skillIds = new Set(card.skills.map((skill) => skill.id));
@@ -199,7 +205,7 @@ export async function execute(
   }
   const client = await ERC8183Client.create({
     walletProvider: wallet,
-    network: "bsc-testnet",
+    network: GATE1_NETWORK,
   });
   const deadline = BigInt(result.intent.deadline as string);
   const description = buildJobDescription(result.quote);
@@ -291,7 +297,7 @@ export async function resume(
   config: ReceiptConfig,
   jobId: bigint,
 ): Promise<Gate1Receipt> {
-  const client = await ERC8183Client.create({ network: "bsc-testnet" });
+  const client = await ERC8183Client.create({ network: GATE1_NETWORK });
   const job = await client.getJob(jobId);
   const status = JobStatus[job.status];
   const deliverableUrl =
