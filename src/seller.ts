@@ -19,6 +19,7 @@ import {
   parseSellerCommand,
   type SellerConfig,
 } from "./seller-config.js";
+import { GATE1_NETWORK } from "./network.js";
 
 type JsonObject = Record<string, unknown>;
 
@@ -148,7 +149,7 @@ async function register(config: SellerConfig): Promise<void> {
   const wallet = loadExistingWallet(config);
   const identity = await ERC8004Agent.create({
     walletProvider: wallet,
-    network: "bsc-testnet",
+    network: GATE1_NETWORK,
   });
   const agentUri = identity.generateAgentUri({
     name: "gate1-erc8183-seller-fixture",
@@ -173,7 +174,7 @@ async function serve(config: SellerConfig): Promise<void> {
   const wallet = loadExistingWallet(config);
   const client = await ERC8183Client.create({
     walletProvider: wallet,
-    network: "bsc-testnet",
+    network: GATE1_NETWORK,
   });
   const chainId = await client.publicClient.getChainId();
   if (chainId !== 97) throw new Error(`Expected chain 97, received ${chainId}`);
@@ -184,7 +185,7 @@ async function serve(config: SellerConfig): Promise<void> {
   });
   const jobOps = await ERC8183JobOps.create({
     walletProvider: wallet,
-    network: "bsc-testnet",
+    network: GATE1_NETWORK,
     storageProvider: new LocalStorageProvider(config.storageDir),
     servicePrice: config.servicePrice,
     agentUrl: `${config.baseUrl}/erc8183`,
