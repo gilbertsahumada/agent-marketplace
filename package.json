@@ -11,6 +11,7 @@
     "check": "npm run typecheck && npm test && npm run build",
     "gate1": "tsx src/cli.ts",
     "gate1:seller": "tsx src/seller.ts",
+    "inventory:bsc": "tsx src/trust8004/inventory-cli.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },

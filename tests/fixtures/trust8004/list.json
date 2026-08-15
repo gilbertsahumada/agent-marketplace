@@ -1,0 +1,15 @@
+{
+  "items": [
+    {
+      "chainId": "56",
+      "agentId": "90001",
+      "name": "Grid research notes",
+      "description": "A declared grid trading concept without a usable service endpoint.",
+      "mcpEndpoint": null,
+      "a2aEndpoint": null
+    }
+  ],
+  "total": 1,
+  "limit": 50,
+  "offset": 0
+}

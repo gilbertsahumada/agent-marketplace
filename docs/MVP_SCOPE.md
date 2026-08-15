@@ -20,7 +20,7 @@ A DeFi user who understands the outcome they want but does not need to understan
 
 - BSC Mainnet catalogue and BSC Testnet development environment.
 - Rebalancing, Grid Trading, Yield Optimisation, and Health Factor Monitoring.
-- Marketplace data adapters for trust8004, 8004scan, and direct onchain verification.
+- A read-only trust8004 catalogue adapter and separate direct onchain verification.
 - Multi-label category evidence.
 - Endpoint and capability verification.
 - Proof-of-hireability states.

@@ -11,6 +11,7 @@
 | 2026-08-12 | Enter partner tracks | Out of scope | Protect main-track execution | Additional prizes deferred |
 | 2026-08-12 | Build complete UI before buyer spike | Rejected | Does not reduce critical technical risk | Visual build starts later |
 | 2026-08-12 | Duplicate the full indexer | Rejected for MVP | High effort without judging value | Provider dependency remains |
+| 2026-08-14 | Use trust8004 as the sole catalogue source | Approved | One read-only API boundary preserves provenance and keeps the BSC inventory simple | Coverage is explicitly partial; critical facts still require direct BSC verification |
 
 ## Scope change rule
 

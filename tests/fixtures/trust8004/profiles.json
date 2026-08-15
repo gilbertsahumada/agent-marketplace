@@ -1,0 +1,78 @@
+{
+  "45650": {
+    "agent": {
+      "agentId": "45650",
+      "chainId": "56",
+      "name": "V3 Pools powered by HeyAnon",
+      "description": "Execution layer for concentrated liquidity positions, price ranges and rebalancing.",
+      "owner": "0x1111111111111111111111111111111111111111",
+      "agentURI": "ipfs://sanitized/45650",
+      "services": "[{\"name\":\"MCP\",\"endpoint\":\"https://fixture.invalid/mcp/v3pools\",\"version\":\"2025-06-18\",\"tools\":[\"collectFees\",\"getLpPosition\",\"increaseLiquidity\",\"decreaseLiquidity\",\"estimateRanges\"],\"capabilities\":[\"tools\"]}]",
+      "endpoints": null,
+      "skills": "[]",
+      "capabilities": null,
+      "endpointHealth": null,
+      "metadataUpdatedAt": 1754000000000,
+      "updatedAt": 1754000100000
+    },
+    "feedbackSummary": { "totalFeedbacks": 3, "averageScore": 84, "uniqueReviewers": 2 },
+    "timestamp": 1754000200000
+  },
+  "45381": {
+    "agent": {
+      "agentId": "45381",
+      "chainId": 56,
+      "name": "Aave powered by HeyAnon",
+      "description": "Lending execution with health factor, collateral and liquidation checks.",
+      "owner": "0x2222222222222222222222222222222222222222",
+      "agentURI": "ipfs://sanitized/45381",
+      "services": [{ "name": "MCP", "endpoint": "https://fixture.invalid/mcp/aave", "version": "2025-06-18", "tools": ["getUserHealthIndicators", "getUserCollateral", "getUserBorrowingPower", "repay"], "capabilities": ["tools"] }],
+      "endpoints": "[]",
+      "skills": [],
+      "capabilities": null,
+      "endpointHealth": null,
+      "metadataUpdatedAt": 1754000000000,
+      "updatedAt": 1754000100000
+    },
+    "feedbackSummary": { "totalFeedbacks": 2, "averageScore": 80, "uniqueReviewers": 2 },
+    "timestamp": 1754000200000
+  },
+  "45422": {
+    "agent": {
+      "agentId": "45422",
+      "chainId": "56",
+      "name": "Beefy powered by HeyAnon",
+      "description": "Execution layer for Beefy yield vault discovery and portfolio operations.",
+      "owner": "0x3333333333333333333333333333333333333333",
+      "agentURI": "ipfs://sanitized/45422",
+      "services": "[{\"name\":\"MCP\",\"endpoint\":\"https://fixture.invalid/mcp/beefy\",\"tools\":[\"getVaults\",\"deposit\",\"withdraw\"],\"capabilities\":[\"tools\"]}]",
+      "endpoints": null,
+      "skills": "[]",
+      "capabilities": null,
+      "endpointHealth": null,
+      "metadataUpdatedAt": null,
+      "updatedAt": 1754000100000
+    },
+    "feedbackSummary": { "totalFeedbacks": 1, "averageScore": 90, "uniqueReviewers": 1 },
+    "timestamp": 1754000200000
+  },
+  "43129": {
+    "agent": {
+      "agentId": "43129",
+      "chainId": 56,
+      "name": "Venus powered by HeyAnon",
+      "description": "Venus yield and collateral management with account liquidity checks.",
+      "owner": "0x4444444444444444444444444444444444444444",
+      "agentURI": "ipfs://sanitized/43129",
+      "services": [{ "name": "MCP", "endpoint": "https://fixture.invalid/mcp/venus", "version": null, "tools": ["getSupplyAPR", "getAccountLiquidity", "getEnabledCollateral", "repay", "stakeXVS"], "capabilities": ["tools"] }],
+      "endpoints": [],
+      "skills": [],
+      "capabilities": null,
+      "endpointHealth": null,
+      "metadataUpdatedAt": 1754000000000,
+      "updatedAt": 1754000100000
+    },
+    "feedbackSummary": { "totalFeedbacks": 4, "averageScore": 88, "uniqueReviewers": 3 },
+    "timestamp": 1754000200000
+  }
+}
