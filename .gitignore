@@ -1,6 +1,7 @@
 node_modules/
 dist/
 .gate1/
+.marketplace/
 .agent-data/
 .bnbagent/
 .twak/

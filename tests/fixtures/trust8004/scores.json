@@ -1,0 +1,6 @@
+{
+  "45650": { "agentId": "45650", "chainId": 56, "trustScore": { "total": 55.5, "tier": "silver", "dimensions": { "quality": { "score": 60, "weight": 0.5, "weighted": 30, "confidence": 0.8 } }, "calculatedAt": "2025-08-01T00:00:00.000Z", "expiresAt": "2025-08-02T00:00:00.000Z" } },
+  "45381": { "agentId": "45381", "chainId": 56, "trustScore": { "total": 54, "tier": "silver", "dimensions": { "quality": { "score": 58, "weight": 0.5, "weighted": 29, "confidence": 0.8 } }, "calculatedAt": "2025-08-01T00:00:00.000Z", "expiresAt": "2025-08-02T00:00:00.000Z" } },
+  "45422": { "agentId": "45422", "chainId": 56, "trustScore": { "total": 53, "tier": "silver", "dimensions": { "quality": { "score": 56, "weight": 0.5, "weighted": 28, "confidence": 0.8 } }, "calculatedAt": "2025-08-01T00:00:00.000Z", "expiresAt": "2025-08-02T00:00:00.000Z" } },
+  "43129": { "agentId": "43129", "chainId": 56, "trustScore": { "total": 52, "tier": "silver", "dimensions": { "quality": { "score": 54, "weight": 0.5, "weighted": 27, "confidence": 0.8 } }, "calculatedAt": "2025-08-01T00:00:00.000Z", "expiresAt": "2025-08-02T00:00:00.000Z" } }
+}

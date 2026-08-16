@@ -78,6 +78,43 @@ TWAK is not an ERC-8183 or A2A requirement. The buyer calls the SDK's generic
 `EVMWalletProvider` with an existing encrypted Keystore V3 by default. A future
 TWAK factory can be added without changing the buyer protocol or lifecycle.
 
+## BSC candidate inventory
+
+The read-only `Trust8004Provider` uses the public trust8004 API as the sole
+catalogue source. It is locked to BSC Mainnet (`chainId=56`), validates every
+response at runtime, normalizes declared services, and labels catalogue
+coverage as a partial snapshot. Declared tools and derived categories are
+candidate evidence, not verified capabilities. Financial facts, critical
+identity, and ERC-8183 state remain direct BSC reads outside this adapter.
+
+Generate the local, Git-ignored inventory with:
+
+```bash
+npm run inventory:bsc
+```
+
+The public API currently does not provide catalogue-completeness guarantees,
+an API/schema version, ERC-8183 hireability, quote/payment data, or direct-chain
+verification proofs. Persisted endpoint observations may also be absent. The
+provider preserves those gaps instead of inventing values and limits calls with
+request deduplication, a simple cache, and sequential pacing below 60 requests
+per minute.
+
+Generate a separate read-only evidence report with:
+
+```bash
+npm run verify:bsc
+```
+
+The verifier compares trust8004 identity fields with `ownerOf` and `tokenURI`
+at one pinned BSC Mainnet block, then performs MCP `initialize` and `tools/list`
+against each declared public endpoint. It never calls a tool. Observed tool
+names prove only that the endpoint exposed them at that timestamp; they do not
+prove functional execution or ERC-8183 hireability. The report is written to
+`.marketplace/verification/bsc-candidates.json`. Exit code `2` means the report
+was written but contains a mismatch, unavailable evidence, or declared/observed
+tool drift; exit code `1` is reserved for fatal catalogue, RPC, or output errors.
+
 See:
 
 - [ERC-8183 Gate 1 interaction diagram](diagrams/erc8183-gate1-flow.html)

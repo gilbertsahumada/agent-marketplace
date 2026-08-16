@@ -5,12 +5,9 @@
 ```text
                     BSC / ERC-8004
                            │
-              ┌────────────┴────────────┐
-              │                         │
-      trust8004 APIs              8004scan API
-      index + enrichment          coverage fallback
-              │                         │
-              └────────────┬────────────┘
+                           │
+                  trust8004 public APIs
+              partial index + enrichment
                            │
                 Marketplace Data Layer
             normalize + verify + categorize
@@ -25,22 +22,48 @@
 
 ## Data provider contract
 
-The product must not query the trust8004 database directly.
+The product must not query the trust8004 database directly. trust8004 is the
+only catalogue source in the active design; there is no external catalogue
+fallback or marketplace indexer.
 
 ```ts
 interface AgentDataProvider {
-  listAgents(filters: AgentFilters): Promise<MarketplaceAgent[]>
+  listAgents(filters: AgentFilters): Promise<AgentListPage>
   getAgent(chainId: number, agentId: string): Promise<MarketplaceAgent>
-  getReputation(chainId: number, agentId: string): Promise<ReputationSummary>
-  getCapabilities(chainId: number, agentId: string): Promise<VerifiedCapabilities>
 }
 ```
 
 Initial providers:
 
-- `Trust8004Provider`: indexed identity, metadata, reputation, and observed endpoint data.
-- `Scan8004Provider`: coverage fallback and candidate discovery.
-- `OnchainProvider`: owner, identity, contract configuration, and ERC-8183 job state.
+- `Trust8004Provider`: read-only, BSC-only catalogue snapshot containing indexed identity,
+  declared metadata/services, reputation, trust score, and any persisted endpoint observation.
+- Direct BSC readers, outside the catalogue adapter: critical identity, contract
+  configuration, financial facts, and ERC-8183 job state.
+
+The provider validates public API responses at runtime, normalizes `services`
+from either JSON strings or arrays, and paces cached/deduplicated requests below
+the public 60 requests/minute limit. Its `catalogCoverage` is always `partial`.
+Missing observations remain `not_observed`; declared tools are never promoted
+to verified capabilities. Comparison is not fetched because it adds no field
+needed by the current inventory and would consume public quota.
+
+## Read-only verification layer
+
+The BSC verification CLI consumes a fresh partial catalogue snapshot but writes
+a separate evidence report. It does not mutate the provider's declared data.
+
+```text
+trust8004 declared snapshot ─┐
+                            ├─ evidence report: declared / observed / onchain
+BSC ownerOf + tokenURI ─────┤
+MCP initialize + tools/list ┘
+```
+
+All identity reads share a pinned BSC Mainnet block. MCP discovery is limited
+to safe public HTTPS endpoints, stays on the validated origin, and never sends
+`tools/call`. Tool-list drift and identity mismatches require attention but are
+preserved as evidence instead of being reconciled automatically. ERC-8183
+hireability remains outside this verifier.
 
 ## Evidence model
 
@@ -78,4 +101,5 @@ The buyer keeps custody. The server may resolve, negotiate, and monitor, but can
 - Marketplace job references survive a trust8004 outage.
 - Provider failures degrade individual evidence, not the whole identity record.
 - No duplicate full indexer in the MVP.
+- Catalogue completeness is unknown and must be shown as a partial snapshot.
 - Shared packages are extracted only after stable duplication appears.

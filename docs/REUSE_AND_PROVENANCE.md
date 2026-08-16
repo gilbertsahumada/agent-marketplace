@@ -11,8 +11,8 @@ This document makes the boundary between existing infrastructure and hackathon w
 | ERC-8004 indexing | trust8004 | API |
 | Metadata and IPFS normalization | trust8004 | API |
 | ERC-8004 reputation | trust8004 | API with visible provenance |
-| Endpoint observations | trust8004 | API; extended with marketplace checks |
-| Coverage and semantic search | 8004scan | Public/Pro API |
+| Endpoint observations | trust8004 | Public API when persisted; absence remains explicit |
+| BSC catalogue snapshot | trust8004 | Public API, marked as partial coverage |
 | ERC-8183 contracts and client | BNB Agent SDK | Upstream TypeScript dependency |
 | Identity and commerce facts | BSC | Direct RPC reads |
 
