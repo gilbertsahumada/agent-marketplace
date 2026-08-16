@@ -12,6 +12,7 @@
 | 2026-08-12 | Build complete UI before buyer spike | Rejected | Does not reduce critical technical risk | Visual build starts later |
 | 2026-08-12 | Duplicate the full indexer | Rejected for MVP | High effort without judging value | Provider dependency remains |
 | 2026-08-14 | Use trust8004 as the sole catalogue source | Approved | One read-only API boundary preserves provenance and keeps the BSC inventory simple | Coverage is explicitly partial; critical facts still require direct BSC verification |
+| 2026-08-16 | Keep verification evidence separate from the trust8004 snapshot | Approved | Prevents observed MCP tools and direct BSC reads from overwriting declared catalogue data | Consumers must interpret mismatches and temporal drift explicitly |
 
 ## Scope change rule
 

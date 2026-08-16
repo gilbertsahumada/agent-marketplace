@@ -47,6 +47,24 @@ Missing observations remain `not_observed`; declared tools are never promoted
 to verified capabilities. Comparison is not fetched because it adds no field
 needed by the current inventory and would consume public quota.
 
+## Read-only verification layer
+
+The BSC verification CLI consumes a fresh partial catalogue snapshot but writes
+a separate evidence report. It does not mutate the provider's declared data.
+
+```text
+trust8004 declared snapshot ─┐
+                            ├─ evidence report: declared / observed / onchain
+BSC ownerOf + tokenURI ─────┤
+MCP initialize + tools/list ┘
+```
+
+All identity reads share a pinned BSC Mainnet block. MCP discovery is limited
+to safe public HTTPS endpoints, stays on the validated origin, and never sends
+`tools/call`. Tool-list drift and identity mismatches require attention but are
+preserved as evidence instead of being reconciled automatically. ERC-8183
+hireability remains outside this verifier.
+
 ## Evidence model
 
 Every important field records its provenance:
