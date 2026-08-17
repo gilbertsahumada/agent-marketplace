@@ -16,10 +16,14 @@ import {
   type TrustScore,
 } from "./types.js";
 
+const MAX_PENDING_REQUESTS = 256;
+
 export interface Trust8004ProviderOptions {
   baseUrl?: string;
   fetch?: typeof fetch;
   minimumRequestIntervalMs?: number;
+  requestTimeoutMs?: number;
+  maxResponseBytes?: number;
   wait?: (milliseconds: number) => Promise<void>;
   now?: () => number;
 }
@@ -87,9 +91,11 @@ export class Trust8004Provider {
   readonly baseUrl: string;
   private readonly fetchImpl: typeof fetch;
   private readonly minimumRequestIntervalMs: number;
+  private readonly requestTimeoutMs: number;
+  private readonly maxResponseBytes: number;
   private readonly wait: (milliseconds: number) => Promise<void>;
   private readonly now: () => number;
-  private readonly cache = new Map<string, Promise<unknown>>();
+  private readonly pending = new Map<string, Promise<unknown>>();
   private queue: Promise<void> = Promise.resolve();
   private lastRequestStartedAt = Number.NEGATIVE_INFINITY;
 
@@ -97,6 +103,8 @@ export class Trust8004Provider {
     this.baseUrl = (options.baseUrl ?? TRUST8004_BASE_URL).replace(/\/$/, "");
     this.fetchImpl = options.fetch ?? fetch;
     this.minimumRequestIntervalMs = options.minimumRequestIntervalMs ?? 1_100;
+    this.requestTimeoutMs = positiveInteger(options.requestTimeoutMs ?? 10_000, "requestTimeoutMs");
+    this.maxResponseBytes = positiveInteger(options.maxResponseBytes ?? 1_048_576, "maxResponseBytes");
     this.wait = options.wait ?? ((milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)));
     this.now = options.now ?? Date.now;
   }
@@ -131,7 +139,7 @@ export class Trust8004Provider {
     this.assertAgentId(agentId);
     return this.request(
       `/api/v2/agents/profile?chainId=${BSC_MAINNET_CHAIN_ID}&agentId=${encodeURIComponent(agentId)}`,
-      parseProfileResponse,
+      (value) => parseProfileResponse(value, agentId),
     );
   }
 
@@ -139,7 +147,7 @@ export class Trust8004Provider {
     this.assertAgentId(agentId);
     return this.request(
       `/api/v2/agents/${encodeURIComponent(agentId)}/score?chainId=${BSC_MAINNET_CHAIN_ID}`,
-      parseTrustScoreResponse,
+      (value) => parseTrustScoreResponse(value, agentId),
     );
   }
 
@@ -239,15 +247,19 @@ export class Trust8004Provider {
 
   private request<T>(path: string, parse: (value: unknown) => T): Promise<T> {
     const url = `${this.baseUrl}${path}`;
-    const cached = this.cache.get(url);
+    const cached = this.pending.get(url);
     if (cached) return cached as Promise<T>;
+    if (this.pending.size >= MAX_PENDING_REQUESTS) {
+      return Promise.reject(new Error("trust8004 request capacity exceeded"));
+    }
 
     const promise = this.schedule(async () => {
       const response = await this.fetchImpl(url, {
         method: "GET",
         headers: { Accept: "application/json" },
+        signal: AbortSignal.timeout(this.requestTimeoutMs),
       });
-      const text = await response.text();
+      const text = await this.readResponseText(response, url);
       if (!response.ok) {
         throw new Trust8004HttpError(response.status, url, text.slice(0, 500));
       }
@@ -261,9 +273,40 @@ export class Trust8004Provider {
       }
       return parse(value);
     });
-    this.cache.set(url, promise);
-    void promise.catch(() => this.cache.delete(url));
-    return promise;
+    this.pending.set(url, promise);
+    return promise.finally(() => {
+      if (this.pending.get(url) === promise) this.pending.delete(url);
+    });
+  }
+
+  private async readResponseText(response: Response, url: string): Promise<string> {
+    const contentLength = response.headers.get("content-length");
+    if (contentLength && /^\d+$/.test(contentLength) && Number(contentLength) > this.maxResponseBytes) {
+      throw new Error(`trust8004 response exceeded ${this.maxResponseBytes} bytes for ${url}`);
+    }
+    if (!response.body) return "";
+
+    const reader = response.body.getReader();
+    const chunks: Uint8Array[] = [];
+    let total = 0;
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > this.maxResponseBytes) {
+        await reader.cancel();
+        throw new Error(`trust8004 response exceeded ${this.maxResponseBytes} bytes for ${url}`);
+      }
+      chunks.push(value);
+    }
+
+    const bytes = new Uint8Array(total);
+    let offset = 0;
+    for (const chunk of chunks) {
+      bytes.set(chunk, offset);
+      offset += chunk.byteLength;
+    }
+    return new TextDecoder().decode(bytes);
   }
 
   private schedule<T>(operation: () => Promise<T>): Promise<T> {
