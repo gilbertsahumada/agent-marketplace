@@ -19,6 +19,10 @@ describe("three-layer dependency boundaries", () => {
     expect(contents("components/**/*.tsx")).not.toMatch(/src\/(?:trust8004|data)|\bviem\b|@bnbagent\/sdk/);
   });
 
+  it("keeps page presentation dependent on Business instead of Data", () => {
+    expect(contents("app/**/*.tsx")).not.toMatch(/src\/data/);
+  });
+
   it("publishes no secret material in the versioned proof manifest", () => {
     const proof = readFileSync("src/data/proofs/gate1-job-514.ts", "utf8");
     expect(proof).not.toMatch(/private.?key|mnemonic|password|keystore|authorization|\.env|\/Users\//i);
