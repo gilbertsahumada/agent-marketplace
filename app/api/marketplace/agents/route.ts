@@ -1,10 +1,13 @@
 import { NextResponse } from "next/server";
 import { listMarketplaceAgents } from "@/src/business/composition";
 import { InvalidMarketplaceInputError } from "@/src/business/errors/marketplace-errors";
+import {
+  MARKETPLACE_DATA_SORTS,
+  type MarketplaceSort,
+} from "@/src/business/use-cases/list-marketplace-agents";
 import { categoryParameter, integerParameter, marketplaceErrorResponse } from "@/src/presentation/http/marketplace-http";
 
-type MarketplaceSort = "newest" | "reputation" | "trust_score" | "agent_id";
-const SORTS = new Set<MarketplaceSort>(["newest", "reputation", "trust_score", "agent_id"]);
+const SORTS = new Set<MarketplaceSort>(MARKETPLACE_DATA_SORTS);
 
 export async function GET(request: Request) {
   try {
