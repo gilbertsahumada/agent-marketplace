@@ -119,17 +119,11 @@ export async function createGate1ProofReader(): Promise<Gate1ProofReader> {
 }
 
 export function sanitizeGate1ProofError(error: unknown): VerificationError {
-  const message = (error instanceof Error ? error.message : String(error))
-    .replace(/https?:\/\/[^\s)]+/gi, "[redacted-url]")
-    .replace(
-      /\b(bearer|authorization|api[_-]?key|client[_-]?secret|private[_-]?key|mnemonic|token|password|secret|keystore)\b\s*[:=]?\s*[^\s,;]+/gi,
-      "$1=[redacted]",
-    )
-    .replace(/\/Users\/[^\s)]+/g, "[redacted-path]")
-    .replace(/[A-Za-z]:\\Users\\[^\s)]+/g, "[redacted-path]")
-    .replace(/(?:^|\s)(?:\.{0,2}\/)?(?:\.gate1|\.marketplace|keystores|wallets)\/[^\s)]+/gi, " [redacted-path]")
-    .slice(0, 300);
-  return { code: "GATE1_PROOF_READ_FAILED", message: message || "Gate 1 proof read failed." };
+  void error;
+  return {
+    code: "GATE1_PROOF_READ_FAILED",
+    message: "Gate 1 proof verification did not complete successfully.",
+  };
 }
 
 function timestamp(unix: bigint): { unix: string; iso: string } {
