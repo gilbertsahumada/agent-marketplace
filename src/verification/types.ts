@@ -18,6 +18,7 @@ export interface VerificationError {
 
 export interface OnchainIdentity {
   owner: Address;
+  agentWallet: Address;
   metadataUri: string;
 }
 
@@ -30,6 +31,7 @@ export interface IdentityVerification {
   };
   onchain: {
     owner: Address | null;
+    agentWallet: Address | null;
     metadataUri: string | null;
     registryAddress: Address;
     blockNumber: string;

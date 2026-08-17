@@ -115,6 +115,26 @@ prove functional execution or ERC-8183 hireability. The report is written to
 was written but contains a mismatch, unavailable evidence, or declared/observed
 tool drift; exit code `1` is reserved for fatal catalogue, RPC, or output errors.
 
+Run the final pre-frontend readiness gate with:
+
+```bash
+npm run readiness:bsc
+```
+
+It combines a fresh trust8004 snapshot, direct BSC Mainnet identity reads,
+declared-protocol activation checks, and a fresh BSC Testnet verification of
+Gate 1 Job `514`. A2A and HTTP ERC-8183 are probed only when explicitly
+declared; MCP-only agents are never presented as hireable. A declared seller
+must return a signed quote whose provider, chain, Commerce contract, and
+payment token validate before receiving `quote_verified`.
+
+The report is written to
+`.marketplace/readiness/bsc-marketplace.json`. `frontendReady=true` means the
+marketplace can represent the available evidence honestly and the buyer proof
+still validates onchain; it does not mean all categories have a live seller.
+Current real-agent activation coverage is empty, and Grid remains explicitly
+empty/unverified.
+
 See:
 
 - [ERC-8183 Gate 1 interaction diagram](diagrams/erc8183-gate1-flow.html)

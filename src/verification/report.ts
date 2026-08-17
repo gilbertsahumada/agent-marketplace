@@ -58,6 +58,7 @@ async function verifyIdentity(
       },
       onchain: {
         owner: onchain.owner,
+        agentWallet: onchain.agentWallet,
         metadataUri: onchain.metadataUri,
         registryAddress: identityReader.registryAddress,
         blockNumber: blockNumber.toString(),
@@ -77,6 +78,7 @@ async function verifyIdentity(
       },
       onchain: {
         owner: null,
+        agentWallet: null,
         metadataUri: null,
         registryAddress: identityReader.registryAddress,
         blockNumber: blockNumber.toString(),

@@ -65,6 +65,30 @@ to safe public HTTPS endpoints, stays on the validated origin, and never sends
 preserved as evidence instead of being reconciled automatically. ERC-8183
 hireability remains outside this verifier.
 
+## Pre-frontend readiness gate
+
+The readiness CLI composes, but does not collapse, the catalogue and evidence
+layers:
+
+```text
+trust8004 partial catalogue ──┐
+BSC Mainnet identity/MCP ─────┼─ readiness report ─ frontendReady
+declared A2A or ERC-8183 HTTP ┤
+BSC Testnet Gate 1 proof ─────┘
+```
+
+Seller probes are driven only by declared services. A2A requires the official
+negotiation and `notify_funded` skills; HTTP uses the official ERC-8183
+health/status/negotiate route family. The transports are assessed independently
+and no adapter is inferred. A signed quote is checked against the direct
+ERC-8004 agent wallet and BSC Mainnet Commerce configuration. MCP alone remains
+`mcp_only`.
+
+Frontend readiness means the evidence is complete enough to render without
+inventing capabilities and the existing buyer lifecycle still has valid
+onchain proof. Real-seller activation coverage is reported separately and may
+remain partial or empty.
+
 ## Evidence model
 
 Every important field records its provenance:
