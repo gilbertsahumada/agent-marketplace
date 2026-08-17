@@ -13,6 +13,7 @@
     "gate1:seller": "tsx src/seller.ts",
     "inventory:bsc": "tsx src/trust8004/inventory-cli.ts",
     "verify:bsc": "tsx src/verification/cli.ts",
+    "readiness:bsc": "tsx src/readiness/cli.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },

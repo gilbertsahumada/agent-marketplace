@@ -19,6 +19,13 @@ const identityReadAbi = [
   },
   {
     type: "function",
+    name: "getAgentWallet",
+    stateMutability: "view",
+    inputs: [{ name: "agentId", type: "uint256" }],
+    outputs: [{ name: "", type: "address" }],
+  },
+  {
+    type: "function",
     name: "tokenURI",
     stateMutability: "view",
     inputs: [{ name: "tokenId", type: "uint256" }],
@@ -52,7 +59,14 @@ export class ViemBscIdentityReader implements BscIdentityReader {
   async readIdentity(agentId: string, blockNumber: bigint): Promise<OnchainIdentity> {
     if (!/^\d+$/.test(agentId)) throw new Error(`agentId must be numeric: ${agentId}`);
     const tokenId = BigInt(agentId);
-    const [owner, metadataUri] = await Promise.all([
+    const [owner, agentWallet, metadataUri] = await Promise.all([
+      this.client.readContract({
+        address: this.registryAddress,
+        abi: identityReadAbi,
+        functionName: "getAgentWallet",
+        args: [tokenId],
+        blockNumber,
+      }),
       this.client.readContract({
         address: this.registryAddress,
         abi: identityReadAbi,
@@ -68,7 +82,7 @@ export class ViemBscIdentityReader implements BscIdentityReader {
         blockNumber,
       }),
     ]);
-    return { owner, metadataUri };
+    return { owner, agentWallet, metadataUri };
   }
 }
 

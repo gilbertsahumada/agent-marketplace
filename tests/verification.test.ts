@@ -150,7 +150,7 @@ describe("BSC verification report", () => {
       fixture("verification/onchain.json") as Promise<{
         registryAddress: Address;
         blockNumber: string;
-        agents: Record<string, { owner: Address; metadataUri: string }>;
+        agents: Record<string, { owner: Address; agentWallet: Address; metadataUri: string }>;
       }>,
     ]);
     const provider = new Trust8004Provider({

@@ -50,7 +50,10 @@ export async function fetchAgentCard(
   if (
     typeof card.name !== "string" ||
     typeof card.url !== "string" ||
-    !Array.isArray(card.skills)
+    !Array.isArray(card.skills) ||
+    !card.skills.every(
+      (skill) => typeof skill === "object" && skill !== null && typeof skill.id === "string",
+    )
   ) {
     throw new Error("Agent Card has an invalid shape");
   }

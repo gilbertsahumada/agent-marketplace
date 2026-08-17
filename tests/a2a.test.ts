@@ -20,6 +20,15 @@ describe("A2A transport", () => {
     ).rejects.toThrow(/origin changed/);
   });
 
+  it("rejects malformed Agent Card skills", async () => {
+    const fakeFetch = vi.fn().mockResolvedValue(
+      Response.json({ name: "seller", url: "https://seller.example/a2a", skills: [{}] }),
+    );
+    await expect(
+      fetchAgentCard("https://seller.example", null, fakeFetch),
+    ).rejects.toThrow(/invalid shape/);
+  });
+
   it("sends bearer credentials without returning them", async () => {
     const fakeFetch = vi.fn().mockResolvedValue(
       new Response(

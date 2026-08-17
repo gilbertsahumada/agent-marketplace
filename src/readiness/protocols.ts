@@ -1,0 +1,438 @@
+import { ERC8183Client, verifyQuoteSignature } from "@bnbagent/sdk/erc8183";
+import { resolveNetwork } from "@bnbagent/sdk";
+import { getAddress, isAddress, type Address, type PublicClient } from "viem";
+import { fetchAgentCard, sendSkill } from "../a2a.js";
+import type { MarketplaceAgent } from "../trust8004/types.js";
+import { assertSafeMcpEndpoint, type ResolveHostname } from "../verification/mcp.js";
+import type { IdentityVerification, VerificationError } from "../verification/types.js";
+import type {
+  HireabilityAssessment,
+  QuoteEvidence,
+  SellerProtocolVerification,
+  SellerTransport,
+} from "./types.js";
+
+interface QuoteContext {
+  chainId: 56;
+  commerce: Address;
+  paymentToken: Address;
+  publicClient: PublicClient;
+}
+
+type QuoteVerdict =
+  | { valid: true; method: "eip191" | "erc1271"; signer: Address }
+  | { valid: false; reason: string };
+
+export interface HireabilityAssessorOptions {
+  fetch?: typeof fetch;
+  resolveHostname?: ResolveHostname;
+  timeoutMs?: number;
+  now?: () => number;
+  createQuoteContext?: () => Promise<QuoteContext>;
+  verifyQuote?: (options: {
+    envelope: Record<string, unknown>;
+    provider: Address;
+    publicClient: PublicClient;
+    expectedVerifyingContract: Address;
+  }) => Promise<QuoteVerdict>;
+}
+
+const QUOTE_REQUEST = {
+  task_description: "Marketplace readiness quote probe; no job will be funded",
+  terms: {
+    deliverables: "Return a deterministic text readiness receipt",
+    quality_standards: "Provide a signed ERC-8183 quote without executing work",
+  },
+} as const;
+
+function record(value: unknown, path: string): Record<string, unknown> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new Error(`${path} must be a JSON object`);
+  }
+  return value as Record<string, unknown>;
+}
+
+function sanitizedError(error: unknown, code: string): VerificationError {
+  const message = (error instanceof Error ? error.message : String(error))
+    .replace(/https?:\/\/[^\s)]+/gi, "[redacted-url]")
+    .replace(/(bearer|token|password|secret)=?\s*[^\s]+/gi, "$1=[redacted]")
+    .slice(0, 300);
+  return { code, message: message || "Protocol verification failed." };
+}
+
+function declaredProtocols(agent: MarketplaceAgent): Array<{
+  transport: SellerTransport;
+  endpoint: string;
+}> {
+  const protocols = new Map<string, { transport: SellerTransport; endpoint: string }>();
+  for (const service of agent.services) {
+    if (!service.endpoint) continue;
+    const normalized = service.name.toLowerCase().replace(/[^a-z0-9]/g, "");
+    const transport = normalized === "a2a"
+      ? "a2a"
+      : normalized === "erc8183"
+        ? "erc8183_http"
+        : null;
+    if (transport) protocols.set(`${transport}:${service.endpoint}`, { transport, endpoint: service.endpoint });
+  }
+  return [...protocols.values()];
+}
+
+function hasMcp(agent: MarketplaceAgent): boolean {
+  return agent.services.some((service) => service.name.toLowerCase() === "mcp" && service.endpoint);
+}
+
+function controlledFetch(
+  safeUrl: URL,
+  fetchImpl: typeof fetch,
+  timeoutMs: number,
+): typeof fetch {
+  return (async (input: string | URL | Request, init?: RequestInit) => {
+    const requestedUrl = new URL(input instanceof Request ? input.url : input.toString());
+    if (requestedUrl.protocol !== "https:" || requestedUrl.origin !== safeUrl.origin) {
+      throw new Error("Protocol probe attempted to leave the validated origin");
+    }
+    return fetchImpl(input, {
+      ...init,
+      redirect: "error",
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+  }) as typeof fetch;
+}
+
+async function fetchJsonObject(
+  url: URL,
+  fetchImpl: typeof fetch,
+  init?: RequestInit,
+): Promise<Record<string, unknown>> {
+  const response = await fetchImpl(url, init);
+  if (!response.ok) throw new Error(`Endpoint returned HTTP ${response.status}`);
+  let value: unknown;
+  try {
+    value = await response.json();
+  } catch {
+    throw new Error("Endpoint returned invalid JSON");
+  }
+  return record(value, "response");
+}
+
+function httpUrls(endpoint: string): { health: URL; status: URL; negotiate: URL } {
+  const declared = new URL(endpoint);
+  declared.search = "";
+  declared.hash = "";
+  const path = declared.pathname.replace(/\/+$/, "");
+  const suffix = path.match(/\/(health|status|negotiate)$/)?.[1];
+  const base = suffix ? path.slice(0, -(suffix.length + 1)) : path;
+  const url = (route: string) => {
+    const result = new URL(declared);
+    result.pathname = `${base}/${route}`.replace(/\/{2,}/g, "/");
+    return result;
+  };
+  return { health: url("health"), status: url("status"), negotiate: url("negotiate") };
+}
+
+function validateHttpHealth(value: Record<string, unknown>): void {
+  if (value.status !== "ok" || value.service !== "ERC-8183 Agent") {
+    throw new Error("ERC-8183 health response has an invalid shape");
+  }
+}
+
+function validateHttpStatus(
+  value: Record<string, unknown>,
+  expectedProvider: Address | null,
+  context: QuoteContext | null,
+): void {
+  const addressFields = ["agent_address", "commerce_address", "router_address", "policy_address"] as const;
+  if (value.status !== "ok") throw new Error("ERC-8183 status response is not ok");
+  for (const field of addressFields) {
+    if (typeof value[field] !== "string" || !isAddress(value[field])) {
+      throw new Error(`ERC-8183 status ${field} is invalid`);
+    }
+  }
+  if (typeof value.service_price !== "string" || !/^\d+$/.test(value.service_price)) {
+    throw new Error("ERC-8183 status service_price is invalid");
+  }
+  if (typeof value.currency !== "string" || (value.currency !== "" && !isAddress(value.currency))) {
+    throw new Error("ERC-8183 status currency is invalid");
+  }
+  if (!Number.isInteger(value.decimals) || Number(value.decimals) < 0) {
+    throw new Error("ERC-8183 status decimals is invalid");
+  }
+  if (expectedProvider && getAddress(String(value.agent_address)) !== expectedProvider) {
+    throw new Error("ERC-8183 status agent_address does not match the ERC-8004 agent wallet");
+  }
+  if (context) {
+    if (getAddress(String(value.commerce_address)) !== context.commerce) {
+      throw new Error("ERC-8183 status commerce_address does not match Commerce");
+    }
+    if (!value.currency || getAddress(String(value.currency)) !== context.paymentToken) {
+      throw new Error("ERC-8183 status currency does not match Commerce payment token");
+    }
+  }
+}
+
+async function validateQuote(
+  value: Record<string, unknown>,
+  expectedProvider: Address,
+  context: QuoteContext,
+  verifyQuote: NonNullable<HireabilityAssessorOptions["verifyQuote"]>,
+  observedAt: string,
+): Promise<QuoteEvidence> {
+  const response = record(value.response, "response");
+  const terms = record(response.terms, "response.terms");
+  if (response.accepted !== true) throw new Error("Quote was not accepted");
+  if (typeof terms.price !== "string" || !/^\d+$/.test(terms.price) || BigInt(terms.price) <= 0n) {
+    throw new Error("Quote price must be a positive raw-unit integer");
+  }
+  if (typeof terms.currency !== "string" || !isAddress(terms.currency)) {
+    throw new Error("Quote currency is invalid");
+  }
+  const currency = getAddress(terms.currency);
+  if (currency !== context.paymentToken) throw new Error("Quote currency does not match Commerce payment token");
+  if (value.chain_id !== context.chainId) throw new Error("Quote chain_id does not match BSC Mainnet");
+  if (typeof value.verifying_contract !== "string" || !isAddress(value.verifying_contract)) {
+    throw new Error("Quote verifying_contract is invalid");
+  }
+  if (getAddress(value.verifying_contract) !== context.commerce) {
+    throw new Error("Quote verifying_contract does not match Commerce");
+  }
+  if (typeof value.negotiation_hash !== "string" || !/^0x[0-9a-fA-F]{64}$/.test(value.negotiation_hash)) {
+    throw new Error("Quote negotiation_hash is invalid");
+  }
+  if (typeof value.provider_sig !== "string" || !/^0x[0-9a-fA-F]+$/.test(value.provider_sig)) {
+    throw new Error("Quote provider_sig is invalid");
+  }
+  if (value.provider_address !== undefined) {
+    if (typeof value.provider_address !== "string" || !isAddress(value.provider_address)) {
+      throw new Error("Quote provider_address is invalid");
+    }
+    if (getAddress(value.provider_address) !== expectedProvider) {
+      throw new Error("Quote provider_address does not match the ERC-8004 agent wallet");
+    }
+  }
+  const verdict = await verifyQuote({
+    envelope: value,
+    provider: expectedProvider,
+    publicClient: context.publicClient,
+    expectedVerifyingContract: context.commerce,
+  });
+  if (!verdict.valid) throw new Error(`Quote signature rejected: ${verdict.reason}`);
+  return {
+    provider: expectedProvider,
+    price: terms.price,
+    currency,
+    negotiationHash: value.negotiation_hash as `0x${string}`,
+    signatureMethod: verdict.method,
+    observedAt,
+    provenance: "observed:erc8183-signed-quote",
+  };
+}
+
+function result(
+  transport: SellerTransport,
+  endpoint: string,
+  observedAt: string,
+  overrides: Partial<SellerProtocolVerification>,
+): SellerProtocolVerification {
+  return {
+    transport,
+    endpoint,
+    status: "unreachable",
+    quoteStatus: "unavailable",
+    agentCardSkills: null,
+    healthObserved: null,
+    statusObserved: null,
+    quote: null,
+    observedAt,
+    provenance: "declared:trust8004-public-api+observed:marketplace-probe",
+    error: null,
+    ...overrides,
+  };
+}
+
+function classifyFailure(error: unknown): {
+  status: SellerProtocolVerification["status"];
+  quoteStatus: SellerProtocolVerification["quoteStatus"];
+  code: string;
+} {
+  const message = error instanceof Error ? error.message : String(error);
+  if (/HTTP|timeout|fetch failed|network/i.test(message)) {
+    return { status: "unreachable", quoteStatus: "unavailable", code: "SELLER_UNREACHABLE" };
+  }
+  return { status: "invalid_response", quoteStatus: "invalid", code: "SELLER_INVALID_RESPONSE" };
+}
+
+async function assessProtocol(
+  protocol: { transport: SellerTransport; endpoint: string },
+  expectedProvider: Address | null,
+  getContext: () => Promise<QuoteContext>,
+  options: HireabilityAssessorOptions,
+): Promise<SellerProtocolVerification> {
+  const now = options.now ?? Date.now;
+  const observedAt = new Date(now()).toISOString();
+  let safeUrl: URL;
+  try {
+    safeUrl = await assertSafeMcpEndpoint(protocol.endpoint, options.resolveHostname);
+  } catch (error) {
+    return result(protocol.transport, protocol.endpoint, observedAt, {
+      status: "unsafe_url",
+      quoteStatus: "not_requested",
+      error: sanitizedError(error, "SELLER_UNSAFE_URL"),
+    });
+  }
+  const fetchImpl = controlledFetch(safeUrl, options.fetch ?? fetch, options.timeoutMs ?? 10_000);
+  const verifyQuote = options.verifyQuote ?? verifyQuoteSignature;
+
+  try {
+    if (protocol.transport === "a2a") {
+      const card = await fetchAgentCard(protocol.endpoint, null, fetchImpl);
+      const skills = [...new Set(card.skills.map((skill) => skill.id))].sort();
+      const missing = ["negotiate-erc8183-job", "notify_funded"].filter((skill) => !skills.includes(skill));
+      if (missing.length > 0) {
+        return result(protocol.transport, protocol.endpoint, observedAt, {
+          status: "protocol_valid",
+          quoteStatus: "not_requested",
+          agentCardSkills: skills,
+          error: { code: "A2A_REQUIRED_SKILLS_MISSING", message: `Agent Card is missing: ${missing.join(", ")}` },
+        });
+      }
+      if (!expectedProvider) {
+        return result(protocol.transport, protocol.endpoint, observedAt, {
+          status: "protocol_valid",
+          quoteStatus: "not_requested",
+          agentCardSkills: skills,
+          error: { code: "ONCHAIN_PROVIDER_UNAVAILABLE", message: "ERC-8004 agent wallet could not be read onchain." },
+        });
+      }
+      const quote = await sendSkill(
+        card.url,
+        { skill: "negotiate-erc8183-job", ...QUOTE_REQUEST },
+        null,
+        fetchImpl,
+      );
+      const evidence = await validateQuote(quote, expectedProvider, await getContext(), verifyQuote, observedAt);
+      return result(protocol.transport, protocol.endpoint, observedAt, {
+        status: "quote_verified",
+        quoteStatus: "verified",
+        agentCardSkills: skills,
+        quote: evidence,
+      });
+    }
+
+    const urls = httpUrls(protocol.endpoint);
+    const health = await fetchJsonObject(urls.health, fetchImpl, { headers: { accept: "application/json" } });
+    const status = await fetchJsonObject(urls.status, fetchImpl, { headers: { accept: "application/json" } });
+    validateHttpHealth(health);
+    if (!expectedProvider) {
+      validateHttpStatus(status, null, null);
+      return result(protocol.transport, protocol.endpoint, observedAt, {
+        status: "protocol_valid",
+        quoteStatus: "not_requested",
+        healthObserved: true,
+        statusObserved: true,
+        error: { code: "ONCHAIN_PROVIDER_UNAVAILABLE", message: "ERC-8004 agent wallet could not be read onchain." },
+      });
+    }
+    const context = await getContext();
+    validateHttpStatus(status, expectedProvider, context);
+    const quote = await fetchJsonObject(urls.negotiate, fetchImpl, {
+      method: "POST",
+      headers: { accept: "application/json", "content-type": "application/json" },
+      body: JSON.stringify(QUOTE_REQUEST),
+    });
+    const evidence = await validateQuote(quote, expectedProvider, context, verifyQuote, observedAt);
+    return result(protocol.transport, protocol.endpoint, observedAt, {
+      status: "quote_verified",
+      quoteStatus: "verified",
+      healthObserved: true,
+      statusObserved: true,
+      quote: evidence,
+    });
+  } catch (error) {
+    const failure = classifyFailure(error);
+    return result(protocol.transport, protocol.endpoint, observedAt, {
+      status: failure.status,
+      quoteStatus: failure.quoteStatus,
+      error: sanitizedError(error, failure.code),
+    });
+  }
+}
+
+async function defaultQuoteContext(): Promise<QuoteContext> {
+  const network = resolveNetwork("bsc-mainnet");
+  const client = await ERC8183Client.create({ network });
+  return {
+    chainId: 56,
+    commerce: getAddress(network.commerceContract),
+    paymentToken: getAddress(await client.paymentToken()),
+    publicClient: client.publicClient,
+  };
+}
+
+function summarize(
+  protocols: Array<{ transport: SellerTransport; endpoint: string }>,
+  observations: SellerProtocolVerification[],
+  mcp: boolean,
+): HireabilityAssessment {
+  if (protocols.length === 0) {
+    return {
+      transport: mcp ? "mcp_only" : "none",
+      declaredSellerProtocols: [],
+      quoteStatus: "not_applicable",
+      hireability: mcp ? "mcp_only" : "not_declared",
+      protocols: [],
+      note: mcp
+        ? "MCP is declared, but MCP availability is not ERC-8183 hireability."
+        : "No declared A2A or HTTP ERC-8183 service was found.",
+      provenance: "derived:marketplace-readiness",
+    };
+  }
+  const transports = [...new Set(protocols.map((protocol) => protocol.transport))];
+  const verified = observations.some((observation) => observation.quoteStatus === "verified");
+  const protocolValid = observations.some((observation) => observation.status === "protocol_valid");
+  const unreachable = observations.every((observation) =>
+    observation.status === "unreachable" || observation.status === "unsafe_url");
+  return {
+    transport: transports.length > 1 ? "multiple" : transports[0]!,
+    declaredSellerProtocols: transports,
+    quoteStatus: verified
+      ? "verified"
+      : protocolValid
+        ? "not_requested"
+        : unreachable
+          ? "unavailable"
+          : "invalid",
+    hireability: verified
+      ? "quote_verified"
+      : protocolValid
+        ? "protocol_discovered"
+        : unreachable
+          ? "unreachable"
+          : "invalid_quote",
+    protocols: observations,
+    note: verified
+      ? "A signed quote was verified; delivery and job execution are not proven."
+      : "No verifiable signed ERC-8183 quote is currently available.",
+    provenance: "derived:marketplace-readiness",
+  };
+}
+
+export function createHireabilityAssessor(
+  options: HireabilityAssessorOptions = {},
+): (agent: MarketplaceAgent, identity: IdentityVerification) => Promise<HireabilityAssessment> {
+  let context: Promise<QuoteContext> | null = null;
+  const getContext = () => {
+    context ??= (options.createQuoteContext ?? defaultQuoteContext)();
+    return context;
+  };
+  return async (agent, identity) => {
+    const protocols = declaredProtocols(agent);
+    if (protocols.length === 0) return summarize(protocols, [], hasMcp(agent));
+    const provider = identity.onchain.agentWallet;
+    const observations: SellerProtocolVerification[] = [];
+    for (const protocol of protocols) {
+      observations.push(await assessProtocol(protocol, provider, getContext, options));
+    }
+    return summarize(protocols, observations, hasMcp(agent));
+  };
+}
