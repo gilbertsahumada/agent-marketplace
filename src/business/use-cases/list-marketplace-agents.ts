@@ -1,5 +1,10 @@
 import { MARKETPLACE_INVENTORY } from "../../data/inventory/marketplace-inventory.js";
-import type { MarketplaceAgentRepository, MarketplaceDataSort } from "../../data/repositories/marketplace-agent-repository.js";
+import {
+  DEFAULT_REGISTERED_AGENT_SORT,
+  MARKETPLACE_DATA_SORTS,
+  type MarketplaceAgentRepository,
+  type MarketplaceDataSort,
+} from "../../data/repositories/marketplace-agent-repository.js";
 import { InvalidMarketplaceInputError, MarketplaceDataUnavailableError } from "../errors/marketplace-errors.js";
 import {
   MARKETPLACE_CATEGORIES,
@@ -8,6 +13,9 @@ import {
   type MarketplaceCategory,
 } from "../entities/marketplace-agent.js";
 import { toMarketplaceAgent } from "../policies/marketplace-agent-policy.js";
+
+export { DEFAULT_REGISTERED_AGENT_SORT, MARKETPLACE_DATA_SORTS };
+export type MarketplaceSort = MarketplaceDataSort;
 
 interface BaseListInput {
   q?: string;
@@ -73,7 +81,7 @@ export class ListMarketplaceAgents {
           page: validated.page,
           limit: validated.limit,
           ...(validated.q ? { q: validated.q } : {}),
-          ...(input.sort ? { sort: input.sort } : {}),
+          sort: input.sort ?? DEFAULT_REGISTERED_AGENT_SORT,
         });
         return {
           view: "all",
