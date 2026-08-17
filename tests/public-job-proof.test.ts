@@ -175,6 +175,40 @@ describe("GetPublicJobProof", () => {
     expect(JSON.stringify(proof.live)).not.toContain("/Users/alice");
   });
 
+  it("never publishes raw authorization headers or structured credentials", async () => {
+    const repository = new Gate1PublicProofRepository({
+      loadLiveProof: async () => {
+        throw new Error([
+          "Authorization: Bearer sk-live-123",
+          "Authorization: Basic dXNlcjpwYXNz",
+          "X-API-Key: key-456",
+          '{"authorization":"Bearer json-token","client_secret":"json-secret"}',
+        ].join(" "));
+      },
+    });
+
+    const proof = await new GetPublicJobProof(repository).execute({ jobId: "514" });
+    expect(proof.live.error).toEqual({
+      code: "GATE1_PROOF_READ_FAILED",
+      message: "Gate 1 proof verification did not complete successfully.",
+    });
+    expect(JSON.stringify(proof)).not.toMatch(/sk-live|dXNlcjpwYXNz|key-456|json-token|json-secret/);
+  });
+
+  it("preserves a live mismatch as a distinct public state", async () => {
+    const mismatch = verifiedLiveProof();
+    mismatch.status = "mismatch";
+    mismatch.checks.stateMatches = false;
+    const repository = new Gate1PublicProofRepository({ loadLiveProof: async () => mismatch });
+
+    await expect(new GetPublicJobProof(repository).execute({ jobId: "514" })).resolves.toMatchObject({
+      live: {
+        status: "mismatch",
+        checks: { stateMatches: false },
+      },
+    });
+  });
+
   it("does not perform an RPC read for an unknown job", async () => {
     const loadLiveProof = vi.fn(async () => verifiedLiveProof());
     const useCase = new GetPublicJobProof(new Gate1PublicProofRepository({ loadLiveProof }));
