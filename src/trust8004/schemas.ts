@@ -11,6 +11,11 @@ import {
 } from "./types.js";
 
 type JsonRecord = Record<string, unknown>;
+const MAX_STRING_LENGTH = 16_384;
+const MAX_ARRAY_LENGTH = 256;
+const MAX_LIST_ITEMS = 100;
+const MAX_SCORE_DIMENSIONS = 64;
+const MAX_CAPABILITY_KEYS = 64;
 
 export class Trust8004SchemaError extends Error {
   constructor(path: string, expected: string, value: unknown) {
@@ -29,6 +34,9 @@ function record(value: unknown, path: string): JsonRecord {
 
 function string(value: unknown, path: string): string {
   if (typeof value !== "string") throw new Trust8004SchemaError(path, "string", value);
+  if (value.length > MAX_STRING_LENGTH) {
+    throw new Trust8004SchemaError(path, `string with at most ${MAX_STRING_LENGTH} characters`, value);
+  }
   return value;
 }
 
@@ -83,11 +91,28 @@ function jsonValue(value: unknown, path: string): unknown {
   }
 }
 
-function array(value: unknown, path: string): unknown[] {
+function array(value: unknown, path: string, maxLength = MAX_ARRAY_LENGTH): unknown[] {
   const parsed = jsonValue(value, path);
   if (parsed === null || parsed === undefined) return [];
   if (!Array.isArray(parsed)) throw new Trust8004SchemaError(path, "array or JSON array string", parsed);
+  if (parsed.length > maxLength) {
+    throw new Trust8004SchemaError(path, `array with at most ${maxLength} items`, parsed);
+  }
   return parsed;
+}
+
+function nonNegativeSafeInteger(value: unknown, path: string): number {
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) {
+    throw new Trust8004SchemaError(path, "non-negative safe integer", value);
+  }
+  return value;
+}
+
+function positiveSafeInteger(value: unknown, path: string): number {
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value <= 0) {
+    throw new Trust8004SchemaError(path, "positive safe integer", value);
+  }
+  return value;
 }
 
 function stringArray(value: unknown, path: string): string[] {
@@ -126,6 +151,13 @@ function flattenDeclaredCapabilities(value: unknown, path: string): string[] {
   const parsed = jsonValue(value, path);
   if (parsed === null || parsed === undefined) return [];
   const data = record(parsed, path);
+  if (Object.keys(data).length > MAX_CAPABILITY_KEYS) {
+    throw new Trust8004SchemaError(
+      path,
+      `object with at most ${MAX_CAPABILITY_KEYS} entries`,
+      data,
+    );
+  }
   const values: string[] = [];
   for (const [key, entry] of Object.entries(data)) {
     if (Array.isArray(entry)) {
@@ -204,10 +236,16 @@ export function parseAgentListResponse(value: unknown): {
   offset: number;
 } {
   const data = record(value, "response");
+  const total = nonNegativeSafeInteger(data.total, "response.total");
+  const limit = positiveSafeInteger(data.limit, "response.limit");
+  if (limit > MAX_LIST_ITEMS) {
+    throw new Trust8004SchemaError("response.limit", `integer at most ${MAX_LIST_ITEMS}`, limit);
+  }
+  const offset = nonNegativeSafeInteger(data.offset, "response.offset");
   const reputationData = data.reputations === undefined
     ? {}
     : record(data.reputations, "response.reputations");
-  const items = array(data.items, "response.items").map((entry, index) => {
+  const items = array(data.items, "response.items", MAX_LIST_ITEMS).map((entry, index) => {
     const item = record(entry, `response.items[${index}]`);
     const parsedChainId = chainId(item.chainId, `response.items[${index}].chainId`);
     const agentId = string(item.agentId, `response.items[${index}].agentId`);
@@ -261,18 +299,26 @@ export function parseAgentListResponse(value: unknown): {
   });
   return {
     items,
-    total: finiteNumber(data.total, "response.total"),
-    limit: finiteNumber(data.limit, "response.limit"),
-    offset: finiteNumber(data.offset, "response.offset"),
+    total,
+    limit,
+    offset,
   };
 }
 
-export function parseProfileResponse(value: unknown): Trust8004Profile {
+export function parseProfileResponse(value: unknown, expectedAgentId?: string): Trust8004Profile {
   const data = record(value, "response");
   const agent = record(data.agent, "response.agent");
+  const parsedAgentId = string(agent.agentId, "response.agent.agentId");
+  if (expectedAgentId !== undefined && parsedAgentId !== expectedAgentId) {
+    throw new Trust8004SchemaError(
+      "response.agent.agentId",
+      `agentId ${expectedAgentId}`,
+      parsedAgentId,
+    );
+  }
   return {
     chainId: chainId(agent.chainId, "response.agent.chainId"),
-    agentId: string(agent.agentId, "response.agent.agentId"),
+    agentId: parsedAgentId,
     name: string(agent.name, "response.agent.name"),
     description: nullableString(agent.description, "response.agent.description"),
     owner: string(agent.owner ?? agent.ownerAddress, "response.agent.owner"),
@@ -307,12 +353,22 @@ function scoreDimension(value: unknown, path: string): TrustScoreDimension {
   };
 }
 
-export function parseTrustScoreResponse(value: unknown): TrustScore {
+export function parseTrustScoreResponse(value: unknown, expectedAgentId?: string): TrustScore {
   const response = record(value, "response");
   chainId(response.chainId, "response.chainId");
-  string(response.agentId, "response.agentId");
+  const parsedAgentId = string(response.agentId, "response.agentId");
+  if (expectedAgentId !== undefined && parsedAgentId !== expectedAgentId) {
+    throw new Trust8004SchemaError("response.agentId", `agentId ${expectedAgentId}`, parsedAgentId);
+  }
   const score = record(response.trustScore, "response.trustScore");
   const dimensions = record(score.dimensions, "response.trustScore.dimensions");
+  if (Object.keys(dimensions).length > MAX_SCORE_DIMENSIONS) {
+    throw new Trust8004SchemaError(
+      "response.trustScore.dimensions",
+      `object with at most ${MAX_SCORE_DIMENSIONS} entries`,
+      dimensions,
+    );
+  }
   return {
     total: finiteNumber(score.total, "response.trustScore.total"),
     tier: string(score.tier, "response.trustScore.tier"),
