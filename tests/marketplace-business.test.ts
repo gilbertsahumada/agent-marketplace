@@ -101,6 +101,7 @@ describe("marketplace business catalogue", () => {
     expect(result.items.every((agent) => agent.categoryEvaluation === "not_evaluated")).toBe(true);
     expect(result.items.every((agent) => agent.hireability.status === "not_evaluated")).toBe(true);
     expect(source.listRegisteredPage).toHaveBeenCalledTimes(1);
+    expect(source.listRegisteredPage).toHaveBeenCalledWith({ page: 2, limit: 24, sort: "newest" });
     expect(source.getById).not.toHaveBeenCalled();
     expect(source.getOnchainIdentity).not.toHaveBeenCalled();
   });
@@ -118,6 +119,9 @@ describe("marketplace business catalogue", () => {
     expect(result.items.map((agent) => agent.agentId)).toEqual(["45650", "45381", "45422", "43129"]);
     expect(result.items.find((agent) => agent.agentId === "43129")?.categories.map((entry) => entry.category))
       .toEqual(["yield_optimisation", "health_factor_monitoring"]);
+    expect(result.items.flatMap((agent) => agent.categories).every((entry) =>
+      entry.evidence.kind === "derived" && entry.evidence.source === "marketplace-inventory"
+    )).toBe(true);
     expect(result.categories.find((category) => category.category === "grid_trading"))
       .toEqual({ category: "grid_trading", count: 0, status: "unverified" });
     expect(result.items.every((agent) => agent.hireability.status === "mcp_only")).toBe(true);
@@ -211,6 +215,8 @@ describe("marketplace business catalogue", () => {
 describe("Trust8004 marketplace repository", () => {
   it("uses one enriched list request, filters the manifest, and deduplicates concurrent refreshes", async () => {
     let requestCount = 0;
+    let activeRequests = 0;
+    let maximumActiveRequests = 0;
     let requestedUrl = "";
     const response = {
       items: ["45650", "45381", "45422", "43129", "45564"].map((agentId) => ({
@@ -239,15 +245,20 @@ describe("Trust8004 marketplace repository", () => {
     };
     const fetchImpl = (async (input: string | URL | Request) => {
       requestCount += 1;
+      activeRequests += 1;
+      maximumActiveRequests = Math.max(maximumActiveRequests, activeRequests);
       requestedUrl = input instanceof Request ? input.url : input.toString();
+      await new Promise((resolve) => setTimeout(resolve, 2));
+      activeRequests -= 1;
       return Response.json(response);
     }) as typeof fetch;
+    const provider = new Trust8004Provider({
+      fetch: fetchImpl,
+      minimumRequestIntervalMs: 0,
+      now: () => 1_776_643_200_000,
+    });
     const dataRepository = new Trust8004MarketplaceAgentRepository({
-      providerFactory: () => new Trust8004Provider({
-        fetch: fetchImpl,
-        minimumRequestIntervalMs: 0,
-        now: () => 1_776_643_200_000,
-      }),
+      provider,
       cache: new AsyncTtlCache(() => 1_776_643_200_000),
     });
 
@@ -265,6 +276,13 @@ describe("Trust8004 marketplace repository", () => {
     expect(url.searchParams.get("limit")).toBe("24");
     expect(url.searchParams.get("includeReputation")).toBe("true");
     expect(url.searchParams.has("active")).toBe(false);
+
+    await Promise.all([
+      dataRepository.listRegisteredPage({ page: 1, limit: 24, q: "Venus" }),
+      dataRepository.listRegisteredPage({ page: 2, limit: 24, q: "Aave" }),
+    ]);
+    expect(requestCount).toBe(3);
+    expect(maximumActiveRequests).toBe(1);
   });
 
   it("caches direct identity reads and sanitizes an unavailable RPC without failing the profile", async () => {
@@ -297,5 +315,60 @@ describe("Trust8004 marketplace repository", () => {
     });
     expect(JSON.stringify(first)).not.toContain("secret.invalid");
     expect(JSON.stringify(first)).not.toContain("token=value");
+    expect(first).toMatchObject({
+      error: { message: "Direct BSC identity verification is currently unavailable." },
+    });
+  });
+
+  it("degrades safely when the BSC identity reader cannot be constructed", async () => {
+    const dataRepository = new Trust8004MarketplaceAgentRepository({
+      identityReaderFactory: () => {
+        throw new Error("Authorization: Bearer secret-token https://private.invalid/rpc");
+      },
+      cache: new AsyncTtlCache(() => 1_776_643_200_000),
+      now: () => 1_776_643_200_000,
+    });
+
+    await expect(dataRepository.getOnchainIdentity("45650")).resolves.toMatchObject({
+      status: "unavailable",
+      registryAddress: null,
+      blockNumber: null,
+      error: {
+        code: "ONCHAIN_IDENTITY_UNAVAILABLE",
+        message: "Direct BSC identity verification is currently unavailable.",
+      },
+    });
+  });
+});
+
+describe("AsyncTtlCache", () => {
+  it("expires values and evicts the least recently used entry at its bound", async () => {
+    let now = 0;
+    const cache = new AsyncTtlCache(() => now, 2);
+    const loads = new Map<string, number>();
+    const read = (key: string) => cache.get(key, 10, async () => {
+      loads.set(key, (loads.get(key) ?? 0) + 1);
+      return `${key}:${loads.get(key)}`;
+    });
+
+    await read("a");
+    await read("b");
+    await read("a");
+    await read("c");
+    await read("b");
+    expect(loads.get("a")).toBe(1);
+    expect(loads.get("b")).toBe(2);
+
+    now = 11;
+    await read("a");
+    expect(loads.get("a")).toBe(2);
+  });
+
+  it("bounds concurrent unique cache misses", async () => {
+    const cache = new AsyncTtlCache(Date.now, 2);
+    const never = () => new Promise<string>(() => undefined);
+    void cache.get("a", 10, never);
+    void cache.get("b", 10, never);
+    await expect(cache.get("c", 10, async () => "c")).rejects.toThrow("cache request capacity exceeded");
   });
 });
