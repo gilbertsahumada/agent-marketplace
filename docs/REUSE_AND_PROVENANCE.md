@@ -15,6 +15,7 @@ This document makes the boundary between existing infrastructure and hackathon w
 | BSC catalogue snapshot | trust8004 | Public API, marked as partial coverage |
 | ERC-8183 contracts and client | BNB Agent SDK | Upstream TypeScript dependency |
 | Identity and commerce facts | BSC | Direct RPC reads |
+| Browser ERC-8183 ABI signatures | BNB Agent SDK generated ABIs | Minimal `createJob`, `setBudget`, `fund`, `registerJob`, `approve`, and lifecycle events adapted for viem |
 
 ## New work in this repository
 
@@ -46,6 +47,20 @@ or absolute-path import was copied from the trust8004 checkout. Space Grotesk
 and Space Mono are loaded independently through `next/font/google`. The
 Evidence Rail and all marketplace hiring semantics are new work in this
 repository.
+
+## Gate 6A protocol references
+
+Gate 6A inspected the installed npm artifact `@bnbagent/sdk@0.5.0` and the
+official TypeScript A2A buyer, wallet-provider contract, ERC-8183 facade, and
+generated ABIs. The SDK remains server-side for resolution, negotiation,
+signature validation, notification, and read helpers. The browser-side viem
+adapter and non-custodial confirmation UI are new marketplace code. Only the
+minimal official ABI signatures needed by the spike were adapted; no SDK
+wallet, keystore, server, or application code was copied into the browser.
+
+Agent `1815` remains controlled test infrastructure derived from the official
+A2A example. It is not a marketplace agent and is not described as an official
+reference agent.
 
 ## Not copied from trust8004
 

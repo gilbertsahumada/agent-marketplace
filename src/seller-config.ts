@@ -1,7 +1,7 @@
 import { getAddress, type Address } from "viem";
 import { TESTNET_NETWORK } from "./config.js";
 
-export type SellerCommand = "serve" | "register";
+export type SellerCommand = "serve" | "register" | "update";
 
 export interface SellerConfig {
   command: SellerCommand;
@@ -33,8 +33,11 @@ function positiveInteger(raw: string | undefined, fallback: number): number {
 
 export function parseSellerCommand(argv: string[]): SellerCommand {
   const [command, ...rest] = argv;
-  if ((command !== "serve" && command !== "register") || rest.length > 0) {
-    throw new Error("Expected seller command: serve or register");
+  if (
+    (command !== "serve" && command !== "register" && command !== "update") ||
+    rest.length > 0
+  ) {
+    throw new Error("Expected seller command: serve, register, or update");
   }
   return command;
 }

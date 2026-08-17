@@ -43,4 +43,13 @@ describe("A2A transport", () => {
       authorization: "Bearer token",
     });
   });
+
+  it("rejects oversized A2A responses before parsing", async () => {
+    const fakeFetch = vi.fn().mockResolvedValue(
+      new Response("{}", { headers: { "content-length": "70000" } }),
+    );
+    await expect(
+      fetchAgentCard("https://seller.example", null, fakeFetch),
+    ).rejects.toThrow(/allowed size/);
+  });
 });

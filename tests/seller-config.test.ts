@@ -12,10 +12,11 @@ const baseEnv = {
 };
 
 describe("seller fixture configuration", () => {
-  it("accepts only the two fixture commands", () => {
+  it("accepts only the three fixture commands", () => {
     expect(parseSellerCommand(["serve"])).toBe("serve");
     expect(parseSellerCommand(["register"])).toBe("register");
-    expect(() => parseSellerCommand(["start"])).toThrow(/serve or register/);
+    expect(parseSellerCommand(["update"])).toBe("update");
+    expect(() => parseSellerCommand(["start"])).toThrow(/serve, register, or update/);
   });
 
   it("defaults to one raw payment-token unit", () => {

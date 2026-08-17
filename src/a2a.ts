@@ -18,6 +18,24 @@ interface RpcReply {
   result?: { parts?: Array<{ data?: Record<string, unknown> }> };
 }
 
+const MAX_A2A_RESPONSE_BYTES = 64 * 1024;
+
+async function boundedJson(response: Response): Promise<unknown> {
+  const contentLength = Number(response.headers.get("content-length") ?? "0");
+  if (Number.isFinite(contentLength) && contentLength > MAX_A2A_RESPONSE_BYTES) {
+    throw new Error("A2A response exceeded the allowed size");
+  }
+  const text = await response.text();
+  if (new TextEncoder().encode(text).byteLength > MAX_A2A_RESPONSE_BYTES) {
+    throw new Error("A2A response exceeded the allowed size");
+  }
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    throw new Error("A2A response was not valid JSON");
+  }
+}
+
 export function agentCardUrl(endpoint: string): string {
   const url = new URL(endpoint);
   const path = url.pathname.replace(/\/+$/, "");
@@ -46,7 +64,7 @@ export async function fetchAgentCard(
   if (!response.ok) {
     throw new Error(`Agent Card returned HTTP ${response.status}`);
   }
-  const card = (await response.json()) as Partial<AgentCard>;
+  const card = (await boundedJson(response)) as Partial<AgentCard>;
   if (
     typeof card.name !== "string" ||
     typeof card.url !== "string" ||
@@ -98,7 +116,7 @@ export async function sendSkill(
   if (!response.ok) {
     throw new Error(`A2A message returned HTTP ${response.status}`);
   }
-  const reply = (await response.json()) as RpcReply;
+  const reply = (await boundedJson(response)) as RpcReply;
   if (reply.error) {
     throw new Error("A2A returned a protocol error");
   }

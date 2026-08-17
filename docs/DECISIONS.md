@@ -17,6 +17,7 @@
 | 2026-08-17 | Probe only explicitly declared seller protocols | Approved | Prevents MCP/A2A discovery from being misrepresented as ERC-8183 hireability | Undeclared compatible routes are intentionally not guessed |
 | 2026-08-17 | Split discovery into curated marketplace and paginated registered views | Approved | Enables navigation of the trust8004 BSC snapshot without mass download, N+1 enrichment, or global classification | Registered agents remain `Not evaluated` until deliberately curated |
 | 2026-08-17 | Deliver the read-only Frontend MVP before wallet signing | Approved | Gate 1 already proves the ERC-8183 lifecycle and the UI can now expose real evidence safely | Non-custodial wallet/ERC-8183 integration is the delayed next gate; no fake quotes or jobs are introduced |
+| 2026-08-18 | Keep `@bnbagent/sdk` server-side and use viem for injected-wallet ERC-8183 writes | Approved for Gate 6A | SDK `0.5.0` accepts its Node-oriented `WalletProvider`, has no EIP-1193 adapter, and its ERC-8183 entry reaches filesystem-backed providers; a minimal viem adapter preserves browser custody | Delays production `/hire/[agentId]` integration until the Testnet spike is signed and observed at `SUBMITTED`; WalletConnect and mainnet remain out of scope |
 
 ## Scope change rule
 

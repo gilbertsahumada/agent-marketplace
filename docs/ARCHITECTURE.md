@@ -148,6 +148,36 @@ Resolve ERC-8004 identity
 
 The buyer keeps custody. The server may resolve, negotiate, and monitor, but cannot sign financial transactions for the user.
 
+## Gate 6A browser-wallet boundary
+
+The experimental `/spikes/erc8183-browser` route preserves the same three
+layers while splitting execution by custody boundary:
+
+```text
+Browser presentation
+  -> Business: quote / prepare / notify / status use cases
+  -> Data server: fixed-origin A2A + SDK quote verification + chain reads
+
+Browser presentation
+  -> Business client composition
+  -> Data browser: injected EIP-1193 + viem + minimal official ABIs
+```
+
+`@bnbagent/sdk@0.5.0` is not imported by Client Components. Its installed
+ERC-8183 entry targets Node, accepts the SDK `WalletProvider` rather than an
+EIP-1193 provider, and reaches filesystem-backed wallet/storage modules. The
+server retains ERC-8004 resolution, A2A negotiation, quote signature checks,
+`notify_funded`, deliverable verification, and tracking. The browser adapter
+has exactly five possible writes: `createJob`, `registerJob`, `setBudget`, an
+exact `approve` when necessary, and `fund`.
+
+The route is false by default, fixed to BSC Testnet chain `97`, Agent `1815`,
+the verified Gate 1 seller wallet, canonical Commerce/Router/token addresses,
+and the active Router-allowlisted policy. The seller origin is a server-only
+bare HTTPS allowlist value and must match current ERC-8004 discovery. Reload
+recovery treats the sanitized local journal as a locator only; receipts and
+current chain state determine completion.
+
 ## Independence requirements
 
 - Financial facts and ERC-8183 state come from chain.
