@@ -27,6 +27,26 @@ This document makes the boundary between existing infrastructure and hackathon w
 - Quotes, funding guidance, job tracking, results, and receipts.
 - Operational curation separating `Hireable now` from `Listed only`.
 
+## Gate 5 visual references
+
+The visual review used trust8004 commit
+`7777b2478a5277f21aecba08b15e960a071de92c` in read-only mode. The marketplace
+adapted patterns from these source areas:
+
+| Pattern adapted | trust8004 reference | Marketplace implementation |
+|---|---|---|
+| Dark zinc tokens and spacing rhythm | `app/globals.css`, `app/layout.tsx`, `app/fonts.ts` | `app/globals.css`, `app/layout.tsx` |
+| Profile information hierarchy | `components/agent-profile/agent-hero.tsx`, `profile-tabs.tsx`, `overview-tab.tsx`, `services-tab.tsx`, `reputation-tab.tsx`, `technical-tab.tsx` | `components/marketplace/agent-profile.tsx` |
+| Compact agent cards and status badges | `components/ui/agent-cell.tsx`, `components/agent-table.tsx`, `components/agent-profile/trust-score-badge.tsx` | `components/marketplace/agent-card.tsx`, `provenance-badge.tsx` |
+| Skeleton, empty, and error geometry | `app/(app)/agents/loading.tsx`, `components/error-boundary.tsx`, `app/not-found.tsx` | `app/loading.tsx`, `app/error.tsx`, `app/not-found.tsx` |
+| Accessible primitive composition | `components/ui/button.tsx`, `badge.tsx`, `tabs.tsx`, `tooltip.tsx`, `dialog.tsx` | Regenerated local shadcn/Radix primitives under `components/ui/` |
+
+No source file, font binary, logo, navigation, runtime package, database code,
+or absolute-path import was copied from the trust8004 checkout. Space Grotesk
+and Space Mono are loaded independently through `next/font/google`. The
+Evidence Rail and all marketplace hiring semantics are new work in this
+repository.
+
 ## Not copied from trust8004
 
 - Existing landing and multichain navigation.
@@ -36,6 +56,7 @@ This document makes the boundary between existing infrastructure and hackathon w
 - Agent activation metadata toggle.
 - Direct Turso schema access.
 - Existing Git history presented as hackathon work.
+- trust8004 font binaries, logo, animated canvas, marquee, and profile glow.
 
 ## Submission disclosure
 

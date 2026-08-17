@@ -15,6 +15,8 @@
 | 2026-08-16 | Keep verification evidence separate from the trust8004 snapshot | Approved | Prevents observed MCP tools and direct BSC reads from overwriting declared catalogue data | Consumers must interpret mismatches and temporal drift explicitly |
 | 2026-08-17 | Gate frontend work on reproducible evidence, not third-party seller access | Approved | Gate 1 already proves the buyer lifecycle onchain; the UI can honestly represent MCP-only and unavailable states | Replaces waiting for an external seller; no existing MVP item or gate is delayed |
 | 2026-08-17 | Probe only explicitly declared seller protocols | Approved | Prevents MCP/A2A discovery from being misrepresented as ERC-8183 hireability | Undeclared compatible routes are intentionally not guessed |
+| 2026-08-17 | Split discovery into curated marketplace and paginated registered views | Approved | Enables navigation of the trust8004 BSC snapshot without mass download, N+1 enrichment, or global classification | Registered agents remain `Not evaluated` until deliberately curated |
+| 2026-08-17 | Deliver the read-only Frontend MVP before wallet signing | Approved | Gate 1 already proves the ERC-8183 lifecycle and the UI can now expose real evidence safely | Non-custodial wallet/ERC-8183 integration is the delayed next gate; no fake quotes or jobs are introduced |
 
 ## Scope change rule
 

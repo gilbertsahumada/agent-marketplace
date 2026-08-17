@@ -2,7 +2,11 @@ import { readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
 import { buildBscCandidateInventory, KNOWN_HEYANON_AGENT_IDS } from "../src/trust8004/inventory.js";
 import { Trust8004Provider } from "../src/trust8004/provider.js";
-import { parseServices, Trust8004SchemaError } from "../src/trust8004/schemas.js";
+import {
+  parseAgentListResponse,
+  parseServices,
+  Trust8004SchemaError,
+} from "../src/trust8004/schemas.js";
 
 async function fixture(name: string): Promise<unknown> {
   return JSON.parse(await readFile(new URL(`./fixtures/trust8004/${name}`, import.meta.url), "utf8")) as unknown;
@@ -65,6 +69,62 @@ describe("Trust8004Provider", () => {
     expect(requestedUrl?.searchParams.get("search")).toBe("grid");
   });
 
+  it("parses the enriched list summary and requests supported server-side options", async () => {
+    const list = {
+      items: [{
+        chainId: 56,
+        agentId: "45650",
+        name: "V3 Pools powered by HeyAnon",
+        description: "Rebalancing",
+        ownerAddress: "0x1111111111111111111111111111111111111111",
+        ipfsUri: "ipfs://sanitized/45650",
+        mcpEndpoint: "https://fixture.invalid/mcp",
+        a2aEndpoint: null,
+        services: JSON.stringify([{ name: "MCP", endpoint: "https://fixture.invalid/mcp", tools: ["rebalance"] }]),
+        endpoints: [],
+        skills: [],
+        capabilities: null,
+        endpointHealth: null,
+        trustScore: 72,
+        trustTier: "Silver",
+        active: true,
+        updatedAt: 1_754_000_100_000,
+      }],
+      total: 1,
+      limit: 24,
+      offset: 0,
+      reputations: { "56:45650": { count: 3, averageScore: 84 } },
+    };
+    let requestedUrl: URL | undefined;
+    const provider = new Trust8004Provider({
+      fetch: fixtureFetch(list, {}, {}, (url) => { requestedUrl = url; }),
+      minimumRequestIntervalMs: 0,
+      now: () => 1_754_000_300_000,
+    });
+
+    const page = await provider.listAgents({
+      view: "all",
+      q: "HeyAnon",
+      limit: 24,
+      includeReputation: true,
+      sortBy: "score",
+      sortOrder: "desc",
+    });
+
+    expect(requestedUrl?.searchParams.get("view")).toBe("all");
+    expect(requestedUrl?.searchParams.get("search")).toBe("HeyAnon");
+    expect(requestedUrl?.searchParams.get("includeReputation")).toBe("true");
+    expect(requestedUrl?.searchParams.get("sortBy")).toBe("score");
+    expect(page.items[0]).toMatchObject({
+      agentId: "45650",
+      owner: "0x1111111111111111111111111111111111111111",
+      metadataUri: "ipfs://sanitized/45650",
+      tools: ["rebalance"],
+      reputation: { totalFeedbacks: 3, averageScore: 84 },
+      trustScore: { total: 72, tier: "Silver" },
+    });
+  });
+
   it("deduplicates identical requests and serializes distinct requests", async () => {
     const data = await allFixtures();
     let requestCount = 0;
@@ -83,6 +143,8 @@ describe("Trust8004Provider", () => {
 
     await Promise.all([provider.listAgents(), provider.listAgents()]);
     expect(requestCount).toBe(1);
+    await provider.listAgents();
+    expect(requestCount).toBe(2);
     await Promise.all([provider.getProfile("45650"), provider.getTrustScore("45650")]);
     expect(maximumActiveRequests).toBe(1);
   });
@@ -131,5 +193,56 @@ describe("Trust8004Provider", () => {
     });
 
     await expect(provider.getProfile("45650")).rejects.toBeInstanceOf(Trust8004SchemaError);
+  });
+
+  it("rejects profile and score payloads for a different requested agent", async () => {
+    const data = await allFixtures();
+    const profiles = structuredClone(data.profiles);
+    const scores = structuredClone(data.scores);
+    (profiles["45650"] as { agent: { agentId: string } }).agent.agentId = "45381";
+    (scores["45381"] as { agentId: string }).agentId = "45650";
+    const provider = new Trust8004Provider({
+      fetch: fixtureFetch(data.list, profiles, scores),
+      minimumRequestIntervalMs: 0,
+    });
+
+    await expect(provider.getProfile("45650")).rejects.toThrow(/response\.agent\.agentId/);
+    await expect(provider.getTrustScore("45381")).rejects.toThrow(/response\.agentId/);
+  });
+
+  it.each([
+    { field: "total", value: -1 },
+    { field: "limit", value: 0 },
+    { field: "limit", value: 1.5 },
+    { field: "limit", value: 101 },
+    { field: "offset", value: -1 },
+  ])("rejects invalid pagination semantics for $field=$value", ({ field, value }) => {
+    const response = {
+      items: [],
+      total: 0,
+      limit: 24,
+      offset: 0,
+      [field]: value,
+    };
+    expect(() => parseAgentListResponse(response)).toThrow(Trust8004SchemaError);
+  });
+
+  it("aborts slow requests and rejects oversized responses", async () => {
+    const slowFetch = ((_input: string | URL | Request, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
+      init?.signal?.addEventListener("abort", () => reject(init.signal?.reason), { once: true });
+    })) as typeof fetch;
+    const slowProvider = new Trust8004Provider({
+      fetch: slowFetch,
+      minimumRequestIntervalMs: 0,
+      requestTimeoutMs: 5,
+    });
+    await expect(slowProvider.listAgents()).rejects.toThrow();
+
+    const oversizedProvider = new Trust8004Provider({
+      fetch: (async () => new Response("01234567890")) as typeof fetch,
+      minimumRequestIntervalMs: 0,
+      maxResponseBytes: 10,
+    });
+    await expect(oversizedProvider.listAgents()).rejects.toThrow(/exceeded 10 bytes/);
   });
 });

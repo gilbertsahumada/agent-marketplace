@@ -240,11 +240,11 @@ function gate1Reader(overrides: Partial<Job> = {}): Gate1ProofReader {
     evaluator: "0x5555555555555555555555555555555555555555",
     description: "sanitized",
     budget: 1n,
-    expiredAt: 2_000_000_000n,
+    expiredAt: 1_786_640_937n,
     status: JobStatus.SUBMITTED,
     hook: "0x6666666666666666666666666666666666666666",
     deliverable: "0x2ed47b2d41add5f9cef468b6748a1d52b3d6e753fac9c7e1de14766e6e315066",
-    submittedAt: 1_900_000_000n,
+    submittedAt: 1_786_636_559n,
     ...overrides,
   };
   return {
@@ -253,14 +253,31 @@ function gate1Reader(overrides: Partial<Job> = {}): Gate1ProofReader {
     getPaymentToken: async () => "0xc70B8741B8B07A6d61E54fd4B20f22Fa648E5565",
     getAgentWallet: async () => "0xa0166a1c586f85Db39798ee311BAA7831C4Dc65b",
     getDeliverableUrl: async () => "https://fixture.example/deliverable/514",
-    getTransaction: async (hash: Hash) => ({ hash, status: "success", blockNumber: "100" }),
+    getTransaction: async (hash: Hash) => {
+      const evidence = {
+        "0x8767e5163c208d18ec4282d2a37c519b29fa03b6f6141e4f0458be8d64a243ce": ["124866822", "2026-08-13T15:54:03.000Z"],
+        "0x843a8e9de35389942f04226c1b8322a0dc05ce3698aafea0fd8b2f13ad578f3f": ["124866829", "2026-08-13T15:54:06.000Z"],
+        "0x1414750595ef9bc36f9b83c85f7345f9da74af4ad2b0a114152d94c1d7b62232": ["124866907", "2026-08-13T15:54:41.000Z"],
+        "0x11bf5cd1de0a0a97547d39955c32eb4d890af2b38beb8dfaee5de21c71308885": ["124866912", "2026-08-13T15:54:43.000Z"],
+        "0x7a3e76c1f11449264e89b7589e72d6c5acae804fba7142d26a6009edfa5ee227": ["124866923", "2026-08-13T15:54:48.000Z"],
+        "0xe64f43b0a4daa7a60e2d0708d5851765be206da55563d601fa3c2dd2e5451a32": ["124867080", "2026-08-13T15:55:59.000Z"],
+      } as const;
+      const [blockNumber, timestamp] = evidence[hash as keyof typeof evidence];
+      return { hash, status: "success", blockNumber, timestamp };
+    },
   };
 }
 
 describe("Gate 1 proof", () => {
   it("verifies the public onchain evidence", async () => {
     const proof = await verifyGate1Proof(gate1Reader(), () => 1_776_643_200_000);
-    expect(proof).toMatchObject({ status: "verified", observedState: "SUBMITTED", jobId: "514" });
+    expect(proof).toMatchObject({
+      status: "verified",
+      observedState: "SUBMITTED",
+      jobId: "514",
+      deadline: { unix: "1786640937", iso: "2026-08-13T17:08:57.000Z" },
+      submittedAt: { unix: "1786636559", iso: "2026-08-13T15:55:59.000Z" },
+    });
     expect(Object.keys(proof.transactions)).toHaveLength(6);
   });
 

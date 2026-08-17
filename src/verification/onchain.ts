@@ -1,12 +1,12 @@
 import { resolveNetwork } from "@bnbagent/sdk";
 import {
   createPublicClient,
+  defineChain,
   getAddress,
   http,
   type Address,
   type PublicClient,
 } from "viem";
-import { bsc } from "viem/chains";
 import type { OnchainIdentity } from "./types.js";
 
 const identityReadAbi = [
@@ -63,14 +63,14 @@ export class ViemBscIdentityReader implements BscIdentityReader {
       this.client.readContract({
         address: this.registryAddress,
         abi: identityReadAbi,
-        functionName: "getAgentWallet",
+        functionName: "ownerOf",
         args: [tokenId],
         blockNumber,
       }),
       this.client.readContract({
         address: this.registryAddress,
         abi: identityReadAbi,
-        functionName: "ownerOf",
+        functionName: "getAgentWallet",
         args: [tokenId],
         blockNumber,
       }),
@@ -88,6 +88,13 @@ export class ViemBscIdentityReader implements BscIdentityReader {
 
 export function createBscIdentityReader(): BscIdentityReader {
   const network = resolveNetwork("bsc-mainnet");
+  const bsc = defineChain({
+    id: 56,
+    name: "BNB Smart Chain",
+    nativeCurrency: { name: "BNB", symbol: "BNB", decimals: 18 },
+    rpcUrls: { default: { http: [network.rpcUrl] } },
+    blockExplorers: { default: { name: "BscScan", url: "https://bscscan.com" } },
+  });
   const client = createPublicClient({
     chain: bsc,
     transport: http(network.rpcUrl),
