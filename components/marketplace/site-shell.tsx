@@ -50,7 +50,7 @@ function Header() {
         </div>
 
         <details className="relative md:hidden">
-          <summary className="flex min-h-11 cursor-pointer list-none items-center gap-1 rounded-lg border border-white/10 px-3 text-sm text-zinc-300 marker:hidden">
+          <summary className="flex min-h-11 cursor-pointer list-none items-center gap-1 rounded-lg border border-white/10 px-3 text-sm text-zinc-300 marker:hidden" tabIndex={0}>
             Menu
             <ChevronDown aria-hidden="true" className="size-4" />
           </summary>
