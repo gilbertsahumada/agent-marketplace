@@ -9,25 +9,21 @@ import {
 } from "viem";
 import { TESTNET_REGISTRY } from "../identity.js";
 import { GATE1_NETWORK } from "../network.js";
+import { GATE1_JOB_514_MANIFEST } from "../data/proofs/gate1-job-514.js";
 import type { VerificationError } from "../verification/types.js";
 import type { Gate1Proof, TransactionEvidence } from "./types.js";
 
-const AGENT_ID = 1815n;
-const JOB_ID = 514n;
+const AGENT_ID = BigInt(GATE1_JOB_514_MANIFEST.sellerAgentId);
+const JOB_ID = BigInt(GATE1_JOB_514_MANIFEST.jobId);
 const EXPECTED = {
-  buyer: getAddress("0x8bdC9Bc2a2de68715e181b72603Bb9A61eff7ddB"),
-  provider: getAddress("0xa0166a1c586f85Db39798ee311BAA7831C4Dc65b"),
-  paymentToken: getAddress("0xc70B8741B8B07A6d61E54fd4B20f22Fa648E5565"),
-  budget: 1n,
-  deliverableHash: "0x2ed47b2d41add5f9cef468b6748a1d52b3d6e753fac9c7e1de14766e6e315066" as Hash,
-  transactions: {
-    createJob: "0x8767e5163c208d18ec4282d2a37c519b29fa03b6f6141e4f0458be8d64a243ce",
-    registerJob: "0x843a8e9de35389942f04226c1b8322a0dc05ce3698aafea0fd8b2f13ad578f3f",
-    setBudget: "0x1414750595ef9bc36f9b83c85f7345f9da74af4ad2b0a114152d94c1d7b62232",
-    approve: "0x11bf5cd1de0a0a97547d39955c32eb4d890af2b38beb8dfaee5de21c71308885",
-    fund: "0x7a3e76c1f11449264e89b7589e72d6c5acae804fba7142d26a6009edfa5ee227",
-    submit: "0xe64f43b0a4daa7a60e2d0708d5851765be206da55563d601fa3c2dd2e5451a32",
-  } satisfies Record<string, Hash>,
+  buyer: getAddress(GATE1_JOB_514_MANIFEST.buyer),
+  provider: getAddress(GATE1_JOB_514_MANIFEST.seller),
+  paymentToken: getAddress(GATE1_JOB_514_MANIFEST.payment.token),
+  budget: BigInt(GATE1_JOB_514_MANIFEST.payment.budgetRaw),
+  deadline: BigInt(GATE1_JOB_514_MANIFEST.lifecycle.deadline.unix),
+  submittedAt: BigInt(GATE1_JOB_514_MANIFEST.lifecycle.submittedAt.unix),
+  deliverableHash: GATE1_JOB_514_MANIFEST.deliverable.hash as Hash,
+  transactions: GATE1_JOB_514_MANIFEST.transactions,
 } as const;
 
 const agentWalletAbi = [{
@@ -107,7 +103,13 @@ class SdkGate1ProofReader implements Gate1ProofReader {
 
   async getTransaction(hash: Hash): Promise<TransactionEvidence> {
     const receipt = await this.publicClient.getTransactionReceipt({ hash });
-    return { hash, status: receipt.status, blockNumber: receipt.blockNumber.toString() };
+    const block = await this.publicClient.getBlock({ blockNumber: receipt.blockNumber });
+    return {
+      hash,
+      status: receipt.status,
+      blockNumber: receipt.blockNumber.toString(),
+      timestamp: new Date(Number(block.timestamp) * 1_000).toISOString(),
+    };
   }
 }
 
@@ -116,12 +118,22 @@ export async function createGate1ProofReader(): Promise<Gate1ProofReader> {
   return new SdkGate1ProofReader(client, client.publicClient);
 }
 
-function sanitizedError(error: unknown): VerificationError {
+export function sanitizeGate1ProofError(error: unknown): VerificationError {
   const message = (error instanceof Error ? error.message : String(error))
     .replace(/https?:\/\/[^\s)]+/gi, "[redacted-url]")
-    .replace(/(bearer|token|password|secret)=?\s*[^\s]+/gi, "$1=[redacted]")
+    .replace(
+      /\b(bearer|authorization|api[_-]?key|client[_-]?secret|private[_-]?key|mnemonic|token|password|secret|keystore)\b\s*[:=]?\s*[^\s,;]+/gi,
+      "$1=[redacted]",
+    )
+    .replace(/\/Users\/[^\s)]+/g, "[redacted-path]")
+    .replace(/[A-Za-z]:\\Users\\[^\s)]+/g, "[redacted-path]")
+    .replace(/(?:^|\s)(?:\.{0,2}\/)?(?:\.gate1|\.marketplace|keystores|wallets)\/[^\s)]+/gi, " [redacted-path]")
     .slice(0, 300);
   return { code: "GATE1_PROOF_READ_FAILED", message: message || "Gate 1 proof read failed." };
+}
+
+function timestamp(unix: bigint): { unix: string; iso: string } {
+  return { unix: unix.toString(), iso: new Date(Number(unix) * 1_000).toISOString() };
 }
 
 export async function verifyGate1Proof(
@@ -137,11 +149,11 @@ export async function verifyGate1Proof(
       reader.getAgentWallet(AGENT_ID),
     ]);
     const transactions: Record<string, TransactionEvidence> = {};
-    for (const [name, hash] of Object.entries(EXPECTED.transactions)) {
-      transactions[name] = await reader.getTransaction(hash);
+    for (const [name, expected] of Object.entries(EXPECTED.transactions)) {
+      transactions[name] = await reader.getTransaction(expected.hash);
     }
     if (!transactions.submit) throw new Error("Submit transaction receipt is missing");
-    const deliverableUrl = await reader.getDeliverableUrl(JOB_ID, EXPECTED.transactions.submit);
+    const deliverableUrl = await reader.getDeliverableUrl(JOB_ID, EXPECTED.transactions.submit.hash);
     const observedState = JobStatus[job.status] ?? `UNKNOWN_${job.status}`;
     const checks = {
       stateMatches: job.status === JobStatus.SUBMITTED,
@@ -150,9 +162,18 @@ export async function verifyGate1Proof(
       agentWalletMatches: getAddress(agentWallet) === EXPECTED.provider,
       paymentTokenMatches: getAddress(paymentToken) === EXPECTED.paymentToken,
       budgetMatches: job.budget === EXPECTED.budget,
+      deadlineMatches: job.expiredAt === EXPECTED.deadline,
+      submittedAtMatches: job.submittedAt === EXPECTED.submittedAt,
       deliverableHashMatches: job.deliverable.toLowerCase() === EXPECTED.deliverableHash,
       deliverableUrlPresent: typeof deliverableUrl === "string" && deliverableUrl.length > 0,
       transactionsSucceeded: Object.values(transactions).every((transaction) => transaction.status === "success"),
+      transactionEvidenceMatches: Object.entries(transactions).every(([name, transaction]) => {
+        const expected = EXPECTED.transactions[name as keyof typeof EXPECTED.transactions];
+        return expected !== undefined
+          && transaction.hash.toLowerCase() === expected.hash
+          && transaction.blockNumber === expected.blockNumber
+          && transaction.timestamp === expected.timestamp;
+      }),
     };
     return {
       status: Object.values(checks).every(Boolean) ? "verified" : "mismatch",
@@ -167,6 +188,8 @@ export async function verifyGate1Proof(
       agentWallet: getAddress(agentWallet),
       paymentToken: getAddress(paymentToken),
       budget: job.budget.toString(),
+      deadline: timestamp(job.expiredAt),
+      submittedAt: timestamp(job.submittedAt),
       deliverableHash: job.deliverable,
       deliverableUrl,
       transactions,
@@ -189,6 +212,8 @@ export async function verifyGate1Proof(
       agentWallet: null,
       paymentToken: null,
       budget: null,
+      deadline: null,
+      submittedAt: null,
       deliverableHash: null,
       deliverableUrl: null,
       transactions: {},
@@ -199,13 +224,16 @@ export async function verifyGate1Proof(
         agentWalletMatches: null,
         paymentTokenMatches: null,
         budgetMatches: null,
+        deadlineMatches: null,
+        submittedAtMatches: null,
         deliverableHashMatches: null,
         deliverableUrlPresent: null,
         transactionsSucceeded: null,
+        transactionEvidenceMatches: null,
       },
       observedAt,
       provenance: "onchain:bsc-testnet-rpc",
-      error: sanitizedError(error),
+      error: sanitizeGate1ProofError(error),
     };
   }
 }

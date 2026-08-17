@@ -24,7 +24,9 @@ const FORBIDDEN_SECRET_ENV = [
   "PROVIDER_PRIVATE_KEY",
 ] as const;
 
-export function assertSafeEnvironment(env: NodeJS.ProcessEnv): void {
+type Environment = Readonly<Record<string, string | undefined>>;
+
+export function assertSafeEnvironment(env: Environment): void {
   const network = env.NETWORK ?? TESTNET_NETWORK;
   if (network !== TESTNET_NETWORK) {
     throw new Error(
@@ -61,7 +63,7 @@ function positiveInteger(value: string | undefined, fallback: number): number {
 }
 
 export function loadConfig(
-  env: NodeJS.ProcessEnv,
+  env: Environment,
   agentIdArg?: string,
 ): Gate1Config {
   assertSafeEnvironment(env);
@@ -93,7 +95,7 @@ export function loadConfig(
   };
 }
 
-export function loadReceiptConfig(env: NodeJS.ProcessEnv): ReceiptConfig {
+export function loadReceiptConfig(env: Environment): ReceiptConfig {
   assertSafeEnvironment(env);
   return {
     receiptDir: env.GATE1_RECEIPT_DIR?.trim() || ".gate1/receipts",

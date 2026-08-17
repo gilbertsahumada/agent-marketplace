@@ -55,6 +55,12 @@ export interface TransactionEvidence {
   hash: `0x${string}`;
   status: "success" | "reverted";
   blockNumber: string;
+  timestamp: string;
+}
+
+export interface OnchainTimestamp {
+  unix: string;
+  iso: string;
 }
 
 export interface Gate1Proof {
@@ -70,6 +76,8 @@ export interface Gate1Proof {
   agentWallet: Address | null;
   paymentToken: Address | null;
   budget: string | null;
+  deadline: OnchainTimestamp | null;
+  submittedAt: OnchainTimestamp | null;
   deliverableHash: `0x${string}` | null;
   deliverableUrl: string | null;
   transactions: Record<string, TransactionEvidence>;

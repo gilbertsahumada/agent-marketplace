@@ -37,6 +37,11 @@ function nullableString(value: unknown, path: string): string | null {
   return string(value, path);
 }
 
+function nullableNonEmptyString(value: unknown, path: string): string | null {
+  const candidate = nullableString(value, path)?.trim();
+  return candidate ? candidate : null;
+}
+
 function finiteNumber(value: unknown, path: string): number {
   if (typeof value !== "number" || !Number.isFinite(value)) {
     throw new Trust8004SchemaError(path, "finite number", value);
@@ -52,6 +57,11 @@ function nullableNumber(value: unknown, path: string): number | null {
 function boolean(value: unknown, path: string): boolean {
   if (typeof value !== "boolean") throw new Trust8004SchemaError(path, "boolean", value);
   return value;
+}
+
+function nullableBoolean(value: unknown, path: string): boolean | null {
+  if (value === null || value === undefined) return null;
+  return boolean(value, path);
 }
 
 function chainId(value: unknown, path: string): typeof BSC_MAINNET_CHAIN_ID {
@@ -194,15 +204,59 @@ export function parseAgentListResponse(value: unknown): {
   offset: number;
 } {
   const data = record(value, "response");
+  const reputationData = data.reputations === undefined
+    ? {}
+    : record(data.reputations, "response.reputations");
   const items = array(data.items, "response.items").map((entry, index) => {
     const item = record(entry, `response.items[${index}]`);
+    const parsedChainId = chainId(item.chainId, `response.items[${index}].chainId`);
+    const agentId = string(item.agentId, `response.items[${index}].agentId`);
+    const services = parseServices(item.services, `response.items[${index}].services`);
+    const endpoints = parseEndpoints(item.endpoints, `response.items[${index}].endpoints`);
+    const capabilities = unique([
+      ...stringArray(item.skills, `response.items[${index}].skills`),
+      ...flattenDeclaredCapabilities(item.capabilities, `response.items[${index}].capabilities`),
+      ...services.flatMap((service) => service.capabilities),
+    ]);
+    const reputationValue = reputationData[`${parsedChainId}:${agentId}`];
+    const reputation = reputationValue === undefined
+      ? null
+      : record(reputationValue, `response.reputations.${parsedChainId}:${agentId}`);
+    const updatedAt = nullableNumber(item.updatedAt, `response.items[${index}].updatedAt`);
     return {
-      chainId: chainId(item.chainId, `response.items[${index}].chainId`),
-      agentId: string(item.agentId, `response.items[${index}].agentId`),
+      chainId: parsedChainId,
+      agentId,
       name: string(item.name, `response.items[${index}].name`),
       description: nullableString(item.description, `response.items[${index}].description`),
+      owner: nullableNonEmptyString(item.ownerAddress ?? item.owner, `response.items[${index}].ownerAddress`),
+      metadataUri: nullableNonEmptyString(item.ipfsUri ?? item.agentURI, `response.items[${index}].ipfsUri`),
       mcpEndpoint: nullableString(item.mcpEndpoint, `response.items[${index}].mcpEndpoint`),
       a2aEndpoint: nullableString(item.a2aEndpoint, `response.items[${index}].a2aEndpoint`),
+      services,
+      endpoints,
+      tools: unique(services.flatMap((service) => service.tools)),
+      capabilities,
+      endpointObservation: parseEndpointObservation(
+        item.endpointHealth,
+        `response.items[${index}].endpointHealth`,
+      ),
+      reputation: {
+        totalFeedbacks: reputation
+          ? finiteNumber(reputation.count, `response.reputations.${parsedChainId}:${agentId}.count`)
+          : 0,
+        averageScore: reputation
+          ? nullableNumber(
+            reputation.averageScore,
+            `response.reputations.${parsedChainId}:${agentId}.averageScore`,
+          )
+          : null,
+      },
+      trustScore: {
+        total: nullableNumber(item.trustScore, `response.items[${index}].trustScore`),
+        tier: nullableString(item.trustTier, `response.items[${index}].trustTier`),
+      },
+      active: nullableBoolean(item.active, `response.items[${index}].active`),
+      updatedAt: updatedAt === null ? null : new Date(updatedAt).toISOString(),
     };
   });
   return {

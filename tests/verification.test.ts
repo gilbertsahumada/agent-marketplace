@@ -2,7 +2,7 @@ import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import type { Address } from "viem";
+import type { Address, PublicClient } from "viem";
 import {
   parseOutputPath,
   verificationExitCode,
@@ -13,7 +13,7 @@ import {
   isPublicIpAddress,
   verifyMcpEndpoint,
 } from "../src/verification/mcp.js";
-import type { BscIdentityReader } from "../src/verification/onchain.js";
+import { ViemBscIdentityReader, type BscIdentityReader } from "../src/verification/onchain.js";
 import { buildBscVerificationReport } from "../src/verification/report.js";
 import type { McpEndpointVerification } from "../src/verification/types.js";
 import { Trust8004Provider } from "../src/trust8004/provider.js";
@@ -142,6 +142,28 @@ describe("MCP verification", () => {
 });
 
 describe("BSC verification report", () => {
+  it("keeps ownerOf and getAgentWallet distinct", async () => {
+    const owner = "0x1111111111111111111111111111111111111111" as Address;
+    const agentWallet = "0x2222222222222222222222222222222222222222" as Address;
+    const client = {
+      readContract: async ({ functionName }: { functionName: string }) => {
+        if (functionName === "ownerOf") return owner;
+        if (functionName === "getAgentWallet") return agentWallet;
+        return "ipfs://sanitized/agent";
+      },
+    } as unknown as PublicClient;
+    const reader = new ViemBscIdentityReader(
+      client,
+      "0x5555555555555555555555555555555555555555",
+    );
+
+    await expect(reader.readIdentity("45650", 123n)).resolves.toEqual({
+      owner,
+      agentWallet,
+      metadataUri: "ipfs://sanitized/agent",
+    });
+  });
+
   it("keeps declared, observed, and onchain evidence separate", async () => {
     const [list, profiles, scores, onchain] = await Promise.all([
       fixture("trust8004/list.json"),

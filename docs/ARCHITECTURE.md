@@ -47,6 +47,35 @@ Missing observations remain `not_observed`; declared tools are never promoted
 to verified capabilities. Comparison is not fetched because it adds no field
 needed by the current inventory and would consume public quota.
 
+## Frontend application layers
+
+The Gate 5 web application uses one-way dependencies:
+
+```text
+app/** + components/** + src/presentation/**
+                    ↓
+             src/business/**
+                    ↓
+               src/data/**
+```
+
+Route Handlers validate HTTP input, invoke exactly one composed use case, and
+map known errors. They do not import data providers. Server Components may
+invoke the same business use cases directly; client presentation never calls
+trust8004 or an RPC endpoint.
+
+`ListMarketplaceAgents` has two explicit modes. `all` delegates page, limit,
+search, and supported ordering to one trust8004 list request and marks every
+record `not_evaluated`. `marketplace` resolves only the four IDs in the
+versioned curated manifest, deduplicates multi-label agents, and applies the
+four marketplace categories. No request classifies or enriches the complete
+BSC snapshot.
+
+`GetMarketplaceAgent` fetches one full trust8004 profile after navigation and
+attaches a separately sourced direct BSC identity check. `GetPublicJobProof`
+reads the versioned sanitized Job `514` snapshot and a cached direct Testnet
+observation. These evidence sources remain structurally separate.
+
 ## Read-only verification layer
 
 The BSC verification CLI consumes a fresh partial catalogue snapshot but writes

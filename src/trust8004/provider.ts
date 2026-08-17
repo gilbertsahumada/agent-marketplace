@@ -27,8 +27,14 @@ export interface Trust8004ProviderOptions {
 export interface ListAgentsOptions {
   limit?: number;
   offset?: number;
+  view?: "all";
+  q?: string;
   search?: string;
   active?: boolean;
+  sortBy?: "registered" | "reputation" | "score" | "id";
+  sortOrder?: "asc" | "desc";
+  includeReputation?: boolean;
+  includeTotal?: boolean;
 }
 
 function positiveInteger(value: number, name: string): number {
@@ -105,12 +111,17 @@ export class Trust8004Provider {
       chainId: String(BSC_MAINNET_CHAIN_ID),
       limit: String(limit),
       offset: String(offset),
-      includeReputation: "false",
+      includeReputation: String(options.includeReputation ?? false),
       includeCategoryCounts: "false",
       includeMetadataReasonCounts: "false",
+      includeTotal: String(options.includeTotal ?? true),
     });
-    if (options.search?.trim()) params.set("search", options.search.trim());
+    if (options.view) params.set("view", options.view);
+    const query = options.q?.trim() || options.search?.trim();
+    if (query) params.set("search", query);
     if (options.active !== undefined) params.set("active", String(options.active));
+    if (options.sortBy) params.set("sortBy", options.sortBy);
+    if (options.sortOrder) params.set("sortOrder", options.sortOrder);
     const fetchedAt = isoTimestamp(this.now(), "provider.now");
     const response = await this.request(`/api/v2/agents?${params.toString()}`, parseAgentListResponse);
     return { ...response, catalogCoverage: CATALOG_COVERAGE, fetchedAt };

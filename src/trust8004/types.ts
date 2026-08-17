@@ -121,8 +121,25 @@ export interface AgentListItem {
   agentId: string;
   name: string;
   description: string | null;
+  owner: string | null;
+  metadataUri: string | null;
   mcpEndpoint: string | null;
   a2aEndpoint: string | null;
+  services: NormalizedService[];
+  endpoints: NormalizedEndpoint[];
+  tools: string[];
+  capabilities: string[];
+  endpointObservation: EndpointObservation;
+  reputation: {
+    totalFeedbacks: number;
+    averageScore: number | null;
+  };
+  trustScore: {
+    total: number | null;
+    tier: string | null;
+  };
+  active: boolean | null;
+  updatedAt: string | null;
 }
 
 export interface AgentListPage {

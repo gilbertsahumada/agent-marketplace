@@ -20,6 +20,8 @@ const RAW_KEY_VARIABLES = [
   "PROVIDER_PRIVATE_KEY",
 ] as const;
 
+type Environment = Readonly<Record<string, string | undefined>>;
+
 function positiveInteger(raw: string | undefined, fallback: number): number {
   if (raw === undefined) return fallback;
   const value = Number(raw);
@@ -38,7 +40,7 @@ export function parseSellerCommand(argv: string[]): SellerCommand {
 }
 
 export function loadSellerConfig(
-  env: NodeJS.ProcessEnv,
+  env: Environment,
   command: SellerCommand,
 ): SellerConfig {
   const network = env.NETWORK ?? TESTNET_NETWORK;

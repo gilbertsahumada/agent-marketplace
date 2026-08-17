@@ -65,6 +65,62 @@ describe("Trust8004Provider", () => {
     expect(requestedUrl?.searchParams.get("search")).toBe("grid");
   });
 
+  it("parses the enriched list summary and requests supported server-side options", async () => {
+    const list = {
+      items: [{
+        chainId: 56,
+        agentId: "45650",
+        name: "V3 Pools powered by HeyAnon",
+        description: "Rebalancing",
+        ownerAddress: "0x1111111111111111111111111111111111111111",
+        ipfsUri: "ipfs://sanitized/45650",
+        mcpEndpoint: "https://fixture.invalid/mcp",
+        a2aEndpoint: null,
+        services: JSON.stringify([{ name: "MCP", endpoint: "https://fixture.invalid/mcp", tools: ["rebalance"] }]),
+        endpoints: [],
+        skills: [],
+        capabilities: null,
+        endpointHealth: null,
+        trustScore: 72,
+        trustTier: "Silver",
+        active: true,
+        updatedAt: 1_754_000_100_000,
+      }],
+      total: 1,
+      limit: 24,
+      offset: 0,
+      reputations: { "56:45650": { count: 3, averageScore: 84 } },
+    };
+    let requestedUrl: URL | undefined;
+    const provider = new Trust8004Provider({
+      fetch: fixtureFetch(list, {}, {}, (url) => { requestedUrl = url; }),
+      minimumRequestIntervalMs: 0,
+      now: () => 1_754_000_300_000,
+    });
+
+    const page = await provider.listAgents({
+      view: "all",
+      q: "HeyAnon",
+      limit: 24,
+      includeReputation: true,
+      sortBy: "score",
+      sortOrder: "desc",
+    });
+
+    expect(requestedUrl?.searchParams.get("view")).toBe("all");
+    expect(requestedUrl?.searchParams.get("search")).toBe("HeyAnon");
+    expect(requestedUrl?.searchParams.get("includeReputation")).toBe("true");
+    expect(requestedUrl?.searchParams.get("sortBy")).toBe("score");
+    expect(page.items[0]).toMatchObject({
+      agentId: "45650",
+      owner: "0x1111111111111111111111111111111111111111",
+      metadataUri: "ipfs://sanitized/45650",
+      tools: ["rebalance"],
+      reputation: { totalFeedbacks: 3, averageScore: 84 },
+      trustScore: { total: 72, tier: "Silver" },
+    });
+  });
+
   it("deduplicates identical requests and serializes distinct requests", async () => {
     const data = await allFixtures();
     let requestCount = 0;

@@ -39,8 +39,10 @@ registered as ERC-8004 Agent ID `1815`, and ERC-8183 Job ID `514` completed the
 buyer flow through onchain `SUBMITTED`. The test used one raw `$U` unit and
 separate buyer/seller testnet wallets.
 
-A complete visual marketplace will not be built until that hiring lifecycle
-works end to end.
+Gate 5 now provides the read-only Frontend MVP. It covers discovery,
+evidence-aware profiles, comparison, an honest hiring eligibility shell, and
+the public Job `514` proof. Non-custodial wallet signing remains deliberately
+deferred to the next delivery.
 
 Gate 1 can use the included controlled seller fixture instead of waiting for a
 third-party seller. It is test infrastructure derived from the official BNB
@@ -135,9 +137,21 @@ still validates onchain; it does not mean all categories have a live seller.
 Current real-agent activation coverage is empty, and Grid remains explicitly
 empty/unverified.
 
+Run the web product locally with:
+
+```bash
+npm run dev
+```
+
+`/agents` defaults to the curated marketplace candidates. Switch to
+`/agents?view=all&page=1&limit=24` to browse the trust8004 BSC snapshot through
+server-side pagination. This mode performs one list request per uncached page;
+it does not download the full catalogue or fetch a profile for every card.
+
 See:
 
 - [ERC-8183 Gate 1 interaction diagram](diagrams/erc8183-gate1-flow.html)
+- [Gate 5 delivery specification](docs/GATE_5_FRONTEND_MVP.md)
 - [MVP scope](docs/MVP_SCOPE.md)
 - [Architecture](docs/ARCHITECTURE.md)
 - [Reuse and provenance](docs/REUSE_AND_PROVENANCE.md)
