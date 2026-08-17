@@ -1,6 +1,10 @@
 import Link from "next/link";
 import { Search } from "lucide-react";
 import type { MarketplaceAgentPage, MarketplaceCategory } from "@/src/business/entities/marketplace-agent";
+import {
+  DEFAULT_REGISTERED_AGENT_SORT,
+  type MarketplaceSort,
+} from "@/src/business/use-cases/list-marketplace-agents";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,7 +19,7 @@ const categoryLabels: Record<MarketplaceCategory, string> = {
   health_factor_monitoring: "Health Factor Monitoring",
 };
 
-export function CatalogPage({ data, query }: { data: MarketplaceAgentPage; query: { view: "all" | "marketplace"; category?: MarketplaceCategory; q?: string; sort?: string } }) {
+export function CatalogPage({ data, query }: { data: MarketplaceAgentPage; query: { view: "all" | "marketplace"; category?: MarketplaceCategory; q?: string; sort?: MarketplaceSort } }) {
   const allView = query.view === "all";
   const hrefForPage = (page: number) => {
     const params = new URLSearchParams({ view: query.view, page: String(page), limit: allView ? "24" : "12" });
@@ -33,7 +37,7 @@ export function CatalogPage({ data, query }: { data: MarketplaceAgentPage; query
             ? "Browse the paginated BSC snapshot exposed by trust8004. These records are registered, not automatically evaluated or hireable."
             : "A small, evidence-backed inventory selected for the four marketplace outcomes. It does not represent every BSC agent in each category."}
         </PageIntro>
-        <CoverageBadge total={data.pagination.total} />
+        <CoverageBadge {...(allView ? { total: data.pagination.total } : {})} />
       </div>
 
       <nav aria-label="Catalog view" className="mt-8 flex gap-2 border-b border-white/10 pb-3">
@@ -63,7 +67,7 @@ export function CatalogPage({ data, query }: { data: MarketplaceAgentPage; query
         {allView && (
           <label>
             <span className="sr-only">Sort agents</span>
-            <select className="h-9 rounded-md border border-input bg-background px-3 text-sm" defaultValue={query.sort ?? "newest"} name="sort">
+            <select className="h-9 rounded-md border border-input bg-background px-3 text-sm" defaultValue={query.sort ?? DEFAULT_REGISTERED_AGENT_SORT} name="sort">
               <option value="newest">Newest</option>
               <option value="trust_score">Trust score</option>
               <option value="reputation">Reputation</option>
