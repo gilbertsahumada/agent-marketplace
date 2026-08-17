@@ -65,8 +65,21 @@ export function AgentProfile({ agent }: { agent: MarketplaceAgent }) {
             <CardHeader><CardTitle>What this agent does</CardTitle></CardHeader>
             <CardContent className="space-y-5">
               <div>
-                <div className="flex items-center gap-2"><h2 className="text-sm font-semibold">Marketplace categories</h2><ProvenanceBadge provenance={evaluated ? "declared" : "derived"} /></div>
-                {agent.categories.length ? <div className="mt-3 flex flex-wrap gap-2">{agent.categories.map(({ category }) => <Badge key={category}>{category.replaceAll("_", " ")}</Badge>)}</div> : <p className="mt-2 text-sm text-zinc-500">Not evaluated for marketplace categories.</p>}
+                <h2 className="text-sm font-semibold">Marketplace categories</h2>
+                {agent.categories.length ? (
+                  <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                    {agent.categories.map(({ category, evidence }) => (
+                      <div className="rounded-lg border border-white/10 bg-white/[0.02] p-3" key={category}>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Badge>{category.replaceAll("_", " ")}</Badge>
+                          <ProvenanceBadge provenance={evidence.kind} />
+                        </div>
+                        <p className="mt-2 text-xs leading-relaxed text-zinc-400">{evidence.note}</p>
+                        <p className="font-stat mt-2 text-[10px] text-zinc-500">{evidence.source} · {evidence.observedAt}</p>
+                      </div>
+                    ))}
+                  </div>
+                ) : <p className="mt-2 text-sm text-zinc-500">Not evaluated for marketplace categories.</p>}
               </div>
               <Separator />
               <div>
@@ -111,11 +124,13 @@ export function AgentProfile({ agent }: { agent: MarketplaceAgent }) {
             </CardContent>
           </Card>
           <Card className="marketplace-surface">
-            <CardHeader><CardTitle>Reputation</CardTitle></CardHeader>
+            <CardHeader><CardTitle className="flex items-center gap-2">Reputation<ProvenanceBadge provenance={agent.provenance.reputation.kind} /></CardTitle></CardHeader>
             <CardContent className="space-y-3 text-sm">
               <div className="flex justify-between"><span className="text-zinc-500">Feedback</span><span>{agent.reputation.totalFeedbacks}</span></div>
               <div className="flex justify-between"><span className="text-zinc-500">Average</span><span>{agent.reputation.averageScore ?? "—"}</span></div>
               <div className="flex justify-between"><span className="text-zinc-500">Reviewers</span><span>{agent.reputation.uniqueReviewers ?? "—"}</span></div>
+              <p className="border-t border-white/10 pt-3 text-xs leading-relaxed text-zinc-500">{agent.provenance.reputation.note}</p>
+              <p className="font-stat text-[10px] text-zinc-500">{agent.provenance.reputation.source} · {agent.provenance.reputation.observedAt}</p>
             </CardContent>
           </Card>
           </div>
