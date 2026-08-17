@@ -2,6 +2,7 @@ import { AsyncTtlCache } from "../cache/async-ttl-cache.js";
 import { Trust8004Provider } from "../../trust8004/provider.js";
 import type { AgentListItem, MarketplaceAgent } from "../../trust8004/types.js";
 import { createBscIdentityReader, type BscIdentityReader } from "../../verification/onchain.js";
+import { DEFAULT_REGISTERED_AGENT_SORT } from "./marketplace-agent-repository.js";
 import type {
   MarketplaceAgentData,
   MarketplaceAgentDataPage,
@@ -12,9 +13,10 @@ import type {
 
 const CATALOG_TTL_MS = 5 * 60 * 1_000;
 const ONCHAIN_IDENTITY_TTL_MS = 60 * 1_000;
+const sharedTrust8004Provider = new Trust8004Provider();
 
 export interface Trust8004MarketplaceRepositoryOptions {
-  providerFactory?: () => Trust8004Provider;
+  provider?: Trust8004Provider;
   cache?: AsyncTtlCache;
   ttlMs?: number;
   identityReaderFactory?: () => BscIdentityReader;
@@ -83,14 +85,14 @@ function fromProfile(agent: MarketplaceAgent): MarketplaceAgentData {
 }
 
 export class Trust8004MarketplaceAgentRepository implements MarketplaceAgentRepository {
-  private readonly providerFactory: () => Trust8004Provider;
+  private readonly provider: Trust8004Provider;
   private readonly cache: AsyncTtlCache;
   private readonly ttlMs: number;
   private readonly identityReaderFactory: () => BscIdentityReader;
   private readonly now: () => number;
 
   constructor(options: Trust8004MarketplaceRepositoryOptions = {}) {
-    this.providerFactory = options.providerFactory ?? (() => new Trust8004Provider());
+    this.provider = options.provider ?? sharedTrust8004Provider;
     this.cache = options.cache ?? new AsyncTtlCache();
     this.ttlMs = options.ttlMs ?? CATALOG_TTL_MS;
     this.identityReaderFactory = options.identityReaderFactory ?? createBscIdentityReader;
@@ -104,12 +106,11 @@ export class Trust8004MarketplaceAgentRepository implements MarketplaceAgentRepo
     sort?: MarketplaceDataSort;
   }): Promise<MarketplaceAgentDataPage> {
     const q = options.q?.trim();
-    const sort = options.sort ?? "trust_score";
+    const sort = options.sort ?? DEFAULT_REGISTERED_AGENT_SORT;
     const offset = (options.page - 1) * options.limit;
     const key = `registered-agents:${q?.toLowerCase() ?? ""}:${sort}:${options.page}:${options.limit}`;
     return this.cache.get(key, this.ttlMs, async () => {
-      const provider = this.providerFactory();
-      const page = await provider.listAgents({
+      const page = await this.provider.listAgents({
         view: "all",
         ...(q ? { q } : {}),
         limit: options.limit,
@@ -132,7 +133,7 @@ export class Trust8004MarketplaceAgentRepository implements MarketplaceAgentRepo
   getById(agentId: string): Promise<MarketplaceAgentData | null> {
     return this.cache.get(`marketplace-agent:${agentId}`, this.ttlMs, async () => {
       try {
-        const agent = await this.providerFactory().getAgent(agentId);
+        const agent = await this.provider.getAgent(agentId);
         return fromProfile(agent);
       } catch (error) {
         if (error && typeof error === "object" && "status" in error && error.status === 404) return null;
@@ -143,10 +144,11 @@ export class Trust8004MarketplaceAgentRepository implements MarketplaceAgentRepo
 
   getOnchainIdentity(agentId: string): Promise<OnchainIdentityData> {
     return this.cache.get(`onchain-identity:${agentId}`, ONCHAIN_IDENTITY_TTL_MS, async () => {
-      const reader = this.identityReaderFactory();
       const observedAt = new Date(this.now()).toISOString();
+      let reader: BscIdentityReader | null = null;
       let blockNumber: bigint | null = null;
       try {
+        reader = this.identityReaderFactory();
         await reader.assertChain();
         blockNumber = await reader.getBlockNumber();
         const identity = await reader.readIdentity(agentId, blockNumber);
@@ -159,24 +161,18 @@ export class Trust8004MarketplaceAgentRepository implements MarketplaceAgentRepo
           error: null,
         };
       } catch (error) {
-        const candidate = error && typeof error === "object" && "shortMessage" in error
-          ? String((error as { shortMessage: unknown }).shortMessage)
-          : error instanceof Error ? error.message : String(error);
-        const message = candidate
-          .replace(/https?:\/\/[^\s)]+/gi, "[redacted-url]")
-          .replace(/(bearer|token|password|secret)=?\s*[^\s]+/gi, "$1=[redacted]")
-          .slice(0, 300);
+        void error;
         return {
           status: "unavailable",
           owner: null,
           agentWallet: null,
           metadataUri: null,
-          registryAddress: reader.registryAddress,
+          registryAddress: reader?.registryAddress ?? null,
           blockNumber: blockNumber?.toString() ?? null,
           observedAt,
           error: {
             code: "ONCHAIN_IDENTITY_UNAVAILABLE",
-            message: message || "Onchain identity is unavailable.",
+            message: "Direct BSC identity verification is currently unavailable.",
           },
         };
       }
