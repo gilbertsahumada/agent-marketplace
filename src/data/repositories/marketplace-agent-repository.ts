@@ -6,7 +6,9 @@ import type {
 } from "../../trust8004/types.js";
 import type { Address } from "viem";
 
-export type MarketplaceDataSort = "newest" | "reputation" | "trust_score" | "agent_id";
+export const MARKETPLACE_DATA_SORTS = ["newest", "reputation", "trust_score", "agent_id"] as const;
+export type MarketplaceDataSort = typeof MARKETPLACE_DATA_SORTS[number];
+export const DEFAULT_REGISTERED_AGENT_SORT: MarketplaceDataSort = "newest";
 
 export interface MarketplaceAgentData {
   sourceDetail: "summary" | "profile";
@@ -65,7 +67,7 @@ export type OnchainIdentityData =
     owner: null;
     agentWallet: null;
     metadataUri: null;
-    registryAddress: Address;
+    registryAddress: Address | null;
     blockNumber: string | null;
     observedAt: string;
     error: { code: "ONCHAIN_IDENTITY_UNAVAILABLE"; message: string };
