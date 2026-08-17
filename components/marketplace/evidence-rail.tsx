@@ -88,6 +88,11 @@ export function EvidenceRail({
                 <div className="flex flex-wrap items-center gap-1.5">
                   <p className="text-xs font-semibold text-zinc-100">{step.label}</p>
                   {!compact && <ProvenanceBadge provenance={step.provenance} />}
+                  {!compact && (
+                    <span className="text-[10px] capitalize text-zinc-500">
+                      {statusLabels[step.status]}
+                    </span>
+                  )}
                 </div>
                 {compact && (
                   <p className="mt-1 text-[10px] capitalize text-zinc-500">
