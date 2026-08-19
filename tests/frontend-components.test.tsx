@@ -19,6 +19,7 @@ import type {
 } from "../src/business/entities/marketplace-agent.js";
 import type { PublicJobProof } from "../src/business/entities/public-job-proof.js";
 import { GATE1_JOB_514_MANIFEST } from "../src/data/proofs/gate1-job-514.js";
+import { Erc8183BrowserSpike } from "../components/spikes/erc8183-browser-spike.js";
 
 const evidence = [
   { kind: "declared" as const, label: "Declared", status: "verified" as const, provenance: "declared" as const, detail: "Declared" },
@@ -131,7 +132,10 @@ function publicProof(status: PublicJobProof["live"]["status"]): PublicJobProof {
   };
 }
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  localStorage.clear();
+});
 
 describe("marketplace presentation rules", () => {
   it("does not render a Hire action for an MCP-only agent", () => {
@@ -231,6 +235,18 @@ describe("marketplace presentation rules", () => {
 
   it("has no basic automated accessibility violations in the evidence component", async () => {
     render(createElement("main", {}, createElement("h1", {}, "Evidence"), createElement(EvidenceRail, { steps: evidence })));
+    const result = await axe.run(document.body);
+    expect(result.violations).toEqual([]);
+  });
+
+  it("labels the browser spike as Testnet infrastructure and requires a quote before wallet access", async () => {
+    render(createElement(Erc8183BrowserSpike));
+    expect(screen.getByRole("heading", { name: /sign the erc-8183 lifecycle yourself/i })).toBeInTheDocument();
+    expect(screen.getByText("Testing infrastructure — not a marketplace agent")).toBeInTheDocument();
+    expect(screen.getAllByText(/Agent 1866/)).toHaveLength(2);
+    expect(screen.queryByText(/Agent 1815/)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /connect injected wallet/i })).toBeDisabled();
+    expect(screen.queryByText(/mainnet/i)).not.toBeInTheDocument();
     const result = await axe.run(document.body);
     expect(result.violations).toEqual([]);
   });

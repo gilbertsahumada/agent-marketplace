@@ -41,8 +41,35 @@ separate buyer/seller testnet wallets.
 
 Gate 5 now provides the read-only Frontend MVP. It covers discovery,
 evidence-aware profiles, comparison, an honest hiring eligibility shell, and
-the public Job `514` proof. Non-custodial wallet signing remains deliberately
-deferred to the next delivery.
+the public Job `514` proof.
+
+Gate 6A adds a disabled-by-default experimental browser-wallet route at
+`/spikes/erc8183-browser`. It keeps A2A negotiation and `notify_funded` on the
+server while an injected EIP-1193 wallet uses viem to simulate and sign the
+five allowlisted Testnet operations. It is pinned to hosted fixture Agent
+`1866` and does not enable Hire for MCP-only marketplace candidates. Automated
+readiness does not pass the gate by itself: a human-controlled wallet must
+still complete the real BSC Testnet flow and reach `SUBMITTED`.
+
+The tunnel-based Agent `1815` remains historical Gate 1 evidence. Gate 6A now
+uses a replacement public hosted seller fixture backed by a Testnet-only
+server secret. Agent `1866` exposes a public Agent Card, A2A negotiation, and
+deterministic deliverable routes at the production marketplace origin. Its
+registration transaction is
+`0x166cdb89f4fb2236d760fcd372db7980d51d473a16f3ab51118eeb024eb61e2a`.
+
+Enable the local spike only while the fixture's registered HTTPS endpoint is
+running:
+
+```bash
+ERC8183_BROWSER_SPIKE_ENABLED=true
+ERC8183_BROWSER_SPIKE_SELLER_ORIGIN=https://your-temporary-origin.example
+npm run dev
+```
+
+The origin and any optional bearer credential are server-only. The browser
+never receives a private key, wallet password, mnemonic, or arbitrary seller
+URL. See [Gate 6A Browser Wallet Spike](docs/GATE_6A_BROWSER_WALLET_SPIKE.md).
 
 Gate 1 can use the included controlled seller fixture instead of waiting for a
 third-party seller. It is test infrastructure derived from the official BNB
@@ -53,6 +80,7 @@ HTTPS URL:
 ```bash
 npm run gate1:seller -- serve
 npm run gate1:seller -- register
+npm run gate1:seller -- update
 ```
 
 The Gate 1 CLI is available without a frontend:

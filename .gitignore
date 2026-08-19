@@ -22,4 +22,5 @@ tunnel*.pid
 !.env.example
 /*.md
 !/README.md
-/docs/
+/docs/*
+.vercel

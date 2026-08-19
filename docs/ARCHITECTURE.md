@@ -148,6 +148,60 @@ Resolve ERC-8004 identity
 
 The buyer keeps custody. The server may resolve, negotiate, and monitor, but cannot sign financial transactions for the user.
 
+## Gate 6A browser-wallet boundary
+
+The experimental `/spikes/erc8183-browser` route preserves the same three
+layers while splitting execution by custody boundary:
+
+```text
+Browser presentation
+  -> Business: quote / prepare / notify / status use cases
+  -> Data server: fixed-origin A2A + SDK quote verification + chain reads
+
+Browser presentation
+  -> Business client composition
+  -> Data browser: injected EIP-1193 + viem + minimal official ABIs
+```
+
+`@bnbagent/sdk@0.5.0` is not imported by Client Components. Its installed
+ERC-8183 entry targets Node, accepts the SDK `WalletProvider` rather than an
+EIP-1193 provider, and reaches filesystem-backed wallet/storage modules. The
+server retains ERC-8004 resolution, A2A negotiation, quote signature checks,
+`notify_funded`, deliverable verification, and tracking. The browser adapter
+has exactly five possible writes: `createJob`, `registerJob`, `setBudget`, an
+exact `approve` when necessary, and `fund`.
+
+The route is false by default and fixed to BSC Testnet chain `97`, hosted
+fixture Agent `1866`, its registered seller wallet, canonical
+Commerce/Router/token addresses, and the active Router-allowlisted policy. The
+seller origin is a server-only bare HTTPS allowlist value and must match current
+ERC-8004 discovery. Reload recovery treats the sanitized local journal as a
+locator only; receipts and current chain state determine completion.
+
+### Hosted Testnet seller fixture
+
+The replacement seller runs as three public Node.js route handlers on Vercel:
+
+```text
+GET  /.well-known/agent-card.json
+POST /api/fixtures/erc8183/a2a
+GET  /api/fixtures/erc8183/job/{jobId}/response
+```
+
+Each route remains a thin controller over a business use case and a dedicated
+server-only repository. The seller key is read only from `SELLER_PRIVATE_KEY`,
+validated against the fixed Testnet seller address, and never enters shared
+composition or client bundles. Negotiation and notification are public; trust
+comes from signed quotes, fixed contracts, the one-raw-unit budget, direct job
+state validation, and idempotent submission rather than a bearer credential.
+
+No external deliverable store is required for the deterministic fixture. The
+response body is regenerated from the job ID and fixed contract set, and it is
+served only when its canonical manifest hash matches the submitted onchain
+deliverable. The old Agent `1815` remains historical evidence. The replacement
+is Agent `1866`, registered after the public hosted endpoint passed deployment
+and signed-quote checks.
+
 ## Independence requirements
 
 - Financial facts and ERC-8183 state come from chain.

@@ -9,6 +9,7 @@ import { AgentEndpoint, ERC8004Agent } from "@bnbagent/sdk/erc8004";
 import {
   ERC8183Client,
   ERC8183JobOps,
+  JobStatus,
   NegotiationHandler,
 } from "@bnbagent/sdk/erc8183";
 import { LocalStorageProvider } from "@bnbagent/sdk/storage";
@@ -22,6 +23,13 @@ import {
 import { GATE1_NETWORK } from "./network.js";
 
 type JsonObject = Record<string, unknown>;
+const GATE1_FIXTURE_AGENT_ID = 1815;
+
+export function fundedNotificationDisposition(status: number): "submit" | "already_submitted" | "reject" {
+  if (status === JobStatus.FUNDED) return "submit";
+  if (status === JobStatus.SUBMITTED || status === JobStatus.COMPLETED) return "already_submitted";
+  return "reject";
+}
 
 export function buildAgentCard(baseUrl: string): JsonObject {
   return {
@@ -170,6 +178,45 @@ async function register(config: SellerConfig): Promise<void> {
   );
 }
 
+export function assertFixtureAgentOwner(
+  owner: string,
+  walletAddress: string,
+): void {
+  if (getAddress(owner) !== getAddress(walletAddress)) {
+    throw new Error(
+      `Seller wallet is not the owner of fixture Agent ${GATE1_FIXTURE_AGENT_ID}`,
+    );
+  }
+}
+
+async function update(config: SellerConfig): Promise<void> {
+  const wallet = loadExistingWallet(config);
+  const identity = await ERC8004Agent.create({
+    walletProvider: wallet,
+    network: GATE1_NETWORK,
+  });
+  const current = await identity.getAgentInfo(GATE1_FIXTURE_AGENT_ID);
+  assertFixtureAgentOwner(current.owner, wallet.address);
+  const agentUri = identity.generateAgentUri({
+    name: "gate1-erc8183-seller-fixture",
+    description:
+      "Controlled test infrastructure for the Gate 1 ERC-8183 buyer spike.",
+    endpoints: [AgentEndpoint.a2a(config.baseUrl, { version: "0.3.0" })],
+    agentId: GATE1_FIXTURE_AGENT_ID,
+  });
+  const result = await identity.setAgentUri(GATE1_FIXTURE_AGENT_ID, agentUri);
+  console.log(
+    JSON.stringify({
+      fixture: true,
+      chainId: 97,
+      provider: wallet.address,
+      endpoint: config.baseUrl,
+      transactionHash: result.transactionHash,
+      agentId: GATE1_FIXTURE_AGENT_ID,
+    }),
+  );
+}
+
 async function serve(config: SellerConfig): Promise<void> {
   const wallet = loadExistingWallet(config);
   const client = await ERC8183Client.create({
@@ -247,6 +294,20 @@ async function serve(config: SellerConfig): Promise<void> {
         ) {
           return rpcError(res, request.id, "notify_funded requires an integer job_id");
         }
+        const current = await jobOps.getJob(Number(jobId));
+        const disposition = fundedNotificationDisposition(
+          typeof current.status === "number" ? current.status : -1,
+        );
+        if (disposition === "already_submitted") {
+          return rpcResult(res, request.id, {
+            acknowledged: true,
+            already_submitted: true,
+            job_id: jobId,
+          });
+        }
+        if (disposition === "reject") {
+          return rpcError(res, request.id, "notify_funded requires an onchain FUNDED job");
+        }
         const result = await jobOps.submitResult(
           Number(jobId),
           `Gate 1 seller fixture completed job ${jobId}`,
@@ -267,8 +328,8 @@ async function serve(config: SellerConfig): Promise<void> {
         });
       }
       return rpcError(res, request.id, "Unknown skill");
-    })().catch((error) => {
-      console.error(error instanceof Error ? error.message : String(error));
+    })().catch(() => {
+      console.error("[seller] request failed");
       if (!res.headersSent) rpcError(res, null, "Internal error", 500);
     });
   });
@@ -292,6 +353,7 @@ async function main(): Promise<void> {
   const command = parseSellerCommand(process.argv.slice(2));
   const config = loadSellerConfig(process.env, command);
   if (command === "register") await register(config);
+  else if (command === "update") await update(config);
   else await serve(config);
 }
 
