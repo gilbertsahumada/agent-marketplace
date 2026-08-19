@@ -212,7 +212,9 @@ steps are already complete. No confirmed transaction is repeated.
 
 Automated readiness requires deterministic security/policy/receipt/recovery
 tests, typecheck, CLI build, web production build, and dependency audit. Gate
-6A itself remains pending until a human-controlled injected wallet signs the
-real Testnet transactions and the resulting job is independently observed at
-`SUBMITTED` after a reload. The implementation must stop for that manual
-interaction; a server key is never an acceptable substitute.
+6A passed on 2026-08-19 when a human-controlled injected wallet signed Job
+`551` through all five Testnet transactions and the hosted seller submitted its
+hash-verified deterministic result. The resulting state was independently read
+as `SUBMITTED` after deployment and request restart. Sanitized transaction,
+quote, lifecycle, and deliverable evidence is versioned in
+`docs/GATE_6A_EVIDENCE.json`; no buyer private key reached the server.
