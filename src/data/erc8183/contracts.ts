@@ -12,6 +12,7 @@ export const ERC8183_TESTNET = Object.freeze({
   policy: getAddress("0xd6a4217588F6B1F5657a92A3e94E6422aD771cEA"),
   token: getAddress("0xc70B8741B8B07A6d61E54fd4B20f22Fa648E5565"),
   seller: getAddress("0xa0166a1c586f85Db39798ee311BAA7831C4Dc65b"),
+  hostedSeller: getAddress("0xA2a2012e52Fd075c0F3146e37E833E7294ee52B5"),
   maximumBudgetRaw: 1n,
 } as const);
 

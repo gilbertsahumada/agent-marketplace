@@ -5,14 +5,23 @@ Research snapshot: 2026-08-17.
 ## Objective and scope
 
 Prove that an injected EIP-1193 wallet can remain fully non-custodial while a
-browser user creates and funds one real ERC-8183 job on BSC Testnet. The only
-seller is controlled fixture Agent `1815`, labelled throughout as:
+browser user creates and funds one real ERC-8183 job on BSC Testnet. The
+checked-in browser configuration remains pinned to historical fixture Agent
+`1815` and disabled until the replacement fixture is registered. Both fixtures
+are labelled throughout as:
 
 > Testing infrastructure — not a marketplace agent
 
 This spike delays the production integration of `/hire/[agentId]`. It does not
 remove a Gate 5 feature, enable the four MCP-only HeyAnon candidates, introduce
 WalletConnect, or support mainnet.
+
+Operational update (2026-08-19): the original Agent `1815` remains historical
+Gate 1 evidence, but its local keystore password was not retained. Gate 6A is
+therefore migrating to a new public hosted fixture at seller address
+`0xA2a2012e52Fd075c0F3146e37E833E7294ee52B5`. The new Agent ID is intentionally
+left unset until the deployed Agent Card and A2A route pass validation. The
+browser route stays disabled during that transition.
 
 ## SDK compatibility decision
 
@@ -78,7 +87,7 @@ browser compatibility.
 | Fact | Allowlisted value |
 |---|---|
 | Chain | BSC Testnet, chain ID `97` |
-| ERC-8004 Agent | `1815` |
+| ERC-8004 Agent | Historical `1815`; replacement ID pending registration |
 | Identity Registry | `0x8004A818BFB912233c491871b3d84c89A494BD9e` |
 | AgenticCommerce | `0xa206c0517b6371c6638cd9e4a42cc9f02a33b0de` |
 | EvaluatorRouter | `0xd7d36d66d2f1b608a0f943f722d27e3744f66f25` |
@@ -104,10 +113,11 @@ ERC8183_BROWSER_SPIKE_SELLER_ORIGIN=https://temporary-seller.example
 # ERC8183_BROWSER_SPIKE_BEARER_TOKEN=<external secret>
 ```
 
-The origin must be HTTPS, contain no credentials, query, or fragment, and
-must exactly match the A2A origin resolved from Agent `1815`. It is never
-accepted from browser input. The feature flag is false by default in every
-environment. Mainnet and every chain other than `97` are rejected in
+The origin must be HTTPS, contain no credentials, query, or fragment, and must
+exactly match the A2A origin resolved from the active allowlisted fixture Agent
+ID. It is never accepted from browser input. The feature flag is false by
+default in every environment and remains false until the replacement ID is
+recorded in code. Mainnet and every chain other than `97` are rejected in
 presentation, business policy, and infrastructure.
 
 ## Three-layer flow
@@ -136,9 +146,9 @@ or read chain state directly.
 1. The browser cannot submit a seller URL, token address, policy, Router,
    Commerce address, Registry address, or chain configuration.
 2. A quote must be accepted, signed, unexpired, bound to chain `97` and the
-   allowlisted Commerce contract, issued by Agent `1815`'s current agent
-   wallet, denominated in allowlisted `$U`, positive, and no more than one raw
-   unit.
+   allowlisted Commerce contract, issued by the active fixture Agent's current
+   agent wallet, denominated in allowlisted `$U`, positive, and no more than
+   one raw unit.
 3. The confirmation view precedes wallet connection and every signature. It
    shows buyer, seller, endpoint origin, balances, exact allowance decision,
    raw/display budget, deadline, contracts, purpose, and maximum signatures.
@@ -175,12 +185,13 @@ steps are already complete. No confirmed transaction is repeated.
 
 ## Assumptions and uncertainties
 
-- Agent `1815` must be running at a temporary HTTPS origin and its registered
-  A2A origin must match the server allowlist at execution time.
-- Once the temporary HTTPS origin is known, the existing fixture owner updates
-  Agent `1815` with `npm run gate1:seller -- update`. The command verifies
-  ownership before submitting `setAgentUri`; `register` must not be used because
-  it would create a different Agent ID.
+- The replacement fixture must be reachable at a stable public HTTPS origin
+  before registration; its registered A2A origin must match the server
+  allowlist at execution time.
+- The replacement key controls a new identity, so it is registered once with
+  `npm run hosted-seller:register`. The resulting Agent ID and transaction hash
+  are recorded before the browser route is enabled. Historical Agent `1815` is
+  not updated because its keystore is no longer operationally recoverable.
 - The injected wallet already holds enough Testnet tBNB and `$U`; the spike
   never requests or handles private keys.
 - The maximum accepted quote is the fixture's one-raw-unit service price.

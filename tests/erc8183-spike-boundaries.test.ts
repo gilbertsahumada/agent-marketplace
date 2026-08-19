@@ -18,4 +18,22 @@ describe("Gate 6A browser/server boundaries", () => {
     expect(envExample).toContain("ERC8183_BROWSER_SPIKE_SELLER_ORIGIN");
     expect(envExample).not.toContain("NEXT_PUBLIC_ERC8183_BROWSER_SPIKE");
   });
+
+  it("keeps the hosted seller signer in a server-only infrastructure module", () => {
+    const repository = readFileSync(
+      "src/data/erc8183/hosted-erc8183-seller-repository.ts",
+      "utf8",
+    );
+    const client = readFileSync(
+      "components/spikes/erc8183-browser-spike.tsx",
+      "utf8",
+    );
+    const config = readFileSync(
+      "src/data/erc8183/hosted-seller-config.ts",
+      "utf8",
+    );
+    expect(repository).toMatch(/^import "server-only";/);
+    expect(config).toContain("SELLER_PRIVATE_KEY");
+    expect(client).not.toMatch(/SELLER_PRIVATE_KEY|hosted-erc8183-seller-repository/);
+  });
 });
