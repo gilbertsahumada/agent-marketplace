@@ -2,6 +2,7 @@
 
 import {
   AlertTriangle,
+  ArrowRight,
   CheckCircle2,
   ExternalLink,
   FlaskConical,
@@ -9,6 +10,8 @@ import {
   ShieldCheck,
   Wallet,
 } from "lucide-react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -90,7 +93,8 @@ function SummaryRow({ label, value, mono = false }: { label: string; value: stri
   );
 }
 
-export function Erc8183BrowserSpike() {
+export function Erc8183TestnetDemo() {
+  const router = useRouter();
   const [quote, setQuote] = useState<NormalizedErc8183Quote | null>(null);
   const [account, setAccount] = useState<string | null>(null);
   const [plan, setPlan] = useState<Erc8183HirePlan | null>(null);
@@ -100,7 +104,9 @@ export function Erc8183BrowserSpike() {
   const [error, setError] = useState<string | null>(null);
 
   const readJob = useCallback(async (jobId: string) => {
-    const current = await apiJson<Erc8183JobFacts>(`/api/spikes/erc8183-browser/jobs/${jobId}`);
+    const tracking = await apiJson<{ job: Erc8183JobFacts | null }>(`/api/marketplace/jobs/testnet/${jobId}`);
+    if (!tracking.job) throw new Error("Current chain state is temporarily unavailable.");
+    const current = tracking.job;
     setJob(current);
     return current;
   }, []);
@@ -119,7 +125,7 @@ export function Erc8183BrowserSpike() {
     setBusy("Requesting a signed quote");
     setError(null);
     try {
-      const result = await apiJson<NormalizedErc8183Quote>("/api/spikes/erc8183-browser/quote", { method: "POST" });
+      const result = await apiJson<NormalizedErc8183Quote>("/api/marketplace/demo/erc8183/quote", { method: "POST" });
       setQuote(result);
       setPlan(null);
     } catch (cause) {
@@ -140,7 +146,7 @@ export function Erc8183BrowserSpike() {
     setError(null);
     try {
       const buyer = await connectInjectedWallet(provider);
-      const prepared = await apiJson<Erc8183HirePlan>("/api/spikes/erc8183-browser/prepare", {
+      const prepared = await apiJson<Erc8183HirePlan>("/api/marketplace/demo/erc8183/prepare", {
         method: "POST",
         body: JSON.stringify({ buyer, quote: quote.envelope }),
       });
@@ -172,7 +178,7 @@ export function Erc8183BrowserSpike() {
       });
       setJournal(execution.journal);
       await readJob(execution.jobId);
-      const notification = await apiJson<NotifyFundedResult>("/api/spikes/erc8183-browser/notify", {
+      const notification = await apiJson<NotifyFundedResult>("/api/marketplace/demo/erc8183/notify", {
         method: "POST",
         body: JSON.stringify({ buyer: account, jobId: execution.jobId }),
       });
@@ -186,6 +192,7 @@ export function Erc8183BrowserSpike() {
       saveBrowserJournal(nextJournal);
       setJournal(nextJournal);
       setJob(notification.job);
+      router.push(`/jobs/testnet/${execution.jobId}`);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "The browser transaction flow stopped.");
     } finally {
@@ -202,12 +209,12 @@ export function Erc8183BrowserSpike() {
       <header className="max-w-3xl">
         <div className="flex flex-wrap items-center gap-2">
           <Badge className="border-amber-300/30 bg-amber-300/10 text-amber-100" variant="outline">BSC Testnet · chain 97</Badge>
-          <Badge variant="outline">Experimental route</Badge>
+          <Badge variant="outline">Controlled hiring demo</Badge>
         </div>
-        <p className="mt-6 text-[11px] font-medium uppercase tracking-[0.22em] text-zinc-500">Gate 6A · Browser wallet spike</p>
-        <h1 className="mt-2 text-3xl font-semibold tracking-tight text-white sm:text-5xl">Sign the ERC-8183 lifecycle yourself.</h1>
+        <p className="mt-6 text-[11px] font-medium uppercase tracking-[0.22em] text-zinc-500">Non-custodial Testnet demo</p>
+        <h1 className="mt-2 text-3xl font-semibold tracking-tight text-white sm:text-5xl">Hire with your wallet. Verify every step.</h1>
         <p className="mt-4 text-base leading-relaxed text-zinc-400">
-          This controlled flow proves that negotiation can stay on the server while every financial transaction is simulated, shown, and signed by your injected wallet.
+          Request a signed quote from the controlled seller, inspect every contract call, and sign the ERC-8183 lifecycle with your injected wallet.
         </p>
       </header>
 
@@ -301,7 +308,7 @@ export function Erc8183BrowserSpike() {
 
         <aside className="space-y-6 lg:sticky lg:top-6 lg:self-start">
           <Card>
-            <CardHeader><CardTitle>Chain-verified progress</CardTitle><CardDescription>Local journal entries are hints; receipts and current contract state are authoritative.</CardDescription></CardHeader>
+            <CardHeader><CardTitle>Chain-verified receipt spine</CardTitle><CardDescription>Local journal entries are locators; receipts and current contract state are authoritative.</CardDescription></CardHeader>
             <CardContent>
               <ol className="space-y-4" aria-label="ERC-8183 browser spike progress">
                 <EvidenceStep label="Quote verified" state={quote ? "verified" : "current"} />
@@ -333,6 +340,9 @@ export function Erc8183BrowserSpike() {
                   </a>
                 ))}
                 {job.deliverableUrl && <a className="inline-flex items-center gap-2 text-sm text-emerald-300" href={job.deliverableUrl} rel="noreferrer" target="_blank">Open sanitized result <ExternalLink aria-hidden="true" className="size-4" /></a>}
+                <Button asChild className="w-full" variant="outline">
+                  <Link href={`/jobs/testnet/${job.jobId}`}>Open job tracker<ArrowRight aria-hidden="true" data-icon="inline-end" /></Link>
+                </Button>
               </CardContent>
             </Card>
           )}

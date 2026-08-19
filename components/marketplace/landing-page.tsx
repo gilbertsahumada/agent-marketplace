@@ -23,10 +23,12 @@ const journey = ["Discover", "Understand", "Compare", "Hire", "Track", "Result"]
 
 export function MarketplaceLanding({
   categories,
+  demoEnabled,
   featuredAgents,
   publicProof,
 }: {
   categories: CategoryCardViewModel[];
+  demoEnabled: boolean;
   featuredAgents: AgentCardViewModel[];
   publicProof: EvidenceStepViewModel[];
 }) {
@@ -52,9 +54,15 @@ export function MarketplaceLanding({
                 </Link>
               </Button>
               <Button asChild className="h-11 px-5 text-sm" size="lg" variant="outline">
-                <Link href="/proof/job-514">View the public job proof</Link>
+                <Link href="/jobs/testnet/551">View the browser-wallet proof</Link>
               </Button>
             </div>
+            {demoEnabled && (
+              <Link className="mt-4 inline-flex items-center gap-2 text-sm text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" href="/demo/erc8183">
+                Try the controlled Testnet hiring demo
+                <ArrowRight aria-hidden="true" className="size-4" />
+              </Link>
+            )}
           </div>
 
           <Card className="marketplace-surface gap-5 py-6">
@@ -64,17 +72,17 @@ export function MarketplaceLanding({
                   <ShieldCheck aria-hidden="true" />
                   Onchain proof
                 </Badge>
-                <span className="font-stat text-xs text-zinc-500">BSC Testnet · Job #514</span>
+                <span className="font-stat text-xs text-zinc-500">BSC Testnet · Job #551</span>
               </div>
               <div>
-                <CardTitle className="text-xl">One complete hiring lifecycle</CardTitle>
+                <CardTitle className="text-xl">One browser-signed hiring lifecycle</CardTitle>
                 <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-                  The controlled Gate 1 seller reached SUBMITTED onchain. This proves the buyer path—not the quality of every listed agent.
+                  An injected wallet signed every buyer transaction and the controlled seller reached SUBMITTED. This proves the hiring path—not the quality of every listed agent.
                 </p>
               </div>
             </CardHeader>
             <CardContent className="px-6">
-              <EvidenceRail ariaLabel="Evidence for public Gate 1 job 514" steps={publicProof} />
+              <EvidenceRail ariaLabel="Evidence for public browser-wallet job 551" steps={publicProof} />
             </CardContent>
           </Card>
         </div>

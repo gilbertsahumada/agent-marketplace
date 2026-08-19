@@ -43,13 +43,17 @@ Gate 5 now provides the read-only Frontend MVP. It covers discovery,
 evidence-aware profiles, comparison, an honest hiring eligibility shell, and
 the public Job `514` proof.
 
-Gate 6A adds a disabled-by-default experimental browser-wallet route at
-`/spikes/erc8183-browser`. It keeps A2A negotiation and `notify_funded` on the
-server while an injected EIP-1193 wallet uses viem to simulate and sign the
-five allowlisted Testnet operations. It is pinned to hosted fixture Agent
-`1866` and does not enable Hire for MCP-only marketplace candidates. Automated
-readiness does not pass the gate by itself: a human-controlled wallet must
-still complete the real BSC Testnet flow and reach `SUBMITTED`.
+Gate 6A passed on 2026-08-19. A human-controlled injected EIP-1193 wallet
+signed all five allowlisted buyer operations for Job `551`; hosted fixture
+Agent `1866` then submitted a hash-verified result. The buyer key never reached
+the server. Job `551` is now the primary public non-custodial proof, while Job
+`514` remains historical Gate 1 evidence.
+
+Gate 6B promotes that hardened flow to the controlled `/demo/erc8183` journey
+and adds direct-chain tracking at `/jobs/testnet/{jobId}`. The demo remains
+disabled by default, Testnet-only, and separate from the BSC Mainnet catalogue.
+It does not enable Hire for MCP-only marketplace candidates. The former
+`/spikes/erc8183-browser` URL redirects to the demo when enabled.
 
 The tunnel-based Agent `1815` remains historical Gate 1 evidence. Gate 6A now
 uses a replacement public hosted seller fixture backed by a Testnet-only
@@ -58,7 +62,7 @@ deterministic deliverable routes at the production marketplace origin. Its
 registration transaction is
 `0x166cdb89f4fb2236d760fcd372db7980d51d473a16f3ab51118eeb024eb61e2a`.
 
-Enable the local spike only while the fixture's registered HTTPS endpoint is
+Enable the local demo only while the fixture's registered HTTPS endpoint is
 running:
 
 ```bash
@@ -180,6 +184,7 @@ See:
 
 - [ERC-8183 Gate 1 interaction diagram](diagrams/erc8183-gate1-flow.html)
 - [Gate 5 delivery specification](docs/GATE_5_FRONTEND_MVP.md)
+- [Gate 6A browser-wallet spike](docs/GATE_6A_BROWSER_WALLET_SPIKE.md)
 - [MVP scope](docs/MVP_SCOPE.md)
 - [Architecture](docs/ARCHITECTURE.md)
 - [Reuse and provenance](docs/REUSE_AND_PROVENANCE.md)

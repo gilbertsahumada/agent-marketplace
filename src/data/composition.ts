@@ -3,5 +3,7 @@ import { Gate1PublicProofRepository } from "./proofs/gate1-public-proof-reposito
 import { TrustlessErc8183SpikeRepository } from "./erc8183/trustless-erc8183-spike-repository.js";
 
 export const marketplaceAgentRepository = new Trust8004MarketplaceAgentRepository();
-export const publicJobProofRepository = new Gate1PublicProofRepository();
 export const erc8183SpikeRepository = new TrustlessErc8183SpikeRepository();
+export const publicJobProofRepository = new Gate1PublicProofRepository({
+  loadGate6aJob: () => erc8183SpikeRepository.getJob(551n),
+});

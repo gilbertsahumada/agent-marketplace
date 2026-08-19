@@ -71,6 +71,14 @@ upstream BNB Agent SDK functionality. The original Agent `1815` is retained
 only as historical Gate 1 evidence because its local keystore is no longer
 operationally recoverable.
 
+## Gate 6B presentation provenance
+
+Gate 6B reuses only presentation primitives and the Evidence Rail already
+created in this repository. The controlled demo, receipt spine, Testnet job
+tracker, Job `551` public manifest, and chain-scoped routing are new marketplace
+work. No additional trust8004 source, asset, font, component, runtime package,
+or database behavior was copied or imported.
+
 ## Not copied from trust8004
 
 - Existing landing and multichain navigation.

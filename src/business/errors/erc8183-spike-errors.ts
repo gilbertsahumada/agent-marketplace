@@ -26,6 +26,13 @@ export class Erc8183JobNotReadyError extends Error {
   }
 }
 
+export class Erc8183DemoJobNotFoundError extends Error {
+  constructor() {
+    super("The job is not part of the fixed Testnet demo");
+    this.name = "ERC8183_DEMO_JOB_NOT_FOUND";
+  }
+}
+
 export class Erc8183SpikeUnavailableError extends Error {
   constructor(message = "The browser-wallet spike dependency is unavailable") {
     super(message);

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getAddress, type Address } from "viem";
 import type { Erc8183QuoteEnvelope } from "../../business/entities/erc8183-browser-spike.js";
 import {
+  Erc8183DemoJobNotFoundError,
   Erc8183JobNotReadyError,
   Erc8183QuoteRejectedError,
   Erc8183SpikeDisabledError,
@@ -66,6 +67,12 @@ export function erc8183SpikeErrorResponse(error: unknown): NextResponse {
   }
   if (error instanceof InvalidErc8183SpikeInputError) {
     return NextResponse.json({ error: { code: error.name, message: error.message } }, { status: 400 });
+  }
+  if (error instanceof Erc8183DemoJobNotFoundError) {
+    return NextResponse.json(
+      { error: { code: error.name, message: "The Testnet demo job was not found." } },
+      { status: 404 },
+    );
   }
   if (error instanceof Erc8183QuoteRejectedError || error instanceof Erc8183JobNotReadyError) {
     return NextResponse.json({ error: { code: error.name, message: error.message } }, { status: 409 });

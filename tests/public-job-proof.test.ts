@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 import { GetPublicJobProof } from "../src/business/use-cases/get-public-job-proof.js";
 import {
@@ -5,8 +6,10 @@ import {
   PublicJobProofNotFoundError,
 } from "../src/business/errors/public-job-proof-errors.js";
 import { GATE1_JOB_514_MANIFEST } from "../src/data/proofs/gate1-job-514.js";
+import { GATE6A_JOB_551_MANIFEST } from "../src/data/proofs/gate6a-job-551.js";
 import { Gate1PublicProofRepository } from "../src/data/proofs/gate1-public-proof-repository.js";
 import type { Gate1Proof, TransactionEvidence } from "../src/readiness/types.js";
+import type { Erc8183JobFacts } from "../src/business/entities/erc8183-browser-spike.js";
 
 function verifiedLiveProof(): Gate1Proof {
   const transactions = Object.fromEntries(
@@ -102,7 +105,84 @@ describe("Gate 1 public proof manifest", () => {
   });
 });
 
+describe("Gate 6A public proof manifest", () => {
+  it("publishes the browser-wallet Job 551 evidence without custody ambiguity", () => {
+    expect(GATE6A_JOB_551_MANIFEST).toMatchObject({
+      source: "snapshot:gate6a-job-551",
+      chainId: 97,
+      jobId: "551",
+      sellerAgentId: "1866",
+      quote: { signatureVerified: true },
+      lifecycle: { expectedState: "SUBMITTED" },
+      custody: { buyerWallet: "injected-eip1193", buyerPrivateKeyReceivedByServer: false },
+      fixture: { testInfrastructure: true, marketplaceAgent: false },
+    });
+    expect(Object.keys(GATE6A_JOB_551_MANIFEST.transactions)).toEqual([
+      "createJob", "registerJob", "setBudget", "approve", "fund", "submit",
+    ]);
+  });
+
+  it("does not contain secrets or local paths", () => {
+    expect(JSON.stringify(GATE6A_JOB_551_MANIFEST)).not.toMatch(
+      /privateKey":"0x|SELLER_PRIVATE_KEY=|mnemonic|password|keystore|authorization|bearer|client[_-]?secret|\/Users\/|\.env/i,
+    );
+  });
+
+  it("matches the canonical sanitized Gate 6A evidence", () => {
+    const evidence = JSON.parse(readFileSync("docs/GATE_6A_EVIDENCE.json", "utf8")) as {
+      jobId: string;
+      buyer: string;
+      seller: string;
+      payment: { symbol: string; budgetRaw: string };
+      transactions: Record<string, { hash: string }>;
+      deliverable: { hash: string; content: string };
+    };
+    expect(GATE6A_JOB_551_MANIFEST).toMatchObject({
+      jobId: evidence.jobId,
+      buyer: evidence.buyer,
+      seller: evidence.seller,
+      payment: { symbol: evidence.payment.symbol, budgetRaw: evidence.payment.budgetRaw },
+      deliverable: { hash: evidence.deliverable.hash, content: evidence.deliverable.content },
+    });
+    expect(Object.fromEntries(
+      Object.entries(GATE6A_JOB_551_MANIFEST.transactions).map(([phase, transaction]) => [phase, transaction.hash]),
+    )).toEqual(Object.fromEntries(
+      Object.entries(evidence.transactions).map(([phase, transaction]) => [phase, transaction.hash]),
+    ));
+  });
+});
+
 describe("GetPublicJobProof", () => {
+  it("verifies the versioned Job 551 snapshot against current chain facts", async () => {
+    const snapshot = GATE6A_JOB_551_MANIFEST;
+    const liveJob: Erc8183JobFacts = {
+      chainId: 97,
+      jobId: "551",
+      buyer: snapshot.buyer,
+      provider: snapshot.seller,
+      evaluator: snapshot.contracts.router,
+      policy: snapshot.contracts.policy,
+      description: "signed quote",
+      budgetRaw: snapshot.payment.budgetRaw,
+      deadline: snapshot.lifecycle.deadline.unix,
+      status: "COMPLETED",
+      submittedAt: snapshot.lifecycle.submittedAt.unix,
+      deliverableHash: snapshot.deliverable.hash,
+      deliverableUrl: snapshot.deliverable.url,
+      result: { content: snapshot.deliverable.content, contentType: snapshot.deliverable.contentType, hashVerified: true },
+      quotedToken: snapshot.payment.token,
+      quotedPriceRaw: snapshot.payment.budgetRaw,
+      quoteExpiresAt: 1,
+    };
+    const proof = await new GetPublicJobProof(new Gate1PublicProofRepository({
+      loadGate6aJob: async () => liveJob,
+    })).execute({ jobId: "551" });
+    expect(proof).toMatchObject({
+      snapshot: { source: "snapshot:gate6a-job-551", custody: { buyerPrivateKeyReceivedByServer: false } },
+      live: { status: "verified", observedState: "COMPLETED", checks: { resultHashVerified: true } },
+    });
+  });
+
   it("returns snapshot and current RPC evidence without collapsing provenance", async () => {
     const repository = new Gate1PublicProofRepository({
       loadLiveProof: async () => verifiedLiveProof(),

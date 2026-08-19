@@ -19,7 +19,7 @@ export default async function HirePage({ params }: { params: Promise<{ agentId: 
           <AlertTitle>{agent.hireability.canHire ? "Seller is eligible" : "Hiring is not available for this seller"}</AlertTitle>
           <AlertDescription>{agent.hireability.reason}</AlertDescription>
         </Alert>
-        <div className="mt-6 flex flex-wrap gap-3"><Button asChild variant="outline"><Link href={`/agents/${agentId}`}>Return to profile</Link></Button><Button asChild variant="outline"><Link href="/proof/job-514">View completed test job</Link></Button></div>
+        <div className="mt-6 flex flex-wrap gap-3"><Button asChild variant="outline"><Link href={`/agents/${agentId}`}>Return to profile</Link></Button><Button asChild variant="outline"><Link href="/jobs/testnet/551">View browser-wallet proof</Link></Button></div>
       </main>
     );
   } catch (error) {
