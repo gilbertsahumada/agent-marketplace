@@ -9,7 +9,7 @@ import { GATE1_NETWORK } from "./network.js";
 
 export async function registerHostedSeller(): Promise<void> {
   const config = loadHostedSellerConfig();
-  if (!isAddressEqual(config.address, ERC8183_TESTNET.hostedSeller)) {
+  if (!isAddressEqual(config.address, ERC8183_TESTNET.seller)) {
     throw new Error("Configured key does not match the hosted seller allowlist");
   }
   const card = await fetchAgentCard(config.origin, null);

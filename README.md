@@ -46,18 +46,17 @@ the public Job `514` proof.
 Gate 6A adds a disabled-by-default experimental browser-wallet route at
 `/spikes/erc8183-browser`. It keeps A2A negotiation and `notify_funded` on the
 server while an injected EIP-1193 wallet uses viem to simulate and sign the
-five allowlisted Testnet operations. The current browser configuration remains
-pinned to historical fixture Agent `1815` and disabled while its hosted
-replacement is deployed and registered. It does not enable Hire for MCP-only
-marketplace candidates. Automated readiness does not pass the gate by itself:
-a human-controlled wallet must still complete the real BSC Testnet flow and
-reach `SUBMITTED`.
+five allowlisted Testnet operations. It is pinned to hosted fixture Agent
+`1866` and does not enable Hire for MCP-only marketplace candidates. Automated
+readiness does not pass the gate by itself: a human-controlled wallet must
+still complete the real BSC Testnet flow and reach `SUBMITTED`.
 
 The tunnel-based Agent `1815` remains historical Gate 1 evidence. Gate 6A now
 uses a replacement public hosted seller fixture backed by a Testnet-only
-server secret. Its Agent Card, A2A negotiation, and deterministic deliverable
-routes are public; the replacement Agent ID is recorded only after deployment
-validation and ERC-8004 registration.
+server secret. Agent `1866` exposes a public Agent Card, A2A negotiation, and
+deterministic deliverable routes at the production marketplace origin. Its
+registration transaction is
+`0x166cdb89f4fb2236d760fcd372db7980d51d473a16f3ab51118eeb024eb61e2a`.
 
 Enable the local spike only while the fixture's registered HTTPS endpoint is
 running:

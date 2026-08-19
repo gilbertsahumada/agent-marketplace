@@ -22,7 +22,7 @@ describe("Gate 6A thin controllers", () => {
   beforeEach(() => vi.clearAllMocks());
 
   it("invokes exactly one use case for each valid request", async () => {
-    executeQuote.mockResolvedValue({ agentId: 1815 });
+    executeQuote.mockResolvedValue({ agentId: 1866 });
     executePrepare.mockResolvedValue({ maximumSignatures: 5 });
     executeNotify.mockResolvedValue({ acknowledged: true });
     executeStatus.mockResolvedValue({ jobId: "900" });

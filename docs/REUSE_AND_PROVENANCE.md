@@ -62,13 +62,14 @@ Agent `1815` remains controlled test infrastructure derived from the official
 A2A example. It is not a marketplace agent and is not described as an official
 reference agent.
 
-The hosted replacement remains the same kind of controlled testing
-infrastructure. Its public Agent Card/A2A controllers, server-only Vercel
-composition, deterministic deliverable reconstruction, and environment-key
-boundary are new marketplace code. `NegotiationHandler`, `ERC8183JobOps`,
-`DeliverableManifest`, and ERC-8004 registration remain upstream BNB Agent SDK
-functionality. The original Agent `1815` is retained only as historical Gate 1
-evidence because its local keystore is no longer operationally recoverable.
+The hosted replacement, Agent `1866`, remains the same kind of controlled
+testing infrastructure. Its public Agent Card/A2A controllers, server-only
+Vercel composition, deterministic deliverable reconstruction, and
+environment-key boundary are new marketplace code. `NegotiationHandler`,
+`ERC8183JobOps`, `DeliverableManifest`, and ERC-8004 registration remain
+upstream BNB Agent SDK functionality. The original Agent `1815` is retained
+only as historical Gate 1 evidence because its local keystore is no longer
+operationally recoverable.
 
 ## Not copied from trust8004
 

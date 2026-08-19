@@ -171,14 +171,12 @@ server retains ERC-8004 resolution, A2A negotiation, quote signature checks,
 has exactly five possible writes: `createJob`, `registerJob`, `setBudget`, an
 exact `approve` when necessary, and `fund`.
 
-The route is false by default and fixed to BSC Testnet chain `97`, canonical
+The route is false by default and fixed to BSC Testnet chain `97`, hosted
+fixture Agent `1866`, its registered seller wallet, canonical
 Commerce/Router/token addresses, and the active Router-allowlisted policy. The
-checked-in browser configuration remains pinned to historical Agent `1815`
-until the replacement hosted fixture receives its ERC-8004 Agent ID; the route
-must not be enabled during that transition. The seller origin is a server-only
-bare HTTPS allowlist value and must match current ERC-8004 discovery. Reload
-recovery treats the sanitized local journal as a locator only; receipts and
-current chain state determine completion.
+seller origin is a server-only bare HTTPS allowlist value and must match current
+ERC-8004 discovery. Reload recovery treats the sanitized local journal as a
+locator only; receipts and current chain state determine completion.
 
 ### Hosted Testnet seller fixture
 
@@ -200,8 +198,9 @@ state validation, and idempotent submission rather than a bearer credential.
 No external deliverable store is required for the deterministic fixture. The
 response body is regenerated from the job ID and fixed contract set, and it is
 served only when its canonical manifest hash matches the submitted onchain
-deliverable. The old Agent `1815` remains historical evidence; the replacement
-Agent ID is recorded only after the hosted endpoint passes deployment checks.
+deliverable. The old Agent `1815` remains historical evidence. The replacement
+is Agent `1866`, registered after the public hosted endpoint passed deployment
+and signed-quote checks.
 
 ## Independence requirements
 

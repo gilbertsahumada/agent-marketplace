@@ -1,7 +1,7 @@
 import type { Address, Hash } from "viem";
 
 export const ERC8183_SPIKE_CHAIN_ID = 97 as const;
-export const ERC8183_SPIKE_AGENT_ID = 1815 as const;
+export const ERC8183_SPIKE_AGENT_ID = 1866 as const;
 export const ERC8183_SPIKE_MAX_BUDGET = 1n;
 
 export type Erc8183QuoteEnvelope = Record<string, unknown>;

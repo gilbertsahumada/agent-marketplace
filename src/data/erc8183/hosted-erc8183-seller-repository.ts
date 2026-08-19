@@ -57,7 +57,7 @@ function buildManifest(jobId: bigint): DeliverableManifest {
 
 async function createRuntime(): Promise<HostedSellerRuntime> {
   const config = loadHostedSellerConfig();
-  if (!isAddressEqual(config.address, ERC8183_TESTNET.hostedSeller)) {
+  if (!isAddressEqual(config.address, ERC8183_TESTNET.seller)) {
     throw new HostedSellerUnavailableError(
       "The configured seller key does not match the hosted fixture allowlist",
     );
@@ -111,7 +111,7 @@ export class HostedErc8183Seller
 {
   async getAgentCard(): Promise<HostedSellerAgentCard> {
     const config = loadHostedSellerConfig();
-    if (!isAddressEqual(config.address, ERC8183_TESTNET.hostedSeller)) {
+    if (!isAddressEqual(config.address, ERC8183_TESTNET.seller)) {
       throw new HostedSellerUnavailableError();
     }
     return hostedSellerAgentCard(config.origin);
@@ -126,7 +126,7 @@ export class HostedErc8183Seller
       });
       return {
         ...quote.toDict(),
-        provider_address: ERC8183_TESTNET.hostedSeller,
+        provider_address: ERC8183_TESTNET.seller,
       };
     }
     const key = message.jobId.toString();
@@ -174,7 +174,7 @@ export class HostedErc8183Seller
     const current = await runtime();
     const job = await current.client.getJob(jobId);
     if (
-      !isAddressEqual(job.provider, ERC8183_TESTNET.hostedSeller) ||
+      !isAddressEqual(job.provider, ERC8183_TESTNET.seller) ||
       (job.status !== JobStatus.SUBMITTED && job.status !== JobStatus.COMPLETED)
     ) {
       throw new HostedSellerJobNotReadyError(

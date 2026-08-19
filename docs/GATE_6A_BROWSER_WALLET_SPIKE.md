@@ -6,9 +6,8 @@ Research snapshot: 2026-08-17.
 
 Prove that an injected EIP-1193 wallet can remain fully non-custodial while a
 browser user creates and funds one real ERC-8183 job on BSC Testnet. The
-checked-in browser configuration remains pinned to historical fixture Agent
-`1815` and disabled until the replacement fixture is registered. Both fixtures
-are labelled throughout as:
+active seller is controlled hosted fixture Agent `1866`. Both it and the
+historical Gate 1 fixture are labelled throughout as:
 
 > Testing infrastructure — not a marketplace agent
 
@@ -19,9 +18,10 @@ WalletConnect, or support mainnet.
 Operational update (2026-08-19): the original Agent `1815` remains historical
 Gate 1 evidence, but its local keystore password was not retained. Gate 6A is
 therefore migrating to a new public hosted fixture at seller address
-`0xA2a2012e52Fd075c0F3146e37E833E7294ee52B5`. The new Agent ID is intentionally
-left unset until the deployed Agent Card and A2A route pass validation. The
-browser route stays disabled during that transition.
+`0xA2a2012e52Fd075c0F3146e37E833E7294ee52B5`. Its public Agent Card and signed
+quote passed deployment validation before it was registered as Agent `1866` in
+transaction
+`0x166cdb89f4fb2236d760fcd372db7980d51d473a16f3ab51118eeb024eb61e2a`.
 
 ## SDK compatibility decision
 
@@ -87,7 +87,7 @@ browser compatibility.
 | Fact | Allowlisted value |
 |---|---|
 | Chain | BSC Testnet, chain ID `97` |
-| ERC-8004 Agent | Historical `1815`; replacement ID pending registration |
+| ERC-8004 Agent | `1866` |
 | Identity Registry | `0x8004A818BFB912233c491871b3d84c89A494BD9e` |
 | AgenticCommerce | `0xa206c0517b6371c6638cd9e4a42cc9f02a33b0de` |
 | EvaluatorRouter | `0xd7d36d66d2f1b608a0f943f722d27e3744f66f25` |
@@ -114,10 +114,9 @@ ERC8183_BROWSER_SPIKE_SELLER_ORIGIN=https://temporary-seller.example
 ```
 
 The origin must be HTTPS, contain no credentials, query, or fragment, and must
-exactly match the A2A origin resolved from the active allowlisted fixture Agent
-ID. It is never accepted from browser input. The feature flag is false by
-default in every environment and remains false until the replacement ID is
-recorded in code. Mainnet and every chain other than `97` are rejected in
+exactly match the A2A origin resolved from Agent `1866`. It is never accepted
+from browser input. The feature flag is false by default in every environment.
+Mainnet and every chain other than `97` are rejected in
 presentation, business policy, and infrastructure.
 
 ## Three-layer flow

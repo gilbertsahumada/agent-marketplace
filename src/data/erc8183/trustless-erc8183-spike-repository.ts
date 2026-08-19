@@ -146,10 +146,10 @@ export class TrustlessErc8183SpikeRepository implements Erc8183SpikeRepository {
     const config = loadErc8183BrowserSpikeConfig();
     const identity = await resolveIdentity(client.publicClient, ERC8183_TESTNET.agentId);
     if (!sameAddress(identity.agentWallet, ERC8183_TESTNET.seller)) {
-      throw new Erc8183SpikeUnavailableError("Agent 1815 wallet no longer matches the fixture allowlist");
+      throw new Erc8183SpikeUnavailableError("The fixture Agent wallet no longer matches the allowlist");
     }
     if (new URL(identity.a2aEndpoint).origin !== config.sellerOrigin) {
-      throw new Erc8183SpikeUnavailableError("Agent 1815 origin does not match the server allowlist");
+      throw new Erc8183SpikeUnavailableError("The fixture Agent origin does not match the server allowlist");
     }
     const card = await fetchAgentCard(identity.a2aEndpoint, config.bearerToken);
     const skills = new Set(card.skills.map(({ id }) => id));

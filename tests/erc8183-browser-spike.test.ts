@@ -35,7 +35,7 @@ const NOW = 2_000_000_000;
 function quote(overrides: Partial<NormalizedErc8183Quote> = {}): NormalizedErc8183Quote {
   return {
     envelope: { response: { accepted: true } },
-    agentId: 1815,
+    agentId: 1866,
     chainId: 97,
     provider: ERC8183_TESTNET.seller,
     endpoint: "https://fixture.example",
