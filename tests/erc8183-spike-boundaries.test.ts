@@ -46,4 +46,15 @@ describe("Gate 6A browser/server boundaries", () => {
     expect(seller).toContain("current.client.submit(");
     expect(seller).toContain("current.client.router.jobPolicy(");
   });
+
+  it("tracks the fixed hosted result without scanning historical submit logs", () => {
+    const repository = readFileSync(
+      "src/data/erc8183/trustless-erc8183-spike-repository.ts",
+      "utf8",
+    );
+    expect(repository).not.toContain("client.getDeliverableUrl(");
+    expect(repository).toContain(
+      "`${config.sellerOrigin}/api/fixtures/erc8183/job/${jobId}/response`",
+    );
+  });
 });

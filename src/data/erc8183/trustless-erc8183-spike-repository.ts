@@ -279,12 +279,13 @@ export class TrustlessErc8183SpikeRepository implements Erc8183SpikeRepository {
   async getJob(jobId: bigint): Promise<Erc8183JobFacts> {
     try {
       const client = await this.client();
+      const config = loadErc8183BrowserSpikeConfig();
       const job = await client.getJob(jobId);
       const policy = await client.router.jobPolicy(jobId);
       const parsedDescription = parseJobDescription(job.description);
       const deliverableUrl =
         job.status === JobStatus.SUBMITTED || job.status === JobStatus.COMPLETED
-          ? await client.getDeliverableUrl(jobId)
+          ? `${config.sellerOrigin}/api/fixtures/erc8183/job/${jobId}/response`
           : null;
       const result = await fetchVerifiedResult(deliverableUrl, job);
       return {

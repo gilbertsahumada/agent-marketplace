@@ -64,9 +64,10 @@ five required writes, simulation, receipt waiting, and chain/account checks.
 
 The hosted fixture submits through the SDK's low-level `ERC8183Client.submit`
 after direct job, provider, evaluator, policy, budget, token, and signed-job
-description checks. It intentionally does not use `ERC8183JobOps.verifyJob`:
-that helper scans a historical log range which the public BSC Testnet RPC can
-reject even when the current job is valid and `FUNDED`.
+description checks. It intentionally does not use `ERC8183JobOps.verifyJob` or
+event-based `getDeliverableUrl`: those helpers scan historical log ranges which
+the public BSC Testnet RPC can reject even when the current job and deterministic
+hosted result are valid.
 
 ## Official references
 
