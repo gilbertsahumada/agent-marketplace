@@ -36,4 +36,14 @@ describe("Gate 6A browser/server boundaries", () => {
     expect(config).toContain("SELLER_PRIVATE_KEY");
     expect(client).not.toMatch(/SELLER_PRIVATE_KEY|hosted-erc8183-seller-repository/);
   });
+
+  it("submits hosted results without the SDK log-scanning JobOps helper", () => {
+    const seller = readFileSync(
+      "src/data/erc8183/hosted-erc8183-seller-repository.ts",
+      "utf8",
+    );
+    expect(seller).not.toMatch(/ERC8183JobOps|submitResult/);
+    expect(seller).toContain("current.client.submit(");
+    expect(seller).toContain("current.client.router.jobPolicy(");
+  });
 });

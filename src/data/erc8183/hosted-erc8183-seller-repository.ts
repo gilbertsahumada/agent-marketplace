@@ -2,12 +2,12 @@ import "server-only";
 import {
   DeliverableManifest,
   ERC8183Client,
-  ERC8183JobOps,
   JobStatus,
   NegotiationHandler,
+  parseJobDescription,
 } from "@bnbagent/sdk/erc8183";
 import { EVMWalletProvider } from "@bnbagent/sdk/wallets";
-import { isAddressEqual } from "viem";
+import { isAddress, isAddressEqual } from "viem";
 import type {
   HostedSellerAgentCard,
   HostedSellerDeliverable,
@@ -27,7 +27,7 @@ import { loadHostedSellerConfig } from "./hosted-seller-config.js";
 interface HostedSellerRuntime {
   client: ERC8183Client;
   negotiation: NegotiationHandler;
-  jobOps: ERC8183JobOps;
+  origin: string;
 }
 
 const notificationInflight = new Map<string, Promise<HostedSellerReply>>();
@@ -87,13 +87,7 @@ async function createRuntime(): Promise<HostedSellerRuntime> {
     servicePrice: ERC8183_TESTNET.maximumBudgetRaw.toString(),
     walletProvider: wallet,
   });
-  const jobOps = await ERC8183JobOps.create({
-    walletProvider: wallet,
-    network: GATE1_NETWORK,
-    servicePrice: ERC8183_TESTNET.maximumBudgetRaw,
-    agentUrl: `${config.origin}/api/fixtures/erc8183`,
-  });
-  return { client, negotiation, jobOps };
+  return { client, negotiation, origin: config.origin };
 }
 
 async function runtime(): Promise<HostedSellerRuntime> {
@@ -145,8 +139,11 @@ export class HostedErc8183Seller
     current: HostedSellerRuntime,
     jobId: number,
   ): Promise<HostedSellerReply> {
-    const job = await current.jobOps.getJob(jobId);
-    const status = typeof job.status === "number" ? job.status : -1;
+    const [job, policy] = await Promise.all([
+      current.client.getJob(BigInt(jobId)),
+      current.client.router.jobPolicy(BigInt(jobId)),
+    ]);
+    const status = job.status;
     if (status === JobStatus.SUBMITTED || status === JobStatus.COMPLETED) {
       return { acknowledged: true, already_submitted: true, job_id: jobId };
     }
@@ -155,18 +152,37 @@ export class HostedErc8183Seller
         "notify_funded requires an onchain FUNDED job",
       );
     }
-    const result = await current.jobOps.submitResult(
-      jobId,
-      resultContent(BigInt(jobId)),
-    );
-    if (!result.success || typeof result.txHash !== "string") {
-      throw new HostedSellerUnavailableError("The seller could not submit the job");
+    const description = parseJobDescription(job.description);
+    if (
+      !isAddressEqual(job.provider, ERC8183_TESTNET.seller) ||
+      !isAddressEqual(job.evaluator, ERC8183_TESTNET.router) ||
+      !isAddressEqual(job.hook, ERC8183_TESTNET.router) ||
+      !isAddressEqual(policy, ERC8183_TESTNET.policy) ||
+      job.budget !== ERC8183_TESTNET.maximumBudgetRaw ||
+      !description ||
+      description.price !== ERC8183_TESTNET.maximumBudgetRaw.toString() ||
+      !isAddress(description.currency) ||
+      !isAddressEqual(description.currency, ERC8183_TESTNET.token) ||
+      !description.providerSig ||
+      !description.negotiationHash
+    ) {
+      throw new HostedSellerJobNotReadyError(
+        "The funded job does not match the hosted seller allowlist",
+      );
     }
+    const manifest = buildManifest(BigInt(jobId));
+    const result = await current.client.submit(
+      BigInt(jobId),
+      manifest.manifestHash(),
+      {
+        deliverable_url: `${current.origin}/api/fixtures/erc8183/job/${jobId}/response`,
+      },
+    );
     return {
       acknowledged: true,
       already_submitted: false,
       job_id: jobId,
-      transaction_hash: result.txHash,
+      transaction_hash: result.transactionHash,
     };
   }
 
