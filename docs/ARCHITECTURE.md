@@ -202,6 +202,36 @@ deliverable. The old Agent `1815` remains historical evidence. The replacement
 is Agent `1866`, registered after the public hosted endpoint passed deployment
 and signed-quote checks.
 
+## Gate 6B Testnet demo boundary
+
+Gate 6B replaces the experimental route as the visible entry point without
+changing the custody or protocol boundaries proven in Gate 6A:
+
+```text
+/demo/erc8183
+  -> marketplace demo controllers
+  -> quote / prepare / notify use cases
+  -> fixed Agent 1866 A2A + BSC Testnet contracts
+
+/jobs/testnet/{jobId}
+  -> one tracking use case
+  -> direct chain state + optional versioned sanitized proof
+  -> browser journal used only for matching local transaction links
+```
+
+The Mainnet catalogue uses `chainId=56`; the controlled seller fixture uses
+Testnet `chainId=97`. They therefore remain separate URL and entity spaces.
+Agent `1866` is never inserted into trust8004 catalogue results, curated
+categories, comparison, or `/hire/[agentId]`.
+
+Job tracking accepts only jobs whose provider, evaluator, policy, quoted token,
+and budget match the fixed Testnet allowlist. Direct contract state is
+authoritative. A versioned snapshot keeps Job `551` available when the live RPC
+or demo feature flag is unavailable, while an unversioned job receives no
+invented fallback. The local journal remains schema-versioned and sanitized;
+it can add transaction links for the matching browser but cannot establish job
+state.
+
 ## Independence requirements
 
 - Financial facts and ERC-8183 state come from chain.

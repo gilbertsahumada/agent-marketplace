@@ -25,19 +25,33 @@ export interface PublicProofTransactionSnapshotRecord {
 
 export interface PublicJobProofSnapshotRecord {
   schemaVersion: 1;
-  source: "snapshot:gate1-job-514";
+  source: "snapshot:gate1-job-514" | "snapshot:gate6a-job-551";
   recordedAt: string;
   network: "bsc-testnet";
   chainId: 97;
-  jobId: "514";
-  sellerAgentId: "1815";
+  jobId: string;
+  sellerAgentId: string;
   buyer: EvmAddressRecord;
   seller: EvmAddressRecord;
+  sellerEndpoint?: string;
+  contracts?: {
+    identityRegistry: EvmAddressRecord;
+    commerce: EvmAddressRecord;
+    router: EvmAddressRecord;
+    policy: EvmAddressRecord;
+  };
   payment: {
     token: EvmAddressRecord;
-    symbol: "$U";
+    symbol: string;
     decimals: 18;
     budgetRaw: "1";
+    budgetFormatted?: string;
+  };
+  quote?: {
+    negotiationHash: TransactionHashRecord;
+    negotiatedAt: string;
+    expiresAt: string;
+    signatureVerified: true;
   };
   lifecycle: {
     expectedState: "SUBMITTED";
@@ -47,14 +61,23 @@ export interface PublicJobProofSnapshotRecord {
   deliverable: {
     hash: TransactionHashRecord;
     receipt: "deterministic-text";
-    availability: "hash_only";
+    availability: "hash_only" | "public_hash_verified";
     note: string;
+    url?: string;
+    contentType?: string;
+    content?: string;
+    hashVerified?: true;
   };
   transactions: Record<Gate1TransactionPhase, PublicProofTransactionSnapshotRecord>;
   fixture: {
     testInfrastructure: true;
     marketplaceAgent: false;
     officialReferenceAgent: false;
+  };
+  custody?: {
+    buyerWallet: "injected-eip1193";
+    buyerPrivateKeyReceivedByServer: false;
+    sellerKeyStorage: "server-side-sensitive-environment-variable";
   };
 }
 
@@ -91,4 +114,5 @@ export interface PublicJobProofRecord {
 
 export interface PublicJobProofRepository {
   findByJobId(jobId: string): Promise<PublicJobProofRecord | null>;
+  findSnapshotByJobId(jobId: string): Promise<PublicJobProofSnapshotRecord | null>;
 }

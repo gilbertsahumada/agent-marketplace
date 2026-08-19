@@ -5,6 +5,7 @@ describe("Gate 6A browser/server boundaries", () => {
   it("keeps the Node-oriented BNB Agent SDK out of client modules", () => {
     for (const file of [
       "components/spikes/erc8183-browser-spike.tsx",
+      "components/marketplace/testnet-job-tracker.tsx",
       "src/data/erc8183/browser-wallet-adapter.ts",
       "src/data/erc8183/receipt-parser.ts",
       "src/data/erc8183/contracts.ts",
@@ -28,6 +29,10 @@ describe("Gate 6A browser/server boundaries", () => {
       "components/spikes/erc8183-browser-spike.tsx",
       "utf8",
     );
+    const tracker = readFileSync(
+      "components/marketplace/testnet-job-tracker.tsx",
+      "utf8",
+    );
     const config = readFileSync(
       "src/data/erc8183/hosted-seller-config.ts",
       "utf8",
@@ -35,6 +40,7 @@ describe("Gate 6A browser/server boundaries", () => {
     expect(repository).toMatch(/^import "server-only";/);
     expect(config).toContain("SELLER_PRIVATE_KEY");
     expect(client).not.toMatch(/SELLER_PRIVATE_KEY|hosted-erc8183-seller-repository/);
+    expect(tracker).not.toMatch(/SELLER_PRIVATE_KEY|hosted-erc8183-seller-repository/);
   });
 
   it("submits hosted results without the SDK log-scanning JobOps helper", () => {

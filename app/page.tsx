@@ -15,7 +15,7 @@ const categoryCopy = {
 export default async function HomePage() {
   const [catalog, proof] = await Promise.all([
     listMarketplaceAgents.execute({ view: "marketplace", page: 1, limit: 12 }),
-    getPublicJobProof.execute({ jobId: "514" }),
+    getPublicJobProof.execute({ jobId: "551" }),
   ]);
   const categories: CategoryCardViewModel[] = catalog.categories.map(({ category, count, status }) => ({
     category,
@@ -29,7 +29,14 @@ export default async function HomePage() {
     { kind: "declared", label: "Declared", status: "verified", provenance: "declared", detail: "Controlled test seller identity and terms were recorded.", source: proof.snapshot.source, timestamp: proof.snapshot.recordedAt },
     { kind: "reachable", label: "Reachable", status: "verified", provenance: "observed", detail: "The A2A seller completed negotiation and funding notification.", timestamp: proof.snapshot.transactions.fund.timestamp },
     { kind: "quote", label: "Quote verified", status: "verified", provenance: "observed", detail: "The buyer accepted a compatible signed quote.", timestamp: proof.snapshot.transactions.createJob.timestamp },
-    { kind: "job", label: "Job proven", status: "verified", provenance: "onchain", detail: "The versioned evidence records Job #514 reaching SUBMITTED on BSC Testnet.", source: proof.snapshot.transactions.submit.provenance, timestamp: proof.snapshot.transactions.submit.timestamp },
+    { kind: "job", label: "Job proven", status: "verified", provenance: "onchain", detail: "The versioned evidence records browser-signed Job #551 reaching SUBMITTED on BSC Testnet.", source: proof.snapshot.transactions.submit.provenance, timestamp: proof.snapshot.transactions.submit.timestamp },
   ];
-  return <MarketplaceLanding categories={categories} featuredAgents={catalog.items.map(agentCardViewModel)} publicProof={publicProof} />;
+  return (
+    <MarketplaceLanding
+      categories={categories}
+      demoEnabled={Reflect.get(process.env, "ERC8183_BROWSER_SPIKE_ENABLED") === "true"}
+      featuredAgents={catalog.items.map(agentCardViewModel)}
+      publicProof={publicProof}
+    />
+  );
 }

@@ -4,12 +4,13 @@ import { createElement } from "react";
 import axe from "axe-core";
 import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { AgentCard } from "../components/marketplace/agent-card.js";
 import { AgentProfile } from "../components/marketplace/agent-profile.js";
 import { CatalogPage } from "../components/marketplace/catalog-page.js";
 import { EvidenceRail } from "../components/marketplace/evidence-rail.js";
 import { PublicProofPage } from "../components/marketplace/public-proof-page.js";
+import { TestnetJobTracker } from "../components/marketplace/testnet-job-tracker.js";
 import { MarketplaceShell } from "../components/marketplace/site-shell.js";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../components/ui/tabs.js";
 import type {
@@ -19,7 +20,12 @@ import type {
 } from "../src/business/entities/marketplace-agent.js";
 import type { PublicJobProof } from "../src/business/entities/public-job-proof.js";
 import { GATE1_JOB_514_MANIFEST } from "../src/data/proofs/gate1-job-514.js";
-import { Erc8183BrowserSpike } from "../components/spikes/erc8183-browser-spike.js";
+import { GATE6A_JOB_551_MANIFEST } from "../src/data/proofs/gate6a-job-551.js";
+import { Erc8183TestnetDemo } from "../components/spikes/erc8183-browser-spike.js";
+
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
+}));
 
 const evidence = [
   { kind: "declared" as const, label: "Declared", status: "verified" as const, provenance: "declared" as const, detail: "Declared" },
@@ -240,13 +246,26 @@ describe("marketplace presentation rules", () => {
   });
 
   it("labels the browser spike as Testnet infrastructure and requires a quote before wallet access", async () => {
-    render(createElement(Erc8183BrowserSpike));
-    expect(screen.getByRole("heading", { name: /sign the erc-8183 lifecycle yourself/i })).toBeInTheDocument();
+    render(createElement(Erc8183TestnetDemo));
+    expect(screen.getByRole("heading", { name: /hire with your wallet/i })).toBeInTheDocument();
     expect(screen.getByText("Testing infrastructure — not a marketplace agent")).toBeInTheDocument();
     expect(screen.getAllByText(/Agent 1866/)).toHaveLength(2);
     expect(screen.queryByText(/Agent 1815/)).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /connect injected wallet/i })).toBeDisabled();
     expect(screen.queryByText(/mainnet/i)).not.toBeInTheDocument();
+    const result = await axe.run(document.body);
+    expect(result.violations).toEqual([]);
+  });
+
+  it("renders the Job 551 proof with complete hashes when live RPC is unavailable", async () => {
+    render(createElement(TestnetJobTracker, {
+      tracking: { liveStatus: "unavailable", job: null, snapshot: GATE6A_JOB_551_MANIFEST },
+    }));
+    expect(screen.getByRole("heading", { name: "ERC-8183 Job #551" })).toBeInTheDocument();
+    expect(screen.getByText("Live chain check unavailable")).toBeInTheDocument();
+    expect(screen.getByText(GATE6A_JOB_551_MANIFEST.transactions.createJob.hash)).toBeInTheDocument();
+    expect(screen.getByText(GATE6A_JOB_551_MANIFEST.transactions.submit.hash)).toBeInTheDocument();
+    expect(screen.getByText(GATE6A_JOB_551_MANIFEST.deliverable.content)).toBeInTheDocument();
     const result = await axe.run(document.body);
     expect(result.violations).toEqual([]);
   });

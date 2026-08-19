@@ -7,6 +7,7 @@ import {
   type NormalizedErc8183Quote,
 } from "../entities/erc8183-browser-spike.js";
 import {
+  Erc8183DemoJobNotFoundError,
   Erc8183JobNotReadyError,
   Erc8183QuoteRejectedError,
 } from "../errors/erc8183-spike-errors.js";
@@ -88,5 +89,27 @@ export function assertExpectedJob(
   }
   if (BigInt(job.deadline) <= BigInt(nowSeconds)) {
     throw new Erc8183JobNotReadyError("Job deadline has expired");
+  }
+}
+
+export function assertTrackableFixtureJob(
+  job: Erc8183JobFacts,
+  allowlist: Erc8183SpikeAllowlist,
+): void {
+  const zeroAddress = /^0x0{40}$/i.test(job.policy);
+  if (
+    job.chainId !== ERC8183_SPIKE_CHAIN_ID ||
+    !sameAddress(job.provider, allowlist.seller) ||
+    !sameAddress(job.evaluator, allowlist.router) ||
+    (!zeroAddress && !sameAddress(job.policy, allowlist.policy)) ||
+    job.quotedToken === null ||
+    !sameAddress(job.quotedToken, allowlist.token) ||
+    job.quotedPriceRaw === null ||
+    !/^\d+$/.test(job.quotedPriceRaw) ||
+    BigInt(job.quotedPriceRaw) <= 0n ||
+    BigInt(job.quotedPriceRaw) > ERC8183_SPIKE_MAX_BUDGET ||
+    (job.budgetRaw !== "0" && job.budgetRaw !== job.quotedPriceRaw)
+  ) {
+    throw new Erc8183DemoJobNotFoundError();
   }
 }

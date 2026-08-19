@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { Erc8183SpikeDisabledError } from "../src/business/errors/erc8183-spike-errors.js";
+import { Erc8183DemoJobNotFoundError, Erc8183SpikeDisabledError } from "../src/business/errors/erc8183-spike-errors.js";
 
 const executeQuote = vi.fn();
 const executePrepare = vi.fn();
@@ -10,13 +10,13 @@ vi.mock("@/src/business/composition", () => ({
   requestErc8183Quote: { execute: executeQuote },
   prepareErc8183Hire: { execute: executePrepare },
   notifyFundedJob: { execute: executeNotify },
-  getErc8183JobStatus: { execute: executeStatus },
+  getErc8183TestnetJobTracking: { execute: executeStatus },
 }));
 
-const quoteRoute = await import("../app/api/spikes/erc8183-browser/quote/route.js");
-const prepareRoute = await import("../app/api/spikes/erc8183-browser/prepare/route.js");
-const notifyRoute = await import("../app/api/spikes/erc8183-browser/notify/route.js");
-const statusRoute = await import("../app/api/spikes/erc8183-browser/jobs/[jobId]/route.js");
+const quoteRoute = await import("../app/api/marketplace/demo/erc8183/quote/route.js");
+const prepareRoute = await import("../app/api/marketplace/demo/erc8183/prepare/route.js");
+const notifyRoute = await import("../app/api/marketplace/demo/erc8183/notify/route.js");
+const statusRoute = await import("../app/api/marketplace/jobs/testnet/[jobId]/route.js");
 
 describe("Gate 6A thin controllers", () => {
   beforeEach(() => vi.clearAllMocks());
@@ -25,7 +25,7 @@ describe("Gate 6A thin controllers", () => {
     executeQuote.mockResolvedValue({ agentId: 1866 });
     executePrepare.mockResolvedValue({ maximumSignatures: 5 });
     executeNotify.mockResolvedValue({ acknowledged: true });
-    executeStatus.mockResolvedValue({ jobId: "900" });
+    executeStatus.mockResolvedValue({ liveStatus: "verified", job: { jobId: "900" }, snapshot: null });
     const buyer = "0x1111111111111111111111111111111111111111";
     expect((await quoteRoute.POST()).status).toBe(200);
     expect((await prepareRoute.POST(new Request("http://local", {
@@ -69,5 +69,14 @@ describe("Gate 6A thin controllers", () => {
     const response = await quoteRoute.POST();
     expect(response.status).toBe(404);
     expect(await response.json()).toMatchObject({ error: { code: "ERC8183_SPIKE_DISABLED" } });
+  });
+
+  it("does not expose jobs outside the fixed Testnet demo", async () => {
+    executeStatus.mockRejectedValue(new Erc8183DemoJobNotFoundError());
+    const response = await statusRoute.GET(new Request("http://local"), { params: Promise.resolve({ jobId: "900" }) });
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({
+      error: { code: "ERC8183_DEMO_JOB_NOT_FOUND", message: "The Testnet demo job was not found." },
+    });
   });
 });
