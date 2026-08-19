@@ -14,12 +14,13 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import type {
-  Erc8183BrowserJournal,
-  Erc8183HirePlan,
-  Erc8183JobFacts,
-  NormalizedErc8183Quote,
-  NotifyFundedResult,
+import {
+  ERC8183_SPIKE_AGENT_ID,
+  type Erc8183BrowserJournal,
+  type Erc8183HirePlan,
+  type Erc8183JobFacts,
+  type NormalizedErc8183Quote,
+  type NotifyFundedResult,
 } from "@/src/business/entities/erc8183-browser-spike";
 import {
   clearBrowserJournal,
@@ -213,7 +214,7 @@ export function Erc8183BrowserSpike() {
       <Alert className="mt-8 border-amber-300/20 bg-amber-300/[0.05]">
         <FlaskConical aria-hidden="true" className="text-amber-300" />
         <AlertTitle>Testing infrastructure — not a marketplace agent</AlertTitle>
-        <AlertDescription>Only fixture Agent 1815 is allowed. The HeyAnon marketplace candidates remain MCP only and cannot use this flow.</AlertDescription>
+        <AlertDescription>Only fixture Agent {ERC8183_SPIKE_AGENT_ID} is allowed. The HeyAnon marketplace candidates remain MCP only and cannot use this flow.</AlertDescription>
       </Alert>
 
       <div className="mt-8 grid gap-6 lg:grid-cols-[minmax(0,1.15fr)_minmax(19rem,0.85fr)]">
@@ -221,12 +222,12 @@ export function Erc8183BrowserSpike() {
           <Card>
             <CardHeader>
               <CardTitle>1 · Get a server-verified quote</CardTitle>
-              <CardDescription>The server resolves Agent 1815, checks its fixed HTTPS origin, fetches its Agent Card, and validates the signed quote.</CardDescription>
+              <CardDescription>The server resolves Agent {ERC8183_SPIKE_AGENT_ID}, checks its fixed HTTPS origin, fetches its Agent Card, and validates the signed quote.</CardDescription>
             </CardHeader>
             <CardContent>
               {quote ? (
                 <dl>
-                  <SummaryRow label="Seller Agent" value={`1815 · ${shortAddress(quote.provider)}`} />
+                  <SummaryRow label="Seller Agent" value={`${quote.agentId} · ${shortAddress(quote.provider)}`} />
                   <SummaryRow label="Negotiated endpoint" value={quote.endpoint} mono />
                   <SummaryRow label="Payment" value={`${quote.priceRaw} raw ${quote.tokenSymbol} · ${quote.priceDisplay} formatted`} />
                   <SummaryRow label="Quote expires" value={new Date(quote.quoteExpiresAt * 1_000).toLocaleString()} />

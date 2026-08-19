@@ -243,6 +243,8 @@ describe("marketplace presentation rules", () => {
     render(createElement(Erc8183BrowserSpike));
     expect(screen.getByRole("heading", { name: /sign the erc-8183 lifecycle yourself/i })).toBeInTheDocument();
     expect(screen.getByText("Testing infrastructure — not a marketplace agent")).toBeInTheDocument();
+    expect(screen.getAllByText(/Agent 1866/)).toHaveLength(2);
+    expect(screen.queryByText(/Agent 1815/)).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /connect injected wallet/i })).toBeDisabled();
     expect(screen.queryByText(/mainnet/i)).not.toBeInTheDocument();
     const result = await axe.run(document.body);
