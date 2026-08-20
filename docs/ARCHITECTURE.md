@@ -89,10 +89,12 @@ MCP initialize + tools/list ┘
 ```
 
 All identity reads share a pinned BSC Mainnet block. MCP discovery is limited
-to safe public HTTPS endpoints, stays on the validated origin, and never sends
-`tools/call`. Tool-list drift and identity mismatches require attention but are
-preserved as evidence instead of being reconciled automatically. ERC-8183
-hireability remains outside this verifier.
+to one endpoint per agent and a bounded run budget, accepts only public HTTPS
+addresses, stays on the validated origin, and never sends `tools/call`. Skipped
+declarations are `not_probed`, not failed observations. Tool-list drift and
+identity mismatches require attention but are preserved as evidence instead of
+being reconciled automatically. ERC-8183 hireability remains outside this
+verifier.
 
 ## Pre-frontend readiness gate
 
@@ -231,6 +233,59 @@ or demo feature flag is unavailable, while an unversioned job receives no
 invented fallback. The local journal remains schema-versioned and sanitized;
 it can add transaction links for the matching browser but cannot establish job
 state.
+
+## Gate 6C Mainnet seller qualification boundary
+
+Gate 6C is read-only and does not connect the Testnet demo to marketplace
+profiles. It evaluates the four versioned candidates plus at most 20 explicit
+operator-supplied Agent IDs:
+
+```text
+curated manifest + explicit Agent IDs
+  -> bounded trust8004 profile reads
+  -> one pinned BSC Mainnet identity snapshot
+  -> probes only declared A2A / HTTP ERC-8183 services
+  -> signed quote + official contract/policy checks
+  -> local sanitized qualification report
+```
+
+No list or FTS request selects qualification targets. An explicit ID remains
+`operator_explicit`, receives no curated category, and cannot increase category
+coverage until a later reviewed manifest change. Grid therefore stays empty
+unless deliberately curated evidence is added.
+
+`quote_verified` records a signed quote that is also valid when the report is
+finalized. A quote that expires during later probes becomes `expired_quote`;
+its signed payload remains historical evidence but cannot qualify a seller.
+The stricter `qualified` state additionally requires matching direct ERC-8004
+identity, BSC Mainnet chain and Commerce/payment-token configuration, and an
+allowlisted Router policy. The CLI never creates or funds a job, calls
+`notify_funded`, or changes `/hire`. Provider/schema failures are visible and
+do not overwrite the previous atomic report.
+
+Seller HTTP is constrained by a server-only transport. It resolves each HTTPS
+origin once, rejects private, mapped, translated, and other non-global IP
+addresses, pins the validated addresses for the actual connection while
+retaining the original TLS hostname, rejects redirects, and closes its
+dispatcher after the probe. MCP, A2A, and HTTP ERC-8183 response bodies are
+cancelled incrementally above 64 KiB after decompression. Quotes are bound to
+the canonical SDK request hash, must be no more than 60 seconds old, and cannot
+exceed the SDK's 900-second TTL.
+
+MCP and seller assessment share one 180-second deadline and a combined ceiling
+of 72 external endpoints. MCP is capped at one endpoint per agent and 24 per
+run. Seller probing remains capped at one endpoint per supported transport,
+two per agent, and 48 per run. Skipped declarations are retained as
+`not_probed`; their presence sets `probe_incomplete` unless another seller
+endpoint already produced a verified quote. Per-category quote evidence and
+fully identity-qualified sellers are reported in separate fields.
+
+Readiness schema `3` exposes manifest categories as `candidate.categories` and
+keeps non-authoritative profile heuristics in `profileDerivedCategories`.
+Explicit IDs therefore remain uncategorized. Quote contract context separates
+SDK-configured Commerce, Router, and policy addresses from payment-token and
+allowlist values observed by RPC, including the observation block and
+timestamp.
 
 ## Independence requirements
 
