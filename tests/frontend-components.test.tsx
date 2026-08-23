@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import "@testing-library/jest-dom/vitest";
-import { createElement } from "react";
+import { createElement, type AnchorHTMLAttributes } from "react";
 import axe from "axe-core";
 import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -26,6 +26,14 @@ import { Erc8183TestnetDemo } from "../components/spikes/erc8183-browser-spike.j
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
 }));
+
+vi.mock("next/link", async () => {
+  const { createElement: createMockElement } = await import("react");
+  return {
+    default: ({ prefetch, ...anchorProps }: AnchorHTMLAttributes<HTMLAnchorElement> & { prefetch?: boolean }) =>
+      createMockElement("a", { ...anchorProps, "data-prefetch": String(prefetch) }),
+  };
+});
 
 const evidence = [
   { kind: "declared" as const, label: "Declared", status: "verified" as const, provenance: "declared" as const, detail: "Declared" },
@@ -148,7 +156,9 @@ describe("marketplace presentation rules", () => {
     render(createElement(AgentCard, { agent: { agentId: "45650", name: "V3 Pools", description: "Agent", categories: ["rebalancing"], href: "/agents/45650", hireability: "mcp_only", evidence } }));
     expect(screen.getByText("MCP only")).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /hire agent/i })).not.toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /view evidence/i })).toHaveAttribute("href", "/agents/45650");
+    const profileLink = screen.getByRole("link", { name: /view evidence/i });
+    expect(profileLink).toHaveAttribute("href", "/agents/45650");
+    expect(profileLink).toHaveAttribute("data-prefetch", "false");
   });
 
   it("keeps the evidence rail accessible as an ordered progression", () => {

@@ -89,13 +89,13 @@ export function EvidenceRail({
                   <p className="text-xs font-semibold text-zinc-100">{step.label}</p>
                   {!compact && <ProvenanceBadge provenance={step.provenance} />}
                   {!compact && (
-                    <span className="text-[10px] capitalize text-zinc-500">
+                    <span className="text-[10px] capitalize text-zinc-400">
                       {statusLabels[step.status]}
                     </span>
                   )}
                 </div>
                 {compact && (
-                  <p className="mt-1 text-[10px] capitalize text-zinc-500">
+                  <p className="mt-1 text-[10px] capitalize text-zinc-400">
                     {step.provenance} · {statusLabels[step.status]}
                   </p>
                 )}
@@ -105,7 +105,7 @@ export function EvidenceRail({
                   </p>
                 )}
                 {!compact && (step.source || step.timestamp) && (
-                  <p className="font-stat mt-2 text-[10px] text-zinc-500">
+                  <p className="font-stat mt-2 text-[10px] text-zinc-400">
                     {[step.source, step.timestamp].filter(Boolean).join(" · ")}
                   </p>
                 )}

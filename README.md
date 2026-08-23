@@ -217,6 +217,51 @@ npm run dev
 server-side pagination. This mode performs one list request per uncached page;
 it does not download the full catalogue or fetch a profile for every card.
 
+## Submission demo runbook
+
+The public deployment is
+[bnb-agent-marketplace-ruby.vercel.app](https://bnb-agent-marketplace-ruby.vercel.app).
+The shortest judgeable path uses only public pages until the optional wallet
+step:
+
+1. **Discover:** open the [landing page](https://bnb-agent-marketplace-ruby.vercel.app/)
+   and inspect the four equally visible categories and the evidence line.
+2. **Understand:** open [Agent 45650](https://bnb-agent-marketplace-ruby.vercel.app/agents/45650)
+   and verify that declared metadata, direct identity reads, derived trust, and
+   endpoint observations remain separate.
+3. **Compare:** compare [V3 Pools, Aave, and Venus](https://bnb-agent-marketplace-ruby.vercel.app/compare?agentId=45650&agentId=45381&agentId=43129)
+   without an invented universal winner.
+4. **Browse:** switch between [curated candidates](https://bnb-agent-marketplace-ruby.vercel.app/agents?view=marketplace)
+   and the [paginated registered snapshot](https://bnb-agent-marketplace-ruby.vercel.app/agents?view=all&page=1&limit=24).
+   Registered records remain `Not evaluated`; Grid remains explicitly empty.
+5. **Hire:** open the [controlled Testnet demo](https://bnb-agent-marketplace-ruby.vercel.app/demo/erc8183)
+   and request a live signed quote. This first action performs no transaction
+   and requests no wallet access.
+6. **Track and result:** inspect [Job 551](https://bnb-agent-marketplace-ruby.vercel.app/jobs/testnet/551),
+   its five browser-signed buyer transactions, seller submission, current
+   onchain state, and hash-verified public result.
+
+Repeating the wallet portion is optional because Job `551` is durable public
+evidence. A repeat requires an injected wallet on BSC Testnet (`chainId=97`),
+Testnet tBNB for gas, Testnet `U`, and at most five sequential confirmations.
+Every contract, token, amount, allowance, deadline, and transaction purpose is
+shown before signing. Never use a Mainnet wallet or Mainnet funds.
+
+The controlled Agent `1866` is testing infrastructure, not a marketplace agent
+or official BNB reference agent. The four current Mainnet candidates remain
+MCP-only, Grid has no verified seller, and catalogue coverage remains partial.
+Those limitations are part of the evidence model rather than hidden demo data.
+If a live catalogue or RPC dependency is unavailable, the application shows a
+diagnostic error; the versioned Job `551` snapshot and transaction links remain
+the durable proof.
+
+Before presenting a new deployment, run:
+
+```bash
+npm run check
+npm audit --audit-level=low
+```
+
 See:
 
 - [ERC-8183 Gate 1 interaction diagram](diagrams/erc8183-gate1-flow.html)

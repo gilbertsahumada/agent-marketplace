@@ -17,7 +17,7 @@ function Brand() {
       </span>
       <span className="leading-none">
         <span className="block text-sm font-semibold tracking-tight text-white">BNB Agent Studio</span>
-        <span className="mt-1 block text-[10px] uppercase tracking-[0.16em] text-zinc-500">
+        <span className="mt-1 block text-[10px] uppercase tracking-[0.16em] text-zinc-400">
           Evidence-first marketplace
         </span>
       </span>
@@ -80,7 +80,7 @@ function Footer() {
       <div className="mx-auto grid max-w-7xl gap-8 px-4 py-10 sm:px-6 md:grid-cols-[1fr_auto] lg:px-8">
         <div>
           <Brand />
-          <p className="mt-4 max-w-md text-sm leading-relaxed text-zinc-500">
+          <p className="mt-4 max-w-md text-sm leading-relaxed text-zinc-400">
             Discover, compare, and verify BSC agents without turning declarations into promises.
           </p>
         </div>

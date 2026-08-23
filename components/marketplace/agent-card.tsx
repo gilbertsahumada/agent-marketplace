@@ -53,7 +53,7 @@ export function AgentCard({ agent }: { agent: AgentCardViewModel }) {
                 {hireabilityLabels[agent.hireability]}
               </Badge>
             </div>
-            <p className="font-stat mt-1 text-[11px] text-zinc-500">
+            <p className="font-stat mt-1 text-[11px] text-zinc-400">
               BSC · Agent #{agent.agentId}
             </p>
           </div>
@@ -84,13 +84,13 @@ export function AgentCard({ agent }: { agent: AgentCardViewModel }) {
         {typeof agent.trustScore === "number" ? (
           <div>
             <p className="font-stat text-sm font-semibold text-white">{agent.trustScore}/100</p>
-            <p className="text-[10px] text-zinc-500">Trust score · derived</p>
+            <p className="text-[10px] text-zinc-400">Trust score · derived</p>
           </div>
         ) : (
-          <p className="text-xs text-zinc-500">Trust score unavailable</p>
+          <p className="text-xs text-zinc-400">Trust score unavailable</p>
         )}
         <Button asChild size="sm" variant={isHireable ? "default" : "outline"}>
-          <Link href={isHireable ? `/hire/${agent.agentId}` : agent.href}>
+          <Link href={isHireable ? `/hire/${agent.agentId}` : agent.href} prefetch={false}>
             {isHireable ? "Hire agent" : "View evidence"}
             <ArrowUpRight aria-hidden="true" data-icon="inline-end" />
           </Link>
