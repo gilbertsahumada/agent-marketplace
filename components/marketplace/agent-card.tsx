@@ -90,7 +90,7 @@ export function AgentCard({ agent }: { agent: AgentCardViewModel }) {
           <p className="text-xs text-zinc-500">Trust score unavailable</p>
         )}
         <Button asChild size="sm" variant={isHireable ? "default" : "outline"}>
-          <Link href={isHireable ? `/hire/${agent.agentId}` : agent.href}>
+          <Link href={isHireable ? `/hire/${agent.agentId}` : agent.href} prefetch={false}>
             {isHireable ? "Hire agent" : "View evidence"}
             <ArrowUpRight aria-hidden="true" data-icon="inline-end" />
           </Link>
