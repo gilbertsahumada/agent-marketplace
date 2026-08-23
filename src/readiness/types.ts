@@ -4,21 +4,48 @@ import type { BscVerificationReport, VerificationError } from "../verification/t
 
 export type SellerTransport = "a2a" | "erc8183_http";
 export type TransportSummary = SellerTransport | "multiple" | "mcp_only" | "none";
-export type QuoteStatus = "verified" | "invalid" | "unavailable" | "not_requested" | "not_applicable";
+export type QuoteStatus = "verified" | "expired" | "invalid" | "unavailable" | "not_requested" | "not_applicable";
 export type HireabilityStatus =
   | "quote_verified"
   | "protocol_discovered"
   | "mcp_only"
   | "not_declared"
   | "unreachable"
+  | "probe_incomplete"
+  | "expired_quote"
   | "invalid_quote";
+
+export interface OnchainTimestamp {
+  unix: string;
+  iso: string;
+}
 
 export interface QuoteEvidence {
   provider: Address;
   price: string;
   currency: Address;
+  verifyingContract: Address;
+  contractContext: {
+    configuredContracts: {
+      chainId: 56;
+      commerce: Address;
+      router: Address;
+      policy: Address;
+      provenance: "configured:bnbagent-sdk@0.5.0:bsc-mainnet";
+    };
+    onchainChecks: {
+      paymentToken: Address;
+      policyAllowlisted: true;
+      blockNumber: string;
+      blockTimestamp: OnchainTimestamp;
+      observedAt: string;
+      provenance: "onchain:bsc-mainnet-rpc";
+    };
+  };
   negotiationHash: `0x${string}`;
   signatureMethod: "eip191" | "erc1271";
+  negotiatedAt: number;
+  quoteExpiresAt: number;
   observedAt: string;
   provenance: "observed:erc8183-signed-quote";
 }
@@ -26,7 +53,7 @@ export interface QuoteEvidence {
 export interface SellerProtocolVerification {
   transport: SellerTransport;
   endpoint: string;
-  status: "quote_verified" | "protocol_valid" | "unreachable" | "unsafe_url" | "invalid_response";
+  status: "quote_verified" | "quote_expired" | "protocol_valid" | "unreachable" | "unsafe_url" | "invalid_response" | "not_probed";
   quoteStatus: Exclude<QuoteStatus, "not_applicable">;
   agentCardSkills: string[] | null;
   healthObserved: boolean | null;
@@ -43,12 +70,34 @@ export interface HireabilityAssessment {
   quoteStatus: QuoteStatus;
   hireability: HireabilityStatus;
   protocols: SellerProtocolVerification[];
+  probe: {
+    totalDeclaredEndpoints: number;
+    evaluatedEndpoints: number;
+    skippedEndpoints: number;
+    truncated: boolean;
+  };
   note: string;
   provenance: "derived:marketplace-readiness";
 }
 
-export interface ReadinessCandidate extends MarketplaceAgent {
+export interface ReadinessCandidate extends Omit<MarketplaceAgent, "categories"> {
+  categories: MarketplaceCategory[];
+  profileDerivedCategories: MarketplaceAgent["categories"];
   activation: HireabilityAssessment;
+  selection: "curated" | "operator_explicit";
+  qualification: {
+    status: "qualified" | "not_qualified" | "unavailable";
+    reasons: Array<
+      | "IDENTITY_NOT_VERIFIED"
+      | "IDENTITY_UNAVAILABLE"
+      | "SELLER_PROTOCOL_NOT_DECLARED"
+      | "SELLER_PROTOCOL_UNAVAILABLE"
+      | "SELLER_PROBE_INCOMPLETE"
+      | "QUOTE_EXPIRED"
+      | "QUOTE_NOT_VERIFIED"
+    >;
+    provenance: "derived:marketplace-seller-qualification";
+  };
 }
 
 export interface TransactionEvidence {
@@ -56,11 +105,6 @@ export interface TransactionEvidence {
   status: "success" | "reverted";
   blockNumber: string;
   timestamp: string;
-}
-
-export interface OnchainTimestamp {
-  unix: string;
-  iso: string;
 }
 
 export interface Gate1Proof {
@@ -88,7 +132,7 @@ export interface Gate1Proof {
 }
 
 export interface BscMarketplaceReadinessReport {
-  schemaVersion: 1;
+  schemaVersion: 3;
   generatedAt: string;
   catalog: {
     chainId: 56;
@@ -96,18 +140,32 @@ export interface BscMarketplaceReadinessReport {
     coverage: "partial";
   };
   verification: BscVerificationReport;
+  selection: {
+    curatedAgentIds: string[];
+    explicitAgentIds: string[];
+    evaluatedAgentIds: string[];
+  };
   categories: Record<MarketplaceCategory, {
     status: "candidates" | "unverified";
     agentIds: string[];
     quoteVerifiedAgentIds: string[];
+    qualifiedAgentIds: string[];
     note: string;
   }>;
   candidates: ReadinessCandidate[];
   activationCoverage: {
     status: "none" | "partial" | "complete";
     quoteVerifiedAgents: number;
+    quoteVerifiedAgentIds: string[];
+    qualifiedSellerAgentIds: string[];
+    qualifiedCuratedAgentIds: string[];
     quoteVerifiedCategories: number;
     requiredCategories: number;
+  };
+  sellerQualification: {
+    status: "passed" | "pending_no_qualified_seller" | "attention_required";
+    qualifiedAgentIds: string[];
+    note: string;
   };
   buyerProof: Gate1Proof;
   frontendReady: boolean;

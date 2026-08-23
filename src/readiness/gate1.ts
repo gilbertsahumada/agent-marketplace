@@ -150,7 +150,7 @@ export async function verifyGate1Proof(
     const deliverableUrl = await reader.getDeliverableUrl(JOB_ID, EXPECTED.transactions.submit.hash);
     const observedState = JobStatus[job.status] ?? `UNKNOWN_${job.status}`;
     const checks = {
-      stateMatches: job.status === JobStatus.SUBMITTED,
+      stateMatches: job.status === JobStatus.SUBMITTED || job.status === JobStatus.COMPLETED,
       buyerMatches: getAddress(job.client) === EXPECTED.buyer,
       providerMatches: getAddress(job.provider) === EXPECTED.provider,
       agentWalletMatches: getAddress(agentWallet) === EXPECTED.provider,

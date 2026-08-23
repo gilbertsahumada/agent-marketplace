@@ -142,12 +142,14 @@ npm run verify:bsc
 
 The verifier compares trust8004 identity fields with `ownerOf` and `tokenURI`
 at one pinned BSC Mainnet block, then performs MCP `initialize` and `tools/list`
-against each declared public endpoint. It never calls a tool. Observed tool
+against at most one declared public endpoint per agent. It never calls a tool. Observed tool
 names prove only that the endpoint exposed them at that timestamp; they do not
 prove functional execution or ERC-8183 hireability. The report is written to
 `.marketplace/verification/bsc-candidates.json`. Exit code `2` means the report
 was written but contains a mismatch, unavailable evidence, or declared/observed
 tool drift; exit code `1` is reserved for fatal catalogue, RPC, or output errors.
+Verification report schema `2` retains declarations skipped by the execution
+budget as `not_probed` instead of presenting them as failed observations.
 
 Run the final pre-frontend readiness gate with:
 
@@ -155,19 +157,54 @@ Run the final pre-frontend readiness gate with:
 npm run readiness:bsc
 ```
 
-It combines a fresh trust8004 snapshot, direct BSC Mainnet identity reads,
+Gate 6C reuses this command for bounded, read-only seller qualification. The
+four versioned marketplace candidates are always evaluated. Newly indexed
+agents can be evaluated explicitly without scanning or classifying the global
+catalogue:
+
+```bash
+npm run readiness:bsc -- --agent-id <bsc-mainnet-agent-id>
+```
+
+`--agent-id` may be repeated for up to 20 additional IDs. Explicit IDs are
+reported as `operator_explicit`; they are not assigned a marketplace category,
+added to the curated manifest, or enabled in `/hire` automatically.
+
+It combines bounded trust8004 profile reads, direct BSC Mainnet identity reads,
 declared-protocol activation checks, and a fresh BSC Testnet verification of
 Gate 1 Job `514`. A2A and HTTP ERC-8183 are probed only when explicitly
 declared; MCP-only agents are never presented as hireable. A declared seller
 must return a signed quote whose provider, chain, Commerce contract, and
-payment token validate before receiving `quote_verified`.
+payment token validate before receiving `quote_verified`. A seller receives
+`qualified` only when its direct ERC-8004 identity also matches and the
+configured Mainnet policy remains allowlisted. Quotes are never funded by this
+command. The returned quote must bind to the exact canonical readiness request,
+be observed within 60 seconds, and use no more than the SDK's 900-second TTL.
+Public seller connections pin the DNS addresses validated before the request,
+reject IPv4-mapped and other non-global IPv6 ranges, and cancel MCP, A2A, or
+HTTP ERC-8183 response bodies above 64 KiB after decompression.
+
+Qualification uses one shared 180-second protocol budget. It evaluates at most
+one MCP endpoint per agent and 24 per run, plus one declared endpoint per seller
+transport, two seller endpoints per agent, and 48 seller endpoints per run. The
+combined ceiling is 72 endpoints. Any omitted endpoint is reported as
+`not_probed`; incomplete probes remain visible and cannot silently become
+qualification evidence.
+
+Readiness report schema `3` makes the versioned manifest the sole authority for
+candidate `categories`; current profile heuristics remain separately visible as
+`profileDerivedCategories`. SDK-configured contract addresses and direct RPC
+payment-token/policy observations have separate provenance. A quote that
+expires before report finalization remains historical evidence but no longer
+counts toward qualification or category coverage.
 
 The report is written to
 `.marketplace/readiness/bsc-marketplace.json`. `frontendReady=true` means the
 marketplace can represent the available evidence honestly and the buyer proof
 still validates onchain; it does not mean all categories have a live seller.
 Current real-agent activation coverage is empty, and Grid remains explicitly
-empty/unverified.
+empty/unverified. A trust8004 outage or invalid schema fails visibly and does
+not replace the previous atomic local report with stale or invented evidence.
 
 Run the web product locally with:
 

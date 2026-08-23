@@ -1,9 +1,10 @@
 import { getAddress, isAddress } from "viem";
 import { buildBscCandidateInventory } from "../trust8004/inventory.js";
 import type { Trust8004Provider } from "../trust8004/provider.js";
-import type { MarketplaceAgent } from "../trust8004/types.js";
+import type { BscCandidateInventory, MarketplaceAgent, MarketplaceCategory } from "../trust8004/types.js";
 import type { BscIdentityReader } from "./onchain.js";
 import { verifyMcpEndpoint, type McpVerifierOptions } from "./mcp.js";
+import { createProbeBudget, type ProbeBudget } from "./probe-budget.js";
 import type {
   AgentVerification,
   BscVerificationReport,
@@ -15,9 +16,20 @@ import type {
 export interface BuildVerificationReportOptions {
   provider: Trust8004Provider;
   identityReader: BscIdentityReader;
+  inventory?: BscCandidateInventory;
   verifyMcp?: typeof verifyMcpEndpoint;
   mcpOptions?: McpVerifierOptions;
+  probeBudget?: ProbeBudget;
+  maxMcpEndpointsPerAgent?: number;
   now?: () => number;
+}
+
+function curatedCategories(
+  inventory: BscCandidateInventory,
+  agentId: string,
+): MarketplaceCategory[] {
+  return (Object.keys(inventory.categories) as MarketplaceCategory[])
+    .filter((category) => inventory.categories[category].agentIds.includes(agentId));
 }
 
 function sanitizedError(error: unknown, code: string): VerificationError {
@@ -106,12 +118,46 @@ function hasToolDrift(endpoint: McpEndpointVerification): boolean {
   return endpoint.comparison.declaredOnly.length > 0 || endpoint.comparison.observedOnly.length > 0;
 }
 
+function notProbedMcp(
+  endpoint: string,
+  declaredTools: string[],
+  code: "MCP_ENDPOINT_LIMIT_REACHED" | "MCP_PROBE_BUDGET_EXHAUSTED",
+): McpEndpointVerification {
+  return {
+    status: "not_probed",
+    endpoint,
+    protocol: "mcp",
+    declaredTools: [...new Set(declaredTools)].sort(),
+    observedTools: [],
+    comparison: { matched: [], declaredOnly: [], observedOnly: [] },
+    negotiatedProtocolVersion: null,
+    serverInfo: null,
+    latencyMs: null,
+    observedAt: null,
+    provenance: "declared:trust8004-public-api+derived:probe-budget",
+    error: {
+      code,
+      message: code === "MCP_ENDPOINT_LIMIT_REACHED"
+        ? "The endpoint was not probed because the per-agent MCP limit was reached."
+        : "The endpoint was not probed because the shared execution budget was exhausted.",
+    },
+  };
+}
+
 export async function buildBscVerificationReport(
   options: BuildVerificationReportOptions,
 ): Promise<BscVerificationReport> {
   const now = options.now ?? Date.now;
   const verifyMcp = options.verifyMcp ?? verifyMcpEndpoint;
-  const inventory = await buildBscCandidateInventory(options.provider, now);
+  const inventory = options.inventory ?? await buildBscCandidateInventory(options.provider, now);
+  const probeBudget = options.probeBudget ?? createProbeBudget({
+    maxMcpEndpoints: 24,
+    maxSellerEndpoints: 0,
+    maxTotalEndpoints: 24,
+    maxTotalDurationMs: 180_000,
+    ...(options.mcpOptions?.monotonicNow ? { monotonicNow: options.mcpOptions.monotonicNow } : {}),
+  });
+  const maxMcpEndpointsPerAgent = options.maxMcpEndpointsPerAgent ?? 1;
   await options.identityReader.assertChain();
   const blockNumber = await options.identityReader.getBlockNumber();
   const generatedAt = new Date(now()).toISOString();
@@ -120,13 +166,26 @@ export async function buildBscVerificationReport(
   for (const agent of inventory.agents) {
     const identity = await verifyIdentity(agent, options.identityReader, blockNumber, generatedAt);
     const mcpEndpoints: McpEndpointVerification[] = [];
-    for (const target of mcpTargets(agent)) {
-      mcpEndpoints.push(await verifyMcp(target.endpoint, target.tools, options.mcpOptions));
+    const targets = mcpTargets(agent);
+    for (const [index, target] of targets.entries()) {
+      if (index >= maxMcpEndpointsPerAgent) {
+        mcpEndpoints.push(notProbedMcp(target.endpoint, target.tools, "MCP_ENDPOINT_LIMIT_REACHED"));
+        continue;
+      }
+      const claim = probeBudget.claim("mcp");
+      if (!claim.allowed) {
+        mcpEndpoints.push(notProbedMcp(target.endpoint, target.tools, "MCP_PROBE_BUDGET_EXHAUSTED"));
+        continue;
+      }
+      mcpEndpoints.push(await verifyMcp(target.endpoint, target.tools, {
+        ...options.mcpOptions,
+        timeoutMs: Math.max(1, Math.min(options.mcpOptions?.timeoutMs ?? 10_000, claim.remainingMs)),
+      }));
     }
     agents.push({
       agentId: agent.agentId,
       name: agent.name,
-      categories: agent.categories.map((classification) => classification.category),
+      categories: curatedCategories(inventory, agent.agentId),
       identity,
       mcpEndpoints,
       hireability: "not_assessed",
@@ -136,6 +195,7 @@ export async function buildBscVerificationReport(
   const endpoints = agents.flatMap((agent) => agent.mcpEndpoints);
   const identityMatches = agents.filter((agent) => agent.identity.status === "match").length;
   const endpointsValid = endpoints.filter((endpoint) => endpoint.status === "protocol_valid").length;
+  const endpointsNotProbed = endpoints.filter((endpoint) => endpoint.status === "not_probed").length;
   const agentsWithoutMcpEndpoint = agents.filter((agent) => agent.mcpEndpoints.length === 0).length;
   const toolDriftEndpoints = endpoints.filter(hasToolDrift).length;
   const identityAttention = agents.length - identityMatches;
@@ -146,7 +206,7 @@ export async function buildBscVerificationReport(
     || toolDriftEndpoints > 0;
 
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     generatedAt,
     chainId: 56,
     catalog: {
@@ -167,6 +227,7 @@ export async function buildBscVerificationReport(
       identityAttention,
       endpointsTotal: endpoints.length,
       endpointsValid,
+      endpointsNotProbed,
       endpointAttention,
       agentsWithoutMcpEndpoint,
       toolDriftEndpoints,

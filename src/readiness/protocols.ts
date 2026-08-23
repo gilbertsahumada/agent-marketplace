@@ -1,9 +1,21 @@
-import { ERC8183Client, verifyQuoteSignature } from "@bnbagent/sdk/erc8183";
+import {
+  ERC8183Client,
+  NegotiationHandler,
+  NegotiationRequest,
+  TermSpecification,
+  verifyQuoteSignature,
+} from "@bnbagent/sdk/erc8183";
 import { resolveNetwork } from "@bnbagent/sdk";
 import { getAddress, isAddress, type Address, type PublicClient } from "viem";
 import { fetchAgentCard, sendSkill } from "../a2a.js";
 import type { MarketplaceAgent } from "../trust8004/types.js";
-import { assertSafeMcpEndpoint, type ResolveHostname } from "../verification/mcp.js";
+import { readBoundedJson } from "../verification/bounded-json.js";
+import {
+  createSafeEndpointTransport,
+  type ResolveHostname,
+  type SafeEndpointTransport,
+} from "../verification/safe-http.js";
+import { createProbeBudget, type ProbeBudget } from "../verification/probe-budget.js";
 import type { IdentityVerification, VerificationError } from "../verification/types.js";
 import type {
   HireabilityAssessment,
@@ -15,7 +27,13 @@ import type {
 interface QuoteContext {
   chainId: 56;
   commerce: Address;
+  router: Address;
+  policy: Address;
   paymentToken: Address;
+  policyAllowlisted: boolean;
+  blockNumber: bigint;
+  blockTimestamp: bigint;
+  onchainObservedAt: string;
   publicClient: PublicClient;
 }
 
@@ -24,10 +42,12 @@ type QuoteVerdict =
   | { valid: false; reason: string };
 
 export interface HireabilityAssessorOptions {
-  fetch?: typeof fetch;
   resolveHostname?: ResolveHostname;
   timeoutMs?: number;
   now?: () => number;
+  monotonicNow?: () => number;
+  maxEndpointsPerAgent?: number;
+  probeBudget?: ProbeBudget;
   createQuoteContext?: () => Promise<QuoteContext>;
   verifyQuote?: (options: {
     envelope: Record<string, unknown>;
@@ -37,13 +57,22 @@ export interface HireabilityAssessorOptions {
   }) => Promise<QuoteVerdict>;
 }
 
-const QUOTE_REQUEST = {
-  task_description: "Marketplace readiness quote probe; no job will be funded",
-  terms: {
-    deliverables: "Return a deterministic text readiness receipt",
-    quality_standards: "Provide a signed ERC-8183 quote without executing work",
-  },
-} as const;
+const QUOTE_TERMS = new TermSpecification({
+  deliverables: "Return a deterministic text readiness receipt",
+  qualityStandards: "Provide a signed ERC-8183 quote without executing work",
+});
+const QUOTE_NEGOTIATION_REQUEST = new NegotiationRequest({
+  taskDescription: "Marketplace readiness quote probe; no job will be funded",
+  terms: QUOTE_TERMS,
+});
+const QUOTE_REQUEST = QUOTE_NEGOTIATION_REQUEST.toDict();
+const QUOTE_REQUEST_HASH = QUOTE_NEGOTIATION_REQUEST.computeHash().toLowerCase();
+
+const MAX_HTTP_RESPONSE_BYTES = 64 * 1024;
+const MAX_QUOTE_CLOCK_SKEW_SECONDS = 60;
+const MAX_QUOTE_AGE_SECONDS = 60;
+const DEFAULT_MAX_ENDPOINTS_PER_AGENT = 2;
+const DEFAULT_MAX_TOTAL_DURATION_MS = 180_000;
 
 function record(value: unknown, path: string): Record<string, unknown> {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
@@ -53,11 +82,18 @@ function record(value: unknown, path: string): Record<string, unknown> {
 }
 
 function sanitizedError(error: unknown, code: string): VerificationError {
-  const message = (error instanceof Error ? error.message : String(error))
-    .replace(/https?:\/\/[^\s)]+/gi, "[redacted-url]")
-    .replace(/(bearer|token|password|secret)=?\s*[^\s]+/gi, "$1=[redacted]")
-    .slice(0, 300);
-  return { code, message: message || "Protocol verification failed." };
+  const candidate = error instanceof Error ? error.message : "";
+  const safeValidationMessage = /^(Agent Card|A2A|Endpoint returned HTTP \d{3}$|Endpoint returned invalid JSON$|Endpoint response exceeded|ERC-8183|Quote |Configured BSC Mainnet policy)/.test(candidate)
+    ? candidate.slice(0, 300)
+    : null;
+  return {
+    code,
+    message: safeValidationMessage ?? (code === "SELLER_UNREACHABLE"
+      ? "The declared seller endpoint could not be reached."
+      : code === "SELLER_UNSAFE_URL"
+        ? "The declared seller endpoint is not safe to probe."
+        : "The seller protocol response failed validation."),
+  };
 }
 
 function declaredProtocols(agent: MarketplaceAgent): Array<{
@@ -82,24 +118,6 @@ function hasMcp(agent: MarketplaceAgent): boolean {
   return agent.services.some((service) => service.name.toLowerCase() === "mcp" && service.endpoint);
 }
 
-function controlledFetch(
-  safeUrl: URL,
-  fetchImpl: typeof fetch,
-  timeoutMs: number,
-): typeof fetch {
-  return (async (input: string | URL | Request, init?: RequestInit) => {
-    const requestedUrl = new URL(input instanceof Request ? input.url : input.toString());
-    if (requestedUrl.protocol !== "https:" || requestedUrl.origin !== safeUrl.origin) {
-      throw new Error("Protocol probe attempted to leave the validated origin");
-    }
-    return fetchImpl(input, {
-      ...init,
-      redirect: "error",
-      signal: AbortSignal.timeout(timeoutMs),
-    });
-  }) as typeof fetch;
-}
-
 async function fetchJsonObject(
   url: URL,
   fetchImpl: typeof fetch,
@@ -107,12 +125,11 @@ async function fetchJsonObject(
 ): Promise<Record<string, unknown>> {
   const response = await fetchImpl(url, init);
   if (!response.ok) throw new Error(`Endpoint returned HTTP ${response.status}`);
-  let value: unknown;
-  try {
-    value = await response.json();
-  } catch {
-    throw new Error("Endpoint returned invalid JSON");
-  }
+  const value = await readBoundedJson(response, {
+    maxBytes: MAX_HTTP_RESPONSE_BYTES,
+    tooLargeMessage: "Endpoint response exceeded the allowed size",
+    invalidJsonMessage: "Endpoint returned invalid JSON",
+  });
   return record(value, "response");
 }
 
@@ -168,7 +185,20 @@ function validateHttpStatus(
     if (!value.currency || getAddress(String(value.currency)) !== context.paymentToken) {
       throw new Error("ERC-8183 status currency does not match Commerce payment token");
     }
+    if (getAddress(String(value.router_address)) !== context.router) {
+      throw new Error("ERC-8183 status router_address does not match Router");
+    }
+    if (getAddress(String(value.policy_address)) !== context.policy || !context.policyAllowlisted) {
+      throw new Error("ERC-8183 status policy is not the allowlisted policy");
+    }
   }
+}
+
+function quoteTimestamp(value: unknown, path: string): number {
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value <= 0) {
+    throw new Error(`${path} must be a positive integer timestamp`);
+  }
+  return value;
 }
 
 async function validateQuote(
@@ -177,10 +207,26 @@ async function validateQuote(
   context: QuoteContext,
   verifyQuote: NonNullable<HireabilityAssessorOptions["verifyQuote"]>,
   observedAt: string,
+  nowSeconds: number,
 ): Promise<QuoteEvidence> {
+  if (!context.policyAllowlisted) throw new Error("Configured BSC Mainnet policy is not allowlisted");
+  const request = record(value.request, "request");
+  if (typeof value.request_hash !== "string" || !/^0x[0-9a-fA-F]{64}$/.test(value.request_hash)) {
+    throw new Error("Quote request_hash is invalid");
+  }
+  const embeddedRequestHash = NegotiationRequest.fromDict(request).computeHash().toLowerCase();
+  if (embeddedRequestHash !== QUOTE_REQUEST_HASH || value.request_hash.toLowerCase() !== QUOTE_REQUEST_HASH) {
+    throw new Error("Quote request does not match the readiness probe");
+  }
   const response = record(value.response, "response");
   const terms = record(response.terms, "response.terms");
   if (response.accepted !== true) throw new Error("Quote was not accepted");
+  if (
+    terms.deliverables !== QUOTE_TERMS.deliverables
+    || terms.quality_standards !== QUOTE_TERMS.qualityStandards
+  ) {
+    throw new Error("Quote terms do not match the readiness probe");
+  }
   if (typeof terms.price !== "string" || !/^\d+$/.test(terms.price) || BigInt(terms.price) <= 0n) {
     throw new Error("Quote price must be a positive raw-unit integer");
   }
@@ -210,19 +256,62 @@ async function validateQuote(
       throw new Error("Quote provider_address does not match the ERC-8004 agent wallet");
     }
   }
+  const negotiatedAt = quoteTimestamp(
+    value.negotiated_at ?? response.negotiated_at,
+    "quote negotiated_at",
+  );
+  const quoteExpiresAt = quoteTimestamp(
+    value.quote_expires_at ?? response.quote_expires_at,
+    "quote quote_expires_at",
+  );
+  if (negotiatedAt > nowSeconds + MAX_QUOTE_CLOCK_SKEW_SECONDS) {
+    throw new Error("Quote negotiated_at is in the future");
+  }
+  if (nowSeconds - negotiatedAt > MAX_QUOTE_AGE_SECONDS) {
+    throw new Error("Quote negotiated_at is stale");
+  }
+  if (quoteExpiresAt <= nowSeconds || quoteExpiresAt <= negotiatedAt) {
+    throw new Error("Quote is expired or has an invalid validity window");
+  }
+  if (quoteExpiresAt - negotiatedAt > NegotiationHandler.MAX_QUOTE_TTL_SECONDS) {
+    throw new Error("Quote validity window exceeds the SDK maximum");
+  }
   const verdict = await verifyQuote({
     envelope: value,
     provider: expectedProvider,
     publicClient: context.publicClient,
     expectedVerifyingContract: context.commerce,
   });
-  if (!verdict.valid) throw new Error(`Quote signature rejected: ${verdict.reason}`);
+  if (!verdict.valid) throw new Error("Quote signature rejected.");
   return {
     provider: expectedProvider,
     price: terms.price,
     currency,
+    verifyingContract: context.commerce,
+    contractContext: {
+      configuredContracts: {
+        chainId: context.chainId,
+        commerce: context.commerce,
+        router: context.router,
+        policy: context.policy,
+        provenance: "configured:bnbagent-sdk@0.5.0:bsc-mainnet",
+      },
+      onchainChecks: {
+        paymentToken: context.paymentToken,
+        policyAllowlisted: true,
+        blockNumber: context.blockNumber.toString(),
+        blockTimestamp: {
+          unix: context.blockTimestamp.toString(),
+          iso: new Date(Number(context.blockTimestamp) * 1_000).toISOString(),
+        },
+        observedAt: context.onchainObservedAt,
+        provenance: "onchain:bsc-mainnet-rpc",
+      },
+    },
     negotiationHash: value.negotiation_hash as `0x${string}`,
     signatureMethod: verdict.method,
+    negotiatedAt,
+    quoteExpiresAt,
     observedAt,
     provenance: "observed:erc8183-signed-quote",
   };
@@ -269,10 +358,16 @@ async function assessProtocol(
   options: HireabilityAssessorOptions,
 ): Promise<SellerProtocolVerification> {
   const now = options.now ?? Date.now;
-  const observedAt = new Date(now()).toISOString();
-  let safeUrl: URL;
+  const observedAtMs = now();
+  const observedAt = new Date(observedAtMs).toISOString();
+  const nowSeconds = Math.floor(observedAtMs / 1_000);
+  let safeTransport: SafeEndpointTransport;
   try {
-    safeUrl = await assertSafeMcpEndpoint(protocol.endpoint, options.resolveHostname);
+    safeTransport = await createSafeEndpointTransport(protocol.endpoint, {
+      ...(options.resolveHostname ? { resolveHostname: options.resolveHostname } : {}),
+      timeoutMs: options.timeoutMs ?? 10_000,
+      maxResponseBytes: MAX_HTTP_RESPONSE_BYTES,
+    });
   } catch (error) {
     return result(protocol.transport, protocol.endpoint, observedAt, {
       status: "unsafe_url",
@@ -280,7 +375,7 @@ async function assessProtocol(
       error: sanitizedError(error, "SELLER_UNSAFE_URL"),
     });
   }
-  const fetchImpl = controlledFetch(safeUrl, options.fetch ?? fetch, options.timeoutMs ?? 10_000);
+  const fetchImpl = safeTransport.fetch;
   const verifyQuote = options.verifyQuote ?? verifyQuoteSignature;
 
   try {
@@ -310,7 +405,14 @@ async function assessProtocol(
         null,
         fetchImpl,
       );
-      const evidence = await validateQuote(quote, expectedProvider, await getContext(), verifyQuote, observedAt);
+      const evidence = await validateQuote(
+        quote,
+        expectedProvider,
+        await getContext(),
+        verifyQuote,
+        observedAt,
+        nowSeconds,
+      );
       return result(protocol.transport, protocol.endpoint, observedAt, {
         status: "quote_verified",
         quoteStatus: "verified",
@@ -340,7 +442,14 @@ async function assessProtocol(
       headers: { accept: "application/json", "content-type": "application/json" },
       body: JSON.stringify(QUOTE_REQUEST),
     });
-    const evidence = await validateQuote(quote, expectedProvider, context, verifyQuote, observedAt);
+    const evidence = await validateQuote(
+      quote,
+      expectedProvider,
+      context,
+      verifyQuote,
+      observedAt,
+      nowSeconds,
+    );
     return result(protocol.transport, protocol.endpoint, observedAt, {
       status: "quote_verified",
       quoteStatus: "verified",
@@ -355,16 +464,29 @@ async function assessProtocol(
       quoteStatus: failure.quoteStatus,
       error: sanitizedError(error, failure.code),
     });
+  } finally {
+    await safeTransport.close().catch(() => undefined);
   }
 }
 
 async function defaultQuoteContext(): Promise<QuoteContext> {
   const network = resolveNetwork("bsc-mainnet");
   const client = await ERC8183Client.create({ network });
+  const policy = getAddress(network.policyContract);
+  const policyAllowlisted = await client.router.policyWhitelist(policy);
+  if (!policyAllowlisted) throw new Error("Configured BSC Mainnet policy is not allowlisted");
+  const paymentToken = getAddress(await client.paymentToken());
+  const block = await client.publicClient.getBlock();
   return {
     chainId: 56,
     commerce: getAddress(network.commerceContract),
-    paymentToken: getAddress(await client.paymentToken()),
+    router: getAddress(network.routerContract),
+    policy,
+    paymentToken,
+    policyAllowlisted,
+    blockNumber: block.number,
+    blockTimestamp: block.timestamp,
+    onchainObservedAt: new Date().toISOString(),
     publicClient: client.publicClient,
   };
 }
@@ -374,6 +496,13 @@ function summarize(
   observations: SellerProtocolVerification[],
   mcp: boolean,
 ): HireabilityAssessment {
+  const skippedEndpoints = observations.filter((observation) => observation.status === "not_probed").length;
+  const probe = {
+    totalDeclaredEndpoints: protocols.length,
+    evaluatedEndpoints: observations.length - skippedEndpoints,
+    skippedEndpoints,
+    truncated: skippedEndpoints > 0,
+  };
   if (protocols.length === 0) {
     return {
       transport: mcp ? "mcp_only" : "none",
@@ -381,6 +510,7 @@ function summarize(
       quoteStatus: "not_applicable",
       hireability: mcp ? "mcp_only" : "not_declared",
       protocols: [],
+      probe,
       note: mcp
         ? "MCP is declared, but MCP availability is not ERC-8183 hireability."
         : "No declared A2A or HTTP ERC-8183 service was found.",
@@ -389,6 +519,7 @@ function summarize(
   }
   const transports = [...new Set(protocols.map((protocol) => protocol.transport))];
   const verified = observations.some((observation) => observation.quoteStatus === "verified");
+  const expired = observations.some((observation) => observation.quoteStatus === "expired");
   const protocolValid = observations.some((observation) => observation.status === "protocol_valid");
   const unreachable = observations.every((observation) =>
     observation.status === "unreachable" || observation.status === "unsafe_url");
@@ -397,22 +528,35 @@ function summarize(
     declaredSellerProtocols: transports,
     quoteStatus: verified
       ? "verified"
-      : protocolValid
-        ? "not_requested"
-        : unreachable
-          ? "unavailable"
-          : "invalid",
+      : expired
+        ? "expired"
+      : probe.truncated
+        ? "unavailable"
+        : protocolValid
+          ? "not_requested"
+          : unreachable
+            ? "unavailable"
+            : "invalid",
     hireability: verified
       ? "quote_verified"
-      : protocolValid
-        ? "protocol_discovered"
-        : unreachable
-          ? "unreachable"
-          : "invalid_quote",
+      : expired
+        ? "expired_quote"
+      : probe.truncated
+        ? "probe_incomplete"
+        : protocolValid
+          ? "protocol_discovered"
+          : unreachable
+            ? "unreachable"
+            : "invalid_quote",
     protocols: observations,
+    probe,
     note: verified
       ? "A signed quote was verified; delivery and job execution are not proven."
-      : "No verifiable signed ERC-8183 quote is currently available.",
+      : expired
+        ? "A signed quote was verified during probing but expired before the report was finalized."
+      : probe.truncated
+        ? "Seller protocol probing was truncated before every declared endpoint could be evaluated."
+        : "No verifiable signed ERC-8183 quote is currently available.",
     provenance: "derived:marketplace-readiness",
   };
 }
@@ -420,6 +564,15 @@ function summarize(
 export function createHireabilityAssessor(
   options: HireabilityAssessorOptions = {},
 ): (agent: MarketplaceAgent, identity: IdentityVerification) => Promise<HireabilityAssessment> {
+  const monotonicNow = options.monotonicNow ?? performance.now.bind(performance);
+  const maxEndpointsPerAgent = options.maxEndpointsPerAgent ?? DEFAULT_MAX_ENDPOINTS_PER_AGENT;
+  const probeBudget = options.probeBudget ?? createProbeBudget({
+    maxMcpEndpoints: 0,
+    maxSellerEndpoints: 48,
+    maxTotalEndpoints: 48,
+    maxTotalDurationMs: DEFAULT_MAX_TOTAL_DURATION_MS,
+    monotonicNow,
+  });
   let context: Promise<QuoteContext> | null = null;
   const getContext = () => {
     context ??= (options.createQuoteContext ?? defaultQuoteContext)();
@@ -430,9 +583,72 @@ export function createHireabilityAssessor(
     if (protocols.length === 0) return summarize(protocols, [], hasMcp(agent));
     const provider = identity.onchain.agentWallet;
     const observations: SellerProtocolVerification[] = [];
+    const selectedTransports = new Set<SellerTransport>();
+    const selected = new Set(protocols.filter((protocol) => {
+      if (selectedTransports.has(protocol.transport) || selectedTransports.size >= maxEndpointsPerAgent) {
+        return false;
+      }
+      selectedTransports.add(protocol.transport);
+      return true;
+    }));
     for (const protocol of protocols) {
-      observations.push(await assessProtocol(protocol, provider, getContext, options));
+      const observedAt = new Date((options.now ?? Date.now)()).toISOString();
+      if (!selected.has(protocol)) {
+        observations.push(result(protocol.transport, protocol.endpoint, observedAt, {
+          status: "not_probed",
+          quoteStatus: "not_requested",
+          error: {
+            code: "SELLER_ENDPOINT_LIMIT_REACHED",
+            message: "The endpoint was not probed because the per-agent limit was reached.",
+          },
+        }));
+        continue;
+      }
+      const claim = probeBudget.claim("seller");
+      if (!claim.allowed) {
+        observations.push(result(protocol.transport, protocol.endpoint, observedAt, {
+          status: "not_probed",
+          quoteStatus: "not_requested",
+          error: {
+            code: "SELLER_PROBE_BUDGET_EXHAUSTED",
+            message: "The endpoint was not probed because the execution budget was exhausted.",
+          },
+        }));
+        continue;
+      }
+      observations.push(await assessProtocol(protocol, provider, getContext, {
+        ...options,
+        timeoutMs: Math.max(1, Math.min(options.timeoutMs ?? 10_000, claim.remainingMs)),
+      }));
     }
     return summarize(protocols, observations, hasMcp(agent));
   };
+}
+
+export function finalizeHireabilityAssessment(
+  assessment: HireabilityAssessment,
+  finalizedAtSeconds: number,
+): HireabilityAssessment {
+  const protocols = assessment.protocols.map((protocol) =>
+    protocol.quoteStatus === "verified"
+      && protocol.quote
+      && protocol.quote.quoteExpiresAt <= finalizedAtSeconds
+      ? {
+          ...protocol,
+          status: "quote_expired" as const,
+          quoteStatus: "expired" as const,
+          error: {
+            code: "QUOTE_EXPIRED_BEFORE_REPORT_FINALIZATION",
+            message: "The signed quote expired before the readiness report was finalized.",
+          },
+        }
+      : protocol);
+  if (protocols.every((protocol, index) => protocol === assessment.protocols[index])) {
+    return assessment;
+  }
+  return summarize(
+    protocols.map(({ transport, endpoint }) => ({ transport, endpoint })),
+    protocols,
+    assessment.transport === "mcp_only",
+  );
 }
