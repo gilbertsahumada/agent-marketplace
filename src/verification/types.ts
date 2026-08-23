@@ -9,7 +9,8 @@ export type McpVerificationStatus =
   | "timeout"
   | "unsafe_url"
   | "http_error"
-  | "protocol_error";
+  | "protocol_error"
+  | "not_probed";
 
 export interface VerificationError {
   code: string;
@@ -58,9 +59,11 @@ export interface McpEndpointVerification {
   };
   negotiatedProtocolVersion: string | null;
   serverInfo: { name: string; version: string } | null;
-  latencyMs: number;
-  observedAt: string;
-  provenance: "observed:mcp-tools-list";
+  latencyMs: number | null;
+  observedAt: string | null;
+  provenance:
+    | "observed:mcp-tools-list"
+    | "declared:trust8004-public-api+derived:probe-budget";
   error: VerificationError | null;
 }
 
@@ -74,7 +77,7 @@ export interface AgentVerification {
 }
 
 export interface BscVerificationReport {
-  schemaVersion: 1;
+  schemaVersion: 2;
   generatedAt: string;
   chainId: 56;
   catalog: {
@@ -99,6 +102,7 @@ export interface BscVerificationReport {
     identityAttention: number;
     endpointsTotal: number;
     endpointsValid: number;
+    endpointsNotProbed: number;
     endpointAttention: number;
     agentsWithoutMcpEndpoint: number;
     toolDriftEndpoints: number;
