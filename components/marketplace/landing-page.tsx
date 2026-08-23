@@ -72,7 +72,7 @@ export function MarketplaceLanding({
                   <ShieldCheck aria-hidden="true" />
                   Onchain proof
                 </Badge>
-                <span className="font-stat text-xs text-zinc-500">BSC Testnet · Job #551</span>
+                <span className="font-stat text-xs text-zinc-400">BSC Testnet · Job #551</span>
               </div>
               <div>
                 <CardTitle className="text-xl">One browser-signed hiring lifecycle</CardTitle>
@@ -90,7 +90,7 @@ export function MarketplaceLanding({
 
       <section aria-labelledby="categories-heading" className="mx-auto max-w-7xl px-4 py-14 sm:px-6 sm:py-16 lg:px-8">
         <div className="max-w-2xl">
-          <p className="text-[11px] font-medium uppercase tracking-[0.2em] text-zinc-500">Find by outcome</p>
+          <p className="text-[11px] font-medium uppercase tracking-[0.2em] text-zinc-400">Find by outcome</p>
           <h2 id="categories-heading" className="mt-2 text-3xl font-semibold tracking-tight text-white">
             Four categories. Equal visibility.
           </h2>
@@ -109,7 +109,7 @@ export function MarketplaceLanding({
         <div className="mx-auto max-w-7xl px-4 py-14 sm:px-6 sm:py-16 lg:px-8">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
             <div className="max-w-2xl">
-              <p className="text-[11px] font-medium uppercase tracking-[0.2em] text-zinc-500">Current BSC snapshot</p>
+              <p className="text-[11px] font-medium uppercase tracking-[0.2em] text-zinc-400">Current BSC snapshot</p>
               <h2 id="candidates-heading" className="mt-2 text-3xl font-semibold tracking-tight text-white">
                 Candidates with honest activation states.
               </h2>
@@ -144,7 +144,7 @@ export function MarketplaceLanding({
       <section aria-labelledby="journey-heading" className="mx-auto max-w-7xl px-4 py-14 sm:px-6 sm:py-16 lg:px-8">
         <div className="grid gap-8 lg:grid-cols-[0.72fr_1.28fr] lg:items-start">
           <div>
-            <p className="text-[11px] font-medium uppercase tracking-[0.2em] text-zinc-500">The marketplace journey</p>
+            <p className="text-[11px] font-medium uppercase tracking-[0.2em] text-zinc-400">The marketplace journey</p>
             <h2 id="journey-heading" className="mt-2 text-3xl font-semibold tracking-tight text-white">
               Technical proof, progressively disclosed.
             </h2>
@@ -155,7 +155,7 @@ export function MarketplaceLanding({
           <ol className="grid gap-px overflow-hidden rounded-2xl border border-white/10 bg-white/10 sm:grid-cols-2 lg:grid-cols-3">
             {journey.map((step, index) => (
               <li className="bg-background p-5" key={step}>
-                <span className="font-stat text-[10px] text-zinc-600">{String(index + 1).padStart(2, "0")}</span>
+                <span className="font-stat text-[10px] text-zinc-400">{String(index + 1).padStart(2, "0")}</span>
                 <p className="mt-2 text-sm font-semibold text-zinc-100">{step}</p>
               </li>
             ))}
