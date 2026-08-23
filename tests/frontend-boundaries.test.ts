@@ -23,6 +23,11 @@ describe("three-layer dependency boundaries", () => {
     expect(contents("app/**/*.tsx")).not.toMatch(/src\/data/);
   });
 
+  it("does not prefetch every profile linked from a catalog page", () => {
+    const agentCard = readFileSync("components/marketplace/agent-card.tsx", "utf8");
+    expect(agentCard).toMatch(/<Link[^>]+prefetch=\{false\}/);
+  });
+
   it("publishes no secret material in the versioned proof manifest", () => {
     const proof = readFileSync("src/data/proofs/gate1-job-514.ts", "utf8");
     expect(proof).not.toMatch(/private.?key|mnemonic|password|keystore|authorization|\.env|\/Users\//i);
