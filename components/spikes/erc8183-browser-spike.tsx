@@ -18,13 +18,13 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
-  ERC8183_SPIKE_AGENT_ID,
   type Erc8183BrowserJournal,
   type Erc8183HirePlan,
   type Erc8183JobFacts,
   type NormalizedErc8183Quote,
   type NotifyFundedResult,
 } from "@/src/business/entities/erc8183-browser-spike";
+import type { MainnetDemoPublicConfig } from "@/src/business/entities/mainnet-browser-demo";
 import {
   clearBrowserJournal,
   connectInjectedWallet,
@@ -32,6 +32,7 @@ import {
   loadBrowserJournal,
   saveBrowserJournal,
   ERC8183_TESTNET,
+  type Erc8183BrowserDeployment,
 } from "@/src/business/browser/erc8183-browser-wallet";
 
 type ApiError = { error?: { code?: string; message?: string } };
@@ -49,7 +50,7 @@ async function apiJson<T>(input: string, init?: RequestInit): Promise<T> {
   });
   const body = (await response.json()) as T & ApiError;
   if (!response.ok) {
-    throw new Error(body.error?.message ?? "The Testnet request failed.");
+    throw new Error(body.error?.message ?? "The chain request failed.");
   }
   return body;
 }
@@ -93,8 +94,32 @@ function SummaryRow({ label, value, mono = false }: { label: string; value: stri
   );
 }
 
+const TESTNET_DEPLOYMENT: Erc8183BrowserDeployment = {
+  ...ERC8183_TESTNET,
+  nativeCurrencyName: "tBNB",
+  nativeCurrencySymbol: "tBNB",
+};
+
+export function Erc8183MainnetDemo({ config }: { config: MainnetDemoPublicConfig }) {
+  return <Erc8183BrowserDemo mode="mainnet" deployment={{
+    chainId: 56,
+    networkName: "BNB Smart Chain",
+    nativeCurrencyName: "BNB",
+    nativeCurrencySymbol: "BNB",
+    ...config,
+    maximumBudgetRaw: BigInt(config.maximumBudgetRaw),
+  }} />;
+}
+
 export function Erc8183TestnetDemo() {
+  return <Erc8183BrowserDemo mode="testnet" deployment={TESTNET_DEPLOYMENT} />;
+}
+
+function Erc8183BrowserDemo({ mode, deployment }: { mode: "testnet" | "mainnet"; deployment: Erc8183BrowserDeployment }) {
   const router = useRouter();
+  const apiBase = mode === "mainnet" ? "/api/marketplace/demo/erc8183-mainnet" : "/api/marketplace/demo/erc8183";
+  const jobsBase = mode === "mainnet" ? "/api/marketplace/jobs/mainnet" : "/api/marketplace/jobs/testnet";
+  const jobPageBase = mode === "mainnet" ? "/jobs/mainnet" : "/jobs/testnet";
   const [quote, setQuote] = useState<NormalizedErc8183Quote | null>(null);
   const [account, setAccount] = useState<string | null>(null);
   const [plan, setPlan] = useState<Erc8183HirePlan | null>(null);
@@ -104,28 +129,28 @@ export function Erc8183TestnetDemo() {
   const [error, setError] = useState<string | null>(null);
 
   const readJob = useCallback(async (jobId: string) => {
-    const tracking = await apiJson<{ job: Erc8183JobFacts | null }>(`/api/marketplace/jobs/testnet/${jobId}`);
+    const tracking = await apiJson<{ job: Erc8183JobFacts | null }>(`${jobsBase}/${jobId}`);
     if (!tracking.job) throw new Error("Current chain state is temporarily unavailable.");
     const current = tracking.job;
     setJob(current);
     return current;
-  }, []);
+  }, [jobsBase]);
 
   useEffect(() => {
-    const stored = loadBrowserJournal();
+    const stored = loadBrowserJournal(localStorage, deployment);
     setJournal(stored);
     if (stored?.jobId) {
       void readJob(stored.jobId).catch(() => {
         setError("The local journal was found, but current chain state could not be reconstructed.");
       });
     }
-  }, [readJob]);
+  }, [deployment, readJob]);
 
   const requestQuote = async () => {
     setBusy("Requesting a signed quote");
     setError(null);
     try {
-      const result = await apiJson<NormalizedErc8183Quote>("/api/marketplace/demo/erc8183/quote", { method: "POST" });
+      const result = await apiJson<NormalizedErc8183Quote>(`${apiBase}/quote`, { method: "POST" });
       setQuote(result);
       setPlan(null);
     } catch (cause) {
@@ -145,8 +170,8 @@ export function Erc8183TestnetDemo() {
     setBusy("Connecting the injected wallet");
     setError(null);
     try {
-      const buyer = await connectInjectedWallet(provider);
-      const prepared = await apiJson<Erc8183HirePlan>("/api/marketplace/demo/erc8183/prepare", {
+      const buyer = await connectInjectedWallet(provider, deployment);
+      const prepared = await apiJson<Erc8183HirePlan>(`${apiBase}/prepare`, {
         method: "POST",
         body: JSON.stringify({ buyer, quote: quote.envelope }),
       });
@@ -175,10 +200,11 @@ export function Erc8183TestnetDemo() {
         journal,
         recoveredJob: job,
         onProgress: ({ journal: next }) => setJournal(next),
+        deployment,
       });
       setJournal(execution.journal);
       await readJob(execution.jobId);
-      const notification = await apiJson<NotifyFundedResult>("/api/marketplace/demo/erc8183/notify", {
+      const notification = await apiJson<NotifyFundedResult>(`${apiBase}/notify`, {
         method: "POST",
         body: JSON.stringify({ buyer: account, jobId: execution.jobId }),
       });
@@ -187,12 +213,16 @@ export function Erc8183TestnetDemo() {
         lastConfirmedStep: "notified",
       };
       if (notification.job.status === "SUBMITTED" || notification.job.status === "COMPLETED") {
-        nextJournal = { ...nextJournal, lastConfirmedStep: "submitted" };
+        nextJournal = {
+          ...nextJournal,
+          ...(notification.sellerTransactionHash ? { transactions: { ...nextJournal.transactions, submit: notification.sellerTransactionHash } } : {}),
+          lastConfirmedStep: "submitted",
+        };
       }
-      saveBrowserJournal(nextJournal);
+      saveBrowserJournal(nextJournal, localStorage, deployment);
       setJournal(nextJournal);
       setJob(notification.job);
-      router.push(`/jobs/testnet/${execution.jobId}`);
+      if (mode === "testnet") router.push(`${jobPageBase}/${execution.jobId}`);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "The browser transaction flow stopped.");
     } finally {
@@ -203,15 +233,42 @@ export function Erc8183TestnetDemo() {
   const signaturePurpose = plan?.transactions.filter(({ required }) => required) ?? [];
   const submitted = job?.status === "SUBMITTED" || job?.status === "COMPLETED";
   const funded = job !== null && ["FUNDED", "SUBMITTED", "COMPLETED"].includes(job.status);
+  const downloadEvidence = () => {
+    if (!journal || !job || !plan) return;
+    const evidence = {
+      schemaVersion: 1,
+      chainId: deployment.chainId,
+      network: deployment.networkName,
+      agentId: deployment.agentId,
+      buyer: journal.buyer,
+      seller: journal.seller,
+      jobId: job.jobId,
+      state: job.status,
+      budgetRaw: plan.quote.priceRaw,
+      token: plan.quote.token,
+      startedAt: journal.startedAt ?? null,
+      capturedAt: new Date().toISOString(),
+      transactions: journal.transactions,
+      receipts: journal.receipts ?? {},
+      deliverableHash: job.deliverableHash,
+      resultHashVerified: job.result?.hashVerified === true,
+    };
+    const url = URL.createObjectURL(new Blob([`${JSON.stringify(evidence, null, 2)}\n`], { type: "application/json" }));
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `erc8183-${deployment.chainId}-job-${job.jobId}-sanitized.json`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  };
 
   return (
     <main id="main-content" className="mx-auto w-full max-w-6xl px-4 py-10 sm:px-6 lg:px-8 lg:py-14">
       <header className="max-w-3xl">
         <div className="flex flex-wrap items-center gap-2">
-          <Badge className="border-amber-300/30 bg-amber-300/10 text-amber-100" variant="outline">BSC Testnet · chain 97</Badge>
-          <Badge variant="outline">Controlled hiring demo</Badge>
+          <Badge className="border-amber-300/30 bg-amber-300/10 text-amber-100" variant="outline">{deployment.networkName} · chain {deployment.chainId}</Badge>
+          <Badge variant="outline">{mode === "mainnet" ? "Mainnet value at risk" : "Controlled hiring demo"}</Badge>
         </div>
-        <p className="mt-6 text-[11px] font-medium uppercase tracking-[0.22em] text-zinc-500">Non-custodial Testnet demo</p>
+        <p className="mt-6 text-[11px] font-medium uppercase tracking-[0.22em] text-zinc-500">Non-custodial {mode === "mainnet" ? "Mainnet" : "Testnet"} demo</p>
         <h1 className="mt-2 text-3xl font-semibold tracking-tight text-white sm:text-5xl">Hire with your wallet. Verify every step.</h1>
         <p className="mt-4 text-base leading-relaxed text-zinc-400">
           Request a signed quote from the controlled seller, inspect every contract call, and sign the ERC-8183 lifecycle with your injected wallet.
@@ -220,8 +277,8 @@ export function Erc8183TestnetDemo() {
 
       <Alert className="mt-8 border-amber-300/20 bg-amber-300/[0.05]">
         <FlaskConical aria-hidden="true" className="text-amber-300" />
-        <AlertTitle>Testing infrastructure — not a marketplace agent</AlertTitle>
-        <AlertDescription>Only fixture Agent {ERC8183_SPIKE_AGENT_ID} is allowed. The HeyAnon marketplace candidates remain MCP only and cannot use this flow.</AlertDescription>
+        <AlertTitle>{mode === "mainnet" ? "Marketplace-operated Grid seller — not an official BNB reference agent" : "Testing infrastructure — not a marketplace agent"}</AlertTitle>
+        <AlertDescription>Only Agent {deployment.agentId} is allowed. The HeyAnon marketplace candidates remain MCP only and cannot use this flow.</AlertDescription>
       </Alert>
 
       <div className="mt-8 grid gap-6 lg:grid-cols-[minmax(0,1.15fr)_minmax(19rem,0.85fr)]">
@@ -229,7 +286,7 @@ export function Erc8183TestnetDemo() {
           <Card>
             <CardHeader>
               <CardTitle>1 · Get a server-verified quote</CardTitle>
-              <CardDescription>The server resolves Agent {ERC8183_SPIKE_AGENT_ID}, checks its fixed HTTPS origin, fetches its Agent Card, and validates the signed quote.</CardDescription>
+              <CardDescription>The server resolves Agent {deployment.agentId}, checks its fixed HTTPS origin, fetches its Agent Card, and validates the signed quote.</CardDescription>
             </CardHeader>
             <CardContent>
               {quote ? (
@@ -253,7 +310,7 @@ export function Erc8183TestnetDemo() {
           <Card>
             <CardHeader>
               <CardTitle>2 · Connect and inspect balances</CardTitle>
-              <CardDescription>Connecting reveals only your public account. The server then reads Testnet balances and allowance; no signature is requested.</CardDescription>
+              <CardDescription>Connecting reveals only your public account. The server then reads balances and allowance; no signature is requested.</CardDescription>
             </CardHeader>
             <CardContent>
               <Button disabled={!quote || busy !== null} onClick={() => void connectAndPrepare()} variant={account ? "outline" : "default"}>
@@ -261,10 +318,10 @@ export function Erc8183TestnetDemo() {
               </Button>
               {plan && (
                 <dl className="mt-5 rounded-xl border border-white/[0.07] bg-white/[0.02] px-4">
-                  <SummaryRow label="Network" value={`${ERC8183_TESTNET.networkName} · chain ${plan.quote.chainId}`} />
+                  <SummaryRow label="Network" value={`${deployment.networkName} · chain ${plan.quote.chainId}`} />
                   <SummaryRow label="Buyer" value={plan.buyer} mono />
                   <SummaryRow label="Seller" value={plan.seller} mono />
-                  <SummaryRow label="tBNB balance" value={`${displayUnits(plan.nativeBalanceRaw, 18)} tBNB`} />
+                  <SummaryRow label={`${deployment.nativeCurrencySymbol} balance`} value={`${displayUnits(plan.nativeBalanceRaw, 18)} ${deployment.nativeCurrencySymbol}`} />
                   <SummaryRow label={`${plan.quote.tokenSymbol} balance`} value={`${displayUnits(plan.tokenBalanceRaw, plan.quote.tokenDecimals)} ${plan.quote.tokenSymbol}`} />
                   <SummaryRow label="Current allowance" value={`${plan.allowanceRaw} raw units`} />
                   <SummaryRow label="Approval" value={plan.approvalRequired ? `Required · exact ${plan.approvalAmountRaw} raw units` : "Not required · current allowance is sufficient"} />
@@ -312,9 +369,9 @@ export function Erc8183TestnetDemo() {
             <CardContent>
               <ol className="space-y-4" aria-label="ERC-8183 browser spike progress">
                 <EvidenceStep label="Quote verified" state={quote ? "verified" : "current"} />
-                <EvidenceStep label="Wallet on chain 97" state={account ? "verified" : quote ? "current" : "pending"} />
+                <EvidenceStep label={`Wallet on chain ${deployment.chainId}`} state={account ? "verified" : quote ? "current" : "pending"} />
                 <EvidenceStep label="Job created" state={job ? "verified" : account ? "current" : "pending"} />
-                <EvidenceStep label="Policy registered" state={job?.policy.toLowerCase() === ERC8183_TESTNET.policy.toLowerCase() ? "verified" : "pending"} />
+                <EvidenceStep label="Policy registered" state={job?.policy.toLowerCase() === deployment.policy.toLowerCase() ? "verified" : "pending"} />
                 <EvidenceStep label="Budget set" state={job && BigInt(job.budgetRaw) > 0n ? "verified" : "pending"} />
                 <EvidenceStep label="Escrow funded" state={funded ? "verified" : "pending"} />
                 <EvidenceStep label="Seller notified" state={submitted ? "verified" : funded ? "current" : "pending"} />
@@ -335,14 +392,15 @@ export function Erc8183TestnetDemo() {
                   </div>
                 )}
                 {journal?.transactions && Object.entries(journal.transactions).map(([kind, hash]) => (
-                  <a className="flex items-center justify-between gap-2 text-xs text-zinc-300 hover:text-white" href={`${ERC8183_TESTNET.explorerUrl}/tx/${hash}`} key={kind} rel="noreferrer" target="_blank">
+                  <a className="flex items-center justify-between gap-2 text-xs text-zinc-300 hover:text-white" href={`${deployment.explorerUrl}/tx/${hash}`} key={kind} rel="noreferrer" target="_blank">
                     <span>{kind}</span><span className="font-mono">{shortAddress(hash)}</span><ExternalLink aria-hidden="true" className="size-3" />
                   </a>
                 ))}
                 {job.deliverableUrl && <a className="inline-flex items-center gap-2 text-sm text-emerald-300" href={job.deliverableUrl} rel="noreferrer" target="_blank">Open sanitized result <ExternalLink aria-hidden="true" className="size-4" /></a>}
                 <Button asChild className="w-full" variant="outline">
-                  <Link href={`/jobs/testnet/${job.jobId}`}>Open job tracker<ArrowRight aria-hidden="true" data-icon="inline-end" /></Link>
+                  <Link href={`${jobPageBase}/${job.jobId}`}>Open job tracker<ArrowRight aria-hidden="true" data-icon="inline-end" /></Link>
                 </Button>
+                <Button className="w-full" onClick={downloadEvidence} variant="ghost">Download sanitized execution evidence</Button>
               </CardContent>
             </Card>
           )}
@@ -356,7 +414,7 @@ export function Erc8183TestnetDemo() {
           )}
 
           {journal && !submitted && (
-            <Button onClick={() => { clearBrowserJournal(); setJournal(null); setJob(null); setError(null); }} variant="ghost">
+            <Button onClick={() => { clearBrowserJournal(localStorage, deployment); setJournal(null); setJob(null); setError(null); }} variant="ghost">
               Clear this browser journal
             </Button>
           )}
