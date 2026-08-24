@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { Space_Grotesk, Space_Mono } from "next/font/google";
 import type { ReactNode } from "react";
 import { MarketplaceShell } from "@/components/marketplace/site-shell";
-import { TooltipProvider } from "@/components/ui/tooltip";
+import { Providers } from "./providers";
 import "./globals.css";
 
 const spaceGrotesk = Space_Grotesk({
@@ -30,9 +30,9 @@ export default function RootLayout({ children }: Readonly<{ children: ReactNode 
   return (
     <html lang="en" className={`dark ${spaceGrotesk.variable} ${spaceMono.variable}`}>
       <body>
-        <TooltipProvider>
+        <Providers>
           <MarketplaceShell>{children}</MarketplaceShell>
-        </TooltipProvider>
+        </Providers>
       </body>
     </html>
   );
