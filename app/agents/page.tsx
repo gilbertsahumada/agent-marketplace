@@ -1,8 +1,10 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
+import { CatalogUnavailable } from "@/components/marketplace/catalog-unavailable";
 import { CatalogPage } from "@/components/marketplace/catalog-page";
 import { listMarketplaceAgents } from "@/src/business/composition";
 import { MARKETPLACE_CATEGORIES, type MarketplaceCategory } from "@/src/business/entities/marketplace-agent";
+import { MarketplaceDataUnavailableError } from "@/src/business/errors/marketplace-errors";
 import {
   DEFAULT_REGISTERED_AGENT_SORT,
   MARKETPLACE_DATA_SORTS,
@@ -27,8 +29,18 @@ export default async function AgentsPage({ searchParams }: { searchParams: Promi
     : view === "all" ? DEFAULT_REGISTERED_AGENT_SORT : undefined;
   const page = typeof params.page === "string" && /^\d+$/.test(params.page) ? Number(params.page) : 1;
   const optional = { ...(q ? { q } : {}), ...(sort ? { sort } : {}) };
-  const data = view === "all"
-    ? await listMarketplaceAgents.execute({ view, page, limit: 24, ...optional })
-    : await listMarketplaceAgents.execute({ view, page, limit: 12, ...optional, ...(category ? { category } : {}) });
+  const retryParams = new URLSearchParams({ view, page: String(page) });
+  if (q) retryParams.set("q", q);
+  if (sort) retryParams.set("sort", sort);
+  if (category) retryParams.set("category", category);
+  let data;
+  try {
+    data = view === "all"
+      ? await listMarketplaceAgents.execute({ view, page, limit: 24, ...optional })
+      : await listMarketplaceAgents.execute({ view, page, limit: 12, ...optional, ...(category ? { category } : {}) });
+  } catch (error) {
+    if (!(error instanceof MarketplaceDataUnavailableError)) throw error;
+    return <CatalogUnavailable retryHref={`/agents?${retryParams.toString()}`} />;
+  }
   return <CatalogPage data={data} query={{ view, ...optional, ...(category ? { category } : {}) }} />;
 }
