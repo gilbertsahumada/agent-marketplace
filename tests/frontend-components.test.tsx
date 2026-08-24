@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { AgentCard } from "../components/marketplace/agent-card.js";
 import { AgentProfile } from "../components/marketplace/agent-profile.js";
 import { CatalogPage } from "../components/marketplace/catalog-page.js";
+import { CatalogUnavailable } from "../components/marketplace/catalog-unavailable.js";
 import { EvidenceRail } from "../components/marketplace/evidence-rail.js";
 import { PublicProofPage } from "../components/marketplace/public-proof-page.js";
 import { TestnetJobTracker } from "../components/marketplace/testnet-job-tracker.js";
@@ -60,6 +61,7 @@ function marketplaceAgent(): MarketplaceAgent {
     description: "Sanitized candidate",
     owner: "0x1111111111111111111111111111111111111111",
     metadataUri: "ipfs://sanitized/45650",
+    operator: "third_party",
     indexedIdentity: {
       owner: "0x1111111111111111111111111111111111111111",
       metadataUri: "ipfs://sanitized/45650",
@@ -153,7 +155,7 @@ afterEach(() => {
 
 describe("marketplace presentation rules", () => {
   it("does not render a Hire action for an MCP-only agent", () => {
-    render(createElement(AgentCard, { agent: { agentId: "45650", name: "V3 Pools", description: "Agent", categories: ["rebalancing"], href: "/agents/45650", hireability: "mcp_only", evidence } }));
+    render(createElement(AgentCard, { agent: { agentId: "45650", name: "V3 Pools", description: "Agent", operator: "third_party", categories: ["rebalancing"], href: "/agents/45650", hireability: "mcp_only", evidence } }));
     expect(screen.getByText("MCP only")).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /hire agent/i })).not.toBeInTheDocument();
     const profileLink = screen.getByRole("link", { name: /view evidence/i });
@@ -182,6 +184,14 @@ describe("marketplace presentation rules", () => {
     expect(screen.getByText("No verified Grid Trading agent yet")).toBeInTheDocument();
     expect(screen.getByText("We have not found a seller with sufficient operational evidence.")).toBeInTheDocument();
     expect(screen.queryByText(/0 reported/)).not.toBeInTheDocument();
+  });
+
+  it("renders a recoverable catalogue outage without fabricating fallback rows", () => {
+    render(createElement(CatalogUnavailable, { retryHref: "/agents?view=all&page=2" }));
+    expect(screen.getByText("Live catalogue temporarily unavailable")).toBeInTheDocument();
+    expect(screen.getByText(/No registered agent or profile data was invented/)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Try again" })).toHaveAttribute("href", "/agents?view=all&page=2");
+    expect(screen.getByRole("link", { name: "Return to the release snapshot" })).toHaveAttribute("href", "/");
   });
 
   it("shows the upstream total only for all registered agents", () => {
