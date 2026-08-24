@@ -40,6 +40,23 @@ export interface MarketplaceAgentData {
     metadataUpdatedAt: string | null;
     indexedUpdatedAt: string | null;
   };
+  verification?: {
+    freshness: "current" | "stale";
+    generatedAt: string;
+    staleAfter: string;
+    blockNumber: string;
+    identity: {
+      status: "match" | "mismatch" | "read_error";
+      mismatchFields: Array<"owner" | "metadata_uri">;
+      observedAt: string;
+    };
+    tools: {
+      status: "observed" | "not_probed";
+      declaredOnly: string[];
+      observedOnly: string[];
+      observedAt: string | null;
+    };
+  } | null;
 }
 
 export interface MarketplaceAgentDataPage {
