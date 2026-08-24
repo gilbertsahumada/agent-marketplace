@@ -58,10 +58,10 @@ export function spikeQuote(value: unknown): Erc8183QuoteEnvelope {
   return record(value, "quote");
 }
 
-export function erc8183SpikeErrorResponse(error: unknown): NextResponse {
+export function erc8183SpikeErrorResponse(error: unknown, networkLabel = "Testnet"): NextResponse {
   if (error instanceof Erc8183SpikeDisabledError) {
     return NextResponse.json(
-      { error: { code: error.name, message: "The experimental Testnet flow is disabled." } },
+      { error: { code: error.name, message: `The experimental ${networkLabel} flow is disabled.` } },
       { status: 404 },
     );
   }
@@ -70,7 +70,7 @@ export function erc8183SpikeErrorResponse(error: unknown): NextResponse {
   }
   if (error instanceof Erc8183DemoJobNotFoundError) {
     return NextResponse.json(
-      { error: { code: error.name, message: "The Testnet demo job was not found." } },
+      { error: { code: error.name, message: `The ${networkLabel} demo job was not found.` } },
       { status: 404 },
     );
   }
@@ -79,12 +79,12 @@ export function erc8183SpikeErrorResponse(error: unknown): NextResponse {
   }
   if (error instanceof Erc8183SpikeUnavailableError) {
     return NextResponse.json(
-      { error: { code: error.name, message: "The Testnet seller or chain check is unavailable." } },
+      { error: { code: error.name, message: `The ${networkLabel} seller or chain check is unavailable.` } },
       { status: 503 },
     );
   }
   return NextResponse.json(
-    { error: { code: "INTERNAL_ERROR", message: "The Testnet spike request could not be completed." } },
+    { error: { code: "INTERNAL_ERROR", message: `The ${networkLabel} spike request could not be completed.` } },
     { status: 500 },
   );
 }
