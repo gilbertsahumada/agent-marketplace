@@ -23,15 +23,33 @@ const journey = ["Discover", "Understand", "Compare", "Hire", "Track", "Result"]
 
 export function MarketplaceLanding({
   categories,
+  catalogSnapshot,
   demoEnabled,
+  mainnetDemoEnabled = false,
   featuredAgents,
   publicProof,
+  proofSummary,
+  qualifiedSeller,
 }: {
   categories: CategoryCardViewModel[];
+  catalogSnapshot: { generatedAt: string; staleAfter: string } | null;
   demoEnabled: boolean;
+  mainnetDemoEnabled?: boolean;
   featuredAgents: AgentCardViewModel[];
   publicProof: EvidenceStepViewModel[];
+  proofSummary?: { href: string; network: string; title: string; description: string };
+  qualifiedSeller: { agentId: string; name: string } | null;
 }) {
+  const primaryHref = mainnetDemoEnabled
+    ? "/demo/erc8183-mainnet"
+    : qualifiedSeller
+      ? `/hire/${qualifiedSeller.agentId}`
+      : demoEnabled ? "/demo/erc8183" : "/jobs/testnet/551";
+  const primaryLabel = mainnetDemoEnabled
+    ? "Hire the Grid planner"
+    : qualifiedSeller
+      ? `Hire ${qualifiedSeller.name}`
+      : demoEnabled ? "Try a verified Testnet hire" : "View a proven hiring result";
   return (
     <main id="main-content">
       <section className="border-b border-white/10">
@@ -48,16 +66,16 @@ export function MarketplaceLanding({
             </p>
             <div className="mt-8 flex flex-col gap-3 min-[420px]:flex-row">
               <Button asChild className="h-11 px-5 text-sm" size="lg">
-                <Link href="/agents">
-                  Explore agents
+                <Link href={primaryHref}>
+                  {primaryLabel}
                   <ArrowRight aria-hidden="true" data-icon="inline-end" />
                 </Link>
               </Button>
               <Button asChild className="h-11 px-5 text-sm" size="lg" variant="outline">
-                <Link href="/jobs/testnet/551">View the browser-wallet proof</Link>
+                <Link href="/agents">Explore agents</Link>
               </Button>
             </div>
-            {demoEnabled && (
+            {demoEnabled && primaryHref !== "/demo/erc8183" && (
               <Link className="mt-4 inline-flex items-center gap-2 text-sm text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" href="/demo/erc8183">
                 Try the controlled Testnet hiring demo
                 <ArrowRight aria-hidden="true" className="size-4" />
@@ -72,17 +90,18 @@ export function MarketplaceLanding({
                   <ShieldCheck aria-hidden="true" />
                   Onchain proof
                 </Badge>
-                <span className="font-stat text-xs text-zinc-400">BSC Testnet · Job #551</span>
+                <span className="font-stat text-xs text-zinc-400">{proofSummary?.network ?? "BSC Testnet · Job #551"}</span>
               </div>
               <div>
-                <CardTitle className="text-xl">One browser-signed hiring lifecycle</CardTitle>
+                <CardTitle className="text-xl">{proofSummary?.title ?? "One browser-signed hiring lifecycle"}</CardTitle>
                 <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-                  An injected wallet signed every buyer transaction and the controlled seller reached SUBMITTED. This proves the hiring path—not the quality of every listed agent.
+                  {proofSummary?.description ?? "An injected wallet signed every buyer transaction and the controlled seller reached SUBMITTED. This proves the hiring path—not the quality of every listed agent."}
                 </p>
               </div>
             </CardHeader>
             <CardContent className="px-6">
               <EvidenceRail ariaLabel="Evidence for public browser-wallet job 551" steps={publicProof} />
+              <Button asChild className="mt-5" variant="outline"><Link href={proofSummary?.href ?? "/jobs/testnet/551"}>Inspect public proof<ArrowRight aria-hidden="true" /></Link></Button>
             </CardContent>
           </Card>
         </div>
@@ -114,7 +133,7 @@ export function MarketplaceLanding({
                 Candidates with honest activation states.
               </h2>
               <p className="mt-3 text-sm leading-relaxed text-zinc-400 sm:text-base">
-                MCP availability can support discovery, but it does not prove ERC-8183 hireability. Hire remains disabled until a compatible seller quote is verified.
+                MCP availability can support discovery, but it does not prove ERC-8183 hireability. {qualifiedSeller ? "A yellow Hire action identifies the seller whose current ERC-8183 evidence qualifies." : "The verified Testnet journey remains available while no Mainnet seller qualifies."}
               </p>
             </div>
             <Button asChild variant="outline">
@@ -124,6 +143,16 @@ export function MarketplaceLanding({
               </Link>
             </Button>
           </div>
+
+          {catalogSnapshot && (
+            <Alert className="mt-8 border-indigo-400/30 bg-indigo-400/[0.06] text-indigo-100">
+              <CircleAlert aria-hidden="true" />
+              <AlertTitle>Release verification snapshot</AlertTitle>
+              <AlertDescription>
+                Observed {new Date(catalogSnapshot.generatedAt).toLocaleString("en-US", { timeZone: "UTC", timeZoneName: "short" })} and valid through {new Date(catalogSnapshot.staleAfter).toLocaleString("en-US", { timeZone: "UTC", timeZoneName: "short" })}. Live trust8004 profile details load only when requested; commercial qualification is never inferred from this snapshot.
+              </AlertDescription>
+            </Alert>
+          )}
 
           {featuredAgents.length > 0 ? (
             <div className="mt-8 grid gap-4 md:grid-cols-2">
