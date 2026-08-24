@@ -1,4 +1,5 @@
 import {
+  ArrowUpRight,
   BadgeCheck,
   Blocks,
   Check,
@@ -36,6 +37,17 @@ const statusLabels: Record<EvidenceStatus, string> = {
   unknown: "not observed",
 };
 
+function StepTimestamp({ iso }: { iso: string }) {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return <span>{iso}</span>;
+  const formatted = `${date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" })} · ${date.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "UTC" })} UTC`;
+  return (
+    <time dateTime={iso} title={iso}>
+      {formatted}
+    </time>
+  );
+}
+
 function StatusIcon({ status }: { status: EvidenceStatus }) {
   if (status === "verified") return <Check aria-hidden="true" className="size-3" />;
   if (status === "current") return <CircleDashed aria-hidden="true" className="size-3" />;
@@ -70,7 +82,7 @@ export function EvidenceRail({
             data-status={step.status}
             key={step.kind}
           >
-            <div className="flex min-w-0 items-start gap-2 md:block">
+            <div className="flex min-w-0 items-start gap-2 md:flex-col md:items-center md:gap-0 md:text-center">
               <div
                 className={cn(
                   "absolute left-0 top-0 z-10 flex size-10 items-center justify-center rounded-full border bg-background md:relative",
@@ -85,11 +97,16 @@ export function EvidenceRail({
               </div>
 
               <div className={cn("min-w-0 md:mt-3", compact && "md:mt-2")}>
-                <div className="flex flex-wrap items-center gap-1.5">
+                <div className="flex flex-wrap items-center gap-1.5 md:justify-center">
                   <p className="text-xs font-semibold text-zinc-100">{step.label}</p>
                   {!compact && <ProvenanceBadge provenance={step.provenance} />}
                   {!compact && (
-                    <span className="text-[10px] capitalize text-zinc-400">
+                    <span
+                      className={cn(
+                        "text-[10px] capitalize text-zinc-400",
+                        step.status === "verified" && "sr-only",
+                      )}
+                    >
                       {statusLabels[step.status]}
                     </span>
                   )}
@@ -106,8 +123,22 @@ export function EvidenceRail({
                 )}
                 {!compact && (step.source || step.timestamp) && (
                   <p className="font-stat mt-2 text-[10px] text-zinc-400">
-                    {[step.source, step.timestamp].filter(Boolean).join(" · ")}
+                    {step.source}
+                    {step.source && step.timestamp && " · "}
+                    {step.timestamp && <StepTimestamp iso={step.timestamp} />}
                   </p>
+                )}
+                {!compact && step.link && (
+                  <a
+                    className="font-stat mt-1.5 inline-flex items-center gap-0.5 text-[10px] text-zinc-300 underline decoration-zinc-600 underline-offset-2 hover:text-primary hover:decoration-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    href={step.link.href}
+                    rel="noopener noreferrer"
+                    target="_blank"
+                  >
+                    {step.link.label}
+                    <ArrowUpRight aria-hidden="true" className="size-3" />
+                    <span className="sr-only">(opens in a new tab)</span>
+                  </a>
                 )}
               </div>
             </div>
