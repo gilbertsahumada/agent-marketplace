@@ -50,6 +50,7 @@ export function MarketplaceLanding({
         <div className="mx-auto grid max-w-7xl gap-10 px-4 py-16 sm:px-6 sm:py-20 lg:grid-cols-[1.08fr_0.92fr] lg:items-center lg:px-8 lg:py-24">
           <div>
             <Badge className="border-primary/30 bg-primary/10 text-primary" variant="outline">
+              <img alt="" className="size-3.5" src="/logo/SVG/BNB Chain_Symbol_Yellow.svg" />
               BNB Smart Chain · Catalogue coverage is partial
             </Badge>
             <h1 className="mt-6 max-w-3xl text-4xl font-semibold leading-[1.05] tracking-[-0.04em] text-white sm:text-5xl lg:text-6xl">
@@ -84,12 +85,15 @@ export function MarketplaceLanding({
                   <ShieldCheck aria-hidden="true" />
                   Onchain proof
                 </Badge>
-                <span className="font-stat text-xs text-zinc-400">{proofSummary?.network ?? "BSC Testnet · Job #551"}</span>
+                <span className="inline-flex items-center gap-1.5 font-stat text-xs text-zinc-400">
+                  <img alt="" className="size-3.5 opacity-80" src="/logo/SVG/BNB Chain_Symbol_White.svg" />
+                  {proofSummary?.network ?? "BSC Testnet · Job #551"}
+                </span>
               </div>
               <div>
                 <CardTitle className="text-xl">{proofSummary?.title ?? "One browser-signed hiring lifecycle"}</CardTitle>
                 <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-                  {proofSummary?.description ?? "An injected wallet signed every buyer transaction and the controlled seller reached SUBMITTED. This proves the hiring path—not the quality of every listed agent."}
+                  {proofSummary?.description ?? "Every buyer transaction was signed in the browser and the seller reached SUBMITTED. This proves the hiring path works — not the quality of every listed agent."}
                 </p>
               </div>
             </CardHeader>
