@@ -168,6 +168,7 @@ describe("Trust8004Provider", () => {
     expect(inventory.schemaVersion).toBe(2);
     expect(inventory.selection).toEqual({
       curatedAgentIds: KNOWN_HEYANON_AGENT_IDS,
+      marketplaceOperatedAgentIds: [],
       explicitAgentIds: [],
       evaluatedAgentIds: KNOWN_HEYANON_AGENT_IDS,
     });
