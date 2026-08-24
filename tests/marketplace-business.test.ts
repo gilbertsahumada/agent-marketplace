@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 import type { Address } from "viem";
 import { CompareMarketplaceAgents } from "../src/business/use-cases/compare-marketplace-agents.js";
 import { GetMarketplaceAgent } from "../src/business/use-cases/get-marketplace-agent.js";
+import { GetMarketplaceLandingCatalog } from "../src/business/use-cases/get-marketplace-landing-catalog.js";
+import { GetPublicVerificationSnapshot } from "../src/business/use-cases/get-public-verification-snapshot.js";
 import { ListMarketplaceAgents } from "../src/business/use-cases/list-marketplace-agents.js";
 import { AsyncTtlCache } from "../src/data/cache/async-ttl-cache.js";
 import { MARKETPLACE_INVENTORY } from "../src/data/inventory/marketplace-inventory.js";
@@ -10,6 +12,7 @@ import type {
   MarketplaceAgentRepository,
 } from "../src/data/repositories/marketplace-agent-repository.js";
 import { Trust8004MarketplaceAgentRepository } from "../src/data/repositories/trust8004-marketplace-agent-repository.js";
+import { StaticPublicVerificationRepository } from "../src/data/repositories/public-verification-repository.js";
 import { Trust8004Provider } from "../src/trust8004/provider.js";
 import type { BscIdentityReader } from "../src/verification/onchain.js";
 
@@ -130,6 +133,19 @@ describe("marketplace business catalogue", () => {
     expect(source.getById).not.toHaveBeenCalledWith("99999");
     expect(source.listRegisteredPage).not.toHaveBeenCalled();
     expect(source.getOnchainIdentity).not.toHaveBeenCalled();
+  });
+
+  it("builds the landing catalogue from the sanitized release snapshot without live profile reads", () => {
+    const result = new GetMarketplaceLandingCatalog(
+      new GetPublicVerificationSnapshot(new StaticPublicVerificationRepository()),
+    ).execute();
+
+    expect(result.source).toBe("release_snapshot");
+    expect(result.snapshot.agents.map(({ agentId }) => agentId)).toEqual(["45650", "45381", "45422", "43129"]);
+    expect(result.categories.find(({ category }) => category === "grid_trading"))
+      .toEqual({ category: "grid_trading", count: 0, status: "unverified" });
+    expect(result.snapshot.agents.find(({ agentId }) => agentId === "43129")?.categories)
+      .toEqual(["yield_optimisation", "health_factor_monitoring"]);
   });
 
   it("filters categories without duplicating a multi-label agent and limits page size to 24", async () => {
