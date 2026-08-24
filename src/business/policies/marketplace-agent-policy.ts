@@ -25,13 +25,25 @@ function serviceKind(name: string): "mcp" | "seller" | "other" {
   return "other";
 }
 
-export function determineHireability(agent: MarketplaceAgentData): MarketplaceHireability {
+export function determineHireability(
+  agent: MarketplaceAgentData,
+  options: { marketplaceOperated?: boolean } = {},
+): MarketplaceHireability {
   const serviceKinds = agent.services
     .filter((service) => Boolean(service.endpoint))
     .map((service) => serviceKind(service.name));
   const hasSellerProtocol = serviceKinds.includes("seller");
   const hasMcp = serviceKinds.includes("mcp");
   const observedAt = agent.freshness.fetchedAt;
+
+  if (options.marketplaceOperated && Reflect.get(process.env, "ERC8183_MAINNET_DEMO_ENABLED") === "true") {
+    return {
+      status: "quote_verified",
+      canHire: true,
+      reason: "The marketplace-operated Grid seller passed the release qualification gate; every new quote is reverified before wallet connection.",
+      evidence: evidence("derived", "marketplace-inventory", observedAt, false, "Operational promotion is explicit and a fresh signed quote remains mandatory."),
+    };
+  }
 
   if (hasSellerProtocol) {
     return {
@@ -90,6 +102,7 @@ export function toMarketplaceAgent(
     description: data.description,
     owner: data.owner,
     metadataUri: data.metadataUri,
+    operator: inventory?.operator ?? "third_party",
     indexedIdentity: {
       owner: data.owner,
       metadataUri: data.metadataUri,
@@ -132,7 +145,7 @@ export function toMarketplaceAgent(
     reputation: data.reputation,
     trustScore: data.trustScore,
     hireability: evaluatesCandidate
-      ? determineHireability(data)
+      ? determineHireability(data, { marketplaceOperated: inventory?.operator === "marketplace" })
       : {
         status: "not_evaluated",
         canHire: false,
@@ -146,6 +159,17 @@ export function toMarketplaceAgent(
         ),
       },
     freshness: data.freshness,
+    verification: data.verification ? {
+      ...data.verification,
+      identity: {
+        ...data.verification.identity,
+        provenance: ["declared", "onchain"],
+      },
+      tools: {
+        ...data.verification.tools,
+        provenance: data.verification.tools.status === "not_probed" ? "not_probed" : "observed",
+      },
+    } : null,
     catalogCoverage: "partial",
     provenance: {
       identity: evidence(
