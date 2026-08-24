@@ -1,4 +1,4 @@
-import { MARKETPLACE_INVENTORY } from "../../data/inventory/marketplace-inventory.js";
+import { marketplaceInventoryEntries } from "../../data/inventory/marketplace-inventory.js";
 import {
   DEFAULT_REGISTERED_AGENT_SORT,
   MARKETPLACE_DATA_SORTS,
@@ -104,7 +104,7 @@ export class ListMarketplaceAgents {
 
     const records = [];
     try {
-      for (const entry of MARKETPLACE_INVENTORY.entries) {
+      for (const entry of marketplaceInventoryEntries()) {
         const record = await this.repository.getById(entry.agentId);
         if (!record) throw new Error(`Curated agent ${entry.agentId} is unavailable`);
         records.push(record);
