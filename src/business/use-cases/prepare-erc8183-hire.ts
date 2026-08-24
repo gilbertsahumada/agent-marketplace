@@ -30,10 +30,11 @@ export class PrepareErc8183Hire {
     }
     const budget = BigInt(quote.priceRaw);
     if (BigInt(facts.tokenBalanceRaw) < budget) {
-      throw new Erc8183JobNotReadyError("Buyer has insufficient Testnet payment-token balance");
+      throw new Erc8183JobNotReadyError(`Buyer has insufficient ${this.repository.allowlist.networkLabel} payment-token balance`);
     }
     if (BigInt(facts.nativeBalanceRaw) <= 0n) {
-      throw new Erc8183JobNotReadyError("Buyer needs Testnet tBNB for browser-signed gas");
+      const gasSymbol = this.repository.allowlist.chainId === 97 ? "tBNB" : "BNB";
+      throw new Erc8183JobNotReadyError(`Buyer needs ${gasSymbol} for ${this.repository.allowlist.networkLabel} browser-signed gas`);
     }
     const approvalRequired = BigInt(facts.allowanceRaw) < budget;
     const deadline = BigInt(now) + BigInt(facts.disputeWindowSeconds) + 3_600n;
@@ -54,6 +55,7 @@ export class PrepareErc8183Hire {
       approvalRequired,
       approvalAmountRaw: approvalRequired ? quote.priceRaw : "0",
       deadline: deadline.toString(),
+      disputeWindowSeconds: facts.disputeWindowSeconds,
       executeBefore: quote.quoteExpiresAt,
       maximumSignatures: approvalRequired ? 5 : 4,
       transactions,
