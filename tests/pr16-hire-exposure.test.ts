@@ -109,11 +109,24 @@ describe("PR 16 Mainnet exposure", () => {
     const quoteDelegate = { execute: vi.fn() };
     const prepareDelegate = { execute: vi.fn() };
     const quote = new RequestQualifiedMainnetQuote(exposure, quoteDelegate as never);
-    const prepare = new PrepareQualifiedMainnetHire(exposure, prepareDelegate as never);
+    const prepare = new PrepareQualifiedMainnetHire(exposure, () => true, prepareDelegate as never);
 
     expect(() => quote.execute()).toThrow(/disabled/);
     expect(() => prepare.execute({} as never)).toThrow(/disabled/);
     expect(quoteDelegate.execute).not.toHaveBeenCalled();
+    expect(prepareDelegate.execute).not.toHaveBeenCalled();
+  });
+
+  it("does not return a fundable Mainnet plan while the write gate is disabled", () => {
+    const exposure = new GetMainnetHiringExposure(
+      { getSnapshot: () => snapshot("qualified") },
+      { getPublicConfig: () => demoConfig },
+      () => Date.parse("2026-08-24T12:01:00.000Z"),
+    );
+    const prepareDelegate = { execute: vi.fn() };
+    const prepare = new PrepareQualifiedMainnetHire(exposure, () => false, prepareDelegate as never);
+
+    expect(() => prepare.execute({} as never)).toThrow(/disabled/);
     expect(prepareDelegate.execute).not.toHaveBeenCalled();
   });
 
@@ -124,14 +137,46 @@ describe("PR 16 Mainnet exposure", () => {
       () => Date.parse("2026-08-24T12:01:00.000Z"),
     );
     const notifyDelegate = { execute: vi.fn(async () => ({ acknowledged: true })) };
-    const disabled = new NotifyQualifiedMainnetFundedJob(exposure, () => false, notifyDelegate as never);
-    const enabled = new NotifyQualifiedMainnetFundedJob(exposure, () => true, notifyDelegate as never);
+    const getFunded = { execute: vi.fn(async () => ({ status: "FUNDED" })) };
+    const disabled = new NotifyQualifiedMainnetFundedJob(exposure, () => false, getFunded as never, notifyDelegate as never);
+    const enabled = new NotifyQualifiedMainnetFundedJob(exposure, () => true, getFunded as never, notifyDelegate as never);
     const input = { jobId: "97", buyer: "0x1111111111111111111111111111111111111111" } as const;
 
-    expect(() => disabled.execute(input)).toThrow(/disabled/);
+    await expect(disabled.execute(input)).rejects.toThrow(/disabled/);
     expect(notifyDelegate.execute).not.toHaveBeenCalled();
     await expect(enabled.execute(input)).resolves.toEqual({ acknowledged: true });
     expect(notifyDelegate.execute).toHaveBeenCalledWith(input);
+  });
+
+  it("preserves terminal notify idempotency after qualification or the write gate expires", async () => {
+    const staleExposure = new GetMainnetHiringExposure(
+      { getSnapshot: () => snapshot("qualified") },
+      { getPublicConfig: () => demoConfig },
+      () => Date.parse("2026-08-27T12:00:00.001Z"),
+    );
+    const terminal = { status: "SUBMITTED", jobId: "97" };
+    const getStatus = { execute: vi.fn(async () => terminal) };
+    const notifyDelegate = { execute: vi.fn(async () => ({ acknowledged: true, alreadySubmitted: true, job: terminal })) };
+    const notify = new NotifyQualifiedMainnetFundedJob(staleExposure, () => false, getStatus as never, notifyDelegate as never);
+    const input = { jobId: "97", buyer: "0x1111111111111111111111111111111111111111" } as const;
+
+    await expect(notify.execute(input)).resolves.toMatchObject({ acknowledged: true, alreadySubmitted: true });
+    expect(notifyDelegate.execute).toHaveBeenCalledWith(input);
+  });
+
+  it("does not bypass the notify gate from a non-terminal status read", async () => {
+    const exposure = new GetMainnetHiringExposure(
+      { getSnapshot: () => snapshot("qualified") },
+      { getPublicConfig: () => demoConfig },
+      () => Date.parse("2026-08-24T12:01:00.000Z"),
+    );
+    const getStatus = { execute: vi.fn(async () => ({ status: "OPEN" })) };
+    const notifyDelegate = { execute: vi.fn() };
+    const notify = new NotifyQualifiedMainnetFundedJob(exposure, () => false, getStatus as never, notifyDelegate as never);
+
+    await expect(notify.execute({ jobId: "97", buyer: "0x1111111111111111111111111111111111111111" }))
+      .rejects.toThrow(/disabled/);
+    expect(notifyDelegate.execute).not.toHaveBeenCalled();
   });
 
   it("keeps env flags out of landing, hire and Mainnet demo controllers", () => {

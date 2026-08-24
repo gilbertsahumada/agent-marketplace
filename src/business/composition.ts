@@ -52,11 +52,13 @@ export const requestMainnetErc8183Quote = new RequestQualifiedMainnetQuote(
 );
 export const prepareMainnetErc8183Hire = new PrepareQualifiedMainnetHire(
   getMainnetHiringExposure,
+  mainnetWritesEnabled,
   unqualifiedMainnetPrepare,
 );
 export const notifyMainnetFundedJob = new NotifyQualifiedMainnetFundedJob(
   getMainnetHiringExposure,
   mainnetWritesEnabled,
+  getMainnetErc8183JobStatus,
   unqualifiedMainnetNotify,
 );
 export const getMainnetBrowserDemoConfig = new GetMainnetBrowserDemoConfig(mainnetBrowserDemoConfigRepository);

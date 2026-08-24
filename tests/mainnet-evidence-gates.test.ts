@@ -6,7 +6,7 @@ import {
   type Address,
   type Hex,
 } from "viem";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { assertMainnetEvidenceTransaction, assertMainnetProofBinding } from "../src/mainnet/capture-job-proof-cli.js";
 import {
   ERC8183_MAINNET,
@@ -16,6 +16,7 @@ import {
 import { assertRegistrationDecision } from "../src/mainnet/grid-seller-cli.js";
 import type { MainnetGoNoGoReport } from "../src/mainnet/go-no-go.js";
 import { GRID_CANONICAL_INPUT, GRID_NEGOTIATION_TERMS, gridTaskDescription } from "../src/business/policies/grid-plan-policy.js";
+import { resolveIdentity } from "../src/identity.js";
 
 const BUYER = getAddress("0x1111111111111111111111111111111111111111");
 const SELLER = getAddress("0x2222222222222222222222222222222222222222");
@@ -187,5 +188,39 @@ describe("Mainnet proof deployment binding", () => {
       ...binding,
       identity: { ...binding.identity, agentWallet: BUYER },
     })).toThrow(/Agent ID/);
+  });
+
+  it("resolves the Agent ID at funding rather than accepting a later identity update", async () => {
+    const fundingBlock = 100n;
+    const metadataUri = (endpoint: string) => `data:application/json;base64,${Buffer.from(JSON.stringify({
+      name: "Grid seller",
+      description: "Historical identity fixture",
+      services: [{ name: "A2A", endpoint, version: "0.3.0" }],
+    })).toString("base64")}`;
+    const readContract = vi.fn(async (request: { functionName: string; blockNumber?: bigint }) => {
+      const historical = request.blockNumber === fundingBlock;
+      if (request.functionName === "ownerOf") return historical ? BUYER : SELLER;
+      if (request.functionName === "getAgentWallet") return historical ? BUYER : SELLER;
+      return metadataUri(historical
+        ? "https://historical.example/grid"
+        : "https://bnb-agent-marketplace-ruby.vercel.app/grid");
+    });
+    const client = { getChainId: vi.fn(async () => 56), readContract } as never;
+
+    const current = await resolveIdentity(client, 9001, {
+      chainId: 56,
+      registry: ERC8183_MAINNET.registry,
+    });
+    const historical = await resolveIdentity(client, 9001, {
+      chainId: 56,
+      registry: ERC8183_MAINNET.registry,
+      blockNumber: fundingBlock,
+    });
+
+    expect(current.agentWallet).toBe(SELLER);
+    expect(historical.agentWallet).toBe(BUYER);
+    expect(readContract.mock.calls.slice(-3).every(([request]) => request.blockNumber === fundingBlock)).toBe(true);
+    expect(() => assertMainnetProofBinding({ ...binding, identity: current })).not.toThrow();
+    expect(() => assertMainnetProofBinding({ ...binding, identity: historical })).toThrow(/Agent ID/);
   });
 });

@@ -11,12 +11,15 @@ function implementationAddress(value: Hex | undefined): Address | null {
   return getAddress(`0x${value.slice(-40)}`);
 }
 
-/** Re-pin both upgradeable contracts at one block immediately before use. */
-export async function mainnetImplementationPinsMatch(client: ImplementationReader): Promise<boolean> {
-  const blockNumber = await client.getBlockNumber();
+/** Pin both upgradeable contracts at an explicit historical block or the current block. */
+export async function mainnetImplementationPinsMatch(
+  client: ImplementationReader,
+  blockNumber?: bigint,
+): Promise<boolean> {
+  const checkedBlock = blockNumber ?? await client.getBlockNumber();
   const [commerceStorage, routerStorage] = await Promise.all([
-    client.getStorageAt({ address: ERC8183_MAINNET.commerce, slot: ERC1967_IMPLEMENTATION_SLOT, blockNumber }),
-    client.getStorageAt({ address: ERC8183_MAINNET.router, slot: ERC1967_IMPLEMENTATION_SLOT, blockNumber }),
+    client.getStorageAt({ address: ERC8183_MAINNET.commerce, slot: ERC1967_IMPLEMENTATION_SLOT, blockNumber: checkedBlock }),
+    client.getStorageAt({ address: ERC8183_MAINNET.router, slot: ERC1967_IMPLEMENTATION_SLOT, blockNumber: checkedBlock }),
   ]);
   const commerce = implementationAddress(commerceStorage);
   const router = implementationAddress(routerStorage);

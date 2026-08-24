@@ -98,6 +98,16 @@ describe("Mainnet Grid seller security", () => {
     const changed = publicClient();
     changed.getStorageAt.mockResolvedValue(implementationStorage(SELLER));
     await expect(mainnetImplementationPinsMatch(changed)).resolves.toBe(false);
+
+    const temporal = publicClient();
+    temporal.getStorageAt.mockImplementation(async ({ address, blockNumber }) =>
+      implementationStorage(blockNumber === 122n
+        ? SELLER
+        : address.toLowerCase() === ERC8183_MAINNET.commerce.toLowerCase()
+          ? ERC8183_MAINNET.commerceImplementation
+          : ERC8183_MAINNET.routerImplementation));
+    await expect(mainnetImplementationPinsMatch(temporal)).resolves.toBe(true);
+    await expect(mainnetImplementationPinsMatch(temporal, 122n)).resolves.toBe(false);
   });
 
   it("rejects a funded job when the SDK signed-quote verifier rejects it", async () => {

@@ -32,6 +32,7 @@ import {
   mainnetTokenEvidenceAbi,
 } from "./contracts.js";
 import { MainnetErc8183Repository } from "./mainnet-erc8183-repository.js";
+import { mainnetImplementationPinsMatch } from "./implementation-pins.js";
 
 const PHASE_TARGETS = {
   createJob: ERC8183_MAINNET.commerce,
@@ -261,6 +262,7 @@ async function main(): Promise<void> {
   let firstTimestamp: bigint | null = null;
   let lastTimestamp: bigint | null = null;
   let totalGasCost = 0n;
+  let createdAtBlock: bigint | null = null;
   let fundedAtBlock: bigint | null = null;
   let previousPosition: { blockNumber: bigint; transactionIndex: number } | null = null;
   const phases = job.status === "COMPLETED"
@@ -291,6 +293,7 @@ async function main(): Promise<void> {
       throw new Error(`${phase} transaction is out of lifecycle order`);
     }
     previousPosition = position;
+    if (phase === "createJob") createdAtBlock = receipt.blockNumber;
     if (phase === "fund") fundedAtBlock = receipt.blockNumber;
     const block = await client.getBlock({ blockNumber: receipt.blockNumber });
     const gasCost = receipt.gasUsed * receipt.effectiveGasPrice;
@@ -299,10 +302,16 @@ async function main(): Promise<void> {
     lastTimestamp = lastTimestamp === null || block.timestamp > lastTimestamp ? block.timestamp : lastTimestamp;
     transactions[phase] = proofTransaction(txHash, receipt.blockNumber, block.timestamp, receipt.gasUsed, receipt.effectiveGasPrice);
   }
-  if (firstTimestamp === null || lastTimestamp === null || fundedAtBlock === null) throw new Error("Proof timestamps or funding block are unavailable");
+  if (firstTimestamp === null || lastTimestamp === null || createdAtBlock === null || fundedAtBlock === null) {
+    throw new Error("Proof timestamps or lifecycle blocks are unavailable");
+  }
   const config = repository.allowlist;
-  const [identity, signature] = await Promise.all([
-    resolveIdentity(client, config.agentId, { chainId: 56, registry: ERC8183_MAINNET.registry }),
+  const [identity, signature, createPinsMatch, fundPinsMatch] = await Promise.all([
+    resolveIdentity(client, config.agentId, {
+      chainId: 56,
+      registry: ERC8183_MAINNET.registry,
+      blockNumber: fundedAtBlock,
+    }),
     verifyQuoteSignature({
       envelope: description,
       provider: config.seller,
@@ -310,7 +319,12 @@ async function main(): Promise<void> {
       expectedVerifyingContract: ERC8183_MAINNET.commerce,
       blockNumber: fundedAtBlock,
     }),
+    mainnetImplementationPinsMatch(client, createdAtBlock),
+    mainnetImplementationPinsMatch(client, fundedAtBlock),
   ]);
+  if (!createPinsMatch || !fundPinsMatch) {
+    throw new Error("Mainnet proof lifecycle used an unallowlisted Commerce or Router implementation");
+  }
   assertMainnetProofBinding({
     job,
     description,
