@@ -84,7 +84,7 @@ export interface ReadinessCandidate extends Omit<MarketplaceAgent, "categories">
   categories: MarketplaceCategory[];
   profileDerivedCategories: MarketplaceAgent["categories"];
   activation: HireabilityAssessment;
-  selection: "curated" | "operator_explicit";
+  selection: "curated" | "marketplace_operated" | "operator_explicit";
   qualification: {
     status: "qualified" | "not_qualified" | "unavailable";
     reasons: Array<
@@ -142,6 +142,7 @@ export interface BscMarketplaceReadinessReport {
   verification: BscVerificationReport;
   selection: {
     curatedAgentIds: string[];
+    marketplaceOperatedAgentIds: string[];
     explicitAgentIds: string[];
     evaluatedAgentIds: string[];
   };
