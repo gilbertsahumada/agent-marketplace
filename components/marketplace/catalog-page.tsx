@@ -87,7 +87,7 @@ export function CatalogPage({ data, query }: { data: MarketplaceAgentPage; query
       ) : query.category === "grid_trading" ? (
         <Alert className="mt-6 border-zinc-800 bg-zinc-950">
           <AlertTitle>No verified Grid Trading agent yet</AlertTitle>
-          <AlertDescription>We have not found a seller with sufficient operational evidence.</AlertDescription>
+          <AlertDescription><span>We have not found a seller with sufficient operational evidence.</span> <Link href="/jobs/testnet/551">Inspect the verified ERC-8183 demonstration</Link> without treating it as a Grid seller.</AlertDescription>
         </Alert>
       ) : (
         <Alert className="mt-6 border-zinc-800 bg-zinc-950">
