@@ -62,6 +62,33 @@ deterministic deliverable routes at the production marketplace origin. Its
 registration transaction is
 `0x166cdb89f4fb2236d760fcd372db7980d51d473a16f3ab51118eeb024eb61e2a`.
 
+Submission hardening now includes a separate, disabled-by-default BSC Mainnet
+path for exactly one marketplace-operated deterministic Grid planner. It is
+not an official BNB reference agent and it never executes trades or takes
+custody. Its server computes reproducible levels, allocations and rebalance
+triggers; the browser retains custody for every buyer write. This path remains
+NO-GO until a fresh read-only report verifies the fixed official contracts,
+active proxy implementations, `U` token, policy, spend ceiling, dedicated
+seller public address and production origin.
+The origin check also fetches the Grid Agent Card through the shared
+DNS-pinned, redirect-rejecting, 64 KiB transport and verifies both required
+seller skills before a report can become `GO`.
+
+```bash
+npm run mainnet:go-no-go
+npm run mainnet:grid-seller -- register          # dry run
+npm run mainnet:grid-seller -- register --execute # explicit Mainnet write
+npm run mainnet:settle-grid-job -- <jobId>       # dry run after dispute window
+npm run mainnet:settle-grid-job -- <jobId> --execute --evidence ./erc8183-56-job-<jobId>-sanitized.json
+npm run mainnet:capture-proof -- <jobId> ./erc8183-56-job-<jobId>-sanitized.json
+# Add --publish only after COMPLETED to promote it as /proof/mainnet.
+```
+
+The first recorded Mainnet evaluation at block `117715355` was `NO_GO`: all
+direct contract and policy checks passed, while the dedicated seller address,
+its minimum gas balance and the production origin were not configured. No
+Mainnet write was attempted.
+
 Enable the local demo only while the fixture's registered HTTPS endpoint is
 running:
 
@@ -140,6 +167,14 @@ Generate a separate read-only evidence report with:
 npm run verify:bsc
 ```
 
+Before a release, publish only the sanitized verification fields consumed by
+the UI. The command rejects stale input and removes endpoint URLs, probe
+payloads and errors:
+
+```bash
+npm run publish:verification -- --input .marketplace/readiness/bsc-marketplace.json
+```
+
 The verifier compares trust8004 identity fields with `ownerOf` and `tokenURI`
 at one pinned BSC Mainnet block, then performs MCP `initialize` and `tools/list`
 against at most one declared public endpoint per agent. It never calls a tool. Observed tool
@@ -202,8 +237,10 @@ The report is written to
 `.marketplace/readiness/bsc-marketplace.json`. `frontendReady=true` means the
 marketplace can represent the available evidence honestly and the buyer proof
 still validates onchain; it does not mean all categories have a live seller.
-Current real-agent activation coverage is empty, and Grid remains explicitly
-empty/unverified. A trust8004 outage or invalid schema fails visibly and does
+Current third-party activation coverage is empty. Grid remains explicitly
+empty until a marketplace-operated seller is registered and qualified; setting
+`ERC8183_MAINNET_SELLER_AGENT_ID` deliberately adds only that ID to the Grid
+readiness target and never classifies the global catalogue. A trust8004 outage or invalid schema fails visibly and does
 not replace the previous atomic local report with stale or invented evidence.
 
 Run the web product locally with:
@@ -252,8 +289,10 @@ or official BNB reference agent. The four current Mainnet candidates remain
 MCP-only, Grid has no verified seller, and catalogue coverage remains partial.
 Those limitations are part of the evidence model rather than hidden demo data.
 If a live catalogue or RPC dependency is unavailable, the application shows a
-diagnostic error; the versioned Job `551` snapshot and transaction links remain
-the durable proof.
+retryable diagnostic state instead of inventing records. The landing remains
+usable from the sanitized, timestamped release snapshot without treating it as
+a live profile or commercial qualification source; the versioned Job `551`
+snapshot and transaction links remain the durable hiring proof.
 
 Before presenting a new deployment, run:
 
@@ -261,6 +300,14 @@ Before presenting a new deployment, run:
 npm run check
 npm audit --audit-level=low
 ```
+
+The scheduled GitHub Actions uptime check covers the landing, catalogue,
+verification methodology and durable Job `551` throughout judging. Set the
+repository variable `MAINNET_GRID_SELLER_ENABLED=true` only after promotion to
+add the Mainnet Agent Card and browser demo to that external check.
+Production keeps `ERC8183_BROWSER_SPIKE_ENABLED=true` from 2026-09-09 through
+2026-09-23; the independent Mainnet flag stays false unless its complete GO,
+registration, qualification and proof-capture sequence succeeds.
 
 See:
 
