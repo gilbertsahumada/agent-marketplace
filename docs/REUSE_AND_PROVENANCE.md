@@ -79,6 +79,28 @@ tracker, Job `551` public manifest, and chain-scoped routing are new marketplace
 work. No additional trust8004 source, asset, font, component, runtime package,
 or database behavior was copied or imported.
 
+## Submission Mainnet and verification provenance
+
+The Mainnet Commerce, Router, policy, payment token and ERC-8004 Registry
+addresses come from the installed official `@bnbagent/sdk@0.5.0` BSC Mainnet
+configuration and are then checked directly through BSC RPC. The marketplace
+code adds the read-only proxy-implementation gate, fixed spend ceiling,
+non-custodial viem browser adapter, deterministic Grid computation, release
+snapshot sanitizer, external uptime workflow and public evidence views.
+
+The marketplace-operated Grid seller is new code in this repository. It is
+not copied from trust8004, is not one of the four third-party HeyAnon
+candidates, and is not described as an official BNB reference agent. Upstream
+SDK functionality remains responsible for ERC-8004 registration, signed quote
+construction/verification, ERC-8183 reads, submission and permissionless
+settlement. The buyer's injected wallet and private key never reach the server.
+
+Published drift evidence is a sanitized derivative of this repository's
+bounded verification run. Names and declarations originate from the trust8004
+public API; identity comparisons originate from a pinned BSC block; MCP tool
+lists are observations only. Endpoint URLs, raw probe payloads and errors are
+not published.
+
 ## Not copied from trust8004
 
 - Existing landing and multichain navigation.
