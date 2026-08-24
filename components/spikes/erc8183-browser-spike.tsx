@@ -13,6 +13,7 @@ import {
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
+import { useAccount, useSwitchChain } from "wagmi";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -27,7 +28,6 @@ import {
 import type { MainnetDemoPublicConfig } from "@/src/business/entities/mainnet-browser-demo";
 import {
   clearBrowserJournal,
-  connectInjectedWallet,
   executeBrowserHire,
   loadBrowserJournal,
   saveBrowserJournal,
@@ -37,11 +37,7 @@ import {
 
 type ApiError = { error?: { code?: string; message?: string } };
 
-type InjectedProvider = Parameters<typeof connectInjectedWallet>[0];
-
-function injectedProvider(): InjectedProvider | null {
-  return (window as Window & { ethereum?: InjectedProvider }).ethereum ?? null;
-}
+type InjectedProvider = Parameters<typeof executeBrowserHire>[0];
 
 async function apiJson<T>(input: string, init?: RequestInit): Promise<T> {
   const response = await fetch(input, {
@@ -121,7 +117,9 @@ function Erc8183BrowserDemo({ mode, deployment }: { mode: "testnet" | "mainnet";
   const jobsBase = mode === "mainnet" ? "/api/marketplace/jobs/mainnet" : "/api/marketplace/jobs/testnet";
   const jobPageBase = mode === "mainnet" ? "/jobs/mainnet" : "/jobs/testnet";
   const [quote, setQuote] = useState<NormalizedErc8183Quote | null>(null);
-  const [account, setAccount] = useState<string | null>(null);
+  const { address, isConnected, connector } = useAccount();
+  const { switchChainAsync } = useSwitchChain();
+  const account = isConnected && address ? address : null;
   const [plan, setPlan] = useState<Erc8183HirePlan | null>(null);
   const [journal, setJournal] = useState<Erc8183BrowserJournal | null>(null);
   const [job, setJob] = useState<Erc8183JobFacts | null>(null);
@@ -162,15 +160,15 @@ function Erc8183BrowserDemo({ mode, deployment }: { mode: "testnet" | "mainnet";
 
   const connectAndPrepare = async () => {
     if (!quote) return;
-    const provider = injectedProvider();
-    if (!provider) {
-      setError("No EIP-1193 injected wallet was detected in this browser.");
+    if (!account) {
+      setError("Connect a wallet from the header before preparing this hire.");
       return;
     }
-    setBusy("Connecting the injected wallet");
+    setBusy("Preparing the connected wallet");
     setError(null);
     try {
-      const buyer = await connectInjectedWallet(provider, deployment);
+      await switchChainAsync({ chainId: deployment.chainId });
+      const buyer = account;
       const prepared = await apiJson<Erc8183HirePlan>(`${apiBase}/prepare`, {
         method: "POST",
         body: JSON.stringify({ buyer, quote: quote.envelope }),
@@ -178,7 +176,6 @@ function Erc8183BrowserDemo({ mode, deployment }: { mode: "testnet" | "mainnet";
       if (journal && journal.buyer.toLowerCase() !== buyer.toLowerCase()) {
         throw new Error("The saved journal belongs to a different wallet. Reconnect that wallet or clear the journal.");
       }
-      setAccount(buyer);
       setPlan(prepared);
       if (journal?.jobId) await readJob(journal.jobId);
     } catch (cause) {
@@ -190,11 +187,11 @@ function Erc8183BrowserDemo({ mode, deployment }: { mode: "testnet" | "mainnet";
 
   const signAndRun = async () => {
     if (!plan || !account) return;
-    const provider = injectedProvider();
-    if (!provider) return setError("The injected wallet is no longer available.");
+    if (!connector) return setError("The connected wallet is no longer available.");
     setBusy("Waiting for wallet confirmations");
     setError(null);
     try {
+      const provider = (await connector.getProvider()) as InjectedProvider;
       if (job && (job.status === "SUBMITTED" || job.status === "COMPLETED")) return;
       const execution = await executeBrowserHire(provider, plan, {
         journal,
@@ -309,12 +306,13 @@ function Erc8183BrowserDemo({ mode, deployment }: { mode: "testnet" | "mainnet";
 
           <Card>
             <CardHeader>
-              <CardTitle>2 · Connect and inspect balances</CardTitle>
-              <CardDescription>Connecting reveals only your public account. The server then reads balances and allowance; no signature is requested.</CardDescription>
+              <CardTitle>2 · Prepare and inspect balances</CardTitle>
+              <CardDescription>Your wallet reveals only its public account. The server then reads balances and allowance; no signature is requested.</CardDescription>
             </CardHeader>
             <CardContent>
-              <Button disabled={!quote || busy !== null} onClick={() => void connectAndPrepare()} variant={account ? "outline" : "default"}>
-                <Wallet aria-hidden="true" />{account ? `Connected ${shortAddress(account)}` : "Connect injected wallet"}
+              <Button disabled={!quote || !account || busy !== null} onClick={() => void connectAndPrepare()} variant={plan ? "outline" : "default"}>
+                <Wallet aria-hidden="true" />
+                {account ? `Prepare hire as ${shortAddress(account)}` : "Connect a wallet in the header"}
               </Button>
               {plan && (
                 <dl className="mt-5 rounded-xl border border-white/[0.07] bg-white/[0.02] px-4">
