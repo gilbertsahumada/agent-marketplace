@@ -1,0 +1,31 @@
+name: Submission uptime
+
+on:
+  schedule:
+    - cron: "17 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  public-journey:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      ORIGIN: https://bnb-agent-marketplace-ruby.vercel.app
+      MAINNET_GRID_SELLER_ENABLED: ${{ vars.MAINNET_GRID_SELLER_ENABLED }}
+    steps:
+      - name: Check durable public routes
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --location --max-time 20 "$ORIGIN/" >/dev/null
+          curl --fail --silent --show-error --location --max-time 20 "$ORIGIN/agents?view=marketplace" >/dev/null
+          curl --fail --silent --show-error --location --max-time 20 "$ORIGIN/jobs/testnet/551" >/dev/null
+          curl --fail --silent --show-error --location --max-time 20 "$ORIGIN/evidence/verification" >/dev/null
+      - name: Check Mainnet Grid seller when promoted
+        if: env.MAINNET_GRID_SELLER_ENABLED == 'true'
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --location --max-time 20 "$ORIGIN/grid/.well-known/agent-card.json" >/dev/null
+          curl --fail --silent --show-error --location --max-time 20 "$ORIGIN/demo/erc8183-mainnet" >/dev/null
