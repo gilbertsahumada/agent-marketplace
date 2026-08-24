@@ -18,6 +18,7 @@ export interface EvidenceStepViewModel {
   detail: string;
   source?: string;
   timestamp?: string;
+  link?: { href: string; label: string };
 }
 
 export interface CategoryCardViewModel {
