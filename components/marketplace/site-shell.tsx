@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Blocks, ChevronDown, GitFork } from "lucide-react";
+import { ChevronDown, GitFork } from "lucide-react";
 import type { ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 
@@ -12,8 +12,8 @@ const navigation = [
 function Brand() {
   return (
     <Link className="group inline-flex items-center gap-2.5" href="/">
-      <span className="flex size-9 items-center justify-center rounded-xl border border-primary/30 bg-primary/10 text-primary transition-colors group-hover:bg-primary/15">
-        <Blocks aria-hidden="true" className="size-4" />
+      <span className="flex size-9 items-center justify-center rounded-xl border border-primary/30 bg-primary/10 transition-colors group-hover:bg-primary/15">
+        <img alt="" className="size-5" src="/logo/SVG/BNB Chain_Symbol_Yellow.svg" />
       </span>
       <span className="leading-none">
         <span className="block text-sm font-semibold tracking-tight text-white">BNB Agent Studio</span>
@@ -98,6 +98,26 @@ function Footer() {
             <GitFork aria-hidden="true" className="size-4" />
             GitHub
           </a>
+        </div>
+      </div>
+      <div className="border-t border-white/10">
+        <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-4 px-4 py-5 sm:px-6 lg:px-8">
+          <img
+            alt="Built on BNB Chain"
+            className="h-5 w-auto opacity-70"
+            src="/logo/SVG/BNB Chain_Logo_White.svg"
+          />
+          <p className="text-xs text-zinc-500">
+            Reputation data powered by{" "}
+            <a
+              className="text-zinc-300 underline decoration-zinc-600 underline-offset-2 hover:text-white"
+              href="https://trust8004.xyz"
+              rel="noreferrer"
+              target="_blank"
+            >
+              trust8004.xyz
+            </a>
+          </p>
         </div>
       </div>
     </footer>

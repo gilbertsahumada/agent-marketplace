@@ -27,16 +27,18 @@ export default async function HomePage() {
     availability: status === "unverified" ? "empty" : "listed",
     availabilityLabel: status === "unverified" ? "Unverified · empty" : `${count} candidate${count === 1 ? "" : "s"}`,
   }));
+  const txLink = (tx: { hash: string; explorerUrl: string } | undefined) =>
+    tx ? { link: { href: tx.explorerUrl, label: `${tx.hash.slice(0, 6)}…${tx.hash.slice(-4)}` } } : {};
   const publicProof: EvidenceStepViewModel[] = mainnetProof ? [
-    { kind: "declared", label: "Declared", status: "verified", provenance: "declared", detail: "The marketplace-operated Grid seller published deterministic no-custody terms.", timestamp: mainnetProof.capturedAt },
-    { kind: "reachable", label: "Reachable", status: "verified", provenance: "observed", detail: "The fixed production seller negotiated and submitted the Grid result.", timestamp: mainnetProof.transactions.submit?.timestamp ?? mainnetProof.capturedAt },
-    { kind: "quote", label: "Quote verified", status: "verified", provenance: "observed", detail: "The browser job description contains the seller-signed canonical Grid quote.", timestamp: mainnetProof.transactions.createJob?.timestamp ?? mainnetProof.capturedAt },
-    { kind: "job", label: "Job proven", status: "verified", provenance: "onchain", detail: `BSC Mainnet Job #${mainnetProof.jobId} reached ${mainnetProof.finalState}.`, source: "onchain:bsc-mainnet-rpc", timestamp: (mainnetProof.transactions.settle ?? mainnetProof.transactions.submit)?.timestamp ?? mainnetProof.capturedAt },
+    { kind: "declared", label: "Declared", status: "verified", provenance: "declared", detail: "The marketplace Grid seller published deterministic no-custody terms.", timestamp: mainnetProof.capturedAt },
+    { kind: "reachable", label: "Reachable", status: "verified", provenance: "observed", detail: "The seller negotiated and submitted the Grid result.", timestamp: mainnetProof.transactions.submit?.timestamp ?? mainnetProof.capturedAt, ...txLink(mainnetProof.transactions.submit) },
+    { kind: "quote", label: "Quote verified", status: "verified", provenance: "observed", detail: "The job carries the seller-signed canonical quote.", timestamp: mainnetProof.transactions.createJob?.timestamp ?? mainnetProof.capturedAt, ...txLink(mainnetProof.transactions.createJob) },
+    { kind: "job", label: "Job proven", status: "verified", provenance: "onchain", detail: `Job #${mainnetProof.jobId} reached ${mainnetProof.finalState} on BSC Mainnet.`, timestamp: (mainnetProof.transactions.settle ?? mainnetProof.transactions.submit)?.timestamp ?? mainnetProof.capturedAt, ...txLink(mainnetProof.transactions.settle ?? mainnetProof.transactions.submit) },
   ] : [
-    { kind: "declared", label: "Declared", status: "verified", provenance: "declared", detail: "Controlled test seller identity and terms were recorded.", source: proof.snapshot.source, timestamp: proof.snapshot.recordedAt },
-    { kind: "reachable", label: "Reachable", status: "verified", provenance: "observed", detail: "The A2A seller completed negotiation and funding notification.", timestamp: proof.snapshot.transactions.fund.timestamp },
-    { kind: "quote", label: "Quote verified", status: "verified", provenance: "observed", detail: "The buyer accepted a compatible signed quote.", timestamp: proof.snapshot.transactions.createJob.timestamp },
-    { kind: "job", label: "Job proven", status: "verified", provenance: "onchain", detail: "The versioned evidence records browser-signed Job #551 reaching SUBMITTED on BSC Testnet.", source: proof.snapshot.transactions.submit.provenance, timestamp: proof.snapshot.transactions.submit.timestamp },
+    { kind: "declared", label: "Declared", status: "verified", provenance: "declared", detail: "Seller identity and terms were recorded.", timestamp: proof.snapshot.recordedAt },
+    { kind: "reachable", label: "Reachable", status: "verified", provenance: "observed", detail: "The seller negotiated and confirmed funding.", timestamp: proof.snapshot.transactions.fund.timestamp, ...txLink(proof.snapshot.transactions.fund) },
+    { kind: "quote", label: "Quote verified", status: "verified", provenance: "observed", detail: "The buyer accepted the signed quote.", timestamp: proof.snapshot.transactions.createJob.timestamp, ...txLink(proof.snapshot.transactions.createJob) },
+    { kind: "job", label: "Job proven", status: "verified", provenance: "onchain", detail: `Job #${proof.snapshot.jobId} reached SUBMITTED on BSC Testnet, browser-signed.`, timestamp: proof.snapshot.transactions.submit.timestamp, ...txLink(proof.snapshot.transactions.submit) },
   ];
   const featuredAgents = catalogResult.snapshot.agents.map((agent) =>
     snapshotAgentCardViewModel(agent, catalogResult.snapshot));

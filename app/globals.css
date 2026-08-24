@@ -141,9 +141,9 @@ body {
 @media (min-width: 768px) {
   .evidence-step:not(:last-child)::after {
     top: 1.25rem;
-    right: calc(-50% + 1.25rem);
+    right: calc(-50% + 1.75rem);
     bottom: auto;
-    left: calc(50% + 1.25rem);
+    left: calc(50% + 1.75rem);
     width: auto;
     height: 1px;
   }
