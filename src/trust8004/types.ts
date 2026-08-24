@@ -174,6 +174,7 @@ export interface BscCandidateInventory {
   chainId: typeof BSC_MAINNET_CHAIN_ID;
   selection: {
     curatedAgentIds: string[];
+    marketplaceOperatedAgentIds: string[];
     explicitAgentIds: string[];
     evaluatedAgentIds: string[];
   };
