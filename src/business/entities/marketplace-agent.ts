@@ -44,6 +44,7 @@ export interface MarketplaceAgent {
   description: string | null;
   owner: string | null;
   metadataUri: string | null;
+  operator: "third_party" | "marketplace";
   indexedIdentity: {
     owner: string | null;
     metadataUri: string | null;
@@ -89,6 +90,25 @@ export interface MarketplaceAgent {
     metadataUpdatedAt: string | null;
     indexedUpdatedAt: string | null;
   };
+  verification?: {
+    freshness: "current" | "stale";
+    generatedAt: string;
+    staleAfter: string;
+    blockNumber: string;
+    identity: {
+      status: "match" | "mismatch" | "read_error";
+      mismatchFields: Array<"owner" | "metadata_uri">;
+      observedAt: string;
+      provenance: readonly ["declared", "onchain"];
+    };
+    tools: {
+      status: "observed" | "not_probed";
+      declaredOnly: string[];
+      observedOnly: string[];
+      observedAt: string | null;
+      provenance: "observed" | "not_probed";
+    };
+  } | null;
   catalogCoverage: "partial";
   provenance: {
     identity: EvidenceRecord;
