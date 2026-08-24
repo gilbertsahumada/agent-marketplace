@@ -10,6 +10,8 @@ import { EvidenceRail } from "./evidence-rail";
 import { CoverageBadge } from "./page-primitives";
 import { ProvenanceBadge } from "./provenance-badge";
 import { evidenceForAgent } from "./view-models";
+import { verificationViewModel } from "./view-models";
+import { VerificationDrift } from "./verification-drift";
 
 function MonoValue({ label, value }: { label: string; value: string | null }) {
   return (
@@ -22,6 +24,7 @@ function MonoValue({ label, value }: { label: string; value: string | null }) {
 
 export function AgentProfile({ agent }: { agent: MarketplaceAgent }) {
   const evaluated = agent.categoryEvaluation === "evaluated";
+  const verification = verificationViewModel(agent);
   return (
     <main id="main-content" className="mx-auto w-full max-w-7xl flex-1 px-4 py-12 sm:px-6 lg:px-8">
       <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
@@ -30,6 +33,7 @@ export function AgentProfile({ agent }: { agent: MarketplaceAgent }) {
           <div>
             <div className="flex flex-wrap items-center gap-2">
               <Badge variant="outline">BSC · #{agent.agentId}</Badge>
+              {agent.operator === "marketplace" && <Badge className="border-cyan-400/30 bg-cyan-400/10 text-cyan-200" variant="outline">Marketplace-operated · not official BNB reference</Badge>}
               <Badge className={agent.hireability.canHire ? "border-primary/40 bg-primary/10 text-primary" : "border-zinc-700 bg-zinc-900 text-zinc-300"} variant="outline">
                 {agent.hireability.canHire ? "Hireable now" : agent.hireability.status === "mcp_only" ? "MCP only" : evaluated ? "Not hireable" : "Not evaluated"}
               </Badge>
@@ -52,6 +56,8 @@ export function AgentProfile({ agent }: { agent: MarketplaceAgent }) {
         <CardHeader><CardTitle>Evidence line</CardTitle></CardHeader>
         <CardContent><EvidenceRail ariaLabel={`Evidence for ${agent.name}`} steps={evidenceForAgent(agent)} /></CardContent>
       </Card>
+
+      {verification && <div className="mt-5"><VerificationDrift verification={verification} /></div>}
 
       <Tabs className="mt-8" defaultValue="overview">
         <TabsList className="max-w-full justify-start overflow-x-auto" variant="line">
