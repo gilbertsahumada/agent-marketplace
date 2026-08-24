@@ -5,6 +5,7 @@ import { buildGridPlan, gridTaskDescription, parseGridTaskDescription } from "..
 import { ERC1967_IMPLEMENTATION_SLOT, ERC8183_MAINNET } from "../src/mainnet/contracts.js";
 import { MainnetGridSellerRepository } from "../src/mainnet/grid-seller-repository.js";
 import { mainnetImplementationPinsMatch } from "../src/mainnet/implementation-pins.js";
+import { areMainnetWritesEnabled } from "../src/mainnet/mainnet-write-gate.js";
 
 const SELLER = getAddress("0x1111111111111111111111111111111111111111");
 
@@ -80,6 +81,14 @@ function terminalDeliverable(jobId: number, jobDescription: string) {
 }
 
 describe("Mainnet Grid seller security", () => {
+  it("keeps Mainnet writes disabled by default and requires the exact explicit flag", () => {
+    expect(areMainnetWritesEnabled({})).toBe(false);
+    expect(areMainnetWritesEnabled({ ERC8183_MAINNET_SELLER_ENABLED: "true" })).toBe(false);
+    expect(areMainnetWritesEnabled({ ERC8183_MAINNET_DEMO_ENABLED: "true" })).toBe(false);
+    expect(areMainnetWritesEnabled({ ERC8183_MAINNET_WRITES_ENABLED: "TRUE" })).toBe(false);
+    expect(areMainnetWritesEnabled({ ERC8183_MAINNET_WRITES_ENABLED: "true" })).toBe(true);
+  });
+
   it("re-pins both ERC-1967 implementations at one block", async () => {
     const matching = publicClient();
     await expect(mainnetImplementationPinsMatch(matching)).resolves.toBe(true);
@@ -99,7 +108,7 @@ describe("Mainnet Grid seller security", () => {
       origin: "https://bnb-agent-marketplace-ruby.vercel.app",
       jobOps: { verifyJob },
       client: { getJob },
-    }) as never);
+    }) as never, () => true);
 
     await expect(repository.handleMessage({ skill: "notify_funded", jobId: 91 }))
       .rejects.toThrow(/signed-quote verification/);
@@ -116,7 +125,7 @@ describe("Mainnet Grid seller security", () => {
       origin: "https://bnb-agent-marketplace-ruby.vercel.app",
       jobOps: { verifyJob },
       client: { getJob, router: { jobPolicy: vi.fn(async () => ERC8183_MAINNET.policy) } },
-    }) as never);
+    }) as never, () => true);
 
     await expect(repository.handleMessage({ skill: "notify_funded", jobId: 95 }))
       .resolves.toEqual({ acknowledged: true, already_submitted: true, job_id: 95 });
@@ -149,7 +158,7 @@ describe("Mainnet Grid seller security", () => {
         policy: { disputeWindow: vi.fn(async () => 604_800n) },
         publicClient: publicClient(),
       },
-    }) as never);
+    }) as never, () => true);
 
     await expect(repository.handleMessage({ skill: "notify_funded", jobId: 92 }))
       .resolves.toMatchObject({ acknowledged: true, already_submitted: true, job_id: 92 });
@@ -171,7 +180,7 @@ describe("Mainnet Grid seller security", () => {
         policy: { disputeWindow: vi.fn(async () => 604_800n) },
         publicClient: publicClient(balance),
       },
-    }) as never);
+    }) as never, () => true);
 
     const now = Math.floor(Date.now() / 1_000);
     await expect(createRepository(fundedJob(undefined, BigInt(now + 604_800)), 2_000_000_000_000_000n)
@@ -193,8 +202,67 @@ describe("Mainnet Grid seller security", () => {
         getJob: vi.fn(async () => ({ ...base, status: 2 })),
         router: { jobPolicy: vi.fn(async () => ERC8183_MAINNET.policy) },
       },
-    }) as never);
+    }) as never, () => true);
     await expect(repository.handleMessage({ skill: "notify_funded", jobId: 96 }))
       .rejects.toThrow(/deterministic result/);
+  });
+
+  it("keeps negotiation available but blocks submit while Mainnet writes are disabled", async () => {
+    const negotiate = vi.fn(async () => ({ toDict: () => ({ accepted: true }) }));
+    const submit = vi.fn();
+    const repository = new MainnetGridSellerRepository(async () => ({
+      seller: SELLER,
+      origin: "https://bnb-agent-marketplace-ruby.vercel.app",
+      negotiation: { negotiate },
+      jobOps: { verifyJob: vi.fn(async () => ({ valid: true })) },
+      client: {
+        getJob: vi.fn(async () => fundedJob()),
+        submit,
+      },
+    }) as never, () => false);
+
+    await expect(repository.handleMessage({
+      skill: "negotiate-erc8183-job",
+      taskDescription: gridTaskDescription({
+        pair: "BNB/USDT",
+        lowerPrice: "700",
+        upperPrice: "900",
+        capital: "1000",
+        gridCount: 9,
+      }),
+      terms: {
+        deliverables: "Deterministic Grid plan JSON with levels, allocation, triggers and assumptions",
+        quality_standards: "Deterministic output, no order execution and no custody",
+      },
+    })).resolves.toMatchObject({ accepted: true, provider_address: SELLER });
+    await expect(repository.handleMessage({ skill: "notify_funded", jobId: 97 }))
+      .rejects.toThrow(/writes are disabled/);
+    expect(negotiate).toHaveBeenCalledOnce();
+    expect(submit).not.toHaveBeenCalled();
+  });
+
+  it("rechecks the write gate at the final submit boundary", async () => {
+    const submit = vi.fn();
+    const writesEnabled = vi.fn()
+      .mockReturnValueOnce(true)
+      .mockReturnValueOnce(false);
+    const repository = new MainnetGridSellerRepository(async () => ({
+      seller: SELLER,
+      origin: "https://bnb-agent-marketplace-ruby.vercel.app",
+      negotiation: {},
+      jobOps: { verifyJob: vi.fn(async () => ({ valid: true })) },
+      client: {
+        getJob: vi.fn(async () => fundedJob()),
+        submit,
+        router: { jobPolicy: vi.fn(async () => ERC8183_MAINNET.policy) },
+        policy: { disputeWindow: vi.fn(async () => 604_800n) },
+        publicClient: publicClient(),
+      },
+    }) as never, writesEnabled);
+
+    await expect(repository.handleMessage({ skill: "notify_funded", jobId: 98 }))
+      .rejects.toThrow(/writes are disabled/);
+    expect(writesEnabled).toHaveBeenCalledTimes(2);
+    expect(submit).not.toHaveBeenCalled();
   });
 });

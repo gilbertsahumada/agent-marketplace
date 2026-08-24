@@ -5,6 +5,7 @@ import { MainnetErc8183Repository } from "../mainnet/mainnet-erc8183-repository.
 import { StaticPublicVerificationRepository } from "./repositories/public-verification-repository.js";
 import { MainnetBrowserDemoConfigRepository } from "../mainnet/browser-demo-config-repository.js";
 import { StaticMainnetJobProofRepository } from "./proofs/mainnet-job-proof-repository.js";
+import { areMainnetWritesEnabled } from "../mainnet/mainnet-write-gate.js";
 
 export const marketplaceAgentRepository = new Trust8004MarketplaceAgentRepository();
 export const erc8183SpikeRepository = new TrustlessErc8183SpikeRepository();
@@ -12,6 +13,7 @@ export const mainnetErc8183Repository = new MainnetErc8183Repository();
 export const publicVerificationRepository = new StaticPublicVerificationRepository();
 export const mainnetBrowserDemoConfigRepository = new MainnetBrowserDemoConfigRepository();
 export const mainnetJobProofRepository = new StaticMainnetJobProofRepository();
+export const mainnetWritesEnabled = areMainnetWritesEnabled;
 export const publicJobProofRepository = new Gate1PublicProofRepository({
   loadGate6aJob: () => erc8183SpikeRepository.getJob(551n),
 });

@@ -2,6 +2,19 @@ import type { GridPlan, GridPlanInput } from "../entities/grid-plan.js";
 
 const SCALE = 100_000_000n;
 
+export const GRID_NEGOTIATION_TERMS = Object.freeze({
+  deliverables: "Deterministic Grid plan JSON with levels, allocation, triggers and assumptions",
+  qualityStandards: "Deterministic output, no order execution and no custody",
+});
+
+export const GRID_CANONICAL_INPUT = Object.freeze({
+  pair: "BNB/USDT",
+  lowerPrice: "700",
+  upperPrice: "900",
+  capital: "1000",
+  gridCount: 9,
+});
+
 function decimal(value: string, field: string): bigint {
   if (!/^(?:0|[1-9]\d*)(?:\.\d{1,8})?$/.test(value)) {
     throw new Error(`${field} must be a positive decimal with at most 8 places`);

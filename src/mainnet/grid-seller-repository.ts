@@ -19,11 +19,12 @@ import type {
 } from "../business/entities/hosted-erc8183-seller.js";
 import { HostedSellerJobNotReadyError, HostedSellerUnavailableError } from "../business/errors/hosted-seller-errors.js";
 import { gridSellerAgentCard } from "../business/policies/grid-seller-policy.js";
-import { buildGridPlan, parseGridTaskDescription } from "../business/policies/grid-plan-policy.js";
+import { GRID_NEGOTIATION_TERMS, buildGridPlan, parseGridTaskDescription } from "../business/policies/grid-plan-policy.js";
 import type { HostedErc8183SellerRepository } from "../data/repositories/hosted-erc8183-seller-repository.js";
 import { ERC8183_MAINNET } from "./contracts.js";
 import { loadMainnetGridSellerConfig } from "./grid-seller-config.js";
 import { mainnetImplementationPinsMatch } from "./implementation-pins.js";
+import { areMainnetWritesEnabled } from "./mainnet-write-gate.js";
 
 interface MainnetGridRuntime {
   client: ERC8183Client;
@@ -114,7 +115,10 @@ async function runtime(): Promise<MainnetGridRuntime> {
 }
 
 export class MainnetGridSellerRepository implements HostedErc8183SellerRepository {
-  constructor(private readonly loadRuntime: () => Promise<MainnetGridRuntime> = runtime) {}
+  constructor(
+    private readonly loadRuntime: () => Promise<MainnetGridRuntime> = runtime,
+    private readonly writesEnabled: () => boolean = areMainnetWritesEnabled,
+  ) {}
 
   async getAgentCard(): Promise<HostedSellerAgentCard> {
     const config = loadMainnetGridSellerConfig(process.env, { requireAgentId: false });
@@ -127,8 +131,8 @@ export class MainnetGridSellerRepository implements HostedErc8183SellerRepositor
     if (message.skill === "negotiate-erc8183-job") {
       parseGridTaskDescription(message.taskDescription);
       if (
-        message.terms.deliverables !== "Deterministic Grid plan JSON with levels, allocation, triggers and assumptions" ||
-        message.terms.quality_standards !== "Deterministic output, no order execution and no custody"
+        message.terms.deliverables !== GRID_NEGOTIATION_TERMS.deliverables ||
+        message.terms.quality_standards !== GRID_NEGOTIATION_TERMS.qualityStandards
       ) throw new HostedSellerJobNotReadyError("The Grid negotiation terms are not supported");
       const quote = await current.negotiation.negotiate({
         task_description: message.taskDescription,
@@ -169,6 +173,9 @@ export class MainnetGridSellerRepository implements HostedErc8183SellerRepositor
       if (!deliverable.verify(existingJob.deliverable)) throw new HostedSellerJobNotReadyError("The terminal Grid deliverable does not match its deterministic result");
       return { acknowledged: true, already_submitted: true, job_id: Number(jobId) };
     }
+    if (!this.writesEnabled()) {
+      throw new HostedSellerUnavailableError("Mainnet Grid seller writes are disabled pending the recorded GO decision");
+    }
     const verification = await current.jobOps.verifyJob(Number(jobId));
     if (verification.valid !== true) {
       throw new HostedSellerJobNotReadyError("The funded Grid job failed signed-quote verification");
@@ -187,6 +194,9 @@ export class MainnetGridSellerRepository implements HostedErc8183SellerRepositor
       throw new HostedSellerUnavailableError("The Mainnet Grid seller gas reserve is below its safety floor");
     }
     const deliverableHash = deliverable.manifestHash();
+    if (!this.writesEnabled()) {
+      throw new HostedSellerUnavailableError("Mainnet Grid seller writes are disabled pending the recorded GO decision");
+    }
     try {
       const result = await current.client.submit(jobId, deliverableHash, {
         deliverable_url: `${current.origin}/api/sellers/grid/job/${jobId}/response`,

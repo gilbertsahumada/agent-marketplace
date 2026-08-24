@@ -66,6 +66,7 @@ describe("three-layer dependency boundaries", () => {
     const secretModules = [
       "src/data/erc8183/hosted-seller-config.ts",
       "src/mainnet/grid-seller-config.ts",
+      "src/mainnet/mainnet-write-gate.ts",
     ];
     const clientFiles = clientReachableFiles();
     const clientSource = [...clientFiles].map((file) => readFileSync(file, "utf8")).join("\n");
@@ -74,7 +75,9 @@ describe("three-layer dependency boundaries", () => {
       expect(clientFiles).not.toContain(secretModule);
     }
     expect(contents("{app,components,src}/**/*.{ts,tsx}")).not.toMatch(/NEXT_PUBLIC_(?:MAINNET_)?SELLER_PRIVATE_KEY/);
+    expect(contents("{app,components,src}/**/*.{ts,tsx}")).not.toMatch(/NEXT_PUBLIC_ERC8183_MAINNET_WRITES_ENABLED/);
     expect(clientSource).not.toMatch(/(?:MAINNET_)?SELLER_PRIVATE_KEY/);
+    expect(clientSource).not.toMatch(/ERC8183_MAINNET_WRITES_ENABLED/);
   });
 
   it("never places a seller key in a log statement", () => {

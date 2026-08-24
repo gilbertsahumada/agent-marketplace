@@ -3,6 +3,7 @@ import {
   mainnetErc8183Repository,
   mainnetBrowserDemoConfigRepository,
   mainnetJobProofRepository,
+  mainnetWritesEnabled,
   marketplaceAgentRepository,
   publicJobProofRepository,
   publicVerificationRepository,
@@ -21,7 +22,7 @@ import { GetMainnetBrowserDemoConfig } from "./use-cases/get-mainnet-browser-dem
 import { GetMainnetJobProof } from "./use-cases/get-mainnet-job-proof.js";
 import { GetMarketplaceLandingCatalog } from "./use-cases/get-marketplace-landing-catalog.js";
 import { GetMainnetHiringExposure } from "./use-cases/get-mainnet-hiring-exposure.js";
-import { PrepareQualifiedMainnetHire, RequestQualifiedMainnetQuote } from "./use-cases/qualified-mainnet-hire.js";
+import { NotifyQualifiedMainnetFundedJob, PrepareQualifiedMainnetHire, RequestQualifiedMainnetQuote } from "./use-cases/qualified-mainnet-hire.js";
 
 export const listMarketplaceAgents = new ListMarketplaceAgents(marketplaceAgentRepository);
 export const getMarketplaceAgent = new GetMarketplaceAgent(marketplaceAgentRepository);
@@ -37,7 +38,7 @@ export const getErc8183TestnetJobTracking = new GetErc8183TestnetJobTracking(
 );
 const unqualifiedMainnetQuote = new RequestErc8183Quote(mainnetErc8183Repository);
 const unqualifiedMainnetPrepare = new PrepareErc8183Hire(mainnetErc8183Repository);
-export const notifyMainnetFundedJob = new NotifyFundedJob(mainnetErc8183Repository);
+const unqualifiedMainnetNotify = new NotifyFundedJob(mainnetErc8183Repository);
 export const getMainnetErc8183JobStatus = new GetErc8183JobStatus(mainnetErc8183Repository);
 export const getPublicVerificationSnapshot = new GetPublicVerificationSnapshot(publicVerificationRepository);
 export const getMarketplaceLandingCatalog = new GetMarketplaceLandingCatalog(getPublicVerificationSnapshot);
@@ -52,6 +53,11 @@ export const requestMainnetErc8183Quote = new RequestQualifiedMainnetQuote(
 export const prepareMainnetErc8183Hire = new PrepareQualifiedMainnetHire(
   getMainnetHiringExposure,
   unqualifiedMainnetPrepare,
+);
+export const notifyMainnetFundedJob = new NotifyQualifiedMainnetFundedJob(
+  getMainnetHiringExposure,
+  mainnetWritesEnabled,
+  unqualifiedMainnetNotify,
 );
 export const getMainnetBrowserDemoConfig = new GetMainnetBrowserDemoConfig(mainnetBrowserDemoConfigRepository);
 export const getMainnetJobProof = new GetMainnetJobProof(mainnetJobProofRepository);

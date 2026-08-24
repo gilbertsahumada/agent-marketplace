@@ -1,6 +1,7 @@
 import type { Erc8183HirePlan, NormalizedErc8183Quote } from "../entities/erc8183-browser-spike.js";
 import { Erc8183SpikeDisabledError } from "../errors/erc8183-spike-errors.js";
 import type { PrepareErc8183Hire, PrepareErc8183HireInput } from "./prepare-erc8183-hire.js";
+import type { NotifyFundedJob } from "./notify-funded-job.js";
 import type { RequestErc8183Quote } from "./request-erc8183-quote.js";
 import type { GetMainnetHiringExposure } from "./get-mainnet-hiring-exposure.js";
 
@@ -29,5 +30,19 @@ export class PrepareQualifiedMainnetHire {
   execute(input: PrepareErc8183HireInput): Promise<Erc8183HirePlan> {
     requireCurrentQualification(this.exposure);
     return this.prepareHire.execute(input);
+  }
+}
+
+export class NotifyQualifiedMainnetFundedJob {
+  constructor(
+    private readonly exposure: GetMainnetHiringExposure,
+    private readonly writesEnabled: () => boolean,
+    private readonly notifyFunded: NotifyFundedJob,
+  ) {}
+
+  execute(input: Parameters<NotifyFundedJob["execute"]>[0]) {
+    requireCurrentQualification(this.exposure);
+    if (!this.writesEnabled()) throw new Erc8183SpikeDisabledError();
+    return this.notifyFunded.execute(input);
   }
 }

@@ -14,9 +14,17 @@ import {
   type Hex,
 } from "viem";
 import { bsc } from "viem/chains";
+import { parseJobDescription, verifyQuoteSignature } from "@bnbagent/sdk/erc8183";
 import type { MainnetJobProof, MainnetJobTransactionProof } from "../business/entities/mainnet-job-proof.js";
-import { buildGridPlan, parseGridTaskDescription } from "../business/policies/grid-plan-policy.js";
-import { parseJobDescription } from "@bnbagent/sdk/erc8183";
+import type { Erc8183JobFacts } from "../business/entities/erc8183-browser-spike.js";
+import {
+  GRID_CANONICAL_INPUT,
+  GRID_NEGOTIATION_TERMS,
+  buildGridPlan,
+  gridTaskDescription,
+  parseGridTaskDescription,
+} from "../business/policies/grid-plan-policy.js";
+import { resolveIdentity, type ResolvedIdentity } from "../identity.js";
 import {
   ERC8183_MAINNET,
   mainnetCommerceEvidenceAbi,
@@ -58,8 +66,46 @@ interface ExpectedEvidenceJob {
   deliverable: Hex;
 }
 
+interface MainnetProofBindingInput {
+  job: Erc8183JobFacts;
+  description: Record<string, unknown>;
+  identity: Pick<ResolvedIdentity, "agentId" | "agentWallet" | "a2aEndpoint">;
+  expectedAgentId: number;
+  expectedSeller: Address;
+  expectedOrigin: string;
+  signatureValid: boolean;
+}
+
 function sameAddress(left: string, right: string): boolean {
   return isAddressEqual(getAddress(left), getAddress(right));
+}
+
+/** Reject a proof unless its job, signed quote and ERC-8004 identity all bind to the fixed deployment. */
+export function assertMainnetProofBinding(input: MainnetProofBindingInput): void {
+  const { job, description, identity } = input;
+  const terms = sourceObject(description.terms);
+  if (
+    job.chainId !== 56 ||
+    !sameAddress(job.provider, input.expectedSeller) ||
+    !sameAddress(job.evaluator, ERC8183_MAINNET.router) ||
+    !sameAddress(job.policy, ERC8183_MAINNET.policy) ||
+    job.budgetRaw !== ERC8183_MAINNET.maximumDemoBudgetRaw.toString() ||
+    job.quotedPriceRaw !== ERC8183_MAINNET.maximumDemoBudgetRaw.toString() ||
+    !job.quotedToken ||
+    !sameAddress(job.quotedToken, ERC8183_MAINNET.token) ||
+    description.chain_id !== 56 ||
+    typeof description.verifying_contract !== "string" ||
+    !sameAddress(description.verifying_contract, ERC8183_MAINNET.commerce) ||
+    description.task !== gridTaskDescription(GRID_CANONICAL_INPUT) ||
+    terms.deliverables !== GRID_NEGOTIATION_TERMS.deliverables ||
+    terms.quality_standards !== GRID_NEGOTIATION_TERMS.qualityStandards
+  ) throw new Error("Mainnet proof job or quote is outside the fixed deployment allowlist");
+  if (!input.signatureValid) throw new Error("Mainnet proof quote signature is invalid");
+  if (
+    identity.agentId !== input.expectedAgentId ||
+    !sameAddress(identity.agentWallet, input.expectedSeller) ||
+    new URL(identity.a2aEndpoint).origin !== input.expectedOrigin
+  ) throw new Error("Mainnet proof Agent ID does not resolve to the fixed seller deployment");
 }
 
 function eventArgs(
@@ -207,6 +253,7 @@ async function main(): Promise<void> {
   if (!job.result?.hashVerified) throw new Error("Mainnet deliverable hash is not verified");
   const parsedDescription = parseJobDescription(job.description);
   if (!parsedDescription) throw new Error("Mainnet job description is not a signed quote");
+  const description = sourceObject(JSON.parse(job.description));
   const expectedPlan = buildGridPlan(parseGridTaskDescription(parsedDescription.task));
   if (JSON.stringify(JSON.parse(job.result.content)) !== JSON.stringify(expectedPlan)) throw new Error("Grid result is not the deterministic quoted computation");
   const client = createPublicClient({ chain: bsc, transport: http(ERC8183_MAINNET.rpcUrl) });
@@ -214,6 +261,7 @@ async function main(): Promise<void> {
   let firstTimestamp: bigint | null = null;
   let lastTimestamp: bigint | null = null;
   let totalGasCost = 0n;
+  let fundedAtBlock: bigint | null = null;
   let previousPosition: { blockNumber: bigint; transactionIndex: number } | null = null;
   const phases = job.status === "COMPLETED"
     ? Object.entries(PHASE_TARGETS)
@@ -243,6 +291,7 @@ async function main(): Promise<void> {
       throw new Error(`${phase} transaction is out of lifecycle order`);
     }
     previousPosition = position;
+    if (phase === "fund") fundedAtBlock = receipt.blockNumber;
     const block = await client.getBlock({ blockNumber: receipt.blockNumber });
     const gasCost = receipt.gasUsed * receipt.effectiveGasPrice;
     totalGasCost += gasCost;
@@ -250,12 +299,32 @@ async function main(): Promise<void> {
     lastTimestamp = lastTimestamp === null || block.timestamp > lastTimestamp ? block.timestamp : lastTimestamp;
     transactions[phase] = proofTransaction(txHash, receipt.blockNumber, block.timestamp, receipt.gasUsed, receipt.effectiveGasPrice);
   }
-  if (firstTimestamp === null || lastTimestamp === null) throw new Error("Proof timestamps are unavailable");
+  if (firstTimestamp === null || lastTimestamp === null || fundedAtBlock === null) throw new Error("Proof timestamps or funding block are unavailable");
+  const config = repository.allowlist;
+  const [identity, signature] = await Promise.all([
+    resolveIdentity(client, config.agentId, { chainId: 56, registry: ERC8183_MAINNET.registry }),
+    verifyQuoteSignature({
+      envelope: description,
+      provider: config.seller,
+      publicClient: client,
+      expectedVerifyingContract: ERC8183_MAINNET.commerce,
+      blockNumber: fundedAtBlock,
+    }),
+  ]);
+  assertMainnetProofBinding({
+    job,
+    description,
+    identity,
+    expectedAgentId: config.agentId,
+    expectedSeller: config.seller,
+    expectedOrigin: "https://bnb-agent-marketplace-ruby.vercel.app",
+    signatureValid: signature.valid,
+  });
   const proof: MainnetJobProof = {
     schemaVersion: 1,
     capturedAt: new Date().toISOString(),
     chainId: 56,
-    agentId: String(repository.allowlist.agentId),
+    agentId: String(identity.agentId),
     jobId: jobIdRaw,
     buyer: getAddress(job.buyer),
     seller: getAddress(job.provider),

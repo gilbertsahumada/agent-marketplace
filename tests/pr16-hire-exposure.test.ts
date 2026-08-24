@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 import type { MainnetDemoPublicConfig } from "../src/business/entities/mainnet-browser-demo.js";
 import { GetMainnetHiringExposure } from "../src/business/use-cases/get-mainnet-hiring-exposure.js";
-import { PrepareQualifiedMainnetHire, RequestQualifiedMainnetQuote } from "../src/business/use-cases/qualified-mainnet-hire.js";
+import { NotifyQualifiedMainnetFundedJob, PrepareQualifiedMainnetHire, RequestQualifiedMainnetQuote } from "../src/business/use-cases/qualified-mainnet-hire.js";
 import { AsyncTtlCache } from "../src/data/cache/async-ttl-cache.js";
 import { Trust8004MarketplaceAgentRepository } from "../src/data/repositories/trust8004-marketplace-agent-repository.js";
 import { PUBLIC_VERIFICATION_SNAPSHOT } from "../src/data/verification/public-verification-snapshot.js";
@@ -115,6 +115,23 @@ describe("PR 16 Mainnet exposure", () => {
     expect(() => prepare.execute({} as never)).toThrow(/disabled/);
     expect(quoteDelegate.execute).not.toHaveBeenCalled();
     expect(prepareDelegate.execute).not.toHaveBeenCalled();
+  });
+
+  it("requires the independent write gate before marketplace notify", async () => {
+    const exposure = new GetMainnetHiringExposure(
+      { getSnapshot: () => snapshot("qualified") },
+      { getPublicConfig: () => demoConfig },
+      () => Date.parse("2026-08-24T12:01:00.000Z"),
+    );
+    const notifyDelegate = { execute: vi.fn(async () => ({ acknowledged: true })) };
+    const disabled = new NotifyQualifiedMainnetFundedJob(exposure, () => false, notifyDelegate as never);
+    const enabled = new NotifyQualifiedMainnetFundedJob(exposure, () => true, notifyDelegate as never);
+    const input = { jobId: "97", buyer: "0x1111111111111111111111111111111111111111" } as const;
+
+    expect(() => disabled.execute(input)).toThrow(/disabled/);
+    expect(notifyDelegate.execute).not.toHaveBeenCalled();
+    await expect(enabled.execute(input)).resolves.toEqual({ acknowledged: true });
+    expect(notifyDelegate.execute).toHaveBeenCalledWith(input);
   });
 
   it("keeps env flags out of landing, hire and Mainnet demo controllers", () => {

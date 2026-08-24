@@ -249,6 +249,12 @@ empty until a marketplace-operated seller is registered and qualified; setting
 readiness target and never classifies the global catalogue. A trust8004 outage or invalid schema fails visibly and does
 not replace the previous atomic local report with stale or invented evidence.
 
+`ERC8183_MAINNET_SELLER_ENABLED` exposes only the Agent Card and signed-quote
+surface needed by readiness. `ERC8183_MAINNET_WRITES_ENABLED` is a separate,
+server-only kill switch that defaults to false and is enabled only after a fresh
+recorded GO decision. Both marketplace notification and the seller's final
+submission boundary reject writes while that switch is off.
+
 Run the web product locally with:
 
 ```bash

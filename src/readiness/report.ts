@@ -87,7 +87,12 @@ export async function buildBscMarketplaceReadinessReport(
     probeBudget,
     now,
   });
-  const assessHireability = options.assessHireability ?? createHireabilityAssessor({ probeBudget });
+  const assessHireability = options.assessHireability ?? createHireabilityAssessor({
+    probeBudget,
+    ...(inventory.selection.marketplaceOperatedAgentIds[0]
+      ? { marketplaceOperatedGridSellerAgentId: inventory.selection.marketplaceOperatedAgentIds[0] }
+      : {}),
+  });
   let candidates: ReadinessCandidate[] = [];
 
   for (const agent of inventory.agents) {

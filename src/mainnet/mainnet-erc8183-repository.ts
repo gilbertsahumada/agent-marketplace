@@ -21,7 +21,7 @@ import type {
   NotifyFundedResult,
 } from "../business/entities/erc8183-browser-spike.js";
 import { Erc8183SpikeDisabledError, Erc8183SpikeUnavailableError } from "../business/errors/erc8183-spike-errors.js";
-import { gridTaskDescription } from "../business/policies/grid-plan-policy.js";
+import { GRID_CANONICAL_INPUT, GRID_NEGOTIATION_TERMS, gridTaskDescription } from "../business/policies/grid-plan-policy.js";
 import type { Erc8183SpikeAllowlist } from "../business/policies/erc8183-spike-policy.js";
 import type { Erc8183SpikeRepository } from "../data/repositories/erc8183-spike-repository.js";
 import { resolveIdentity } from "../identity.js";
@@ -32,16 +32,10 @@ import { ERC8183_MAINNET } from "./contracts.js";
 import { mainnetImplementationPinsMatch } from "./implementation-pins.js";
 
 const GRID_TERMS = new TermSpecification({
-  deliverables: "Deterministic Grid plan JSON with levels, allocation, triggers and assumptions",
-  qualityStandards: "Deterministic output, no order execution and no custody",
+  deliverables: GRID_NEGOTIATION_TERMS.deliverables,
+  qualityStandards: GRID_NEGOTIATION_TERMS.qualityStandards,
 });
-const GRID_TASK = gridTaskDescription({
-  pair: "BNB/USDT",
-  lowerPrice: "700",
-  upperPrice: "900",
-  capital: "1000",
-  gridCount: 9,
-});
+const GRID_TASK = gridTaskDescription(GRID_CANONICAL_INPUT);
 const GRID_REQUEST = new NegotiationRequest({ taskDescription: GRID_TASK, terms: GRID_TERMS });
 const GRID_REQUEST_HASH = GRID_REQUEST.computeHash().toLowerCase();
 const inflightNotifications = new Map<string, Promise<NotifyFundedResult>>();

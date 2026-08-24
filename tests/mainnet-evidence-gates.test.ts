@@ -7,7 +7,7 @@ import {
   type Hex,
 } from "viem";
 import { describe, expect, it } from "vitest";
-import { assertMainnetEvidenceTransaction } from "../src/mainnet/capture-job-proof-cli.js";
+import { assertMainnetEvidenceTransaction, assertMainnetProofBinding } from "../src/mainnet/capture-job-proof-cli.js";
 import {
   ERC8183_MAINNET,
   mainnetCommerceEvidenceAbi,
@@ -15,6 +15,7 @@ import {
 } from "../src/mainnet/contracts.js";
 import { assertRegistrationDecision } from "../src/mainnet/grid-seller-cli.js";
 import type { MainnetGoNoGoReport } from "../src/mainnet/go-no-go.js";
+import { GRID_CANONICAL_INPUT, GRID_NEGOTIATION_TERMS, gridTaskDescription } from "../src/business/policies/grid-plan-policy.js";
 
 const BUYER = getAddress("0x1111111111111111111111111111111111111111");
 const SELLER = getAddress("0x2222222222222222222222222222222222222222");
@@ -123,5 +124,68 @@ describe("Mainnet proof transaction binding", () => {
     const receipt = { status: "success" as const, logs: [fundedLog(JOB_ID)] };
     expect(() => assertMainnetEvidenceTransaction({ phase: "fund", transaction, receipt, job })).not.toThrow();
     expect(() => assertMainnetEvidenceTransaction({ phase: "fund", transaction, receipt: { ...receipt, logs: [fundedLog(JOB_ID + 1n)] }, job })).toThrow(/lifecycle event/);
+  });
+});
+
+describe("Mainnet proof deployment binding", () => {
+  const description = {
+    version: 1,
+    chain_id: 56,
+    verifying_contract: ERC8183_MAINNET.commerce,
+    task: gridTaskDescription(GRID_CANONICAL_INPUT),
+    terms: {
+      deliverables: GRID_NEGOTIATION_TERMS.deliverables,
+      quality_standards: GRID_NEGOTIATION_TERMS.qualityStandards,
+    },
+  };
+  const proofJob = {
+    chainId: 56 as const,
+    jobId: JOB_ID.toString(),
+    buyer: BUYER,
+    provider: SELLER,
+    evaluator: ERC8183_MAINNET.router,
+    policy: ERC8183_MAINNET.policy,
+    description: JSON.stringify(description),
+    budgetRaw: BUDGET.toString(),
+    deadline: "2000000000",
+    status: "COMPLETED" as const,
+    submittedAt: "1999999000",
+    deliverableHash: DELIVERABLE,
+    deliverableUrl: null,
+    result: null,
+    quotedToken: ERC8183_MAINNET.token,
+    quotedPriceRaw: BUDGET.toString(),
+    quoteExpiresAt: 1_900_000_000,
+  };
+  const binding = {
+    job: proofJob,
+    description,
+    identity: {
+      agentId: 9001,
+      agentWallet: SELLER,
+      a2aEndpoint: "https://bnb-agent-marketplace-ruby.vercel.app/grid",
+    },
+    expectedAgentId: 9001,
+    expectedSeller: SELLER,
+    expectedOrigin: "https://bnb-agent-marketplace-ruby.vercel.app",
+    signatureValid: true,
+  };
+
+  it("rejects jobs not bound to the exact seller, token, budget, signature and Agent ID", () => {
+    expect(() => assertMainnetProofBinding(binding)).not.toThrow();
+    expect(() => assertMainnetProofBinding({ ...binding, expectedSeller: BUYER })).toThrow(/allowlist/);
+    expect(() => assertMainnetProofBinding({ ...binding, signatureValid: false })).toThrow(/signature/);
+    expect(() => assertMainnetProofBinding({
+      ...binding,
+      job: { ...proofJob, quotedToken: BUYER },
+    })).toThrow(/allowlist/);
+    expect(() => assertMainnetProofBinding({
+      ...binding,
+      job: { ...proofJob, budgetRaw: (BUDGET + 1n).toString() },
+    })).toThrow(/allowlist/);
+    expect(() => assertMainnetProofBinding({
+      ...binding,
+      identity: { ...binding.identity, agentWallet: BUYER },
+    })).toThrow(/Agent ID/);
   });
 });
