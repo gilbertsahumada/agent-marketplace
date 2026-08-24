@@ -96,7 +96,11 @@ export function hostedSellerRpcResult(id: unknown, data: JsonRecord) {
   });
 }
 
-export function hostedSellerErrorResponse(error: unknown, id: unknown = null) {
+export function hostedSellerErrorResponse(
+  error: unknown,
+  id: unknown = null,
+  sellerLabel = "Testnet seller",
+) {
   if (
     error instanceof InvalidHostedSellerRequestError ||
     error instanceof HostedSellerJobNotReadyError
@@ -112,7 +116,7 @@ export function hostedSellerErrorResponse(error: unknown, id: unknown = null) {
   }
   if (error instanceof HostedSellerUnavailableError) {
     return NextResponse.json(
-      { error: { code: error.name, message: "The Testnet seller is unavailable." } },
+      { error: { code: error.name, message: `The ${sellerLabel} is unavailable.` } },
       { status: 503 },
     );
   }
