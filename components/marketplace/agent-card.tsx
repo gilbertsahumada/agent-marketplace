@@ -14,6 +14,7 @@ import type {
   AgentCardViewModel,
   MarketplaceCategory,
 } from "./presentation-types";
+import { VerificationDrift } from "./verification-drift";
 
 const categoryLabels: Record<MarketplaceCategory, string> = {
   rebalancing: "Rebalancing",
@@ -56,6 +57,7 @@ export function AgentCard({ agent }: { agent: AgentCardViewModel }) {
             <p className="font-stat mt-1 text-[11px] text-zinc-400">
               BSC · Agent #{agent.agentId}
             </p>
+            {agent.operator === "marketplace" && <Badge className="mt-2 border-cyan-400/30 bg-cyan-400/10 text-cyan-200" variant="outline">Marketplace-operated · not official BNB reference</Badge>}
           </div>
         </div>
 
@@ -78,6 +80,7 @@ export function AgentCard({ agent }: { agent: AgentCardViewModel }) {
           compact
           steps={agent.evidence}
         />
+        {agent.verification && <VerificationDrift compact verification={agent.verification} />}
       </CardContent>
 
       <CardFooter className="justify-between gap-3 border-white/10 bg-zinc-950/40 px-5 py-3">
