@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ChevronDown, GitFork } from "lucide-react";
 import type { ReactNode } from "react";
 import { Button } from "@/components/ui/button";
+import { WalletConnectButton } from "./wallet-connect-button";
 
 const navigation = [
   { href: "/agents", label: "Agents" },
@@ -43,10 +44,11 @@ function Header() {
           ))}
         </nav>
 
-        <div className="hidden md:block">
+        <div className="hidden items-center gap-2 md:flex">
           <Button asChild>
             <Link href="/agents">Explore on BSC</Link>
           </Button>
+          <WalletConnectButton />
         </div>
 
         <details className="relative md:hidden">
@@ -67,6 +69,9 @@ function Header() {
                 {item.label}
               </Link>
             ))}
+            <div className="mt-2 border-t border-white/10 px-3 pt-3">
+              <WalletConnectButton />
+            </div>
           </nav>
         </details>
       </div>
