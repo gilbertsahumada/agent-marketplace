@@ -313,8 +313,8 @@ Protection must remain disabled throughout 2026-09-09 through 2026-09-23; protec
 PR previews are not submission URLs. The scheduled GitHub Actions uptime check
 requires an anonymous, non-redirected HTTP `200` from the landing, catalogue, Agent
 `45650` profile, its `/hire` route and durable Job `551` throughout judging. The
-monitor detects Mainnet exposure from the public demo route: before current seller
-qualification it accepts `404`; once the route returns `200`, it requires the public
+monitor detects Mainnet exposure from the server-gated quote API: before current seller
+qualification it accepts `404`; once that API returns `200`, it requires the public
 `MAINNET_UPTIME_BUYER_ADDRESS` repository variable and verifies the Agent Card,
 signed quote and read-only prepare response without signing or broadcasting. Once
 the canonical Mainnet proof is published, a missing Mainnet hiring route fails the

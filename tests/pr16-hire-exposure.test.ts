@@ -131,7 +131,7 @@ describe("PR 16 Mainnet exposure", () => {
   it("monitors Mainnet quote and read-only prepare only after public exposure", () => {
     const workflow = readFileSync(".github/workflows/submission-uptime.yml", "utf8");
     expect(workflow).not.toContain("MAINNET_GRID_SELLER_ENABLED");
-    expect(workflow).toContain('if [ "$demo_status" = "404" ]');
+    expect(workflow).toContain('if [ "$quote_status" = "404" ]');
     expect(workflow).toContain('if [ "$proof_status" = "200" ]');
     expect(workflow).toContain("/api/marketplace/demo/erc8183-mainnet/quote");
     expect(workflow).toContain("/api/marketplace/demo/erc8183-mainnet/prepare");

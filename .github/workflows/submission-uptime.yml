@@ -41,8 +41,11 @@ jobs:
             echo "Expected Mainnet proof to return 200 or 404, received $proof_status" >&2
             exit 1
           fi
-          demo_status="$(curl --silent --show-error --max-time 20 --output /dev/null --write-out '%{http_code}' "$ORIGIN/demo/erc8183-mainnet")"
-          if [ "$demo_status" = "404" ]; then
+          quote_file="$(mktemp)"
+          prepare_file="$(mktemp)"
+          trap 'rm -f "$quote_file" "$prepare_file"' EXIT
+          quote_status="$(curl --silent --show-error --max-time 30 --request POST --output "$quote_file" --write-out '%{http_code}' "$ORIGIN/api/marketplace/demo/erc8183-mainnet/quote")"
+          if [ "$quote_status" = "404" ]; then
             if [ "$proof_status" = "200" ]; then
               echo "Mainnet proof is published but the qualified hiring route is unavailable" >&2
               exit 1
@@ -50,8 +53,8 @@ jobs:
             echo "Mainnet hiring is not exposed: no current qualified and configured seller."
             exit 0
           fi
-          if [ "$demo_status" != "200" ]; then
-            echo "Expected Mainnet demo to return 200 or 404, received $demo_status" >&2
+          if [ "$quote_status" != "200" ]; then
+            echo "Expected Mainnet quote to return 200 or 404, received $quote_status" >&2
             exit 1
           fi
 
@@ -59,12 +62,8 @@ jobs:
             echo "MAINNET_UPTIME_BUYER_ADDRESS is required after Mainnet hiring is exposed" >&2
             exit 1
           }
-          quote_file="$(mktemp)"
-          prepare_file="$(mktemp)"
-          trap 'rm -f "$quote_file" "$prepare_file"' EXIT
+          curl --fail --silent --show-error --max-time 20 "$ORIGIN/demo/erc8183-mainnet" >/dev/null
           curl --fail --silent --show-error --max-time 20 "$ORIGIN/grid/.well-known/agent-card.json" >/dev/null
-          curl --fail --silent --show-error --max-time 30 --request POST \
-            "$ORIGIN/api/marketplace/demo/erc8183-mainnet/quote" >"$quote_file"
           jq --exit-status '.chainId == 56 and (.envelope | type == "object")' "$quote_file" >/dev/null
           jq --arg buyer "$MAINNET_UPTIME_BUYER_ADDRESS" '{buyer: $buyer, quote: .envelope}' "$quote_file" >"$prepare_file"
           curl --fail --silent --show-error --max-time 30 --request POST \
