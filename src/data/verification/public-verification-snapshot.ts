@@ -30,13 +30,28 @@ function stringArray(value: unknown, name: string): string[] {
 
 function timestamp(value: unknown, name: string): string {
   const result = string(value, name);
-  if (!Number.isFinite(Date.parse(result))) throw new Error(`${name} must be an ISO timestamp`);
+  const parsed = Date.parse(result);
+  if (!Number.isFinite(parsed) || new Date(parsed).toISOString() !== result) {
+    throw new Error(`${name} must be a canonical ISO timestamp`);
+  }
+  return result;
+}
+
+function numericString(value: unknown, name: string): string {
+  const result = string(value, name);
+  if (!/^\d+$/.test(result)) throw new Error(`${name} must be a numeric string`);
+  return result;
+}
+
+function address(value: unknown, name: string): string {
+  const result = string(value, name);
+  if (!/^0x[0-9a-fA-F]{40}$/.test(result)) throw new Error(`${name} must be an EVM address`);
   return result;
 }
 
 export function parsePublicVerificationSnapshot(value: unknown): PublicVerificationSnapshot {
   const root = object(value, "verification snapshot");
-  if (root.schemaVersion !== 1 || root.chainId !== 56) {
+  if (root.schemaVersion !== 2 || root.chainId !== 56) {
     throw new Error("verification snapshot schema or chain is unsupported");
   }
   const generatedAt = timestamp(root.generatedAt, "generatedAt");
@@ -45,16 +60,26 @@ export function parsePublicVerificationSnapshot(value: unknown): PublicVerificat
     const agent = object(entry, `agents[${index}]`);
     const identity = object(agent.identity, `agents[${index}].identity`);
     const tools = object(agent.tools, `agents[${index}].tools`);
-    const qualification = agent.qualification === undefined
-      ? null
-      : object(agent.qualification, `agents[${index}].qualification`);
+    const qualification = object(agent.qualification, `agents[${index}].qualification`);
     const identityStatus = string(identity.status, "identity.status");
     if (!["match", "mismatch", "read_error"].includes(identityStatus)) {
       throw new Error("identity.status is unsupported");
     }
+    const identityProvenance = stringArray(identity.provenance, "identity.provenance");
+    const expectedIdentitySource = identityStatus === "read_error" ? "unavailable" : "onchain";
+    if (
+      identityProvenance.length !== 2
+      || identityProvenance[0] !== "declared"
+      || identityProvenance[1] !== expectedIdentitySource
+    ) {
+      throw new Error("identity.provenance does not match identity.status");
+    }
     const mismatchFields = stringArray(identity.mismatchFields, "identity.mismatchFields");
     if (mismatchFields.some((field) => field !== "owner" && field !== "metadata_uri")) {
       throw new Error("identity.mismatchFields contains an unsupported field");
+    }
+    if ((identityStatus === "mismatch") !== (mismatchFields.length > 0)) {
+      throw new Error("identity.mismatchFields does not match identity.status");
     }
     const toolStatus = string(tools.status, "tools.status");
     if (toolStatus !== "observed" && toolStatus !== "not_probed") {
@@ -64,48 +89,64 @@ export function parsePublicVerificationSnapshot(value: unknown): PublicVerificat
     if (provenance !== "observed" && provenance !== "not_probed") {
       throw new Error("tools.provenance is unsupported");
     }
-    const probeOutcomes = tools.probeOutcomes === undefined
-      ? []
-      : stringArray(tools.probeOutcomes, "tools.probeOutcomes");
+    const probeOutcomes = stringArray(tools.probeOutcomes, "tools.probeOutcomes");
     if (probeOutcomes.some((outcome) => !PROBE_OUTCOMES.includes(outcome as typeof PROBE_OUTCOMES[number]))) {
       throw new Error("tools.probeOutcomes contains an unsupported outcome");
     }
-    const reachability = tools.reachability === undefined
-      ? "not_probed"
-      : string(tools.reachability, "tools.reachability");
+    const reachability = string(tools.reachability, "tools.reachability");
     if (!["verified", "failed", "not_probed"].includes(reachability)) {
       throw new Error("tools.reachability is unsupported");
     }
-    if (reachability === "verified" && !probeOutcomes.includes("protocol_valid")) {
-      throw new Error("verified tools.reachability requires a protocol_valid outcome");
+    const attemptedProbe = probeOutcomes.some((outcome) => outcome !== "not_probed");
+    if (attemptedProbe && probeOutcomes.includes("not_probed")) {
+      throw new Error("tools.probeOutcomes cannot mix attempted and not_probed outcomes");
     }
-    if (reachability === "failed" && (
-      probeOutcomes.length === 0 || probeOutcomes.every((outcome) => outcome === "not_probed")
-    )) {
-      throw new Error("failed tools.reachability requires an attempted probe outcome");
+    const expectedToolStatus = attemptedProbe ? "observed" : "not_probed";
+    const expectedReachability = probeOutcomes.includes("protocol_valid")
+      ? "verified"
+      : attemptedProbe
+        ? "failed"
+        : "not_probed";
+    if (toolStatus !== expectedToolStatus || reachability !== expectedReachability) {
+      throw new Error("tools status and reachability do not match probeOutcomes");
     }
-    const operator = agent.operator === undefined ? "third_party" : string(agent.operator, "operator");
+    if ((provenance === "observed") !== attemptedProbe) {
+      throw new Error("tools.provenance does not match probeOutcomes");
+    }
+    const operator = string(agent.operator, "operator");
     if (operator !== "third_party" && operator !== "marketplace") {
       throw new Error("operator is unsupported");
     }
-    const qualificationStatus = qualification === null
-      ? "unavailable"
-      : string(qualification.status, "qualification.status");
+    const selection = string(agent.selection, "selection");
+    if (!["curated", "marketplace_operated", "operator_explicit"].includes(selection)) {
+      throw new Error("selection is unsupported");
+    }
+    if ((selection === "marketplace_operated") !== (operator === "marketplace")) {
+      throw new Error("selection does not match operator");
+    }
+    const qualificationStatus = string(qualification.status, "qualification.status");
     if (!["qualified", "not_qualified", "unavailable"].includes(qualificationStatus)) {
       throw new Error("qualification.status is unsupported");
     }
-    if (qualification !== null && qualification.provenance !== "derived:marketplace-seller-qualification") {
+    if (qualification.provenance !== "derived:marketplace-seller-qualification") {
       throw new Error("qualification.provenance is unsupported");
     }
+    const qualificationObservedAt = timestamp(qualification.observedAt, "qualification.observedAt");
+    if (qualificationObservedAt !== generatedAt) {
+      throw new Error("qualification.observedAt must match snapshot generatedAt");
+    }
+    const toolsObservedAt = tools.observedAt === null ? null : timestamp(tools.observedAt, "tools.observedAt");
+    if ((toolsObservedAt !== null) !== attemptedProbe) {
+      throw new Error("tools.observedAt does not match probeOutcomes");
+    }
     return {
-      agentId: string(agent.agentId, "agentId"),
+      agentId: numericString(agent.agentId, "agentId"),
       name: string(agent.name, "name"),
+      selection: selection as PublicAgentVerification["selection"],
       operator: operator as PublicAgentVerification["operator"],
       qualification: {
         status: qualificationStatus as PublicAgentVerification["qualification"]["status"],
-        observedAt: qualification === null
-          ? generatedAt
-          : timestamp(qualification.observedAt, "qualification.observedAt"),
+        observedAt: qualificationObservedAt,
         provenance: "derived:marketplace-seller-qualification" as const,
       },
       categories: stringArray(agent.categories, "categories").map((category) => {
@@ -118,7 +159,7 @@ export function parsePublicVerificationSnapshot(value: unknown): PublicVerificat
         status: identityStatus as PublicAgentVerification["identity"]["status"],
         mismatchFields: mismatchFields as PublicAgentVerification["identity"]["mismatchFields"],
         observedAt: timestamp(identity.observedAt, "identity.observedAt"),
-        provenance: ["declared", "onchain"] as const,
+        provenance: ["declared", expectedIdentitySource] as const,
       },
       tools: {
         status: toolStatus as PublicAgentVerification["tools"]["status"],
@@ -126,7 +167,7 @@ export function parsePublicVerificationSnapshot(value: unknown): PublicVerificat
         reachability: reachability as PublicAgentVerification["tools"]["reachability"],
         declaredOnly: stringArray(tools.declaredOnly, "tools.declaredOnly"),
         observedOnly: stringArray(tools.observedOnly, "tools.observedOnly"),
-        observedAt: tools.observedAt === null ? null : timestamp(tools.observedAt, "tools.observedAt"),
+        observedAt: toolsObservedAt,
         provenance: provenance as PublicAgentVerification["tools"]["provenance"],
       },
     };
@@ -139,12 +180,12 @@ export function parsePublicVerificationSnapshot(value: unknown): PublicVerificat
     throw new Error("verification snapshot source is unsupported");
   }
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     generatedAt,
     staleAfter,
     chainId: 56,
-    blockNumber: string(root.blockNumber, "blockNumber"),
-    registryAddress: string(root.registryAddress, "registryAddress"),
+    blockNumber: numericString(root.blockNumber, "blockNumber"),
+    registryAddress: address(root.registryAddress, "registryAddress"),
     source: root.source,
     agents,
   };

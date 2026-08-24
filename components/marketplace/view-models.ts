@@ -1,5 +1,6 @@
 import type { MarketplaceAgent } from "@/src/business/entities/marketplace-agent";
 import type { PublicAgentVerification, PublicVerificationSnapshot } from "@/src/business/entities/public-verification-snapshot";
+import { isReleaseAgentHireable, isVerificationSnapshotCurrent } from "@/src/business/policies/release-qualification-policy";
 import type { AgentCardViewModel, EvidenceStepViewModel, VerificationDriftViewModel } from "./presentation-types";
 
 export function verificationViewModel(agent: MarketplaceAgent): VerificationDriftViewModel | null {
@@ -10,6 +11,7 @@ export function verificationViewModel(agent: MarketplaceAgent): VerificationDrif
     identityStatus: agent.verification.identity.status,
     identityMismatchFields: agent.verification.identity.mismatchFields,
     identityObservedAt: agent.verification.identity.observedAt,
+    identityOnchainProvenance: agent.verification.identity.provenance[1],
     toolsStatus: agent.verification.tools.status,
     toolReachability: agent.verification.tools.reachability,
     toolProbeOutcomes: agent.verification.tools.probeOutcomes,
@@ -21,12 +23,15 @@ export function verificationViewModel(agent: MarketplaceAgent): VerificationDrif
 
 export function evidenceForAgent(agent: MarketplaceAgent): EvidenceStepViewModel[] {
   const releaseReachability = agent.verification?.tools.reachability;
+  const releaseEvidenceCurrent = agent.verification?.freshness === "current";
   const reachable = releaseReachability
-    ? releaseReachability === "verified"
+    ? releaseEvidenceCurrent && releaseReachability === "verified"
     : agent.endpointObservation.status === "observed_ok";
   const reachabilityProvenance = releaseReachability === "not_probed" ? "not_probed" : "observed";
   const reachabilityDetail = releaseReachability === "failed"
     ? `The release probe did not establish protocol-valid reachability (${agent.verification!.tools.probeOutcomes.join(", ")}).`
+    : releaseReachability === "verified" && !releaseEvidenceCurrent
+      ? "The protocol-valid observation belongs to a stale release snapshot and is not current reachability evidence."
     : reachable
       ? "A service endpoint was observed as protocol-valid and reachable."
       : releaseReachability === "not_probed"
@@ -95,10 +100,9 @@ export function snapshotAgentCardViewModel(
   snapshot: PublicVerificationSnapshot,
   now = Date.now(),
 ): AgentCardViewModel {
-  const endpointReachable = agent.tools.reachability === "verified";
-  const snapshotCurrent = now <= Date.parse(snapshot.staleAfter)
-    && Date.parse(snapshot.generatedAt) <= now + 5 * 60 * 1_000;
-  const quoteVerified = snapshotCurrent && agent.qualification.status === "qualified";
+  const snapshotCurrent = isVerificationSnapshotCurrent(snapshot, now);
+  const endpointReachable = snapshotCurrent && agent.tools.reachability === "verified";
+  const quoteVerified = isReleaseAgentHireable(agent, snapshot, now);
   const verification: VerificationDriftViewModel = {
     freshness: snapshotCurrent ? "current" : "stale",
     generatedAt: snapshot.generatedAt,
@@ -106,6 +110,7 @@ export function snapshotAgentCardViewModel(
     identityStatus: agent.identity.status,
     identityMismatchFields: agent.identity.mismatchFields,
     identityObservedAt: agent.identity.observedAt,
+    identityOnchainProvenance: agent.identity.provenance[1],
     toolsStatus: agent.tools.status,
     toolReachability: agent.tools.reachability,
     toolProbeOutcomes: agent.tools.probeOutcomes,
@@ -139,6 +144,8 @@ export function snapshotAgentCardViewModel(
         provenance: agent.tools.reachability === "not_probed" ? "not_probed" : "observed",
         detail: endpointReachable
           ? "An MCP endpoint completed protocol validation during release verification."
+          : !snapshotCurrent && agent.tools.reachability === "verified"
+            ? "The protocol-valid observation belongs to a stale release snapshot and is not current reachability evidence."
           : agent.tools.reachability === "failed"
             ? `A probe was attempted but did not establish reachability (${agent.tools.probeOutcomes.join(", ")}).`
             : "No endpoint probe is available in this release snapshot.",

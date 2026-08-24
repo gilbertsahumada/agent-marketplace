@@ -88,7 +88,8 @@ export function assertExpectedJob(
   ) {
     throw new Erc8183JobNotReadyError("Job description does not match its allowlisted token and budget");
   }
-  if (BigInt(job.deadline) <= BigInt(nowSeconds)) {
+  const terminal = job.status === "SUBMITTED" || job.status === "COMPLETED";
+  if (!terminal && BigInt(job.deadline) <= BigInt(nowSeconds)) {
     throw new Erc8183JobNotReadyError("Job deadline has expired");
   }
 }

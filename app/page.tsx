@@ -48,7 +48,6 @@ export default async function HomePage() {
       }}
       categories={categories}
       demoEnabled={Reflect.get(process.env, "ERC8183_BROWSER_SPIKE_ENABLED") === "true"}
-      mainnetDemoEnabled={Reflect.get(process.env, "ERC8183_MAINNET_DEMO_ENABLED") === "true"}
       featuredAgents={featuredAgents}
       publicProof={publicProof}
       {...(mainnetProof ? { proofSummary: {
@@ -57,7 +56,7 @@ export default async function HomePage() {
         title: "One browser-signed Mainnet hiring lifecycle",
         description: "An injected wallet funded a real Grid planning job; its result, transactions, gas and duration are publicly reproducible.",
       } } : {})}
-      qualifiedSeller={null}
+      qualifiedSeller={catalogResult.qualifiedSeller}
     />
   );
 }

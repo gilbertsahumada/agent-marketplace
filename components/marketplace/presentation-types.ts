@@ -4,7 +4,7 @@ export type MarketplaceCategory =
   | "yield_optimisation"
   | "health_factor_monitoring";
 
-export type ProvenanceKind = "declared" | "observed" | "onchain" | "derived" | "not_probed";
+export type ProvenanceKind = "declared" | "observed" | "onchain" | "derived" | "not_probed" | "unavailable";
 
 export type EvidenceKind = "declared" | "reachable" | "quote" | "job";
 
@@ -49,6 +49,7 @@ export interface VerificationDriftViewModel {
   identityStatus: "match" | "mismatch" | "read_error";
   identityMismatchFields: Array<"owner" | "metadata_uri">;
   identityObservedAt: string;
+  identityOnchainProvenance: "onchain" | "unavailable";
   toolsStatus: "observed" | "not_probed";
   toolReachability: "verified" | "failed" | "not_probed";
   toolProbeOutcomes: string[];

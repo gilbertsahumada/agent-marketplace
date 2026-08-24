@@ -1,10 +1,30 @@
+import { DeliverableManifest } from "@bnbagent/sdk/erc8183";
 import { getAddress } from "viem";
 import { describe, expect, it, vi } from "vitest";
-import { gridTaskDescription } from "../src/business/policies/grid-plan-policy.js";
-import { ERC8183_MAINNET } from "../src/mainnet/contracts.js";
+import { buildGridPlan, gridTaskDescription, parseGridTaskDescription } from "../src/business/policies/grid-plan-policy.js";
+import { ERC1967_IMPLEMENTATION_SLOT, ERC8183_MAINNET } from "../src/mainnet/contracts.js";
 import { MainnetGridSellerRepository } from "../src/mainnet/grid-seller-repository.js";
+import { mainnetImplementationPinsMatch } from "../src/mainnet/implementation-pins.js";
 
 const SELLER = getAddress("0x1111111111111111111111111111111111111111");
+
+function implementationStorage(address: string): `0x${string}` {
+  return `0x${"0".repeat(24)}${address.slice(2).toLowerCase()}`;
+}
+
+function publicClient(balance = 2_000_000_000_000_000n) {
+  return {
+    getBalance: vi.fn(async () => balance),
+    getBlock: vi.fn(async () => ({ timestamp: BigInt(Math.floor(Date.now() / 1_000)) })),
+    getBlockNumber: vi.fn(async () => 123n),
+    getStorageAt: vi.fn(async ({ address, slot }: { address: string; slot: string; blockNumber: bigint }) => {
+      expect(slot).toBe(ERC1967_IMPLEMENTATION_SLOT);
+      return implementationStorage(address.toLowerCase() === ERC8183_MAINNET.commerce.toLowerCase()
+        ? ERC8183_MAINNET.commerceImplementation
+        : ERC8183_MAINNET.routerImplementation);
+    }),
+  };
+}
 
 function description(now = Math.floor(Date.now() / 1_000)): string {
   return JSON.stringify({
@@ -42,7 +62,35 @@ function fundedJob(
   };
 }
 
+function terminalDeliverable(jobId: number, jobDescription: string) {
+  const parsed = JSON.parse(jobDescription) as { task: string };
+  const plan = buildGridPlan(parseGridTaskDescription(parsed.task));
+  return new DeliverableManifest({
+    version: 1,
+    jobId,
+    chainId: 56,
+    contracts: {
+      commerce: ERC8183_MAINNET.commerce,
+      router: ERC8183_MAINNET.router,
+      policy: ERC8183_MAINNET.policy,
+    },
+    response: { content: JSON.stringify(plan), contentType: "application/json" },
+    metadata: { sellerType: "marketplace-operated-grid-seller", execution: "none" },
+  }).manifestHash();
+}
+
 describe("Mainnet Grid seller security", () => {
+  it("re-pins both ERC-1967 implementations at one block", async () => {
+    const matching = publicClient();
+    await expect(mainnetImplementationPinsMatch(matching)).resolves.toBe(true);
+    expect(matching.getStorageAt).toHaveBeenCalledTimes(2);
+    expect(matching.getStorageAt.mock.calls.every(([request]) => request.blockNumber === 123n)).toBe(true);
+
+    const changed = publicClient();
+    changed.getStorageAt.mockResolvedValue(implementationStorage(SELLER));
+    await expect(mainnetImplementationPinsMatch(changed)).resolves.toBe(false);
+  });
+
   it("rejects a funded job when the SDK signed-quote verifier rejects it", async () => {
     const verifyJob = vi.fn(async () => ({ valid: false, error_code: "quote_invalid" }));
     const getJob = vi.fn(async () => fundedJob());
@@ -61,12 +109,13 @@ describe("Mainnet Grid seller security", () => {
 
   it("acknowledges a repeated notification only from the terminal onchain state", async () => {
     const verifyJob = vi.fn();
-    const getJob = vi.fn(async () => ({ ...fundedJob(`0x${"44".repeat(32)}`), status: 2 }));
+    const base = fundedJob();
+    const getJob = vi.fn(async () => ({ ...base, deliverable: terminalDeliverable(95, base.description), status: 2 }));
     const repository = new MainnetGridSellerRepository(async () => ({
       seller: SELLER,
       origin: "https://bnb-agent-marketplace-ruby.vercel.app",
       jobOps: { verifyJob },
-      client: { getJob },
+      client: { getJob, router: { jobPolicy: vi.fn(async () => ERC8183_MAINNET.policy) } },
     }) as never);
 
     await expect(repository.handleMessage({ skill: "notify_funded", jobId: 95 }))
@@ -98,7 +147,7 @@ describe("Mainnet Grid seller security", () => {
         submit,
         router: { jobPolicy: vi.fn(async () => ERC8183_MAINNET.policy) },
         policy: { disputeWindow: vi.fn(async () => 604_800n) },
-        publicClient: { getBalance: vi.fn(async () => 2_000_000_000_000_000n) },
+        publicClient: publicClient(),
       },
     }) as never);
 
@@ -120,17 +169,32 @@ describe("Mainnet Grid seller security", () => {
         submit,
         router: { jobPolicy: vi.fn(async () => ERC8183_MAINNET.policy) },
         policy: { disputeWindow: vi.fn(async () => 604_800n) },
-        publicClient: { getBalance: vi.fn(async () => balance) },
+        publicClient: publicClient(balance),
       },
     }) as never);
 
     const now = Math.floor(Date.now() / 1_000);
     await expect(createRepository(fundedJob(undefined, BigInt(now + 604_800)), 2_000_000_000_000_000n)
       .handleMessage({ skill: "notify_funded", jobId: 93 }))
-      .rejects.toThrow(/outside the Mainnet allowlist/);
+      .rejects.toThrow(/ten minutes/);
     await expect(createRepository(fundedJob(), 1_999_999_999_999_999n)
       .handleMessage({ skill: "notify_funded", jobId: 94 }))
       .rejects.toThrow(/gas reserve/);
     expect(submit).not.toHaveBeenCalled();
+  });
+
+  it("rejects a terminal repeat whose deterministic deliverable or policy does not bind", async () => {
+    const base = fundedJob(`0x${"44".repeat(32)}`);
+    const repository = new MainnetGridSellerRepository(async () => ({
+      seller: SELLER,
+      origin: "https://bnb-agent-marketplace-ruby.vercel.app",
+      jobOps: { verifyJob: vi.fn() },
+      client: {
+        getJob: vi.fn(async () => ({ ...base, status: 2 })),
+        router: { jobPolicy: vi.fn(async () => ERC8183_MAINNET.policy) },
+      },
+    }) as never);
+    await expect(repository.handleMessage({ skill: "notify_funded", jobId: 96 }))
+      .rejects.toThrow(/deterministic result/);
   });
 });

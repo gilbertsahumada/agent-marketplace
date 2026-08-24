@@ -25,7 +25,6 @@ export function MarketplaceLanding({
   categories,
   catalogSnapshot,
   demoEnabled,
-  mainnetDemoEnabled = false,
   featuredAgents,
   publicProof,
   proofSummary,
@@ -34,20 +33,15 @@ export function MarketplaceLanding({
   categories: CategoryCardViewModel[];
   catalogSnapshot: { generatedAt: string; staleAfter: string } | null;
   demoEnabled: boolean;
-  mainnetDemoEnabled?: boolean;
   featuredAgents: AgentCardViewModel[];
   publicProof: EvidenceStepViewModel[];
   proofSummary?: { href: string; network: string; title: string; description: string };
   qualifiedSeller: { agentId: string; name: string } | null;
 }) {
-  const primaryHref = mainnetDemoEnabled
-    ? "/demo/erc8183-mainnet"
-    : qualifiedSeller
+  const primaryHref = qualifiedSeller
       ? `/hire/${qualifiedSeller.agentId}`
       : demoEnabled ? "/demo/erc8183" : "/jobs/testnet/551";
-  const primaryLabel = mainnetDemoEnabled
-    ? "Hire the Grid planner"
-    : qualifiedSeller
+  const primaryLabel = qualifiedSeller
       ? `Hire ${qualifiedSeller.name}`
       : demoEnabled ? "Try a verified Testnet hire" : "View a proven hiring result";
   return (
@@ -149,7 +143,7 @@ export function MarketplaceLanding({
               <CircleAlert aria-hidden="true" />
               <AlertTitle>Release verification snapshot</AlertTitle>
               <AlertDescription>
-                Observed {new Date(catalogSnapshot.generatedAt).toLocaleString("en-US", { timeZone: "UTC", timeZoneName: "short" })} and valid through {new Date(catalogSnapshot.staleAfter).toLocaleString("en-US", { timeZone: "UTC", timeZoneName: "short" })}. Live trust8004 profile details load only when requested; commercial qualification is never inferred from this snapshot.
+                Observed {new Date(catalogSnapshot.generatedAt).toLocaleString("en-US", { timeZone: "UTC", timeZoneName: "short" })} and valid through {new Date(catalogSnapshot.staleAfter).toLocaleString("en-US", { timeZone: "UTC", timeZoneName: "short" })}. Live trust8004 profile details load only when requested; qualification is preserved from release readiness evidence and never inferred from catalogue metadata.
               </AlertDescription>
             </Alert>
           )}

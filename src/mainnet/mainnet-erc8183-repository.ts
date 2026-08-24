@@ -29,6 +29,7 @@ import { readBoundedJson } from "../verification/bounded-json.js";
 import { createSafeEndpointTransport } from "../verification/safe-http.js";
 import { loadMainnetBrowserDemoConfig } from "./browser-demo-config.js";
 import { ERC8183_MAINNET } from "./contracts.js";
+import { mainnetImplementationPinsMatch } from "./implementation-pins.js";
 
 const GRID_TERMS = new TermSpecification({
   deliverables: "Deterministic Grid plan JSON with levels, allocation, triggers and assumptions",
@@ -124,6 +125,9 @@ export class MainnetErc8183Repository implements Erc8183SpikeRepository {
     loadMainnetBrowserDemoConfig();
     const client = await ERC8183Client.create({ network: resolveNetwork("bsc-mainnet") });
     if ((await client.publicClient.getChainId()) !== 56) throw new Erc8183SpikeUnavailableError("RPC is not connected to BSC Mainnet");
+    if (!await mainnetImplementationPinsMatch(client.publicClient)) {
+      throw new Erc8183SpikeUnavailableError("The Mainnet Commerce or Router implementation is not allowlisted");
+    }
     return client;
   }
 

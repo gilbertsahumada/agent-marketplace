@@ -38,6 +38,7 @@ export function determineHireability(
   if (
     agent.verification?.freshness === "current"
     && agent.verification.qualification.status === "qualified"
+    && agent.verification.selection !== "operator_explicit"
   ) {
     return {
       status: "quote_verified",
@@ -93,6 +94,19 @@ export function determineHireability(
       "No compatible seller transport is declared.",
     ),
   };
+}
+
+export function selectHireAlternative(
+  selected: MarketplaceAgent,
+  candidates: readonly MarketplaceAgent[],
+): MarketplaceAgent | null {
+  const categories = new Set(selected.categories.map(({ category }) => category));
+  const qualified = candidates.filter((candidate) =>
+    candidate.agentId !== selected.agentId && candidate.hireability.canHire);
+  return qualified.find((candidate) =>
+    candidate.categories.some(({ category }) => categories.has(category)))
+    ?? qualified[0]
+    ?? null;
 }
 
 export function toMarketplaceAgent(
@@ -171,7 +185,7 @@ export function toMarketplaceAgent(
       ...data.verification,
       identity: {
         ...data.verification.identity,
-        provenance: ["declared", "onchain"],
+        provenance: data.verification.identity.provenance,
       },
       tools: {
         ...data.verification.tools,

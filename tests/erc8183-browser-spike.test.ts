@@ -284,6 +284,23 @@ describe("notify_funded guard", () => {
     await expect(useCase.execute({ jobId: "900", buyer: BUYER })).resolves.toMatchObject({ alreadySubmitted: true });
     expect(notify).not.toHaveBeenCalled();
   });
+
+  it("keeps terminal retries idempotent after deadline while rejecting expired FUNDED jobs", async () => {
+    const notify = vi.fn();
+    const terminal = new NotifyFundedJob(repository({
+      getJob: async () => job({ status: "COMPLETED", deadline: "1" }),
+      notifyFunded: notify,
+    }));
+    await expect(terminal.execute({ jobId: "900", buyer: BUYER }))
+      .resolves.toMatchObject({ alreadySubmitted: true });
+
+    const funded = new NotifyFundedJob(repository({
+      getJob: async () => job({ status: "FUNDED", deadline: "1" }),
+      notifyFunded: notify,
+    }));
+    await expect(funded.execute({ jobId: "900", buyer: BUYER })).rejects.toThrow(/deadline/);
+    expect(notify).not.toHaveBeenCalled();
+  });
 });
 
 describe("server-only configuration", () => {

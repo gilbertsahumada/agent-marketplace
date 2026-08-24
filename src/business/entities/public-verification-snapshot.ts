@@ -6,6 +6,7 @@ export interface PublicAgentVerification {
   agentId: string;
   name: string;
   categories: MarketplaceCategory[];
+  selection: "curated" | "marketplace_operated" | "operator_explicit";
   operator: "third_party" | "marketplace";
   qualification: {
     status: "qualified" | "not_qualified" | "unavailable";
@@ -16,7 +17,7 @@ export interface PublicAgentVerification {
     status: "match" | "mismatch" | "read_error";
     mismatchFields: Array<"owner" | "metadata_uri">;
     observedAt: string;
-    provenance: readonly ["declared", "onchain"];
+    provenance: readonly ["declared", "onchain" | "unavailable"];
   };
   tools: {
     status: "observed" | "not_probed";
@@ -39,7 +40,7 @@ export interface PublicAgentVerification {
 }
 
 export interface PublicVerificationSnapshot {
-  schemaVersion: 1;
+  schemaVersion: 2;
   generatedAt: string;
   staleAfter: string;
   chainId: 56;

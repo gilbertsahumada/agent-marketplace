@@ -5,6 +5,7 @@ const DEFAULT_FRESHNESS_HOURS = 72;
 const MAX_FUTURE_CLOCK_SKEW_MS = 5 * 60 * 1_000;
 
 export interface ReleaseMarketplaceEvidence {
+  selection: "curated" | "marketplace_operated" | "operator_explicit";
   operator: "third_party" | "marketplace";
   qualification: "qualified" | "not_qualified" | "unavailable";
 }
@@ -62,6 +63,7 @@ export function marketplaceEvidenceFromReleaseInput(
       throw new Error(`candidates[${index}].qualification does not match sellerQualification`);
     }
     result.set(agentId, {
+      selection: selection as ReleaseMarketplaceEvidence["selection"],
       operator: selection === "marketplace_operated" ? "marketplace" : "third_party",
       qualification: qualification.status as ReleaseMarketplaceEvidence["qualification"],
     });
@@ -92,7 +94,7 @@ export function sanitizeVerificationReport(
     throw new Error(`verification report is older than ${maxAgeHours} hours`);
   }
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     generatedAt: report.generatedAt,
     staleAfter: new Date(generatedAt + freshnessMs).toISOString(),
     chainId: 56,
@@ -118,6 +120,7 @@ export function sanitizeVerificationReport(
         agentId: agent.agentId,
         name: agent.name,
         categories: agent.categories,
+        selection: marketplaceEvidence?.selection ?? "operator_explicit",
         operator: marketplaceEvidence?.operator ?? "third_party",
         qualification: {
           status: marketplaceEvidence?.qualification ?? "unavailable",
@@ -131,7 +134,10 @@ export function sanitizeVerificationReport(
             ...(agent.identity.checks.metadataUriMatches === false ? ["metadata_uri" as const] : []),
           ],
           observedAt: agent.identity.observedAt,
-          provenance: ["declared", "onchain"] as const,
+          provenance: [
+            "declared",
+            agent.identity.status === "read_error" ? "unavailable" : "onchain",
+          ] as const,
         },
         tools: {
           status: observed.length > 0 ? "observed" as const : "not_probed" as const,

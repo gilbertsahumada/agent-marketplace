@@ -20,6 +20,8 @@ import { GetPublicVerificationSnapshot } from "./use-cases/get-public-verificati
 import { GetMainnetBrowserDemoConfig } from "./use-cases/get-mainnet-browser-demo-config.js";
 import { GetMainnetJobProof } from "./use-cases/get-mainnet-job-proof.js";
 import { GetMarketplaceLandingCatalog } from "./use-cases/get-marketplace-landing-catalog.js";
+import { GetMainnetHiringExposure } from "./use-cases/get-mainnet-hiring-exposure.js";
+import { PrepareQualifiedMainnetHire, RequestQualifiedMainnetQuote } from "./use-cases/qualified-mainnet-hire.js";
 
 export const listMarketplaceAgents = new ListMarketplaceAgents(marketplaceAgentRepository);
 export const getMarketplaceAgent = new GetMarketplaceAgent(marketplaceAgentRepository);
@@ -33,11 +35,23 @@ export const getErc8183TestnetJobTracking = new GetErc8183TestnetJobTracking(
   erc8183SpikeRepository,
   publicJobProofRepository,
 );
-export const requestMainnetErc8183Quote = new RequestErc8183Quote(mainnetErc8183Repository);
-export const prepareMainnetErc8183Hire = new PrepareErc8183Hire(mainnetErc8183Repository);
+const unqualifiedMainnetQuote = new RequestErc8183Quote(mainnetErc8183Repository);
+const unqualifiedMainnetPrepare = new PrepareErc8183Hire(mainnetErc8183Repository);
 export const notifyMainnetFundedJob = new NotifyFundedJob(mainnetErc8183Repository);
 export const getMainnetErc8183JobStatus = new GetErc8183JobStatus(mainnetErc8183Repository);
 export const getPublicVerificationSnapshot = new GetPublicVerificationSnapshot(publicVerificationRepository);
 export const getMarketplaceLandingCatalog = new GetMarketplaceLandingCatalog(getPublicVerificationSnapshot);
+export const getMainnetHiringExposure = new GetMainnetHiringExposure(
+  publicVerificationRepository,
+  mainnetBrowserDemoConfigRepository,
+);
+export const requestMainnetErc8183Quote = new RequestQualifiedMainnetQuote(
+  getMainnetHiringExposure,
+  unqualifiedMainnetQuote,
+);
+export const prepareMainnetErc8183Hire = new PrepareQualifiedMainnetHire(
+  getMainnetHiringExposure,
+  unqualifiedMainnetPrepare,
+);
 export const getMainnetBrowserDemoConfig = new GetMainnetBrowserDemoConfig(mainnetBrowserDemoConfigRepository);
 export const getMainnetJobProof = new GetMainnetJobProof(mainnetJobProofRepository);

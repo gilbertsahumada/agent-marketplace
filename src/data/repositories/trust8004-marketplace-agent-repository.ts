@@ -92,6 +92,7 @@ function fromProfile(agent: MarketplaceAgent, now: number): MarketplaceAgentData
       generatedAt: PUBLIC_VERIFICATION_SNAPSHOT.generatedAt,
       staleAfter: PUBLIC_VERIFICATION_SNAPSHOT.staleAfter,
       blockNumber: PUBLIC_VERIFICATION_SNAPSHOT.blockNumber,
+      selection: verification.selection,
       operator: verification.operator,
       qualification: verification.qualification,
       identity: verification.identity,
@@ -147,16 +148,16 @@ export class Trust8004MarketplaceAgentRepository implements MarketplaceAgentRepo
     });
   }
 
-  getById(agentId: string): Promise<MarketplaceAgentData | null> {
-    return this.cache.get(`marketplace-agent:${agentId}`, this.ttlMs, async () => {
+  async getById(agentId: string): Promise<MarketplaceAgentData | null> {
+    const agent = await this.cache.get(`marketplace-agent:${agentId}`, this.ttlMs, async () => {
       try {
-        const agent = await this.provider.getAgent(agentId);
-        return fromProfile(agent, this.now());
+        return await this.provider.getAgent(agentId);
       } catch (error) {
         if (error && typeof error === "object" && "status" in error && error.status === 404) return null;
         throw error;
       }
     });
+    return agent ? fromProfile(agent, this.now()) : null;
   }
 
   getOnchainIdentity(agentId: string): Promise<OnchainIdentityData> {

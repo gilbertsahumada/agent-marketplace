@@ -1,9 +1,9 @@
 {
-  "schemaVersion": 1,
-  "generatedAt": "2026-08-24T16:14:46.642Z",
-  "staleAfter": "2026-08-27T16:14:46.642Z",
+  "schemaVersion": 2,
+  "generatedAt": "2026-08-24T16:44:20.958Z",
+  "staleAfter": "2026-08-27T16:44:20.958Z",
   "chainId": 56,
-  "blockNumber": "117838128",
+  "blockNumber": "117842070",
   "registryAddress": "0x8004A169FB4a3325136EB29fA0ceB6D2e539a432",
   "source": "marketplace-verification-release-snapshot",
   "agents": [
@@ -13,16 +13,17 @@
       "categories": [
         "rebalancing"
       ],
+      "selection": "curated",
       "operator": "third_party",
       "qualification": {
         "status": "not_qualified",
-        "observedAt": "2026-08-24T16:14:46.642Z",
+        "observedAt": "2026-08-24T16:44:20.958Z",
         "provenance": "derived:marketplace-seller-qualification"
       },
       "identity": {
         "status": "match",
         "mismatchFields": [],
-        "observedAt": "2026-08-24T16:14:46.642Z",
+        "observedAt": "2026-08-24T16:44:20.958Z",
         "provenance": [
           "declared",
           "onchain"
@@ -36,7 +37,7 @@
         "reachability": "verified",
         "declaredOnly": [],
         "observedOnly": [],
-        "observedAt": "2026-08-24T16:14:46.881Z",
+        "observedAt": "2026-08-24T16:44:21.781Z",
         "provenance": "observed"
       }
     },
@@ -46,16 +47,17 @@
       "categories": [
         "health_factor_monitoring"
       ],
+      "selection": "curated",
       "operator": "third_party",
       "qualification": {
         "status": "not_qualified",
-        "observedAt": "2026-08-24T16:14:46.642Z",
+        "observedAt": "2026-08-24T16:44:20.958Z",
         "provenance": "derived:marketplace-seller-qualification"
       },
       "identity": {
         "status": "match",
         "mismatchFields": [],
-        "observedAt": "2026-08-24T16:14:46.642Z",
+        "observedAt": "2026-08-24T16:44:20.958Z",
         "provenance": [
           "declared",
           "onchain"
@@ -69,7 +71,7 @@
         "reachability": "verified",
         "declaredOnly": [],
         "observedOnly": [],
-        "observedAt": "2026-08-24T16:14:47.422Z",
+        "observedAt": "2026-08-24T16:44:22.394Z",
         "provenance": "observed"
       }
     },
@@ -79,10 +81,11 @@
       "categories": [
         "yield_optimisation"
       ],
+      "selection": "curated",
       "operator": "third_party",
       "qualification": {
         "status": "not_qualified",
-        "observedAt": "2026-08-24T16:14:46.642Z",
+        "observedAt": "2026-08-24T16:44:20.958Z",
         "provenance": "derived:marketplace-seller-qualification"
       },
       "identity": {
@@ -90,7 +93,7 @@
         "mismatchFields": [
           "metadata_uri"
         ],
-        "observedAt": "2026-08-24T16:14:46.642Z",
+        "observedAt": "2026-08-24T16:44:20.958Z",
         "provenance": [
           "declared",
           "onchain"
@@ -115,7 +118,7 @@
           "stakeCLM",
           "withdrawCLM"
         ],
-        "observedAt": "2026-08-24T16:14:47.732Z",
+        "observedAt": "2026-08-24T16:44:22.828Z",
         "provenance": "observed"
       }
     },
@@ -126,16 +129,17 @@
         "yield_optimisation",
         "health_factor_monitoring"
       ],
+      "selection": "curated",
       "operator": "third_party",
       "qualification": {
         "status": "not_qualified",
-        "observedAt": "2026-08-24T16:14:46.642Z",
+        "observedAt": "2026-08-24T16:44:20.958Z",
         "provenance": "derived:marketplace-seller-qualification"
       },
       "identity": {
         "status": "match",
         "mismatchFields": [],
-        "observedAt": "2026-08-24T16:14:46.642Z",
+        "observedAt": "2026-08-24T16:44:20.958Z",
         "provenance": [
           "declared",
           "onchain"
@@ -158,7 +162,7 @@
           "stakeXVS"
         ],
         "observedOnly": [],
-        "observedAt": "2026-08-24T16:14:48.193Z",
+        "observedAt": "2026-08-24T16:44:23.260Z",
         "provenance": "observed"
       }
     }

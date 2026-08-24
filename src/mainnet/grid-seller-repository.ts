@@ -23,6 +23,7 @@ import { buildGridPlan, parseGridTaskDescription } from "../business/policies/gr
 import type { HostedErc8183SellerRepository } from "../data/repositories/hosted-erc8183-seller-repository.js";
 import { ERC8183_MAINNET } from "./contracts.js";
 import { loadMainnetGridSellerConfig } from "./grid-seller-config.js";
+import { mainnetImplementationPinsMatch } from "./implementation-pins.js";
 
 interface MainnetGridRuntime {
   client: ERC8183Client;
@@ -38,6 +39,7 @@ let signerBusy = false;
 const requestTimes: number[] = [];
 const MAX_REQUESTS_PER_MINUTE = 60;
 const MINIMUM_SIGNER_GAS_BALANCE = 2_000_000_000_000_000n;
+const MINIMUM_SUBMIT_MARGIN_SECONDS = 600n;
 
 function assertRequestBudget(now = Date.now()): void {
   while (requestTimes.length > 0 && requestTimes[0]! <= now - 60_000) requestTimes.shift();
@@ -162,9 +164,9 @@ export class MainnetGridSellerRepository implements HostedErc8183SellerRepositor
     }
     const existingJob = await current.client.getJob(jobId);
     if (existingJob.status === JobStatus.SUBMITTED || existingJob.status === JobStatus.COMPLETED) {
-      if (!isAddressEqual(existingJob.provider, current.seller)) {
-        throw new HostedSellerJobNotReadyError("The Grid job belongs to another provider");
-      }
+      const policy = await current.client.router.jobPolicy(jobId);
+      const deliverable = await this.assertBoundJob(current, jobId, existingJob, policy, false);
+      if (!deliverable.verify(existingJob.deliverable)) throw new HostedSellerJobNotReadyError("The terminal Grid deliverable does not match its deterministic result");
       return { acknowledged: true, already_submitted: true, job_id: Number(jobId) };
     }
     const verification = await current.jobOps.verifyJob(Number(jobId));
@@ -176,25 +178,14 @@ export class MainnetGridSellerRepository implements HostedErc8183SellerRepositor
       current.client.router.jobPolicy(jobId),
     ]);
     if (job.status !== JobStatus.FUNDED) throw new HostedSellerJobNotReadyError("notify_funded requires an onchain FUNDED job");
-    const { parsed } = planForDescription(job.description);
-    const disputeWindow = await current.client.policy.disputeWindow();
-    const now = BigInt(Math.floor(Date.now() / 1_000));
-    if (
-      !isAddressEqual(job.provider, current.seller) ||
-      !isAddressEqual(job.evaluator, ERC8183_MAINNET.router) ||
-      !isAddressEqual(job.hook, ERC8183_MAINNET.router) ||
-      !isAddressEqual(policy, ERC8183_MAINNET.policy) ||
-      job.budget !== ERC8183_MAINNET.maximumDemoBudgetRaw ||
-      parsed.price !== ERC8183_MAINNET.maximumDemoBudgetRaw.toString() ||
-      !isAddress(parsed.currency) ||
-      !isAddressEqual(parsed.currency, ERC8183_MAINNET.token) ||
-      job.expiredAt <= now + disputeWindow
-    ) throw new HostedSellerJobNotReadyError("The funded Grid job is outside the Mainnet allowlist");
+    const deliverable = await this.assertBoundJob(current, jobId, job, policy, true);
+    if (!await mainnetImplementationPinsMatch(current.client.publicClient)) {
+      throw new HostedSellerUnavailableError("The Mainnet Commerce or Router implementation is not allowlisted");
+    }
     const signerBalance = await current.client.publicClient.getBalance({ address: current.seller });
     if (signerBalance < MINIMUM_SIGNER_GAS_BALANCE) {
       throw new HostedSellerUnavailableError("The Mainnet Grid seller gas reserve is below its safety floor");
     }
-    const deliverable = manifest(jobId, job.description);
     const deliverableHash = deliverable.manifestHash();
     try {
       const result = await current.client.submit(jobId, deliverableHash, {
@@ -225,6 +216,36 @@ export class MainnetGridSellerRepository implements HostedErc8183SellerRepositor
       }
       throw new HostedSellerUnavailableError("The Mainnet Grid submission could not be reconciled onchain");
     }
+  }
+
+  private async assertBoundJob(
+    current: MainnetGridRuntime,
+    jobId: bigint,
+    job: Awaited<ReturnType<ERC8183Client["getJob"]>>,
+    policy: `0x${string}`,
+    requireSubmitWindow: boolean,
+  ): Promise<DeliverableManifest> {
+    const { parsed } = planForDescription(job.description);
+    if (
+      !isAddressEqual(job.provider, current.seller) ||
+      !isAddressEqual(job.evaluator, ERC8183_MAINNET.router) ||
+      !isAddressEqual(job.hook, ERC8183_MAINNET.router) ||
+      !isAddressEqual(policy, ERC8183_MAINNET.policy) ||
+      job.budget !== ERC8183_MAINNET.maximumDemoBudgetRaw ||
+      parsed.price !== ERC8183_MAINNET.maximumDemoBudgetRaw.toString() ||
+      !isAddress(parsed.currency) ||
+      !isAddressEqual(parsed.currency, ERC8183_MAINNET.token)
+    ) throw new HostedSellerJobNotReadyError("The Grid job is outside the Mainnet allowlist");
+    if (requireSubmitWindow) {
+      const [disputeWindow, block] = await Promise.all([
+        current.client.policy.disputeWindow(),
+        current.client.publicClient.getBlock(),
+      ]);
+      if (job.expiredAt <= block.timestamp + disputeWindow + MINIMUM_SUBMIT_MARGIN_SECONDS) {
+        throw new HostedSellerJobNotReadyError("The funded Grid job has less than ten minutes of submit margin");
+      }
+    }
+    return manifest(jobId, job.description);
   }
 
   async getDeliverable(jobId: bigint): Promise<HostedSellerDeliverable> {

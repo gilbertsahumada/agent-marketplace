@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { evidenceForAgent, snapshotAgentCardViewModel } from "../components/marketplace/view-models.js";
 import { determineHireability, toMarketplaceAgent } from "../src/business/policies/marketplace-agent-policy.js";
-import { assertPublicVerificationSnapshotFresh } from "../src/data/verification/public-verification-snapshot.js";
+import { assertPublicVerificationSnapshotFresh, parsePublicVerificationSnapshot } from "../src/data/verification/public-verification-snapshot.js";
 import type { MarketplaceAgentData } from "../src/data/repositories/marketplace-agent-repository.js";
 import {
   marketplaceEvidenceFromReleaseInput,
@@ -139,13 +139,14 @@ function marketplaceData(qualification: "qualified" | "not_qualified", freshness
       generatedAt: GENERATED_AT,
       staleAfter: "2026-08-27T12:00:00.000Z",
       blockNumber: "123",
+      selection: "marketplace_operated",
       operator: "marketplace",
       qualification: {
         status: qualification,
         observedAt: GENERATED_AT,
         provenance: "derived:marketplace-seller-qualification",
       },
-      identity: { status: "match", mismatchFields: [], observedAt: GENERATED_AT },
+      identity: { status: "match", mismatchFields: [], observedAt: GENERATED_AT, provenance: ["declared", "onchain"] },
       tools: {
         status: "observed",
         probeOutcomes: ["protocol_valid"],
@@ -174,6 +175,13 @@ describe("PR 16 marketplace evidence boundaries", () => {
         canHire: true,
         status: "quote_verified",
         evidence: { source: "marketplace-readiness", observedAt: GENERATED_AT },
+      });
+      const explicit = marketplaceData("qualified", "current");
+      explicit.verification!.selection = "operator_explicit";
+      explicit.verification!.operator = "third_party";
+      expect(determineHireability(explicit)).toMatchObject({
+        canHire: false,
+        status: "protocol_discovered",
       });
     } finally {
       delete process.env.ERC8183_MAINNET_DEMO_ENABLED;
@@ -232,5 +240,72 @@ describe("PR 16 marketplace evidence boundaries", () => {
       snapshot,
       Date.parse(GENERATED_AT) - 5 * 60 * 1_000 - 1,
     )).toThrow(/too far in the future/);
+  });
+
+  it("rejects missing or contradictory schema 2 provenance and probe fields", () => {
+    const release = readinessInput("protocol_valid");
+    const snapshot = sanitizeVerificationReport(verificationReportFromReleaseInput(release), {
+      now: Date.parse(GENERATED_AT),
+      marketplaceEvidence: marketplaceEvidenceFromReleaseInput(release),
+    });
+    expect(snapshot.schemaVersion).toBe(2);
+
+    const missingOperator = structuredClone(snapshot) as unknown as { agents: Array<Record<string, unknown>> };
+    delete missingOperator.agents[0]!.operator;
+    expect(() => parsePublicVerificationSnapshot(missingOperator)).toThrow(/operator/);
+
+    const contradiction = structuredClone(snapshot) as unknown as {
+      agents: Array<{ tools: { status: string } }>;
+    };
+    contradiction.agents[0]!.tools.status = "not_probed";
+    expect(() => parsePublicVerificationSnapshot(contradiction)).toThrow(/do not match probeOutcomes/);
+
+    const identityContradiction = structuredClone(snapshot) as unknown as {
+      agents: Array<{ identity: { status: string; mismatchFields: string[] } }>;
+    };
+    identityContradiction.agents[0]!.identity.status = "read_error";
+    identityContradiction.agents[0]!.identity.mismatchFields = ["owner"];
+    expect(() => parsePublicVerificationSnapshot(identityContradiction)).toThrow(/does not match identity.status/);
+
+    const mixedProbe = structuredClone(snapshot) as unknown as {
+      agents: Array<{ tools: { probeOutcomes: string[] } }>;
+    };
+    mixedProbe.agents[0]!.tools.probeOutcomes = ["protocol_valid", "not_probed"];
+    expect(() => parsePublicVerificationSnapshot(mixedProbe)).toThrow(/cannot mix/);
+  });
+
+  it("does not render a stale protocol observation as current reachability", () => {
+    const release = readinessInput("protocol_valid");
+    const snapshot = sanitizeVerificationReport(verificationReportFromReleaseInput(release), {
+      now: Date.parse(GENERATED_AT),
+      marketplaceEvidence: marketplaceEvidenceFromReleaseInput(release),
+    });
+    const card = snapshotAgentCardViewModel(
+      snapshot.agents[0]!,
+      snapshot,
+      Date.parse(snapshot.staleAfter) + 1,
+    );
+    expect(card.evidence.find(({ kind }) => kind === "reachable")).toMatchObject({
+      status: "unknown",
+      provenance: "observed",
+    });
+    expect(card.evidence.find(({ kind }) => kind === "reachable")?.detail).toContain("stale");
+  });
+
+  it("publishes read errors as unavailable identity attempts, never verified onchain provenance", () => {
+    const release = readinessInput("protocol_valid");
+    const report = verificationReportFromReleaseInput(release);
+    report.agents[0]!.identity.status = "read_error";
+    report.agents[0]!.identity.checks = { ownerMatches: null, metadataUriMatches: null };
+    const snapshot = sanitizeVerificationReport(report, {
+      now: Date.parse(GENERATED_AT),
+      marketplaceEvidence: marketplaceEvidenceFromReleaseInput(release),
+    });
+    expect(snapshot.agents[0]?.identity).toMatchObject({
+      status: "read_error",
+      provenance: ["declared", "unavailable"],
+    });
+    expect(parsePublicVerificationSnapshot(snapshot).agents[0]?.identity.provenance)
+      .toEqual(["declared", "unavailable"]);
   });
 });

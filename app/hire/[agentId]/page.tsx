@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getMarketplaceAgent, listMarketplaceAgents } from "@/src/business/composition";
+import { getMainnetHiringExposure, getMarketplaceAgent, listMarketplaceAgents } from "@/src/business/composition";
+import { selectHireAlternative } from "@/src/business/policies/marketplace-agent-policy";
 import { MarketplaceAgentNotFoundError, MarketplaceDataUnavailableError } from "@/src/business/errors/marketplace-errors";
 import { CatalogUnavailable } from "@/components/marketplace/catalog-unavailable";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -16,12 +17,11 @@ export default async function HirePage({ params }: { params: Promise<{ agentId: 
       getMarketplaceAgent.execute({ agentId }),
       listMarketplaceAgents.execute({ view: "marketplace", page: 1, limit: 12 }),
     ]);
-    const categories = new Set(agent.categories.map(({ category }) => category));
-    const alternative = catalog.items.find((candidate) => candidate.agentId !== agent.agentId
-      && candidate.hireability.canHire
-      && candidate.categories.some(({ category }) => categories.has(category)));
+    const alternative = selectHireAlternative(agent, catalog.items);
+    const mainnetExposure = getMainnetHiringExposure.execute();
     const demoEnabled = Reflect.get(process.env, "ERC8183_BROWSER_SPIKE_ENABLED") === "true";
-    const mainnetDemoEnabled = Reflect.get(process.env, "ERC8183_MAINNET_DEMO_ENABLED") === "true";
+    const selectedDemoAvailable = agent.hireability.canHire
+      && String(mainnetExposure.demoConfig?.agentId) === agent.agentId;
     return (
       <main id="main-content" className="mx-auto w-full max-w-4xl flex-1 px-4 py-12 sm:px-6 lg:px-8">
         <PageIntro eyebrow="Hire eligibility" title={agent.name}>This screen validates whether the selected agent has enough ERC-8183 evidence. It does not simulate a quote or transaction.</PageIntro>
@@ -31,7 +31,7 @@ export default async function HirePage({ params }: { params: Promise<{ agentId: 
         </Alert>
         <div className="mt-6 flex flex-wrap gap-3">
           <Button asChild variant="outline"><Link href={`/agents/${agentId}`}>Return to profile</Link></Button>
-          {alternative ? <Button asChild><Link href={`/hire/${alternative.agentId}`}>Hire {alternative.name}</Link></Button> : mainnetDemoEnabled ? <Button asChild><Link href="/demo/erc8183-mainnet">Hire the qualified Grid planner</Link></Button> : demoEnabled ? <Button asChild><Link href="/demo/erc8183">Try the verified Testnet demo</Link></Button> : <Button asChild variant="outline"><Link href="/jobs/testnet/551">View browser-wallet proof</Link></Button>}
+          {selectedDemoAvailable ? <Button asChild><Link href="/demo/erc8183-mainnet">Continue to browser-wallet hire</Link></Button> : alternative ? <Button asChild><Link href={`/hire/${alternative.agentId}`}>Hire {alternative.name}</Link></Button> : demoEnabled ? <Button asChild><Link href="/demo/erc8183">Try the verified Testnet demo</Link></Button> : <Button asChild variant="outline"><Link href="/jobs/testnet/551">View browser-wallet proof</Link></Button>}
         </div>
       </main>
     );

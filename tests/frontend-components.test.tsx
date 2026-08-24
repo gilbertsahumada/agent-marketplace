@@ -2,7 +2,7 @@
 import "@testing-library/jest-dom/vitest";
 import { createElement, type AnchorHTMLAttributes } from "react";
 import axe from "axe-core";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AgentCard } from "../components/marketplace/agent-card.js";
@@ -23,6 +23,7 @@ import type { PublicJobProof } from "../src/business/entities/public-job-proof.j
 import { GATE1_JOB_514_MANIFEST } from "../src/data/proofs/gate1-job-514.js";
 import { GATE6A_JOB_551_MANIFEST } from "../src/data/proofs/gate6a-job-551.js";
 import { Erc8183TestnetDemo } from "../components/spikes/erc8183-browser-spike.js";
+import { VerificationDrift } from "../components/marketplace/verification-drift.js";
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
@@ -161,6 +162,52 @@ describe("marketplace presentation rules", () => {
     const profileLink = screen.getByRole("link", { name: /view evidence/i });
     expect(profileLink).toHaveAttribute("href", "/agents/45650");
     expect(profileLink).toHaveAttribute("data-prefetch", "false");
+  });
+
+  it("renders not-probed evidence neutrally instead of with a green verified icon", () => {
+    const { container } = render(createElement(VerificationDrift, {
+      compact: true,
+      verification: {
+        freshness: "current",
+        generatedAt: "2026-08-24T12:00:00.000Z",
+        blockNumber: "123",
+        identityStatus: "match",
+        identityMismatchFields: [],
+        identityObservedAt: "2026-08-24T12:00:00.000Z",
+        identityOnchainProvenance: "onchain",
+        toolsStatus: "not_probed",
+        toolReachability: "not_probed",
+        toolProbeOutcomes: ["not_probed"],
+        declaredOnlyTools: [],
+        observedOnlyTools: [],
+        toolsObservedAt: null,
+      },
+    }));
+    expect(within(container).getByText(/Tool endpoint was not probed/)).toBeInTheDocument();
+    expect(within(container).getByText(/Not probed/)).toBeInTheDocument();
+    expect(container.querySelector(".text-emerald-300")).toBeNull();
+  });
+
+  it("renders a failed identity read as unavailable rather than onchain provenance", () => {
+    const { container } = render(createElement(VerificationDrift, {
+      verification: {
+        freshness: "current",
+        generatedAt: "2026-08-24T12:00:00.000Z",
+        blockNumber: "123",
+        identityStatus: "read_error",
+        identityMismatchFields: [],
+        identityObservedAt: "2026-08-24T12:00:00.000Z",
+        identityOnchainProvenance: "unavailable",
+        toolsStatus: "not_probed",
+        toolReachability: "not_probed",
+        toolProbeOutcomes: ["not_probed"],
+        declaredOnlyTools: [],
+        observedOnlyTools: [],
+        toolsObservedAt: null,
+      },
+    }));
+    expect(within(container).getAllByText(/unavailable/i).length).toBeGreaterThan(0);
+    expect(within(container).queryByText("onchain")).toBeNull();
   });
 
   it("keeps the evidence rail accessible as an ordered progression", () => {
