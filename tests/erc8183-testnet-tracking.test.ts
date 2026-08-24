@@ -36,6 +36,10 @@ function job(overrides: Partial<Erc8183JobFacts> = {}): Erc8183JobFacts {
 function jobs(getJob: Erc8183SpikeRepository["getJob"]): Erc8183SpikeRepository {
   return {
     allowlist: {
+      chainId: 97,
+      agentId: ERC8183_TESTNET.agentId,
+      maximumBudgetRaw: ERC8183_TESTNET.maximumBudgetRaw,
+      networkLabel: "BSC Testnet",
       commerce: ERC8183_TESTNET.commerce,
       router: ERC8183_TESTNET.router,
       policy: ERC8183_TESTNET.policy,

@@ -77,6 +77,7 @@ function hirePlan(): Erc8183HirePlan {
     approvalRequired: true,
     approvalAmountRaw: "1",
     deadline: String(NOW + 4_500),
+    disputeWindowSeconds: "900",
     executeBefore: NOW + 900,
     maximumSignatures: 5,
     transactions: [],
@@ -109,6 +110,10 @@ function job(overrides: Partial<Erc8183JobFacts> = {}): Erc8183JobFacts {
 function repository(overrides: Partial<Erc8183SpikeRepository> = {}): Erc8183SpikeRepository {
   return {
     allowlist: {
+      chainId: 97,
+      agentId: ERC8183_TESTNET.agentId,
+      maximumBudgetRaw: ERC8183_TESTNET.maximumBudgetRaw,
+      networkLabel: "BSC Testnet",
       commerce: ERC8183_TESTNET.commerce,
       router: ERC8183_TESTNET.router,
       policy: ERC8183_TESTNET.policy,
@@ -277,6 +282,23 @@ describe("notify_funded guard", () => {
     const notify = vi.fn();
     const useCase = new NotifyFundedJob(repository({ getJob: async () => job({ status: "SUBMITTED" }), notifyFunded: notify }));
     await expect(useCase.execute({ jobId: "900", buyer: BUYER })).resolves.toMatchObject({ alreadySubmitted: true });
+    expect(notify).not.toHaveBeenCalled();
+  });
+
+  it("keeps terminal retries idempotent after deadline while rejecting expired FUNDED jobs", async () => {
+    const notify = vi.fn();
+    const terminal = new NotifyFundedJob(repository({
+      getJob: async () => job({ status: "COMPLETED", deadline: "1" }),
+      notifyFunded: notify,
+    }));
+    await expect(terminal.execute({ jobId: "900", buyer: BUYER }))
+      .resolves.toMatchObject({ alreadySubmitted: true });
+
+    const funded = new NotifyFundedJob(repository({
+      getJob: async () => job({ status: "FUNDED", deadline: "1" }),
+      notifyFunded: notify,
+    }));
+    await expect(funded.execute({ jobId: "900", buyer: BUYER })).rejects.toThrow(/deadline/);
     expect(notify).not.toHaveBeenCalled();
   });
 });

@@ -1,0 +1,170 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-08-24T17:05:42.720Z",
+  "staleAfter": "2026-08-27T17:05:42.720Z",
+  "chainId": 56,
+  "blockNumber": "117844918",
+  "registryAddress": "0x8004A169FB4a3325136EB29fA0ceB6D2e539a432",
+  "source": "marketplace-verification-release-snapshot",
+  "agents": [
+    {
+      "agentId": "45650",
+      "name": "V3 Pools powered by HeyAnon",
+      "categories": [
+        "rebalancing"
+      ],
+      "selection": "curated",
+      "operator": "third_party",
+      "qualification": {
+        "status": "not_qualified",
+        "observedAt": "2026-08-24T17:05:42.720Z",
+        "provenance": "derived:marketplace-seller-qualification"
+      },
+      "identity": {
+        "status": "match",
+        "mismatchFields": [],
+        "observedAt": "2026-08-24T17:05:42.720Z",
+        "provenance": [
+          "declared",
+          "onchain"
+        ]
+      },
+      "tools": {
+        "status": "observed",
+        "probeOutcomes": [
+          "protocol_valid"
+        ],
+        "reachability": "verified",
+        "declaredOnly": [],
+        "observedOnly": [],
+        "observedAt": "2026-08-24T17:05:42.993Z",
+        "provenance": "observed"
+      }
+    },
+    {
+      "agentId": "45381",
+      "name": "Aave powered by HeyAnon",
+      "categories": [
+        "health_factor_monitoring"
+      ],
+      "selection": "curated",
+      "operator": "third_party",
+      "qualification": {
+        "status": "not_qualified",
+        "observedAt": "2026-08-24T17:05:42.720Z",
+        "provenance": "derived:marketplace-seller-qualification"
+      },
+      "identity": {
+        "status": "match",
+        "mismatchFields": [],
+        "observedAt": "2026-08-24T17:05:42.720Z",
+        "provenance": [
+          "declared",
+          "onchain"
+        ]
+      },
+      "tools": {
+        "status": "observed",
+        "probeOutcomes": [
+          "protocol_valid"
+        ],
+        "reachability": "verified",
+        "declaredOnly": [],
+        "observedOnly": [],
+        "observedAt": "2026-08-24T17:05:43.345Z",
+        "provenance": "observed"
+      }
+    },
+    {
+      "agentId": "45422",
+      "name": "Beefy powered by HeyAnon",
+      "categories": [
+        "yield_optimisation"
+      ],
+      "selection": "curated",
+      "operator": "third_party",
+      "qualification": {
+        "status": "not_qualified",
+        "observedAt": "2026-08-24T17:05:42.720Z",
+        "provenance": "derived:marketplace-seller-qualification"
+      },
+      "identity": {
+        "status": "mismatch",
+        "mismatchFields": [
+          "metadata_uri"
+        ],
+        "observedAt": "2026-08-24T17:05:42.720Z",
+        "provenance": [
+          "declared",
+          "onchain"
+        ]
+      },
+      "tools": {
+        "status": "observed",
+        "probeOutcomes": [
+          "protocol_valid"
+        ],
+        "reachability": "verified",
+        "declaredOnly": [],
+        "observedOnly": [
+          "claimCLMRewards",
+          "depositCLM",
+          "getCLMPoolWithIds",
+          "getCLMPoolWithNamesOrSymbols",
+          "getCLMPoolsWithChains",
+          "getCLMPoolsWithProtocols",
+          "getCLMPoolsWithTokens",
+          "previewDepositCLM",
+          "stakeCLM",
+          "withdrawCLM"
+        ],
+        "observedAt": "2026-08-24T17:05:43.742Z",
+        "provenance": "observed"
+      }
+    },
+    {
+      "agentId": "43129",
+      "name": "Venus powered by HeyAnon",
+      "categories": [
+        "yield_optimisation",
+        "health_factor_monitoring"
+      ],
+      "selection": "curated",
+      "operator": "third_party",
+      "qualification": {
+        "status": "not_qualified",
+        "observedAt": "2026-08-24T17:05:42.720Z",
+        "provenance": "derived:marketplace-seller-qualification"
+      },
+      "identity": {
+        "status": "match",
+        "mismatchFields": [],
+        "observedAt": "2026-08-24T17:05:42.720Z",
+        "provenance": [
+          "declared",
+          "onchain"
+        ]
+      },
+      "tools": {
+        "status": "observed",
+        "probeOutcomes": [
+          "protocol_valid"
+        ],
+        "reachability": "verified",
+        "declaredOnly": [
+          "claimStakedRewardsXVS",
+          "claimUnstakeXVS",
+          "getAvailableToClaimUnstakeXVS",
+          "getDescriptionXVS",
+          "getLockPeriodXVS",
+          "getStakeInfoXVS",
+          "requestUnstakeXVS",
+          "stakeXVS"
+        ],
+        "observedOnly": [],
+        "observedAt": "2026-08-24T17:05:44.123Z",
+        "provenance": "observed"
+      }
+    }
+  ]
+}

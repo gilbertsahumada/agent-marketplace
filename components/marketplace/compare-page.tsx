@@ -5,7 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { EvidenceRail } from "./evidence-rail";
 import { PageIntro } from "./page-primitives";
-import { evidenceForAgent } from "./view-models";
+import { evidenceForAgent, verificationViewModel } from "./view-models";
+import { VerificationDrift } from "./verification-drift";
 
 const choices = [
   ["45650", "V3 Pools"],
@@ -49,6 +50,7 @@ export function ComparePage({ comparison, selected }: { comparison: MarketplaceA
                 </CardHeader>
                 <CardContent className="space-y-5">
                   <EvidenceRail compact steps={evidenceForAgent(agent)} />
+                  {verificationViewModel(agent) && <VerificationDrift compact verification={verificationViewModel(agent)!} />}
                   <dl className="space-y-3 text-sm">
                     <div className="flex justify-between gap-3"><dt className="text-zinc-500">Categories</dt><dd className="text-right">{agent.categories.map(({ category }) => category.replaceAll("_", " ")).join(", ") || "Not evaluated"}</dd></div>
                     <div className="flex justify-between gap-3"><dt className="text-zinc-500">Endpoint</dt><dd>{agent.endpointObservation.status.replaceAll("_", " ")}</dd></div>

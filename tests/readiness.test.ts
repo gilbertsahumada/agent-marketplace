@@ -22,6 +22,7 @@ import type { MarketplaceAgent } from "../src/trust8004/types.js";
 import type { BscIdentityReader } from "../src/verification/onchain.js";
 import type { IdentityVerification, McpEndpointVerification } from "../src/verification/types.js";
 import { createProbeBudget } from "../src/verification/probe-budget.js";
+import { MainnetGridSellerRepository } from "../src/mainnet/grid-seller-repository.js";
 
 const PROVIDER = "0x1111111111111111111111111111111111111111" as Address;
 const PAYMENT_TOKEN = "0x2222222222222222222222222222222222222222" as Address;
@@ -242,6 +243,64 @@ describe("ERC-8183 readiness protocols", () => {
       quoteExpiresAt: 1_950_000_600,
     });
     expect(methods).toEqual(["negotiate-erc8183-job"]);
+  });
+
+  it("uses the canonical Grid request that the marketplace-operated seller accepts", async () => {
+    const seller = new MainnetGridSellerRepository(async () => ({
+      seller: PROVIDER,
+      negotiation: {
+        negotiate: async (request: Record<string, unknown>) => {
+          const normalized = NegotiationRequest.fromDict(request);
+          return {
+            toDict: () => ({
+              request: normalized.toDict(),
+              request_hash: normalized.computeHash(),
+              response: {
+                accepted: true,
+                terms: {
+                  ...(request.terms as Record<string, unknown>),
+                  price: "1",
+                  currency: PAYMENT_TOKEN,
+                },
+                negotiated_at: 1_949_999_970,
+                quote_expires_at: 1_950_000_600,
+              },
+              negotiation_hash: `0x${"c".repeat(64)}`,
+              provider_sig: `0x${"d".repeat(130)}`,
+              chain_id: 56,
+              verifying_contract: COMMERCE,
+            }),
+          };
+        },
+      },
+    }) as never);
+    let requestedTask = "";
+    const fetchImpl = vi.fn(async (_input: string | URL | Request, init?: RequestInit) => {
+      if (!init?.method || init.method === "GET") {
+        return Response.json({
+          name: "marketplace-operated-grid-planner",
+          url: "https://fixture.example/a2a",
+          skills: [{ id: "negotiate-erc8183-job" }, { id: "notify_funded" }],
+        });
+      }
+      const body = JSON.parse(String(init.body)) as { params: { message: { parts: Array<{ data: Record<string, unknown> }> } } };
+      const data = body.params.message.parts[0]!.data;
+      requestedTask = String(data.task_description);
+      const quote = await seller.handleMessage({
+        skill: "negotiate-erc8183-job",
+        taskDescription: requestedTask,
+        terms: data.terms as never,
+      });
+      return Response.json({ result: { parts: [{ data: quote }] } });
+    }) as unknown as typeof fetch;
+    const gridAgent = { ...agent([{ name: "A2A", endpoint: "https://fixture.example/a2a", version: null, tools: [], capabilities: [] }]), agentId: "9001" };
+    const result = await createHireabilityAssessor({
+      ...assessorOptions(fetchImpl),
+      marketplaceOperatedGridSellerAgentId: "9001",
+    })(gridAgent, identity());
+
+    expect(requestedTask).toMatch(/^GRID_PLAN_V1:/);
+    expect(result).toMatchObject({ transport: "a2a", hireability: "quote_verified", quoteStatus: "verified" });
   });
 
   it("uses only the declared HTTP ERC-8183 route family", async () => {

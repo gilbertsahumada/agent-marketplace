@@ -3,6 +3,10 @@ import { Trust8004Provider } from "../../trust8004/provider.js";
 import type { AgentListItem, MarketplaceAgent } from "../../trust8004/types.js";
 import { createBscIdentityReader, type BscIdentityReader } from "../../verification/onchain.js";
 import { DEFAULT_REGISTERED_AGENT_SORT } from "./marketplace-agent-repository.js";
+import {
+  PUBLIC_VERIFICATION_SNAPSHOT,
+  publicVerificationForAgent,
+} from "../verification/public-verification-snapshot.js";
 import type {
   MarketplaceAgentData,
   MarketplaceAgentDataPage,
@@ -61,10 +65,12 @@ function fromSummary(agent: AgentListItem, fetchedAt: string): MarketplaceAgentD
       metadataUpdatedAt: null,
       indexedUpdatedAt: agent.updatedAt,
     },
+    verification: null,
   };
 }
 
-function fromProfile(agent: MarketplaceAgent): MarketplaceAgentData {
+function fromProfile(agent: MarketplaceAgent, now: number): MarketplaceAgentData {
+  const verification = publicVerificationForAgent(agent.agentId, now);
   return {
     sourceDetail: "profile",
     chainId: agent.chainId,
@@ -81,6 +87,17 @@ function fromProfile(agent: MarketplaceAgent): MarketplaceAgentData {
     reputation: agent.reputation,
     trustScore: agent.trustScore,
     freshness: agent.freshness,
+    verification: verification ? {
+      freshness: verification.freshness,
+      generatedAt: PUBLIC_VERIFICATION_SNAPSHOT.generatedAt,
+      staleAfter: PUBLIC_VERIFICATION_SNAPSHOT.staleAfter,
+      blockNumber: PUBLIC_VERIFICATION_SNAPSHOT.blockNumber,
+      selection: verification.selection,
+      operator: verification.operator,
+      qualification: verification.qualification,
+      identity: verification.identity,
+      tools: verification.tools,
+    } : null,
   };
 }
 
@@ -112,6 +129,7 @@ export class Trust8004MarketplaceAgentRepository implements MarketplaceAgentRepo
     return this.cache.get(key, this.ttlMs, async () => {
       const page = await this.provider.listAgents({
         view: "all",
+        active: true,
         ...(q ? { q } : {}),
         limit: options.limit,
         offset,
@@ -130,16 +148,16 @@ export class Trust8004MarketplaceAgentRepository implements MarketplaceAgentRepo
     });
   }
 
-  getById(agentId: string): Promise<MarketplaceAgentData | null> {
-    return this.cache.get(`marketplace-agent:${agentId}`, this.ttlMs, async () => {
+  async getById(agentId: string): Promise<MarketplaceAgentData | null> {
+    const agent = await this.cache.get(`marketplace-agent:${agentId}`, this.ttlMs, async () => {
       try {
-        const agent = await this.provider.getAgent(agentId);
-        return fromProfile(agent);
+        return await this.provider.getAgent(agentId);
       } catch (error) {
         if (error && typeof error === "object" && "status" in error && error.status === 404) return null;
         throw error;
       }
     });
+    return agent ? fromProfile(agent, this.now()) : null;
   }
 
   getOnchainIdentity(agentId: string): Promise<OnchainIdentityData> {

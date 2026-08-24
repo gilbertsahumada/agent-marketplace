@@ -2,12 +2,13 @@
 import "@testing-library/jest-dom/vitest";
 import { createElement, type AnchorHTMLAttributes } from "react";
 import axe from "axe-core";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AgentCard } from "../components/marketplace/agent-card.js";
 import { AgentProfile } from "../components/marketplace/agent-profile.js";
 import { CatalogPage } from "../components/marketplace/catalog-page.js";
+import { CatalogUnavailable } from "../components/marketplace/catalog-unavailable.js";
 import { EvidenceRail } from "../components/marketplace/evidence-rail.js";
 import { PublicProofPage } from "../components/marketplace/public-proof-page.js";
 import { TestnetJobTracker } from "../components/marketplace/testnet-job-tracker.js";
@@ -22,6 +23,7 @@ import type { PublicJobProof } from "../src/business/entities/public-job-proof.j
 import { GATE1_JOB_514_MANIFEST } from "../src/data/proofs/gate1-job-514.js";
 import { GATE6A_JOB_551_MANIFEST } from "../src/data/proofs/gate6a-job-551.js";
 import { Erc8183TestnetDemo } from "../components/spikes/erc8183-browser-spike.js";
+import { VerificationDrift } from "../components/marketplace/verification-drift.js";
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
@@ -60,6 +62,7 @@ function marketplaceAgent(): MarketplaceAgent {
     description: "Sanitized candidate",
     owner: "0x1111111111111111111111111111111111111111",
     metadataUri: "ipfs://sanitized/45650",
+    operator: "third_party",
     indexedIdentity: {
       owner: "0x1111111111111111111111111111111111111111",
       metadataUri: "ipfs://sanitized/45650",
@@ -153,12 +156,58 @@ afterEach(() => {
 
 describe("marketplace presentation rules", () => {
   it("does not render a Hire action for an MCP-only agent", () => {
-    render(createElement(AgentCard, { agent: { agentId: "45650", name: "V3 Pools", description: "Agent", categories: ["rebalancing"], href: "/agents/45650", hireability: "mcp_only", evidence } }));
+    render(createElement(AgentCard, { agent: { agentId: "45650", name: "V3 Pools", description: "Agent", operator: "third_party", categories: ["rebalancing"], href: "/agents/45650", hireability: "mcp_only", evidence } }));
     expect(screen.getByText("MCP only")).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /hire agent/i })).not.toBeInTheDocument();
     const profileLink = screen.getByRole("link", { name: /view evidence/i });
     expect(profileLink).toHaveAttribute("href", "/agents/45650");
     expect(profileLink).toHaveAttribute("data-prefetch", "false");
+  });
+
+  it("renders not-probed evidence neutrally instead of with a green verified icon", () => {
+    const { container } = render(createElement(VerificationDrift, {
+      compact: true,
+      verification: {
+        freshness: "current",
+        generatedAt: "2026-08-24T12:00:00.000Z",
+        blockNumber: "123",
+        identityStatus: "match",
+        identityMismatchFields: [],
+        identityObservedAt: "2026-08-24T12:00:00.000Z",
+        identityOnchainProvenance: "onchain",
+        toolsStatus: "not_probed",
+        toolReachability: "not_probed",
+        toolProbeOutcomes: ["not_probed"],
+        declaredOnlyTools: [],
+        observedOnlyTools: [],
+        toolsObservedAt: null,
+      },
+    }));
+    expect(within(container).getByText(/Tool endpoint was not probed/)).toBeInTheDocument();
+    expect(within(container).getByText(/Not probed/)).toBeInTheDocument();
+    expect(container.querySelector(".text-emerald-300")).toBeNull();
+  });
+
+  it("renders a failed identity read as unavailable rather than onchain provenance", () => {
+    const { container } = render(createElement(VerificationDrift, {
+      verification: {
+        freshness: "current",
+        generatedAt: "2026-08-24T12:00:00.000Z",
+        blockNumber: "123",
+        identityStatus: "read_error",
+        identityMismatchFields: [],
+        identityObservedAt: "2026-08-24T12:00:00.000Z",
+        identityOnchainProvenance: "unavailable",
+        toolsStatus: "not_probed",
+        toolReachability: "not_probed",
+        toolProbeOutcomes: ["not_probed"],
+        declaredOnlyTools: [],
+        observedOnlyTools: [],
+        toolsObservedAt: null,
+      },
+    }));
+    expect(within(container).getAllByText(/unavailable/i).length).toBeGreaterThan(0);
+    expect(within(container).queryByText("onchain")).toBeNull();
   });
 
   it("keeps the evidence rail accessible as an ordered progression", () => {
@@ -184,6 +233,14 @@ describe("marketplace presentation rules", () => {
     expect(screen.queryByText(/0 reported/)).not.toBeInTheDocument();
   });
 
+  it("renders a recoverable catalogue outage without fabricating fallback rows", () => {
+    render(createElement(CatalogUnavailable, { retryHref: "/agents?view=all&page=2" }));
+    expect(screen.getByText("Live catalogue temporarily unavailable")).toBeInTheDocument();
+    expect(screen.getByText(/No registered agent or profile data was invented/)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Try again" })).toHaveAttribute("href", "/agents?view=all&page=2");
+    expect(screen.getByRole("link", { name: "Return to the release snapshot" })).toHaveAttribute("href", "/");
+  });
+
   it("shows the upstream total only for all registered agents", () => {
     const page: MarketplaceAgentPage = {
       view: "all",
@@ -194,7 +251,8 @@ describe("marketplace presentation rules", () => {
       fetchedAt: "2026-08-17T00:00:00.000Z",
     };
     render(createElement(CatalogPage, { data: page, query: { view: "all", sort: "newest" } }));
-    expect(screen.getByText("Catalog coverage: partial · 80,058 reported")).toBeInTheDocument();
+    expect(screen.getByText("Catalog coverage: partial · 80,058 active indexed BSC records returned by trust8004")).toBeInTheDocument();
+    expect(screen.getByText(/count is response\.total for active=true/)).toBeInTheDocument();
     expect(screen.getByRole("combobox", { name: "Sort agents" })).toHaveValue("newest");
   });
 

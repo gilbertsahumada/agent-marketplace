@@ -11,12 +11,14 @@ export interface MarketplaceInventoryEntry {
   chainId: 56;
   agentId: string;
   categories: readonly InventoryCategoryEvidence[];
+  operator: "third_party" | "marketplace";
 }
 
 const entries = [
   {
     chainId: 56,
     agentId: "45650",
+    operator: "third_party",
     categories: [{
       category: "rebalancing",
       signal: "Curated V3 liquidity range and rebalancing candidate.",
@@ -27,6 +29,7 @@ const entries = [
   {
     chainId: 56,
     agentId: "45381",
+    operator: "third_party",
     categories: [{
       category: "health_factor_monitoring",
       signal: "Curated Aave health-factor and collateral-monitoring candidate.",
@@ -37,6 +40,7 @@ const entries = [
   {
     chainId: 56,
     agentId: "45422",
+    operator: "third_party",
     categories: [{
       category: "yield_optimisation",
       signal: "Curated Beefy vault and yield candidate.",
@@ -47,6 +51,7 @@ const entries = [
   {
     chainId: 56,
     agentId: "43129",
+    operator: "third_party",
     categories: [
       {
         category: "yield_optimisation",
@@ -102,14 +107,36 @@ export const MARKETPLACE_INVENTORY = {
   },
 } as const;
 
+export function marketplaceInventoryEntries(
+  env: Readonly<Record<string, string | undefined>> = process.env,
+): MarketplaceInventoryEntry[] {
+  const configuredAgentId = Reflect.get(env, "ERC8183_MAINNET_SELLER_AGENT_ID")?.trim();
+  if (!configuredAgentId || !/^\d+$/.test(configuredAgentId) || BigInt(configuredAgentId) <= 0n) {
+    return [...MARKETPLACE_INVENTORY.entries];
+  }
+  const normalized = BigInt(configuredAgentId).toString();
+  if (MARKETPLACE_INVENTORY.entries.some(({ agentId }) => agentId === normalized)) return [...MARKETPLACE_INVENTORY.entries];
+  return [...MARKETPLACE_INVENTORY.entries, {
+    chainId: 56,
+    agentId: normalized,
+    operator: "marketplace",
+    categories: [{
+      category: "grid_trading",
+      signal: "Marketplace-operated deterministic Grid planner; no trading execution or custody.",
+      provenance: "derived:marketplace-inventory",
+      verificationStatus: "candidate_unverified",
+    }],
+  }];
+}
+
 const entriesById = new Map<string, MarketplaceInventoryEntry>(
   MARKETPLACE_INVENTORY.entries.map((entry) => [entry.agentId, entry]),
 );
 
 export function getMarketplaceInventoryEntry(agentId: string): MarketplaceInventoryEntry | null {
-  return entriesById.get(agentId) ?? null;
+  return entriesById.get(agentId) ?? marketplaceInventoryEntries().find((entry) => entry.agentId === agentId) ?? null;
 }
 
 export function isMarketplaceInventoryAgent(agentId: string): boolean {
-  return entriesById.has(agentId);
+  return getMarketplaceInventoryEntry(agentId) !== null;
 }

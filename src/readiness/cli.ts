@@ -100,6 +100,9 @@ async function main(): Promise<void> {
     identityReader: createBscIdentityReader(),
     gate1Reader: await createGate1ProofReader(),
     additionalAgentIds: args.additionalAgentIds,
+    ...(process.env.ERC8183_MAINNET_SELLER_AGENT_ID
+      ? { marketplaceOperatedGridSellerAgentId: process.env.ERC8183_MAINNET_SELLER_AGENT_ID }
+      : {}),
   });
   await writeReadinessReport(args.outputPath, report);
   process.stdout.write(

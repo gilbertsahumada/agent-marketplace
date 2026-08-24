@@ -25,13 +25,34 @@ function serviceKind(name: string): "mcp" | "seller" | "other" {
   return "other";
 }
 
-export function determineHireability(agent: MarketplaceAgentData): MarketplaceHireability {
+export function determineHireability(
+  agent: MarketplaceAgentData,
+): MarketplaceHireability {
   const serviceKinds = agent.services
     .filter((service) => Boolean(service.endpoint))
     .map((service) => serviceKind(service.name));
   const hasSellerProtocol = serviceKinds.includes("seller");
   const hasMcp = serviceKinds.includes("mcp");
   const observedAt = agent.freshness.fetchedAt;
+
+  if (
+    agent.verification?.freshness === "current"
+    && agent.verification.qualification.status === "qualified"
+    && agent.verification.selection !== "operator_explicit"
+  ) {
+    return {
+      status: "quote_verified",
+      canHire: true,
+      reason: "The seller passed the release qualification gate; every new quote is reverified before wallet connection.",
+      evidence: evidence(
+        "derived",
+        "marketplace-readiness",
+        agent.verification.qualification.observedAt,
+        false,
+        "Current readiness qualification combines verified identity and signed-quote evidence.",
+      ),
+    };
+  }
 
   if (hasSellerProtocol) {
     return {
@@ -75,6 +96,19 @@ export function determineHireability(agent: MarketplaceAgentData): MarketplaceHi
   };
 }
 
+export function selectHireAlternative(
+  selected: MarketplaceAgent,
+  candidates: readonly MarketplaceAgent[],
+): MarketplaceAgent | null {
+  const categories = new Set(selected.categories.map(({ category }) => category));
+  const qualified = candidates.filter((candidate) =>
+    candidate.agentId !== selected.agentId && candidate.hireability.canHire);
+  return qualified.find((candidate) =>
+    candidate.categories.some(({ category }) => categories.has(category)))
+    ?? qualified[0]
+    ?? null;
+}
+
 export function toMarketplaceAgent(
   data: MarketplaceAgentData,
   options: { evaluateMarketplace: boolean },
@@ -90,6 +124,7 @@ export function toMarketplaceAgent(
     description: data.description,
     owner: data.owner,
     metadataUri: data.metadataUri,
+    operator: data.verification?.operator ?? inventory?.operator ?? "third_party",
     indexedIdentity: {
       owner: data.owner,
       metadataUri: data.metadataUri,
@@ -146,6 +181,17 @@ export function toMarketplaceAgent(
         ),
       },
     freshness: data.freshness,
+    verification: data.verification ? {
+      ...data.verification,
+      identity: {
+        ...data.verification.identity,
+        provenance: data.verification.identity.provenance,
+      },
+      tools: {
+        ...data.verification.tools,
+        provenance: data.verification.tools.status === "not_probed" ? "not_probed" : "observed",
+      },
+    } : null,
     catalogCoverage: "partial",
     provenance: {
       identity: evidence(

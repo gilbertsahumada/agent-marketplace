@@ -34,7 +34,7 @@ export function CatalogPage({ data, query }: { data: MarketplaceAgentPage; query
       <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
         <PageIntro eyebrow="BSC catalog" title={allView ? "All registered agents" : "Marketplace candidates"}>
           {allView
-            ? "Browse the paginated BSC snapshot exposed by trust8004. These records are registered, not automatically evaluated or hireable."
+            ? `Browse active indexed records for chainId 56 returned by trust8004. The count is response.total for active=true and was fetched ${new Date(data.fetchedAt).toLocaleString("en-US", { timeZone: "UTC", timeZoneName: "short" })}. These records are registered, not automatically evaluated or hireable.`
             : "A small, evidence-backed inventory selected for the four marketplace outcomes. It does not represent every BSC agent in each category."}
         </PageIntro>
         <CoverageBadge {...(allView ? { total: data.pagination.total } : {})} />
@@ -87,7 +87,7 @@ export function CatalogPage({ data, query }: { data: MarketplaceAgentPage; query
       ) : query.category === "grid_trading" ? (
         <Alert className="mt-6 border-zinc-800 bg-zinc-950">
           <AlertTitle>No verified Grid Trading agent yet</AlertTitle>
-          <AlertDescription>We have not found a seller with sufficient operational evidence.</AlertDescription>
+          <AlertDescription><span>We have not found a seller with sufficient operational evidence.</span> <Link href="/jobs/testnet/551">Inspect the verified ERC-8183 demonstration</Link> without treating it as a Grid seller.</AlertDescription>
         </Alert>
       ) : (
         <Alert className="mt-6 border-zinc-800 bg-zinc-950">

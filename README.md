@@ -62,6 +62,33 @@ deterministic deliverable routes at the production marketplace origin. Its
 registration transaction is
 `0x166cdb89f4fb2236d760fcd372db7980d51d473a16f3ab51118eeb024eb61e2a`.
 
+Submission hardening now includes a separate, disabled-by-default BSC Mainnet
+path for exactly one marketplace-operated deterministic Grid planner. It is
+not an official BNB reference agent and it never executes trades or takes
+custody. Its server computes reproducible levels, allocations and rebalance
+triggers; the browser retains custody for every buyer write. This path remains
+NO-GO until a fresh read-only report verifies the fixed official contracts,
+active proxy implementations, `U` token, policy, spend ceiling, dedicated
+seller public address and production origin.
+The origin check also fetches the Grid Agent Card through the shared
+DNS-pinned, redirect-rejecting, 64 KiB transport and verifies both required
+seller skills before a report can become `GO`.
+
+```bash
+npm run mainnet:go-no-go
+npm run mainnet:grid-seller -- register          # dry run
+npm run mainnet:grid-seller -- register --execute # explicit Mainnet write
+npm run mainnet:settle-grid-job -- <jobId>       # dry run after dispute window
+npm run mainnet:settle-grid-job -- <jobId> --execute --evidence ./erc8183-56-job-<jobId>-sanitized.json
+npm run mainnet:capture-proof -- <jobId> ./erc8183-56-job-<jobId>-sanitized.json
+# Add --publish only after COMPLETED to promote it as /proof/mainnet.
+```
+
+The first recorded Mainnet evaluation at block `117715355` was `NO_GO`: all
+direct contract and policy checks passed, while the dedicated seller address,
+its minimum gas balance and the production origin were not configured. No
+Mainnet write was attempted.
+
 Enable the local demo only while the fixture's registered HTTPS endpoint is
 running:
 
@@ -140,6 +167,20 @@ Generate a separate read-only evidence report with:
 npm run verify:bsc
 ```
 
+Before a release, publish only the sanitized verification fields consumed by
+the UI. The command rejects stale input and removes endpoint URLs, probe
+payloads and errors:
+
+```bash
+npm run publish:verification -- --input .marketplace/readiness/bsc-marketplace.json
+```
+
+Vercel uses `npm run build:deployment`: it regenerates the bounded readiness
+report, publishes the sanitized snapshot, verifies its 72-hour freshness limit,
+and only then runs the application build. Local `npm run build` remains a
+deterministic check of the already published artifact. An expired snapshot or a
+failed live regeneration blocks the deployment.
+
 The verifier compares trust8004 identity fields with `ownerOf` and `tokenURI`
 at one pinned BSC Mainnet block, then performs MCP `initialize` and `tools/list`
 against at most one declared public endpoint per agent. It never calls a tool. Observed tool
@@ -202,9 +243,17 @@ The report is written to
 `.marketplace/readiness/bsc-marketplace.json`. `frontendReady=true` means the
 marketplace can represent the available evidence honestly and the buyer proof
 still validates onchain; it does not mean all categories have a live seller.
-Current real-agent activation coverage is empty, and Grid remains explicitly
-empty/unverified. A trust8004 outage or invalid schema fails visibly and does
+Current third-party activation coverage is empty. Grid remains explicitly
+empty until a marketplace-operated seller is registered and qualified; setting
+`ERC8183_MAINNET_SELLER_AGENT_ID` deliberately adds only that ID to the Grid
+readiness target and never classifies the global catalogue. A trust8004 outage or invalid schema fails visibly and does
 not replace the previous atomic local report with stale or invented evidence.
+
+`ERC8183_MAINNET_SELLER_ENABLED` exposes only the Agent Card and signed-quote
+surface needed by readiness. `ERC8183_MAINNET_WRITES_ENABLED` is a separate,
+server-only kill switch that defaults to false and is enabled only after a fresh
+recorded GO decision. Both marketplace notification and the seller's final
+submission boundary reject writes while that switch is off.
 
 Run the web product locally with:
 
@@ -252,8 +301,10 @@ or official BNB reference agent. The four current Mainnet candidates remain
 MCP-only, Grid has no verified seller, and catalogue coverage remains partial.
 Those limitations are part of the evidence model rather than hidden demo data.
 If a live catalogue or RPC dependency is unavailable, the application shows a
-diagnostic error; the versioned Job `551` snapshot and transaction links remain
-the durable proof.
+retryable diagnostic state instead of inventing records. The landing remains
+usable from the sanitized, timestamped release snapshot without treating it as
+a live profile or commercial qualification source; the versioned Job `551`
+snapshot and transaction links remain the durable hiring proof.
 
 Before presenting a new deployment, run:
 
@@ -261,6 +312,34 @@ Before presenting a new deployment, run:
 npm run check
 npm audit --audit-level=low
 ```
+
+The submission URL is
+`https://bnb-agent-marketplace-ruby.vercel.app`. Its Production Deployment
+Protection must remain disabled throughout 2026-09-09 through 2026-09-23; protected
+PR previews are not submission URLs. The scheduled GitHub Actions uptime check
+requires an anonymous, non-redirected HTTP `200` from the landing, catalogue, Agent
+`45650` profile, its `/hire` route and durable Job `551` throughout judging. The
+monitor detects Mainnet exposure from the server-gated quote API: before current seller
+qualification it accepts `404`; once that API returns `200`, it requires the public
+`MAINNET_UPTIME_BUYER_ADDRESS` repository variable and verifies the Agent Card,
+signed quote and read-only prepare response without signing or broadcasting. Once
+the canonical Mainnet proof is published, a missing Mainnet hiring route fails the
+check instead of being treated as intentionally unavailable.
+Production keeps `ERC8183_BROWSER_SPIKE_ENABLED=true` from 2026-09-09 through
+2026-09-23; the independent Mainnet flag stays false unless its complete GO,
+registration, qualification and proof-capture sequence succeeds.
+
+Provision the new single-purpose Mainnet seller key only as a write-only Vercel
+secret:
+
+```bash
+vercel env add MAINNET_SELLER_PRIVATE_KEY production --sensitive
+vercel env ls production
+```
+
+The listing must show `Hidden`, `Sensitive`, and `Production` only. Do not add a
+Preview or Development copy. The key-loading module is marked `server-only`, and
+the build/test boundary fails if any client import graph can reach the variable.
 
 See:
 

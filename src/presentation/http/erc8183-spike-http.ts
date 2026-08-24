@@ -9,8 +9,9 @@ import {
   Erc8183SpikeUnavailableError,
   InvalidErc8183SpikeInputError,
 } from "../../business/errors/erc8183-spike-errors.js";
+import { BoundedRequestJsonError, readBoundedRequestJson } from "./bounded-request-json.js";
 
-const MAX_BODY_BYTES = 24_000;
+const MAX_BODY_BYTES = 24 * 1_024;
 
 function record(value: unknown, label: string): Record<string, unknown> {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
@@ -20,18 +21,13 @@ function record(value: unknown, label: string): Record<string, unknown> {
 }
 
 export async function spikeJsonBody(request: Request): Promise<Record<string, unknown>> {
-  const declaredLength = Number(request.headers.get("content-length") ?? "0");
-  if (Number.isFinite(declaredLength) && declaredLength > MAX_BODY_BYTES) {
-    throw new InvalidErc8183SpikeInputError("Request body is too large");
-  }
   try {
-    const value = record(await request.json(), "body");
-    if (JSON.stringify(value).length > MAX_BODY_BYTES) {
-      throw new InvalidErc8183SpikeInputError("Request body is too large");
-    }
-    return value;
+    return record(await readBoundedRequestJson(request, MAX_BODY_BYTES), "body");
   } catch (error) {
     if (error instanceof InvalidErc8183SpikeInputError) throw error;
+    if (error instanceof BoundedRequestJsonError) {
+      throw new InvalidErc8183SpikeInputError(error.message);
+    }
     throw new InvalidErc8183SpikeInputError("Request body must be valid JSON");
   }
 }
@@ -58,10 +54,10 @@ export function spikeQuote(value: unknown): Erc8183QuoteEnvelope {
   return record(value, "quote");
 }
 
-export function erc8183SpikeErrorResponse(error: unknown): NextResponse {
+export function erc8183SpikeErrorResponse(error: unknown, networkLabel = "Testnet"): NextResponse {
   if (error instanceof Erc8183SpikeDisabledError) {
     return NextResponse.json(
-      { error: { code: error.name, message: "The experimental Testnet flow is disabled." } },
+      { error: { code: error.name, message: `The experimental ${networkLabel} flow is disabled.` } },
       { status: 404 },
     );
   }
@@ -70,7 +66,7 @@ export function erc8183SpikeErrorResponse(error: unknown): NextResponse {
   }
   if (error instanceof Erc8183DemoJobNotFoundError) {
     return NextResponse.json(
-      { error: { code: error.name, message: "The Testnet demo job was not found." } },
+      { error: { code: error.name, message: `The ${networkLabel} demo job was not found.` } },
       { status: 404 },
     );
   }
@@ -79,12 +75,12 @@ export function erc8183SpikeErrorResponse(error: unknown): NextResponse {
   }
   if (error instanceof Erc8183SpikeUnavailableError) {
     return NextResponse.json(
-      { error: { code: error.name, message: "The Testnet seller or chain check is unavailable." } },
+      { error: { code: error.name, message: `The ${networkLabel} seller or chain check is unavailable.` } },
       { status: 503 },
     );
   }
   return NextResponse.json(
-    { error: { code: "INTERNAL_ERROR", message: "The Testnet spike request could not be completed." } },
+    { error: { code: "INTERNAL_ERROR", message: `The ${networkLabel} spike request could not be completed.` } },
     { status: 500 },
   );
 }

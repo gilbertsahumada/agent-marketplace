@@ -287,6 +287,77 @@ SDK-configured Commerce, Router, and policy addresses from payment-token and
 allowlist values observed by RPC, including the observation block and
 timestamp.
 
+## Submission evidence and gated Mainnet path
+
+The frontend never reads the Git-ignored operator verification report. A
+release command validates report schema `2`, enforces a 72-hour maximum age,
+removes endpoint URLs, payloads and error details, and writes the versioned
+`bsc-candidates-public.json` snapshot. Cards and profiles receive this evidence
+through the marketplace repository; the methodology page receives it through
+one business use case. `not_probed` remains distinct from observed absence.
+
+The Vercel deployment build first runs `readiness:bsc` and
+`publish:verification`, then applies the normal freshness gate and application
+build. This keeps the runtime independent of the operator report while ensuring
+each deployment embeds a newly sanitized snapshot; an unavailable live source
+or expired artifact stops the deployment.
+
+The landing composes its four category counts, candidate names and drift cards
+from that sanitized release snapshot. It performs no live profile fan-out.
+The paginated registered catalogue and deliberately opened profiles remain
+live trust8004 reads; a known upstream timeout becomes a retryable presentation
+state while the API continues returning a diagnostic `503`. The snapshot is
+never used to fabricate registered rows, profile fields or current commercial
+qualification.
+
+The optional Mainnet path reuses the custody boundary proven on Testnet but has
+its own flags, journal key, routes, allowlist and public configuration:
+
+```text
+/demo/erc8183-mainnet
+  -> Mainnet quote / prepare / notify use cases
+  -> fixed marketplace-operated Grid Agent and production origin
+  -> official BSC Mainnet Commerce / Router / policy / U token
+  -> injected EIP-1193 wallet signs buyer writes
+
+/grid/.well-known/agent-card.json
+  -> thin controller -> deterministic Grid seller business policy
+  -> `server-only` Production secret -> SDK signer -> submit manifest hash
+```
+
+When provisioned, `MAINNET_SELLER_PRIVATE_KEY` exists only as a Sensitive
+Production Vercel variable. Preview and Development have no copy, no
+`NEXT_PUBLIC_` variant exists, and client dependency tests reject any import path
+to its loader.
+
+The already-operated Testnet seller uses the separate `SELLER_PRIVATE_KEY`, also
+Sensitive and Production-only. Preview does not need that key: its buyer routes
+are enabled against the fixed Production-hosted Testnet Agent `1866`, so Preview
+can request and validate quotes and prepare the injected-wallet intents without
+crossing the seller secret boundary.
+
+No browser input can select a seller URL, Agent ID, token, policy or contract.
+Seller A2A calls use the shared DNS-pinned, redirect-rejecting and 64 KiB
+bounded transport. The quote must bind to the canonical Grid request, be at
+most 60 seconds old, expire within the SDK 900-second ceiling, match the
+registered ERC-8004 agent wallet, and pass direct token/policy checks.
+
+Mainnet writes remain disabled until `mainnet:go-no-go` records a fresh `GO`.
+That report must observe the fixed production Grid Agent Card through the
+DNS-pinned, redirect-rejecting, body-capped transport and match its message URL
+and negotiation/notification skills; checking only the configured origin text
+is insufficient.
+The recorded read at block `117722575` remained `NO_GO` solely because the
+dedicated seller address, minimum gas balance and production origin were not configured. Browser
+writes are simulated immediately before each signature. After the seven-day
+policy window, `mainnet:settle-grid-job` validates provider, evaluator, policy,
+state and deliverable before its separate explicit `--execute` settlement.
+
+Once registered, `ERC8183_MAINNET_SELLER_AGENT_ID` adds exactly that known ID
+to the Grid readiness target and curated UI inventory. It does not classify,
+scan or enrich the global trust8004 catalogue. The model labels the seller as
+`marketplace` operated and never as an official BNB reference agent.
+
 ## Independence requirements
 
 - Financial facts and ERC-8183 state come from chain.

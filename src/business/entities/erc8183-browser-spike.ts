@@ -8,8 +8,8 @@ export type Erc8183QuoteEnvelope = Record<string, unknown>;
 
 export interface NormalizedErc8183Quote {
   envelope: Erc8183QuoteEnvelope;
-  agentId: typeof ERC8183_SPIKE_AGENT_ID;
-  chainId: typeof ERC8183_SPIKE_CHAIN_ID;
+  agentId: number;
+  chainId: 56 | 97;
   provider: Address;
   endpoint: string;
   commerce: Address;
@@ -39,7 +39,9 @@ export type Erc8183TransactionKind =
   | "registerJob"
   | "setBudget"
   | "approve"
-  | "fund";
+  | "fund"
+  | "submit"
+  | "settle";
 
 export interface Erc8183TransactionIntent {
   kind: Erc8183TransactionKind;
@@ -58,13 +60,14 @@ export interface Erc8183HirePlan {
   approvalRequired: boolean;
   approvalAmountRaw: string;
   deadline: string;
+  disputeWindowSeconds?: string;
   executeBefore: number;
   maximumSignatures: 4 | 5;
   transactions: Erc8183TransactionIntent[];
 }
 
 export interface Erc8183JobFacts {
-  chainId: typeof ERC8183_SPIKE_CHAIN_ID;
+  chainId: 56 | 97;
   jobId: string;
   buyer: Address;
   provider: Address;
@@ -90,6 +93,7 @@ export interface Erc8183JobFacts {
 export interface NotifyFundedResult {
   acknowledged: true;
   alreadySubmitted: boolean;
+  sellerTransactionHash?: Hash;
   job: Erc8183JobFacts;
 }
 
@@ -105,10 +109,17 @@ export type Erc8183JournalStep =
 
 export interface Erc8183BrowserJournal {
   schemaVersion: 1;
-  chainId: typeof ERC8183_SPIKE_CHAIN_ID;
+  chainId: 56 | 97;
   buyer: Address;
   seller: Address;
   jobId: string | null;
   transactions: Partial<Record<Erc8183TransactionKind, Hash>>;
+  receipts?: Partial<Record<Erc8183TransactionKind, {
+    blockNumber: string;
+    gasUsed: string;
+    effectiveGasPrice: string;
+    confirmedAt: string;
+  }>>;
+  startedAt?: string;
   lastConfirmedStep: Erc8183JournalStep;
 }

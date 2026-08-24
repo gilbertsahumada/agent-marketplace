@@ -13,6 +13,7 @@ export const MAX_EXPLICIT_QUALIFICATION_AGENT_IDS = 20;
 
 export interface BuildBscCandidateInventoryOptions {
   additionalAgentIds?: readonly string[];
+  marketplaceOperatedGridSellerAgentId?: string;
 }
 
 export const MAX_UINT256_AGENT_ID = (1n << 256n) - 1n;
@@ -32,12 +33,16 @@ export async function buildBscCandidateInventory(
   const requestedExplicitIds = options.additionalAgentIds ?? [];
   const curatedAgentIds = [...KNOWN_HEYANON_AGENT_IDS];
   const curatedSet = new Set<string>(curatedAgentIds);
+  const marketplaceOperatedAgentIds = options.marketplaceOperatedGridSellerAgentId
+    ? [normalizedAgentId(options.marketplaceOperatedGridSellerAgentId)].filter((agentId) => !curatedSet.has(agentId))
+    : [];
+  const operatedSet = new Set(marketplaceOperatedAgentIds);
   const explicitAgentIds = [...new Set(requestedExplicitIds.map(normalizedAgentId))]
-    .filter((agentId) => !curatedSet.has(agentId));
+    .filter((agentId) => !curatedSet.has(agentId) && !operatedSet.has(agentId));
   if (explicitAgentIds.length > MAX_EXPLICIT_QUALIFICATION_AGENT_IDS) {
     throw new Error(`At most ${MAX_EXPLICIT_QUALIFICATION_AGENT_IDS} explicit agent IDs may be evaluated`);
   }
-  const agentIds = [...curatedAgentIds, ...explicitAgentIds];
+  const agentIds = [...curatedAgentIds, ...marketplaceOperatedAgentIds, ...explicitAgentIds];
   const explicitSet = new Set(explicitAgentIds);
   const agents: MarketplaceAgent[] = [];
 
@@ -50,11 +55,15 @@ export async function buildBscCandidateInventory(
   const categories = Object.fromEntries(
     (Object.keys(MARKETPLACE_INVENTORY.categories) as MarketplaceCategory[]).map((category) => {
       const source = MARKETPLACE_INVENTORY.categories[category];
-      const matchingIds = [...source.agentIds];
+      const matchingIds = category === "grid_trading" && marketplaceOperatedAgentIds.length > 0
+        ? marketplaceOperatedAgentIds
+        : [...source.agentIds];
       return [category, {
-        status: source.status,
+        status: matchingIds.length > 0 ? "candidates" : source.status,
         agentIds: matchingIds,
-        note: source.evidence,
+        note: category === "grid_trading" && marketplaceOperatedAgentIds.length > 0
+          ? "One marketplace-operated deterministic Grid seller is explicitly configured; qualification remains evidence-gated."
+          : source.evidence,
       }];
     }),
   ) as BscCandidateInventory["categories"];
@@ -63,7 +72,7 @@ export async function buildBscCandidateInventory(
     schemaVersion: 2,
     generatedAt: new Date(now()).toISOString(),
     chainId: BSC_MAINNET_CHAIN_ID,
-    selection: { curatedAgentIds, explicitAgentIds, evaluatedAgentIds: agentIds },
+    selection: { curatedAgentIds, marketplaceOperatedAgentIds, explicitAgentIds, evaluatedAgentIds: agentIds },
     source: {
       name: "trust8004",
       baseUrl: provider.baseUrl,

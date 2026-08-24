@@ -17,6 +17,7 @@ import {
 } from "../verification/safe-http.js";
 import { createProbeBudget, type ProbeBudget } from "../verification/probe-budget.js";
 import type { IdentityVerification, VerificationError } from "../verification/types.js";
+import { GRID_CANONICAL_INPUT, GRID_NEGOTIATION_TERMS, gridTaskDescription } from "../business/policies/grid-plan-policy.js";
 import type {
   HireabilityAssessment,
   QuoteEvidence,
@@ -55,6 +56,7 @@ export interface HireabilityAssessorOptions {
     publicClient: PublicClient;
     expectedVerifyingContract: Address;
   }) => Promise<QuoteVerdict>;
+  marketplaceOperatedGridSellerAgentId?: string;
 }
 
 const QUOTE_TERMS = new TermSpecification({
@@ -67,6 +69,31 @@ const QUOTE_NEGOTIATION_REQUEST = new NegotiationRequest({
 });
 const QUOTE_REQUEST = QUOTE_NEGOTIATION_REQUEST.toDict();
 const QUOTE_REQUEST_HASH = QUOTE_NEGOTIATION_REQUEST.computeHash().toLowerCase();
+const GRID_QUOTE_TERMS = new TermSpecification({
+  deliverables: GRID_NEGOTIATION_TERMS.deliverables,
+  qualityStandards: GRID_NEGOTIATION_TERMS.qualityStandards,
+});
+const GRID_QUOTE_NEGOTIATION_REQUEST = new NegotiationRequest({
+  taskDescription: gridTaskDescription(GRID_CANONICAL_INPUT),
+  terms: GRID_QUOTE_TERMS,
+});
+
+interface ReadinessQuoteProbe {
+  request: Record<string, unknown>;
+  requestHash: string;
+  terms: TermSpecification;
+}
+
+const DEFAULT_QUOTE_PROBE: ReadinessQuoteProbe = {
+  request: QUOTE_REQUEST,
+  requestHash: QUOTE_REQUEST_HASH,
+  terms: QUOTE_TERMS,
+};
+const GRID_QUOTE_PROBE: ReadinessQuoteProbe = {
+  request: GRID_QUOTE_NEGOTIATION_REQUEST.toDict(),
+  requestHash: GRID_QUOTE_NEGOTIATION_REQUEST.computeHash().toLowerCase(),
+  terms: GRID_QUOTE_TERMS,
+};
 
 const MAX_HTTP_RESPONSE_BYTES = 64 * 1024;
 const MAX_QUOTE_CLOCK_SKEW_SECONDS = 60;
@@ -208,6 +235,7 @@ async function validateQuote(
   verifyQuote: NonNullable<HireabilityAssessorOptions["verifyQuote"]>,
   observedAt: string,
   nowSeconds: number,
+  probe: ReadinessQuoteProbe,
 ): Promise<QuoteEvidence> {
   if (!context.policyAllowlisted) throw new Error("Configured BSC Mainnet policy is not allowlisted");
   const request = record(value.request, "request");
@@ -215,15 +243,15 @@ async function validateQuote(
     throw new Error("Quote request_hash is invalid");
   }
   const embeddedRequestHash = NegotiationRequest.fromDict(request).computeHash().toLowerCase();
-  if (embeddedRequestHash !== QUOTE_REQUEST_HASH || value.request_hash.toLowerCase() !== QUOTE_REQUEST_HASH) {
+  if (embeddedRequestHash !== probe.requestHash || value.request_hash.toLowerCase() !== probe.requestHash) {
     throw new Error("Quote request does not match the readiness probe");
   }
   const response = record(value.response, "response");
   const terms = record(response.terms, "response.terms");
   if (response.accepted !== true) throw new Error("Quote was not accepted");
   if (
-    terms.deliverables !== QUOTE_TERMS.deliverables
-    || terms.quality_standards !== QUOTE_TERMS.qualityStandards
+    terms.deliverables !== probe.terms.deliverables
+    || terms.quality_standards !== probe.terms.qualityStandards
   ) {
     throw new Error("Quote terms do not match the readiness probe");
   }
@@ -356,6 +384,7 @@ async function assessProtocol(
   expectedProvider: Address | null,
   getContext: () => Promise<QuoteContext>,
   options: HireabilityAssessorOptions,
+  probe: ReadinessQuoteProbe,
 ): Promise<SellerProtocolVerification> {
   const now = options.now ?? Date.now;
   const observedAtMs = now();
@@ -401,7 +430,7 @@ async function assessProtocol(
       }
       const quote = await sendSkill(
         card.url,
-        { skill: "negotiate-erc8183-job", ...QUOTE_REQUEST },
+        { skill: "negotiate-erc8183-job", ...probe.request },
         null,
         fetchImpl,
       );
@@ -412,6 +441,7 @@ async function assessProtocol(
         verifyQuote,
         observedAt,
         nowSeconds,
+        probe,
       );
       return result(protocol.transport, protocol.endpoint, observedAt, {
         status: "quote_verified",
@@ -440,7 +470,7 @@ async function assessProtocol(
     const quote = await fetchJsonObject(urls.negotiate, fetchImpl, {
       method: "POST",
       headers: { accept: "application/json", "content-type": "application/json" },
-      body: JSON.stringify(QUOTE_REQUEST),
+      body: JSON.stringify(probe.request),
     });
     const evidence = await validateQuote(
       quote,
@@ -449,6 +479,7 @@ async function assessProtocol(
       verifyQuote,
       observedAt,
       nowSeconds,
+      probe,
     );
     return result(protocol.transport, protocol.endpoint, observedAt, {
       status: "quote_verified",
@@ -582,6 +613,9 @@ export function createHireabilityAssessor(
     const protocols = declaredProtocols(agent);
     if (protocols.length === 0) return summarize(protocols, [], hasMcp(agent));
     const provider = identity.onchain.agentWallet;
+    const quoteProbe = options.marketplaceOperatedGridSellerAgentId === agent.agentId
+      ? GRID_QUOTE_PROBE
+      : DEFAULT_QUOTE_PROBE;
     const observations: SellerProtocolVerification[] = [];
     const selectedTransports = new Set<SellerTransport>();
     const selected = new Set(protocols.filter((protocol) => {
@@ -619,7 +653,7 @@ export function createHireabilityAssessor(
       observations.push(await assessProtocol(protocol, provider, getContext, {
         ...options,
         timeoutMs: Math.max(1, Math.min(options.timeoutMs ?? 10_000, claim.remainingMs)),
-      }));
+      }, quoteProbe));
     }
     return summarize(protocols, observations, hasMcp(agent));
   };

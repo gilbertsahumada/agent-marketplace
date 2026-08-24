@@ -17,7 +17,7 @@ export function PageIntro({ eyebrow, title, children }: { eyebrow: string; title
 export function CoverageBadge({ total }: { total?: number }) {
   return (
     <Badge className="border-amber-400/30 bg-amber-400/10 text-amber-200" variant="outline">
-      Catalog coverage: partial{typeof total === "number" ? ` · ${total.toLocaleString()} reported` : ""}
+      Catalog coverage: partial{typeof total === "number" ? ` · ${total.toLocaleString()} active indexed BSC records returned by trust8004` : ""}
     </Badge>
   );
 }

@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { AgentProfile } from "@/components/marketplace/agent-profile";
+import { CatalogUnavailable } from "@/components/marketplace/catalog-unavailable";
 import { getMarketplaceAgent } from "@/src/business/composition";
-import { MarketplaceAgentNotFoundError } from "@/src/business/errors/marketplace-errors";
+import { MarketplaceAgentNotFoundError, MarketplaceDataUnavailableError } from "@/src/business/errors/marketplace-errors";
 
 export const dynamic = "force-dynamic";
 
@@ -17,6 +18,9 @@ export default async function AgentPage({ params }: { params: Promise<{ agentId:
     return <AgentProfile agent={await getMarketplaceAgent.execute({ agentId })} />;
   } catch (error) {
     if (error instanceof MarketplaceAgentNotFoundError) notFound();
+    if (error instanceof MarketplaceDataUnavailableError) {
+      return <CatalogUnavailable retryHref={`/agents/${agentId}`} />;
+    }
     throw error;
   }
 }

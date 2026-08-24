@@ -80,30 +80,39 @@ export function extractA2aEndpoint(
 export async function resolveIdentity(
   client: PublicClient,
   agentId: number,
+  options: { chainId?: number; registry?: Address; blockNumber?: bigint } = {},
 ): Promise<ResolvedIdentity> {
   const chainId = await client.getChainId();
-  if (chainId !== TESTNET_CHAIN_ID) {
-    throw new Error(`RPC chain mismatch: expected 97, received ${chainId}`);
+  const expectedChainId = options.chainId ?? TESTNET_CHAIN_ID;
+  const registry = options.registry ?? TESTNET_REGISTRY;
+  if (chainId !== expectedChainId) {
+    throw new Error(`RPC chain mismatch: expected ${expectedChainId}, received ${chainId}`);
   }
   const id = BigInt(agentId);
+  const historicalBlock = options.blockNumber === undefined
+    ? {}
+    : { blockNumber: options.blockNumber };
   const [owner, agentWallet, agentUri] = await Promise.all([
     client.readContract({
-      address: TESTNET_REGISTRY,
+      address: registry,
       abi: identityReadAbi,
       functionName: "ownerOf",
       args: [id],
+      ...historicalBlock,
     }),
     client.readContract({
-      address: TESTNET_REGISTRY,
+      address: registry,
       abi: identityReadAbi,
       functionName: "getAgentWallet",
       args: [id],
+      ...historicalBlock,
     }),
     client.readContract({
-      address: TESTNET_REGISTRY,
+      address: registry,
       abi: identityReadAbi,
       functionName: "tokenURI",
       args: [id],
+      ...historicalBlock,
     }),
   ]);
   const metadata = await ERC8004Agent.parseAgentUri(agentUri);
