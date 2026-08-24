@@ -1,5 +1,3 @@
-import { readFile } from "node:fs/promises";
-import { resolve } from "node:path";
 import { AgentEndpoint, ERC8004Agent } from "@bnbagent/sdk/erc8004";
 import { resolveNetwork } from "@bnbagent/sdk";
 import { EVMWalletProvider } from "@bnbagent/sdk/wallets";
@@ -9,18 +7,34 @@ import { fetchAgentCard } from "../a2a.js";
 import { createSafeEndpointTransport } from "../verification/safe-http.js";
 import { ERC8183_MAINNET } from "./contracts.js";
 import { loadMainnetGridSellerConfig } from "./grid-seller-config.js";
-import type { MainnetGoNoGoReport } from "./go-no-go.js";
+import { evaluateMainnetGoNoGo, type MainnetGoNoGoReport } from "./go-no-go.js";
 
-async function assertRecentGo(): Promise<MainnetGoNoGoReport> {
-  const path = resolve(".marketplace/mainnet/go-no-go.json");
-  const parsed = JSON.parse(await readFile(path, "utf8")) as Partial<MainnetGoNoGoReport>;
-  if (parsed.schemaVersion !== 1 || parsed.status !== "go" || !parsed.generatedAt) {
+export function assertRegistrationDecision(
+  report: MainnetGoNoGoReport,
+  config: { address: string; origin: string },
+  now = Date.now(),
+): void {
+  const generatedAt = Date.parse(report.generatedAt);
+  if (report.schemaVersion !== 1 || report.status !== "go" || !Number.isFinite(generatedAt)) {
     throw new Error("A successful mainnet:go-no-go report is required");
   }
-  if (Date.now() - Date.parse(parsed.generatedAt) > 15 * 60_000) {
-    throw new Error("The mainnet:go-no-go report is older than 15 minutes");
+  if (generatedAt > now + 60_000 || now - generatedAt > 15 * 60_000) {
+    throw new Error("The mainnet:go-no-go report is outside the allowed time window");
   }
-  return parsed as MainnetGoNoGoReport;
+  if (
+    report.chainId !== ERC8183_MAINNET.chainId ||
+    report.spendCeilingRaw !== ERC8183_MAINNET.maximumDemoBudgetRaw.toString() ||
+    Object.values(report.checks).some(({ passed }) => !passed) ||
+    report.reasons.length > 0 ||
+    report.checks.dedicatedSellerAddress?.observed.toLowerCase() !== config.address.toLowerCase() ||
+    report.checks.productionSellerOrigin?.observed !== config.origin ||
+    report.checks.paymentToken?.observed.toLowerCase() !== ERC8183_MAINNET.token.toLowerCase() ||
+    report.checks.policyAllowlisted?.observed !== "true" ||
+    report.checks.commerceImplementation?.observed.toLowerCase() !== ERC8183_MAINNET.commerceImplementation.toLowerCase() ||
+    report.checks.routerImplementation?.observed.toLowerCase() !== ERC8183_MAINNET.routerImplementation.toLowerCase()
+  ) {
+    throw new Error("The mainnet:go-no-go result is not bound to the active seller and contract allowlist");
+  }
 }
 
 async function main(): Promise<void> {
@@ -28,8 +42,11 @@ async function main(): Promise<void> {
   if (process.argv[2] !== "register" || process.argv.some((arg, index) => index > 2 && arg !== "--execute")) {
     throw new Error("Expected command: register [--execute]");
   }
-  const decision = await assertRecentGo();
   const config = loadMainnetGridSellerConfig(process.env, { requireAgentId: false });
+  // Re-read the chain and the fixed production endpoint in this invocation.
+  // A previously written or edited local report is never an authority for a write.
+  const decision = await evaluateMainnetGoNoGo();
+  assertRegistrationDecision(decision, config);
   if (config.agentId !== null) throw new Error("The Mainnet Grid seller already has a configured Agent ID");
   const transport = await createSafeEndpointTransport(config.origin, { timeoutMs: 20_000, maxResponseBytes: 64 * 1024 });
   const card = await (async () => {
@@ -72,7 +89,9 @@ async function main(): Promise<void> {
   process.stdout.write(`${JSON.stringify({ ...summary, status: "REGISTERED", agentId: result.agentId, transactionHash: result.transactionHash })}\n`);
 }
 
-main().catch(() => {
-  process.stderr.write("Mainnet Grid seller registration failed; no secret details were emitted.\n");
-  process.exitCode = 1;
-});
+if (process.argv[1] && import.meta.url === new URL(`file://${process.argv[1]}`).href) {
+  main().catch(() => {
+    process.stderr.write("Mainnet Grid seller registration failed; no secret details were emitted.\n");
+    process.exitCode = 1;
+  });
+}

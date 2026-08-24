@@ -50,6 +50,8 @@ export interface VerificationDriftViewModel {
   identityMismatchFields: Array<"owner" | "metadata_uri">;
   identityObservedAt: string;
   toolsStatus: "observed" | "not_probed";
+  toolReachability: "verified" | "failed" | "not_probed";
+  toolProbeOutcomes: string[];
   declaredOnlyTools: string[];
   observedOnlyTools: string[];
   toolsObservedAt: string | null;

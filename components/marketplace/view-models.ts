@@ -11,6 +11,8 @@ export function verificationViewModel(agent: MarketplaceAgent): VerificationDrif
     identityMismatchFields: agent.verification.identity.mismatchFields,
     identityObservedAt: agent.verification.identity.observedAt,
     toolsStatus: agent.verification.tools.status,
+    toolReachability: agent.verification.tools.reachability,
+    toolProbeOutcomes: agent.verification.tools.probeOutcomes,
     declaredOnlyTools: agent.verification.tools.declaredOnly,
     observedOnlyTools: agent.verification.tools.observedOnly,
     toolsObservedAt: agent.verification.tools.observedAt,
@@ -18,7 +20,20 @@ export function verificationViewModel(agent: MarketplaceAgent): VerificationDrif
 }
 
 export function evidenceForAgent(agent: MarketplaceAgent): EvidenceStepViewModel[] {
-  const reachable = agent.endpointObservation.status === "observed_ok";
+  const releaseReachability = agent.verification?.tools.reachability;
+  const reachable = releaseReachability
+    ? releaseReachability === "verified"
+    : agent.endpointObservation.status === "observed_ok";
+  const reachabilityProvenance = releaseReachability === "not_probed" ? "not_probed" : "observed";
+  const reachabilityDetail = releaseReachability === "failed"
+    ? `The release probe did not establish protocol-valid reachability (${agent.verification!.tools.probeOutcomes.join(", ")}).`
+    : reachable
+      ? "A service endpoint was observed as protocol-valid and reachable."
+      : releaseReachability === "not_probed"
+        ? "No endpoint probe was attempted in the current release snapshot."
+        : "No recent endpoint observation is available.";
+  const reachabilityObservedAt = agent.verification?.tools.observedAt
+    ?? agent.endpointObservation.lastTestedAt;
   const quoteVerified = agent.hireability.status === "quote_verified";
   return [
     {
@@ -34,10 +49,10 @@ export function evidenceForAgent(agent: MarketplaceAgent): EvidenceStepViewModel
       kind: "reachable",
       label: "Reachable",
       status: reachable ? "verified" : "unknown",
-      provenance: "observed",
-      detail: reachable ? "A service endpoint was observed as reachable." : "No recent endpoint observation is available.",
-      source: "trust8004 public API",
-      ...(agent.endpointObservation.lastTestedAt ? { timestamp: agent.endpointObservation.lastTestedAt } : {}),
+      provenance: reachabilityProvenance,
+      detail: reachabilityDetail,
+      source: releaseReachability ? "marketplace verification release snapshot" : "trust8004 public API",
+      ...(reachabilityObservedAt ? { timestamp: reachabilityObservedAt } : {}),
     },
     {
       kind: "quote",
@@ -80,15 +95,20 @@ export function snapshotAgentCardViewModel(
   snapshot: PublicVerificationSnapshot,
   now = Date.now(),
 ): AgentCardViewModel {
-  const toolsObserved = agent.tools.status === "observed";
+  const endpointReachable = agent.tools.reachability === "verified";
+  const snapshotCurrent = now <= Date.parse(snapshot.staleAfter)
+    && Date.parse(snapshot.generatedAt) <= now + 5 * 60 * 1_000;
+  const quoteVerified = snapshotCurrent && agent.qualification.status === "qualified";
   const verification: VerificationDriftViewModel = {
-    freshness: now <= Date.parse(snapshot.staleAfter) ? "current" : "stale",
+    freshness: snapshotCurrent ? "current" : "stale",
     generatedAt: snapshot.generatedAt,
     blockNumber: snapshot.blockNumber,
     identityStatus: agent.identity.status,
     identityMismatchFields: agent.identity.mismatchFields,
     identityObservedAt: agent.identity.observedAt,
     toolsStatus: agent.tools.status,
+    toolReachability: agent.tools.reachability,
+    toolProbeOutcomes: agent.tools.probeOutcomes,
     declaredOnlyTools: agent.tools.declaredOnly,
     observedOnlyTools: agent.tools.observedOnly,
     toolsObservedAt: agent.tools.observedAt,
@@ -97,10 +117,10 @@ export function snapshotAgentCardViewModel(
     agentId: agent.agentId,
     name: agent.name,
     description: "Curated candidate from the sanitized release snapshot; open its profile for live trust8004 metadata.",
-    operator: "third_party",
+    operator: agent.operator,
     categories: agent.categories,
     href: `/agents/${agent.agentId}`,
-    hireability: "listed_only",
+    hireability: quoteVerified ? "hireable" : "listed_only",
     verification,
     evidence: [
       {
@@ -115,25 +135,31 @@ export function snapshotAgentCardViewModel(
       {
         kind: "reachable",
         label: "Reachable",
-        status: toolsObserved ? "verified" : "unknown",
-        provenance: toolsObserved ? "observed" : "not_probed",
-        detail: toolsObserved ? "An MCP endpoint was observed during release verification." : "No endpoint probe is available in this release snapshot.",
+        status: endpointReachable ? "verified" : "unknown",
+        provenance: agent.tools.reachability === "not_probed" ? "not_probed" : "observed",
+        detail: endpointReachable
+          ? "An MCP endpoint completed protocol validation during release verification."
+          : agent.tools.reachability === "failed"
+            ? `A probe was attempted but did not establish reachability (${agent.tools.probeOutcomes.join(", ")}).`
+            : "No endpoint probe is available in this release snapshot.",
         source: snapshot.source,
         ...(agent.tools.observedAt ? { timestamp: agent.tools.observedAt } : {}),
       },
       {
         kind: "quote",
         label: "Quote verified",
-        status: "unknown",
+        status: quoteVerified ? "verified" : "unknown",
         provenance: "derived",
-        detail: "Live ERC-8183 qualification is unavailable while the catalogue source is offline.",
+        detail: quoteVerified
+          ? "The current release readiness snapshot qualifies this seller; a fresh quote is still required."
+          : "No current ERC-8183 seller qualification is present in this release snapshot.",
       },
       {
         kind: "job",
         label: "Job proven",
         status: "unknown",
         provenance: "onchain",
-        detail: "No completed onchain job is linked to this third-party candidate.",
+        detail: `No completed onchain job is linked to this ${agent.operator === "marketplace" ? "marketplace-operated seller" : "third-party candidate"}.`,
       },
     ],
   };

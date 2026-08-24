@@ -6,6 +6,9 @@ import type { VerificationDriftViewModel } from "./presentation-types";
 
 function toolSummary(verification: VerificationDriftViewModel): string {
   if (verification.toolsStatus === "not_probed") return "Tool endpoint was not probed";
+  if (verification.toolReachability === "failed") {
+    return `Probe did not establish reachability (${verification.toolProbeOutcomes.join(", ")})`;
+  }
   if (verification.declaredOnlyTools.length > 0) {
     return `${verification.declaredOnlyTools.length} declared tool${verification.declaredOnlyTools.length === 1 ? " was" : "s were"} not observed`;
   }
@@ -23,6 +26,7 @@ export function VerificationDrift({
   compact?: boolean;
 }) {
   const attention = verification.identityStatus !== "match"
+    || verification.toolReachability === "failed"
     || verification.declaredOnlyTools.length > 0
     || verification.observedOnlyTools.length > 0;
   const Icon = verification.freshness === "stale" ? Clock3 : attention ? CircleAlert : CircleCheck;

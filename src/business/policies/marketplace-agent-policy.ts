@@ -27,7 +27,6 @@ function serviceKind(name: string): "mcp" | "seller" | "other" {
 
 export function determineHireability(
   agent: MarketplaceAgentData,
-  options: { marketplaceOperated?: boolean } = {},
 ): MarketplaceHireability {
   const serviceKinds = agent.services
     .filter((service) => Boolean(service.endpoint))
@@ -36,12 +35,21 @@ export function determineHireability(
   const hasMcp = serviceKinds.includes("mcp");
   const observedAt = agent.freshness.fetchedAt;
 
-  if (options.marketplaceOperated && Reflect.get(process.env, "ERC8183_MAINNET_DEMO_ENABLED") === "true") {
+  if (
+    agent.verification?.freshness === "current"
+    && agent.verification.qualification.status === "qualified"
+  ) {
     return {
       status: "quote_verified",
       canHire: true,
-      reason: "The marketplace-operated Grid seller passed the release qualification gate; every new quote is reverified before wallet connection.",
-      evidence: evidence("derived", "marketplace-inventory", observedAt, false, "Operational promotion is explicit and a fresh signed quote remains mandatory."),
+      reason: "The seller passed the release qualification gate; every new quote is reverified before wallet connection.",
+      evidence: evidence(
+        "derived",
+        "marketplace-readiness",
+        agent.verification.qualification.observedAt,
+        false,
+        "Current readiness qualification combines verified identity and signed-quote evidence.",
+      ),
     };
   }
 
@@ -102,7 +110,7 @@ export function toMarketplaceAgent(
     description: data.description,
     owner: data.owner,
     metadataUri: data.metadataUri,
-    operator: inventory?.operator ?? "third_party",
+    operator: data.verification?.operator ?? inventory?.operator ?? "third_party",
     indexedIdentity: {
       owner: data.owner,
       metadataUri: data.metadataUri,
@@ -145,7 +153,7 @@ export function toMarketplaceAgent(
     reputation: data.reputation,
     trustScore: data.trustScore,
     hireability: evaluatesCandidate
-      ? determineHireability(data, { marketplaceOperated: inventory?.operator === "marketplace" })
+      ? determineHireability(data)
       : {
         status: "not_evaluated",
         canHire: false,

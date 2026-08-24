@@ -92,6 +92,8 @@ function fromProfile(agent: MarketplaceAgent, now: number): MarketplaceAgentData
       generatedAt: PUBLIC_VERIFICATION_SNAPSHOT.generatedAt,
       staleAfter: PUBLIC_VERIFICATION_SNAPSHOT.staleAfter,
       blockNumber: PUBLIC_VERIFICATION_SNAPSHOT.blockNumber,
+      operator: verification.operator,
+      qualification: verification.qualification,
       identity: verification.identity,
       tools: verification.tools,
     } : null,

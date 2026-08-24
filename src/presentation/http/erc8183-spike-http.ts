@@ -9,8 +9,9 @@ import {
   Erc8183SpikeUnavailableError,
   InvalidErc8183SpikeInputError,
 } from "../../business/errors/erc8183-spike-errors.js";
+import { BoundedRequestJsonError, readBoundedRequestJson } from "./bounded-request-json.js";
 
-const MAX_BODY_BYTES = 24_000;
+const MAX_BODY_BYTES = 24 * 1_024;
 
 function record(value: unknown, label: string): Record<string, unknown> {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
@@ -20,18 +21,13 @@ function record(value: unknown, label: string): Record<string, unknown> {
 }
 
 export async function spikeJsonBody(request: Request): Promise<Record<string, unknown>> {
-  const declaredLength = Number(request.headers.get("content-length") ?? "0");
-  if (Number.isFinite(declaredLength) && declaredLength > MAX_BODY_BYTES) {
-    throw new InvalidErc8183SpikeInputError("Request body is too large");
-  }
   try {
-    const value = record(await request.json(), "body");
-    if (JSON.stringify(value).length > MAX_BODY_BYTES) {
-      throw new InvalidErc8183SpikeInputError("Request body is too large");
-    }
-    return value;
+    return record(await readBoundedRequestJson(request, MAX_BODY_BYTES), "body");
   } catch (error) {
     if (error instanceof InvalidErc8183SpikeInputError) throw error;
+    if (error instanceof BoundedRequestJsonError) {
+      throw new InvalidErc8183SpikeInputError(error.message);
+    }
     throw new InvalidErc8183SpikeInputError("Request body must be valid JSON");
   }
 }

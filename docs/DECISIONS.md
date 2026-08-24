@@ -33,7 +33,7 @@
 | 2026-08-24 | Keep the dedicated Mainnet seller key in one sensitive Production-only Vercel variable | Approved, secret not provisioned | `MAINNET_SELLER_PRIVATE_KEY` is read behind a `server-only` boundary and is never a public variable, response field or log value; the wallet will be new, single-purpose and gas-funded only | Preview and Development cannot run the Mainnet seller; earnings are swept after each completed job (and at least daily while a balance exists), retaining only the documented gas floor, and the key is rotated and the old variable revoked after 2026-09-23 UTC |
 | 2026-08-24 | Validate Preview hiring without copying the Testnet seller key into Preview | Approved | The Preview buyer flow negotiates with fixed Testnet Agent `1866` at the Production-hosted seller origin, so quote and preflight need only the Preview-scoped enable flag and fixed origin; the seller signature remains in the Production function | Preview can validate through quote and transaction preparation, while the final five injected-wallet signatures remain an explicit human action; `SELLER_PRIVATE_KEY` stays Sensitive and Production-only |
 | 2026-08-24 | Define the catalogue total as trust8004's active indexed BSC list total | Approved | On 2026-08-24 the list API with `chainId=56&active=true`, the same request without `active`, `/api/v2/agents/stats?chainIds=56`, `/api/v2/chains`, and the landing payload all reconciled at `155185`; BSC reported zero inactive rows | The UI says `active indexed BSC records returned by trust8004`, carries the fetch timestamp and partial-coverage warning, and does not reinterpret this as onchain completeness |
-| 2026-08-24 | Treat an unresolved Mainnet OptimisticPolicy dispute as a submission risk | Recorded, pre-write | The allowlisted APEX policy has a seven-day window, quorum three and five active allowlisted voters. It is UMA-style in semantics but does not invoke UMA OOV3: `dispute` and `voteReject` are nonpayable and charge only variable BNB gas. Undisputed submissions auto-approve after seven days; a disputed job without reject quorum remains pending | The primary Mainnet run must be submitted no later than 2026-09-08, monitored through settlement, and never replace Testnet Job `551` while disputed or pending. A dispute that misses quorum can remain unresolved throughout 2026-09-09–23; Testnet remains the fallback proof |
+| 2026-08-24 | Treat the Mainnet OptimisticPolicy dispute window as a submission timing risk | Recorded, pre-write | The allowlisted APEX policy has a seven-day window, quorum three and five active allowlisted voters. It is UMA-style in semantics but does not invoke UMA OOV3: `dispute` and `voteReject` are nonpayable and charge only variable BNB gas. Official `OptimisticPolicy.sol` returns REJECT when reject votes reach quorum and APPROVE after the window when they do not, whether or not a dispute was opened | The primary Mainnet run must be submitted no later than 2026-09-08 and monitored through settlement. It can remain pending for at most the seven-day window; a quorum rejection or a submission too late to settle before judging keeps Testnet Job `551` as the primary proof |
 
 ## Mainnet security decision — 2026-08-24
 
@@ -74,14 +74,18 @@ The warning is exactly: `Active voter count 5 is below the APEX operational
 recommendation of 3x quorum (9).` It refers to the allowlisted APEX
 `OptimisticPolicy`, not an external UMA Optimistic Oracle transaction. The SDK
 describes this policy as “silence approves”: an undisputed submission can be
-settled after `604800` seconds (seven days), while a disputed submission needs
-three allowlisted reject votes to resolve as rejected. There is no dispute bond
+settled after `604800` seconds (seven days). A disputed submission resolves as
+rejected if three allowlisted reject votes reach quorum; otherwise the official
+APEX `OptimisticPolicy.sol` returns approval when the same seven-day window
+expires. There is no dispute bond
 or fixed protocol fee in the deployed ABI; `dispute`, `voteReject`, and `settle`
 are nonpayable, so their cost is only `gasUsed × transaction gas price` in BNB.
 At block `117821751` the observed gas price was `0.05 gwei`; the exact cost is
-recorded from receipts rather than estimated as a constant. If a dispute does
-not reach quorum, the policy continues returning a pending verdict and the job
-must not be promoted as the primary proof.
+recorded from receipts rather than estimated as a constant. The operational risk
+is therefore a pending state lasting until the window expires, not indefinite
+pending. A quorum-rejected job must not be promoted as the primary proof, and a
+submission on 2026-09-08 should become settleable by 2026-09-15, inside the
+2026-09-09 through 2026-09-23 evaluation window.
 
 ## Scope change rule
 

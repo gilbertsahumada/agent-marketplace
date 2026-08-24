@@ -12,7 +12,7 @@ export type EvidenceKind = "declared" | "observed" | "onchain" | "derived";
 
 export interface EvidenceRecord {
   kind: EvidenceKind;
-  source: "trust8004-public-api" | "marketplace-inventory" | "bsc-rpc";
+  source: "trust8004-public-api" | "marketplace-inventory" | "marketplace-readiness" | "bsc-rpc";
   observedAt: string;
   verifiedDirectly: boolean;
   note: string;
@@ -95,6 +95,12 @@ export interface MarketplaceAgent {
     generatedAt: string;
     staleAfter: string;
     blockNumber: string;
+    operator: "third_party" | "marketplace";
+    qualification: {
+      status: "qualified" | "not_qualified" | "unavailable";
+      observedAt: string;
+      provenance: "derived:marketplace-seller-qualification";
+    };
     identity: {
       status: "match" | "mismatch" | "read_error";
       mismatchFields: Array<"owner" | "metadata_uri">;
@@ -103,6 +109,17 @@ export interface MarketplaceAgent {
     };
     tools: {
       status: "observed" | "not_probed";
+      probeOutcomes: Array<
+        | "protocol_valid"
+        | "no_tools"
+        | "unauthorized"
+        | "timeout"
+        | "unsafe_url"
+        | "http_error"
+        | "protocol_error"
+        | "not_probed"
+      >;
+      reachability: "verified" | "failed" | "not_probed";
       declaredOnly: string[];
       observedOnly: string[];
       observedAt: string | null;

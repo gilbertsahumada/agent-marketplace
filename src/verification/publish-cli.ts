@@ -2,7 +2,11 @@ import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import { parsePublicVerificationSnapshot } from "../data/verification/public-verification-snapshot.js";
-import { sanitizeVerificationReport, verificationReportFromReleaseInput } from "./publish.js";
+import {
+  marketplaceEvidenceFromReleaseInput,
+  sanitizeVerificationReport,
+  verificationReportFromReleaseInput,
+} from "./publish.js";
 
 interface PublishArguments {
   input: string;
@@ -36,6 +40,7 @@ export async function publishVerificationSnapshot(
   const snapshot = sanitizeVerificationReport(verificationReportFromReleaseInput(source), {
     now,
     maxAgeHours: args.maxAgeHours,
+    marketplaceEvidence: marketplaceEvidenceFromReleaseInput(source),
   });
   parsePublicVerificationSnapshot(snapshot);
   await mkdir(dirname(args.output), { recursive: true });

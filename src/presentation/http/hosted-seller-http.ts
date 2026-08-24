@@ -5,8 +5,9 @@ import {
   HostedSellerUnavailableError,
   InvalidHostedSellerRequestError,
 } from "../../business/errors/hosted-seller-errors.js";
+import { BoundedRequestJsonError, readBoundedRequestJson } from "./bounded-request-json.js";
 
-const MAX_BODY_BYTES = 24_000;
+const MAX_BODY_BYTES = 24 * 1_024;
 
 type JsonRecord = Record<string, unknown>;
 
@@ -21,19 +22,14 @@ export async function parseHostedSellerRequest(request: Request): Promise<{
   id: unknown;
   message: HostedSellerMessage;
 }> {
-  const declaredLength = Number(request.headers.get("content-length") ?? "0");
-  if (Number.isFinite(declaredLength) && declaredLength > MAX_BODY_BYTES) {
-    throw new InvalidHostedSellerRequestError("Request body is too large");
-  }
-  const text = await request.text();
-  if (new TextEncoder().encode(text).byteLength > MAX_BODY_BYTES) {
-    throw new InvalidHostedSellerRequestError("Request body is too large");
-  }
   let raw: unknown;
   try {
-    raw = JSON.parse(text);
-  } catch {
-    throw new InvalidHostedSellerRequestError("Request body must be valid JSON");
+    raw = await readBoundedRequestJson(request, MAX_BODY_BYTES);
+  } catch (error) {
+    if (error instanceof BoundedRequestJsonError) {
+      throw new InvalidHostedSellerRequestError(error.message);
+    }
+    throw error;
   }
   const rpc = record(raw, "JSON-RPC request");
   if (rpc.jsonrpc !== "2.0" || rpc.method !== "message/send") {

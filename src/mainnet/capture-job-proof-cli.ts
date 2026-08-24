@@ -1,11 +1,28 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import { createPublicClient, getAddress, http, isAddressEqual, type Hash } from "viem";
+import {
+  createPublicClient,
+  decodeEventLog,
+  decodeFunctionData,
+  getAddress,
+  hexToString,
+  http,
+  isAddressEqual,
+  type Abi,
+  type Address,
+  type Hash,
+  type Hex,
+} from "viem";
 import { bsc } from "viem/chains";
 import type { MainnetJobProof, MainnetJobTransactionProof } from "../business/entities/mainnet-job-proof.js";
 import { buildGridPlan, parseGridTaskDescription } from "../business/policies/grid-plan-policy.js";
 import { parseJobDescription } from "@bnbagent/sdk/erc8183";
-import { ERC8183_MAINNET } from "./contracts.js";
+import {
+  ERC8183_MAINNET,
+  mainnetCommerceEvidenceAbi,
+  mainnetRouterEvidenceAbi,
+  mainnetTokenEvidenceAbi,
+} from "./contracts.js";
 import { MainnetErc8183Repository } from "./mainnet-erc8183-repository.js";
 
 const PHASE_TARGETS = {
@@ -17,6 +34,150 @@ const PHASE_TARGETS = {
   submit: ERC8183_MAINNET.commerce,
   settle: ERC8183_MAINNET.router,
 } as const;
+
+type EvidencePhase = keyof typeof PHASE_TARGETS;
+
+interface EvidenceTransactionInput {
+  from: Address;
+  to: Address | null;
+  input: Hex;
+}
+
+interface EvidenceReceiptInput {
+  status: "success" | "reverted";
+  logs: ReadonlyArray<{ address: Address; data: Hex; topics: readonly Hex[] }>;
+}
+
+interface ExpectedEvidenceJob {
+  jobId: bigint;
+  buyer: Address;
+  seller: Address;
+  description: string;
+  deadline: bigint;
+  budget: bigint;
+  deliverable: Hex;
+}
+
+function sameAddress(left: string, right: string): boolean {
+  return isAddressEqual(getAddress(left), getAddress(right));
+}
+
+function eventArgs(
+  receipt: EvidenceReceiptInput,
+  address: Address,
+  abi: Abi,
+  eventName: string,
+  matches: (args: Record<string, unknown>) => boolean,
+): boolean {
+  return receipt.logs.some((log) => {
+    if (!sameAddress(log.address, address)) return false;
+    try {
+      const decoded = decodeEventLog({ abi, data: log.data, topics: log.topics as [Hex, ...Hex[]], strict: true });
+      return decoded.eventName === eventName && matches(decoded.args as unknown as Record<string, unknown>);
+    } catch {
+      return false;
+    }
+  });
+}
+
+function requireEvent(found: boolean, phase: EvidencePhase): void {
+  if (!found) throw new Error(`${phase} receipt does not contain the expected confirmed lifecycle event`);
+}
+
+/** Bind one public proof transaction to the exact Mainnet Grid job and phase. */
+export function assertMainnetEvidenceTransaction(input: {
+  phase: EvidencePhase;
+  transaction: EvidenceTransactionInput;
+  receipt: EvidenceReceiptInput;
+  job: ExpectedEvidenceJob;
+}): void {
+  const { phase, transaction, receipt, job } = input;
+  const target = PHASE_TARGETS[phase];
+  if (receipt.status !== "success" || !transaction.to || !sameAddress(transaction.to, target)) {
+    throw new Error(`${phase} receipt is not allowlisted`);
+  }
+  const expectedSender = phase === "submit" || phase === "settle" ? job.seller : job.buyer;
+  if (!sameAddress(transaction.from, expectedSender)) {
+    throw new Error(`${phase} transaction sender does not match the proven lifecycle`);
+  }
+
+  const abi = phase === "registerJob" || phase === "settle"
+    ? mainnetRouterEvidenceAbi
+    : phase === "approve"
+      ? mainnetTokenEvidenceAbi
+      : mainnetCommerceEvidenceAbi;
+  let decoded: ReturnType<typeof decodeFunctionData>;
+  try {
+    decoded = decodeFunctionData({ abi, data: transaction.input });
+  } catch {
+    throw new Error(`${phase} transaction calldata is not a supported lifecycle operation`);
+  }
+  if (decoded.functionName !== phase) throw new Error(`${phase} transaction called ${decoded.functionName}`);
+  const args = decoded.args as readonly unknown[];
+
+  if (phase === "createJob") {
+    const [provider, evaluator, expiredAt, description, hook] = args as [Address, Address, bigint, string, Address];
+    if (!sameAddress(provider, job.seller) || !sameAddress(evaluator, ERC8183_MAINNET.router) || expiredAt !== job.deadline || description !== job.description || !sameAddress(hook, ERC8183_MAINNET.router)) {
+      throw new Error("createJob calldata does not match the proven job");
+    }
+    requireEvent(eventArgs(receipt, ERC8183_MAINNET.commerce, mainnetCommerceEvidenceAbi, "JobCreated", (event) =>
+      event.jobId === job.jobId && sameAddress(String(event.client), job.buyer) && sameAddress(String(event.provider), job.seller)
+      && sameAddress(String(event.evaluator), ERC8183_MAINNET.router) && event.expiredAt === job.deadline
+      && sameAddress(String(event.hook), ERC8183_MAINNET.router)), phase);
+    return;
+  }
+  if (phase === "registerJob") {
+    const [jobId, policy] = args as [bigint, Address];
+    if (jobId !== job.jobId || !sameAddress(policy, ERC8183_MAINNET.policy)) throw new Error("registerJob calldata does not match the proven job");
+    requireEvent(eventArgs(receipt, ERC8183_MAINNET.router, mainnetRouterEvidenceAbi, "JobRegistered", (event) =>
+      event.jobId === job.jobId && sameAddress(String(event.policy), ERC8183_MAINNET.policy) && sameAddress(String(event.client), job.buyer)), phase);
+    return;
+  }
+  if (phase === "setBudget") {
+    const [jobId, amount, optParams] = args as [bigint, bigint, Hex];
+    if (jobId !== job.jobId || amount !== job.budget || optParams !== "0x") throw new Error("setBudget calldata does not match the proven job");
+    requireEvent(eventArgs(receipt, ERC8183_MAINNET.commerce, mainnetCommerceEvidenceAbi, "BudgetSet", (event) =>
+      event.jobId === job.jobId && event.amount === job.budget), phase);
+    return;
+  }
+  if (phase === "approve") {
+    const [spender, amount] = args as [Address, bigint];
+    if (!sameAddress(spender, ERC8183_MAINNET.commerce) || amount !== job.budget) throw new Error("approve calldata is not the exact required allowance");
+    requireEvent(eventArgs(receipt, ERC8183_MAINNET.token, mainnetTokenEvidenceAbi, "Approval", (event) =>
+      sameAddress(String(event.owner), job.buyer) && sameAddress(String(event.spender), ERC8183_MAINNET.commerce) && event.value === job.budget), phase);
+    return;
+  }
+  if (phase === "fund") {
+    const [jobId, expectedBudget, optParams] = args as [bigint, bigint, Hex];
+    if (jobId !== job.jobId || expectedBudget !== job.budget || optParams !== "0x") throw new Error("fund calldata does not match the proven job");
+    requireEvent(eventArgs(receipt, ERC8183_MAINNET.commerce, mainnetCommerceEvidenceAbi, "JobFunded", (event) =>
+      event.jobId === job.jobId && sameAddress(String(event.client), job.buyer) && sameAddress(String(event.provider), job.seller) && event.amount === job.budget), phase);
+    return;
+  }
+  if (phase === "submit") {
+    const [jobId, deliverable, optParams] = args as [bigint, Hex, Hex];
+    let deliverableUrl: unknown;
+    try {
+      deliverableUrl = (JSON.parse(hexToString(optParams)) as Record<string, unknown>).deliverable_url;
+    } catch {
+      throw new Error("submit calldata does not contain valid deliverable metadata");
+    }
+    if (
+      jobId !== job.jobId ||
+      deliverable.toLowerCase() !== job.deliverable.toLowerCase() ||
+      deliverableUrl !== `https://bnb-agent-marketplace-ruby.vercel.app/api/sellers/grid/job/${job.jobId}/response`
+    ) throw new Error("submit calldata does not match the proven deliverable");
+    requireEvent(eventArgs(receipt, ERC8183_MAINNET.commerce, mainnetCommerceEvidenceAbi, "JobSubmitted", (event) =>
+      event.jobId === job.jobId && sameAddress(String(event.provider), job.seller) && String(event.deliverable).toLowerCase() === job.deliverable.toLowerCase()), phase);
+    return;
+  }
+  const [jobId, evidence] = args as [bigint, Hex];
+  if (jobId !== job.jobId || evidence !== "0x") throw new Error("settle calldata does not match the proven job");
+  requireEvent(eventArgs(receipt, ERC8183_MAINNET.router, mainnetRouterEvidenceAbi, "JobSettled", (event) =>
+    event.jobId === job.jobId && sameAddress(String(event.policy), ERC8183_MAINNET.policy) && event.verdict === 1), phase);
+  requireEvent(eventArgs(receipt, ERC8183_MAINNET.commerce, mainnetCommerceEvidenceAbi, "JobCompleted", (event) =>
+    event.jobId === job.jobId && sameAddress(String(event.evaluator), ERC8183_MAINNET.router)), phase);
+}
 
 function sourceObject(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Evidence input must be a JSON object");
@@ -53,6 +214,7 @@ async function main(): Promise<void> {
   let firstTimestamp: bigint | null = null;
   let lastTimestamp: bigint | null = null;
   let totalGasCost = 0n;
+  let previousPosition: { blockNumber: bigint; transactionIndex: number } | null = null;
   const phases = job.status === "COMPLETED"
     ? Object.entries(PHASE_TARGETS)
     : Object.entries(PHASE_TARGETS).filter(([phase]) => phase !== "settle");
@@ -62,7 +224,25 @@ async function main(): Promise<void> {
       client.getTransactionReceipt({ hash: txHash }),
       client.getTransaction({ hash: txHash }),
     ]);
-    if (receipt.status !== "success" || !transaction.to || !isAddressEqual(transaction.to, target)) throw new Error(`${phase} receipt is not allowlisted`);
+    assertMainnetEvidenceTransaction({
+      phase: phase as EvidencePhase,
+      transaction: { from: transaction.from, to: transaction.to, input: transaction.input },
+      receipt: { status: receipt.status, logs: receipt.logs },
+      job: {
+        jobId,
+        buyer: job.buyer,
+        seller: job.provider,
+        description: job.description,
+        deadline: BigInt(job.deadline),
+        budget: BigInt(job.budgetRaw),
+        deliverable: job.deliverableHash,
+      },
+    });
+    const position = { blockNumber: receipt.blockNumber, transactionIndex: receipt.transactionIndex };
+    if (previousPosition && (position.blockNumber < previousPosition.blockNumber || (position.blockNumber === previousPosition.blockNumber && position.transactionIndex <= previousPosition.transactionIndex))) {
+      throw new Error(`${phase} transaction is out of lifecycle order`);
+    }
+    previousPosition = position;
     const block = await client.getBlock({ blockNumber: receipt.blockNumber });
     const gasCost = receipt.gasUsed * receipt.effectiveGasPrice;
     totalGasCost += gasCost;
@@ -109,7 +289,9 @@ function proofTransaction(txHash: Hash, blockNumber: bigint, timestamp: bigint, 
   };
 }
 
-main().catch(() => {
-  process.stderr.write("Mainnet proof capture failed; no sensitive details were emitted.\n");
-  process.exitCode = 1;
-});
+if (process.argv[1] && import.meta.url === new URL(`file://${process.argv[1]}`).href) {
+  main().catch(() => {
+    process.stderr.write("Mainnet proof capture failed; no sensitive details were emitted.\n");
+    process.exitCode = 1;
+  });
+}

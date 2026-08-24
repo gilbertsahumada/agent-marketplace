@@ -284,7 +284,16 @@ export class MainnetErc8183Repository implements Erc8183SpikeRepository {
         const before = await this.getJob(jobId);
         if (before.status === "SUBMITTED" || before.status === "COMPLETED") return { acknowledged: true as const, alreadySubmitted: true, job: before };
         if (before.status !== "FUNDED") throw new Erc8183SpikeUnavailableError("notify_funded requires a FUNDED Mainnet job");
-        const notification = await withSellerTransport(config.sellerOrigin, (fetchImpl) => notifyFunded(card.url, jobId, null, fetchImpl));
+        let notification: Awaited<ReturnType<typeof notifyFunded>>;
+        try {
+          notification = await withSellerTransport(config.sellerOrigin, (fetchImpl) => notifyFunded(card.url, jobId, null, fetchImpl));
+        } catch {
+          const reconciled = await this.getJob(jobId);
+          if (reconciled.status === "SUBMITTED" || reconciled.status === "COMPLETED") {
+            return { acknowledged: true as const, alreadySubmitted: true, job: reconciled };
+          }
+          throw new Erc8183SpikeUnavailableError("The Mainnet seller notification could not be reconciled onchain");
+        }
         const job = await this.getJob(jobId);
         if (job.status !== "SUBMITTED" && job.status !== "COMPLETED") throw new Erc8183SpikeUnavailableError("Seller acknowledged without an onchain submission");
         const transactionHash = notification.transaction_hash;
