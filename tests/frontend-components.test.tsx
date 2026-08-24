@@ -204,7 +204,8 @@ describe("marketplace presentation rules", () => {
       fetchedAt: "2026-08-17T00:00:00.000Z",
     };
     render(createElement(CatalogPage, { data: page, query: { view: "all", sort: "newest" } }));
-    expect(screen.getByText("Catalog coverage: partial · 80,058 reported")).toBeInTheDocument();
+    expect(screen.getByText("Catalog coverage: partial · 80,058 active indexed BSC records returned by trust8004")).toBeInTheDocument();
+    expect(screen.getByText(/count is response\.total for active=true/)).toBeInTheDocument();
     expect(screen.getByRole("combobox", { name: "Sort agents" })).toHaveValue("newest");
   });
 

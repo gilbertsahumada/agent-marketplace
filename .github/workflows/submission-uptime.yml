@@ -19,10 +19,20 @@ jobs:
       - name: Check durable public routes
         run: |
           set -euo pipefail
-          curl --fail --silent --show-error --location --max-time 20 "$ORIGIN/" >/dev/null
-          curl --fail --silent --show-error --location --max-time 20 "$ORIGIN/agents?view=marketplace" >/dev/null
-          curl --fail --silent --show-error --location --max-time 20 "$ORIGIN/jobs/testnet/551" >/dev/null
-          curl --fail --silent --show-error --location --max-time 20 "$ORIGIN/evidence/verification" >/dev/null
+          check_200() {
+            route="$1"
+            status="$(curl --silent --show-error --max-time 20 --output /dev/null --write-out '%{http_code}' "$ORIGIN$route")"
+            if [ "$status" != "200" ]; then
+              echo "Expected anonymous 200 for $route, received $status" >&2
+              exit 1
+            fi
+          }
+          check_200 "/"
+          check_200 "/agents?view=marketplace"
+          check_200 "/agents/45650"
+          check_200 "/hire/45650"
+          check_200 "/jobs/testnet/551"
+          check_200 "/evidence/verification"
       - name: Check Mainnet Grid seller when promoted
         if: env.MAINNET_GRID_SELLER_ENABLED == 'true'
         run: |

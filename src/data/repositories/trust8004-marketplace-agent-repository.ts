@@ -126,6 +126,7 @@ export class Trust8004MarketplaceAgentRepository implements MarketplaceAgentRepo
     return this.cache.get(key, this.ttlMs, async () => {
       const page = await this.provider.listAgents({
         view: "all",
+        active: true,
         ...(q ? { q } : {}),
         limit: options.limit,
         offset,

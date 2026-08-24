@@ -296,6 +296,12 @@ removes endpoint URLs, payloads and error details, and writes the versioned
 through the marketplace repository; the methodology page receives it through
 one business use case. `not_probed` remains distinct from observed absence.
 
+The Vercel deployment build first runs `readiness:bsc` and
+`publish:verification`, then applies the normal freshness gate and application
+build. This keeps the runtime independent of the operator report while ensuring
+each deployment embeds a newly sanitized snapshot; an unavailable live source
+or expired artifact stops the deployment.
+
 The landing composes its four category counts, candidate names and drift cards
 from that sanitized release snapshot. It performs no live profile fan-out.
 The paginated registered catalogue and deliberately opened profiles remain
@@ -316,8 +322,19 @@ its own flags, journal key, routes, allowlist and public configuration:
 
 /grid/.well-known/agent-card.json
   -> thin controller -> deterministic Grid seller business policy
-  -> server-only SDK signer -> submit manifest hash
+  -> `server-only` Production secret -> SDK signer -> submit manifest hash
 ```
+
+When provisioned, `MAINNET_SELLER_PRIVATE_KEY` exists only as a Sensitive
+Production Vercel variable. Preview and Development have no copy, no
+`NEXT_PUBLIC_` variant exists, and client dependency tests reject any import path
+to its loader.
+
+The already-operated Testnet seller uses the separate `SELLER_PRIVATE_KEY`, also
+Sensitive and Production-only. Preview does not need that key: its buyer routes
+are enabled against the fixed Production-hosted Testnet Agent `1866`, so Preview
+can request and validate quotes and prepare the injected-wallet intents without
+crossing the seller secret boundary.
 
 No browser input can select a seller URL, Agent ID, token, policy or contract.
 Seller A2A calls use the shared DNS-pinned, redirect-rejecting and 64 KiB
@@ -330,7 +347,7 @@ That report must observe the fixed production Grid Agent Card through the
 DNS-pinned, redirect-rejecting, body-capped transport and match its message URL
 and negotiation/notification skills; checking only the configured origin text
 is insufficient.
-The first real read at block `117715355` remained `NO_GO` solely because the
+The recorded read at block `117722575` remained `NO_GO` solely because the
 dedicated seller address, minimum gas balance and production origin were not configured. Browser
 writes are simulated immediately before each signature. After the seven-day
 policy window, `mainnet:settle-grid-job` validates provider, evaluator, policy,

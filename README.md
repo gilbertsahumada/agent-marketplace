@@ -175,6 +175,12 @@ payloads and errors:
 npm run publish:verification -- --input .marketplace/readiness/bsc-marketplace.json
 ```
 
+Vercel uses `npm run build:deployment`: it regenerates the bounded readiness
+report, publishes the sanitized snapshot, verifies its 72-hour freshness limit,
+and only then runs the application build. Local `npm run build` remains a
+deterministic check of the already published artifact. An expired snapshot or a
+failed live regeneration blocks the deployment.
+
 The verifier compares trust8004 identity fields with `ownerOf` and `tokenURI`
 at one pinned BSC Mainnet block, then performs MCP `initialize` and `tools/list`
 against at most one declared public endpoint per agent. It never calls a tool. Observed tool
@@ -301,13 +307,29 @@ npm run check
 npm audit --audit-level=low
 ```
 
-The scheduled GitHub Actions uptime check covers the landing, catalogue,
-verification methodology and durable Job `551` throughout judging. Set the
+The submission URL is
+`https://bnb-agent-marketplace-ruby.vercel.app`. Its Production Deployment
+Protection must remain disabled throughout 2026-09-09 through 2026-09-23; protected
+PR previews are not submission URLs. The scheduled GitHub Actions uptime check
+requires an anonymous, non-redirected HTTP `200` from the landing, catalogue, Agent
+`45650` profile, its `/hire` route and durable Job `551` throughout judging. Set the
 repository variable `MAINNET_GRID_SELLER_ENABLED=true` only after promotion to
 add the Mainnet Agent Card and browser demo to that external check.
 Production keeps `ERC8183_BROWSER_SPIKE_ENABLED=true` from 2026-09-09 through
 2026-09-23; the independent Mainnet flag stays false unless its complete GO,
 registration, qualification and proof-capture sequence succeeds.
+
+Provision the new single-purpose Mainnet seller key only as a write-only Vercel
+secret:
+
+```bash
+vercel env add MAINNET_SELLER_PRIVATE_KEY production --sensitive
+vercel env ls production
+```
+
+The listing must show `Hidden`, `Sensitive`, and `Production` only. Do not add a
+Preview or Development copy. The key-loading module is marked `server-only`, and
+the build/test boundary fails if any client import graph can reach the variable.
 
 See:
 

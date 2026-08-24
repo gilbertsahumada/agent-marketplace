@@ -291,7 +291,7 @@ describe("Trust8004 marketplace repository", () => {
     expect(url.searchParams.get("search")).toBe("HeyAnon");
     expect(url.searchParams.get("limit")).toBe("24");
     expect(url.searchParams.get("includeReputation")).toBe("true");
-    expect(url.searchParams.has("active")).toBe(false);
+    expect(url.searchParams.get("active")).toBe("true");
 
     await Promise.all([
       dataRepository.listRegisteredPage({ page: 1, limit: 24, q: "Venus" }),

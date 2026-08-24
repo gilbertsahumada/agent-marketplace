@@ -100,6 +100,15 @@ export function parsePublicVerificationSnapshot(value: unknown): PublicVerificat
 
 export const PUBLIC_VERIFICATION_SNAPSHOT = parsePublicVerificationSnapshot(snapshotJson);
 
+export function assertPublicVerificationSnapshotFresh(
+  snapshot: PublicVerificationSnapshot,
+  now = Date.now(),
+): void {
+  if (now > Date.parse(snapshot.staleAfter)) {
+    throw new Error(`Public verification snapshot expired at ${snapshot.staleAfter}. Run npm run publish:verification before deploying.`);
+  }
+}
+
 const agentsById = new Map(PUBLIC_VERIFICATION_SNAPSHOT.agents.map((agent) => [agent.agentId, agent]));
 
 export function publicVerificationForAgent(

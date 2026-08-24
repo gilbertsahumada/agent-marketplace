@@ -71,6 +71,7 @@ describe("Trust8004Provider", () => {
     expect(requestedUrl?.searchParams.get("limit")).toBe("50");
     expect(requestedUrl?.searchParams.get("offset")).toBe("0");
     expect(requestedUrl?.searchParams.get("search")).toBe("grid");
+    expect(requestedUrl?.searchParams.get("active")).toBe("true");
   });
 
   it("parses the enriched list summary and requests supported server-side options", async () => {

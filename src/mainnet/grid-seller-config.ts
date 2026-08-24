@@ -1,3 +1,4 @@
+import "server-only";
 import { getAddress, type Address, type Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { HostedSellerUnavailableError } from "../business/errors/hosted-seller-errors.js";
@@ -38,11 +39,16 @@ export function loadMainnetGridSellerConfig(
   if (options.requireAgentId !== false && (!rawAgentId || !/^\d+$/.test(rawAgentId) || !Number.isSafeInteger(Number(rawAgentId)) || Number(rawAgentId) <= 0)) {
     throw new HostedSellerUnavailableError("The Mainnet Grid seller Agent ID is unavailable");
   }
-  return {
+  const config = {
     origin: rawOrigin,
     endpoint: `${rawOrigin}/grid`,
-    privateKey,
     address,
     agentId: rawAgentId && /^\d+$/.test(rawAgentId) ? Number(rawAgentId) : null,
-  };
+  } as Omit<MainnetGridSellerConfig, "privateKey">;
+  return Object.defineProperty(config, "privateKey", {
+    value: privateKey,
+    enumerable: false,
+    configurable: false,
+    writable: false,
+  }) as MainnetGridSellerConfig;
 }

@@ -1,12 +1,18 @@
-import { getAddress, type PublicClient } from "viem";
+import { getAddress, type Hex, type PublicClient } from "viem";
+import { privateKeyToAccount } from "viem/accounts";
+import { inspect } from "node:util";
+import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 import { buildGridPlan, gridTaskDescription, parseGridTaskDescription } from "../src/business/policies/grid-plan-policy.js";
 import { assertBrowserSpikeChain, parseBrowserJournal, type Erc8183BrowserDeployment } from "../src/data/erc8183/browser-wallet-adapter.js";
-import { parsePublicVerificationSnapshot, PUBLIC_VERIFICATION_SNAPSHOT } from "../src/data/verification/public-verification-snapshot.js";
+import { assertPublicVerificationSnapshotFresh, parsePublicVerificationSnapshot, PUBLIC_VERIFICATION_SNAPSHOT } from "../src/data/verification/public-verification-snapshot.js";
 import { loadMainnetBrowserDemoConfig } from "../src/mainnet/browser-demo-config.js";
 import { marketplaceInventoryEntries } from "../src/data/inventory/marketplace-inventory.js";
 import { ERC1967_IMPLEMENTATION_SLOT, ERC8183_MAINNET } from "../src/mainnet/contracts.js";
 import { evaluateMainnetGoNoGo } from "../src/mainnet/go-no-go.js";
+import { loadMainnetGridSellerConfig } from "../src/mainnet/grid-seller-config.js";
+import { loadHostedSellerConfig } from "../src/data/erc8183/hosted-seller-config.js";
+import { erc8183SpikeErrorResponse } from "../src/presentation/http/erc8183-spike-http.js";
 
 const SELLER = getAddress("0x1111111111111111111111111111111111111111");
 const BUYER = getAddress("0x2222222222222222222222222222222222222222");
@@ -105,9 +111,52 @@ describe("published verification evidence", () => {
     expect(JSON.stringify(reparsed)).not.toMatch(/https?:|authorization|bearer|payload|private.?key/i);
     expect(reparsed.agents.every(({ identity }) => identity.provenance.join(",") === "declared,onchain")).toBe(true);
   });
+
+  it("fails closed when the published snapshot crosses its freshness threshold", () => {
+    expect(() => assertPublicVerificationSnapshotFresh(
+      PUBLIC_VERIFICATION_SNAPSHOT,
+      Date.parse(PUBLIC_VERIFICATION_SNAPSHOT.staleAfter) + 1,
+    )).toThrow(/expired/);
+  });
+
+  it("regenerates sanitized verification evidence before every Vercel build", () => {
+    const packageJson = JSON.parse(readFileSync("package.json", "utf8")) as { scripts: Record<string, string> };
+    const vercel = JSON.parse(readFileSync("vercel.json", "utf8")) as { buildCommand: string };
+    expect(vercel.buildCommand).toBe("npm run build:deployment");
+    expect(packageJson.scripts["build:deployment"]).toBe("npm run readiness:bsc && npm run publish:verification && npm run build");
+  });
 });
 
 describe("Mainnet security decision", () => {
+  it("keeps seller key material out of object logs, JSON and error responses", async () => {
+    const secret = `0x${"11".repeat(32)}` as Hex;
+    const config = loadMainnetGridSellerConfig({
+      ERC8183_MAINNET_SELLER_ENABLED: "true",
+      ERC8183_MAINNET_SELLER_ORIGIN: "https://bnb-agent-marketplace-ruby.vercel.app",
+      ERC8183_MAINNET_SELLER_ADDRESS: privateKeyToAccount(secret).address,
+      ERC8183_MAINNET_SELLER_AGENT_ID: "9001",
+      MAINNET_SELLER_PRIVATE_KEY: secret,
+    });
+    const error = Object.assign(new Error("seller failed"), { config });
+    const hostedConfig = loadHostedSellerConfig({
+      ERC8183_BROWSER_SPIKE_SELLER_ORIGIN: "https://bnb-agent-marketplace-ruby.vercel.app",
+      SELLER_PRIVATE_KEY: secret,
+    });
+    const serialized = JSON.stringify({ config, hostedConfig, error });
+    const inspected = inspect({ config, hostedConfig, error });
+    const directResponse = await Response.json({ config, hostedConfig }).text();
+    const errorResponse = await erc8183SpikeErrorResponse(error, "Mainnet").text();
+
+    expect(config.privateKey).toBe(secret);
+    expect(hostedConfig.privateKey).toBe(secret);
+    expect(Object.keys(config)).not.toContain("privateKey");
+    expect(Object.keys(hostedConfig)).not.toContain("privateKey");
+    for (const output of [serialized, inspected, directResponse, errorResponse]) {
+      expect(output).not.toContain(secret);
+      expect(output).not.toMatch(/privateKey|MAINNET_SELLER_PRIVATE_KEY/);
+    }
+  });
+
   it("remains NO_GO until the dedicated seller public configuration is present", async () => {
     const implementationStorage = (address: string) => `0x${"0".repeat(24)}${address.slice(2).toLowerCase()}` as `0x${string}`;
     const client = {

@@ -1,3 +1,4 @@
+import "server-only";
 import { getAddress, type Address, type Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { HostedSellerUnavailableError } from "../../business/errors/hosted-seller-errors.js";
@@ -43,9 +44,14 @@ export function loadHostedSellerConfig(
     );
   }
   const privateKey = rawKey as Hex;
-  return {
+  const config = {
     origin: url.origin,
-    privateKey,
     address: getAddress(privateKeyToAccount(privateKey).address),
-  };
+  } as Omit<HostedSellerConfig, "privateKey">;
+  return Object.defineProperty(config, "privateKey", {
+    value: privateKey,
+    enumerable: false,
+    configurable: false,
+    writable: false,
+  }) as HostedSellerConfig;
 }
