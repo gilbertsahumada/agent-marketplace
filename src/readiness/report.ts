@@ -26,6 +26,7 @@ export interface BuildReadinessReportOptions {
     identity: IdentityVerification,
   ) => Promise<HireabilityAssessment>;
   additionalAgentIds?: readonly string[];
+  marketplaceOperatedGridSellerAgentId?: string;
   now?: () => number;
 }
 
@@ -68,6 +69,7 @@ export async function buildBscMarketplaceReadinessReport(
   const now = options.now ?? Date.now;
   const inventory = await buildBscCandidateInventory(options.provider, now, {
     ...(options.additionalAgentIds ? { additionalAgentIds: options.additionalAgentIds } : {}),
+    ...(options.marketplaceOperatedGridSellerAgentId ? { marketplaceOperatedGridSellerAgentId: options.marketplaceOperatedGridSellerAgentId } : {}),
   });
   const probeBudget = createProbeBudget({
     maxMcpEndpoints: 24,
@@ -98,9 +100,11 @@ export async function buildBscMarketplaceReadinessReport(
       categories,
       profileDerivedCategories: agent.categories,
       activation,
-      selection: inventory.selection.explicitAgentIds.includes(agent.agentId)
-        ? "operator_explicit"
-        : "curated",
+      selection: inventory.selection.marketplaceOperatedAgentIds.includes(agent.agentId)
+        ? "marketplace_operated"
+        : inventory.selection.explicitAgentIds.includes(agent.agentId)
+          ? "operator_explicit"
+          : "curated",
       qualification: qualification(activation, identity),
     });
   }
