@@ -7,7 +7,11 @@ import {
   type Hex,
 } from "viem";
 import { describe, expect, it, vi } from "vitest";
-import { assertMainnetEvidenceTransaction, assertMainnetProofBinding } from "../src/mainnet/capture-job-proof-cli.js";
+import {
+  assertMainnetEvidenceTransaction,
+  assertMainnetLifecycleImplementationPins,
+  assertMainnetProofBinding,
+} from "../src/mainnet/capture-job-proof-cli.js";
 import {
   ERC8183_MAINNET,
   mainnetCommerceEvidenceAbi,
@@ -222,5 +226,21 @@ describe("Mainnet proof deployment binding", () => {
     expect(readContract.mock.calls.slice(-3).every(([request]) => request.blockNumber === fundingBlock)).toBe(true);
     expect(() => assertMainnetProofBinding({ ...binding, identity: current })).not.toThrow();
     expect(() => assertMainnetProofBinding({ ...binding, identity: historical })).toThrow(/Agent ID/);
+  });
+
+  it("rejects an invalid intermediate implementation block and deduplicates shared blocks", async () => {
+    const pinsMatch = vi.fn(async (_client: unknown, blockNumber?: bigint) => blockNumber !== 102n);
+    const phaseBlocks = {
+      createJob: 100n,
+      registerJob: 100n,
+      setBudget: 102n,
+      fund: 103n,
+      submit: 104n,
+      settle: 105n,
+    };
+
+    await expect(assertMainnetLifecycleImplementationPins({} as never, phaseBlocks, pinsMatch as never))
+      .rejects.toThrow(/unallowlisted/);
+    expect(pinsMatch.mock.calls.map(([, blockNumber]) => blockNumber)).toEqual([100n, 102n, 103n, 104n, 105n]);
   });
 });

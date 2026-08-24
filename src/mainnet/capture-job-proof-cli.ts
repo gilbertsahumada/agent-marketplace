@@ -45,6 +45,16 @@ const PHASE_TARGETS = {
 } as const;
 
 type EvidencePhase = keyof typeof PHASE_TARGETS;
+type LifecyclePhaseBlocks = Partial<Record<EvidencePhase, bigint>>;
+
+const IMPLEMENTATION_PIN_PHASES = [
+  "createJob",
+  "registerJob",
+  "setBudget",
+  "fund",
+  "submit",
+  "settle",
+] as const satisfies readonly EvidencePhase[];
 
 interface EvidenceTransactionInput {
   from: Address;
@@ -107,6 +117,23 @@ export function assertMainnetProofBinding(input: MainnetProofBindingInput): void
     !sameAddress(identity.agentWallet, input.expectedSeller) ||
     new URL(identity.a2aEndpoint).origin !== input.expectedOrigin
   ) throw new Error("Mainnet proof Agent ID does not resolve to the fixed seller deployment");
+}
+
+/** Verify every distinct Commerce/Router lifecycle block against the pinned implementations. */
+export async function assertMainnetLifecycleImplementationPins(
+  client: Parameters<typeof mainnetImplementationPinsMatch>[0],
+  phaseBlocks: LifecyclePhaseBlocks,
+  pinsMatch: typeof mainnetImplementationPinsMatch = mainnetImplementationPinsMatch,
+): Promise<void> {
+  const blocks = new Set<bigint>();
+  for (const phase of IMPLEMENTATION_PIN_PHASES) {
+    const blockNumber = phaseBlocks[phase];
+    if (blockNumber !== undefined) blocks.add(blockNumber);
+  }
+  const results = await Promise.all([...blocks].map((blockNumber) => pinsMatch(client, blockNumber)));
+  if (results.some((matches) => !matches)) {
+    throw new Error("Mainnet proof lifecycle used an unallowlisted Commerce or Router implementation");
+  }
 }
 
 function eventArgs(
@@ -262,8 +289,7 @@ async function main(): Promise<void> {
   let firstTimestamp: bigint | null = null;
   let lastTimestamp: bigint | null = null;
   let totalGasCost = 0n;
-  let createdAtBlock: bigint | null = null;
-  let fundedAtBlock: bigint | null = null;
+  const phaseBlocks: LifecyclePhaseBlocks = {};
   let previousPosition: { blockNumber: bigint; transactionIndex: number } | null = null;
   const phases = job.status === "COMPLETED"
     ? Object.entries(PHASE_TARGETS)
@@ -293,8 +319,7 @@ async function main(): Promise<void> {
       throw new Error(`${phase} transaction is out of lifecycle order`);
     }
     previousPosition = position;
-    if (phase === "createJob") createdAtBlock = receipt.blockNumber;
-    if (phase === "fund") fundedAtBlock = receipt.blockNumber;
+    phaseBlocks[phase as EvidencePhase] = receipt.blockNumber;
     const block = await client.getBlock({ blockNumber: receipt.blockNumber });
     const gasCost = receipt.gasUsed * receipt.effectiveGasPrice;
     totalGasCost += gasCost;
@@ -302,11 +327,12 @@ async function main(): Promise<void> {
     lastTimestamp = lastTimestamp === null || block.timestamp > lastTimestamp ? block.timestamp : lastTimestamp;
     transactions[phase] = proofTransaction(txHash, receipt.blockNumber, block.timestamp, receipt.gasUsed, receipt.effectiveGasPrice);
   }
-  if (firstTimestamp === null || lastTimestamp === null || createdAtBlock === null || fundedAtBlock === null) {
+  const fundedAtBlock = phaseBlocks.fund;
+  if (firstTimestamp === null || lastTimestamp === null || phaseBlocks.createJob === undefined || fundedAtBlock === undefined) {
     throw new Error("Proof timestamps or lifecycle blocks are unavailable");
   }
   const config = repository.allowlist;
-  const [identity, signature, createPinsMatch, fundPinsMatch] = await Promise.all([
+  const [identity, signature] = await Promise.all([
     resolveIdentity(client, config.agentId, {
       chainId: 56,
       registry: ERC8183_MAINNET.registry,
@@ -319,12 +345,8 @@ async function main(): Promise<void> {
       expectedVerifyingContract: ERC8183_MAINNET.commerce,
       blockNumber: fundedAtBlock,
     }),
-    mainnetImplementationPinsMatch(client, createdAtBlock),
-    mainnetImplementationPinsMatch(client, fundedAtBlock),
+    assertMainnetLifecycleImplementationPins(client, phaseBlocks),
   ]);
-  if (!createPinsMatch || !fundPinsMatch) {
-    throw new Error("Mainnet proof lifecycle used an unallowlisted Commerce or Router implementation");
-  }
   assertMainnetProofBinding({
     job,
     description,
