@@ -104,18 +104,16 @@ function Footer() {
             GitHub
           </a>
         </div>
-      </div>
-      <div className="border-t border-white/10">
-        <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-4 px-4 py-5 sm:px-6 lg:px-8">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-white/[0.06] pt-6 text-xs text-zinc-500 md:col-span-2">
           <img
             alt="Built on BNB Chain"
-            className="h-5 w-auto opacity-70"
+            className="h-3.5 w-auto opacity-50"
             src="/logo/SVG/BNB Chain_Logo_White.svg"
           />
-          <p className="text-xs text-zinc-500">
+          <p>
             Reputation data powered by{" "}
             <a
-              className="text-zinc-300 underline decoration-zinc-600 underline-offset-2 hover:text-white"
+              className="text-zinc-400 underline decoration-zinc-700 underline-offset-2 hover:text-white"
               href="https://trust8004.xyz"
               rel="noreferrer"
               target="_blank"
