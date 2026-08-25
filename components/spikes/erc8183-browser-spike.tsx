@@ -85,7 +85,7 @@ function SummaryRow({ label, value, mono = false }: { label: string; value: stri
   return (
     <div className="grid gap-1 border-b border-white/[0.06] py-3 last:border-0 sm:grid-cols-[11rem_1fr]">
       <dt className="text-xs text-zinc-500">{label}</dt>
-      <dd className={mono ? "font-stat break-all font-mono text-xs text-zinc-200" : "text-sm text-zinc-200"}>{value}</dd>
+      <dd className={mono ? "font-hash text-xs text-zinc-200" : "text-sm text-zinc-200"}>{value}</dd>
     </div>
   );
 }
@@ -265,8 +265,8 @@ function Erc8183BrowserDemo({ mode, deployment }: { mode: "testnet" | "mainnet";
           <Badge className="border-amber-300/30 bg-amber-300/10 text-amber-100" variant="outline">{deployment.networkName} · chain {deployment.chainId}</Badge>
           <Badge variant="outline">{mode === "mainnet" ? "Mainnet value at risk" : "Controlled hiring demo"}</Badge>
         </div>
-        <p className="mt-6 text-[11px] font-medium uppercase tracking-[0.22em] text-zinc-500">Non-custodial {mode === "mainnet" ? "Mainnet" : "Testnet"} demo</p>
-        <h1 className="mt-2 text-3xl font-semibold tracking-tight text-white sm:text-5xl">Hire with your wallet. Verify every step.</h1>
+        <p className="font-eyebrow font-eyebrow-dot mt-6 text-zinc-500">Non-custodial {mode === "mainnet" ? "Mainnet" : "Testnet"} demo</p>
+        <h1 className="mt-2 text-3xl font-light tracking-tight text-white sm:text-5xl">Hire with your wallet. Verify every step.</h1>
         <p className="mt-4 text-base leading-relaxed text-zinc-400">
           Request a signed quote from the controlled seller, inspect every contract call, and sign the ERC-8183 lifecycle with your injected wallet.
         </p>
@@ -344,9 +344,9 @@ function Erc8183BrowserDemo({ mode, deployment }: { mode: "testnet" | "mainnet";
                   {plan.transactions.map((intent) => (
                     <li key={intent.kind} className="flex items-start justify-between gap-4 rounded-lg border border-white/[0.07] bg-white/[0.02] p-3">
                       <div className="min-w-0">
-                        <p className="font-mono text-xs text-zinc-200">{intent.kind}</p>
+                        <p className="font-hash text-xs text-zinc-200">{intent.kind}</p>
                         <p className="mt-1 text-xs text-zinc-500">{intent.purpose}</p>
-                        <p className="mt-1 break-all font-mono text-[10px] text-zinc-600">{intent.contract}</p>
+                        <p className="font-hash mt-1 text-[10px] text-zinc-600">{intent.contract}</p>
                       </div>
                       <Badge variant="outline">{intent.required ? "signature" : "skipped"}</Badge>
                     </li>
@@ -382,16 +382,16 @@ function Erc8183BrowserDemo({ mode, deployment }: { mode: "testnet" | "mainnet";
             <Card className="border-emerald-400/20">
               <CardHeader><CardTitle>Onchain Job #{job.jobId}</CardTitle><CardDescription>Current state: {job.status}</CardDescription></CardHeader>
               <CardContent className="space-y-3">
-                <p className="font-mono text-xs break-all text-zinc-400">Deliverable {job.deliverableHash}</p>
+                <p className="font-hash text-xs text-zinc-400">Deliverable {job.deliverableHash}</p>
                 {job.result && (
                   <div className="rounded-lg border border-emerald-400/20 bg-emerald-400/[0.05] p-3">
-                    <p className="text-[10px] font-medium uppercase tracking-[0.16em] text-emerald-300">Hash-verified result</p>
+                    <p className="font-eyebrow text-emerald-300">Hash-verified result</p>
                     <p className="mt-2 whitespace-pre-wrap text-sm text-zinc-200">{job.result.content}</p>
                   </div>
                 )}
                 {journal?.transactions && Object.entries(journal.transactions).map(([kind, hash]) => (
                   <a className="flex items-center justify-between gap-2 text-xs text-zinc-300 hover:text-white" href={`${deployment.explorerUrl}/tx/${hash}`} key={kind} rel="noreferrer" target="_blank">
-                    <span>{kind}</span><span className="font-mono">{shortAddress(hash)}</span><ExternalLink aria-hidden="true" className="size-3" />
+                    <span>{kind}</span><span className="font-hash">{shortAddress(hash)}</span><ExternalLink aria-hidden="true" className="size-3" />
                   </a>
                 ))}
                 {job.deliverableUrl && <a className="inline-flex items-center gap-2 text-sm text-emerald-300" href={job.deliverableUrl} rel="noreferrer" target="_blank">Open sanitized result <ExternalLink aria-hidden="true" className="size-4" /></a>}
