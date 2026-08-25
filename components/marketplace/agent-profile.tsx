@@ -16,8 +16,8 @@ import { VerificationDrift } from "./verification-drift";
 function MonoValue({ label, value }: { label: string; value: string | null }) {
   return (
     <div className="rounded-lg border border-white/10 bg-white/[0.02] p-3">
-      <p className="text-[10px] uppercase tracking-[0.16em] text-zinc-500">{label}</p>
-      <p className="font-stat mt-1 break-all text-xs text-zinc-300">{value ?? "Unavailable"}</p>
+      <p className="font-eyebrow text-zinc-500">{label}</p>
+      <p className="font-hash mt-1 text-xs text-zinc-300">{value ?? "Unavailable"}</p>
     </div>
   );
 }
@@ -38,7 +38,7 @@ export function AgentProfile({ agent }: { agent: MarketplaceAgent }) {
                 {agent.hireability.canHire ? "Hireable now" : agent.hireability.status === "mcp_only" ? "MCP only" : evaluated ? "Not hireable" : "Not evaluated"}
               </Badge>
             </div>
-            <h1 className="mt-3 text-3xl font-semibold tracking-tight text-white sm:text-4xl">{agent.name}</h1>
+            <h1 className="mt-3 text-3xl font-light tracking-tight text-white sm:text-4xl">{agent.name}</h1>
             <p className="mt-3 max-w-3xl text-sm leading-relaxed text-zinc-400 sm:text-base">{agent.description ?? "No description declared."}</p>
           </div>
         </div>

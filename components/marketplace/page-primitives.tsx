@@ -7,8 +7,8 @@ import { Button } from "@/components/ui/button";
 export function PageIntro({ eyebrow, title, children }: { eyebrow: string; title: string; children: ReactNode }) {
   return (
     <header className="max-w-3xl">
-      <p className="text-[11px] font-medium uppercase tracking-[0.2em] text-zinc-500">{eyebrow}</p>
-      <h1 className="mt-2 text-3xl font-semibold tracking-tight text-white sm:text-4xl">{title}</h1>
+      <p className="font-eyebrow font-eyebrow-dot text-zinc-500">{eyebrow}</p>
+      <h1 className="mt-2 text-3xl font-light tracking-tight text-white sm:text-4xl">{title}</h1>
       <div className="mt-4 text-sm leading-relaxed text-zinc-400 sm:text-base">{children}</div>
     </header>
   );

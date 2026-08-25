@@ -115,6 +115,37 @@ body {
   font-feature-settings: "tnum" 1, "zero" 1;
 }
 
+/* Section and field labels. Space Mono ships only 400 and 700, so the weight is
+   pinned here rather than left to a utility. Colour stays with the call site. */
+.font-eyebrow {
+  font-family: var(--font-space-mono), monospace;
+  font-size: 0.625rem;
+  font-weight: 400;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+/* Opt-in marker for section eyebrows. Drawn, not a "●" character, so screen
+   readers do not announce it. */
+.font-eyebrow-dot::before {
+  display: inline-block;
+  width: 0.25em;
+  height: 0.25em;
+  margin-right: 0.6em;
+  border-radius: 50%;
+  background: currentColor;
+  vertical-align: middle;
+  content: "";
+}
+
+/* Addresses, transaction hashes and provenance identifiers: fixed width so the
+   characters can be compared one by one. */
+.font-hash {
+  font-family: var(--font-space-mono), monospace;
+  font-variant-numeric: tabular-nums slashed-zero;
+  overflow-wrap: anywhere;
+}
+
 .marketplace-surface {
   background: #121214;
   border: 1px solid rgb(255 255 255 / 9%);

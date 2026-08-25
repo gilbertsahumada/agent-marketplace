@@ -73,7 +73,7 @@ export function WalletConnectButton({ variant = "full" }: { variant?: "compact" 
   // Render the disconnected shape until mount so the server and client markup match.
   if (!mounted) {
     return (
-      <Button className="font-stat" disabled variant="outline">
+      <Button disabled variant="outline">
         <Wallet aria-hidden="true" />
         {variant === "full" && "Connect wallet"}
       </Button>
@@ -88,7 +88,7 @@ export function WalletConnectButton({ variant = "full" }: { variant?: "compact" 
         <Button
           aria-expanded={isOpen}
           aria-haspopup="menu"
-          className={cn("font-stat", !onSupportedChain && "border-amber-400/40 text-amber-200")}
+          className={cn(!onSupportedChain && "border-amber-400/40 text-amber-200")}
           onClick={() => setIsOpen(!isOpen)}
           variant="outline"
         >
@@ -97,7 +97,11 @@ export function WalletConnectButton({ variant = "full" }: { variant?: "compact" 
           ) : (
             <TriangleAlert aria-hidden="true" />
           )}
-          {onSupportedChain ? shortAddress(address) : "Wrong network"}
+          {onSupportedChain ? (
+            <span className="font-hash">{shortAddress(address)}</span>
+          ) : (
+            "Wrong network"
+          )}
         </Button>
 
         {isOpen && (
@@ -109,16 +113,16 @@ export function WalletConnectButton({ variant = "full" }: { variant?: "compact" 
             )}
 
             <div className="px-2 py-2">
-              <p className="text-[10px] uppercase tracking-[0.16em] text-zinc-400">Address</p>
+              <p className="font-eyebrow text-zinc-400">Address</p>
               <div className="mt-1 flex items-center justify-between gap-2">
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <span className="font-stat cursor-help text-sm text-zinc-100">
+                    <span className="font-hash cursor-help text-sm text-zinc-100">
                       {shortAddress(address)}
                     </span>
                   </TooltipTrigger>
                   <TooltipContent className="max-w-[280px] break-all" side="left">
-                    <span className="font-stat text-xs">{address}</span>
+                    <span className="font-hash text-xs">{address}</span>
                   </TooltipContent>
                 </Tooltip>
                 <Button
@@ -140,11 +144,11 @@ export function WalletConnectButton({ variant = "full" }: { variant?: "compact" 
 
             <div className="my-1 border-t border-white/10" />
 
-            <p className="px-2 py-1 text-[10px] uppercase tracking-[0.16em] text-zinc-400">Network</p>
+            <p className="font-eyebrow px-2 py-1 text-zinc-400">Network</p>
             {SUPPORTED_CHAINS.map((chain) => (
               <button
                 className={cn(
-                  "font-stat flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm transition-colors",
+                  "flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm transition-colors",
                   chain.id === chainId
                     ? "text-zinc-400"
                     : "text-zinc-200 hover:bg-white/5 hover:text-white",
@@ -189,7 +193,6 @@ export function WalletConnectButton({ variant = "full" }: { variant?: "compact" 
       <Button
         aria-expanded={isOpen}
         aria-haspopup="menu"
-        className="font-stat"
         onClick={() => setIsOpen(!isOpen)}
         variant="outline"
       >
@@ -199,13 +202,13 @@ export function WalletConnectButton({ variant = "full" }: { variant?: "compact" 
 
       {isOpen && (
         <div className={panelClass}>
-          <p className="px-2 py-1.5 text-[10px] uppercase tracking-[0.16em] text-zinc-400">
+          <p className="font-eyebrow px-2 py-1.5 text-zinc-400">
             Select wallet
           </p>
           {wallet.available ? (
             connectors.map((connector) => (
               <button
-                className="font-stat flex w-full items-center rounded-lg px-2 py-1.5 text-left text-sm text-zinc-200 transition-colors hover:bg-white/5 hover:text-white"
+                className="flex w-full items-center rounded-lg px-2 py-1.5 text-left text-sm text-zinc-200 transition-colors hover:bg-white/5 hover:text-white"
                 key={connector.id}
                 onClick={() => {
                   connect({ connector });
@@ -218,7 +221,7 @@ export function WalletConnectButton({ variant = "full" }: { variant?: "compact" 
             ))
           ) : (
             <a
-              className="font-stat flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-sm text-zinc-400 transition-colors hover:bg-white/5 hover:text-white"
+              className="flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-sm text-zinc-400 transition-colors hover:bg-white/5 hover:text-white"
               href="https://metamask.io/download/"
               rel="noopener noreferrer"
               target="_blank"

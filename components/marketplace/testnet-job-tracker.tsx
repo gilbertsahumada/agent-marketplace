@@ -37,7 +37,7 @@ function Fact({ label, value }: { label: string; value: string }) {
   return (
     <div className="border-b border-white/10 py-3 last:border-0 sm:grid sm:grid-cols-[9rem_1fr] sm:gap-4">
       <dt className="text-xs text-muted-foreground">{label}</dt>
-      <dd className="font-stat mt-1 break-all font-mono text-xs text-zinc-200 sm:mt-0">{value}</dd>
+      <dd className="font-hash mt-1 text-xs text-zinc-200 sm:mt-0">{value}</dd>
     </div>
   );
 }
@@ -134,14 +134,14 @@ export function TestnetJobTracker({ tracking }: { tracking: Erc8183TestnetJobTra
             {snapshotTransactions.map(([phase, transaction]) => (
               <a className="rounded-lg border border-white/10 p-3 transition-colors hover:bg-white/[0.03] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" href={transaction.explorerUrl} key={phase} rel="noreferrer" target="_blank">
                 <span className="flex items-center justify-between gap-3 text-sm text-zinc-200"><span className="flex items-center gap-2"><CheckCircle2 aria-hidden="true" className="size-4 text-emerald-400" />{TRANSACTION_LABELS[phase as keyof typeof TRANSACTION_LABELS]}</span><ArrowUpRight aria-hidden="true" className="size-4" /></span>
-                <span className="font-stat mt-2 block break-all font-mono text-[11px] text-zinc-400">{transaction.hash}</span>
+                <span className="font-hash mt-2 block text-[11px] text-zinc-400">{transaction.hash}</span>
                 <span className="mt-2 block text-[11px] text-zinc-500">Block {transaction.blockNumber} · {transaction.timestamp} · onchain</span>
               </a>
             ))}
             {journalTransactions.map(([phase, hash]) => hash && (
               <a className="rounded-lg border border-white/10 p-3 transition-colors hover:bg-white/[0.03] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" href={`${ERC8183_TESTNET.explorerUrl}/tx/${hash}`} key={phase} rel="noreferrer" target="_blank">
                 <span className="flex items-center justify-between gap-3 text-sm text-zinc-200"><span>{TRANSACTION_LABELS[phase as keyof typeof TRANSACTION_LABELS]}</span><ArrowUpRight aria-hidden="true" className="size-4" /></span>
-                <span className="font-stat mt-2 block break-all font-mono text-[11px] text-zinc-400">{hash}</span>
+                <span className="font-hash mt-2 block text-[11px] text-zinc-400">{hash}</span>
               </a>
             ))}
           </CardContent>

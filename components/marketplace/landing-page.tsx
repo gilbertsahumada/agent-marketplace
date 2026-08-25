@@ -53,7 +53,7 @@ export function MarketplaceLanding({
               <img alt="" className="size-3.5" src="/logo/SVG/BNB Chain_Symbol_Yellow.svg" />
               BNB Smart Chain · Catalogue coverage is partial
             </Badge>
-            <h1 className="mt-6 max-w-3xl text-4xl font-semibold leading-[1.05] tracking-[-0.04em] text-white sm:text-5xl lg:text-6xl">
+            <h1 className="mt-6 max-w-3xl text-4xl font-light leading-[1.05] tracking-[-0.04em] text-white sm:text-5xl lg:text-6xl">
               Hire an AI agent with evidence, not promises.
             </h1>
             <p className="mt-6 max-w-2xl text-base leading-relaxed text-zinc-400 sm:text-lg">
@@ -107,8 +107,8 @@ export function MarketplaceLanding({
 
       <section aria-labelledby="categories-heading" className="mx-auto max-w-7xl px-4 py-14 sm:px-6 sm:py-16 lg:px-8">
         <div className="max-w-2xl">
-          <p className="text-[11px] font-medium uppercase tracking-[0.2em] text-zinc-400">Find by outcome</p>
-          <h2 id="categories-heading" className="mt-2 text-3xl font-semibold tracking-tight text-white">
+          <p className="font-eyebrow font-eyebrow-dot text-zinc-400">Find by outcome</p>
+          <h2 id="categories-heading" className="mt-2 text-3xl font-light tracking-tight text-white">
             Four categories. Equal visibility.
           </h2>
           <p className="mt-3 text-sm leading-relaxed text-zinc-400 sm:text-base">
@@ -126,8 +126,8 @@ export function MarketplaceLanding({
         <div className="mx-auto max-w-7xl px-4 py-14 sm:px-6 sm:py-16 lg:px-8">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
             <div className="max-w-2xl">
-              <p className="text-[11px] font-medium uppercase tracking-[0.2em] text-zinc-400">Current BSC snapshot</p>
-              <h2 id="candidates-heading" className="mt-2 text-3xl font-semibold tracking-tight text-white">
+              <p className="font-eyebrow font-eyebrow-dot text-zinc-400">Current BSC snapshot</p>
+              <h2 id="candidates-heading" className="mt-2 text-3xl font-light tracking-tight text-white">
                 Candidates with honest activation states.
               </h2>
               <p className="mt-3 text-sm leading-relaxed text-zinc-400 sm:text-base">
@@ -171,8 +171,8 @@ export function MarketplaceLanding({
       <section aria-labelledby="journey-heading" className="mx-auto max-w-7xl px-4 py-14 sm:px-6 sm:py-16 lg:px-8">
         <div className="grid gap-8 lg:grid-cols-[0.72fr_1.28fr] lg:items-start">
           <div>
-            <p className="text-[11px] font-medium uppercase tracking-[0.2em] text-zinc-400">The marketplace journey</p>
-            <h2 id="journey-heading" className="mt-2 text-3xl font-semibold tracking-tight text-white">
+            <p className="font-eyebrow font-eyebrow-dot text-zinc-400">The marketplace journey</p>
+            <h2 id="journey-heading" className="mt-2 text-3xl font-light tracking-tight text-white">
               Technical proof, progressively disclosed.
             </h2>
             <p className="mt-3 text-sm leading-relaxed text-zinc-400 sm:text-base">
