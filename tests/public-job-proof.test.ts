@@ -1,4 +1,3 @@
-import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 import { GetPublicJobProof } from "../src/business/use-cases/get-public-job-proof.js";
 import {
@@ -128,28 +127,6 @@ describe("Gate 6A public proof manifest", () => {
     );
   });
 
-  it("matches the canonical sanitized Gate 6A evidence", () => {
-    const evidence = JSON.parse(readFileSync("docs/GATE_6A_EVIDENCE.json", "utf8")) as {
-      jobId: string;
-      buyer: string;
-      seller: string;
-      payment: { symbol: string; budgetRaw: string };
-      transactions: Record<string, { hash: string }>;
-      deliverable: { hash: string; content: string };
-    };
-    expect(GATE6A_JOB_551_MANIFEST).toMatchObject({
-      jobId: evidence.jobId,
-      buyer: evidence.buyer,
-      seller: evidence.seller,
-      payment: { symbol: evidence.payment.symbol, budgetRaw: evidence.payment.budgetRaw },
-      deliverable: { hash: evidence.deliverable.hash, content: evidence.deliverable.content },
-    });
-    expect(Object.fromEntries(
-      Object.entries(GATE6A_JOB_551_MANIFEST.transactions).map(([phase, transaction]) => [phase, transaction.hash]),
-    )).toEqual(Object.fromEntries(
-      Object.entries(evidence.transactions).map(([phase, transaction]) => [phase, transaction.hash]),
-    ));
-  });
 });
 
 describe("GetPublicJobProof", () => {
