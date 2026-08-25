@@ -23,6 +23,7 @@ import type { PublicJobProof } from "../src/business/entities/public-job-proof.j
 import { GATE1_JOB_514_MANIFEST } from "../src/data/proofs/gate1-job-514.js";
 import { GATE6A_JOB_551_MANIFEST } from "../src/data/proofs/gate6a-job-551.js";
 import { Erc8183TestnetDemo } from "../components/spikes/erc8183-browser-spike.js";
+import { Providers } from "../app/providers.js";
 import { VerificationDrift } from "../components/marketplace/verification-drift.js";
 
 vi.mock("next/navigation", () => ({
@@ -280,8 +281,10 @@ describe("marketplace presentation rules", () => {
 
   it("supports keyboard focus through the shell and arrow navigation through tabs", async () => {
     const user = userEvent.setup();
-    const { unmount } = render(createElement(MarketplaceShell, {
-      children: createElement("main", { id: "main-content" }, "Content"),
+    const { unmount } = render(createElement(Providers, {
+      children: createElement(MarketplaceShell, {
+        children: createElement("main", { id: "main-content" }, "Content"),
+      }),
     }));
     await user.tab();
     expect(screen.getByRole("link", { name: "Skip to content" })).toHaveFocus();
@@ -314,12 +317,12 @@ describe("marketplace presentation rules", () => {
   });
 
   it("labels the browser spike as Testnet infrastructure and requires a quote before wallet access", async () => {
-    render(createElement(Erc8183TestnetDemo));
+    render(createElement(Providers, { children: createElement(Erc8183TestnetDemo) }));
     expect(screen.getByRole("heading", { name: /hire with your wallet/i })).toBeInTheDocument();
     expect(screen.getByText("Testing infrastructure — not a marketplace agent")).toBeInTheDocument();
     expect(screen.getAllByText(/Agent 1866/)).toHaveLength(2);
     expect(screen.queryByText(/Agent 1815/)).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /connect injected wallet/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /connect a wallet in the header/i })).toBeDisabled();
     expect(screen.queryByText(/mainnet/i)).not.toBeInTheDocument();
     const result = await axe.run(document.body);
     expect(result.violations).toEqual([]);

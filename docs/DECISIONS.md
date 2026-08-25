@@ -89,6 +89,35 @@ pending. A quorum-rejected job must not be promoted as the primary proof, and a
 submission on 2026-09-08 should become settleable by 2026-09-15, inside the
 2026-09-09 through 2026-09-23 evaluation window.
 
+## Wallet connection moves to wagmi — 2026-08-25
+
+The browser wallet connection is now owned by wagmi and surfaced by a connect
+button in the site header, modelled on the trust8004 button.
+
+Under the scope change rule this **replaces** the per-page connection in the
+Gate 6A spike component. `components/spikes/erc8183-browser-spike.tsx` no longer
+reads `window.ethereum`, no longer calls `connectInjectedWallet` itself, and no
+longer keeps its own `account` state; it reads the account from `useAccount()`
+and obtains the EIP-1193 provider from the active connector. The defect this
+closes is that nothing observed `accountsChanged` or `chainChanged`, so an
+account or network switch made inside the wallet was never noticed.
+
+Deliberately unchanged:
+
+- `executeBrowserHire` and the five ERC-8183 writes are untouched. wagmi supplies
+  the same injected provider the adapter already expected, so the path carrying
+  published onchain evidence keeps its simulate, receipt and buyer checks,
+  including the `connectInjectedWallet` re-verification at the top of the run.
+- No WalletConnect. `injected()` is the only connector, consistent with
+  `docs/GATE_6A_BROWSER_WALLET_SPIKE.md`, which records that this spike does not
+  introduce WalletConnect. `next.config.ts` stubs the optional connector peers
+  the `wagmi/connectors` barrel pulls in so the build stays warning-free.
+- Chains remain BSC Mainnet (56) and BSC Testnet (97) only, listed once in
+  `lib/bsc-chains.ts`. An unsupported chain is reported and offered a switch; it
+  is never switched automatically.
+- Mainnet write gating is unaffected; it stays server-side and no
+  `ERC8183_MAINNET_*` flag is exposed to the client.
+
 ## Scope change rule
 
 Any new MVP feature must identify either:
