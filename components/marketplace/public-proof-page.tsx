@@ -60,7 +60,7 @@ export function PublicProofPage({ proof }: { proof: PublicJobProof }) {
             {[
               ["Chain", `${snapshot.network} · ${snapshot.chainId}`], ["Seller agent", snapshot.sellerAgentId], ["Buyer", snapshot.buyer], ["Seller", snapshot.seller],
               ["Payment token", `${snapshot.payment.symbol} · ${snapshot.payment.token}`], ["Budget (raw)", snapshot.payment.budgetRaw], ["Deadline", snapshot.lifecycle.deadline.iso], ["Submitted", snapshot.lifecycle.submittedAt.iso],
-            ].map(([label, value]) => <div className="grid gap-1 border-b border-white/10 pb-3 sm:grid-cols-[9rem_1fr]" key={label}><dt className="text-zinc-500">{label}</dt><dd className="font-stat break-all text-xs text-zinc-200">{value}</dd></div>)}
+            ].map(([label, value]) => <div className="grid gap-1 border-b border-white/10 pb-3 sm:grid-cols-[9rem_1fr]" key={label}><dt className="text-zinc-500">{label}</dt><dd className="font-hash text-xs text-zinc-200">{value}</dd></div>)}
           </dl></CardContent>
         </Card>
         <Card className="marketplace-surface">
@@ -72,7 +72,7 @@ export function PublicProofPage({ proof }: { proof: PublicJobProof }) {
                   <span className="flex items-center gap-2"><CheckCircle2 className="size-4 text-emerald-400" />{phase}</span>
                   <ArrowUpRight className="size-4" />
                 </span>
-                <span className="font-stat mt-3 block break-all text-[11px] text-zinc-300">{transaction.hash}</span>
+                <span className="font-hash mt-3 block text-[11px] text-zinc-300">{transaction.hash}</span>
                 <span className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-zinc-500">
                   <span>Block {transaction.blockNumber}</span>
                   <span>{transaction.timestamp}</span>

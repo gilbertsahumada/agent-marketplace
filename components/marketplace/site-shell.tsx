@@ -18,7 +18,7 @@ function Brand() {
       </span>
       <span className="leading-none">
         <span className="block text-sm font-semibold tracking-tight text-white">BNB Agent Studio</span>
-        <span className="mt-1 block text-[10px] uppercase tracking-[0.16em] text-zinc-400">
+        <span className="font-eyebrow mt-1 block text-zinc-400">
           Evidence-first marketplace
         </span>
       </span>
