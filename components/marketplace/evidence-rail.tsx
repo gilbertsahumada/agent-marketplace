@@ -123,7 +123,7 @@ export function EvidenceRail({
                 )}
                 {!compact && (step.source || step.timestamp) && (
                   <p className="font-stat mt-2 text-[10px] text-zinc-400">
-                    {step.source}
+                    {step.source && <span className="font-hash">{step.source}</span>}
                     {step.source && step.timestamp && " · "}
                     {step.timestamp && <StepTimestamp iso={step.timestamp} />}
                   </p>
