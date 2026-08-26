@@ -3,7 +3,7 @@ import { getAddress } from "viem";
 import { describe, expect, it, vi } from "vitest";
 import { buildGridPlan, gridTaskDescription, parseGridTaskDescription } from "../src/business/policies/grid-plan-policy.ts";
 import { ERC1967_IMPLEMENTATION_SLOT, ERC8183_MAINNET } from "../src/mainnet/contracts.ts";
-import { MainnetGridSellerRepository } from "../src/mainnet/grid-seller-repository.ts";
+import { MainnetGridSellerRepository, mainnetGridNetwork } from "../src/mainnet/grid-seller-repository.ts";
 import { mainnetImplementationPinsMatch } from "../src/mainnet/implementation-pins.ts";
 import { areMainnetWritesEnabled } from "../src/mainnet/mainnet-write-gate.ts";
 
@@ -81,6 +81,17 @@ function terminalDeliverable(jobId: number, jobDescription: string) {
 }
 
 describe("Mainnet Grid seller security", () => {
+  it("uses the fixed RPC that can verify the bounded JobFunded quote window", () => {
+    const network = mainnetGridNetwork();
+    expect(network).toMatchObject({
+      chainId: 56,
+      rpcUrl: "https://bsc-rpc.publicnode.com",
+      commerceContract: ERC8183_MAINNET.commerce.toLowerCase(),
+      routerContract: ERC8183_MAINNET.router.toLowerCase(),
+      policyContract: ERC8183_MAINNET.policy.toLowerCase(),
+    });
+  });
+
   it("keeps Mainnet writes disabled by default and requires the exact explicit flag", () => {
     expect(areMainnetWritesEnabled({})).toBe(false);
     expect(areMainnetWritesEnabled({ ERC8183_MAINNET_SELLER_ENABLED: "true" })).toBe(false);
