@@ -3,16 +3,16 @@ import type {
   PublicJobProofLiveEvidenceRecord,
   PublicJobProofRecord,
   PublicJobProofRepository,
-} from "./public-job-proof-record.js";
+} from "./public-job-proof-record.ts";
 import {
   createGate1ProofReader,
   sanitizeGate1ProofError,
   verifyGate1Proof,
-} from "../../readiness/gate1.js";
-import type { Gate1Proof } from "../../readiness/types.js";
-import { GATE1_JOB_514_MANIFEST } from "./gate1-job-514.js";
-import { GATE6A_JOB_551_MANIFEST } from "./gate6a-job-551.js";
-import type { Erc8183JobFacts } from "../../business/entities/erc8183-browser-spike.js";
+} from "../../readiness/gate1.ts";
+import type { Gate1Proof } from "../../readiness/types.ts";
+import { GATE1_JOB_514_MANIFEST } from "./gate1-job-514.ts";
+import { GATE6A_JOB_551_MANIFEST } from "./gate6a-job-551.ts";
+import type { Erc8183JobFacts } from "../../business/entities/erc8183-browser-spike.ts";
 
 export type Gate1LiveProofLoader = () => Promise<Gate1Proof>;
 
