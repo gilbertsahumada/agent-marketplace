@@ -63,13 +63,16 @@ registration transaction is
 `0x166cdb89f4fb2236d760fcd372db7980d51d473a16f3ab51118eeb024eb61e2a`.
 
 Submission hardening now includes a separate, disabled-by-default BSC Mainnet
-path for exactly one marketplace-operated deterministic Grid planner. It is
+path for exactly one marketplace-operated deterministic Grid planner, registered
+as Agent `303779`. It is
 not an official BNB reference agent and it never executes trades or takes
 custody. Its server computes reproducible levels, allocations and rebalance
-triggers; the browser retains custody for every buyer write. This path remains
-NO-GO until a fresh read-only report verifies the fixed official contracts,
+triggers; the browser retains custody for every buyer write. The contract
+go/no-go and seller qualification now pass: the fixed official contracts,
 active proxy implementations, `U` token, policy, spend ceiling, dedicated
-seller public address and production origin.
+seller public address, production origin, direct identity and signed quote all
+match. Buyer writes remain disabled until the intended injected wallet has
+enough Mainnet BNB for gas and the fixed `0.01 U` budget.
 The origin check also fetches the Grid Agent Card through the shared
 DNS-pinned, redirect-rejecting, 64 KiB transport and verifies both required
 seller skills before a report can become `GO`.
@@ -243,10 +246,10 @@ The report is written to
 `.marketplace/readiness/bsc-marketplace.json`. `frontendReady=true` means the
 marketplace can represent the available evidence honestly and the buyer proof
 still validates onchain; it does not mean all categories have a live seller.
-Current third-party activation coverage is empty. Grid remains explicitly
-empty until a marketplace-operated seller is registered and qualified; setting
-`ERC8183_MAINNET_SELLER_AGENT_ID` deliberately adds only that ID to the Grid
-readiness target and never classifies the global catalogue. A trust8004 outage or invalid schema fails visibly and does
+Current third-party activation coverage is empty. The deliberately configured
+marketplace-operated Agent `303779` now provides qualified Grid coverage;
+setting `ERC8183_MAINNET_SELLER_AGENT_ID` adds only that ID to the Grid readiness
+target and never classifies the global catalogue. A trust8004 outage or invalid schema fails visibly and does
 not replace the previous atomic local report with stale or invented evidence.
 
 `ERC8183_MAINNET_SELLER_ENABLED` exposes only the Agent Card and signed-quote
@@ -266,6 +269,41 @@ npm run dev
 server-side pagination. This mode performs one list request per uncached page;
 it does not download the full catalogue or fetch a profile for every card.
 
+## Evidence Passport and agent validation
+
+Every opened BSC profile now has a live Evidence Passport at
+`/agents/{agentId}/passport` and a read-only JSON representation at
+`/api/marketplace/agents/{agentId}/passport`. The Passport is not an NFT,
+financial endorsement, or new reputation protocol. It separates direct
+identity, endpoint observations, signed-quote qualification, and hash-verified
+Mainnet job history, with an explicit sample size and deterministic evidence
+fingerprint.
+
+Builders can run a bounded read-only check at `/validate`. The browser sends
+only one numeric BSC Agent ID to `POST /api/marketplace/validate`; trust8004 is
+the sole catalogue source and declared endpoints are resolved server-side. One
+run checks at most one MCP endpoint and two seller endpoints using the existing
+safe transport. It never assigns a marketplace category, promotes an agent, or
+enables Hire automatically. A verified ad-hoc quote remains a candidate for
+manual review until it appears in a current reviewed release snapshot.
+
+The same public evidence is available through a thin, BSC-only CLI. It calls
+the deployed marketplace APIs and does not contain a second trust8004, RPC, or
+qualification implementation:
+
+```bash
+npm run marketplace -- agent inspect 56:45650
+npm run marketplace -- agent validate 56:303779
+npm run marketplace -- seller qualify 56:303779
+npm run marketplace -- job proof 56:<mainnet-job-id>
+```
+
+Set `MARKETPLACE_ORIGIN` or pass `--origin https://...` to target another
+deployment. Plain HTTP is accepted only for `localhost` or `127.0.0.1`. The
+`job proof` command returns only a captured, sanitized Mainnet proof whose
+result hash was verified; it does not treat live tracking state as durable
+proof.
+
 ## Submission demo runbook
 
 The public deployment is
@@ -282,10 +320,13 @@ step:
    without an invented universal winner.
 4. **Browse:** switch between [curated candidates](https://bnb-agent-marketplace-ruby.vercel.app/agents?view=marketplace)
    and the [paginated registered snapshot](https://bnb-agent-marketplace-ruby.vercel.app/agents?view=all&page=1&limit=24).
-   Registered records remain `Not evaluated`; Grid remains explicitly empty.
-5. **Hire:** open the [controlled Testnet demo](https://bnb-agent-marketplace-ruby.vercel.app/demo/erc8183)
-   and request a live signed quote. This first action performs no transaction
-   and requests no wallet access.
+   Registered records remain `Not evaluated`; Grid contains the explicitly
+   labelled marketplace-operated seller rather than an inferred third party.
+5. **Hire:** until the Mainnet buyer is funded and the server-side write gate is
+   enabled, open the [controlled Testnet demo](https://bnb-agent-marketplace-ruby.vercel.app/demo/erc8183)
+   and request a live signed quote. The Mainnet Grid path uses the same
+   non-custodial browser flow and becomes the primary route only after its real
+   job is proven. Requesting a quote performs no transaction or wallet access.
 6. **Track and result:** inspect [Job 551](https://bnb-agent-marketplace-ruby.vercel.app/jobs/testnet/551),
    its five browser-signed buyer transactions, seller submission, current
    onchain state, and hash-verified public result.
@@ -297,8 +338,9 @@ Every contract, token, amount, allowance, deadline, and transaction purpose is
 shown before signing. Never use a Mainnet wallet or Mainnet funds.
 
 The controlled Agent `1866` is testing infrastructure, not a marketplace agent
-or official BNB reference agent. The four current Mainnet candidates remain
-MCP-only, Grid has no verified seller, and catalogue coverage remains partial.
+or official BNB reference agent. The four third-party Mainnet candidates remain
+MCP-only. Grid Agent `303779` is a qualified marketplace-operated seller, not an
+official BNB reference agent, and catalogue coverage remains partial.
 Those limitations are part of the evidence model rather than hidden demo data.
 If a live catalogue or RPC dependency is unavailable, the application shows a
 retryable diagnostic state instead of inventing records. The landing remains
