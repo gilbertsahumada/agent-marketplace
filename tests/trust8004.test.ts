@@ -4,13 +4,13 @@ import {
   buildBscCandidateInventory,
   KNOWN_HEYANON_AGENT_IDS,
   MAX_EXPLICIT_QUALIFICATION_AGENT_IDS,
-} from "../src/trust8004/inventory.js";
-import { Trust8004Provider } from "../src/trust8004/provider.js";
+} from "../src/trust8004/inventory.ts";
+import { Trust8004Provider } from "../src/trust8004/provider.ts";
 import {
   parseAgentListResponse,
   parseServices,
   Trust8004SchemaError,
-} from "../src/trust8004/schemas.js";
+} from "../src/trust8004/schemas.ts";
 
 async function fixture(name: string): Promise<unknown> {
   return JSON.parse(await readFile(new URL(`./fixtures/trust8004/${name}`, import.meta.url), "utf8")) as unknown;
