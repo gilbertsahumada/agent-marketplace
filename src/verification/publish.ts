@@ -1,5 +1,5 @@
-import type { PublicVerificationSnapshot } from "../data/verification/public-verification-snapshot.js";
-import type { BscVerificationReport } from "./types.js";
+import type { PublicVerificationSnapshot } from "../data/verification/public-verification-snapshot.ts";
+import type { BscVerificationReport } from "./types.ts";
 
 const DEFAULT_FRESHNESS_HOURS = 72;
 const MAX_FUTURE_CLOCK_SKEW_MS = 5 * 60 * 1_000;
