@@ -100,7 +100,7 @@ npm run dev
 
 The origin and any optional bearer credential are server-only. The browser
 never receives a private key, wallet password, mnemonic, or arbitrary seller
-URL. See [Gate 6A Browser Wallet Spike](docs/GATE_6A_BROWSER_WALLET_SPIKE.md).
+URL.
 
 Gate 1 can use the included controlled seller fixture instead of waiting for a
 third-party seller. It is test infrastructure derived from the official BNB
@@ -341,15 +341,7 @@ The listing must show `Hidden`, `Sensitive`, and `Production` only. Do not add a
 Preview or Development copy. The key-loading module is marked `server-only`, and
 the build/test boundary fails if any client import graph can reach the variable.
 
-See:
-
-- [ERC-8183 Gate 1 interaction diagram](diagrams/erc8183-gate1-flow.html)
-- [Gate 5 delivery specification](docs/GATE_5_FRONTEND_MVP.md)
-- [Gate 6A browser-wallet spike](docs/GATE_6A_BROWSER_WALLET_SPIKE.md)
-- [MVP scope](docs/MVP_SCOPE.md)
-- [Architecture](docs/ARCHITECTURE.md)
-- [Reuse and provenance](docs/REUSE_AND_PROVENANCE.md)
-- [Decision log](docs/DECISIONS.md)
+See the [ERC-8183 Gate 1 interaction diagram](diagrams/erc8183-gate1-flow.html).
 
 ## License
 
