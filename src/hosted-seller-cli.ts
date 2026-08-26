@@ -2,10 +2,10 @@ import { pathToFileURL } from "node:url";
 import { AgentEndpoint, ERC8004Agent } from "@bnbagent/sdk/erc8004";
 import { EVMWalletProvider } from "@bnbagent/sdk/wallets";
 import { isAddressEqual } from "viem";
-import { fetchAgentCard } from "./a2a.js";
-import { ERC8183_TESTNET } from "./data/erc8183/contracts.js";
-import { loadHostedSellerConfig } from "./data/erc8183/hosted-seller-config.js";
-import { GATE1_NETWORK } from "./network.js";
+import { fetchAgentCard } from "./a2a.ts";
+import { ERC8183_TESTNET } from "./data/erc8183/contracts.ts";
+import { loadHostedSellerConfig } from "./data/erc8183/hosted-seller-config.ts";
+import { GATE1_NETWORK } from "./network.ts";
 
 export async function registerHostedSeller(): Promise<void> {
   const config = loadHostedSellerConfig();
