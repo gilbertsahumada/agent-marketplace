@@ -12,24 +12,24 @@ import {
 } from "@bnbagent/sdk/erc8183";
 import { resolveNetwork } from "@bnbagent/sdk";
 import { formatUnits, getAddress, isAddressEqual, type Address } from "viem";
-import { fetchAgentCard, notifyFunded, sendSkill, type QuoteEnvelope } from "../a2a.js";
+import { fetchAgentCard, notifyFunded, sendSkill, type QuoteEnvelope } from "../a2a.ts";
 import type {
   Erc8183BuyerFacts,
   Erc8183JobFacts,
   Erc8183QuoteEnvelope,
   NormalizedErc8183Quote,
   NotifyFundedResult,
-} from "../business/entities/erc8183-browser-spike.js";
-import { Erc8183SpikeDisabledError, Erc8183SpikeUnavailableError } from "../business/errors/erc8183-spike-errors.js";
-import { GRID_CANONICAL_INPUT, GRID_NEGOTIATION_TERMS, gridTaskDescription } from "../business/policies/grid-plan-policy.js";
-import type { Erc8183SpikeAllowlist } from "../business/policies/erc8183-spike-policy.js";
-import type { Erc8183SpikeRepository } from "../data/repositories/erc8183-spike-repository.js";
-import { resolveIdentity } from "../identity.js";
-import { readBoundedJson } from "../verification/bounded-json.js";
-import { createSafeEndpointTransport } from "../verification/safe-http.js";
-import { loadMainnetBrowserDemoConfig } from "./browser-demo-config.js";
-import { ERC8183_MAINNET } from "./contracts.js";
-import { mainnetImplementationPinsMatch } from "./implementation-pins.js";
+} from "../business/entities/erc8183-browser-spike.ts";
+import { Erc8183SpikeDisabledError, Erc8183SpikeUnavailableError } from "../business/errors/erc8183-spike-errors.ts";
+import { GRID_CANONICAL_INPUT, GRID_NEGOTIATION_TERMS, gridTaskDescription } from "../business/policies/grid-plan-policy.ts";
+import type { Erc8183SpikeAllowlist } from "../business/policies/erc8183-spike-policy.ts";
+import type { Erc8183SpikeRepository } from "../data/repositories/erc8183-spike-repository.ts";
+import { resolveIdentity } from "../identity.ts";
+import { readBoundedJson } from "../verification/bounded-json.ts";
+import { createSafeEndpointTransport } from "../verification/safe-http.ts";
+import { loadMainnetBrowserDemoConfig } from "./browser-demo-config.ts";
+import { ERC8183_MAINNET } from "./contracts.ts";
+import { mainnetImplementationPinsMatch } from "./implementation-pins.ts";
 
 const GRID_TERMS = new TermSpecification({
   deliverables: GRID_NEGOTIATION_TERMS.deliverables,
