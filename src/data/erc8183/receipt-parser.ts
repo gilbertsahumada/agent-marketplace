@@ -2,10 +2,11 @@ import {
   decodeEventLog,
   getAddress,
   isAddressEqual,
+  type Address,
   type TransactionReceipt,
 } from "viem";
 import { Erc8183JobNotReadyError } from "../../business/errors/erc8183-spike-errors.ts";
-import { agenticCommerceBrowserAbi, ERC8183_TESTNET } from "./contracts.ts";
+import { agenticCommerceBrowserAbi } from "./contracts.ts";
 
 export function assertSuccessfulReceipt(receipt: TransactionReceipt): void {
   if (receipt.status !== "success") {
@@ -13,10 +14,10 @@ export function assertSuccessfulReceipt(receipt: TransactionReceipt): void {
   }
 }
 
-export function extractConfirmedJobId(receipt: TransactionReceipt): bigint {
+export function extractConfirmedJobId(receipt: TransactionReceipt, commerce: Address): bigint {
   assertSuccessfulReceipt(receipt);
   for (const log of receipt.logs) {
-    if (!isAddressEqual(getAddress(log.address), ERC8183_TESTNET.commerce)) continue;
+    if (!isAddressEqual(getAddress(log.address), commerce)) continue;
     try {
       const decoded = decodeEventLog({
         abi: agenticCommerceBrowserAbi,
