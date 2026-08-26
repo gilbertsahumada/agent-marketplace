@@ -1,7 +1,7 @@
 import { getAddress, type Address } from "viem";
-import type { Erc8183SpikeRepository } from "../../data/repositories/erc8183-spike-repository.js";
-import { InvalidErc8183SpikeInputError, Erc8183JobNotReadyError } from "../errors/erc8183-spike-errors.js";
-import { assertExpectedJob } from "../policies/erc8183-spike-policy.js";
+import type { Erc8183SpikeRepository } from "../../data/repositories/erc8183-spike-repository.ts";
+import { InvalidErc8183SpikeInputError, Erc8183JobNotReadyError } from "../errors/erc8183-spike-errors.ts";
+import { assertExpectedJob } from "../policies/erc8183-spike-policy.ts";
 
 export class NotifyFundedJob {
   constructor(private readonly repository: Erc8183SpikeRepository) {}
