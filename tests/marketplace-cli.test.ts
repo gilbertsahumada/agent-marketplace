@@ -6,7 +6,7 @@ import { spawnSync } from "node:child_process";
 import {
   executeMarketplaceCli,
   parseMarketplaceCliArguments,
-} from "../src/marketplace-cli.js";
+} from "../src/marketplace-cli.ts";
 
 const ORIGIN = "https://marketplace.example";
 
