@@ -3,7 +3,7 @@ import type {
   CategoryEvidence,
   MarketplaceCategory,
   Trust8004Profile,
-} from "./types.js";
+} from "./types.ts";
 
 interface Rule {
   category: MarketplaceCategory;
