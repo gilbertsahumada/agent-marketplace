@@ -13,16 +13,16 @@ import type {
   HostedSellerDeliverable,
   HostedSellerMessage,
   HostedSellerReply,
-} from "../../business/entities/hosted-erc8183-seller.js";
+} from "../../business/entities/hosted-erc8183-seller.ts";
 import {
   HostedSellerJobNotReadyError,
   HostedSellerUnavailableError,
-} from "../../business/errors/hosted-seller-errors.js";
-import { hostedSellerAgentCard } from "../../business/policies/hosted-seller-policy.js";
-import { GATE1_NETWORK } from "../../network.js";
-import type { HostedErc8183SellerRepository } from "../repositories/hosted-erc8183-seller-repository.js";
-import { ERC8183_TESTNET } from "./contracts.js";
-import { loadHostedSellerConfig } from "./hosted-seller-config.js";
+} from "../../business/errors/hosted-seller-errors.ts";
+import { hostedSellerAgentCard } from "../../business/policies/hosted-seller-policy.ts";
+import { GATE1_NETWORK } from "../../network.ts";
+import type { HostedErc8183SellerRepository } from "../repositories/hosted-erc8183-seller-repository.ts";
+import { ERC8183_TESTNET } from "./contracts.ts";
+import { loadHostedSellerConfig } from "./hosted-seller-config.ts";
 
 interface HostedSellerRuntime {
   client: ERC8183Client;
