@@ -1,14 +1,14 @@
-import { Trust8004MarketplaceAgentRepository } from "./repositories/trust8004-marketplace-agent-repository.js";
-import { Gate1PublicProofRepository } from "./proofs/gate1-public-proof-repository.js";
-import { TrustlessErc8183SpikeRepository } from "./erc8183/trustless-erc8183-spike-repository.js";
-import { MainnetErc8183Repository } from "../mainnet/mainnet-erc8183-repository.js";
-import { StaticPublicVerificationRepository } from "./repositories/public-verification-repository.js";
-import { MainnetBrowserDemoConfigRepository } from "../mainnet/browser-demo-config-repository.js";
-import { StaticMainnetJobProofRepository } from "./proofs/mainnet-job-proof-repository.js";
-import { areMainnetWritesEnabled } from "../mainnet/mainnet-write-gate.js";
-import { Trust8004AgentValidationRepository } from "./repositories/trust8004-agent-validation-repository.js";
-import { RateLimitedAgentValidationRepository } from "./repositories/rate-limited-agent-validation-repository.js";
-import { Trust8004Provider } from "../trust8004/provider.js";
+import { Trust8004MarketplaceAgentRepository } from "./repositories/trust8004-marketplace-agent-repository.ts";
+import { Gate1PublicProofRepository } from "./proofs/gate1-public-proof-repository.ts";
+import { TrustlessErc8183SpikeRepository } from "./erc8183/trustless-erc8183-spike-repository.ts";
+import { MainnetErc8183Repository } from "../mainnet/mainnet-erc8183-repository.ts";
+import { StaticPublicVerificationRepository } from "./repositories/public-verification-repository.ts";
+import { MainnetBrowserDemoConfigRepository } from "../mainnet/browser-demo-config-repository.ts";
+import { StaticMainnetJobProofRepository } from "./proofs/mainnet-job-proof-repository.ts";
+import { areMainnetWritesEnabled } from "../mainnet/mainnet-write-gate.ts";
+import { Trust8004AgentValidationRepository } from "./repositories/trust8004-agent-validation-repository.ts";
+import { RateLimitedAgentValidationRepository } from "./repositories/rate-limited-agent-validation-repository.ts";
+import { Trust8004Provider } from "../trust8004/provider.ts";
 
 const trust8004Provider = new Trust8004Provider();
 export const marketplaceAgentRepository = new Trust8004MarketplaceAgentRepository({ provider: trust8004Provider });
