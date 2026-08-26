@@ -1,8 +1,8 @@
-import type { PublicVerificationSnapshot } from "../entities/public-verification-snapshot.js";
-import type { MarketplaceCategorySummary } from "../entities/marketplace-agent.js";
-import { MARKETPLACE_CATEGORIES } from "../entities/marketplace-agent.js";
-import type { GetPublicVerificationSnapshot } from "./get-public-verification-snapshot.js";
-import { hireableReleaseAgents } from "../policies/release-qualification-policy.js";
+import type { PublicVerificationSnapshot } from "../entities/public-verification-snapshot.ts";
+import type { MarketplaceCategorySummary } from "../entities/marketplace-agent.ts";
+import { MARKETPLACE_CATEGORIES } from "../entities/marketplace-agent.ts";
+import type { GetPublicVerificationSnapshot } from "./get-public-verification-snapshot.ts";
+import { hireableReleaseAgents } from "../policies/release-qualification-policy.ts";
 
 export interface MarketplaceLandingCatalog {
   source: "release_snapshot";
