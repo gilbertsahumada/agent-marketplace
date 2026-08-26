@@ -6,12 +6,12 @@ import {
   KNOWN_HEYANON_AGENT_IDS,
   MAX_EXPLICIT_QUALIFICATION_AGENT_IDS,
   MAX_UINT256_AGENT_ID,
-} from "../trust8004/inventory.js";
-import { Trust8004HttpError, Trust8004Provider } from "../trust8004/provider.js";
-import { createBscIdentityReader } from "../verification/onchain.js";
-import { createGate1ProofReader } from "./gate1.js";
-import { buildBscMarketplaceReadinessReport } from "./report.js";
-import type { BscMarketplaceReadinessReport } from "./types.js";
+} from "../trust8004/inventory.ts";
+import { Trust8004HttpError, Trust8004Provider } from "../trust8004/provider.ts";
+import { createBscIdentityReader } from "../verification/onchain.ts";
+import { createGate1ProofReader } from "./gate1.ts";
+import { buildBscMarketplaceReadinessReport } from "./report.ts";
+import type { BscMarketplaceReadinessReport } from "./types.ts";
 
 export interface ReadinessCliArguments {
   outputPath: string;
