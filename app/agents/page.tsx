@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { CatalogUnavailable } from "@/components/marketplace/catalog-unavailable";
 import { CatalogPage } from "@/components/marketplace/catalog-page";
-import { listMarketplaceAgents } from "@/src/business/composition";
+import { getMainnetJobProof, listMarketplaceAgents } from "@/src/business/composition";
 import { MARKETPLACE_CATEGORIES, type MarketplaceCategory } from "@/src/business/entities/marketplace-agent";
 import { MarketplaceDataUnavailableError } from "@/src/business/errors/marketplace-errors";
 import {
@@ -42,5 +42,6 @@ export default async function AgentsPage({ searchParams }: { searchParams: Promi
     if (!(error instanceof MarketplaceDataUnavailableError)) throw error;
     return <CatalogUnavailable retryHref={`/agents?${retryParams.toString()}`} />;
   }
-  return <CatalogPage data={data} query={{ view, ...optional, ...(category ? { category } : {}) }} />;
+  const mainnetProof = getMainnetJobProof.execute();
+  return <CatalogPage data={data} query={{ view, ...optional, ...(category ? { category } : {}) }} {...(mainnetProof ? { provenAgentId: mainnetProof.agentId } : {})} />;
 }

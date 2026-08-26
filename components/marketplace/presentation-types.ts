@@ -41,6 +41,8 @@ export interface AgentCardViewModel {
   evidence: EvidenceStepViewModel[];
   trustScore?: number;
   verification?: VerificationDriftViewModel | null;
+  passportState: "registered" | "evaluated" | "hireable" | "job_proven" | "attention";
+  passportHref: string;
 }
 
 export interface VerificationDriftViewModel {

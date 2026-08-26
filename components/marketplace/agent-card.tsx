@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowUpRight, Bot, ShieldCheck } from "lucide-react";
+import { ArrowUpRight, Bot, Fingerprint, ShieldCheck } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -29,11 +29,19 @@ const hireabilityLabels = {
   listed_only: "Not evaluated",
 } satisfies Record<AgentCardViewModel["hireability"], string>;
 
+const passportLabels: Record<AgentCardViewModel["passportState"], string> = {
+  registered: "Registered",
+  evaluated: "Evaluated",
+  hireable: "Hireable",
+  job_proven: "Job proven",
+  attention: "Attention",
+};
+
 export function AgentCard({ agent }: { agent: AgentCardViewModel }) {
   const isHireable = agent.hireability === "hireable";
 
   return (
-    <Card className="marketplace-surface h-full gap-4 py-5">
+    <Card className="marketplace-surface marketplace-agent-evidence-card h-full gap-4 py-5" data-passport-state={agent.passportState}>
       <CardHeader className="gap-3 px-5">
         <div className="flex items-start gap-3">
           <div className="flex size-11 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-zinc-900 text-zinc-300">
@@ -57,6 +65,14 @@ export function AgentCard({ agent }: { agent: AgentCardViewModel }) {
             <p className="font-stat mt-1 text-[11px] text-zinc-400">
               BSC · Agent #{agent.agentId}
             </p>
+            <Link
+              className="mt-2 inline-flex items-center gap-1.5 text-xs text-zinc-400 underline decoration-zinc-700 underline-offset-4 hover:text-white"
+              href={agent.passportHref}
+              prefetch={false}
+            >
+              <Fingerprint aria-hidden="true" className="size-3" />
+              Passport · {passportLabels[agent.passportState]}
+            </Link>
             {agent.operator === "marketplace" && <Badge className="mt-2 border-cyan-400/30 bg-cyan-400/10 text-cyan-200" variant="outline">Marketplace-operated · not official BNB reference</Badge>}
           </div>
         </div>

@@ -43,6 +43,20 @@ export default function VerificationMethodologyPage() {
           <p>Evidence older than the recorded threshold is labelled stale. Historical evidence remains visible with its timestamp instead of being silently refreshed or invented.</p>
         </CardContent>
       </Card>
+      <Card className="marketplace-surface mt-4">
+        <CardHeader><CardTitle>Evidence Passport states</CardTitle></CardHeader>
+        <CardContent className="space-y-5 text-sm leading-relaxed text-zinc-400">
+          <p>The Passport summarizes evidence already held by the marketplace. It is not an NFT, a financial guarantee, or a substitute for the underlying timestamped records.</p>
+          <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+            <div><dt className="font-medium text-zinc-100">Registered</dt><dd>Present in the trust8004 BSC snapshot.</dd></div>
+            <div><dt className="font-medium text-zinc-100">Evaluated</dt><dd>Direct identity and a current bounded endpoint observation are available.</dd></div>
+            <div><dt className="font-medium text-zinc-100">Hireable</dt><dd>A reviewed release snapshot contains a current verified ERC-8183 quote.</dd></div>
+            <div><dt className="font-medium text-zinc-100">Job proven</dt><dd>A matching Mainnet job has a hash-verified result.</dd></div>
+            <div><dt className="font-medium text-zinc-100">Attention</dt><dd>Direct identity conflicts, failed reads, or stale evidence override positive states.</dd></div>
+          </dl>
+          <p>The evidence fingerprint is a deterministic hash of the source identity, observations, qualification and matching job proofs. Render time and presentation styling are excluded, so the same evidence produces the same fingerprint.</p>
+        </CardContent>
+      </Card>
     </main>
   );
 }

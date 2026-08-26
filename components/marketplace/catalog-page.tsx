@@ -19,7 +19,7 @@ const categoryLabels: Record<MarketplaceCategory, string> = {
   health_factor_monitoring: "Health Factor Monitoring",
 };
 
-export function CatalogPage({ data, query }: { data: MarketplaceAgentPage; query: { view: "all" | "marketplace"; category?: MarketplaceCategory; q?: string; sort?: MarketplaceSort } }) {
+export function CatalogPage({ data, query, provenAgentId }: { data: MarketplaceAgentPage; query: { view: "all" | "marketplace"; category?: MarketplaceCategory; q?: string; sort?: MarketplaceSort }; provenAgentId?: string }) {
   const allView = query.view === "all";
   const hrefForPage = (page: number) => {
     const params = new URLSearchParams({ view: query.view, page: String(page), limit: allView ? "24" : "12" });
@@ -82,7 +82,7 @@ export function CatalogPage({ data, query }: { data: MarketplaceAgentPage; query
 
       {data.items.length > 0 ? (
         <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {data.items.map((agent) => <AgentCard agent={agentCardViewModel(agent)} key={agent.agentId} />)}
+          {data.items.map((agent) => <AgentCard agent={agentCardViewModel(agent, provenAgentId)} key={agent.agentId} />)}
         </div>
       ) : query.category === "grid_trading" ? (
         <Alert className="mt-6 border-zinc-800 bg-zinc-950">

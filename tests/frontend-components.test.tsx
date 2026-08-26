@@ -25,6 +25,12 @@ import { GATE6A_JOB_551_MANIFEST } from "../src/data/proofs/gate6a-job-551.js";
 import { Erc8183TestnetDemo } from "../components/spikes/erc8183-browser-spike.js";
 import { Providers } from "../app/providers.js";
 import { VerificationDrift } from "../components/marketplace/verification-drift.js";
+import { EvidencePassportCard } from "../components/marketplace/evidence-passport-card.js";
+import type { AgentEvidencePassport } from "../src/business/entities/evidence-passport.js";
+import { ValidateAgentPanel } from "../components/marketplace/validate-agent-panel.js";
+import type { AgentValidationReport } from "../src/business/entities/agent-validation.js";
+import { ComparePage } from "../components/marketplace/compare-page.js";
+import ValidateAgentPage from "../app/validate/page.js";
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
@@ -150,19 +156,158 @@ function publicProof(status: PublicJobProof["live"]["status"]): PublicJobProof {
   };
 }
 
+function evidencePassport(state: AgentEvidencePassport["state"]): AgentEvidencePassport {
+  const verified = { status: "verified" as const, provenance: "onchain" as const, observedAt: "2026-08-26T10:00:00.000Z", detail: "Verified directly." };
+  return {
+    schemaVersion: 1,
+    chainId: 56,
+    agentId: "303779",
+    name: "Marketplace Grid Planner",
+    operator: "marketplace",
+    state,
+    evidenceSnapshotHash: `0x${"ab".repeat(32)}`,
+    generatedAt: "2026-08-26T10:05:00.000Z",
+    attentionReasons: state === "attention" ? ["Verification evidence is stale."] : [],
+    checks: {
+      identity: verified,
+      endpoint: state === "registered" ? { status: "not_probed", provenance: "not_probed", observedAt: null, detail: "Not probed." } : { ...verified, provenance: "observed" },
+      quote: { ...(state === "hireable" || state === "job_proven" ? { ...verified, provenance: "observed" as const } : { status: "missing" as const, provenance: "derived" as const, observedAt: null, detail: "No current quote." }), hireabilityStatus: state === "hireable" || state === "job_proven" ? "quote_verified" : "not_evaluated" },
+      job: state === "job_proven" ? verified : { status: "missing", provenance: "onchain", observedAt: null, detail: "No proven job." },
+    },
+    trackRecord: {
+      provenJobs: state === "job_proven" ? 1 : 0,
+      sampleSize: state === "job_proven" ? 1 : 0,
+      submittedJobs: state === "job_proven" ? 1 : 0,
+      completedJobs: 0,
+      latestJobId: state === "job_proven" ? "700" : null,
+      latestCapturedAt: state === "job_proven" ? "2026-08-26T10:04:00.000Z" : null,
+      latestDurationSeconds: state === "job_proven" ? "42" : null,
+      latestGasCostWei: state === "job_proven" ? "1234" : null,
+    },
+    nextRequirements: state === "registered" ? ["Run a bounded marketplace endpoint evaluation."] : [],
+  };
+}
+
+function validationReport(): AgentValidationReport {
+  return {
+    schemaVersion: 1,
+    chainId: 56,
+    status: "complete",
+    generatedAt: "2026-08-26T10:05:00.000Z",
+    agent: {
+      agentId: "303779",
+      name: "Marketplace Grid Planner",
+      description: "Deterministic grid planning",
+      owner: "0x1111111111111111111111111111111111111111",
+      metadataUri: "ipfs://grid",
+      operator: "marketplace",
+      indexedAt: "2026-08-26T10:00:00.000Z",
+      declaredServices: [{ name: "A2A", hasEndpoint: true, tools: [] }],
+    },
+    classification: { status: "not_assigned", categories: [], note: "Validation does not assign marketplace categories." },
+    promotion: { status: "manual_review_required", note: "Validation evidence never promotes an agent automatically." },
+    qualification: { status: "quote_verified_candidate", canHire: false, note: "Manual review is required before Hire." },
+    evidence: {
+      identity: {
+        status: "match",
+        ownerMatches: true,
+        metadataUriMatches: true,
+        agentWallet: "0x2222222222222222222222222222222222222222",
+        registryAddress: "0x3333333333333333333333333333333333333333",
+        blockNumber: "118077255",
+        observedAt: "2026-08-26T10:00:00.000Z",
+        error: null,
+      },
+      endpointChecks: [{ protocol: "a2a", status: "verified", declaredTools: [], observedTools: [], declaredOnlyTools: [], observedOnlyTools: [], observedAt: "2026-08-26T10:00:00.000Z", error: null }],
+      quote: { status: "verified", provider: "0x2222222222222222222222222222222222222222", currency: "0x4444444444444444444444444444444444444444", priceRaw: "1", expiresAt: "2026-08-26T10:10:00.000Z", observedAt: "2026-08-26T10:00:00.000Z" },
+    },
+    passport: evidencePassport("evaluated"),
+  };
+}
+
 afterEach(() => {
   cleanup();
   localStorage.clear();
+  vi.unstubAllGlobals();
 });
 
 describe("marketplace presentation rules", () => {
+  it("renders the Evidence Passport as evidence, not as an NFT or guarantee", async () => {
+    const { rerender } = render(createElement("main", {}, createElement(EvidencePassportCard, { passport: evidencePassport("registered") })));
+    expect(screen.getByRole("heading", { name: "Agent Evidence Passport" })).toBeInTheDocument();
+    expect(screen.getByText("Registered")).toBeInTheDocument();
+    expect(screen.getByText("Not probed")).toBeInTheDocument();
+    expect(screen.getByText(/live marketplace evidence snapshot/i)).toBeInTheDocument();
+    expect(screen.queryByText(/NFT/i)).not.toBeInTheDocument();
+
+    rerender(createElement("main", {}, createElement(EvidencePassportCard, { passport: evidencePassport("job_proven"), apiHref: "/api/marketplace/agents/303779/passport" })));
+    expect(screen.getByText("Job proven")).toBeInTheDocument();
+    expect(screen.getByText("1 proven job")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Open passport JSON" })).toHaveAttribute("href", "/api/marketplace/agents/303779/passport");
+    expect((await axe.run(document.body)).violations).toEqual([]);
+  });
+
+  it("validates an Agent ID without accepting an endpoint or enabling Hire", async () => {
+    const fetchMock = vi.fn(async () => Response.json(validationReport()));
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+    render(createElement("main", {}, createElement(ValidateAgentPanel)));
+
+    expect(screen.getByRole("textbox", { name: "BSC Agent ID" })).toBeInTheDocument();
+    expect(screen.queryByRole("textbox", { name: /endpoint/i })).not.toBeInTheDocument();
+    await user.type(screen.getByRole("textbox", { name: "BSC Agent ID" }), "303779");
+    await user.click(screen.getByRole("button", { name: "Validate agent" }));
+
+    expect(await screen.findByRole("heading", { name: "Agent Evidence Passport" })).toBeInTheDocument();
+    expect(screen.getByText("Manual review required")).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /hire/i })).not.toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledWith("/api/marketplace/validate", expect.objectContaining({
+      method: "POST",
+      body: JSON.stringify({ agentId: "303779" }),
+    }));
+    expect((await axe.run(document.body)).violations).toEqual([]);
+  });
+
+  it("links each comparison column to its evidence Passport without extra claims", () => {
+    const first = marketplaceAgent();
+    const second = { ...marketplaceAgent(), agentId: "45381", name: "Aave powered by HeyAnon" };
+    render(createElement(ComparePage, {
+      comparison: {
+        agents: [first, second],
+        winner: null,
+        note: "No universal winner.",
+        catalogCoverage: "partial",
+        fetchedAt: "2026-08-26T10:00:00.000Z",
+      },
+      selected: ["45650", "45381"],
+    }));
+
+    expect(screen.getByRole("link", { name: "Passport · Registered for V3 Pools powered by HeyAnon" })).toHaveAttribute("href", "/agents/45650/passport");
+    expect(screen.getByRole("link", { name: "Passport · Registered for Aave powered by HeyAnon" })).toHaveAttribute("href", "/agents/45381/passport");
+  });
+
+  it("explains the builder path from registration to proven work", async () => {
+    render(createElement(ValidateAgentPage));
+    expect(screen.getByRole("heading", { name: "From Agent Studio to marketplace evidence" })).toBeInTheDocument();
+    expect(screen.getAllByRole("listitem").map((item) => item.textContent)).toEqual(expect.arrayContaining([
+      expect.stringContaining("Register"),
+      expect.stringContaining("Validate"),
+      expect.stringContaining("Review"),
+      expect.stringContaining("Hire"),
+      expect.stringContaining("Prove"),
+    ]));
+    expect(screen.getByRole("link", { name: "Read the verification methodology" })).toHaveAttribute("href", "/evidence/verification");
+    expect((await axe.run(document.body)).violations).toEqual([]);
+  });
+
   it("does not render a Hire action for an MCP-only agent", () => {
-    render(createElement(AgentCard, { agent: { agentId: "45650", name: "V3 Pools", description: "Agent", operator: "third_party", categories: ["rebalancing"], href: "/agents/45650", hireability: "mcp_only", evidence } }));
+    render(createElement(AgentCard, { agent: { agentId: "45650", name: "V3 Pools", description: "Agent", operator: "third_party", categories: ["rebalancing"], href: "/agents/45650", hireability: "mcp_only", evidence, passportState: "evaluated", passportHref: "/agents/45650/passport" } }));
     expect(screen.getByText("MCP only")).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /hire agent/i })).not.toBeInTheDocument();
     const profileLink = screen.getByRole("link", { name: /view evidence/i });
     expect(profileLink).toHaveAttribute("href", "/agents/45650");
     expect(profileLink).toHaveAttribute("data-prefetch", "false");
+    expect(screen.getByRole("link", { name: "Passport · Evaluated" })).toHaveAttribute("href", "/agents/45650/passport");
   });
 
   it("renders not-probed evidence neutrally instead of with a green verified icon", () => {
@@ -259,7 +404,8 @@ describe("marketplace presentation rules", () => {
 
   it("renders curated categories as derived evidence with their rationale", async () => {
     const user = userEvent.setup();
-    render(createElement(AgentProfile, { agent: marketplaceAgent() }));
+    render(createElement(AgentProfile, { agent: marketplaceAgent(), passport: evidencePassport("registered") }));
+    expect(screen.getByRole("heading", { name: "Agent Evidence Passport" })).toBeInTheDocument();
     expect(screen.getAllByText("derived")).not.toHaveLength(0);
     expect(screen.getByText(/Curated liquidity-management signal/)).toBeInTheDocument();
     await user.click(screen.getByRole("tab", { name: "Reputation" }));
@@ -323,6 +469,9 @@ describe("marketplace presentation rules", () => {
     expect(screen.getAllByText(/Agent 1866/)).toHaveLength(2);
     expect(screen.queryByText(/Agent 1815/)).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /connect a wallet in the header/i })).toBeDisabled();
+    expect(screen.getByRole("heading", { name: "Guardrails and continuing authority" })).toBeInTheDocument();
+    expect(screen.getByText(/never receives the buyer private key/i)).toBeInTheDocument();
+    expect(screen.getByText(/does not expose a cancellation action after funding/i)).toBeInTheDocument();
     expect(screen.queryByText(/mainnet/i)).not.toBeInTheDocument();
     const result = await axe.run(document.body);
     expect(result.violations).toEqual([]);

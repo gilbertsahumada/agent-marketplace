@@ -41,7 +41,7 @@ export default async function HomePage() {
     { kind: "job", label: "Job proven", status: "verified", provenance: "onchain", detail: `Job #${proof.snapshot.jobId} reached SUBMITTED on BSC Testnet, browser-signed.`, timestamp: proof.snapshot.transactions.submit.timestamp, ...txLink(proof.snapshot.transactions.submit) },
   ];
   const featuredAgents = catalogResult.snapshot.agents.map((agent) =>
-    snapshotAgentCardViewModel(agent, catalogResult.snapshot));
+    snapshotAgentCardViewModel(agent, catalogResult.snapshot, Date.now(), mainnetProof?.agentId));
   return (
     <MarketplaceLanding
       catalogSnapshot={{
