@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { MarketplaceRateLimitError } from "../src/business/errors/marketplace-errors.js";
 
 const executeList = vi.fn();
 const executeGet = vi.fn();
@@ -93,6 +94,43 @@ describe("marketplace API controllers", () => {
     }));
     expect(rejected.status).toBe(400);
     expect(executeValidate).not.toHaveBeenCalled();
+  });
+
+  it("rejects oversized validation bodies before invoking the use case", async () => {
+    const declared = await validationRoute.POST(new Request("http://local/api/marketplace/validate", {
+      method: "POST",
+      headers: { "content-type": "application/json", "content-length": "257" },
+      body: JSON.stringify({ agentId: "303779" }),
+    }));
+    expect(declared.status).toBe(413);
+    expect(executeValidate).not.toHaveBeenCalled();
+
+    const streamed = await validationRoute.POST(new Request("http://local/api/marketplace/validate", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: new ReadableStream({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode(`{"agentId":"${"1".repeat(300)}"}`));
+          controller.close();
+        },
+      }),
+      duplex: "half",
+    } as RequestInit & { duplex: "half" }));
+    expect(streamed.status).toBe(413);
+    expect(executeValidate).not.toHaveBeenCalled();
+  });
+
+  it("returns a diagnostic 429 when validation admission is exhausted", async () => {
+    executeValidate.mockRejectedValueOnce(new MarketplaceRateLimitError(42));
+    const response = await validationRoute.POST(new Request("http://local/api/marketplace/validate", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ agentId: "303779" }),
+    }));
+
+    expect(response.status).toBe(429);
+    expect(response.headers.get("retry-after")).toBe("42");
+    expect(await response.json()).toMatchObject({ error: { code: "MarketplaceRateLimitError" } });
   });
 
   it("delegates a durable Mainnet proof lookup to exactly one use case", async () => {

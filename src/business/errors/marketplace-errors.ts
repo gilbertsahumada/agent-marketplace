@@ -18,3 +18,17 @@ export class MarketplaceDataUnavailableError extends Error {
     this.name = "MarketplaceDataUnavailableError";
   }
 }
+
+export class MarketplaceRateLimitError extends Error {
+  constructor(readonly retryAfterSeconds: number) {
+    super("Agent validation is temporarily at capacity");
+    this.name = "MarketplaceRateLimitError";
+  }
+}
+
+export class MarketplacePayloadTooLargeError extends Error {
+  constructor() {
+    super("Validation input is too large");
+    this.name = "MarketplacePayloadTooLargeError";
+  }
+}

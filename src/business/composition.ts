@@ -69,6 +69,6 @@ export const getMainnetJobProof = new GetMainnetJobProof(mainnetJobProofReposito
 export const getPublicMainnetJobProof = new GetPublicMainnetJobProof(mainnetJobProofRepository);
 export const getAgentEvidencePassport = new GetAgentEvidencePassport(
   getMarketplaceAgent,
-  getMainnetJobProof,
+  mainnetJobProofRepository,
 );
 export const validateMarketplaceAgent = new ValidateMarketplaceAgent(agentValidationRepository);

@@ -268,6 +268,20 @@ describe("marketplace presentation rules", () => {
     expect((await axe.run(document.body)).violations).toEqual([]);
   });
 
+  it("wraps a uint256-sized raw quote on narrow screens", async () => {
+    const raw = "9".repeat(78);
+    const report = validationReport();
+    report.evidence.quote.priceRaw = raw;
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json(report)));
+    const user = userEvent.setup();
+    render(createElement("main", {}, createElement(ValidateAgentPanel)));
+
+    await user.type(screen.getByRole("textbox", { name: "BSC Agent ID" }), "303779");
+    await user.click(screen.getByRole("button", { name: "Validate agent" }));
+
+    expect(await screen.findByText(raw)).toHaveClass("break-all", "text-right");
+  });
+
   it("links each comparison column to its evidence Passport without extra claims", () => {
     const first = marketplaceAgent();
     const second = { ...marketplaceAgent(), agentId: "45381", name: "Aave powered by HeyAnon" };

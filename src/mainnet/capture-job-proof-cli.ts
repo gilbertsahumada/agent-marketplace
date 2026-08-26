@@ -377,6 +377,27 @@ async function main(): Promise<void> {
   const destination = publish
     ? resolve("src/data/proofs/bsc-mainnet-primary.json")
     : resolve(`.marketplace/mainnet/job-${jobIdRaw}-proof.json`);
+  if (publish) {
+    const historyDestination = resolve("src/data/proofs/bsc-mainnet-history.json");
+    const historyValue = JSON.parse(await readFile(historyDestination, "utf8")) as unknown;
+    if (!historyValue || typeof historyValue !== "object" || Array.isArray(historyValue)) {
+      throw new Error("Mainnet proof history is invalid");
+    }
+    const history = historyValue as { schemaVersion?: unknown; proofs?: unknown };
+    if (history.schemaVersion !== 1 || !Array.isArray(history.proofs)) {
+      throw new Error("Mainnet proof history schema is unsupported");
+    }
+    const existing = history.proofs.find((entry) => (
+      entry && typeof entry === "object" && !Array.isArray(entry)
+      && Reflect.get(entry, "chainId") === proof.chainId
+      && Reflect.get(entry, "jobId") === proof.jobId
+    ));
+    if (existing && JSON.stringify(existing) !== JSON.stringify(proof)) {
+      throw new Error(`Mainnet proof history conflicts for job ${proof.jobId}`);
+    }
+    if (!existing) history.proofs.push(proof);
+    await writeFile(historyDestination, `${JSON.stringify(history, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
+  }
   await writeFile(destination, `${JSON.stringify({ schemaVersion: 1, proof }, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
   process.stdout.write(`Captured sanitized Mainnet Job ${jobIdRaw} proof at ${destination}\n`);
 }

@@ -7,8 +7,11 @@ import { MainnetBrowserDemoConfigRepository } from "../mainnet/browser-demo-conf
 import { StaticMainnetJobProofRepository } from "./proofs/mainnet-job-proof-repository.js";
 import { areMainnetWritesEnabled } from "../mainnet/mainnet-write-gate.js";
 import { Trust8004AgentValidationRepository } from "./repositories/trust8004-agent-validation-repository.js";
+import { RateLimitedAgentValidationRepository } from "./repositories/rate-limited-agent-validation-repository.js";
+import { Trust8004Provider } from "../trust8004/provider.js";
 
-export const marketplaceAgentRepository = new Trust8004MarketplaceAgentRepository();
+const trust8004Provider = new Trust8004Provider();
+export const marketplaceAgentRepository = new Trust8004MarketplaceAgentRepository({ provider: trust8004Provider });
 export const erc8183SpikeRepository = new TrustlessErc8183SpikeRepository();
 export const mainnetErc8183Repository = new MainnetErc8183Repository();
 export const publicVerificationRepository = new StaticPublicVerificationRepository();
@@ -19,8 +22,11 @@ export const publicJobProofRepository = new Gate1PublicProofRepository({
   loadGate6aJob: () => erc8183SpikeRepository.getJob(551n),
 });
 const configuredMarketplaceSellerId = Reflect.get(process.env, "ERC8183_MAINNET_SELLER_AGENT_ID")?.trim();
-export const agentValidationRepository = new Trust8004AgentValidationRepository({
-  ...(configuredMarketplaceSellerId
-    ? { marketplaceOperatedGridSellerAgentId: configuredMarketplaceSellerId }
-    : {}),
-});
+export const agentValidationRepository = new RateLimitedAgentValidationRepository(
+  new Trust8004AgentValidationRepository({
+    provider: trust8004Provider,
+    ...(configuredMarketplaceSellerId
+      ? { marketplaceOperatedGridSellerAgentId: configuredMarketplaceSellerId }
+      : {}),
+  }),
+);

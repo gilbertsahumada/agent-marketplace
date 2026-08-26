@@ -1,6 +1,3 @@
-#!/usr/bin/env node
-import { fileURLToPath } from "node:url";
-
 const DEFAULT_ORIGIN = "https://bnb-agent-marketplace-ruby.vercel.app";
 const MAX_RESPONSE_BYTES = 1_048_576;
 const REQUEST_TIMEOUT_MS = 40_000;
@@ -164,7 +161,7 @@ export async function executeMarketplaceCli(
   return validateResponse(await readJson(response), args);
 }
 
-async function main(): Promise<void> {
+export async function runMarketplaceCli(): Promise<void> {
   try {
     const result = await executeMarketplaceCli(parseMarketplaceCliArguments(process.argv.slice(2)));
     process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
@@ -173,5 +170,3 @@ async function main(): Promise<void> {
     process.exitCode = 1;
   }
 }
-
-if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) void main();

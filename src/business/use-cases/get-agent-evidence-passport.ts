@@ -7,14 +7,14 @@ export interface MarketplaceAgentReader {
   execute(input: { agentId: string }): Promise<MarketplaceAgent>;
 }
 
-export interface PrimaryMainnetJobProofReader {
-  execute(): MainnetJobProof | null;
+export interface MainnetJobProofReader {
+  listByAgentId(agentId: string): MainnetJobProof[];
 }
 
 export class GetAgentEvidencePassport {
   constructor(
     private readonly getAgent: MarketplaceAgentReader,
-    private readonly getPrimaryJobProof: PrimaryMainnetJobProofReader,
+    private readonly jobProofs: MainnetJobProofReader,
     private readonly now: () => number = Date.now,
   ) {}
 
@@ -32,7 +32,6 @@ export class GetAgentEvidencePassport {
   }
 
   private build(agent: MarketplaceAgent): AgentEvidencePassport {
-    const proof = this.getPrimaryJobProof.execute();
     return buildEvidencePassport({
       chainId: agent.chainId,
       agentId: agent.agentId,
@@ -56,7 +55,7 @@ export class GetAgentEvidencePassport {
         status: agent.hireability.status,
         observedAt: agent.hireability.evidence.observedAt,
       },
-      jobProofs: proof ? [proof] : [],
+      jobProofs: this.jobProofs.listByAgentId(agent.agentId),
       generatedAt: new Date(this.now()).toISOString(),
     });
   }

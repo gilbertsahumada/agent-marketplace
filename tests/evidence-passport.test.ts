@@ -223,6 +223,66 @@ describe("Evidence Passport policy", () => {
     expect(rerendered.evidenceSnapshotHash).toBe(first.evidenceSnapshotHash);
     expect(changed.evidenceSnapshotHash).not.toBe(first.evidenceSnapshotHash);
   });
+
+  it.each<[string, Partial<MainnetJobProof>]>([
+    ["buyer", { buyer: "0x4444444444444444444444444444444444444444" }],
+    ["token", { token: "0x5555555555555555555555555555555555555555" }],
+    ["budget", { budgetRaw: "2" }],
+    ["duration", { durationSeconds: "43" }],
+    ["gas cost", { totalGasCostWei: "1235" }],
+    ["transaction", { transactions: {
+      fund: {
+        hash: `0x${"cd".repeat(32)}`,
+        blockNumber: "118077256",
+        timestamp: OBSERVED_AT,
+        gasUsed: "1",
+        effectiveGasPrice: "2",
+        gasCostWei: "2",
+        explorerUrl: "https://bscscan.com/tx/example",
+        provenance: "onchain:bsc-mainnet-rpc" as const,
+      },
+    } }],
+  ])("commits the job %s claim into the fingerprint", (_label, changedProof) => {
+    const baseline = buildEvidencePassport(input({ jobProofs: [proof()] }));
+    const changed = buildEvidencePassport(input({ jobProofs: [proof(changedProof)] }));
+    expect(changed.evidenceSnapshotHash).not.toBe(baseline.evidenceSnapshotHash);
+  });
+
+  it("deduplicates identical job proofs and rejects conflicting copies", () => {
+    const single = buildEvidencePassport(input({ jobProofs: [proof()] }));
+    const duplicate = buildEvidencePassport(input({ jobProofs: [proof(), proof()] }));
+
+    expect(duplicate.trackRecord.provenJobs).toBe(1);
+    expect(duplicate.evidenceSnapshotHash).toBe(single.evidenceSnapshotHash);
+    expect(() => buildEvidencePassport(input({
+      jobProofs: [proof(), proof({ budgetRaw: "2" })],
+    }))).toThrow("conflicting");
+  });
+
+  it("orders equal-timestamp proofs deterministically", () => {
+    const first = proof({ jobId: "700" });
+    const second = proof({ jobId: "701" });
+    const forward = buildEvidencePassport(input({ jobProofs: [first, second] }));
+    const reversed = buildEvidencePassport(input({ jobProofs: [second, first] }));
+
+    expect(reversed.evidenceSnapshotHash).toBe(forward.evidenceSnapshotHash);
+    expect(reversed.trackRecord.latestJobId).toBe(forward.trackRecord.latestJobId);
+  });
+
+  it("marks a completed but failed endpoint evaluation as Attention", () => {
+    const passport = buildEvidencePassport(input({
+      verification: {
+        freshness: "current",
+        identityStatus: "match",
+        endpointStatus: "failed",
+        observedAt: OBSERVED_AT,
+        staleAfter: "2026-08-29T10:00:00.000Z",
+      },
+    }));
+
+    expect(passport.state).toBe("attention");
+    expect(passport.attentionReasons).toContain("The bounded endpoint evaluation failed.");
+  });
 });
 
 describe("GetAgentEvidencePassport", () => {
@@ -252,7 +312,7 @@ describe("GetAgentEvidencePassport", () => {
       },
     } as unknown as MarketplaceAgent;
     const getAgent = { execute: async () => agent };
-    const getProof = { execute: () => proof() };
+    const getProof = { listByAgentId: () => [proof()] };
 
     const passport = await new GetAgentEvidencePassport(
       getAgent,
@@ -285,7 +345,7 @@ describe("GetAgentEvidencePassport", () => {
     let reads = 0;
     const useCase = new GetAgentEvidencePassport(
       { execute: async () => { reads += 1; return agent; } },
-      { execute: () => null },
+      { listByAgentId: () => [] },
       () => Date.parse("2026-08-26T10:05:00.000Z"),
     );
 
@@ -294,5 +354,26 @@ describe("GetAgentEvidencePassport", () => {
     expect(reads).toBe(1);
     expect(result.agent).toBe(agent);
     expect(result.passport).toMatchObject({ agentId: "303779", state: "registered" });
+  });
+
+  it("loads all persisted proofs for the requested agent", async () => {
+    const agent = {
+      chainId: 56,
+      agentId: "303779",
+      name: "Marketplace Grid Planner",
+      operator: "marketplace",
+      freshness: { fetchedAt: OBSERVED_AT },
+      onchainIdentity: { status: "match", observedAt: OBSERVED_AT, blockNumber: "118077255" },
+      verification: null,
+      hireability: { canHire: false, status: "not_evaluated", evidence: { observedAt: OBSERVED_AT } },
+    } as unknown as MarketplaceAgent;
+    const proofs = [proof({ jobId: "700" }), proof({ jobId: "701", capturedAt: "2026-08-26T10:06:00.000Z" })];
+    const useCase = new GetAgentEvidencePassport(
+      { execute: async () => agent },
+      { listByAgentId: (agentId: string) => proofs.filter((item) => item.agentId === agentId) },
+    );
+
+    const passport = await useCase.execute({ agentId: "303779" });
+    expect(passport.trackRecord).toMatchObject({ provenJobs: 2, sampleSize: 2, latestJobId: "701" });
   });
 });

@@ -138,7 +138,7 @@ export function ValidateAgentPanel() {
                 <CardHeader><CardTitle>Commercial evidence</CardTitle></CardHeader>
                 <CardContent className="grid gap-3 text-sm">
                   <div className="flex justify-between gap-3"><span className="text-zinc-500">Quote</span><span>{result.evidence.quote.status}</span></div>
-                  <div className="flex justify-between gap-3"><span className="text-zinc-500">Price · raw units</span><span className="font-stat">{result.evidence.quote.priceRaw ?? "—"}</span></div>
+                  <div className="flex justify-between gap-3"><span className="text-zinc-500">Price · raw units</span><span className="min-w-0 break-all text-right font-stat">{result.evidence.quote.priceRaw ?? "—"}</span></div>
                   <div className="flex justify-between gap-3"><span className="text-zinc-500">Identity</span><span>{result.evidence.identity.status}</span></div>
                   <div className="flex justify-between gap-3"><span className="text-zinc-500">Classification</span><span>Not assigned</span></div>
                   <p className="border-t border-white/[0.08] pt-3 text-xs leading-relaxed text-zinc-500">{result.classification.note}</p>

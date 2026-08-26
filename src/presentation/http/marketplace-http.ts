@@ -4,6 +4,8 @@ import {
   InvalidMarketplaceInputError,
   MarketplaceAgentNotFoundError,
   MarketplaceDataUnavailableError,
+  MarketplacePayloadTooLargeError,
+  MarketplaceRateLimitError,
 } from "../../business/errors/marketplace-errors.js";
 import {
   InvalidPublicJobProofIdError,
@@ -25,6 +27,18 @@ export function categoryParameter(value: string | null): MarketplaceCategory | u
 }
 
 export function marketplaceErrorResponse(error: unknown): NextResponse {
+  if (error instanceof MarketplacePayloadTooLargeError) {
+    return NextResponse.json(
+      { error: { code: error.name, message: error.message } },
+      { status: 413 },
+    );
+  }
+  if (error instanceof MarketplaceRateLimitError) {
+    return NextResponse.json(
+      { error: { code: error.name, message: error.message } },
+      { status: 429, headers: { "Retry-After": String(error.retryAfterSeconds) } },
+    );
+  }
   if (error instanceof InvalidMarketplaceInputError || error instanceof InvalidPublicJobProofIdError) {
     return NextResponse.json({ error: { code: error.name, message: error.message } }, { status: 400 });
   }

@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, symlinkSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+import { spawnSync } from "node:child_process";
 import {
   executeMarketplaceCli,
   parseMarketplaceCliArguments,
@@ -11,8 +14,21 @@ describe("public marketplace CLI", () => {
   it("is packaged as a thin HTTP client without data-layer imports", () => {
     const packageJson = JSON.parse(readFileSync("package.json", "utf8")) as { bin?: Record<string, string> };
     const source = readFileSync("src/marketplace-cli.ts", "utf8");
-    expect(packageJson.bin?.marketplace).toBe("dist/marketplace-cli.js");
+    expect(packageJson.bin?.marketplace).toBe("dist/marketplace-cli-bin.js");
     expect(source).not.toMatch(/src\/(?:data|trust8004|readiness|verification)|@bnbagent\/sdk|\bviem\b/);
+  });
+
+  it("executes through the symlink shape used by npm bins", () => {
+    const directory = mkdtempSync(join(tmpdir(), "marketplace-cli-"));
+    try {
+      const link = join(directory, "marketplace.ts");
+      symlinkSync(resolve("src/marketplace-cli-bin.ts"), link);
+      const result = spawnSync(process.execPath, ["--import", "tsx", link], { encoding: "utf8" });
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain("Usage:");
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
   });
 
   it.each([

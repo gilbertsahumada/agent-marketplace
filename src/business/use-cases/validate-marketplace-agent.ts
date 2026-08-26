@@ -4,6 +4,7 @@ import {
   InvalidMarketplaceInputError,
   MarketplaceAgentNotFoundError,
   MarketplaceDataUnavailableError,
+  MarketplaceRateLimitError,
 } from "../errors/marketplace-errors.js";
 import { buildEvidencePassport } from "../policies/evidence-passport-policy.js";
 
@@ -38,6 +39,7 @@ export class ValidateMarketplaceAgent {
     try {
       evidence = await this.repository.validate(input.agentId);
     } catch (error) {
+      if (error instanceof MarketplaceRateLimitError) throw error;
       throw new MarketplaceDataUnavailableError("validate agent", { cause: error });
     }
     if (!evidence) throw new MarketplaceAgentNotFoundError(input.agentId);

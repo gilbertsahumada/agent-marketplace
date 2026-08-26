@@ -286,6 +286,15 @@ run checks at most one MCP endpoint and two seller endpoints using the existing
 safe transport. It never assigns a marketplace category, promotes an agent, or
 enables Hire automatically. A verified ad-hoc quote remains a candidate for
 manual review until it appears in a current reviewed release snapshot.
+Validation admits at most ten distinct Agent IDs per minute and two concurrent
+runs per server process; duplicate IDs share in-flight work, and catalogue plus
+validation share one trust8004 request scheduler. This is deliberately a local
+safety boundary, not a distributed Vercel quota. Production scale-out still
+requires a platform or shared-store rate limit before increasing public traffic.
+
+Published Mainnet proofs are retained in a versioned history alongside the
+current primary proof. Passport fingerprints commit the complete sanitized job
+record, reject conflicting copies of the same job and use deterministic ordering.
 
 The same public evidence is available through a thin, BSC-only CLI. It calls
 the deployed marketplace APIs and does not contain a second trust8004, RPC, or

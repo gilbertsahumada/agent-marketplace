@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { MainnetJobProof } from "../src/business/entities/mainnet-job-proof.js";
 import { InvalidPublicJobProofIdError, PublicJobProofNotFoundError } from "../src/business/errors/public-job-proof-errors.js";
 import { GetPublicMainnetJobProof } from "../src/business/use-cases/get-mainnet-job-proof.js";
+import { StaticMainnetJobProofRepository } from "../src/data/proofs/mainnet-job-proof-repository.js";
 
 const proof = {
   schemaVersion: 1,
@@ -32,5 +33,17 @@ describe("GetPublicMainnetJobProof", () => {
   it("rejects invalid or unrecorded IDs", () => {
     expect(() => useCase.execute({ jobId: "0" })).toThrow(InvalidPublicJobProofIdError);
     expect(() => useCase.execute({ jobId: "701" })).toThrow(PublicJobProofNotFoundError);
+  });
+});
+
+describe("StaticMainnetJobProofRepository", () => {
+  it("retains versioned historical proofs when the primary proof changes", () => {
+    const previous = { ...proof, jobId: "699", capturedAt: "2026-08-25T10:00:00.000Z" };
+    const repository = new StaticMainnetJobProofRepository(
+      { schemaVersion: 1, proof },
+      { schemaVersion: 1, proofs: [previous] },
+    );
+
+    expect(repository.listByAgentId("303779").map(({ jobId }) => jobId)).toEqual(["699", "700"]);
   });
 });

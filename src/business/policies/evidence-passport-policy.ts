@@ -42,6 +42,7 @@ export function deriveAgentPassportState(
     || agent.verification?.freshness === "stale"
     || agent.verification?.identity.status === "mismatch"
     || agent.verification?.identity.status === "read_error"
+    || agent.verification?.tools.reachability === "failed"
   ) return "attention";
   if (agent.onchainIdentity.status === "match" && agent.agentId === provenAgentId) return "job_proven";
   if (agent.hireability.canHire) return "hireable";
@@ -63,6 +64,7 @@ export function deriveSnapshotAgentPassportState(
     !isVerificationSnapshotCurrent(snapshot, now)
     || agent.identity.status === "mismatch"
     || agent.identity.status === "read_error"
+    || agent.tools.reachability === "failed"
   ) return "attention";
   if (agent.identity.status === "match" && agent.agentId === provenAgentId) return "job_proven";
   if (isReleaseAgentHireable(agent, snapshot, now)) return "hireable";
@@ -186,9 +188,28 @@ function quoteCheck(input: EvidencePassportInput): AgentEvidencePassport["checks
 }
 
 export function buildEvidencePassport(input: EvidencePassportInput): AgentEvidencePassport {
-  const jobProofs = input.jobProofs
-    .filter((proof) => proof.chainId === input.chainId && proof.agentId === input.agentId)
-    .sort((left, right) => Date.parse(right.capturedAt) - Date.parse(left.capturedAt));
+  const proofsByJob = new Map<string, MainnetJobProof>();
+  for (const proof of input.jobProofs.filter(
+    (candidate) => candidate.chainId === input.chainId && candidate.agentId === input.agentId,
+  )) {
+    const key = `${proof.chainId}:${proof.jobId}`;
+    const existing = proofsByJob.get(key);
+    if (existing && canonicalJson(existing) !== canonicalJson(proof)) {
+      throw new Error(`Evidence Passport contains conflicting proofs for job ${proof.jobId}`);
+    }
+    if (!existing) proofsByJob.set(key, proof);
+  }
+  const jobProofs = [...proofsByJob.values()]
+    .sort((left, right) => {
+      const timestampOrder = Date.parse(right.capturedAt) - Date.parse(left.capturedAt);
+      if (timestampOrder !== 0) return timestampOrder;
+      if (/^\d+$/.test(left.jobId) && /^\d+$/.test(right.jobId)) {
+        const leftId = BigInt(left.jobId);
+        const rightId = BigInt(right.jobId);
+        return leftId === rightId ? 0 : rightId > leftId ? 1 : -1;
+      }
+      return right.jobId.localeCompare(left.jobId);
+    });
   const latestJob = jobProofs[0] ?? null;
   const identity = identityCheck(input);
   const endpoint = endpointCheck(input);
@@ -209,6 +230,9 @@ export function buildEvidencePassport(input: EvidencePassportInput): AgentEviden
 
   const attentionReasons: string[] = [];
   if (input.verification?.freshness === "stale") attentionReasons.push("Verification evidence is stale.");
+  if (input.verification?.freshness === "current" && input.verification.endpointStatus === "failed") {
+    attentionReasons.push("The bounded endpoint evaluation failed.");
+  }
   if (input.onchainIdentity.status === "mismatch" || input.verification?.identityStatus === "mismatch") {
     attentionReasons.push("Indexed identity does not match the direct BSC read.");
   }
@@ -252,13 +276,7 @@ export function buildEvidencePassport(input: EvidencePassportInput): AgentEviden
     onchainIdentity: input.onchainIdentity,
     verification: input.verification,
     hireability: input.hireability,
-    jobProofs: jobProofs.map(({ agentId, jobId, capturedAt, finalState, deliverableHash }) => ({
-      agentId,
-      jobId,
-      capturedAt,
-      finalState,
-      deliverableHash,
-    })),
+    jobProofs,
   })));
 
   return {

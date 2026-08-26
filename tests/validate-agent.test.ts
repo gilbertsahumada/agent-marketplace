@@ -98,4 +98,24 @@ describe("ValidateMarketplaceAgent", () => {
     expect(report.qualification).toMatchObject({ status: "not_qualified", canHire: false });
     expect(report.passport.checks.quote.status).toBe("missing");
   });
+
+  it("keeps report and Passport attention states consistent after a failed probe", async () => {
+    const failed = evidence({
+      endpointChecks: [{
+        protocol: "a2a",
+        status: "failed",
+        declaredTools: [],
+        observedTools: [],
+        declaredOnlyTools: [],
+        observedOnlyTools: [],
+        observedAt: OBSERVED_AT,
+        error: { code: "PROBE_FAILED", message: "The seller endpoint did not complete validation." },
+      }],
+      quote: { status: "invalid", provider: null, currency: null, priceRaw: null, expiresAt: null, observedAt: OBSERVED_AT },
+    });
+    const report = await new ValidateMarketplaceAgent({ validate: async () => failed }).execute({ agentId: "303779" });
+
+    expect(report.status).toBe("attention_required");
+    expect(report.passport.state).toBe("attention");
+  });
 });
