@@ -1,4 +1,4 @@
-import type { MarketplaceCategory } from "../../trust8004/types.js";
+import type { MarketplaceCategory } from "../../trust8004/types.ts";
 
 export interface InventoryCategoryEvidence {
   category: MarketplaceCategory;
