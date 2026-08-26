@@ -1,12 +1,12 @@
-import type { AgentValidationEvidence, AgentValidationReport } from "../entities/agent-validation.js";
-import type { HireabilityStatus } from "../entities/marketplace-agent.js";
+import type { AgentValidationEvidence, AgentValidationReport } from "../entities/agent-validation.ts";
+import type { HireabilityStatus } from "../entities/marketplace-agent.ts";
 import {
   InvalidMarketplaceInputError,
   MarketplaceAgentNotFoundError,
   MarketplaceDataUnavailableError,
   MarketplaceRateLimitError,
-} from "../errors/marketplace-errors.js";
-import { buildEvidencePassport } from "../policies/evidence-passport-policy.js";
+} from "../errors/marketplace-errors.ts";
+import { buildEvidencePassport } from "../policies/evidence-passport-policy.ts";
 
 export interface AgentValidationRepository {
   validate(agentId: string): Promise<AgentValidationEvidence | null>;
