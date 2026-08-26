@@ -1,6 +1,6 @@
-import type { AgentValidationEvidence } from "../../business/entities/agent-validation.js";
-import { MarketplaceRateLimitError } from "../../business/errors/marketplace-errors.js";
-import type { AgentValidationRepository } from "../../business/use-cases/validate-marketplace-agent.js";
+import type { AgentValidationEvidence } from "../../business/entities/agent-validation.ts";
+import { MarketplaceRateLimitError } from "../../business/errors/marketplace-errors.ts";
+import type { AgentValidationRepository } from "../../business/use-cases/validate-marketplace-agent.ts";
 
 export interface AgentValidationAdmissionOptions {
   maxRequests?: number;
