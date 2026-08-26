@@ -16,15 +16,15 @@ import type {
   HostedSellerDeliverable,
   HostedSellerMessage,
   HostedSellerReply,
-} from "../business/entities/hosted-erc8183-seller.js";
-import { HostedSellerJobNotReadyError, HostedSellerUnavailableError } from "../business/errors/hosted-seller-errors.js";
-import { gridSellerAgentCard } from "../business/policies/grid-seller-policy.js";
-import { GRID_NEGOTIATION_TERMS, buildGridPlan, parseGridTaskDescription } from "../business/policies/grid-plan-policy.js";
-import type { HostedErc8183SellerRepository } from "../data/repositories/hosted-erc8183-seller-repository.js";
-import { ERC8183_MAINNET } from "./contracts.js";
-import { loadMainnetGridSellerConfig } from "./grid-seller-config.js";
-import { mainnetImplementationPinsMatch } from "./implementation-pins.js";
-import { areMainnetWritesEnabled } from "./mainnet-write-gate.js";
+} from "../business/entities/hosted-erc8183-seller.ts";
+import { HostedSellerJobNotReadyError, HostedSellerUnavailableError } from "../business/errors/hosted-seller-errors.ts";
+import { gridSellerAgentCard } from "../business/policies/grid-seller-policy.ts";
+import { GRID_NEGOTIATION_TERMS, buildGridPlan, parseGridTaskDescription } from "../business/policies/grid-plan-policy.ts";
+import type { HostedErc8183SellerRepository } from "../data/repositories/hosted-erc8183-seller-repository.ts";
+import { ERC8183_MAINNET } from "./contracts.ts";
+import { loadMainnetGridSellerConfig } from "./grid-seller-config.ts";
+import { mainnetImplementationPinsMatch } from "./implementation-pins.ts";
+import { areMainnetWritesEnabled } from "./mainnet-write-gate.ts";
 
 interface MainnetGridRuntime {
   client: ERC8183Client;
