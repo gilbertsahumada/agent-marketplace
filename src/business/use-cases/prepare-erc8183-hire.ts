@@ -58,6 +58,14 @@ export class PrepareErc8183Hire {
       disputeWindowSeconds: facts.disputeWindowSeconds,
       executeBefore: quote.quoteExpiresAt,
       maximumSignatures: approvalRequired ? 5 : 4,
+      guardrails: {
+        custody: "injected_wallet",
+        buyerPrivateKeyReceivedByServer: false,
+        spendCeilingRaw: this.repository.allowlist.maximumBudgetRaw.toString(),
+        approvalMode: "exact_if_required",
+        approvalSpender: quote.commerce,
+        cancellationAvailableAfterFunding: false,
+      },
       transactions,
     };
   }

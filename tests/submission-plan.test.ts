@@ -105,7 +105,15 @@ describe("Mainnet browser allowlist", () => {
 describe("published verification evidence", () => {
   it("contains provenance and no endpoint or probe payload fields", () => {
     const reparsed = parsePublicVerificationSnapshot(PUBLIC_VERIFICATION_SNAPSHOT);
-    expect(reparsed.agents).toHaveLength(4);
+    expect(reparsed.agents).toHaveLength(5);
+    expect(reparsed.agents.filter(({ operator }) => operator === "third_party")).toHaveLength(4);
+    expect(reparsed.agents.filter(({ operator }) => operator === "marketplace")).toEqual([
+      expect.objectContaining({
+        agentId: "303779",
+        categories: ["grid_trading"],
+        qualification: expect.objectContaining({ status: "qualified" }),
+      }),
+    ]);
     expect(reparsed.agents.find(({ agentId }) => agentId === "43129")?.categories)
       .toEqual(["yield_optimisation", "health_factor_monitoring"]);
     expect(JSON.stringify(reparsed)).not.toMatch(/https?:|authorization|bearer|payload|private.?key/i);
@@ -128,6 +136,13 @@ describe("published verification evidence", () => {
 });
 
 describe("Mainnet security decision", () => {
+  it("loads the local Mainnet configuration for the documented go/no-go command", () => {
+    const packageJson = JSON.parse(readFileSync("package.json", "utf8")) as { scripts: Record<string, string> };
+    expect(packageJson.scripts["mainnet:go-no-go"]).toBe(
+      "node --env-file=.env.local --import tsx src/mainnet/go-no-go-cli.ts",
+    );
+  });
+
   it("keeps seller key material out of object logs, JSON and error responses", async () => {
     const secret = `0x${"11".repeat(32)}` as Hex;
     const config = loadMainnetGridSellerConfig({

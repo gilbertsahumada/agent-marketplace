@@ -63,6 +63,14 @@ export interface Erc8183HirePlan {
   disputeWindowSeconds?: string;
   executeBefore: number;
   maximumSignatures: 4 | 5;
+  guardrails: {
+    custody: "injected_wallet";
+    buyerPrivateKeyReceivedByServer: false;
+    spendCeilingRaw: string;
+    approvalMode: "exact_if_required";
+    approvalSpender: Address;
+    cancellationAvailableAfterFunding: false;
+  };
   transactions: Erc8183TransactionIntent[];
 }
 

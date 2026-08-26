@@ -202,6 +202,12 @@ describe("PR 16 marketplace evidence boundaries", () => {
       operator: "marketplace",
       hireability: "hireable",
     });
+    expect(snapshotAgentCardViewModel(
+      snapshot.agents[0]!,
+      snapshot,
+      Date.parse(GENERATED_AT),
+      snapshot.agents[0]!.agentId,
+    )).toMatchObject({ passportState: "job_proven" });
   });
 
   it("preserves failed probe outcomes and never presents them as verified Reachable", () => {

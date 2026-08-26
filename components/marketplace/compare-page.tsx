@@ -1,11 +1,12 @@
 import Link from "next/link";
+import { Fingerprint } from "lucide-react";
 import type { MarketplaceAgentComparison } from "@/src/business/entities/marketplace-agent";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { EvidenceRail } from "./evidence-rail";
 import { PageIntro } from "./page-primitives";
-import { evidenceForAgent, verificationViewModel } from "./view-models";
+import { agentCardViewModel, evidenceForAgent, verificationViewModel } from "./view-models";
 import { VerificationDrift } from "./verification-drift";
 
 const choices = [
@@ -15,7 +16,15 @@ const choices = [
   ["43129", "Venus"],
 ] as const;
 
-export function ComparePage({ comparison, selected }: { comparison: MarketplaceAgentComparison | undefined; selected: string[] }) {
+const passportLabels = {
+  registered: "Registered",
+  evaluated: "Evaluated",
+  hireable: "Hireable",
+  job_proven: "Job proven",
+  attention: "Attention",
+} as const;
+
+export function ComparePage({ comparison, selected, provenAgentId }: { comparison: MarketplaceAgentComparison | undefined; selected: string[]; provenAgentId?: string }) {
   return (
     <main id="main-content" className="mx-auto w-full max-w-7xl flex-1 px-4 py-12 sm:px-6 lg:px-8">
       <PageIntro eyebrow="Evidence side by side" title="Compare agents without a universal winner">
@@ -42,11 +51,22 @@ export function ComparePage({ comparison, selected }: { comparison: MarketplaceA
         <>
           <p className="mt-8 text-sm text-zinc-400">{comparison.note}</p>
           <div className="mt-5 grid gap-4 lg:grid-cols-3">
-            {comparison.agents.map((agent) => (
-              <Card className="marketplace-surface" key={agent.agentId}>
+            {comparison.agents.map((agent) => {
+              const passport = agentCardViewModel(agent, provenAgentId);
+              return (
+              <Card className="marketplace-surface marketplace-agent-evidence-card" data-passport-state={passport.passportState} key={agent.agentId}>
                 <CardHeader>
                   <Badge className="w-fit" variant="outline">Agent #{agent.agentId}</Badge>
                   <CardTitle className="mt-2"><Link href={`/agents/${agent.agentId}`}>{agent.name}</Link></CardTitle>
+                  <Link
+                    aria-label={`Passport · ${passportLabels[passport.passportState]} for ${agent.name}`}
+                    className="mt-2 inline-flex items-center gap-1.5 text-xs text-zinc-400 underline decoration-zinc-700 underline-offset-4 hover:text-white"
+                    href={passport.passportHref}
+                    prefetch={false}
+                  >
+                    <Fingerprint aria-hidden="true" className="size-3" />
+                    Passport · {passportLabels[passport.passportState]}
+                  </Link>
                 </CardHeader>
                 <CardContent className="space-y-5">
                   <EvidenceRail compact steps={evidenceForAgent(agent)} />
@@ -61,7 +81,8 @@ export function ComparePage({ comparison, selected }: { comparison: MarketplaceA
                   </dl>
                 </CardContent>
               </Card>
-            ))}
+              );
+            })}
           </div>
         </>
       )}

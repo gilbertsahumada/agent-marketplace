@@ -151,6 +151,94 @@ body {
   border: 1px solid rgb(255 255 255 / 9%);
 }
 
+.evidence-passport {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  border: 1px solid rgb(255 255 255 / 12%);
+  background: #111113;
+}
+
+.evidence-passport::before {
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  background:
+    radial-gradient(circle at var(--passport-shift-x) var(--passport-shift-y), rgb(255 255 255 / 18%), transparent 32%),
+    conic-gradient(from var(--passport-angle), rgb(34 211 238 / 24%), rgb(139 92 246 / 22%), rgb(240 185 11 / 22%), rgb(16 185 129 / 22%), rgb(34 211 238 / 24%));
+  content: "";
+  opacity: 0;
+}
+
+.evidence-passport[data-state="evaluated"]::before {
+  opacity: 0.08;
+}
+
+.evidence-passport[data-state="hireable"]::before {
+  opacity: 0.14;
+}
+
+.evidence-passport[data-state="job_proven"]::before {
+  opacity: 0.22;
+}
+
+.evidence-passport[data-state="attention"] {
+  border-color: rgb(239 68 68 / 35%);
+}
+
+.passport-state-badge {
+  border-color: rgb(161 161 170 / 35%);
+  background: rgb(24 24 27 / 75%);
+  color: #d4d4d8;
+}
+
+.evidence-passport[data-state="evaluated"] .passport-state-badge {
+  border-color: rgb(34 211 238 / 40%);
+  color: #a5f3fc;
+}
+
+.evidence-passport[data-state="hireable"] .passport-state-badge {
+  border-color: rgb(240 185 11 / 45%);
+  color: #fde68a;
+}
+
+.evidence-passport[data-state="job_proven"] .passport-state-badge {
+  border-color: rgb(16 185 129 / 45%);
+  color: #a7f3d0;
+}
+
+.evidence-passport[data-state="attention"] .passport-state-badge {
+  border-color: rgb(239 68 68 / 45%);
+  color: #fca5a5;
+}
+
+.marketplace-agent-evidence-card {
+  position: relative;
+  isolation: isolate;
+}
+
+.marketplace-agent-evidence-card::before {
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  background: linear-gradient(125deg, transparent 34%, rgb(34 211 238 / 10%), rgb(139 92 246 / 9%), transparent 68%);
+  content: "";
+  opacity: 0;
+}
+
+.marketplace-agent-evidence-card[data-passport-state="evaluated"]::before {
+  opacity: 0.45;
+}
+
+.marketplace-agent-evidence-card[data-passport-state="hireable"]::before,
+.marketplace-agent-evidence-card[data-passport-state="job_proven"]::before {
+  opacity: 0.8;
+}
+
+.marketplace-agent-evidence-card[data-passport-state="attention"] {
+  border-color: rgb(239 68 68 / 30%);
+}
+
 .evidence-step {
   position: relative;
 }

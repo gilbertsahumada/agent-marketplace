@@ -7,6 +7,7 @@ import { WalletConnectButton } from "./wallet-connect-button";
 const navigation = [
   { href: "/agents", label: "Agents" },
   { href: "/compare", label: "Compare" },
+  { href: "/validate", label: "Validate" },
   { href: "/jobs/testnet/551", label: "Job proof" },
 ] as const;
 
@@ -92,6 +93,8 @@ function Footer() {
         <div className="flex flex-wrap items-start gap-x-5 gap-y-3 text-sm text-zinc-400 md:justify-end">
           <Link className="hover:text-white" href="/agents">Agents</Link>
           <Link className="hover:text-white" href="/compare">Compare</Link>
+          <Link className="hover:text-white" href="/validate">Validate my agent</Link>
+          <Link className="hover:text-white" href="/evidence/verification">Methodology</Link>
           <Link className="hover:text-white" href="/jobs/testnet/551">Public proof</Link>
           <a
             aria-label="BNB Agent Marketplace on GitHub"

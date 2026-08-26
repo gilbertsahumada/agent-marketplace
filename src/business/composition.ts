@@ -7,6 +7,7 @@ import {
   marketplaceAgentRepository,
   publicJobProofRepository,
   publicVerificationRepository,
+  agentValidationRepository,
 } from "../data/composition.js";
 import { CompareMarketplaceAgents } from "./use-cases/compare-marketplace-agents.js";
 import { GetMarketplaceAgent } from "./use-cases/get-marketplace-agent.js";
@@ -19,9 +20,11 @@ import { RequestErc8183Quote } from "./use-cases/request-erc8183-quote.js";
 import { GetErc8183TestnetJobTracking } from "./use-cases/get-erc8183-testnet-job-tracking.js";
 import { GetPublicVerificationSnapshot } from "./use-cases/get-public-verification-snapshot.js";
 import { GetMainnetBrowserDemoConfig } from "./use-cases/get-mainnet-browser-demo-config.js";
-import { GetMainnetJobProof } from "./use-cases/get-mainnet-job-proof.js";
+import { GetMainnetJobProof, GetPublicMainnetJobProof } from "./use-cases/get-mainnet-job-proof.js";
 import { GetMarketplaceLandingCatalog } from "./use-cases/get-marketplace-landing-catalog.js";
 import { GetMainnetHiringExposure } from "./use-cases/get-mainnet-hiring-exposure.js";
+import { GetAgentEvidencePassport } from "./use-cases/get-agent-evidence-passport.js";
+import { ValidateMarketplaceAgent } from "./use-cases/validate-marketplace-agent.js";
 import { NotifyQualifiedMainnetFundedJob, PrepareQualifiedMainnetHire, RequestQualifiedMainnetQuote } from "./use-cases/qualified-mainnet-hire.js";
 
 export const listMarketplaceAgents = new ListMarketplaceAgents(marketplaceAgentRepository);
@@ -63,3 +66,9 @@ export const notifyMainnetFundedJob = new NotifyQualifiedMainnetFundedJob(
 );
 export const getMainnetBrowserDemoConfig = new GetMainnetBrowserDemoConfig(mainnetBrowserDemoConfigRepository);
 export const getMainnetJobProof = new GetMainnetJobProof(mainnetJobProofRepository);
+export const getPublicMainnetJobProof = new GetPublicMainnetJobProof(mainnetJobProofRepository);
+export const getAgentEvidencePassport = new GetAgentEvidencePassport(
+  getMarketplaceAgent,
+  mainnetJobProofRepository,
+);
+export const validateMarketplaceAgent = new ValidateMarketplaceAgent(agentValidationRepository);

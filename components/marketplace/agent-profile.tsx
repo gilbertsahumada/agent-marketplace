@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { ArrowUpRight, Bot, CheckCircle2, CircleAlert } from "lucide-react";
 import type { MarketplaceAgent } from "@/src/business/entities/marketplace-agent";
+import type { AgentEvidencePassport } from "@/src/business/entities/evidence-passport";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -12,6 +13,7 @@ import { ProvenanceBadge } from "./provenance-badge";
 import { evidenceForAgent } from "./view-models";
 import { verificationViewModel } from "./view-models";
 import { VerificationDrift } from "./verification-drift";
+import { EvidencePassportCard } from "./evidence-passport-card";
 
 function MonoValue({ label, value }: { label: string; value: string | null }) {
   return (
@@ -22,7 +24,7 @@ function MonoValue({ label, value }: { label: string; value: string | null }) {
   );
 }
 
-export function AgentProfile({ agent }: { agent: MarketplaceAgent }) {
+export function AgentProfile({ agent, passport }: { agent: MarketplaceAgent; passport: AgentEvidencePassport }) {
   const evaluated = agent.categoryEvaluation === "evaluated";
   const verification = verificationViewModel(agent);
   return (
@@ -50,6 +52,13 @@ export function AgentProfile({ agent }: { agent: MarketplaceAgent }) {
             <p className="max-w-xs text-sm text-zinc-500">{agent.hireability.reason}</p>
           )}
         </div>
+      </div>
+
+      <div className="mt-8">
+        <EvidencePassportCard
+          apiHref={`/api/marketplace/agents/${agent.agentId}/passport`}
+          passport={passport}
+        />
       </div>
 
       <Card className="marketplace-surface mt-8">

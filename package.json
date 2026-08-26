@@ -3,6 +3,9 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
+  "bin": {
+    "marketplace": "dist/marketplace-cli-bin.js"
+  },
   "engines": {
     "node": ">=20.9.0"
   },
@@ -18,10 +21,11 @@
     "gate1:seller": "tsx src/seller.ts",
     "hosted-seller:register": "node --env-file=.env.local --import tsx src/hosted-seller-cli.ts register",
     "inventory:bsc": "tsx src/trust8004/inventory-cli.ts",
+    "marketplace": "tsx src/marketplace-cli-bin.ts",
     "verify:bsc": "tsx src/verification/cli.ts",
     "publish:verification": "tsx src/verification/publish-cli.ts",
     "check:verification-snapshot": "tsx src/verification/check-public-snapshot-cli.ts",
-    "mainnet:go-no-go": "tsx src/mainnet/go-no-go-cli.ts",
+    "mainnet:go-no-go": "node --env-file=.env.local --import tsx src/mainnet/go-no-go-cli.ts",
     "mainnet:grid-seller": "node --conditions=react-server --env-file=.env.local --import tsx src/mainnet/grid-seller-cli.ts",
     "mainnet:settle-grid-job": "node --conditions=react-server --env-file=.env.local --import tsx src/mainnet/settle-grid-job-cli.ts",
     "mainnet:capture-proof": "node --env-file=.env.local --import tsx src/mainnet/capture-job-proof-cli.ts",

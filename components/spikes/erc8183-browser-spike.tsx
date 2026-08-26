@@ -363,6 +363,23 @@ function Erc8183BrowserDemo({ mode, deployment }: { mode: "testnet" | "mainnet";
 
         <aside className="space-y-6 lg:sticky lg:top-6 lg:self-start">
           <Card>
+            <CardHeader>
+              <h2 className="text-base font-medium text-zinc-100">Guardrails and continuing authority</h2>
+              <CardDescription>What this flow can authorize, and where user control ends.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <dl className="space-y-4 text-xs leading-relaxed text-zinc-400">
+                <div><dt className="font-medium text-zinc-200">Custody</dt><dd className="mt-1">The injected wallet signs each buyer transaction. The server never receives the buyer private key.</dd></div>
+                <div><dt className="font-medium text-zinc-200">Spend and token authority</dt><dd className="mt-1">The allowlist caps a job at {deployment.maximumBudgetRaw.toString()} raw token units. Approval is the exact quote amount when needed, never unlimited, and targets only the configured Commerce contract.</dd></div>
+                <div><dt className="font-medium text-zinc-200">Before funding</dt><dd className="mt-1">Decline any wallet prompt to stop. No seller authority or escrow funding exists until the corresponding transactions confirm.</dd></div>
+                <div><dt className="font-medium text-zinc-200">After funding</dt><dd className="mt-1">The budget is committed to ERC-8183 escrow and subsequent outcomes are contract and policy governed. The seller cannot sign for the buyer. This demo does not expose a cancellation action after funding.</dd></div>
+                <div><dt className="font-medium text-zinc-200">Revocation</dt><dd className="mt-1">Any residual ERC-20 allowance can be set to zero through the token contract or wallet interface. Revoking allowance does not reverse funds already placed in escrow.</dd></div>
+              </dl>
+              {plan && <p className="mt-4 border-t border-white/[0.08] pt-4 text-xs text-zinc-300">This quote: spend {plan.quote.priceRaw} raw units · approval {plan.approvalRequired ? `exactly ${plan.approvalAmountRaw}` : "not required"} · {plan.maximumSignatures} signatures maximum.</p>}
+            </CardContent>
+          </Card>
+
+          <Card>
             <CardHeader><CardTitle>Chain-verified receipt spine</CardTitle><CardDescription>Local journal entries are locators; receipts and current contract state are authoritative.</CardDescription></CardHeader>
             <CardContent>
               <ol className="space-y-4" aria-label="ERC-8183 browser spike progress">

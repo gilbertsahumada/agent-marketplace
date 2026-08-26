@@ -141,9 +141,24 @@ describe("marketplace business catalogue", () => {
     ).execute();
 
     expect(result.source).toBe("release_snapshot");
-    expect(result.snapshot.agents.map(({ agentId }) => agentId)).toEqual(["45650", "45381", "45422", "43129"]);
+    expect(result.snapshot.agents.map(({ agentId }) => agentId)).toEqual([
+      "45650",
+      "45381",
+      "45422",
+      "43129",
+      "303779",
+    ]);
     expect(result.categories.find(({ category }) => category === "grid_trading"))
-      .toEqual({ category: "grid_trading", count: 0, status: "unverified" });
+      .toEqual({ category: "grid_trading", count: 1, status: "candidates" });
+    expect(result.qualifiedSeller).toEqual({
+      agentId: "303779",
+      name: "marketplace-operated-grid-planner",
+    });
+    expect(result.snapshot.agents.find(({ agentId }) => agentId === "303779")).toMatchObject({
+      operator: "marketplace",
+      qualification: { status: "qualified" },
+      categories: ["grid_trading"],
+    });
     expect(result.snapshot.agents.find(({ agentId }) => agentId === "43129")?.categories)
       .toEqual(["yield_optimisation", "health_factor_monitoring"]);
   });

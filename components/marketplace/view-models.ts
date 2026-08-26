@@ -1,5 +1,6 @@
 import type { MarketplaceAgent } from "@/src/business/entities/marketplace-agent";
 import type { PublicAgentVerification, PublicVerificationSnapshot } from "@/src/business/entities/public-verification-snapshot";
+import { deriveAgentPassportState, deriveSnapshotAgentPassportState } from "@/src/business/policies/evidence-passport-policy";
 import { isReleaseAgentHireable, isVerificationSnapshotCurrent } from "@/src/business/policies/release-qualification-policy";
 import type { AgentCardViewModel, EvidenceStepViewModel, VerificationDriftViewModel } from "./presentation-types";
 
@@ -76,7 +77,7 @@ export function evidenceForAgent(agent: MarketplaceAgent): EvidenceStepViewModel
   ];
 }
 
-export function agentCardViewModel(agent: MarketplaceAgent): AgentCardViewModel {
+export function agentCardViewModel(agent: MarketplaceAgent, provenAgentId?: string): AgentCardViewModel {
   return {
     agentId: agent.agentId,
     name: agent.name,
@@ -91,6 +92,8 @@ export function agentCardViewModel(agent: MarketplaceAgent): AgentCardViewModel 
         : "listed_only",
     evidence: evidenceForAgent(agent),
     verification: verificationViewModel(agent),
+    passportState: deriveAgentPassportState(agent, provenAgentId),
+    passportHref: `/agents/${agent.agentId}/passport`,
     ...(agent.trustScore.total !== null ? { trustScore: agent.trustScore.total } : {}),
   };
 }
@@ -99,6 +102,7 @@ export function snapshotAgentCardViewModel(
   agent: PublicAgentVerification,
   snapshot: PublicVerificationSnapshot,
   now = Date.now(),
+  provenAgentId?: string,
 ): AgentCardViewModel {
   const snapshotCurrent = isVerificationSnapshotCurrent(snapshot, now);
   const endpointReachable = snapshotCurrent && agent.tools.reachability === "verified";
@@ -127,6 +131,8 @@ export function snapshotAgentCardViewModel(
     href: `/agents/${agent.agentId}`,
     hireability: quoteVerified ? "hireable" : "listed_only",
     verification,
+    passportState: deriveSnapshotAgentPassportState(agent, snapshot, now, provenAgentId),
+    passportHref: `/agents/${agent.agentId}/passport`,
     evidence: [
       {
         kind: "declared",

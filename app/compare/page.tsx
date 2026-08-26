@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { CatalogUnavailable } from "@/components/marketplace/catalog-unavailable";
 import { ComparePage } from "@/components/marketplace/compare-page";
-import { compareMarketplaceAgents } from "@/src/business/composition";
+import { compareMarketplaceAgents, getMainnetJobProof } from "@/src/business/composition";
 import { MarketplaceDataUnavailableError } from "@/src/business/errors/marketplace-errors";
 
 export const dynamic = "force-dynamic";
@@ -21,5 +21,6 @@ export default async function CompareRoute({ searchParams }: { searchParams: Pro
     for (const agentId of selected) retry.append("agentId", agentId);
     return <CatalogUnavailable retryHref={`/compare?${retry.toString()}`} />;
   }
-  return <ComparePage comparison={comparison} selected={selected} />;
+  const mainnetProof = getMainnetJobProof.execute();
+  return <ComparePage comparison={comparison} selected={selected} {...(mainnetProof ? { provenAgentId: mainnetProof.agentId } : {})} />;
 }

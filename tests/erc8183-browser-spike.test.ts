@@ -80,6 +80,14 @@ function hirePlan(): Erc8183HirePlan {
     disputeWindowSeconds: "900",
     executeBefore: NOW + 900,
     maximumSignatures: 5,
+    guardrails: {
+      custody: "injected_wallet",
+      buyerPrivateKeyReceivedByServer: false,
+      spendCeilingRaw: "1",
+      approvalMode: "exact_if_required",
+      approvalSpender: ERC8183_TESTNET.commerce,
+      cancellationAvailableAfterFunding: false,
+    },
     transactions: [],
   };
 }
@@ -150,6 +158,14 @@ describe("Gate 6A business policy", () => {
     expect(plan.approvalAmountRaw).toBe("1");
     expect(plan.maximumSignatures).toBe(5);
     expect(plan.transactions.find(({ kind }) => kind === "approve")).toMatchObject({ required: true });
+    expect(plan.guardrails).toEqual({
+      custody: "injected_wallet",
+      buyerPrivateKeyReceivedByServer: false,
+      spendCeilingRaw: "1",
+      approvalMode: "exact_if_required",
+      approvalSpender: ERC8183_TESTNET.commerce,
+      cancellationAvailableAfterFunding: false,
+    });
   });
 
   it("skips approval when current allowance is sufficient", async () => {
