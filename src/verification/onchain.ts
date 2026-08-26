@@ -7,7 +7,7 @@ import {
   type Address,
   type PublicClient,
 } from "viem";
-import type { OnchainIdentity } from "./types.js";
+import type { OnchainIdentity } from "./types.ts";
 
 const identityReadAbi = [
   {
