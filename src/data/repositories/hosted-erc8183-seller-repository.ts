@@ -3,7 +3,7 @@ import type {
   HostedSellerDeliverable,
   HostedSellerMessage,
   HostedSellerReply,
-} from "../../business/entities/hosted-erc8183-seller.js";
+} from "../../business/entities/hosted-erc8183-seller.ts";
 
 export interface HostedErc8183SellerRepository {
   getAgentCard(): Promise<HostedSellerAgentCard>;
