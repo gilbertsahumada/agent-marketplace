@@ -9,9 +9,9 @@ import {
   type PublicClient,
 } from "viem";
 import { bsc } from "viem/chains";
-import { fetchAgentCard } from "../a2a.js";
-import { createSafeEndpointTransport } from "../verification/safe-http.js";
-import { ERC1967_IMPLEMENTATION_SLOT, ERC8183_MAINNET } from "./contracts.js";
+import { fetchAgentCard } from "../a2a.ts";
+import { createSafeEndpointTransport } from "../verification/safe-http.ts";
+import { ERC1967_IMPLEMENTATION_SLOT, ERC8183_MAINNET } from "./contracts.ts";
 
 const commerceAbi = parseAbi(["function paymentToken() view returns (address)"]);
 const routerAbi = parseAbi(["function policyWhitelist(address) view returns (bool)"]);
