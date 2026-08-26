@@ -1,19 +1,19 @@
-import { AsyncTtlCache } from "../cache/async-ttl-cache.js";
-import { Trust8004Provider } from "../../trust8004/provider.js";
-import type { AgentListItem, MarketplaceAgent } from "../../trust8004/types.js";
-import { createBscIdentityReader, type BscIdentityReader } from "../../verification/onchain.js";
-import { DEFAULT_REGISTERED_AGENT_SORT } from "./marketplace-agent-repository.js";
+import { AsyncTtlCache } from "../cache/async-ttl-cache.ts";
+import { Trust8004Provider } from "../../trust8004/provider.ts";
+import type { AgentListItem, MarketplaceAgent } from "../../trust8004/types.ts";
+import { createBscIdentityReader, type BscIdentityReader } from "../../verification/onchain.ts";
+import { DEFAULT_REGISTERED_AGENT_SORT } from "./marketplace-agent-repository.ts";
 import {
   PUBLIC_VERIFICATION_SNAPSHOT,
   publicVerificationForAgent,
-} from "../verification/public-verification-snapshot.js";
+} from "../verification/public-verification-snapshot.ts";
 import type {
   MarketplaceAgentData,
   MarketplaceAgentDataPage,
   MarketplaceAgentRepository,
   MarketplaceDataSort,
   OnchainIdentityData,
-} from "./marketplace-agent-repository.js";
+} from "./marketplace-agent-repository.ts";
 
 const CATALOG_TTL_MS = 5 * 60 * 1_000;
 const ONCHAIN_IDENTITY_TTL_MS = 60 * 1_000;
