@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
-import type { MainnetJobProof } from "../src/business/entities/mainnet-job-proof.js";
-import type { MarketplaceAgent } from "../src/business/entities/marketplace-agent.js";
+import type { MainnetJobProof } from "../src/business/entities/mainnet-job-proof.ts";
+import type { MarketplaceAgent } from "../src/business/entities/marketplace-agent.ts";
 import {
   buildEvidencePassport,
   type EvidencePassportInput,
-} from "../src/business/policies/evidence-passport-policy.js";
-import { GetAgentEvidencePassport } from "../src/business/use-cases/get-agent-evidence-passport.js";
+} from "../src/business/policies/evidence-passport-policy.ts";
+import { GetAgentEvidencePassport } from "../src/business/use-cases/get-agent-evidence-passport.ts";
 
 const OBSERVED_AT = "2026-08-26T10:00:00.000Z";
 
