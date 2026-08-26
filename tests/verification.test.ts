@@ -7,22 +7,22 @@ import {
   parseOutputPath,
   verificationExitCode,
   writeVerificationReport,
-} from "../src/verification/cli.js";
+} from "../src/verification/cli.ts";
 import {
   assertSafeMcpEndpoint,
   isPublicIpAddress,
   verifyMcpEndpoint,
-} from "../src/verification/mcp.js";
+} from "../src/verification/mcp.ts";
 import {
   createSafeEndpointTransport,
   createPinnedLookup,
   resolveSafePublicHttpsEndpoint,
-} from "../src/verification/safe-http.js";
-import { ViemBscIdentityReader, type BscIdentityReader } from "../src/verification/onchain.js";
-import { buildBscVerificationReport } from "../src/verification/report.js";
-import type { McpEndpointVerification } from "../src/verification/types.js";
-import { Trust8004Provider } from "../src/trust8004/provider.js";
-import { buildBscCandidateInventory } from "../src/trust8004/inventory.js";
+} from "../src/verification/safe-http.ts";
+import { ViemBscIdentityReader, type BscIdentityReader } from "../src/verification/onchain.ts";
+import { buildBscVerificationReport } from "../src/verification/report.ts";
+import type { McpEndpointVerification } from "../src/verification/types.ts";
+import { Trust8004Provider } from "../src/trust8004/provider.ts";
+import { buildBscCandidateInventory } from "../src/trust8004/inventory.ts";
 
 async function fixture(path: string): Promise<unknown> {
   return JSON.parse(await readFile(new URL(`./fixtures/${path}`, import.meta.url), "utf8")) as unknown;
