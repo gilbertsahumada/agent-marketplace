@@ -1,4 +1,4 @@
-import type { EndpointObservation, NormalizedEndpoint, NormalizedService, TrustScoreDimension } from "../../trust8004/types.js";
+import type { EndpointObservation, NormalizedEndpoint, NormalizedService, TrustScoreDimension } from "../../trust8004/types.ts";
 
 export const MARKETPLACE_CATEGORIES = [
   "rebalancing",
