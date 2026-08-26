@@ -1,12 +1,12 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
-import type { MainnetDemoPublicConfig } from "../src/business/entities/mainnet-browser-demo.js";
-import { GetMainnetHiringExposure } from "../src/business/use-cases/get-mainnet-hiring-exposure.js";
-import { NotifyQualifiedMainnetFundedJob, PrepareQualifiedMainnetHire, RequestQualifiedMainnetQuote } from "../src/business/use-cases/qualified-mainnet-hire.js";
-import { AsyncTtlCache } from "../src/data/cache/async-ttl-cache.js";
-import { Trust8004MarketplaceAgentRepository } from "../src/data/repositories/trust8004-marketplace-agent-repository.js";
-import { PUBLIC_VERIFICATION_SNAPSHOT } from "../src/data/verification/public-verification-snapshot.js";
-import type { Trust8004Provider } from "../src/trust8004/provider.js";
+import type { MainnetDemoPublicConfig } from "../src/business/entities/mainnet-browser-demo.ts";
+import { GetMainnetHiringExposure } from "../src/business/use-cases/get-mainnet-hiring-exposure.ts";
+import { NotifyQualifiedMainnetFundedJob, PrepareQualifiedMainnetHire, RequestQualifiedMainnetQuote } from "../src/business/use-cases/qualified-mainnet-hire.ts";
+import { AsyncTtlCache } from "../src/data/cache/async-ttl-cache.ts";
+import { Trust8004MarketplaceAgentRepository } from "../src/data/repositories/trust8004-marketplace-agent-repository.ts";
+import { PUBLIC_VERIFICATION_SNAPSHOT } from "../src/data/verification/public-verification-snapshot.ts";
+import type { Trust8004Provider } from "../src/trust8004/provider.ts";
 
 const demoConfig: MainnetDemoPublicConfig = {
   agentId: 9001,
