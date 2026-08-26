@@ -1,11 +1,11 @@
-import type { MarketplaceAgentRepository } from "../../data/repositories/marketplace-agent-repository.js";
-import type { MarketplaceAgent } from "../entities/marketplace-agent.js";
+import type { MarketplaceAgentRepository } from "../../data/repositories/marketplace-agent-repository.ts";
+import type { MarketplaceAgent } from "../entities/marketplace-agent.ts";
 import {
   InvalidMarketplaceInputError,
   MarketplaceAgentNotFoundError,
   MarketplaceDataUnavailableError,
-} from "../errors/marketplace-errors.js";
-import { attachOnchainIdentity, toMarketplaceAgent } from "../policies/marketplace-agent-policy.js";
+} from "../errors/marketplace-errors.ts";
+import { attachOnchainIdentity, toMarketplaceAgent } from "../policies/marketplace-agent-policy.ts";
 
 export class GetMarketplaceAgent {
   constructor(private readonly repository: MarketplaceAgentRepository) {}
