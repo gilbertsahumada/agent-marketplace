@@ -10,19 +10,19 @@ import {
   negotiate,
   notifyFunded,
   type QuoteEnvelope,
-} from "./a2a.js";
-import type { Gate1Config, ReceiptConfig } from "./config.js";
+} from "./a2a.ts";
+import type { Gate1Config, ReceiptConfig } from "./config.ts";
 import {
   createEvmBuyerWallet,
   type BuyerWalletFactory,
-} from "./buyer-wallet.js";
-import { resolveIdentity } from "./identity.js";
-import { GATE1_NETWORK } from "./network.js";
+} from "./buyer-wallet.ts";
+import { resolveIdentity } from "./identity.ts";
+import { GATE1_NETWORK } from "./network.ts";
 import {
   receiptPath,
   writeReceipt,
   type Gate1Receipt,
-} from "./receipt.js";
+} from "./receipt.ts";
 
 export interface PreflightResult {
   identity: Awaited<ReturnType<typeof resolveIdentity>>;
