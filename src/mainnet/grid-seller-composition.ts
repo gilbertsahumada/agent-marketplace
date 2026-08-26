@@ -1,8 +1,8 @@
 import "server-only";
-import { GetHostedSellerAgentCard } from "../business/use-cases/get-hosted-seller-agent-card.js";
-import { GetHostedSellerDeliverable } from "../business/use-cases/get-hosted-seller-deliverable.js";
-import { HandleHostedSellerMessage } from "../business/use-cases/handle-hosted-seller-message.js";
-import { MainnetGridSellerRepository } from "./grid-seller-repository.js";
+import { GetHostedSellerAgentCard } from "../business/use-cases/get-hosted-seller-agent-card.ts";
+import { GetHostedSellerDeliverable } from "../business/use-cases/get-hosted-seller-deliverable.ts";
+import { HandleHostedSellerMessage } from "../business/use-cases/handle-hosted-seller-message.ts";
+import { MainnetGridSellerRepository } from "./grid-seller-repository.ts";
 
 const repository = new MainnetGridSellerRepository();
 
