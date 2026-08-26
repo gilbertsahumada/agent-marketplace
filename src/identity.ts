@@ -6,7 +6,7 @@ import {
   type Address,
   type PublicClient,
 } from "viem";
-import { TESTNET_CHAIN_ID } from "./config.js";
+import { TESTNET_CHAIN_ID } from "./config.ts";
 
 export const TESTNET_REGISTRY = getAddress(
   "0x8004A818BFB912233c491871b3d84c89A494BD9e",
