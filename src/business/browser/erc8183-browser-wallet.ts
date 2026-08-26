@@ -6,6 +6,6 @@ export {
   executeBrowserHire,
   loadBrowserJournal,
   saveBrowserJournal,
-} from "../../data/erc8183/browser-wallet-adapter.js";
-export type { Erc8183BrowserDeployment } from "../../data/erc8183/browser-wallet-adapter.js";
-export { ERC8183_TESTNET } from "../../data/erc8183/contracts.js";
+} from "../../data/erc8183/browser-wallet-adapter.ts";
+export type { Erc8183BrowserDeployment } from "../../data/erc8183/browser-wallet-adapter.ts";
+export { ERC8183_TESTNET } from "../../data/erc8183/contracts.ts";
