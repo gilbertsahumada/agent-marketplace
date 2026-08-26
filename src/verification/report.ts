@@ -1,17 +1,17 @@
 import { getAddress, isAddress } from "viem";
-import { buildBscCandidateInventory } from "../trust8004/inventory.js";
-import type { Trust8004Provider } from "../trust8004/provider.js";
-import type { BscCandidateInventory, MarketplaceAgent, MarketplaceCategory } from "../trust8004/types.js";
-import type { BscIdentityReader } from "./onchain.js";
-import { verifyMcpEndpoint, type McpVerifierOptions } from "./mcp.js";
-import { createProbeBudget, type ProbeBudget } from "./probe-budget.js";
+import { buildBscCandidateInventory } from "../trust8004/inventory.ts";
+import type { Trust8004Provider } from "../trust8004/provider.ts";
+import type { BscCandidateInventory, MarketplaceAgent, MarketplaceCategory } from "../trust8004/types.ts";
+import type { BscIdentityReader } from "./onchain.ts";
+import { verifyMcpEndpoint, type McpVerifierOptions } from "./mcp.ts";
+import { createProbeBudget, type ProbeBudget } from "./probe-budget.ts";
 import type {
   AgentVerification,
   BscVerificationReport,
   IdentityVerification,
   McpEndpointVerification,
   VerificationError,
-} from "./types.js";
+} from "./types.ts";
 
 export interface BuildVerificationReportOptions {
   provider: Trust8004Provider;
