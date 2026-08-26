@@ -7,24 +7,24 @@ import {
   verifyQuoteSignature,
 } from "@bnbagent/sdk/erc8183";
 import { formatUnits, getAddress, isAddressEqual, type Address } from "viem";
-import { fetchAgentCard, negotiate, notifyFunded, type QuoteEnvelope } from "../../a2a.js";
+import { fetchAgentCard, negotiate, notifyFunded, type QuoteEnvelope } from "../../a2a.ts";
 import type {
   Erc8183BuyerFacts,
   Erc8183JobFacts,
   Erc8183QuoteEnvelope,
   NormalizedErc8183Quote,
   NotifyFundedResult,
-} from "../../business/entities/erc8183-browser-spike.js";
+} from "../../business/entities/erc8183-browser-spike.ts";
 import {
   Erc8183SpikeDisabledError,
   Erc8183SpikeUnavailableError,
-} from "../../business/errors/erc8183-spike-errors.js";
-import type { Erc8183SpikeAllowlist } from "../../business/policies/erc8183-spike-policy.js";
-import { resolveIdentity } from "../../identity.js";
-import { GATE1_NETWORK } from "../../network.js";
-import type { Erc8183SpikeRepository } from "../repositories/erc8183-spike-repository.js";
-import { ERC8183_TESTNET } from "./contracts.js";
-import { loadErc8183BrowserSpikeConfig } from "./spike-config.js";
+} from "../../business/errors/erc8183-spike-errors.ts";
+import type { Erc8183SpikeAllowlist } from "../../business/policies/erc8183-spike-policy.ts";
+import { resolveIdentity } from "../../identity.ts";
+import { GATE1_NETWORK } from "../../network.ts";
+import type { Erc8183SpikeRepository } from "../repositories/erc8183-spike-repository.ts";
+import { ERC8183_TESTNET } from "./contracts.ts";
+import { loadErc8183BrowserSpikeConfig } from "./spike-config.ts";
 
 type QuoteResponse = {
   accepted?: unknown;
