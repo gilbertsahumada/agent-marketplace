@@ -23,6 +23,7 @@ import {
   type Erc8183BrowserJournal,
   type Erc8183HirePlan,
   type Erc8183JobFacts,
+  type Erc8183TransactionIntent,
   type NormalizedErc8183Quote,
   type NotifyFundedResult,
 } from "@/src/business/entities/erc8183-browser-spike";
@@ -89,6 +90,51 @@ function SummaryRow({ label, value, mono = false }: { label: string; value: stri
       <dt className="text-xs text-zinc-500">{label}</dt>
       <dd className={mono ? "font-hash text-xs text-zinc-200" : "text-sm text-zinc-200"}>{value}</dd>
     </div>
+  );
+}
+
+export function Erc8183TransactionList({
+  explorerUrl,
+  intents,
+  journal,
+}: {
+  explorerUrl: string;
+  intents: Erc8183TransactionIntent[];
+  journal: Erc8183BrowserJournal | null;
+}) {
+  return (
+    <ol className="space-y-3" aria-label="Expected wallet signatures">
+      {intents.map((intent) => {
+        const hash = journal?.transactions[intent.kind];
+        const confirmed = journal?.receipts?.[intent.kind] !== undefined;
+        return (
+          <li key={intent.kind} className="rounded-lg border border-white/[0.07] bg-white/[0.02] p-3">
+            <div className="flex items-start justify-between gap-4">
+              <div className="min-w-0">
+                <p className="font-hash text-xs text-zinc-200">{intent.kind}</p>
+                <p className="mt-1 text-xs text-zinc-500">{intent.purpose}</p>
+                <p className="font-hash mt-1 text-[10px] text-zinc-600">{intent.contract}</p>
+              </div>
+              <Badge className={confirmed ? "border-emerald-400/30 text-emerald-300" : undefined} variant="outline">
+                {confirmed && <CheckCircle2 aria-hidden="true" className="size-3" />}
+                {confirmed ? "confirmed" : hash ? "pending" : intent.required ? "signature" : "skipped"}
+              </Badge>
+            </div>
+            {hash && (
+              <a
+                aria-label={`View ${intent.kind} transaction in explorer`}
+                className="font-hash mt-3 inline-flex items-center gap-2 text-[11px] text-amber-200 hover:text-amber-100"
+                href={`${explorerUrl}/tx/${hash}`}
+                rel="noreferrer"
+                target="_blank"
+              >
+                {shortAddress(hash)} <ExternalLink aria-hidden="true" className="size-3" />
+              </a>
+            )}
+          </li>
+        );
+      })}
+    </ol>
   );
 }
 
@@ -362,18 +408,7 @@ function Erc8183BrowserDemo({ mode, deployment }: { mode: "testnet" | "mainnet";
             </CardHeader>
             <CardContent>
               {plan ? (
-                <ol className="space-y-3" aria-label="Expected wallet signatures">
-                  {plan.transactions.map((intent) => (
-                    <li key={intent.kind} className="flex items-start justify-between gap-4 rounded-lg border border-white/[0.07] bg-white/[0.02] p-3">
-                      <div className="min-w-0">
-                        <p className="font-hash text-xs text-zinc-200">{intent.kind}</p>
-                        <p className="mt-1 text-xs text-zinc-500">{intent.purpose}</p>
-                        <p className="font-hash mt-1 text-[10px] text-zinc-600">{intent.contract}</p>
-                      </div>
-                      <Badge variant="outline">{intent.required ? "signature" : "skipped"}</Badge>
-                    </li>
-                  ))}
-                </ol>
+                <Erc8183TransactionList explorerUrl={deployment.explorerUrl} intents={plan.transactions} journal={journal} />
               ) : <p className="text-sm text-zinc-500">Connect a wallet to calculate the exact transaction set.</p>}
               <Button className="mt-5" disabled={!plan || busy !== null || submitted} onClick={() => void signAndRun()}>
                 {busy === "Waiting for wallet confirmations" ? <LoaderCircle aria-hidden="true" className="animate-spin" /> : <Wallet aria-hidden="true" />}
