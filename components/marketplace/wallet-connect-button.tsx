@@ -2,7 +2,7 @@
 
 import { Check, Copy, ExternalLink, LogOut, TriangleAlert, Wallet } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { useAccount, useChainId, useConnect, useDisconnect, useSwitchChain } from "wagmi";
+import { useAccount, useChainId, useConnect, useDisconnect, useSwitchChain, type Connector } from "wagmi";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
@@ -21,6 +21,19 @@ function detectedWalletName(): { name: string; available: boolean } {
   if (injected.isMetaMask) return { name: "MetaMask", available: true };
   if (injected.isCoinbaseWallet) return { name: "Coinbase Wallet", available: true };
   return { name: "Browser Wallet", available: true };
+}
+
+function visibleWalletOptions(connectors: readonly Connector[], fallbackName: string) {
+  const options = new Map<string, { connector: Connector; name: string }>();
+  for (const connector of connectors) {
+    const name = connector.name.toLowerCase() === "injected" ? fallbackName : connector.name;
+    const key = name.trim().toLowerCase();
+    const existing = options.get(key);
+    if (!existing || (existing.connector.id === "injected" && connector.id !== "injected")) {
+      options.set(key, { connector, name });
+    }
+  }
+  return [...options.values()];
 }
 
 const panelClass =
@@ -187,6 +200,7 @@ export function WalletConnectButton({ variant = "full" }: { variant?: "compact" 
   }
 
   const wallet = detectedWalletName();
+  const walletOptions = visibleWalletOptions(connectors, wallet.name);
 
   return (
     <div className="relative" ref={dropdownRef}>
@@ -206,17 +220,17 @@ export function WalletConnectButton({ variant = "full" }: { variant?: "compact" 
             Select wallet
           </p>
           {wallet.available ? (
-            connectors.map((connector) => (
+            walletOptions.map(({ connector, name }) => (
               <button
                 className="flex w-full items-center rounded-lg px-2 py-1.5 text-left text-sm text-zinc-200 transition-colors hover:bg-white/5 hover:text-white"
-                key={connector.id}
+                key={connector.uid}
                 onClick={() => {
                   connect({ connector });
                   setIsOpen(false);
                 }}
                 type="button"
               >
-                {wallet.name}
+                {name}
               </button>
             ))
           ) : (
