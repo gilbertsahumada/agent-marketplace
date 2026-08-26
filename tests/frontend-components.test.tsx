@@ -22,7 +22,7 @@ import type {
 import type { PublicJobProof } from "../src/business/entities/public-job-proof.ts";
 import { GATE1_JOB_514_MANIFEST } from "../src/data/proofs/gate1-job-514.ts";
 import { GATE6A_JOB_551_MANIFEST } from "../src/data/proofs/gate6a-job-551.ts";
-import { Erc8183TestnetDemo } from "../components/spikes/erc8183-browser-spike.tsx";
+import { Erc8183TestnetDemo, Erc8183TransactionList } from "../components/spikes/erc8183-browser-spike.tsx";
 import { Providers } from "../app/providers.tsx";
 import { VerificationDrift } from "../components/marketplace/verification-drift.tsx";
 import { EvidencePassportCard } from "../components/marketplace/evidence-passport-card.tsx";
@@ -489,6 +489,32 @@ describe("marketplace presentation rules", () => {
     expect(screen.queryByText(/mainnet/i)).not.toBeInTheDocument();
     const result = await axe.run(document.body);
     expect(result.violations).toEqual([]);
+  });
+
+  it("shows confirmed wallet transactions with explorer links", () => {
+    const hash = `0x${"12".repeat(32)}` as const;
+    render(createElement(Erc8183TransactionList, {
+      explorerUrl: "https://bscscan.com",
+      intents: [{
+        kind: "createJob",
+        contract: "0x1111111111111111111111111111111111111111",
+        purpose: "Create the job",
+        required: true,
+      }],
+      journal: {
+        schemaVersion: 1,
+        chainId: 56,
+        buyer: "0x2222222222222222222222222222222222222222",
+        seller: "0x3333333333333333333333333333333333333333",
+        jobId: "56662",
+        transactions: { createJob: hash },
+        receipts: { createJob: { blockNumber: "1", gasUsed: "2", effectiveGasPrice: "3", confirmedAt: "2026-08-27T00:00:00.000Z" } },
+        lastConfirmedStep: "created",
+      },
+    }));
+
+    expect(screen.getByText("confirmed")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /view createJob transaction/i })).toHaveAttribute("href", `https://bscscan.com/tx/${hash}`);
   });
 
   it("renders the Job 551 proof with complete hashes when live RPC is unavailable", async () => {
