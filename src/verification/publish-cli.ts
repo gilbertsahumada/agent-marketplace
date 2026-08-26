@@ -1,12 +1,12 @@
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
-import { parsePublicVerificationSnapshot } from "../data/verification/public-verification-snapshot.js";
+import { parsePublicVerificationSnapshot } from "../data/verification/public-verification-snapshot.ts";
 import {
   marketplaceEvidenceFromReleaseInput,
   sanitizeVerificationReport,
   verificationReportFromReleaseInput,
-} from "./publish.js";
+} from "./publish.ts";
 
 interface PublishArguments {
   input: string;
