@@ -10,19 +10,19 @@ import {
   readinessFatalMessage,
   readinessExitCode,
   writeReadinessReport,
-} from "../src/readiness/cli.js";
-import type { Gate1ProofReader } from "../src/readiness/gate1.js";
-import { verifyGate1Proof } from "../src/readiness/gate1.js";
-import { createHireabilityAssessor } from "../src/readiness/protocols.js";
-import { buildBscMarketplaceReadinessReport } from "../src/readiness/report.js";
-import type { HireabilityAssessment } from "../src/readiness/types.js";
-import { KNOWN_HEYANON_AGENT_IDS } from "../src/trust8004/inventory.js";
-import { Trust8004HttpError, Trust8004Provider } from "../src/trust8004/provider.js";
-import type { MarketplaceAgent } from "../src/trust8004/types.js";
-import type { BscIdentityReader } from "../src/verification/onchain.js";
-import type { IdentityVerification, McpEndpointVerification } from "../src/verification/types.js";
-import { createProbeBudget } from "../src/verification/probe-budget.js";
-import { MainnetGridSellerRepository } from "../src/mainnet/grid-seller-repository.js";
+} from "../src/readiness/cli.ts";
+import type { Gate1ProofReader } from "../src/readiness/gate1.ts";
+import { verifyGate1Proof } from "../src/readiness/gate1.ts";
+import { createHireabilityAssessor } from "../src/readiness/protocols.ts";
+import { buildBscMarketplaceReadinessReport } from "../src/readiness/report.ts";
+import type { HireabilityAssessment } from "../src/readiness/types.ts";
+import { KNOWN_HEYANON_AGENT_IDS } from "../src/trust8004/inventory.ts";
+import { Trust8004HttpError, Trust8004Provider } from "../src/trust8004/provider.ts";
+import type { MarketplaceAgent } from "../src/trust8004/types.ts";
+import type { BscIdentityReader } from "../src/verification/onchain.ts";
+import type { IdentityVerification, McpEndpointVerification } from "../src/verification/types.ts";
+import { createProbeBudget } from "../src/verification/probe-budget.ts";
+import { MainnetGridSellerRepository } from "../src/mainnet/grid-seller-repository.ts";
 
 const PROVIDER = "0x1111111111111111111111111111111111111111" as Address;
 const PAYMENT_TOKEN = "0x2222222222222222222222222222222222222222" as Address;
