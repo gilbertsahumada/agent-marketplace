@@ -17,15 +17,15 @@ import type {
   Erc8183JobFacts,
   Erc8183JournalStep,
   Erc8183TransactionKind,
-} from "../../business/entities/erc8183-browser-spike.js";
-import { InvalidErc8183SpikeInputError } from "../../business/errors/erc8183-spike-errors.js";
+} from "../../business/entities/erc8183-browser-spike.ts";
+import { InvalidErc8183SpikeInputError } from "../../business/errors/erc8183-spike-errors.ts";
 import {
   agenticCommerceBrowserAbi,
   ERC8183_TESTNET,
   evaluatorRouterBrowserAbi,
   paymentTokenBrowserAbi,
-} from "./contracts.js";
-import { assertSuccessfulReceipt, extractConfirmedJobId } from "./receipt-parser.js";
+} from "./contracts.ts";
+import { assertSuccessfulReceipt, extractConfirmedJobId } from "./receipt-parser.ts";
 
 const JOURNAL_KEY = "bnb-agent-marketplace:erc8183-browser-spike:v1";
 const JOURNAL_STEPS = new Set([
