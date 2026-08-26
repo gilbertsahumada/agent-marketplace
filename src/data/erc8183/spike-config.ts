@@ -1,4 +1,4 @@
-import { Erc8183SpikeDisabledError, Erc8183SpikeUnavailableError } from "../../business/errors/erc8183-spike-errors.js";
+import { Erc8183SpikeDisabledError, Erc8183SpikeUnavailableError } from "../../business/errors/erc8183-spike-errors.ts";
 
 export interface Erc8183BrowserSpikeConfig {
   sellerOrigin: string;
