@@ -1,4 +1,4 @@
-import type { HireabilityStatus } from "./marketplace-agent.js";
+import type { HireabilityStatus } from "./marketplace-agent.ts";
 
 export type EvidencePassportState =
   | "registered"
