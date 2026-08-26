@@ -1,7 +1,7 @@
 import snapshotJson from "./bsc-candidates-public.json" with { type: "json" };
-import { MARKETPLACE_CATEGORIES, type MarketplaceCategory } from "../../business/entities/marketplace-agent.js";
-import type { PublicAgentVerification, PublicVerificationFreshness, PublicVerificationSnapshot } from "../../business/entities/public-verification-snapshot.js";
-export type { PublicAgentVerification, PublicVerificationFreshness, PublicVerificationSnapshot } from "../../business/entities/public-verification-snapshot.js";
+import { MARKETPLACE_CATEGORIES, type MarketplaceCategory } from "../../business/entities/marketplace-agent.ts";
+import type { PublicAgentVerification, PublicVerificationFreshness, PublicVerificationSnapshot } from "../../business/entities/public-verification-snapshot.ts";
+export type { PublicAgentVerification, PublicVerificationFreshness, PublicVerificationSnapshot } from "../../business/entities/public-verification-snapshot.ts";
 
 const MAX_FUTURE_CLOCK_SKEW_MS = 5 * 60 * 1_000;
 const PROBE_OUTCOMES = [
