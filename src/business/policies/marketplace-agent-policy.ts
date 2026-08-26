@@ -1,12 +1,12 @@
-import { getMarketplaceInventoryEntry } from "../../data/inventory/marketplace-inventory.js";
-import type { MarketplaceAgentData } from "../../data/repositories/marketplace-agent-repository.js";
-import type { OnchainIdentityData } from "../../data/repositories/marketplace-agent-repository.js";
+import { getMarketplaceInventoryEntry } from "../../data/inventory/marketplace-inventory.ts";
+import type { MarketplaceAgentData } from "../../data/repositories/marketplace-agent-repository.ts";
+import type { OnchainIdentityData } from "../../data/repositories/marketplace-agent-repository.ts";
 import type {
   EvidenceRecord,
   MarketplaceAgent,
   MarketplaceCategory,
   MarketplaceHireability,
-} from "../entities/marketplace-agent.js";
+} from "../entities/marketplace-agent.ts";
 
 function evidence(
   kind: EvidenceRecord["kind"],
