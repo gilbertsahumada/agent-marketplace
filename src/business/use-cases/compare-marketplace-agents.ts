@@ -1,11 +1,11 @@
-import type { MarketplaceAgentRepository } from "../../data/repositories/marketplace-agent-repository.js";
-import type { MarketplaceAgentComparison } from "../entities/marketplace-agent.js";
+import type { MarketplaceAgentRepository } from "../../data/repositories/marketplace-agent-repository.ts";
+import type { MarketplaceAgentComparison } from "../entities/marketplace-agent.ts";
 import {
   InvalidMarketplaceInputError,
   MarketplaceAgentNotFoundError,
   MarketplaceDataUnavailableError,
-} from "../errors/marketplace-errors.js";
-import { toMarketplaceAgent } from "../policies/marketplace-agent-policy.js";
+} from "../errors/marketplace-errors.ts";
+import { toMarketplaceAgent } from "../policies/marketplace-agent-policy.ts";
 
 export class CompareMarketplaceAgents {
   constructor(private readonly repository: MarketplaceAgentRepository) {}
