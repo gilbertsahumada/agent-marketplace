@@ -8,24 +8,24 @@ import {
   publicJobProofRepository,
   publicVerificationRepository,
   agentValidationRepository,
-} from "../data/composition.js";
-import { CompareMarketplaceAgents } from "./use-cases/compare-marketplace-agents.js";
-import { GetMarketplaceAgent } from "./use-cases/get-marketplace-agent.js";
-import { ListMarketplaceAgents } from "./use-cases/list-marketplace-agents.js";
-import { GetPublicJobProof } from "./use-cases/get-public-job-proof.js";
-import { GetErc8183JobStatus } from "./use-cases/get-erc8183-job-status.js";
-import { NotifyFundedJob } from "./use-cases/notify-funded-job.js";
-import { PrepareErc8183Hire } from "./use-cases/prepare-erc8183-hire.js";
-import { RequestErc8183Quote } from "./use-cases/request-erc8183-quote.js";
-import { GetErc8183TestnetJobTracking } from "./use-cases/get-erc8183-testnet-job-tracking.js";
-import { GetPublicVerificationSnapshot } from "./use-cases/get-public-verification-snapshot.js";
-import { GetMainnetBrowserDemoConfig } from "./use-cases/get-mainnet-browser-demo-config.js";
-import { GetMainnetJobProof, GetPublicMainnetJobProof } from "./use-cases/get-mainnet-job-proof.js";
-import { GetMarketplaceLandingCatalog } from "./use-cases/get-marketplace-landing-catalog.js";
-import { GetMainnetHiringExposure } from "./use-cases/get-mainnet-hiring-exposure.js";
-import { GetAgentEvidencePassport } from "./use-cases/get-agent-evidence-passport.js";
-import { ValidateMarketplaceAgent } from "./use-cases/validate-marketplace-agent.js";
-import { NotifyQualifiedMainnetFundedJob, PrepareQualifiedMainnetHire, RequestQualifiedMainnetQuote } from "./use-cases/qualified-mainnet-hire.js";
+} from "../data/composition.ts";
+import { CompareMarketplaceAgents } from "./use-cases/compare-marketplace-agents.ts";
+import { GetMarketplaceAgent } from "./use-cases/get-marketplace-agent.ts";
+import { ListMarketplaceAgents } from "./use-cases/list-marketplace-agents.ts";
+import { GetPublicJobProof } from "./use-cases/get-public-job-proof.ts";
+import { GetErc8183JobStatus } from "./use-cases/get-erc8183-job-status.ts";
+import { NotifyFundedJob } from "./use-cases/notify-funded-job.ts";
+import { PrepareErc8183Hire } from "./use-cases/prepare-erc8183-hire.ts";
+import { RequestErc8183Quote } from "./use-cases/request-erc8183-quote.ts";
+import { GetErc8183TestnetJobTracking } from "./use-cases/get-erc8183-testnet-job-tracking.ts";
+import { GetPublicVerificationSnapshot } from "./use-cases/get-public-verification-snapshot.ts";
+import { GetMainnetBrowserDemoConfig } from "./use-cases/get-mainnet-browser-demo-config.ts";
+import { GetMainnetJobProof, GetPublicMainnetJobProof } from "./use-cases/get-mainnet-job-proof.ts";
+import { GetMarketplaceLandingCatalog } from "./use-cases/get-marketplace-landing-catalog.ts";
+import { GetMainnetHiringExposure } from "./use-cases/get-mainnet-hiring-exposure.ts";
+import { GetAgentEvidencePassport } from "./use-cases/get-agent-evidence-passport.ts";
+import { ValidateMarketplaceAgent } from "./use-cases/validate-marketplace-agent.ts";
+import { NotifyQualifiedMainnetFundedJob, PrepareQualifiedMainnetHire, RequestQualifiedMainnetQuote } from "./use-cases/qualified-mainnet-hire.ts";
 
 export const listMarketplaceAgents = new ListMarketplaceAgents(marketplaceAgentRepository);
 export const getMarketplaceAgent = new GetMarketplaceAgent(marketplaceAgentRepository);
