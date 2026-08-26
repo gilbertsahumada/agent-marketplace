@@ -1,11 +1,11 @@
 import { DeliverableManifest } from "@bnbagent/sdk/erc8183";
 import { getAddress } from "viem";
 import { describe, expect, it, vi } from "vitest";
-import { buildGridPlan, gridTaskDescription, parseGridTaskDescription } from "../src/business/policies/grid-plan-policy.js";
-import { ERC1967_IMPLEMENTATION_SLOT, ERC8183_MAINNET } from "../src/mainnet/contracts.js";
-import { MainnetGridSellerRepository } from "../src/mainnet/grid-seller-repository.js";
-import { mainnetImplementationPinsMatch } from "../src/mainnet/implementation-pins.js";
-import { areMainnetWritesEnabled } from "../src/mainnet/mainnet-write-gate.js";
+import { buildGridPlan, gridTaskDescription, parseGridTaskDescription } from "../src/business/policies/grid-plan-policy.ts";
+import { ERC1967_IMPLEMENTATION_SLOT, ERC8183_MAINNET } from "../src/mainnet/contracts.ts";
+import { MainnetGridSellerRepository } from "../src/mainnet/grid-seller-repository.ts";
+import { mainnetImplementationPinsMatch } from "../src/mainnet/implementation-pins.ts";
+import { areMainnetWritesEnabled } from "../src/mainnet/mainnet-write-gate.ts";
 
 const SELLER = getAddress("0x1111111111111111111111111111111111111111");
 
