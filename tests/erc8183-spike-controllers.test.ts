@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { Erc8183DemoJobNotFoundError, Erc8183SpikeDisabledError } from "../src/business/errors/erc8183-spike-errors.js";
+import { Erc8183DemoJobNotFoundError, Erc8183SpikeDisabledError } from "../src/business/errors/erc8183-spike-errors.ts";
 
 const executeQuote = vi.fn();
 const executePrepare = vi.fn();
@@ -13,10 +13,10 @@ vi.mock("@/src/business/composition", () => ({
   getErc8183TestnetJobTracking: { execute: executeStatus },
 }));
 
-const quoteRoute = await import("../app/api/marketplace/demo/erc8183/quote/route.js");
-const prepareRoute = await import("../app/api/marketplace/demo/erc8183/prepare/route.js");
-const notifyRoute = await import("../app/api/marketplace/demo/erc8183/notify/route.js");
-const statusRoute = await import("../app/api/marketplace/jobs/testnet/[jobId]/route.js");
+const quoteRoute = await import("../app/api/marketplace/demo/erc8183/quote/route.ts");
+const prepareRoute = await import("../app/api/marketplace/demo/erc8183/prepare/route.ts");
+const notifyRoute = await import("../app/api/marketplace/demo/erc8183/notify/route.ts");
+const statusRoute = await import("../app/api/marketplace/jobs/testnet/[jobId]/route.ts");
 
 describe("Gate 6A thin controllers", () => {
   beforeEach(() => vi.clearAllMocks());
