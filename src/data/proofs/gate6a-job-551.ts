@@ -1,4 +1,4 @@
-import type { PublicJobProofSnapshotRecord } from "./public-job-proof-record.js";
+import type { PublicJobProofSnapshotRecord } from "./public-job-proof-record.ts";
 
 const EXPLORER = "https://testnet.bscscan.com/tx";
 
