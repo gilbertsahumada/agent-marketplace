@@ -1,7 +1,7 @@
 import "server-only";
 import { getAddress, type Address, type Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
-import { HostedSellerUnavailableError } from "../../business/errors/hosted-seller-errors.js";
+import { HostedSellerUnavailableError } from "../../business/errors/hosted-seller-errors.ts";
 
 export interface HostedSellerConfig {
   origin: string;
