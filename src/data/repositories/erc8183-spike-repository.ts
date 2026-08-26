@@ -5,8 +5,8 @@ import type {
   Erc8183QuoteEnvelope,
   NormalizedErc8183Quote,
   NotifyFundedResult,
-} from "../../business/entities/erc8183-browser-spike.js";
-import type { Erc8183SpikeAllowlist } from "../../business/policies/erc8183-spike-policy.js";
+} from "../../business/entities/erc8183-browser-spike.ts";
+import type { Erc8183SpikeAllowlist } from "../../business/policies/erc8183-spike-policy.ts";
 
 export interface Erc8183SpikeRepository {
   readonly allowlist: Erc8183SpikeAllowlist;
