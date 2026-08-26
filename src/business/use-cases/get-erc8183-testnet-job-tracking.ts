@@ -1,9 +1,9 @@
-import type { PublicJobProofRepository } from "../../data/proofs/public-job-proof-record.js";
-import type { Erc8183SpikeRepository } from "../../data/repositories/erc8183-spike-repository.js";
-import type { Erc8183TestnetJobTracking } from "../entities/erc8183-testnet-job-tracking.js";
-import { InvalidErc8183SpikeInputError } from "../errors/erc8183-spike-errors.js";
-import { Erc8183SpikeDisabledError, Erc8183SpikeUnavailableError } from "../errors/erc8183-spike-errors.js";
-import { assertTrackableFixtureJob } from "../policies/erc8183-spike-policy.js";
+import type { PublicJobProofRepository } from "../../data/proofs/public-job-proof-record.ts";
+import type { Erc8183SpikeRepository } from "../../data/repositories/erc8183-spike-repository.ts";
+import type { Erc8183TestnetJobTracking } from "../entities/erc8183-testnet-job-tracking.ts";
+import { InvalidErc8183SpikeInputError } from "../errors/erc8183-spike-errors.ts";
+import { Erc8183SpikeDisabledError, Erc8183SpikeUnavailableError } from "../errors/erc8183-spike-errors.ts";
+import { assertTrackableFixtureJob } from "../policies/erc8183-spike-policy.ts";
 
 export class GetErc8183TestnetJobTracking {
   constructor(
