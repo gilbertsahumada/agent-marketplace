@@ -1,12 +1,12 @@
 import { getAddress } from "viem";
 import { describe, expect, it } from "vitest";
-import type { Erc8183JobFacts } from "../src/business/entities/erc8183-browser-spike.js";
-import { Erc8183DemoJobNotFoundError, Erc8183SpikeDisabledError } from "../src/business/errors/erc8183-spike-errors.js";
-import { GetErc8183TestnetJobTracking } from "../src/business/use-cases/get-erc8183-testnet-job-tracking.js";
-import { ERC8183_TESTNET } from "../src/data/erc8183/contracts.js";
-import { GATE6A_JOB_551_MANIFEST } from "../src/data/proofs/gate6a-job-551.js";
-import type { PublicJobProofRepository } from "../src/data/proofs/public-job-proof-record.js";
-import type { Erc8183SpikeRepository } from "../src/data/repositories/erc8183-spike-repository.js";
+import type { Erc8183JobFacts } from "../src/business/entities/erc8183-browser-spike.ts";
+import { Erc8183DemoJobNotFoundError, Erc8183SpikeDisabledError } from "../src/business/errors/erc8183-spike-errors.ts";
+import { GetErc8183TestnetJobTracking } from "../src/business/use-cases/get-erc8183-testnet-job-tracking.ts";
+import { ERC8183_TESTNET } from "../src/data/erc8183/contracts.ts";
+import { GATE6A_JOB_551_MANIFEST } from "../src/data/proofs/gate6a-job-551.ts";
+import type { PublicJobProofRepository } from "../src/data/proofs/public-job-proof-record.ts";
+import type { Erc8183SpikeRepository } from "../src/data/repositories/erc8183-spike-repository.ts";
 
 const BUYER = getAddress("0x1111111111111111111111111111111111111111");
 
