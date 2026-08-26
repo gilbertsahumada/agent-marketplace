@@ -2,7 +2,7 @@ import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { redact, writeReceipt, type Gate1Receipt } from "../src/receipt.js";
+import { redact, writeReceipt, type Gate1Receipt } from "../src/receipt.ts";
 
 describe("Gate 1 receipts", () => {
   it("recursively removes secret-shaped fields", () => {
