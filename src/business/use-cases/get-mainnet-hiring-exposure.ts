@@ -1,10 +1,10 @@
-import type { MainnetDemoPublicConfig } from "../entities/mainnet-browser-demo.js";
-import type { PublicVerificationSnapshot } from "../entities/public-verification-snapshot.js";
+import type { MainnetDemoPublicConfig } from "../entities/mainnet-browser-demo.ts";
+import type { PublicVerificationSnapshot } from "../entities/public-verification-snapshot.ts";
 import {
   Erc8183SpikeDisabledError,
   Erc8183SpikeUnavailableError,
-} from "../errors/erc8183-spike-errors.js";
-import { hireableReleaseAgents } from "../policies/release-qualification-policy.js";
+} from "../errors/erc8183-spike-errors.ts";
+import { hireableReleaseAgents } from "../policies/release-qualification-policy.ts";
 
 export interface MainnetHiringSnapshotReader {
   getSnapshot(): PublicVerificationSnapshot;
