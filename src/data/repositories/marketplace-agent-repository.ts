@@ -3,7 +3,7 @@ import type {
   NormalizedEndpoint,
   NormalizedService,
   TrustScoreDimension,
-} from "../../trust8004/types.js";
+} from "../../trust8004/types.ts";
 import type { Address } from "viem";
 
 export const MARKETPLACE_DATA_SORTS = ["newest", "reputation", "trust_score", "agent_id"] as const;
