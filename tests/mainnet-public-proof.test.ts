@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import type { MainnetJobProof } from "../src/business/entities/mainnet-job-proof.js";
-import { InvalidPublicJobProofIdError, PublicJobProofNotFoundError } from "../src/business/errors/public-job-proof-errors.js";
-import { GetPublicMainnetJobProof } from "../src/business/use-cases/get-mainnet-job-proof.js";
-import { StaticMainnetJobProofRepository } from "../src/data/proofs/mainnet-job-proof-repository.js";
+import type { MainnetJobProof } from "../src/business/entities/mainnet-job-proof.ts";
+import { InvalidPublicJobProofIdError, PublicJobProofNotFoundError } from "../src/business/errors/public-job-proof-errors.ts";
+import { GetPublicMainnetJobProof } from "../src/business/use-cases/get-mainnet-job-proof.ts";
+import { StaticMainnetJobProofRepository } from "../src/data/proofs/mainnet-job-proof-repository.ts";
 
 const proof = {
   schemaVersion: 1,
