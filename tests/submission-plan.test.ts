@@ -133,6 +133,13 @@ describe("published verification evidence", () => {
     expect(vercel.buildCommand).toBe("npm run build:deployment");
     expect(packageJson.scripts["build:deployment"]).toBe("npm run readiness:bsc && npm run publish:verification && npm run build");
   });
+
+  it("loads local readiness configuration without requiring an env file in deployment", () => {
+    const packageJson = JSON.parse(readFileSync("package.json", "utf8")) as { scripts: Record<string, string> };
+    expect(packageJson.scripts["readiness:bsc"]).toBe(
+      "if [ -f .env.local ]; then node --env-file=.env.local --import tsx src/readiness/cli.ts; else tsx src/readiness/cli.ts; fi",
+    );
+  });
 });
 
 describe("Mainnet security decision", () => {

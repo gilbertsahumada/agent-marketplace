@@ -29,7 +29,7 @@
     "mainnet:grid-seller": "node --conditions=react-server --env-file=.env.local --import tsx src/mainnet/grid-seller-cli.ts",
     "mainnet:settle-grid-job": "node --conditions=react-server --env-file=.env.local --import tsx src/mainnet/settle-grid-job-cli.ts",
     "mainnet:capture-proof": "node --env-file=.env.local --import tsx src/mainnet/capture-job-proof-cli.ts",
-    "readiness:bsc": "tsx src/readiness/cli.ts",
+    "readiness:bsc": "if [ -f .env.local ]; then node --env-file=.env.local --import tsx src/readiness/cli.ts; else tsx src/readiness/cli.ts; fi",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
