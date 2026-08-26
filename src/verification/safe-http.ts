@@ -1,7 +1,7 @@
 import { lookup } from "node:dns/promises";
 import { BlockList, isIP, type LookupFunction } from "node:net";
 import { Agent } from "undici";
-import { boundResponseBody } from "./bounded-json.js";
+import { boundResponseBody } from "./bounded-json.ts";
 
 export type ResolveHostname = (hostname: string) => Promise<string[]>;
 
