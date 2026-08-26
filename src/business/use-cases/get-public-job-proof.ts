@@ -1,9 +1,9 @@
-import type { PublicJobProofRepository } from "../../data/proofs/public-job-proof-record.js";
-import type { PublicJobProof } from "../entities/public-job-proof.js";
+import type { PublicJobProofRepository } from "../../data/proofs/public-job-proof-record.ts";
+import type { PublicJobProof } from "../entities/public-job-proof.ts";
 import {
   InvalidPublicJobProofIdError,
   PublicJobProofNotFoundError,
-} from "../errors/public-job-proof-errors.js";
+} from "../errors/public-job-proof-errors.ts";
 
 export class GetPublicJobProof {
   constructor(private readonly repository: PublicJobProofRepository) {}

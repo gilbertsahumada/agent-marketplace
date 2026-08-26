@@ -5,7 +5,7 @@ import {
   extractDataPart,
   fundedNotificationDisposition,
   assertFixtureAgentOwner,
-} from "../src/seller.js";
+} from "../src/seller.ts";
 
 describe("A2A seller fixture", () => {
   it("advertises exactly the skills required by the buyer", () => {

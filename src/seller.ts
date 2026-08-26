@@ -19,8 +19,8 @@ import {
   loadSellerConfig,
   parseSellerCommand,
   type SellerConfig,
-} from "./seller-config.js";
-import { GATE1_NETWORK } from "./network.js";
+} from "./seller-config.ts";
+import { GATE1_NETWORK } from "./network.ts";
 
 type JsonObject = Record<string, unknown>;
 const GATE1_FIXTURE_AGENT_ID = 1815;

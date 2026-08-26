@@ -1,5 +1,5 @@
 import type { Address } from "viem";
-import type { MarketplaceCategory } from "../trust8004/types.js";
+import type { MarketplaceCategory } from "../trust8004/types.ts";
 
 export type IdentityVerificationStatus = "match" | "mismatch" | "read_error";
 export type McpVerificationStatus =

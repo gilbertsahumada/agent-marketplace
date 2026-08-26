@@ -1,4 +1,4 @@
-import type { MarketplaceCategory } from "./marketplace-agent.js";
+import type { MarketplaceCategory } from "./marketplace-agent.ts";
 
 export type PublicVerificationFreshness = "current" | "stale";
 

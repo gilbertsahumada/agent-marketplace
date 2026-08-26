@@ -1,6 +1,6 @@
-import type { Erc8183SpikeRepository } from "../../data/repositories/erc8183-spike-repository.js";
-import { InvalidErc8183SpikeInputError } from "../errors/erc8183-spike-errors.js";
-import { assertTrackableFixtureJob } from "../policies/erc8183-spike-policy.js";
+import type { Erc8183SpikeRepository } from "../../data/repositories/erc8183-spike-repository.ts";
+import { InvalidErc8183SpikeInputError } from "../errors/erc8183-spike-errors.ts";
+import { assertTrackableFixtureJob } from "../policies/erc8183-spike-policy.ts";
 
 export class GetErc8183JobStatus {
   constructor(private readonly repository: Erc8183SpikeRepository) {}

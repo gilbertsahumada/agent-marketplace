@@ -1,6 +1,6 @@
 import type { Address } from "viem";
-import type { MarketplaceAgent, MarketplaceCategory } from "../trust8004/types.js";
-import type { BscVerificationReport, VerificationError } from "../verification/types.js";
+import type { MarketplaceAgent, MarketplaceCategory } from "../trust8004/types.ts";
+import type { BscVerificationReport, VerificationError } from "../verification/types.ts";
 
 export type SellerTransport = "a2a" | "erc8183_http";
 export type TransportSummary = SellerTransport | "multiple" | "mcp_only" | "none";

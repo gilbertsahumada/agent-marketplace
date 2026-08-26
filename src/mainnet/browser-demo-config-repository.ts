@@ -1,6 +1,6 @@
-import type { MainnetDemoPublicConfig } from "../business/entities/mainnet-browser-demo.js";
-import type { MainnetBrowserDemoConfigReader } from "../business/use-cases/get-mainnet-browser-demo-config.js";
-import { loadMainnetBrowserDemoConfig } from "./browser-demo-config.js";
+import type { MainnetDemoPublicConfig } from "../business/entities/mainnet-browser-demo.ts";
+import type { MainnetBrowserDemoConfigReader } from "../business/use-cases/get-mainnet-browser-demo-config.ts";
+import { loadMainnetBrowserDemoConfig } from "./browser-demo-config.ts";
 
 export class MainnetBrowserDemoConfigRepository implements MainnetBrowserDemoConfigReader {
   getPublicConfig(): MainnetDemoPublicConfig {

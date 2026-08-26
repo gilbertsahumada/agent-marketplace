@@ -1,6 +1,6 @@
 import envelopeJson from "./bsc-mainnet-primary.json" with { type: "json" };
 import historyJson from "./bsc-mainnet-history.json" with { type: "json" };
-import type { MainnetJobProof } from "../../business/entities/mainnet-job-proof.js";
+import type { MainnetJobProof } from "../../business/entities/mainnet-job-proof.ts";
 
 export interface MainnetJobProofRepository {
   getPrimary(): MainnetJobProof | null;

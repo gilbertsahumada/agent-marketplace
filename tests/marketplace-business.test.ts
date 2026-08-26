@@ -1,20 +1,20 @@
 import { describe, expect, it, vi } from "vitest";
 import type { Address } from "viem";
-import { CompareMarketplaceAgents } from "../src/business/use-cases/compare-marketplace-agents.js";
-import { GetMarketplaceAgent } from "../src/business/use-cases/get-marketplace-agent.js";
-import { GetMarketplaceLandingCatalog } from "../src/business/use-cases/get-marketplace-landing-catalog.js";
-import { GetPublicVerificationSnapshot } from "../src/business/use-cases/get-public-verification-snapshot.js";
-import { ListMarketplaceAgents } from "../src/business/use-cases/list-marketplace-agents.js";
-import { AsyncTtlCache } from "../src/data/cache/async-ttl-cache.js";
-import { MARKETPLACE_INVENTORY } from "../src/data/inventory/marketplace-inventory.js";
+import { CompareMarketplaceAgents } from "../src/business/use-cases/compare-marketplace-agents.ts";
+import { GetMarketplaceAgent } from "../src/business/use-cases/get-marketplace-agent.ts";
+import { GetMarketplaceLandingCatalog } from "../src/business/use-cases/get-marketplace-landing-catalog.ts";
+import { GetPublicVerificationSnapshot } from "../src/business/use-cases/get-public-verification-snapshot.ts";
+import { ListMarketplaceAgents } from "../src/business/use-cases/list-marketplace-agents.ts";
+import { AsyncTtlCache } from "../src/data/cache/async-ttl-cache.ts";
+import { MARKETPLACE_INVENTORY } from "../src/data/inventory/marketplace-inventory.ts";
 import type {
   MarketplaceAgentData,
   MarketplaceAgentRepository,
-} from "../src/data/repositories/marketplace-agent-repository.js";
-import { Trust8004MarketplaceAgentRepository } from "../src/data/repositories/trust8004-marketplace-agent-repository.js";
-import { StaticPublicVerificationRepository } from "../src/data/repositories/public-verification-repository.js";
-import { Trust8004Provider } from "../src/trust8004/provider.js";
-import type { BscIdentityReader } from "../src/verification/onchain.js";
+} from "../src/data/repositories/marketplace-agent-repository.ts";
+import { Trust8004MarketplaceAgentRepository } from "../src/data/repositories/trust8004-marketplace-agent-repository.ts";
+import { StaticPublicVerificationRepository } from "../src/data/repositories/public-verification-repository.ts";
+import { Trust8004Provider } from "../src/trust8004/provider.ts";
+import type { BscIdentityReader } from "../src/verification/onchain.ts";
 
 const FETCHED_AT = "2026-08-17T00:00:00.000Z";
 

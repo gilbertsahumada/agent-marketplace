@@ -15,24 +15,24 @@ import {
 } from "viem";
 import { bsc } from "viem/chains";
 import { parseJobDescription, verifyQuoteSignature } from "@bnbagent/sdk/erc8183";
-import type { MainnetJobProof, MainnetJobTransactionProof } from "../business/entities/mainnet-job-proof.js";
-import type { Erc8183JobFacts } from "../business/entities/erc8183-browser-spike.js";
+import type { MainnetJobProof, MainnetJobTransactionProof } from "../business/entities/mainnet-job-proof.ts";
+import type { Erc8183JobFacts } from "../business/entities/erc8183-browser-spike.ts";
 import {
   GRID_CANONICAL_INPUT,
   GRID_NEGOTIATION_TERMS,
   buildGridPlan,
   gridTaskDescription,
   parseGridTaskDescription,
-} from "../business/policies/grid-plan-policy.js";
-import { resolveIdentity, type ResolvedIdentity } from "../identity.js";
+} from "../business/policies/grid-plan-policy.ts";
+import { resolveIdentity, type ResolvedIdentity } from "../identity.ts";
 import {
   ERC8183_MAINNET,
   mainnetCommerceEvidenceAbi,
   mainnetRouterEvidenceAbi,
   mainnetTokenEvidenceAbi,
-} from "./contracts.js";
-import { MainnetErc8183Repository } from "./mainnet-erc8183-repository.js";
-import { mainnetImplementationPinsMatch } from "./implementation-pins.js";
+} from "./contracts.ts";
+import { MainnetErc8183Repository } from "./mainnet-erc8183-repository.ts";
+import { mainnetImplementationPinsMatch } from "./implementation-pins.ts";
 
 const PHASE_TARGETS = {
   createJob: ERC8183_MAINNET.commerce,
@@ -294,7 +294,7 @@ async function main(): Promise<void> {
   const phases = job.status === "COMPLETED"
     ? Object.entries(PHASE_TARGETS)
     : Object.entries(PHASE_TARGETS).filter(([phase]) => phase !== "settle");
-  for (const [phase, target] of phases.filter(([phase]) => phase !== "approve" || transactionsInput.approve !== undefined)) {
+  for (const [phase] of phases.filter(([phase]) => phase !== "approve" || transactionsInput.approve !== undefined)) {
     const txHash = hash(transactionsInput[phase], phase);
     const [receipt, transaction] = await Promise.all([
       client.getTransactionReceipt({ hash: txHash }),

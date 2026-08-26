@@ -5,32 +5,32 @@ import axe from "axe-core";
 import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { AgentCard } from "../components/marketplace/agent-card.js";
-import { AgentProfile } from "../components/marketplace/agent-profile.js";
-import { CatalogPage } from "../components/marketplace/catalog-page.js";
-import { CatalogUnavailable } from "../components/marketplace/catalog-unavailable.js";
-import { EvidenceRail } from "../components/marketplace/evidence-rail.js";
-import { PublicProofPage } from "../components/marketplace/public-proof-page.js";
-import { TestnetJobTracker } from "../components/marketplace/testnet-job-tracker.js";
-import { MarketplaceShell } from "../components/marketplace/site-shell.js";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "../components/ui/tabs.js";
+import { AgentCard } from "../components/marketplace/agent-card.tsx";
+import { AgentProfile } from "../components/marketplace/agent-profile.tsx";
+import { CatalogPage } from "../components/marketplace/catalog-page.tsx";
+import { CatalogUnavailable } from "../components/marketplace/catalog-unavailable.tsx";
+import { EvidenceRail } from "../components/marketplace/evidence-rail.tsx";
+import { PublicProofPage } from "../components/marketplace/public-proof-page.tsx";
+import { TestnetJobTracker } from "../components/marketplace/testnet-job-tracker.tsx";
+import { MarketplaceShell } from "../components/marketplace/site-shell.tsx";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "../components/ui/tabs.tsx";
 import type {
   EvidenceRecord,
   MarketplaceAgent,
   MarketplaceAgentPage,
-} from "../src/business/entities/marketplace-agent.js";
-import type { PublicJobProof } from "../src/business/entities/public-job-proof.js";
-import { GATE1_JOB_514_MANIFEST } from "../src/data/proofs/gate1-job-514.js";
-import { GATE6A_JOB_551_MANIFEST } from "../src/data/proofs/gate6a-job-551.js";
-import { Erc8183TestnetDemo } from "../components/spikes/erc8183-browser-spike.js";
-import { Providers } from "../app/providers.js";
-import { VerificationDrift } from "../components/marketplace/verification-drift.js";
-import { EvidencePassportCard } from "../components/marketplace/evidence-passport-card.js";
-import type { AgentEvidencePassport } from "../src/business/entities/evidence-passport.js";
-import { ValidateAgentPanel } from "../components/marketplace/validate-agent-panel.js";
-import type { AgentValidationReport } from "../src/business/entities/agent-validation.js";
-import { ComparePage } from "../components/marketplace/compare-page.js";
-import ValidateAgentPage from "../app/validate/page.js";
+} from "../src/business/entities/marketplace-agent.ts";
+import type { PublicJobProof } from "../src/business/entities/public-job-proof.ts";
+import { GATE1_JOB_514_MANIFEST } from "../src/data/proofs/gate1-job-514.ts";
+import { GATE6A_JOB_551_MANIFEST } from "../src/data/proofs/gate6a-job-551.ts";
+import { Erc8183TestnetDemo } from "../components/spikes/erc8183-browser-spike.tsx";
+import { Providers } from "../app/providers.tsx";
+import { VerificationDrift } from "../components/marketplace/verification-drift.tsx";
+import { EvidencePassportCard } from "../components/marketplace/evidence-passport-card.tsx";
+import type { AgentEvidencePassport } from "../src/business/entities/evidence-passport.ts";
+import { ValidateAgentPanel } from "../components/marketplace/validate-agent-panel.tsx";
+import type { AgentValidationReport } from "../src/business/entities/agent-validation.ts";
+import { ComparePage } from "../components/marketplace/compare-page.tsx";
+import ValidateAgentPage from "../app/validate/page.tsx";
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),

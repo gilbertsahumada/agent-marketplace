@@ -1,4 +1,4 @@
-import type { HostedSellerAgentCard } from "../entities/hosted-erc8183-seller.js";
+import type { HostedSellerAgentCard } from "../entities/hosted-erc8183-seller.ts";
 
 export function gridSellerAgentCard(origin: string): HostedSellerAgentCard {
   return {

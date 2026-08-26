@@ -1,4 +1,4 @@
-import type { MainnetDemoPublicConfig } from "../entities/mainnet-browser-demo.js";
+import type { MainnetDemoPublicConfig } from "../entities/mainnet-browser-demo.ts";
 
 export interface MainnetBrowserDemoConfigReader {
   getPublicConfig(): MainnetDemoPublicConfig;

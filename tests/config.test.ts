@@ -4,7 +4,7 @@ import {
   loadConfig,
   loadReceiptConfig,
   parseArgs,
-} from "../src/config.js";
+} from "../src/config.ts";
 
 describe("Gate 1 configuration guards", () => {
   it("accepts only bsc-testnet", () => {

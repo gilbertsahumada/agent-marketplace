@@ -1,5 +1,5 @@
-import type { PublicVerificationSnapshot } from "../../business/entities/public-verification-snapshot.js";
-import { PUBLIC_VERIFICATION_SNAPSHOT } from "../verification/public-verification-snapshot.js";
+import type { PublicVerificationSnapshot } from "../../business/entities/public-verification-snapshot.ts";
+import { PUBLIC_VERIFICATION_SNAPSHOT } from "../verification/public-verification-snapshot.ts";
 
 export interface PublicVerificationRepository {
   getSnapshot(): PublicVerificationSnapshot;

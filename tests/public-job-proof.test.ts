@@ -1,14 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
-import { GetPublicJobProof } from "../src/business/use-cases/get-public-job-proof.js";
+import { GetPublicJobProof } from "../src/business/use-cases/get-public-job-proof.ts";
 import {
   InvalidPublicJobProofIdError,
   PublicJobProofNotFoundError,
-} from "../src/business/errors/public-job-proof-errors.js";
-import { GATE1_JOB_514_MANIFEST } from "../src/data/proofs/gate1-job-514.js";
-import { GATE6A_JOB_551_MANIFEST } from "../src/data/proofs/gate6a-job-551.js";
-import { Gate1PublicProofRepository } from "../src/data/proofs/gate1-public-proof-repository.js";
-import type { Gate1Proof, TransactionEvidence } from "../src/readiness/types.js";
-import type { Erc8183JobFacts } from "../src/business/entities/erc8183-browser-spike.js";
+} from "../src/business/errors/public-job-proof-errors.ts";
+import { GATE1_JOB_514_MANIFEST } from "../src/data/proofs/gate1-job-514.ts";
+import { GATE6A_JOB_551_MANIFEST } from "../src/data/proofs/gate6a-job-551.ts";
+import { Gate1PublicProofRepository } from "../src/data/proofs/gate1-public-proof-repository.ts";
+import type { Gate1Proof, TransactionEvidence } from "../src/readiness/types.ts";
+import type { Erc8183JobFacts } from "../src/business/entities/erc8183-browser-spike.ts";
 
 function verifiedLiveProof(): Gate1Proof {
   const transactions = Object.fromEntries(

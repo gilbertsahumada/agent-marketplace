@@ -1,10 +1,10 @@
-import type { Erc8183HirePlan, NormalizedErc8183Quote } from "../entities/erc8183-browser-spike.js";
-import { Erc8183SpikeDisabledError } from "../errors/erc8183-spike-errors.js";
-import type { PrepareErc8183Hire, PrepareErc8183HireInput } from "./prepare-erc8183-hire.js";
-import type { NotifyFundedJob } from "./notify-funded-job.js";
-import type { RequestErc8183Quote } from "./request-erc8183-quote.js";
-import type { GetMainnetHiringExposure } from "./get-mainnet-hiring-exposure.js";
-import type { GetErc8183JobStatus } from "./get-erc8183-job-status.js";
+import type { Erc8183HirePlan, NormalizedErc8183Quote } from "../entities/erc8183-browser-spike.ts";
+import { Erc8183SpikeDisabledError } from "../errors/erc8183-spike-errors.ts";
+import type { PrepareErc8183Hire, PrepareErc8183HireInput } from "./prepare-erc8183-hire.ts";
+import type { NotifyFundedJob } from "./notify-funded-job.ts";
+import type { RequestErc8183Quote } from "./request-erc8183-quote.ts";
+import type { GetMainnetHiringExposure } from "./get-mainnet-hiring-exposure.ts";
+import type { GetErc8183JobStatus } from "./get-erc8183-job-status.ts";
 
 function requireCurrentQualification(exposure: GetMainnetHiringExposure): void {
   if (!exposure.execute().demoConfig) throw new Erc8183SpikeDisabledError();

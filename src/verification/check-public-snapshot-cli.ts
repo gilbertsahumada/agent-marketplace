@@ -1,4 +1,4 @@
-import { assertPublicVerificationSnapshotFresh, PUBLIC_VERIFICATION_SNAPSHOT } from "../data/verification/public-verification-snapshot.js";
+import { assertPublicVerificationSnapshotFresh, PUBLIC_VERIFICATION_SNAPSHOT } from "../data/verification/public-verification-snapshot.ts";
 
 try {
   assertPublicVerificationSnapshotFresh(PUBLIC_VERIFICATION_SNAPSHOT);

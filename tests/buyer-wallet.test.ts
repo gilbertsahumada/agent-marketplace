@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createEvmBuyerWallet } from "../src/buyer-wallet.js";
+import { createEvmBuyerWallet } from "../src/buyer-wallet.ts";
 
 const buyerAddress = "0x0000000000000000000000000000000000000001";
 

@@ -10,10 +10,10 @@ vi.mock("@/src/business/hosted-seller-composition", () => ({
   getHostedSellerDeliverable: { execute: executeDeliverable },
 }));
 
-const cardRoute = await import("../app/.well-known/agent-card.json/route.js");
-const a2aRoute = await import("../app/api/fixtures/erc8183/a2a/route.js");
+const cardRoute = await import("../app/.well-known/agent-card.json/route.ts");
+const a2aRoute = await import("../app/api/fixtures/erc8183/a2a/route.ts");
 const responseRoute = await import(
-  "../app/api/fixtures/erc8183/job/[jobId]/response/route.js"
+  "../app/api/fixtures/erc8183/job/[jobId]/response/route.ts"
 );
 
 function messageRequest(): Request {

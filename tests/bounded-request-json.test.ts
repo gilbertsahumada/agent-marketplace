@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
-import { readBoundedRequestJson } from "../src/presentation/http/bounded-request-json.js";
-import { spikeJsonBody } from "../src/presentation/http/erc8183-spike-http.js";
-import { parseHostedSellerRequest } from "../src/presentation/http/hosted-seller-http.js";
+import { readBoundedRequestJson } from "../src/presentation/http/bounded-request-json.ts";
+import { spikeJsonBody } from "../src/presentation/http/erc8183-spike-http.ts";
+import { parseHostedSellerRequest } from "../src/presentation/http/hosted-seller-http.ts";
 
 function oversizedStreamingRequest(url: string): { request: Request; canceled: () => boolean } {
   let chunk = 0;

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { agentCardUrl, fetchAgentCard, sendSkill } from "../src/a2a.js";
+import { agentCardUrl, fetchAgentCard, sendSkill } from "../src/a2a.ts";
 
 describe("A2A transport", () => {
   it("builds the well-known URL before a query string", () => {

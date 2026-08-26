@@ -3,7 +3,6 @@ import {
   encodeEventTopics,
   encodeFunctionData,
   getAddress,
-  type Address,
   type Hex,
 } from "viem";
 import { describe, expect, it, vi } from "vitest";
@@ -11,16 +10,16 @@ import {
   assertMainnetEvidenceTransaction,
   assertMainnetLifecycleImplementationPins,
   assertMainnetProofBinding,
-} from "../src/mainnet/capture-job-proof-cli.js";
+} from "../src/mainnet/capture-job-proof-cli.ts";
 import {
   ERC8183_MAINNET,
   mainnetCommerceEvidenceAbi,
   mainnetTokenEvidenceAbi,
-} from "../src/mainnet/contracts.js";
-import { assertRegistrationDecision } from "../src/mainnet/grid-seller-cli.js";
-import type { MainnetGoNoGoReport } from "../src/mainnet/go-no-go.js";
-import { GRID_CANONICAL_INPUT, GRID_NEGOTIATION_TERMS, gridTaskDescription } from "../src/business/policies/grid-plan-policy.js";
-import { resolveIdentity } from "../src/identity.js";
+} from "../src/mainnet/contracts.ts";
+import { assertRegistrationDecision } from "../src/mainnet/grid-seller-cli.ts";
+import type { MainnetGoNoGoReport } from "../src/mainnet/go-no-go.ts";
+import { GRID_CANONICAL_INPUT, GRID_NEGOTIATION_TERMS, gridTaskDescription } from "../src/business/policies/grid-plan-policy.ts";
+import { resolveIdentity } from "../src/identity.ts";
 
 const BUYER = getAddress("0x1111111111111111111111111111111111111111");
 const SELLER = getAddress("0x2222222222222222222222222222222222222222");

@@ -1,15 +1,15 @@
 import "server-only";
-import type { AgentValidationEvidence, AgentValidationEndpointCheck } from "../../business/entities/agent-validation.js";
-import type { AgentValidationRepository } from "../../business/use-cases/validate-marketplace-agent.js";
-import { createHireabilityAssessor } from "../../readiness/protocols.js";
-import type { HireabilityAssessment } from "../../readiness/types.js";
-import { Trust8004Provider } from "../../trust8004/provider.js";
-import type { BscCandidateInventory, MarketplaceAgent } from "../../trust8004/types.js";
-import { buildBscVerificationReport, type BuildVerificationReportOptions } from "../../verification/report.js";
-import { createBscIdentityReader, type BscIdentityReader } from "../../verification/onchain.js";
-import { createProbeBudget } from "../../verification/probe-budget.js";
-import type { BscVerificationReport, IdentityVerification } from "../../verification/types.js";
-import { AsyncTtlCache } from "../cache/async-ttl-cache.js";
+import type { AgentValidationEvidence, AgentValidationEndpointCheck } from "../../business/entities/agent-validation.ts";
+import type { AgentValidationRepository } from "../../business/use-cases/validate-marketplace-agent.ts";
+import { createHireabilityAssessor } from "../../readiness/protocols.ts";
+import type { HireabilityAssessment } from "../../readiness/types.ts";
+import { Trust8004Provider } from "../../trust8004/provider.ts";
+import type { BscCandidateInventory, MarketplaceAgent } from "../../trust8004/types.ts";
+import { buildBscVerificationReport, type BuildVerificationReportOptions } from "../../verification/report.ts";
+import { createBscIdentityReader, type BscIdentityReader } from "../../verification/onchain.ts";
+import { createProbeBudget } from "../../verification/probe-budget.ts";
+import type { BscVerificationReport, IdentityVerification } from "../../verification/types.ts";
+import { AsyncTtlCache } from "../cache/async-ttl-cache.ts";
 
 const VALIDATION_TTL_MS = 60 * 1_000;
 const VALIDATION_TIMEOUT_MS = 30 * 1_000;

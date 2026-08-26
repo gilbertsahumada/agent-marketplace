@@ -3,11 +3,11 @@ import { resolveNetwork } from "@bnbagent/sdk";
 import { EVMWalletProvider } from "@bnbagent/sdk/wallets";
 import { createPublicClient, http, parseAbi } from "viem";
 import { bsc } from "viem/chains";
-import { fetchAgentCard } from "../a2a.js";
-import { createSafeEndpointTransport } from "../verification/safe-http.js";
-import { ERC8183_MAINNET } from "./contracts.js";
-import { loadMainnetGridSellerConfig } from "./grid-seller-config.js";
-import { evaluateMainnetGoNoGo, type MainnetGoNoGoReport } from "./go-no-go.js";
+import { fetchAgentCard } from "../a2a.ts";
+import { createSafeEndpointTransport } from "../verification/safe-http.ts";
+import { ERC8183_MAINNET } from "./contracts.ts";
+import { loadMainnetGridSellerConfig } from "./grid-seller-config.ts";
+import { evaluateMainnetGoNoGo, type MainnetGoNoGoReport } from "./go-no-go.ts";
 
 export function assertRegistrationDecision(
   report: MainnetGoNoGoReport,

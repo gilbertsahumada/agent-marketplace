@@ -1,12 +1,12 @@
-import { Trust8004Provider } from "./provider.js";
-import { MARKETPLACE_INVENTORY } from "../data/inventory/marketplace-inventory.js";
+import { Trust8004Provider } from "./provider.ts";
+import { MARKETPLACE_INVENTORY } from "../data/inventory/marketplace-inventory.ts";
 import {
   BSC_MAINNET_CHAIN_ID,
   CATALOG_COVERAGE,
   type BscCandidateInventory,
   type MarketplaceAgent,
   type MarketplaceCategory,
-} from "./types.js";
+} from "./types.ts";
 
 export const KNOWN_HEYANON_AGENT_IDS = MARKETPLACE_INVENTORY.entries.map((entry) => entry.agentId);
 export const MAX_EXPLICIT_QUALIFICATION_AGENT_IDS = 20;

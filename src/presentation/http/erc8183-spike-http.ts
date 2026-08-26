@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getAddress, type Address } from "viem";
-import type { Erc8183QuoteEnvelope } from "../../business/entities/erc8183-browser-spike.js";
+import type { Erc8183QuoteEnvelope } from "../../business/entities/erc8183-browser-spike.ts";
 import {
   Erc8183DemoJobNotFoundError,
   Erc8183JobNotReadyError,
@@ -8,8 +8,8 @@ import {
   Erc8183SpikeDisabledError,
   Erc8183SpikeUnavailableError,
   InvalidErc8183SpikeInputError,
-} from "../../business/errors/erc8183-spike-errors.js";
-import { BoundedRequestJsonError, readBoundedRequestJson } from "./bounded-request-json.js";
+} from "../../business/errors/erc8183-spike-errors.ts";
+import { BoundedRequestJsonError, readBoundedRequestJson } from "./bounded-request-json.ts";
 
 const MAX_BODY_BYTES = 24 * 1_024;
 

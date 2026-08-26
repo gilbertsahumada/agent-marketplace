@@ -1,7 +1,7 @@
 import { mkdir, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
-import { evaluateMainnetGoNoGo } from "./go-no-go.js";
+import { evaluateMainnetGoNoGo } from "./go-no-go.ts";
 
 async function main(): Promise<void> {
   const destination = resolve(".marketplace/mainnet/go-no-go.json");

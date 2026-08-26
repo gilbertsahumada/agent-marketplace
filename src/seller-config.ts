@@ -1,5 +1,5 @@
 import { getAddress, type Address } from "viem";
-import { TESTNET_NETWORK } from "./config.js";
+import { TESTNET_NETWORK } from "./config.ts";
 
 export type SellerCommand = "serve" | "register" | "update";
 

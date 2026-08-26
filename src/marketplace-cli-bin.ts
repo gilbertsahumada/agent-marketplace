@@ -1,4 +1,4 @@
 #!/usr/bin/env node
-import { runMarketplaceCli } from "./marketplace-cli.js";
+import { runMarketplaceCli } from "./marketplace-cli.ts";
 
 void runMarketplaceCli();

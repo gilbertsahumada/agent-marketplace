@@ -3,10 +3,10 @@ import type {
   Erc8183HirePlan,
   Erc8183QuoteEnvelope,
   Erc8183TransactionIntent,
-} from "../entities/erc8183-browser-spike.js";
-import { Erc8183JobNotReadyError } from "../errors/erc8183-spike-errors.js";
-import { assertAllowedQuote } from "../policies/erc8183-spike-policy.js";
-import type { Erc8183SpikeRepository } from "../../data/repositories/erc8183-spike-repository.js";
+} from "../entities/erc8183-browser-spike.ts";
+import { Erc8183JobNotReadyError } from "../errors/erc8183-spike-errors.ts";
+import { assertAllowedQuote } from "../policies/erc8183-spike-policy.ts";
+import type { Erc8183SpikeRepository } from "../../data/repositories/erc8183-spike-repository.ts";
 
 export interface PrepareErc8183HireInput {
   buyer: Address;

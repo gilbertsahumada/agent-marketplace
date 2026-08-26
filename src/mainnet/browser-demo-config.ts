@@ -1,7 +1,7 @@
 import { getAddress } from "viem";
-import { Erc8183SpikeDisabledError, Erc8183SpikeUnavailableError } from "../business/errors/erc8183-spike-errors.js";
-import type { Erc8183BrowserDeployment } from "../data/erc8183/browser-wallet-adapter.js";
-import { ERC8183_MAINNET } from "./contracts.js";
+import { Erc8183SpikeDisabledError, Erc8183SpikeUnavailableError } from "../business/errors/erc8183-spike-errors.ts";
+import type { Erc8183BrowserDeployment } from "../data/erc8183/browser-wallet-adapter.ts";
+import { ERC8183_MAINNET } from "./contracts.ts";
 
 type Environment = Readonly<Record<string, string | undefined>>;
 

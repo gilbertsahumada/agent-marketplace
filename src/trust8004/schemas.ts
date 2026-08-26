@@ -8,7 +8,7 @@ import {
   type Trust8004Profile,
   type TrustScore,
   type TrustScoreDimension,
-} from "./types.js";
+} from "./types.ts";
 
 type JsonRecord = Record<string, unknown>;
 const MAX_STRING_LENGTH = 16_384;

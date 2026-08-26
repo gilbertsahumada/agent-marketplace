@@ -5,8 +5,8 @@ import axe from "axe-core";
 import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { WalletConnectButton } from "../components/marketplace/wallet-connect-button.js";
-import { TooltipProvider } from "../components/ui/tooltip.js";
+import { WalletConnectButton } from "../components/marketplace/wallet-connect-button.tsx";
+import { TooltipProvider } from "../components/ui/tooltip.tsx";
 
 const account = vi.fn();
 const chainId = vi.fn();

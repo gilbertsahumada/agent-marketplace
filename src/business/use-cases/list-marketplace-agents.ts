@@ -1,18 +1,18 @@
-import { marketplaceInventoryEntries } from "../../data/inventory/marketplace-inventory.js";
+import { marketplaceInventoryEntries } from "../../data/inventory/marketplace-inventory.ts";
 import {
   DEFAULT_REGISTERED_AGENT_SORT,
   MARKETPLACE_DATA_SORTS,
   type MarketplaceAgentRepository,
   type MarketplaceDataSort,
-} from "../../data/repositories/marketplace-agent-repository.js";
-import { InvalidMarketplaceInputError, MarketplaceDataUnavailableError } from "../errors/marketplace-errors.js";
+} from "../../data/repositories/marketplace-agent-repository.ts";
+import { InvalidMarketplaceInputError, MarketplaceDataUnavailableError } from "../errors/marketplace-errors.ts";
 import {
   MARKETPLACE_CATEGORIES,
   type MarketplaceAgent,
   type MarketplaceAgentPage,
   type MarketplaceCategory,
-} from "../entities/marketplace-agent.js";
-import { toMarketplaceAgent } from "../policies/marketplace-agent-policy.js";
+} from "../entities/marketplace-agent.ts";
+import { toMarketplaceAgent } from "../policies/marketplace-agent-policy.ts";
 
 export { DEFAULT_REGISTERED_AGENT_SORT, MARKETPLACE_DATA_SORTS };
 export type MarketplaceSort = MarketplaceDataSort;

@@ -1,5 +1,5 @@
-import type { Erc8183JobFacts } from "./erc8183-browser-spike.js";
-import type { PublicJobProof } from "./public-job-proof.js";
+import type { Erc8183JobFacts } from "./erc8183-browser-spike.ts";
+import type { PublicJobProof } from "./public-job-proof.ts";
 
 export interface Erc8183TestnetJobTracking {
   liveStatus: "verified" | "unavailable";

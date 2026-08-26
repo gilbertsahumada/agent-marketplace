@@ -2,8 +2,8 @@ import {
   parseAgentListResponse,
   parseProfileResponse,
   parseTrustScoreResponse,
-} from "./schemas.js";
-import { classifyProfile } from "./classify.js";
+} from "./schemas.ts";
+import { classifyProfile } from "./classify.ts";
 import {
   BSC_MAINNET_CHAIN_ID,
   CATALOG_COVERAGE,
@@ -14,7 +14,7 @@ import {
   type ProvenanceRecord,
   type Trust8004Profile,
   type TrustScore,
-} from "./types.js";
+} from "./types.ts";
 
 const MAX_PENDING_REQUESTS = 256;
 

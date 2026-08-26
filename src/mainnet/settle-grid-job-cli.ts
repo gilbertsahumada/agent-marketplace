@@ -4,8 +4,8 @@ import { EVMWalletProvider } from "@bnbagent/sdk/wallets";
 import { isAddressEqual } from "viem";
 import { readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import { ERC8183_MAINNET } from "./contracts.js";
-import { loadMainnetGridSellerConfig } from "./grid-seller-config.js";
+import { ERC8183_MAINNET } from "./contracts.ts";
+import { loadMainnetGridSellerConfig } from "./grid-seller-config.ts";
 
 async function main(): Promise<void> {
   const jobIdRaw = process.argv[2];

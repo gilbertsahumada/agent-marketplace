@@ -2,7 +2,6 @@ import {
   encodeAbiParameters,
   encodeEventTopics,
   getAddress,
-  type Address,
   type Hash,
   type TransactionReceipt,
 } from "viem";
@@ -12,22 +11,22 @@ import type {
   Erc8183HirePlan,
   Erc8183JobFacts,
   NormalizedErc8183Quote,
-} from "../src/business/entities/erc8183-browser-spike.js";
-import { Erc8183JobNotReadyError, Erc8183QuoteRejectedError } from "../src/business/errors/erc8183-spike-errors.js";
-import { assertAllowedQuote } from "../src/business/policies/erc8183-spike-policy.js";
-import { NotifyFundedJob } from "../src/business/use-cases/notify-funded-job.js";
-import { PrepareErc8183Hire } from "../src/business/use-cases/prepare-erc8183-hire.js";
+} from "../src/business/entities/erc8183-browser-spike.ts";
+import { Erc8183JobNotReadyError, Erc8183QuoteRejectedError } from "../src/business/errors/erc8183-spike-errors.ts";
+import { assertAllowedQuote } from "../src/business/policies/erc8183-spike-policy.ts";
+import { NotifyFundedJob } from "../src/business/use-cases/notify-funded-job.ts";
+import { PrepareErc8183Hire } from "../src/business/use-cases/prepare-erc8183-hire.ts";
 import {
   assertBrowserSpikeChain,
   exactApprovalRequired,
   parseBrowserJournal,
   resumeRequirements,
   validateRecoveredJobForResume,
-} from "../src/data/erc8183/browser-wallet-adapter.js";
-import { agenticCommerceBrowserAbi, ERC8183_TESTNET } from "../src/data/erc8183/contracts.js";
-import { loadErc8183BrowserSpikeConfig } from "../src/data/erc8183/spike-config.js";
-import { assertSuccessfulReceipt, extractConfirmedJobId } from "../src/data/erc8183/receipt-parser.js";
-import type { Erc8183SpikeRepository } from "../src/data/repositories/erc8183-spike-repository.js";
+} from "../src/data/erc8183/browser-wallet-adapter.ts";
+import { agenticCommerceBrowserAbi, ERC8183_TESTNET } from "../src/data/erc8183/contracts.ts";
+import { loadErc8183BrowserSpikeConfig } from "../src/data/erc8183/spike-config.ts";
+import { assertSuccessfulReceipt, extractConfirmedJobId } from "../src/data/erc8183/receipt-parser.ts";
+import type { Erc8183SpikeRepository } from "../src/data/repositories/erc8183-spike-repository.ts";
 
 const BUYER = getAddress("0x1111111111111111111111111111111111111111");
 const NOW = 2_000_000_000;

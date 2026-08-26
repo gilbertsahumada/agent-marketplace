@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   loadSellerConfig,
   parseSellerCommand,
-} from "../src/seller-config.js";
+} from "../src/seller-config.ts";
 
 const baseEnv = {
   NETWORK: "bsc-testnet",

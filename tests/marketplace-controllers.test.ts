@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { MarketplaceRateLimitError } from "../src/business/errors/marketplace-errors.js";
+import { MarketplaceRateLimitError } from "../src/business/errors/marketplace-errors.ts";
 
 const executeList = vi.fn();
 const executeGet = vi.fn();
@@ -19,13 +19,13 @@ vi.mock("@/src/business/composition", () => ({
   getPublicMainnetJobProof: { execute: executeMainnetProof },
 }));
 
-const agentsRoute = await import("../app/api/marketplace/agents/route.js");
-const agentRoute = await import("../app/api/marketplace/agents/[agentId]/route.js");
-const compareRoute = await import("../app/api/marketplace/compare/route.js");
-const proofRoute = await import("../app/api/marketplace/proofs/jobs/514/route.js");
-const passportRoute = await import("../app/api/marketplace/agents/[agentId]/passport/route.js");
-const validationRoute = await import("../app/api/marketplace/validate/route.js");
-const mainnetProofRoute = await import("../app/api/marketplace/proofs/jobs/mainnet/[jobId]/route.js");
+const agentsRoute = await import("../app/api/marketplace/agents/route.ts");
+const agentRoute = await import("../app/api/marketplace/agents/[agentId]/route.ts");
+const compareRoute = await import("../app/api/marketplace/compare/route.ts");
+const proofRoute = await import("../app/api/marketplace/proofs/jobs/514/route.ts");
+const passportRoute = await import("../app/api/marketplace/agents/[agentId]/passport/route.ts");
+const validationRoute = await import("../app/api/marketplace/validate/route.ts");
+const mainnetProofRoute = await import("../app/api/marketplace/proofs/jobs/mainnet/[jobId]/route.ts");
 
 describe("marketplace API controllers", () => {
   beforeEach(() => vi.clearAllMocks());

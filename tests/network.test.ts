@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ACTIVE_TESTNET_POLICY, GATE1_NETWORK } from "../src/network.js";
+import { ACTIVE_TESTNET_POLICY, GATE1_NETWORK } from "../src/network.ts";
 
 describe("Gate 1 network", () => {
   it("pins the active BSC Testnet policy without changing the canonical stack", () => {

@@ -1,4 +1,4 @@
-import type { GridPlan, GridPlanInput } from "../entities/grid-plan.js";
+import type { GridPlan, GridPlanInput } from "../entities/grid-plan.ts";
 
 const SCALE = 100_000_000n;
 

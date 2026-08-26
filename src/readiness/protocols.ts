@@ -7,23 +7,23 @@ import {
 } from "@bnbagent/sdk/erc8183";
 import { resolveNetwork } from "@bnbagent/sdk";
 import { getAddress, isAddress, type Address, type PublicClient } from "viem";
-import { fetchAgentCard, sendSkill } from "../a2a.js";
-import type { MarketplaceAgent } from "../trust8004/types.js";
-import { readBoundedJson } from "../verification/bounded-json.js";
+import { fetchAgentCard, sendSkill } from "../a2a.ts";
+import type { MarketplaceAgent } from "../trust8004/types.ts";
+import { readBoundedJson } from "../verification/bounded-json.ts";
 import {
   createSafeEndpointTransport,
   type ResolveHostname,
   type SafeEndpointTransport,
-} from "../verification/safe-http.js";
-import { createProbeBudget, type ProbeBudget } from "../verification/probe-budget.js";
-import type { IdentityVerification, VerificationError } from "../verification/types.js";
-import { GRID_CANONICAL_INPUT, GRID_NEGOTIATION_TERMS, gridTaskDescription } from "../business/policies/grid-plan-policy.js";
+} from "../verification/safe-http.ts";
+import { createProbeBudget, type ProbeBudget } from "../verification/probe-budget.ts";
+import type { IdentityVerification, VerificationError } from "../verification/types.ts";
+import { GRID_CANONICAL_INPUT, GRID_NEGOTIATION_TERMS, gridTaskDescription } from "../business/policies/grid-plan-policy.ts";
 import type {
   HireabilityAssessment,
   QuoteEvidence,
   SellerProtocolVerification,
   SellerTransport,
-} from "./types.js";
+} from "./types.ts";
 
 interface QuoteContext {
   chainId: 56;

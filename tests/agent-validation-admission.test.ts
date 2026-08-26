@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
-import { MarketplaceRateLimitError } from "../src/business/errors/marketplace-errors.js";
-import { RateLimitedAgentValidationRepository } from "../src/data/repositories/rate-limited-agent-validation-repository.js";
+import { MarketplaceRateLimitError } from "../src/business/errors/marketplace-errors.ts";
+import { RateLimitedAgentValidationRepository } from "../src/data/repositories/rate-limited-agent-validation-repository.ts";
 
 describe("agent validation admission control", () => {
   it("shares one trust8004 scheduler between catalogue and validation", () => {

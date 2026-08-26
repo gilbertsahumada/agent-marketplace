@@ -1,12 +1,12 @@
 import { getAddress } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { describe, expect, it, vi } from "vitest";
-import type { HostedErc8183SellerRepository } from "../src/data/repositories/hosted-erc8183-seller-repository.js";
-import { GetHostedSellerDeliverable } from "../src/business/use-cases/get-hosted-seller-deliverable.js";
-import { HandleHostedSellerMessage } from "../src/business/use-cases/handle-hosted-seller-message.js";
-import { hostedSellerAgentCard } from "../src/business/policies/hosted-seller-policy.js";
-import { loadHostedSellerConfig } from "../src/data/erc8183/hosted-seller-config.js";
-import { parseHostedSellerRequest } from "../src/presentation/http/hosted-seller-http.js";
+import type { HostedErc8183SellerRepository } from "../src/data/repositories/hosted-erc8183-seller-repository.ts";
+import { GetHostedSellerDeliverable } from "../src/business/use-cases/get-hosted-seller-deliverable.ts";
+import { HandleHostedSellerMessage } from "../src/business/use-cases/handle-hosted-seller-message.ts";
+import { hostedSellerAgentCard } from "../src/business/policies/hosted-seller-policy.ts";
+import { loadHostedSellerConfig } from "../src/data/erc8183/hosted-seller-config.ts";
+import { parseHostedSellerRequest } from "../src/presentation/http/hosted-seller-http.ts";
 
 const testPrivateKey = `0x${"11".repeat(32)}` as const;
 

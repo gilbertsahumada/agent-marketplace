@@ -1,5 +1,5 @@
 import { getAddress, isAddressEqual, type Address, type Hex } from "viem";
-import { ERC1967_IMPLEMENTATION_SLOT, ERC8183_MAINNET } from "./contracts.js";
+import { ERC1967_IMPLEMENTATION_SLOT, ERC8183_MAINNET } from "./contracts.ts";
 
 interface ImplementationReader {
   getBlockNumber(): Promise<bigint>;

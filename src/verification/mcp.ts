@@ -5,16 +5,16 @@ import {
   UnauthorizedError,
   type FetchLike,
 } from "@modelcontextprotocol/client";
-import type { McpEndpointVerification, McpVerificationStatus } from "./types.js";
+import type { McpEndpointVerification, McpVerificationStatus } from "./types.ts";
 import {
   createSafeEndpointTransport,
   resolveSafePublicHttpsEndpoint,
   type ResolveHostname,
   type SafeEndpointTransport,
-} from "./safe-http.js";
+} from "./safe-http.ts";
 
-export { isPublicIpAddress } from "./safe-http.js";
-export type { ResolveHostname } from "./safe-http.js";
+export { isPublicIpAddress } from "./safe-http.ts";
+export type { ResolveHostname } from "./safe-http.ts";
 
 export interface McpVerifierOptions {
   resolveHostname?: ResolveHostname;

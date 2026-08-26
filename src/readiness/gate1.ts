@@ -7,11 +7,11 @@ import {
   type Hash,
   type PublicClient,
 } from "viem";
-import { TESTNET_REGISTRY } from "../identity.js";
-import { GATE1_NETWORK } from "../network.js";
-import { GATE1_JOB_514_MANIFEST } from "../data/proofs/gate1-job-514.js";
-import type { VerificationError } from "../verification/types.js";
-import type { Gate1Proof, TransactionEvidence } from "./types.js";
+import { TESTNET_REGISTRY } from "../identity.ts";
+import { GATE1_NETWORK } from "../network.ts";
+import { GATE1_JOB_514_MANIFEST } from "../data/proofs/gate1-job-514.ts";
+import type { VerificationError } from "../verification/types.ts";
+import type { Gate1Proof, TransactionEvidence } from "./types.ts";
 
 const AGENT_ID = BigInt(GATE1_JOB_514_MANIFEST.sellerAgentId);
 const JOB_ID = BigInt(GATE1_JOB_514_MANIFEST.jobId);

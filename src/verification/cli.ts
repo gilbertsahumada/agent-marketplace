@@ -1,10 +1,10 @@
 import { mkdir, rename, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { Trust8004Provider } from "../trust8004/provider.js";
-import { createBscIdentityReader } from "./onchain.js";
-import { buildBscVerificationReport } from "./report.js";
-import type { BscVerificationReport } from "./types.js";
+import { Trust8004Provider } from "../trust8004/provider.ts";
+import { createBscIdentityReader } from "./onchain.ts";
+import { buildBscVerificationReport } from "./report.ts";
+import type { BscVerificationReport } from "./types.ts";
 
 export function parseOutputPath(args: string[]): string {
   const unknown = args.filter((arg, index) => arg !== "--output" && args[index - 1] !== "--output");

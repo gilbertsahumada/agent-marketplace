@@ -1,7 +1,7 @@
 import type {
   PublicAgentVerification,
   PublicVerificationSnapshot,
-} from "../entities/public-verification-snapshot.js";
+} from "../entities/public-verification-snapshot.ts";
 
 export const VERIFICATION_CLOCK_SKEW_MS = 5 * 60 * 1_000;
 

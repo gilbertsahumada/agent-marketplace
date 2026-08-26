@@ -1,8 +1,8 @@
-import type { MainnetJobProof } from "../entities/mainnet-job-proof.js";
+import type { MainnetJobProof } from "../entities/mainnet-job-proof.ts";
 import {
   InvalidPublicJobProofIdError,
   PublicJobProofNotFoundError,
-} from "../errors/public-job-proof-errors.js";
+} from "../errors/public-job-proof-errors.ts";
 
 export interface MainnetJobProofReader { getPrimary(): MainnetJobProof | null }
 

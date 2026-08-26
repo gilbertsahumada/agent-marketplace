@@ -1,19 +1,19 @@
-import { KNOWN_HEYANON_AGENT_IDS, buildBscCandidateInventory } from "../trust8004/inventory.js";
-import type { Trust8004Provider } from "../trust8004/provider.js";
-import type { MarketplaceAgent, MarketplaceCategory } from "../trust8004/types.js";
-import { verifyMcpEndpoint, type McpVerifierOptions } from "../verification/mcp.js";
-import type { BscIdentityReader } from "../verification/onchain.js";
-import { buildBscVerificationReport } from "../verification/report.js";
-import type { IdentityVerification } from "../verification/types.js";
-import type { Gate1ProofReader } from "./gate1.js";
-import { verifyGate1Proof } from "./gate1.js";
-import { createProbeBudget } from "../verification/probe-budget.js";
-import { createHireabilityAssessor, finalizeHireabilityAssessment } from "./protocols.js";
+import { KNOWN_HEYANON_AGENT_IDS, buildBscCandidateInventory } from "../trust8004/inventory.ts";
+import type { Trust8004Provider } from "../trust8004/provider.ts";
+import type { MarketplaceAgent, MarketplaceCategory } from "../trust8004/types.ts";
+import { verifyMcpEndpoint, type McpVerifierOptions } from "../verification/mcp.ts";
+import type { BscIdentityReader } from "../verification/onchain.ts";
+import { buildBscVerificationReport } from "../verification/report.ts";
+import type { IdentityVerification } from "../verification/types.ts";
+import type { Gate1ProofReader } from "./gate1.ts";
+import { verifyGate1Proof } from "./gate1.ts";
+import { createProbeBudget } from "../verification/probe-budget.ts";
+import { createHireabilityAssessor, finalizeHireabilityAssessment } from "./protocols.ts";
 import type {
   BscMarketplaceReadinessReport,
   HireabilityAssessment,
   ReadinessCandidate,
-} from "./types.js";
+} from "./types.ts";
 
 export interface BuildReadinessReportOptions {
   provider: Trust8004Provider;

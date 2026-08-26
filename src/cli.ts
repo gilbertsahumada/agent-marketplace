@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-import { loadConfig, loadReceiptConfig, parseArgs } from "./config.js";
-import { execute, resume, runPreflight } from "./flow.js";
+import { loadConfig, loadReceiptConfig, parseArgs } from "./config.ts";
+import { execute, resume, runPreflight } from "./flow.ts";
 
 function print(value: unknown): void {
   console.log(

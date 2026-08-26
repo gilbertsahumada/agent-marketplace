@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
-import type { HostedSellerMessage } from "../../business/entities/hosted-erc8183-seller.js";
+import type { HostedSellerMessage } from "../../business/entities/hosted-erc8183-seller.ts";
 import {
   HostedSellerJobNotReadyError,
   HostedSellerUnavailableError,
   InvalidHostedSellerRequestError,
-} from "../../business/errors/hosted-seller-errors.js";
-import { BoundedRequestJsonError, readBoundedRequestJson } from "./bounded-request-json.js";
+} from "../../business/errors/hosted-seller-errors.ts";
+import { BoundedRequestJsonError, readBoundedRequestJson } from "./bounded-request-json.ts";
 
 const MAX_BODY_BYTES = 24 * 1_024;
 

@@ -1,5 +1,5 @@
 import type { Address } from "viem";
-import type { AgentEvidencePassport } from "./evidence-passport.js";
+import type { AgentEvidencePassport } from "./evidence-passport.ts";
 
 export type AgentValidationEndpointStatus = "verified" | "failed" | "not_probed";
 

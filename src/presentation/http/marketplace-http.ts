@@ -1,16 +1,16 @@
 import { NextResponse } from "next/server";
-import { MARKETPLACE_CATEGORIES, type MarketplaceCategory } from "../../business/entities/marketplace-agent.js";
+import { MARKETPLACE_CATEGORIES, type MarketplaceCategory } from "../../business/entities/marketplace-agent.ts";
 import {
   InvalidMarketplaceInputError,
   MarketplaceAgentNotFoundError,
   MarketplaceDataUnavailableError,
   MarketplacePayloadTooLargeError,
   MarketplaceRateLimitError,
-} from "../../business/errors/marketplace-errors.js";
+} from "../../business/errors/marketplace-errors.ts";
 import {
   InvalidPublicJobProofIdError,
   PublicJobProofNotFoundError,
-} from "../../business/errors/public-job-proof-errors.js";
+} from "../../business/errors/public-job-proof-errors.ts";
 
 export function integerParameter(value: string | null, fallback: number, name: string): number {
   if (value === null || value === "") return fallback;

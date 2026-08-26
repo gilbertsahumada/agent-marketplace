@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { readBoundedJson } from "./verification/bounded-json.js";
+import { readBoundedJson } from "./verification/bounded-json.ts";
 
 export interface AgentCard {
   name: string;

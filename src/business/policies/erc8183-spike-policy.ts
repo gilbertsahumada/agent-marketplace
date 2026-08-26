@@ -2,12 +2,12 @@ import { getAddress, isAddressEqual, type Address } from "viem";
 import {
   type Erc8183JobFacts,
   type NormalizedErc8183Quote,
-} from "../entities/erc8183-browser-spike.js";
+} from "../entities/erc8183-browser-spike.ts";
 import {
   Erc8183DemoJobNotFoundError,
   Erc8183JobNotReadyError,
   Erc8183QuoteRejectedError,
-} from "../errors/erc8183-spike-errors.js";
+} from "../errors/erc8183-spike-errors.ts";
 
 export interface Erc8183SpikeAllowlist {
   chainId: 56 | 97;

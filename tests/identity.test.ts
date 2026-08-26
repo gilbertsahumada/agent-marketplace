@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { extractA2aEndpoint } from "../src/identity.js";
+import { extractA2aEndpoint } from "../src/identity.ts";
 
 describe("ERC-8004 endpoint extraction", () => {
   it("requires exactly one HTTPS A2A endpoint", () => {
