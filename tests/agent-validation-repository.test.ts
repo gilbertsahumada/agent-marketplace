@@ -1,15 +1,15 @@
 import { describe, expect, it, vi } from "vitest";
 import type { Address } from "viem";
-import type { HireabilityAssessment } from "../src/readiness/types.js";
-import type { MarketplaceAgent } from "../src/trust8004/types.js";
-import type { BscVerificationReport } from "../src/verification/types.js";
-import type { BuildVerificationReportOptions } from "../src/verification/report.js";
-import type { BscCandidateInventory } from "../src/trust8004/types.js";
+import type { HireabilityAssessment } from "../src/readiness/types.ts";
+import type { MarketplaceAgent } from "../src/trust8004/types.ts";
+import type { BscVerificationReport } from "../src/verification/types.ts";
+import type { BuildVerificationReportOptions } from "../src/verification/report.ts";
+import type { BscCandidateInventory } from "../src/trust8004/types.ts";
 
 vi.mock("server-only", () => ({}));
 
 const { Trust8004AgentValidationRepository } = await import(
-  "../src/data/repositories/trust8004-agent-validation-repository.js"
+  "../src/data/repositories/trust8004-agent-validation-repository.ts"
 );
 
 const OBSERVED_AT = "2026-08-26T10:00:00.000Z";
