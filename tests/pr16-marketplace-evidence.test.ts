@@ -1,14 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { evidenceForAgent, snapshotAgentCardViewModel } from "../components/marketplace/view-models.js";
-import { determineHireability, toMarketplaceAgent } from "../src/business/policies/marketplace-agent-policy.js";
-import { assertPublicVerificationSnapshotFresh, parsePublicVerificationSnapshot } from "../src/data/verification/public-verification-snapshot.js";
-import type { MarketplaceAgentData } from "../src/data/repositories/marketplace-agent-repository.js";
+import { evidenceForAgent, snapshotAgentCardViewModel } from "../components/marketplace/view-models.ts";
+import { determineHireability, toMarketplaceAgent } from "../src/business/policies/marketplace-agent-policy.ts";
+import { assertPublicVerificationSnapshotFresh, parsePublicVerificationSnapshot } from "../src/data/verification/public-verification-snapshot.ts";
+import type { MarketplaceAgentData } from "../src/data/repositories/marketplace-agent-repository.ts";
 import {
   marketplaceEvidenceFromReleaseInput,
   sanitizeVerificationReport,
   verificationReportFromReleaseInput,
-} from "../src/verification/publish.js";
-import type { BscVerificationReport, McpVerificationStatus } from "../src/verification/types.js";
+} from "../src/verification/publish.ts";
+import type { BscVerificationReport, McpVerificationStatus } from "../src/verification/types.ts";
 
 const GENERATED_AT = "2026-08-24T12:00:00.000Z";
 
