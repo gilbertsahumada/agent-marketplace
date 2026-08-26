@@ -5,6 +5,7 @@ export {
   connectInjectedWallet,
   executeBrowserHire,
   loadBrowserJournal,
+  recoverBrowserJournal,
   saveBrowserJournal,
 } from "../../data/erc8183/browser-wallet-adapter.ts";
 export type { Erc8183BrowserDeployment } from "../../data/erc8183/browser-wallet-adapter.ts";

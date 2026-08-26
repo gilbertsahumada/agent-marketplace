@@ -20,6 +20,7 @@ import {
   assertBrowserSpikeChain,
   exactApprovalRequired,
   parseBrowserJournal,
+  recoverBrowserJournal,
   resumeRequirements,
   validateRecoveredJobForResume,
 } from "../src/data/erc8183/browser-wallet-adapter.ts";
@@ -29,6 +30,7 @@ import { assertSuccessfulReceipt, extractConfirmedJobId } from "../src/data/erc8
 import type { Erc8183SpikeRepository } from "../src/data/repositories/erc8183-spike-repository.ts";
 
 const BUYER = getAddress("0x1111111111111111111111111111111111111111");
+const MAINNET_COMMERCE = getAddress("0xEa4DAa3100A767e86FDed867729ae7446476EBA6");
 const NOW = 2_000_000_000;
 
 function quote(overrides: Partial<NormalizedErc8183Quote> = {}): NormalizedErc8183Quote {
@@ -240,7 +242,36 @@ describe("receipts and recovery", () => {
         transactionIndex: 0,
       }],
     } as TransactionReceipt;
-    expect(extractConfirmedJobId(receipt)).toBe(900n);
+    expect(extractConfirmedJobId(receipt, ERC8183_TESTNET.commerce)).toBe(900n);
+  });
+
+  it("extracts Job ID from the Commerce deployment that executed createJob", () => {
+    const topics = encodeEventTopics({
+      abi: agenticCommerceBrowserAbi,
+      eventName: "JobCreated",
+      args: { jobId: 901n, client: BUYER, provider: ERC8183_TESTNET.seller },
+    });
+    const data = encodeAbiParameters(
+      [{ type: "address" }, { type: "uint256" }, { type: "address" }],
+      [ERC8183_TESTNET.router, BigInt(NOW + 4_500), ERC8183_TESTNET.router],
+    );
+    const receipt = {
+      ...baseReceipt,
+      status: "success",
+      logs: [{
+        address: MAINNET_COMMERCE,
+        blockHash: baseReceipt.blockHash,
+        blockNumber: 1n,
+        data,
+        logIndex: 0,
+        removed: false,
+        topics,
+        transactionHash: baseReceipt.transactionHash,
+        transactionIndex: 0,
+      }],
+    } as TransactionReceipt;
+
+    expect(extractConfirmedJobId(receipt, MAINNET_COMMERCE)).toBe(901n);
   });
 
   it("restores only the minimal sanitized journal and derives remaining work from chain", () => {
@@ -282,6 +313,19 @@ describe("receipts and recovery", () => {
       ...restored,
       lastConfirmedStep: "wallet_has_the_key",
     })).toBeNull();
+  });
+
+  it("recovers an existing confirmed job without repeating createJob", () => {
+    const values = new Map<string, string>();
+    const storage = { setItem: (key: string, value: string) => values.set(key, value) };
+    const recovered = recoverBrowserJournal(job({ status: "OPEN", budgetRaw: "0" }), hirePlan(), storage);
+
+    expect(recovered).toMatchObject({
+      jobId: "900",
+      transactions: {},
+      lastConfirmedStep: "created",
+    });
+    expect([...values.values()]).toHaveLength(1);
   });
 });
 

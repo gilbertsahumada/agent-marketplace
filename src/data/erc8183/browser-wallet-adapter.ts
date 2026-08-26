@@ -346,6 +346,27 @@ export function validateRecoveredJobForResume(
   }
 }
 
+export function recoverBrowserJournal(
+  job: Erc8183JobFacts,
+  plan: Erc8183HirePlan,
+  storage: Pick<Storage, "setItem"> = localStorage,
+  deployment: Erc8183BrowserDeployment = TESTNET_BROWSER_DEPLOYMENT,
+): Erc8183BrowserJournal {
+  validateRecoveredJobForResume(job, plan, job.jobId, deployment);
+  const journal: Erc8183BrowserJournal = {
+    schemaVersion: 1,
+    chainId: deployment.chainId,
+    buyer: getAddress(job.buyer),
+    seller: getAddress(job.provider),
+    jobId: job.jobId,
+    transactions: {},
+    lastConfirmedStep: "created",
+    startedAt: new Date().toISOString(),
+  };
+  saveBrowserJournal(journal, storage, deployment);
+  return journal;
+}
+
 export function resumeRequirements(job: Erc8183JobFacts | null, budgetRaw: string) {
   const budget = BigInt(budgetRaw);
   return {
@@ -414,7 +435,7 @@ export async function executeBrowserHire(
   let jobId = journal.jobId ? BigInt(journal.jobId) : null;
   if (jobId === null && journal.transactions.createJob) {
     const confirmed = await confirm(journal.transactions.createJob, deployment.commerce);
-    jobId = extractConfirmedJobId(confirmed.receipt);
+    jobId = extractConfirmedJobId(confirmed.receipt, deployment.commerce);
     journal = withProgress(journal, "created", { kind: "createJob", hash: journal.transactions.createJob, ...confirmed }, jobId.toString(), onProgress, deployment);
   }
   if (jobId === null) {
@@ -426,8 +447,9 @@ export async function executeBrowserHire(
       args: [plan.seller, deployment.router, BigInt(plan.deadline), plan.quote.description, deployment.router],
     });
     const hash = await walletClient.writeContract(simulation.request);
+    journal = withProgress(journal, journal.lastConfirmedStep, { kind: "createJob", hash }, null, onProgress, deployment);
     const confirmed = await confirm(hash, deployment.commerce);
-    jobId = extractConfirmedJobId(confirmed.receipt);
+    jobId = extractConfirmedJobId(confirmed.receipt, deployment.commerce);
     journal = withProgress(journal, "created", { kind: "createJob", hash, ...confirmed }, jobId.toString(), onProgress, deployment);
   }
   const budget = BigInt(plan.quote.priceRaw);
