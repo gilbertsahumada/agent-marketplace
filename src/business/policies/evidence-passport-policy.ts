@@ -1,9 +1,9 @@
 import { keccak256, toBytes } from "viem";
-import type { AgentEvidencePassport, EvidencePassportCheck, EvidencePassportState } from "../entities/evidence-passport.js";
-import type { HireabilityStatus, MarketplaceAgent } from "../entities/marketplace-agent.js";
-import type { MainnetJobProof } from "../entities/mainnet-job-proof.js";
-import type { PublicAgentVerification, PublicVerificationSnapshot } from "../entities/public-verification-snapshot.js";
-import { isReleaseAgentHireable, isVerificationSnapshotCurrent } from "./release-qualification-policy.js";
+import type { AgentEvidencePassport, EvidencePassportCheck, EvidencePassportState } from "../entities/evidence-passport.ts";
+import type { HireabilityStatus, MarketplaceAgent } from "../entities/marketplace-agent.ts";
+import type { MainnetJobProof } from "../entities/mainnet-job-proof.ts";
+import type { PublicAgentVerification, PublicVerificationSnapshot } from "../entities/public-verification-snapshot.ts";
+import { isReleaseAgentHireable, isVerificationSnapshotCurrent } from "./release-qualification-policy.ts";
 
 export interface EvidencePassportInput {
   chainId: 56;
