@@ -41,6 +41,11 @@ const requestTimes: number[] = [];
 const MAX_REQUESTS_PER_MINUTE = 60;
 const MINIMUM_SIGNER_GAS_BALANCE = 2_000_000_000_000_000n;
 const MINIMUM_SUBMIT_MARGIN_SECONDS = 600n;
+const MAINNET_GRID_RPC_URL = "https://bsc-rpc.publicnode.com";
+
+export function mainnetGridNetwork() {
+  return { ...resolveNetwork("bsc-mainnet"), rpcUrl: MAINNET_GRID_RPC_URL };
+}
 
 function assertRequestBudget(now = Date.now()): void {
   while (requestTimes.length > 0 && requestTimes[0]! <= now - 60_000) requestTimes.shift();
@@ -80,7 +85,8 @@ function manifest(jobId: bigint, description: string): DeliverableManifest {
 async function createRuntime(): Promise<MainnetGridRuntime> {
   const config = loadMainnetGridSellerConfig(process.env, { requireAgentId: true });
   const wallet = new EVMWalletProvider({ password: "in-memory-only", privateKey: config.privateKey, persist: false });
-  const client = await ERC8183Client.create({ walletProvider: wallet, network: resolveNetwork("bsc-mainnet") });
+  const network = mainnetGridNetwork();
+  const client = await ERC8183Client.create({ walletProvider: wallet, network });
   const [chainId, token, policyAllowed] = await Promise.all([
     client.publicClient.getChainId(),
     client.paymentToken(),
@@ -96,7 +102,7 @@ async function createRuntime(): Promise<MainnetGridRuntime> {
   });
   const jobOps = await ERC8183JobOps.create({
     walletProvider: wallet,
-    network: resolveNetwork("bsc-mainnet"),
+    network,
     servicePrice: ERC8183_MAINNET.maximumDemoBudgetRaw,
     agentUrl: config.origin,
     allowUnsignedJobs: false,
