@@ -377,7 +377,11 @@ function Erc8183BrowserDemo({ mode, deployment }: { mode: "testnet" | "mainnet";
               ) : <p className="text-sm text-zinc-500">Connect a wallet to calculate the exact transaction set.</p>}
               <Button className="mt-5" disabled={!plan || busy !== null || submitted} onClick={() => void signAndRun()}>
                 {busy === "Waiting for wallet confirmations" ? <LoaderCircle aria-hidden="true" className="animate-spin" /> : <Wallet aria-hidden="true" />}
-                {submitted ? "Job already submitted" : `Begin ${signaturePurpose.length || 0} wallet signatures`}
+                {submitted
+                  ? "Job already submitted"
+                  : journal?.jobId
+                    ? "Continue remaining wallet signatures"
+                    : `Begin ${signaturePurpose.length || 0} wallet signatures`}
               </Button>
               {plan && !journal?.jobId && (
                 <div className="mt-5 border-t border-white/[0.07] pt-5">
