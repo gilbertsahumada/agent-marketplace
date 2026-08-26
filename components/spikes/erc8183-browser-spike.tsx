@@ -18,6 +18,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import {
   type Erc8183BrowserJournal,
   type Erc8183HirePlan,
@@ -30,6 +31,7 @@ import {
   clearBrowserJournal,
   executeBrowserHire,
   loadBrowserJournal,
+  recoverBrowserJournal,
   saveBrowserJournal,
   ERC8183_TESTNET,
   type Erc8183BrowserDeployment,
@@ -125,6 +127,7 @@ function Erc8183BrowserDemo({ mode, deployment }: { mode: "testnet" | "mainnet";
   const [job, setJob] = useState<Erc8183JobFacts | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [recoveryJobId, setRecoveryJobId] = useState("");
 
   const readJob = useCallback(async (jobId: string) => {
     const tracking = await apiJson<{ job: Erc8183JobFacts | null }>(`${jobsBase}/${jobId}`);
@@ -222,6 +225,25 @@ function Erc8183BrowserDemo({ mode, deployment }: { mode: "testnet" | "mainnet";
       if (mode === "testnet") router.push(`${jobPageBase}/${execution.jobId}`);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "The browser transaction flow stopped.");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const recoverJob = async () => {
+    if (!plan || !/^\d+$/.test(recoveryJobId)) {
+      setError("Enter a numeric Job ID after preparing the connected wallet.");
+      return;
+    }
+    setBusy("Recovering confirmed job");
+    setError(null);
+    try {
+      const current = await readJob(recoveryJobId);
+      const recovered = recoverBrowserJournal(current, plan, localStorage, deployment);
+      setJournal(recovered);
+      setJob(current);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "The confirmed job could not be recovered.");
     } finally {
       setBusy(null);
     }
@@ -357,6 +379,25 @@ function Erc8183BrowserDemo({ mode, deployment }: { mode: "testnet" | "mainnet";
                 {busy === "Waiting for wallet confirmations" ? <LoaderCircle aria-hidden="true" className="animate-spin" /> : <Wallet aria-hidden="true" />}
                 {submitted ? "Job already submitted" : `Begin ${signaturePurpose.length || 0} wallet signatures`}
               </Button>
+              {plan && !journal?.jobId && (
+                <div className="mt-5 border-t border-white/[0.07] pt-5">
+                  <p className="text-xs leading-relaxed text-zinc-500">
+                    If a confirmed createJob transaction was interrupted before this browser saved its Job ID, recover it from chain instead of creating a duplicate.
+                  </p>
+                  <div className="mt-3 flex gap-2">
+                    <Input
+                      aria-label="Confirmed Job ID"
+                      inputMode="numeric"
+                      onChange={(event) => setRecoveryJobId(event.target.value.trim())}
+                      placeholder="Confirmed Job ID"
+                      value={recoveryJobId}
+                    />
+                    <Button disabled={busy !== null || !/^\d+$/.test(recoveryJobId)} onClick={() => void recoverJob()} variant="outline">
+                      Recover
+                    </Button>
+                  </div>
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>
