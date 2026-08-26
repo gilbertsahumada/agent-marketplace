@@ -1,7 +1,7 @@
 import { mkdir, rename, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
-import { buildBscCandidateInventory } from "./inventory.js";
-import { Trust8004Provider } from "./provider.js";
+import { buildBscCandidateInventory } from "./inventory.ts";
+import { Trust8004Provider } from "./provider.ts";
 
 function outputPath(args: string[]): string {
   const outputIndex = args.indexOf("--output");
