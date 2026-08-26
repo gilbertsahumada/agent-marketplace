@@ -1,7 +1,7 @@
-import type { AgentEvidencePassport } from "../entities/evidence-passport.js";
-import type { MarketplaceAgent } from "../entities/marketplace-agent.js";
-import type { MainnetJobProof } from "../entities/mainnet-job-proof.js";
-import { buildEvidencePassport } from "../policies/evidence-passport-policy.js";
+import type { AgentEvidencePassport } from "../entities/evidence-passport.ts";
+import type { MarketplaceAgent } from "../entities/marketplace-agent.ts";
+import type { MainnetJobProof } from "../entities/mainnet-job-proof.ts";
+import { buildEvidencePassport } from "../policies/evidence-passport-policy.ts";
 
 export interface MarketplaceAgentReader {
   execute(input: { agentId: string }): Promise<MarketplaceAgent>;
