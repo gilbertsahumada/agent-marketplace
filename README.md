@@ -63,7 +63,8 @@ registration transaction is
 `0x166cdb89f4fb2236d760fcd372db7980d51d473a16f3ab51118eeb024eb61e2a`.
 
 Submission hardening now includes a separate, disabled-by-default BSC Mainnet
-path for exactly one marketplace-operated deterministic Grid planner, registered
+path for exactly one marketplace-operated deterministic Grid planner. Production
+activation was authorized after a fresh recorded GO decision; the planner is registered
 as Agent `303779`. It is
 not an official BNB reference agent and it never executes trades or takes
 custody. Its server computes reproducible levels, allocations and rebalance
@@ -71,8 +72,9 @@ triggers; the browser retains custody for every buyer write. The contract
 go/no-go and seller qualification now pass: the fixed official contracts,
 active proxy implementations, `U` token, policy, spend ceiling, dedicated
 seller public address, production origin, direct identity and signed quote all
-match. Buyer writes remain disabled until the intended injected wallet has
-enough Mainnet BNB for gas and the fixed `0.01 U` budget.
+match. The intended injected buyer wallet now exceeds the documented Mainnet
+gas floor and holds more than the fixed `0.01 U` budget. Production demo and
+write gates are enabled for the controlled browser-signed execution.
 The origin check also fetches the Grid Agent Card through the shared
 DNS-pinned, redirect-rejecting, 64 KiB transport and verifies both required
 seller skills before a report can become `GO`.
@@ -331,11 +333,11 @@ step:
    and the [paginated registered snapshot](https://bnb-agent-marketplace-ruby.vercel.app/agents?view=all&page=1&limit=24).
    Registered records remain `Not evaluated`; Grid contains the explicitly
    labelled marketplace-operated seller rather than an inferred third party.
-5. **Hire:** until the Mainnet buyer is funded and the server-side write gate is
-   enabled, open the [controlled Testnet demo](https://bnb-agent-marketplace-ruby.vercel.app/demo/erc8183)
-   and request a live signed quote. The Mainnet Grid path uses the same
-   non-custodial browser flow and becomes the primary route only after its real
-   job is proven. Requesting a quote performs no transaction or wallet access.
+5. **Hire:** open the [controlled Mainnet Grid demo](https://bnb-agent-marketplace-ruby.vercel.app/demo/erc8183-mainnet)
+   and request a live signed quote. The fixed production gates are enabled after
+   a recorded GO decision; the injected buyer still controls every signature.
+   Requesting a quote performs no transaction or wallet access. The Mainnet path
+   becomes the primary public proof only after its real job is captured.
 6. **Track and result:** inspect [Job 551](https://bnb-agent-marketplace-ruby.vercel.app/jobs/testnet/551),
    its five browser-signed buyer transactions, seller submission, current
    onchain state, and hash-verified public result.
@@ -377,8 +379,9 @@ signed quote and read-only prepare response without signing or broadcasting. Onc
 the canonical Mainnet proof is published, a missing Mainnet hiring route fails the
 check instead of being treated as intentionally unavailable.
 Production keeps `ERC8183_BROWSER_SPIKE_ENABLED=true` from 2026-09-09 through
-2026-09-23; the independent Mainnet flag stays false unless its complete GO,
-registration, qualification and proof-capture sequence succeeds.
+2026-09-23. The independent Mainnet demo and write gates were enabled on
+2026-08-26 after GO, registration, qualification and buyer funding; they remain
+subject to the existing fixed allowlists and kill switch.
 
 Provision the new single-purpose Mainnet seller key only as a write-only Vercel
 secret:
