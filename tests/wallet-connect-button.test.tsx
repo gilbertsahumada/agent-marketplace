@@ -5,6 +5,7 @@ import axe from "axe-core";
 import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { Connector } from "wagmi";
 import { WalletConnectButton } from "../components/marketplace/wallet-connect-button.tsx";
 import { TooltipProvider } from "../components/ui/tooltip.tsx";
 
@@ -12,12 +13,13 @@ const account = vi.fn();
 const chainId = vi.fn();
 const switchChain = vi.fn();
 const connect = vi.fn();
+const connectors = vi.fn<() => Connector[]>(() => []);
 const disconnect = vi.fn();
 
 vi.mock("wagmi", () => ({
   useAccount: () => account(),
   useChainId: () => chainId(),
-  useConnect: () => ({ connect, connectors: [{ id: "injected", name: "Injected" }], error: null }),
+  useConnect: () => ({ connect, connectors: connectors(), error: null }),
   useDisconnect: () => ({ disconnect }),
   useSwitchChain: () => ({ switchChain }),
 }));
@@ -43,6 +45,30 @@ describe("header wallet connect button", () => {
     expect(await screen.findByRole("button", { name: /connect wallet/i })).toBeInTheDocument();
     const result = await axe.run(document.body);
     expect(result.violations).toEqual([]);
+  });
+
+  it("shows each discovered wallet once and prefers the specific connector", async () => {
+    const user = userEvent.setup();
+    const generic = { id: "injected", name: "Injected", uid: "generic" } as Connector;
+    const metamask = { id: "io.metamask", name: "MetaMask", uid: "metamask" } as Connector;
+    account.mockReturnValue({ address: undefined, isConnected: false, connector: undefined });
+    chainId.mockReturnValue(56);
+    connectors.mockReturnValue([
+      generic,
+      metamask,
+      { ...metamask, uid: "metamask-2" },
+      { ...metamask, uid: "metamask-3" },
+      { ...metamask, uid: "metamask-4" },
+    ]);
+    Object.defineProperty(window, "ethereum", { configurable: true, value: { isMetaMask: true } });
+
+    renderButton();
+    await user.click(await screen.findByRole("button", { name: /connect wallet/i }));
+
+    const options = screen.getAllByRole("button", { name: "MetaMask" });
+    expect(options).toHaveLength(1);
+    await user.click(options[0]!);
+    expect(connect).toHaveBeenCalledWith({ connector: metamask });
   });
 
   it("shows the truncated address once a wallet is connected on BSC", async () => {
