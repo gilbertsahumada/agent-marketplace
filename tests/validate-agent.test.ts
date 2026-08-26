@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import { ValidateMarketplaceAgent } from "../src/business/use-cases/validate-marketplace-agent.js";
-import type { AgentValidationEvidence } from "../src/business/entities/agent-validation.js";
+import { ValidateMarketplaceAgent } from "../src/business/use-cases/validate-marketplace-agent.ts";
+import type { AgentValidationEvidence } from "../src/business/entities/agent-validation.ts";
 
 const OBSERVED_AT = "2026-08-26T10:00:00.000Z";
 
