@@ -4,8 +4,8 @@ import {
   isAddressEqual,
   type TransactionReceipt,
 } from "viem";
-import { Erc8183JobNotReadyError } from "../../business/errors/erc8183-spike-errors.js";
-import { agenticCommerceBrowserAbi, ERC8183_TESTNET } from "./contracts.js";
+import { Erc8183JobNotReadyError } from "../../business/errors/erc8183-spike-errors.ts";
+import { agenticCommerceBrowserAbi, ERC8183_TESTNET } from "./contracts.ts";
 
 export function assertSuccessfulReceipt(receipt: TransactionReceipt): void {
   if (receipt.status !== "success") {
