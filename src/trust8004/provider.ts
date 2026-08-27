@@ -131,14 +131,14 @@ export class Trust8004Provider {
     if (options.sortBy) params.set("sortBy", options.sortBy);
     if (options.sortOrder) params.set("sortOrder", options.sortOrder);
     const fetchedAt = isoTimestamp(this.now(), "provider.now");
-    const response = await this.request(`/api/v2/agents?${params.toString()}`, parseAgentListResponse);
+    const response = await this.request(`/api/app/agents?${params.toString()}`, parseAgentListResponse);
     return { ...response, catalogCoverage: CATALOG_COVERAGE, fetchedAt };
   }
 
   async getProfile(agentId: string): Promise<Trust8004Profile> {
     this.assertAgentId(agentId);
     return this.request(
-      `/api/v2/agents/profile?chainId=${BSC_MAINNET_CHAIN_ID}&agentId=${encodeURIComponent(agentId)}`,
+      `/api/app/agents/profile?chainId=${BSC_MAINNET_CHAIN_ID}&agentId=${encodeURIComponent(agentId)}`,
       (value) => parseProfileResponse(value, agentId),
     );
   }
@@ -146,7 +146,7 @@ export class Trust8004Provider {
   async getTrustScore(agentId: string): Promise<TrustScore> {
     this.assertAgentId(agentId);
     return this.request(
-      `/api/v2/agents/${encodeURIComponent(agentId)}/score?chainId=${BSC_MAINNET_CHAIN_ID}`,
+      `/api/app/agents/${encodeURIComponent(agentId)}/score?chainId=${BSC_MAINNET_CHAIN_ID}`,
       (value) => parseTrustScoreResponse(value, agentId),
     );
   }
