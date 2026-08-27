@@ -20,6 +20,12 @@ export function hostedSellerAgentCard(origin: string): HostedSellerAgentCard {
         tags: ["erc8183", "testing", "bnb-chain"],
       },
       {
+        id: "negotiate",
+        name: "Negotiate a deterministic ERC-8183 fixture job",
+        description: "Return a provider-signed one-raw-unit Testnet quote.",
+        tags: ["erc8183", "testing", "bnb-chain"],
+      },
+      {
         id: "notify_funded",
         name: "Submit a funded ERC-8183 fixture job",
         description: "Verify a FUNDED job and publish a deterministic result.",

@@ -7,6 +7,7 @@ import type {
   MarketplaceCategory,
   MarketplaceHireability,
 } from "../entities/marketplace-agent.ts";
+import { isReleaseQuoteCurrent } from "./release-qualification-policy.ts";
 
 function evidence(
   kind: EvidenceRecord["kind"],
@@ -27,19 +28,60 @@ function serviceKind(name: string): "mcp" | "seller" | "other" {
 
 export function determineHireability(
   agent: MarketplaceAgentData,
+  now = Date.now(),
 ): MarketplaceHireability {
-  const serviceKinds = agent.services
-    .filter((service) => Boolean(service.endpoint))
-    .map((service) => serviceKind(service.name));
+  const declarations = [
+    ...agent.services.map(({ name, endpoint }) => ({ name, endpoint })),
+    ...agent.endpoints,
+  ];
+  const serviceKinds = declarations
+    .filter(({ endpoint }) => Boolean(endpoint))
+    .map(({ name }) => name ? serviceKind(name) : "other");
   const hasSellerProtocol = serviceKinds.includes("seller");
   const hasMcp = serviceKinds.includes("mcp");
   const observedAt = agent.freshness.fetchedAt;
+  const walletAttribution = agent.verification?.identity.walletAttribution;
+
+  if (walletAttribution?.status === "ambiguous") {
+    return {
+      status: "wallet_ambiguous",
+      canHire: false,
+      reason: `The seller wallet maps to ${walletAttribution.candidateCount} evaluated Agent IDs; payment cannot be attributed safely to one agent.`,
+      evidence: evidence(
+        "observed",
+        "marketplace-readiness",
+        agent.verification?.identity.observedAt ?? observedAt,
+        true,
+        "Wallet attribution is ambiguous within the evaluated set.",
+      ),
+    };
+  }
 
   if (
-    agent.verification?.freshness === "current"
-    && agent.verification.qualification.status === "qualified"
+    agent.verification?.qualification.status === "qualified"
     && agent.verification.selection !== "operator_explicit"
   ) {
+    if (
+      agent.verification.freshness !== "current"
+      || !isReleaseQuoteCurrent(agent.verification.qualification.observedAt, now)
+    ) {
+      return {
+        status: "quote_stale",
+        canHire: false,
+        reason: agent.verification.freshness === "stale"
+          ? "A signed quote was verified in an expired release snapshot; refresh the seller evidence before hiring."
+          : "A signed quote was verified, but it is older than 60 seconds; refresh it before hiring.",
+        evidence: evidence(
+          "observed",
+          "marketplace-readiness",
+          agent.verification.qualification.observedAt,
+          true,
+          agent.verification.freshness === "stale"
+            ? "The last signed quote passed the release gate, but its release snapshot is expired."
+            : "The last signed quote passed the release gate but is outside the 60-second hireable-now window.",
+        ),
+      };
+    }
     return {
       status: "quote_verified",
       canHire: true,
@@ -83,7 +125,7 @@ export function determineHireability(
     };
   }
   return {
-    status: "not_declared",
+    status: "no_transport_declared",
     canHire: false,
     reason: "No A2A or HTTP ERC-8183 seller service is declared.",
     evidence: evidence(

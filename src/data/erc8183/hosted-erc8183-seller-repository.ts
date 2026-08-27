@@ -113,7 +113,7 @@ export class HostedErc8183Seller
 
   async handleMessage(message: HostedSellerMessage): Promise<HostedSellerReply> {
     const current = await runtime();
-    if (message.skill === "negotiate-erc8183-job") {
+    if ("taskDescription" in message) {
       const quote = await current.negotiation.negotiate({
         task_description: message.taskDescription,
         terms: message.terms,

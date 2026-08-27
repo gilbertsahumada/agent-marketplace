@@ -14,10 +14,13 @@ export function PageIntro({ eyebrow, title, children }: { eyebrow: string; title
   );
 }
 
-export function CoverageBadge({ total }: { total?: number }) {
+export function CoverageBadge({ total, fetchedAt }: { total?: number; fetchedAt?: string }) {
+  const count = typeof total === "number"
+    ? ` · ${total.toLocaleString()} BSC (chainId=56) records reported by trust8004 for active=true (response.total${fetchedAt ? `; fetched ${new Date(fetchedAt).toISOString()}` : ""})`
+    : "";
   return (
     <Badge className="border-amber-400/30 bg-amber-400/10 text-amber-200" variant="outline">
-      Catalog coverage: partial{typeof total === "number" ? ` · ${total.toLocaleString()} active indexed BSC records returned by trust8004` : ""}
+      Catalog coverage: partial{count}
     </Badge>
   );
 }

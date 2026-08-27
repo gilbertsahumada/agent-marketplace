@@ -1,8 +1,16 @@
 import type { MarketplaceAgent } from "@/src/business/entities/marketplace-agent";
 import type { PublicAgentVerification, PublicVerificationSnapshot } from "@/src/business/entities/public-verification-snapshot";
 import { deriveAgentPassportState, deriveSnapshotAgentPassportState } from "@/src/business/policies/evidence-passport-policy";
-import { isReleaseAgentHireable, isVerificationSnapshotCurrent } from "@/src/business/policies/release-qualification-policy";
+import { isReleaseAgentHireable, isReleaseQuoteCurrent, isVerificationSnapshotCurrent } from "@/src/business/policies/release-qualification-policy";
 import type { AgentCardViewModel, EvidenceStepViewModel, VerificationDriftViewModel } from "./presentation-types";
+
+function evidenceAge(observedAt: string, now = Date.now()): string {
+  const elapsedSeconds = Math.max(0, Math.floor((now - Date.parse(observedAt)) / 1_000));
+  if (elapsedSeconds < 60) return "just now";
+  if (elapsedSeconds < 3_600) return `${Math.floor(elapsedSeconds / 60)}m ago`;
+  if (elapsedSeconds < 86_400) return `${Math.floor(elapsedSeconds / 3_600)}h ago`;
+  return `${Math.floor(elapsedSeconds / 86_400)}d ago`;
+}
 
 export function verificationViewModel(agent: MarketplaceAgent): VerificationDriftViewModel | null {
   return agent.verification ? {
@@ -13,6 +21,9 @@ export function verificationViewModel(agent: MarketplaceAgent): VerificationDrif
     identityMismatchFields: agent.verification.identity.mismatchFields,
     identityObservedAt: agent.verification.identity.observedAt,
     identityOnchainProvenance: agent.verification.identity.provenance[1],
+    ...(agent.verification.identity.walletAttribution
+      ? { walletAttribution: agent.verification.identity.walletAttribution }
+      : {}),
     toolsStatus: agent.verification.tools.status,
     toolReachability: agent.verification.tools.reachability,
     toolProbeOutcomes: agent.verification.tools.probeOutcomes,
@@ -22,7 +33,7 @@ export function verificationViewModel(agent: MarketplaceAgent): VerificationDrif
   } : null;
 }
 
-export function evidenceForAgent(agent: MarketplaceAgent): EvidenceStepViewModel[] {
+export function evidenceForAgent(agent: MarketplaceAgent, now = Date.now()): EvidenceStepViewModel[] {
   const releaseReachability = agent.verification?.tools.reachability;
   const releaseEvidenceCurrent = agent.verification?.freshness === "current";
   const reachable = releaseReachability
@@ -41,6 +52,8 @@ export function evidenceForAgent(agent: MarketplaceAgent): EvidenceStepViewModel
   const reachabilityObservedAt = agent.verification?.tools.observedAt
     ?? agent.endpointObservation.lastTestedAt;
   const quoteVerified = agent.hireability.status === "quote_verified";
+  const quoteStale = agent.hireability.status === "quote_stale";
+  const quoteObservedAt = agent.verification?.qualification.observedAt;
   return [
     {
       kind: "declared",
@@ -64,8 +77,13 @@ export function evidenceForAgent(agent: MarketplaceAgent): EvidenceStepViewModel
       kind: "quote",
       label: "Quote verified",
       status: quoteVerified ? "verified" : "unknown",
-      provenance: quoteVerified ? "observed" : "derived",
-      detail: quoteVerified ? "An ERC-8183 seller quote was verified." : "No compatible ERC-8183 seller quote has been verified.",
+      provenance: quoteVerified || quoteStale ? "observed" : "derived",
+      detail: quoteVerified
+        ? `An ERC-8183 seller quote was verified ${quoteObservedAt ? evidenceAge(quoteObservedAt, now) : "recently"} and is inside the 60-second hireable-now window.`
+        : quoteStale
+          ? `A signed ERC-8183 quote was last verified ${quoteObservedAt ? evidenceAge(quoteObservedAt, now) : "more than 60 seconds ago"}; refresh before hiring.`
+          : "No compatible ERC-8183 seller quote has been verified.",
+      ...(quoteObservedAt && (quoteVerified || quoteStale) ? { timestamp: quoteObservedAt } : {}),
     },
     {
       kind: "job",
@@ -89,7 +107,11 @@ export function agentCardViewModel(agent: MarketplaceAgent, provenAgentId?: stri
       ? "hireable"
       : agent.hireability.status === "mcp_only"
         ? "mcp_only"
-        : "listed_only",
+        : agent.hireability.status === "quote_stale"
+          ? "quote_stale"
+          : agent.hireability.status === "wallet_ambiguous"
+            ? "wallet_ambiguous"
+            : "listed_only",
     evidence: evidenceForAgent(agent),
     verification: verificationViewModel(agent),
     passportState: deriveAgentPassportState(agent, provenAgentId),
@@ -107,6 +129,8 @@ export function snapshotAgentCardViewModel(
   const snapshotCurrent = isVerificationSnapshotCurrent(snapshot, now);
   const endpointReachable = snapshotCurrent && agent.tools.reachability === "verified";
   const quoteVerified = isReleaseAgentHireable(agent, snapshot, now);
+  const quoteCurrent = isReleaseQuoteCurrent(agent.qualification.observedAt, now);
+  const quoteStale = agent.qualification.status === "qualified" && (!quoteCurrent || !snapshotCurrent);
   const verification: VerificationDriftViewModel = {
     freshness: snapshotCurrent ? "current" : "stale",
     generatedAt: snapshot.generatedAt,
@@ -115,6 +139,7 @@ export function snapshotAgentCardViewModel(
     identityMismatchFields: agent.identity.mismatchFields,
     identityObservedAt: agent.identity.observedAt,
     identityOnchainProvenance: agent.identity.provenance[1],
+    ...(agent.identity.walletAttribution ? { walletAttribution: agent.identity.walletAttribution } : {}),
     toolsStatus: agent.tools.status,
     toolReachability: agent.tools.reachability,
     toolProbeOutcomes: agent.tools.probeOutcomes,
@@ -129,7 +154,7 @@ export function snapshotAgentCardViewModel(
     operator: agent.operator,
     categories: agent.categories,
     href: `/agents/${agent.agentId}`,
-    hireability: quoteVerified ? "hireable" : "listed_only",
+    hireability: quoteVerified ? "hireable" : quoteStale ? "quote_stale" : "listed_only",
     verification,
     passportState: deriveSnapshotAgentPassportState(agent, snapshot, now, provenAgentId),
     passportHref: `/agents/${agent.agentId}/passport`,
@@ -162,10 +187,13 @@ export function snapshotAgentCardViewModel(
         kind: "quote",
         label: "Quote verified",
         status: quoteVerified ? "verified" : "unknown",
-        provenance: "derived",
+        provenance: quoteVerified || quoteStale ? "observed" : "derived",
         detail: quoteVerified
-          ? "The current release readiness snapshot qualifies this seller; a fresh quote is still required."
-          : "No current ERC-8183 seller qualification is present in this release snapshot.",
+          ? `The current release readiness snapshot qualifies this seller; the quote was verified ${evidenceAge(agent.qualification.observedAt, now)} ago and a fresh quote is still required before signing.`
+          : quoteStale
+            ? `A signed quote was last verified ${evidenceAge(agent.qualification.observedAt, now)} ago at ${agent.qualification.observedAt}; it is outside the 60-second hireable-now window.`
+            : "No current ERC-8183 seller qualification is present in this release snapshot.",
+        ...(quoteStale || quoteVerified ? { timestamp: agent.qualification.observedAt } : {}),
       },
       {
         kind: "job",

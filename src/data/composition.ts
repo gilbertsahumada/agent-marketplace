@@ -9,6 +9,7 @@ import { areMainnetWritesEnabled } from "../mainnet/mainnet-write-gate.ts";
 import { Trust8004AgentValidationRepository } from "./repositories/trust8004-agent-validation-repository.ts";
 import { RateLimitedAgentValidationRepository } from "./repositories/rate-limited-agent-validation-repository.ts";
 import { Trust8004Provider } from "../trust8004/provider.ts";
+import { createNeonSellerObservationStore } from "./observations/seller-observation-store.ts";
 
 const trust8004Provider = new Trust8004Provider();
 export const marketplaceAgentRepository = new Trust8004MarketplaceAgentRepository({ provider: trust8004Provider });
@@ -30,3 +31,4 @@ export const agentValidationRepository = new RateLimitedAgentValidationRepositor
       : {}),
   }),
 );
+export const sellerObservationStoreFactory = () => createNeonSellerObservationStore();

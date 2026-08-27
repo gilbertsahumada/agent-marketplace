@@ -37,12 +37,13 @@ function rpcRequest(data: Record<string, unknown>): Request {
 }
 
 describe("hosted ERC-8183 seller", () => {
-  it("builds a public card with only the two fixture skills", () => {
+  it("builds a public card with both accepted negotiation skill identifiers", () => {
     const card = hostedSellerAgentCard("https://seller.example");
     expect(card.url).toBe("https://seller.example/api/fixtures/erc8183/a2a");
     expect(card.description).toContain("not a marketplace agent");
     expect(card.skills.map(({ id }) => id)).toEqual([
       "negotiate-erc8183-job",
+      "negotiate",
       "notify_funded",
     ]);
   });
@@ -80,6 +81,18 @@ describe("hosted ERC-8183 seller", () => {
     ).resolves.toMatchObject({
       id: "request-1",
       message: { skill: "negotiate-erc8183-job" },
+    });
+    await expect(
+      parseHostedSellerRequest(
+        rpcRequest({
+          skill: "negotiate",
+          task_description: "Deterministic echo",
+          terms: { deliverables: "text" },
+        }),
+      ),
+    ).resolves.toMatchObject({
+      id: "request-1",
+      message: { skill: "negotiate" },
     });
     await expect(
       parseHostedSellerRequest(

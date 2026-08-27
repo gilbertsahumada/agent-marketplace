@@ -10,6 +10,7 @@ import {
 } from "viem";
 import { bsc } from "viem/chains";
 import { fetchAgentCard } from "../a2a.ts";
+import { hasErc8183SellerSkills } from "../erc8183/skills.ts";
 import { createSafeEndpointTransport } from "../verification/safe-http.ts";
 import { ERC1967_IMPLEMENTATION_SLOT, ERC8183_MAINNET } from "./contracts.ts";
 
@@ -75,11 +76,9 @@ async function probeProductionSeller(origin: string): Promise<boolean> {
       maxResponseBytes: 64 * 1024,
     });
     const card = await fetchAgentCard(endpoint, null, transport.fetch);
-    const skillIds = new Set(card.skills.map(({ id }) => id));
     return card.name === "marketplace-operated-grid-planner"
       && card.url === `${origin}/api/sellers/grid/a2a`
-      && skillIds.has("negotiate-erc8183-job")
-      && skillIds.has("notify_funded");
+      && hasErc8183SellerSkills(card.skills);
   } catch {
     return false;
   } finally {

@@ -42,9 +42,15 @@ function qualification(
   activation: HireabilityAssessment,
   identity: IdentityVerification,
 ): ReadinessCandidate["qualification"] {
+  const observedAt = activation.protocols
+    .map((protocol) => protocol.quote?.observedAt)
+    .filter((value): value is string => Boolean(value))
+    .sort()
+    .at(-1) ?? identity.observedAt;
   const reasons: ReadinessCandidate["qualification"]["reasons"] = [];
   if (identity.status === "read_error") reasons.push("IDENTITY_UNAVAILABLE");
   else if (identity.status !== "match") reasons.push("IDENTITY_NOT_VERIFIED");
+  if (identity.walletAttribution?.status === "ambiguous") reasons.push("WALLET_AMBIGUOUS");
   if (activation.declaredSellerProtocols.length === 0) reasons.push("SELLER_PROTOCOL_NOT_DECLARED");
   else if (activation.hireability === "unreachable") reasons.push("SELLER_PROTOCOL_UNAVAILABLE");
   else if (activation.hireability === "probe_incomplete") reasons.push("SELLER_PROBE_INCOMPLETE");
@@ -58,6 +64,7 @@ function qualification(
       : reasons.length === 0
         ? "qualified"
         : "not_qualified",
+    observedAt,
     reasons,
     provenance: "derived:marketplace-seller-qualification",
   };

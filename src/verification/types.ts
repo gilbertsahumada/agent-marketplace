@@ -23,6 +23,13 @@ export interface OnchainIdentity {
   metadataUri: string;
 }
 
+export interface WalletAttribution {
+  status: "unique" | "ambiguous" | "not_checked";
+  candidateCount: number;
+  candidateAgentIds: string[];
+  provenance: "derived:marketplace-readiness";
+}
+
 export interface IdentityVerification {
   status: IdentityVerificationStatus;
   declared: {
@@ -44,6 +51,13 @@ export interface IdentityVerification {
   };
   observedAt: string;
   error: VerificationError | null;
+  /**
+   * A wallet can only be attributed to one agent when the evaluated identity
+   * set proves that relationship is unique. This is optional for older
+   * fixtures and ad-hoc single-agent reads that cannot establish global
+   * uniqueness.
+  */
+  walletAttribution?: WalletAttribution;
 }
 
 export interface McpEndpointVerification {
@@ -106,6 +120,7 @@ export interface BscVerificationReport {
     endpointAttention: number;
     agentsWithoutMcpEndpoint: number;
     toolDriftEndpoints: number;
+    walletAmbiguousAgents?: number;
   };
   agents: AgentVerification[];
 }

@@ -127,6 +127,25 @@ describe("published verification evidence", () => {
     )).toThrow(/expired/);
   });
 
+  it("rebuilds more often than the snapshot freshness window", () => {
+    // Hireability requires verification.freshness === "current", so an expired
+    // snapshot removes every Hire action from the live site with no code change.
+    // Vercel regenerates the snapshot on each build, so the invariant is that a
+    // scheduled rebuild runs strictly inside the publish window.
+    const publishCli = readFileSync("src/verification/publish-cli.ts", "utf8");
+    const declaredWindow = publishCli.match(/--max-age-hours"\)\s*\?\?\s*"(\d+)"/);
+    expect(declaredWindow).not.toBeNull();
+    const windowHours = Number(declaredWindow![1]);
+
+    const workflow = readFileSync(".github/workflows/refresh-release-snapshot.yml", "utf8");
+    const schedule = workflow.match(/cron:\s*"0 \*\/(\d+) \* \* \*"/);
+    expect(schedule).not.toBeNull();
+    const rebuildEveryHours = Number(schedule![1]);
+
+    // A missed run must still leave room to recover before the snapshot expires.
+    expect(rebuildEveryHours * 2).toBeLessThan(windowHours);
+  });
+
   it("regenerates sanitized verification evidence before every Vercel build", () => {
     const packageJson = JSON.parse(readFileSync("package.json", "utf8")) as { scripts: Record<string, string> };
     const vercel = JSON.parse(readFileSync("vercel.json", "utf8")) as { buildCommand: string };

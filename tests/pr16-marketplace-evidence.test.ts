@@ -101,6 +101,7 @@ function readinessInput(status: McpVerificationStatus) {
       selection: "marketplace_operated",
       qualification: {
         status: "qualified",
+        observedAt: "2026-08-24T11:59:30.000Z",
         reasons: [],
         provenance: "derived:marketplace-seller-qualification",
       },
@@ -163,15 +164,15 @@ describe("PR 16 marketplace evidence boundaries", () => {
   it("cannot enable Hire from an environment flag without current qualification", () => {
     process.env.ERC8183_MAINNET_DEMO_ENABLED = "true";
     try {
-      expect(determineHireability(marketplaceData("not_qualified", "current"))).toMatchObject({
+      expect(determineHireability(marketplaceData("not_qualified", "current"), Date.parse(GENERATED_AT))).toMatchObject({
         canHire: false,
         status: "protocol_discovered",
       });
-      expect(determineHireability(marketplaceData("qualified", "stale"))).toMatchObject({
+      expect(determineHireability(marketplaceData("qualified", "stale"), Date.parse(GENERATED_AT))).toMatchObject({
         canHire: false,
-        status: "protocol_discovered",
+        status: "quote_stale",
       });
-      expect(determineHireability(marketplaceData("qualified", "current"))).toMatchObject({
+      expect(determineHireability(marketplaceData("qualified", "current"), Date.parse(GENERATED_AT))).toMatchObject({
         canHire: true,
         status: "quote_verified",
         evidence: { source: "marketplace-readiness", observedAt: GENERATED_AT },
@@ -179,13 +180,49 @@ describe("PR 16 marketplace evidence boundaries", () => {
       const explicit = marketplaceData("qualified", "current");
       explicit.verification!.selection = "operator_explicit";
       explicit.verification!.operator = "third_party";
-      expect(determineHireability(explicit)).toMatchObject({
+      expect(determineHireability(explicit, Date.parse(GENERATED_AT))).toMatchObject({
         canHire: false,
         status: "protocol_discovered",
       });
     } finally {
       delete process.env.ERC8183_MAINNET_DEMO_ENABLED;
     }
+  });
+
+  it("keeps a reachable seller visible after the 60-second quote window expires", () => {
+    const data = marketplaceData("qualified", "current");
+    const result = determineHireability(data, Date.parse(GENERATED_AT) + 60_001);
+    expect(result).toMatchObject({
+      status: "quote_stale",
+      canHire: false,
+      evidence: { source: "marketplace-readiness", kind: "observed", observedAt: GENERATED_AT },
+    });
+    expect(result.reason).toContain("older than 60 seconds");
+  });
+
+  it("keeps the last qualified quote visible after the release snapshot expires", () => {
+    const data = marketplaceData("qualified", "stale");
+    const result = determineHireability(data, Date.parse(GENERATED_AT));
+    expect(result).toMatchObject({
+      status: "quote_stale",
+      canHire: false,
+      evidence: { source: "marketplace-readiness", kind: "observed" },
+    });
+    expect(result.reason).toContain("expired release snapshot");
+  });
+
+  it("does not expose Hire when the evaluated seller wallet maps to multiple Agent IDs", () => {
+    const data = marketplaceData("qualified", "current");
+    data.verification!.identity.walletAttribution = {
+      status: "ambiguous",
+      candidateCount: 2,
+      candidateAgentIds: ["9001", "9002"],
+      provenance: "derived:marketplace-readiness",
+    };
+    expect(determineHireability(data, Date.parse(GENERATED_AT))).toMatchObject({
+      status: "wallet_ambiguous",
+      canHire: false,
+    });
   });
 
   it("preserves marketplace operation and qualification through sanitization and presentation", () => {
@@ -196,7 +233,11 @@ describe("PR 16 marketplace evidence boundaries", () => {
     });
     expect(snapshot.agents[0]).toMatchObject({
       operator: "marketplace",
-      qualification: { status: "qualified", provenance: "derived:marketplace-seller-qualification" },
+      qualification: {
+        status: "qualified",
+        observedAt: "2026-08-24T11:59:30.000Z",
+        provenance: "derived:marketplace-seller-qualification",
+      },
     });
     expect(snapshotAgentCardViewModel(snapshot.agents[0]!, snapshot, Date.parse(GENERATED_AT))).toMatchObject({
       operator: "marketplace",

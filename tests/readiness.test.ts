@@ -245,6 +245,30 @@ describe("ERC-8183 readiness protocols", () => {
     expect(methods).toEqual(["negotiate-erc8183-job"]);
   });
 
+  it("accepts the short negotiate skill used by third-party A2A sellers", async () => {
+    const quote = await fixture("readiness/quote.json");
+    const methods: string[] = [];
+    const fetchImpl = vi.fn(async (_input: string | URL | Request, init?: RequestInit) => {
+      if (!init?.method || init.method === "GET") {
+        return Response.json({
+          name: "Third-party Grid seller",
+          url: "https://fixture.example/a2a",
+          skills: [{ id: "negotiate" }, { id: "notify_funded" }],
+        });
+      }
+      const body = JSON.parse(String(init.body)) as { params: { message: { parts: Array<{ data: { skill: string } }> } } };
+      methods.push(body.params.message.parts[0]!.data.skill);
+      return Response.json({ result: { parts: [{ data: quote }] } });
+    }) as unknown as typeof fetch;
+    const result = await createHireabilityAssessor(assessorOptions(fetchImpl))(
+      agent([{ name: "A2A", endpoint: "https://fixture.example/a2a", version: null, tools: [], capabilities: [] }]),
+      identity(),
+    );
+
+    expect(result).toMatchObject({ transport: "a2a", hireability: "quote_verified", quoteStatus: "verified" });
+    expect(methods).toEqual(["negotiate"]);
+  });
+
   it("uses the canonical Grid request that the marketplace-operated seller accepts", async () => {
     const seller = new MainnetGridSellerRepository(async () => ({
       seller: PROVIDER,
@@ -333,6 +357,50 @@ describe("ERC-8183 readiness protocols", () => {
       "POST /erc8183/negotiate",
     ]);
     expect(paths.every((path) => !path.includes("agent-card"))).toBe(true);
+  });
+
+  it("reads a seller declared only under endpoints", async () => {
+    // trust8004 returns the declaration under `services` and leaves `endpoints`
+    // null today, but the ERC-8004 registration file names the same list
+    // `endpoints`. A seller declared only there must still be probed.
+    const quote = await fixture("readiness/quote.json");
+    const fetchImpl = vi.fn(async (input: string | URL | Request) => {
+      const url = new URL(input instanceof Request ? input.url : input.toString());
+      if (url.pathname.endsWith("/negotiate")) return Response.json(quote);
+      if (url.pathname.endsWith("/health")) return Response.json({ status: "ok", service: "ERC-8183 Agent" });
+      return Response.json({
+        status: "ok",
+        agent_address: PROVIDER,
+        commerce_address: COMMERCE,
+        router_address: "0x4444444444444444444444444444444444444444",
+        policy_address: "0x5555555555555555555555555555555555555555",
+        service_price: "1",
+        currency: PAYMENT_TOKEN,
+        decimals: 18,
+      });
+    }) as unknown as typeof fetch;
+    const endpointOnly: MarketplaceAgent = {
+      ...agent([]),
+      endpoints: [{ name: "ERC-8183", endpoint: "https://fixture.example/erc8183/status" }],
+    };
+    const result = await createHireabilityAssessor(assessorOptions(fetchImpl))(endpointOnly, identity());
+
+    expect(result).toMatchObject({ transport: "erc8183_http", hireability: "quote_verified" });
+  });
+
+  it("probes an endpoint mirrored in both services and endpoints only once", async () => {
+    const paths: string[] = [];
+    const fetchImpl = vi.fn(async (input: string | URL | Request) => {
+      const url = new URL(input instanceof Request ? input.url : input.toString());
+      paths.push(url.pathname);
+      return Response.json({ status: "ok", service: "ERC-8183 Agent" });
+    }) as unknown as typeof fetch;
+    // agent() mirrors services into endpoints exactly like the provider does.
+    const mirrored = agent([{ name: "ERC-8183", endpoint: "https://fixture.example/erc8183/status", version: "0.1.0", tools: [], capabilities: [] }]);
+    const result = await createHireabilityAssessor(assessorOptions(fetchImpl))(mirrored, identity());
+
+    expect(result.probe.totalDeclaredEndpoints).toBe(1);
+    expect(paths.filter((path) => path.endsWith("/health"))).toHaveLength(1);
   });
 
   it("cancels oversized chunked HTTP ERC-8183 responses before buffering them", async () => {
@@ -766,7 +834,10 @@ describe("marketplace readiness report", () => {
     (profiles["999"] as { agent: { agentId: string; name: string } }).agent.agentId = "999";
     (profiles["999"] as { agent: { agentId: string; name: string } }).agent.name = "Explicit seller candidate";
     (scores["999"] as { agentId: string }).agentId = "999";
-    const explicitIdentity = onchain.agents["45650"]!;
+    const explicitIdentity = {
+      ...onchain.agents["45650"]!,
+      agentWallet: "0x6666666666666666666666666666666666666666" as Address,
+    };
     const qualified = quoteVerifiedAssessment(explicitIdentity.agentWallet);
     const mcpOnly: HireabilityAssessment = {
       transport: "mcp_only",

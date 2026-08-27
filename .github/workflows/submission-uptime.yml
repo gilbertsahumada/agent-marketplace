@@ -33,6 +33,18 @@ jobs:
           check_200 "/hire/45650"
           check_200 "/jobs/testnet/551"
           check_200 "/evidence/verification"
+      - name: Check the served catalogue still exposes a hireable seller
+        run: |
+          set -euo pipefail
+          # A 200 only proves something is deployed. Hireability additionally
+          # requires the release snapshot to be inside its freshness window, so
+          # this asserts the rendered affordance rather than the status code.
+          body="$(curl --silent --show-error --max-time 25 "$ORIGIN/agents?view=marketplace")"
+          if ! printf '%s' "$body" | grep -q "Hire agent"; then
+            echo "The served marketplace catalogue exposes no Hire action." >&2
+            echo "Most likely the release verification snapshot expired; run publish:verification and redeploy." >&2
+            exit 1
+          fi
       - name: Check Mainnet Grid seller when current qualification exposes it
         run: |
           set -euo pipefail

@@ -8,6 +8,7 @@ import {
 } from "@bnbagent/sdk/erc8183";
 import { formatUnits, getAddress, isAddressEqual, type Address } from "viem";
 import { fetchAgentCard, negotiate, notifyFunded, type QuoteEnvelope } from "../../a2a.ts";
+import { hasErc8183SellerSkills, negotiationSkillForCard } from "../../erc8183/skills.ts";
 import type {
   Erc8183BuyerFacts,
   Erc8183JobFacts,
@@ -156,21 +157,20 @@ export class TrustlessErc8183SpikeRepository implements Erc8183SpikeRepository {
       throw new Erc8183SpikeUnavailableError("The fixture Agent origin does not match the server allowlist");
     }
     const card = await fetchAgentCard(identity.a2aEndpoint, config.bearerToken);
-    const skills = new Set(card.skills.map(({ id }) => id));
-    if (!skills.has("negotiate-erc8183-job") || !skills.has("notify_funded")) {
+    if (!hasErc8183SellerSkills(card.skills)) {
       throw new Erc8183SpikeUnavailableError("Seller Agent Card does not advertise the required skills");
     }
     if (new URL(card.url).origin !== config.sellerOrigin) {
       throw new Erc8183SpikeUnavailableError("Seller message URL does not match the server allowlist");
     }
-    return { config, identity, card };
+    return { config, identity, card, negotiationSkill: negotiationSkillForCard(card.skills)! };
   }
 
   async requestQuote(): Promise<NormalizedErc8183Quote> {
     try {
       const client = await this.client();
-      const { config, card } = await this.seller(client);
-      const envelope = await negotiate(card.url, config.bearerToken);
+      const { config, card, negotiationSkill } = await this.seller(client);
+      const envelope = await negotiate(card.url, config.bearerToken, fetch, negotiationSkill);
       return this.normalizeAndVerify(client, card.url, envelope);
     } catch (error) {
       return publicFailure(error);

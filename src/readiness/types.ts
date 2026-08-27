@@ -9,7 +9,7 @@ export type HireabilityStatus =
   | "quote_verified"
   | "protocol_discovered"
   | "mcp_only"
-  | "not_declared"
+  | "no_transport_declared"
   | "unreachable"
   | "probe_incomplete"
   | "expired_quote"
@@ -87,6 +87,8 @@ export interface ReadinessCandidate extends Omit<MarketplaceAgent, "categories">
   selection: "curated" | "marketplace_operated" | "operator_explicit";
   qualification: {
     status: "qualified" | "not_qualified" | "unavailable";
+    /** Timestamp of the evidence that determined qualification (quote when present). */
+    observedAt: string;
     reasons: Array<
       | "IDENTITY_NOT_VERIFIED"
       | "IDENTITY_UNAVAILABLE"
@@ -95,6 +97,7 @@ export interface ReadinessCandidate extends Omit<MarketplaceAgent, "categories">
       | "SELLER_PROBE_INCOMPLETE"
       | "QUOTE_EXPIRED"
       | "QUOTE_NOT_VERIFIED"
+      | "WALLET_AMBIGUOUS"
     >;
     provenance: "derived:marketplace-seller-qualification";
   };

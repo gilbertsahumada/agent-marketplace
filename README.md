@@ -148,10 +148,20 @@ TWAK factory can be added without changing the buyer protocol or lifecycle.
 
 The read-only `Trust8004Provider` uses the public trust8004 API as the sole
 catalogue source. It is locked to BSC Mainnet (`chainId=56`), validates every
-response at runtime, normalizes declared services, and labels catalogue
-coverage as a partial snapshot. Declared tools and derived categories are
+response at runtime, normalizes declared services and endpoints, and labels
+catalogue coverage as a partial snapshot. Declared tools and derived categories are
 candidate evidence, not verified capabilities. Financial facts, critical
 identity, and ERC-8183 state remain direct BSC reads outside this adapter.
+
+The registered-catalogue count is deliberately not hardcoded. The
+`/agents?view=all` badge reports exactly `response.total` from trust8004's
+`chainId=56&active=true` list query and includes the UTC fetch timestamp; it is a
+count of indexed active registry records, not a count of classified or hireable
+agents. As a reproducible reference point, that query returned **308,330 records
+at 2026-08-27T13:28:07Z**. A different count on a later deployment means the upstream
+snapshot changed, not that the marketplace silently changed its definition. The
+readiness transport filter applies the same union to `services[]` and
+`endpoints[]`.
 
 Generate the local, Git-ignored inventory with:
 
@@ -195,7 +205,10 @@ prove functional execution or ERC-8183 hireability. The report is written to
 was written but contains a mismatch, unavailable evidence, or declared/observed
 tool drift; exit code `1` is reserved for fatal catalogue, RPC, or output errors.
 Verification report schema `2` retains declarations skipped by the execution
-budget as `not_probed` instead of presenting them as failed observations.
+budget as `not_probed` instead of presenting them as failed observations. SSRF
+address, hostname, redirect, timeout and body-size controls are centralized in
+`src/verification/safe-http.ts`; readiness reuses that implementation rather
+than defining a second private-range policy.
 
 Run the final pre-frontend readiness gate with:
 
@@ -226,6 +239,12 @@ payment token validate before receiving `quote_verified`. A seller receives
 configured Mainnet policy remains allowlisted. Quotes are never funded by this
 command. The returned quote must bind to the exact canonical readiness request,
 be observed within 60 seconds, and use no more than the SDK's 900-second TTL.
+The A2A Agent Card check accepts both negotiation skill IDs observed in the
+ecosystem (`negotiate-erc8183-job` and `negotiate`) and still requires
+`notify_funded`; this repository publishes both aliases on its sellers.
+An agent with no compatible declaration is reported as `no_transport_declared`;
+this is distinct from `mcp_only` and from a seller transport that was discovered
+but has not produced a verified quote.
 Public seller connections pin the DNS addresses validated before the request,
 reject IPv4-mapped and other non-global IPv6 ranges, and cancel MCP, A2A, or
 HTTP ERC-8183 response bodies above 64 KiB after decompression.
@@ -243,6 +262,20 @@ candidate `categories`; current profile heuristics remain separately visible as
 payment-token/policy observations have separate provenance. A quote that
 expires before report finalization remains historical evidence but no longer
 counts toward qualification or category coverage.
+
+The release snapshot retains the last qualification evidence timestamp. A quote
+older than the 60-second `hireable_now` window is rendered as `Quote refresh
+required` while the separately observed endpoint remains visible; it is never
+silently converted to `MCP only` or removed from the catalogue. If
+`ownerOf(agentId) == agentWallet` for more than one evaluated ID, the report emits
+`wallet_ambiguous` with the candidate IDs and does not attribute a payment to a
+single agent. This is bounded to the evaluated set; it is not a claim about
+unindexed IDs.
+
+The readiness and verification probes run while the release snapshot is built,
+not during ordinary catalogue or profile rendering. The explicit `/validate`
+flow and an intentional hiring attempt may refresh one requested agent; normal
+navigation never starts an unbounded outbound probe.
 
 The report is written to
 `.marketplace/readiness/bsc-marketplace.json`. `frontendReady=true` means the

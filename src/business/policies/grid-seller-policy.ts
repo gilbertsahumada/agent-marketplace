@@ -19,6 +19,12 @@ export function gridSellerAgentCard(origin: string): HostedSellerAgentCard {
         tags: ["erc8183", "grid-trading", "bnb-chain"],
       },
       {
+        id: "negotiate",
+        name: "Negotiate a deterministic Grid plan",
+        description: "Quote a reproducible Grid calculation with no order execution or custody.",
+        tags: ["erc8183", "grid-trading", "bnb-chain"],
+      },
+      {
         id: "notify_funded",
         name: "Compute and submit a funded Grid plan",
         description: "Verify a FUNDED job, compute its deterministic plan and submit the manifest hash.",

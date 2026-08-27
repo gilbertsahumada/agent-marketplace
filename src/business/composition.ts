@@ -8,6 +8,7 @@ import {
   publicJobProofRepository,
   publicVerificationRepository,
   agentValidationRepository,
+  sellerObservationStoreFactory,
 } from "../data/composition.ts";
 import { CompareMarketplaceAgents } from "./use-cases/compare-marketplace-agents.ts";
 import { GetMarketplaceAgent } from "./use-cases/get-marketplace-agent.ts";
@@ -26,6 +27,7 @@ import { GetMainnetHiringExposure } from "./use-cases/get-mainnet-hiring-exposur
 import { GetAgentEvidencePassport } from "./use-cases/get-agent-evidence-passport.ts";
 import { ValidateMarketplaceAgent } from "./use-cases/validate-marketplace-agent.ts";
 import { NotifyQualifiedMainnetFundedJob, PrepareQualifiedMainnetHire, RequestQualifiedMainnetQuote } from "./use-cases/qualified-mainnet-hire.ts";
+import { RecordSellerObservation } from "./use-cases/record-seller-observation.ts";
 
 export const listMarketplaceAgents = new ListMarketplaceAgents(marketplaceAgentRepository);
 export const getMarketplaceAgent = new GetMarketplaceAgent(marketplaceAgentRepository);
@@ -39,7 +41,11 @@ export const getErc8183TestnetJobTracking = new GetErc8183TestnetJobTracking(
   erc8183SpikeRepository,
   publicJobProofRepository,
 );
-const unqualifiedMainnetQuote = new RequestErc8183Quote(mainnetErc8183Repository);
+// Exported for the seller-observation cron only: it must be able to observe
+// liveness *before* a qualification exists, so it deliberately skips the
+// release-qualification gate that guards every buyer-facing route.
+export const probeMainnetErc8183Quote = new RequestErc8183Quote(mainnetErc8183Repository);
+const unqualifiedMainnetQuote = probeMainnetErc8183Quote;
 const unqualifiedMainnetPrepare = new PrepareErc8183Hire(mainnetErc8183Repository);
 const unqualifiedMainnetNotify = new NotifyFundedJob(mainnetErc8183Repository);
 export const getMainnetErc8183JobStatus = new GetErc8183JobStatus(mainnetErc8183Repository);
@@ -65,6 +71,11 @@ export const notifyMainnetFundedJob = new NotifyQualifiedMainnetFundedJob(
   unqualifiedMainnetNotify,
 );
 export const getMainnetBrowserDemoConfig = new GetMainnetBrowserDemoConfig(mainnetBrowserDemoConfigRepository);
+export const recordMainnetSellerObservation = new RecordSellerObservation(
+  getMainnetBrowserDemoConfig,
+  probeMainnetErc8183Quote,
+  sellerObservationStoreFactory,
+);
 export const getMainnetJobProof = new GetMainnetJobProof(mainnetJobProofRepository);
 export const getPublicMainnetJobProof = new GetPublicMainnetJobProof(mainnetJobProofRepository);
 export const getAgentEvidencePassport = new GetAgentEvidencePassport(

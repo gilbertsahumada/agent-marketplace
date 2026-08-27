@@ -13,6 +13,7 @@ import {
 import { resolveNetwork } from "@bnbagent/sdk";
 import { formatUnits, getAddress, isAddressEqual, type Address } from "viem";
 import { fetchAgentCard, notifyFunded, sendSkill, type QuoteEnvelope } from "../a2a.ts";
+import { hasErc8183SellerSkills, negotiationSkillForCard } from "../erc8183/skills.ts";
 import type {
   Erc8183BuyerFacts,
   Erc8183JobFacts,
@@ -138,18 +139,18 @@ export class MainnetErc8183Repository implements Erc8183SpikeRepository {
       throw new Erc8183SpikeUnavailableError("The registered Mainnet Agent origin does not match the allowlist");
     }
     const card = await withSellerTransport(config.sellerOrigin, (fetchImpl) => fetchAgentCard(identity.a2aEndpoint, null, fetchImpl));
-    if (new URL(card.url).origin !== config.sellerOrigin || !card.skills.some(({ id }) => id === "negotiate-erc8183-job") || !card.skills.some(({ id }) => id === "notify_funded")) {
+    if (new URL(card.url).origin !== config.sellerOrigin || !hasErc8183SellerSkills(card.skills)) {
       throw new Erc8183SpikeUnavailableError("The Mainnet Agent Card does not match the required seller protocol");
     }
-    return { config, card };
+    return { config, card, negotiationSkill: negotiationSkillForCard(card.skills)! };
   }
 
   async requestQuote(): Promise<NormalizedErc8183Quote> {
     try {
       const client = await this.client();
-      const { config, card } = await this.seller(client);
+      const { config, card, negotiationSkill } = await this.seller(client);
       const envelope = await withSellerTransport(config.sellerOrigin, (fetchImpl) => sendSkill(card.url, {
-        skill: "negotiate-erc8183-job",
+        skill: negotiationSkill,
         task_description: GRID_TASK,
         terms: GRID_TERMS.toDict(),
       }, null, fetchImpl)) as QuoteEnvelope;

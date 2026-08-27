@@ -8,6 +8,8 @@ export interface ReleaseMarketplaceEvidence {
   selection: "curated" | "marketplace_operated" | "operator_explicit";
   operator: "third_party" | "marketplace";
   qualification: "qualified" | "not_qualified" | "unavailable";
+  /** Last evidence timestamp used by the release qualification. */
+  observedAt?: string;
 }
 
 function record(value: unknown, name: string): Record<string, unknown> {
@@ -59,6 +61,15 @@ export function marketplaceEvidenceFromReleaseInput(
     if (qualification.provenance !== "derived:marketplace-seller-qualification") {
       throw new Error(`candidates[${index}].qualification.provenance is unsupported`);
     }
+    const observedAt = qualification.observedAt;
+    if (
+      observedAt !== undefined
+      && (typeof observedAt !== "string"
+        || !Number.isFinite(Date.parse(observedAt))
+        || new Date(Date.parse(observedAt)).toISOString() !== observedAt)
+    ) {
+      throw new Error(`candidates[${index}].qualification.observedAt must be an ISO timestamp`);
+    }
     if ((qualification.status === "qualified") !== qualifiedAgentIds.has(agentId)) {
       throw new Error(`candidates[${index}].qualification does not match sellerQualification`);
     }
@@ -66,6 +77,7 @@ export function marketplaceEvidenceFromReleaseInput(
       selection: selection as ReleaseMarketplaceEvidence["selection"],
       operator: selection === "marketplace_operated" ? "marketplace" : "third_party",
       qualification: qualification.status as ReleaseMarketplaceEvidence["qualification"],
+      ...(typeof observedAt === "string" ? { observedAt } : {}),
     });
   });
   return result;
@@ -124,7 +136,7 @@ export function sanitizeVerificationReport(
         operator: marketplaceEvidence?.operator ?? "third_party",
         qualification: {
           status: marketplaceEvidence?.qualification ?? "unavailable",
-          observedAt: report.generatedAt,
+          observedAt: marketplaceEvidence?.observedAt ?? report.generatedAt,
           provenance: "derived:marketplace-seller-qualification" as const,
         },
         identity: {
@@ -138,6 +150,9 @@ export function sanitizeVerificationReport(
             "declared",
             agent.identity.status === "read_error" ? "unavailable" : "onchain",
           ] as const,
+          ...(agent.identity.walletAttribution
+            ? { walletAttribution: agent.identity.walletAttribution }
+            : {}),
         },
         tools: {
           status: observed.length > 0 ? "observed" as const : "not_probed" as const,

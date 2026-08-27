@@ -381,6 +381,58 @@ describe("BSC verification report", () => {
     }
   });
 
+  it("marks an owner-wallet shared by multiple evaluated agents as ambiguous", async () => {
+    const [list, profiles, scores, onchain] = await Promise.all([
+      fixture("trust8004/list.json"),
+      fixture("trust8004/profiles.json") as Promise<Record<string, unknown>>,
+      fixture("trust8004/scores.json") as Promise<Record<string, unknown>>,
+      fixture("verification/onchain.json") as Promise<{
+        registryAddress: Address;
+        blockNumber: string;
+        agents: Record<string, { owner: Address; agentWallet: Address; metadataUri: string }>;
+      }>,
+    ]);
+    const provider = new Trust8004Provider({
+      fetch: trustFixtureFetch(list, profiles, scores),
+      minimumRequestIntervalMs: 0,
+    });
+    const inventory = await buildBscCandidateInventory(provider, () => 1_754_000_300_000);
+    const shared = onchain.agents["45650"]!;
+    const second = inventory.agents.find((agent) => agent.agentId === "45381")!;
+    second.owner = shared.owner;
+    second.metadataUri = shared.metadataUri;
+    const report = await buildBscVerificationReport({
+      provider,
+      inventory,
+      identityReader: {
+        registryAddress: onchain.registryAddress,
+        assertChain: async () => undefined,
+        getBlockNumber: async () => BigInt(onchain.blockNumber),
+        readIdentity: async (agentId) => agentId === "45381" ? shared : onchain.agents[agentId]!,
+      },
+      verifyMcp: async (endpoint, declaredTools) => ({
+        status: "protocol_valid" as const,
+        endpoint,
+        protocol: "mcp" as const,
+        declaredTools,
+        observedTools: declaredTools,
+        comparison: { matched: declaredTools, declaredOnly: [], observedOnly: [] },
+        negotiatedProtocolVersion: "2025-06-18",
+        serverInfo: null,
+        latencyMs: 1,
+        observedAt: "2025-08-01T00:00:00.000Z",
+        provenance: "observed:mcp-tools-list" as const,
+        error: null,
+      }),
+    });
+
+    expect(report.summary.walletAmbiguousAgents).toBe(2);
+    expect(report.agents.find((agent) => agent.agentId === "45650")?.identity.walletAttribution)
+      .toMatchObject({ status: "ambiguous", candidateCount: 2, candidateAgentIds: ["45650", "45381"] });
+    expect(report.agents.find((agent) => agent.agentId === "45381")?.identity.walletAttribution)
+      .toMatchObject({ status: "ambiguous", candidateCount: 2, candidateAgentIds: ["45650", "45381"] });
+  });
+
   it("bounds a profile with 256 declared MCP endpoints and reports every omission", async () => {
     const [list, profiles, scores, onchain] = await Promise.all([
       fixture("trust8004/list.json"),
@@ -403,6 +455,10 @@ describe("BSC verification report", () => {
       version: "2025-06-18",
       tools: [`tool-${index}`],
       capabilities: ["tools"],
+    }));
+    inventory.agents[0]!.endpoints = inventory.agents[0]!.services.map((service) => ({
+      name: service.name,
+      endpoint: service.endpoint!,
     }));
     let calls = 0;
     const report = await buildBscVerificationReport({

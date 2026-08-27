@@ -7,10 +7,11 @@ import {
 import { formatUnits, getAddress } from "viem";
 import {
   fetchAgentCard,
-  negotiate,
+  sendSkill,
   notifyFunded,
   type QuoteEnvelope,
 } from "./a2a.ts";
+import { hasErc8183SellerSkills, negotiationSkillForCard } from "./erc8183/skills.ts";
 import type { Gate1Config, ReceiptConfig } from "./config.ts";
 import {
   createEvmBuyerWallet,
@@ -73,15 +74,19 @@ export async function preflight(config: Gate1Config): Promise<PreflightResult> {
   }
   const identity = await resolveIdentity(erc8183.publicClient, config.agentId);
   const card = await fetchAgentCard(identity.a2aEndpoint, config.bearerToken);
-  const skillIds = new Set(card.skills.map((skill) => skill.id));
-  if (!skillIds.has("negotiate-erc8183-job")) {
-    throw new Error("Agent Card does not advertise negotiate-erc8183-job");
-  }
-  if (!skillIds.has("notify_funded")) {
-    throw new Error("Agent Card does not advertise notify_funded");
+  const negotiationSkill = negotiationSkillForCard(card.skills);
+  if (!hasErc8183SellerSkills(card.skills)) {
+    throw new Error("Agent Card does not advertise a supported negotiation skill and notify_funded");
   }
 
-  const quote = await negotiate(card.url, config.bearerToken);
+  const quote = await sendSkill(card.url, {
+    skill: negotiationSkill!,
+    task_description: "Gate 1 ERC-8183 buyer spike",
+    terms: {
+      deliverables: "A deterministic text receipt proving seller execution",
+      quality_standards: "Return a non-empty result and submit it onchain",
+    },
+  }, config.bearerToken) as QuoteEnvelope;
   const { provider, price, currency } = quoteTerms(quote);
   if (provider !== getAddress(identity.agentWallet)) {
     throw new Error("Quote provider does not match the ERC-8004 agent wallet");
