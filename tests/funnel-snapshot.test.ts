@@ -44,6 +44,13 @@ describe("WP0 protocol classification", () => {
       a2aEndpoint: "https://a.test",
     }))).toBe("protocolUnknown");
   });
+
+  it.each([
+    ["services", agent({ services: [{ name: "A2A" }, "not-an-object"] })],
+    ["endpoints", agent({ endpoints: [{ protocol: "mcp" }, null] })],
+  ])("treats invalid entries inside %s as unknown", (_field, input) => {
+    expect(classifyProtocolBucket(input)).toBe("protocolUnknown");
+  });
 });
 
 describe("WP0 endpoint safety", () => {
@@ -241,4 +248,63 @@ describe("WP0 full snapshot", () => {
     expect(gates.find((gate) => gate.name === "countOnlyDriftBelowOnePercent")?.passed).toBe(false);
     expect(gates.find((gate) => gate.name === "wp1SizingWithinBudget")?.passed).toBe(false);
   });
+
+  it.each([null, 59])(
+    "fails API contract revalidation when the advertised rate limit is %s",
+    (rateLimitAdvertised) => {
+      const snapshot: FunnelSnapshot = {
+        schemaVersion: 1,
+        generatedAt: "2026-08-27T18:00:00.000Z",
+        chainId: 56,
+        cutoff: { blockNumber: "123", observedAt: "2026-08-27T18:00:00.000Z" },
+        source: {
+          baseUrl: "https://trust8004.xyz",
+          listPath: "/api/app/agents",
+          detailPathTemplate: "/api/app/agents/56:AGENT_ID",
+          params: { chainId: "56", limit: "2000", sortBy: "registered", sortOrder: "asc" },
+          rateLimitHeaders: rateLimitAdvertised === null
+            ? {}
+            : { "x-ratelimit-limit": [String(rateLimitAdvertised)] },
+        },
+        registeredTotal: 1,
+        countOnlyTotal: 1,
+        metadata: { ok: 1, httpUnreachable: 0, other: 0 },
+        protocols: { a2aOnly: 1, erc8183Only: 0, both: 0, mcpOnly: 0, otherOrNone: 0, protocolUnknown: 0 },
+        candidates: { declaringAgents: 1, declaredEndpoints: 1, publicHttpsEndpoints: 1, topDomains: [] },
+        scan: {
+          pages: 1,
+          requestedPageSize: 2_000,
+          observedPageSize: 2_000,
+          firstAgentId: "1",
+          lastAgentId: "1",
+          requests: 1,
+          retries: 0,
+          http429Responses: 0,
+          maximumRequestsPerRollingMinute: 1,
+          maxPageBytes: 1,
+          missingRegisteredAt: 0,
+          duplicateAgentIds: 0,
+          durationMs: 1,
+          errors: [],
+        },
+        apiValidation: {
+          listRoute: true,
+          detailRoute: true,
+          rateLimitAdvertised,
+          requestedLimitAccepted: true,
+          ascendingSampleConfirmed: true,
+          detailFieldsObserved: true,
+          onchainWalletSource: "getAgentWallet",
+          onchainWalletBlockNumber: "123",
+        },
+        wp1Blocked: false,
+        gates: [],
+        sourceSha256: "",
+      };
+
+      const gate = validateFunnelSnapshot(snapshot)
+        .find((candidate) => candidate.name === "apiContractRevalidated");
+      expect(gate?.passed).toBe(false);
+    },
+  );
 });
