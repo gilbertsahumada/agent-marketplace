@@ -643,9 +643,9 @@ function trustFixtureFetch(
 ): typeof fetch {
   return (async (input: string | URL | Request) => {
     const url = new URL(input instanceof Request ? input.url : input.toString());
-    if (url.pathname === "/api/v2/agents") return Response.json(list);
-    if (url.pathname === "/api/v2/agents/profile") return Response.json(profiles[url.searchParams.get("agentId") ?? ""]);
-    const match = url.pathname.match(/^\/api\/v2\/agents\/(\d+)\/score$/);
+    if (url.pathname === "/api/app/agents") return Response.json(list);
+    if (url.pathname === "/api/app/agents/profile") return Response.json(profiles[url.searchParams.get("agentId") ?? ""]);
+    const match = url.pathname.match(/^\/api\/app\/agents\/(\d+)\/score$/);
     return Response.json(scores[match?.[1] ?? ""]);
   }) as typeof fetch;
 }

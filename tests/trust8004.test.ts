@@ -26,10 +26,10 @@ function fixtureFetch(
     const url = new URL(input instanceof Request ? input.url : input.toString());
     await onRequest?.(url);
     let body: unknown;
-    if (url.pathname === "/api/v2/agents") body = list;
-    else if (url.pathname === "/api/v2/agents/profile") body = profiles[url.searchParams.get("agentId") ?? ""];
+    if (url.pathname === "/api/app/agents") body = list;
+    else if (url.pathname === "/api/app/agents/profile") body = profiles[url.searchParams.get("agentId") ?? ""];
     else {
-      const match = url.pathname.match(/^\/api\/v2\/agents\/(\d+)\/score$/);
+      const match = url.pathname.match(/^\/api\/app\/agents\/(\d+)\/score$/);
       body = match ? scores[match[1]!] : undefined;
     }
     return body === undefined
@@ -182,7 +182,7 @@ describe("Trust8004Provider", () => {
     expect(inventory.agents.every((agent) => agent.endpointObservation.status === "not_observed")).toBe(true);
     expect(inventory.agents.every((agent) => agent.provenance.services.kind === "declared")).toBe(true);
     expect(inventory.agents.every((agent) => agent.categories.every((category) => !category.verified))).toBe(true);
-    expect(requestedPaths).not.toContain("/api/v2/agents");
+    expect(requestedPaths).not.toContain("/api/app/agents");
   });
 
   it("evaluates explicit IDs without adding them to curated categories", async () => {
