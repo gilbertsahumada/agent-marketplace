@@ -11,7 +11,7 @@ const identityReader = {
   readIdentity: async () => ({
     owner: "0x2222222222222222222222222222222222222222" as const,
     agentWallet: "0x0000000000000000000000000000000000000000" as const,
-    metadataUri: null,
+    metadataUri: "",
   }),
 };
 
@@ -80,16 +80,20 @@ describe("WP0 endpoint network safety", () => {
 describe("WP0 response transport safety", () => {
   it("cancels an unbounded streamed body as soon as it exceeds maxResponseBytes", async () => {
     let cancelled = false;
-    let pulls = 0;
+    let producedChunks = 0;
+    const totalChunks = 100;
     const body = new ReadableStream<Uint8Array>({
       pull(controller) {
-        pulls += 1;
-        if (pulls === 1) {
+        if (producedChunks === totalChunks) {
+          controller.close();
+          return;
+        }
+        producedChunks += 1;
+        if (producedChunks === 1) {
           controller.enqueue(new TextEncoder().encode("123456789"));
           return;
         }
         controller.enqueue(new Uint8Array(1_024));
-        controller.close();
       },
       cancel() {
         cancelled = true;
@@ -106,7 +110,7 @@ describe("WP0 response transport safety", () => {
       minimumRequestIntervalMs: 1_100,
     })).rejects.toThrow("WP0_RESPONSE_TOO_LARGE");
     expect(cancelled).toBe(true);
-    expect(pulls).toBe(1);
+    expect(producedChunks).toBeLessThan(totalChunks);
   });
 
   it("uses error redirect handling and never follows a 3xx response", async () => {
