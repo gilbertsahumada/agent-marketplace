@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { isIP } from "node:net";
 import type { BscIdentityReader } from "../verification/onchain.ts";
+import { isPublicIpAddress } from "../verification/safe-http.ts";
 
 export const FUNNEL_SCHEMA_VERSION = 1 as const;
 export const FUNNEL_PAGE_SIZE = 2_000;
@@ -101,6 +102,12 @@ export interface RunFunnelSnapshotOptions {
   wait?: (milliseconds: number) => Promise<void>;
   now?: () => number;
   generatedAt?: string;
+  onPage?: (progress: {
+    pages: number;
+    offset: number;
+    processed: number;
+    expectedTotal: number;
+  }) => void | Promise<void>;
   identityReader: BscIdentityReader;
 }
 
@@ -213,11 +220,18 @@ function protocolDeclarations(input: FunnelAgentInput): {
   let a2a = typeof input.a2aEndpoint === "string" && input.a2aEndpoint.trim().length > 0;
   let mcp = typeof input.mcpEndpoint === "string" && input.mcpEndpoint.trim().length > 0;
   let erc8183 = false;
+  let malformed = false;
   const candidates: string[] = [];
   for (const entry of [...services, ...endpoints]) {
-    if (!entry || typeof entry !== "object" || Array.isArray(entry)) continue;
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+      malformed = true;
+      continue;
+    }
     const item = entry as JsonRecord;
-    const protocol = normalizedProtocol(item.name ?? item.type ?? item.protocol);
+    const label = item.name ?? item.type ?? item.protocol;
+    const hasLabel = "name" in item || "type" in item || "protocol" in item;
+    if (hasLabel && typeof label !== "string") malformed = true;
+    const protocol = normalizedProtocol(label);
     if (protocol === "a2a") a2a = true;
     if (protocol === "erc8183") erc8183 = true;
     if (protocol === "mcp") mcp = true;
@@ -230,7 +244,7 @@ function protocolDeclarations(input: FunnelAgentInput): {
     a2a,
     erc8183,
     mcp,
-    malformed: false,
+    malformed,
     candidateEndpoints: [...new Set(candidates)].slice(0, 2),
   };
 }
@@ -245,35 +259,6 @@ export function classifyProtocolBucket(input: FunnelAgentInput): ProtocolBucket 
   return "otherOrNone";
 }
 
-function isPrivateIpv4(hostname: string): boolean {
-  const parts = hostname.split(".").map(Number);
-  if (parts.length !== 4 || parts.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) return true;
-  const [a, b] = parts as [number, number, number, number];
-  return a === 0
-    || a === 10
-    || a === 127
-    || (a === 100 && b >= 64 && b <= 127)
-    || (a === 169 && b === 254)
-    || (a === 172 && b >= 16 && b <= 31)
-    || (a === 192 && b === 0)
-    || (a === 192 && b === 168)
-    || (a === 198 && (b === 18 || b === 19))
-    || a >= 224;
-}
-
-function isPrivateIpv6(hostname: string): boolean {
-  const normalized = hostname.replace(/^\[|\]$/g, "").toLowerCase();
-  return normalized === "::"
-    || normalized === "::1"
-    || normalized.startsWith("fc")
-    || normalized.startsWith("fd")
-    || /^fe[89ab]/.test(normalized)
-    || normalized.startsWith("ff")
-    || normalized.startsWith("::ffff:10.")
-    || normalized.startsWith("::ffff:127.")
-    || normalized.startsWith("::ffff:192.168.");
-}
-
 export function isPublicHttpsEndpoint(endpoint: string): boolean {
   try {
     const url = new URL(endpoint);
@@ -282,9 +267,8 @@ export function isPublicHttpsEndpoint(endpoint: string): boolean {
     if (!hostname || hostname === "localhost" || hostname.endsWith(".localhost") || hostname.endsWith(".local")) {
       return false;
     }
-    const ipVersion = isIP(hostname.replace(/^\[|\]$/g, ""));
-    if (ipVersion === 4) return !isPrivateIpv4(hostname);
-    if (ipVersion === 6) return !isPrivateIpv6(hostname);
+    const address = hostname.replace(/^\[|\]$/g, "");
+    if (isIP(address)) return isPublicIpAddress(address);
     return true;
   } catch {
     return false;
@@ -334,6 +318,23 @@ function isAscending(previous: ParsedAgent | undefined, current: ParsedAgent): b
   return current.registeredAt >= previous.registeredAt;
 }
 
+function sampleIdsMatch(original: string[], current: string[], allowNewSuffix: boolean): boolean {
+  if (!allowNewSuffix) {
+    return current.length === original.length
+      && original.every((agentId, index) => current[index] === agentId);
+  }
+  if (current.length < original.length
+    || !original.every((agentId, index) => current[index] === agentId)) {
+    return false;
+  }
+  const seen = new Set(original);
+  for (const agentId of current.slice(original.length)) {
+    if (seen.has(agentId)) return false;
+    seen.add(agentId);
+  }
+  return true;
+}
+
 function sortedValue(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(sortedValue);
   if (!value || typeof value !== "object") return value;
@@ -377,7 +378,7 @@ function evaluateGates(snapshot: FunnelSnapshot, assumeHash = false): FunnelGate
     { name: "countOnlyDriftBelowOnePercent", passed: drift < 0.01, detail: Number.isFinite(drift) ? drift.toFixed(6) : "infinite" },
     { name: "ascendingSampleConfirmed", passed: snapshot.apiValidation.ascendingSampleConfirmed, detail: snapshot.apiValidation.ascendingSampleConfirmed ? "confirmed" : "mismatch" },
     { name: "rateBudget", passed: snapshot.scan.maximumRequestsPerRollingMinute <= FUNNEL_MAX_REQUESTS_PER_MINUTE && snapshot.scan.http429Responses === 0, detail: `${snapshot.scan.maximumRequestsPerRollingMinute}/55; 429=${snapshot.scan.http429Responses}` },
-    { name: "apiContractRevalidated", passed: snapshot.apiValidation.listRoute && snapshot.apiValidation.detailRoute && snapshot.apiValidation.requestedLimitAccepted && snapshot.apiValidation.detailFieldsObserved, detail: "list, detail, limit, fields" },
+    { name: "apiContractRevalidated", passed: snapshot.apiValidation.listRoute && snapshot.apiValidation.detailRoute && snapshot.apiValidation.rateLimitAdvertised === 60 && snapshot.apiValidation.requestedLimitAccepted && snapshot.apiValidation.detailFieldsObserved, detail: "list, detail, rate=60, limit, fields" },
     { name: "artifactSanitized", passed: snapshot.scan.errors.length === 0 && !containsSensitiveEvidence(snapshot), detail: snapshot.scan.errors.length === 0 ? "sanitized" : "errors-present" },
     { name: "onchainWalletRevalidated", passed: snapshot.apiValidation.onchainWalletSource === "getAgentWallet" || snapshot.apiValidation.onchainWalletSource === "ownerOf", detail: snapshot.apiValidation.onchainWalletSource },
     { name: "wp1SizingWithinBudget", passed: snapshot.candidates.declaringAgents <= FUNNEL_CANDIDATE_BUDGET && snapshot.candidates.declaredEndpoints <= FUNNEL_CANDIDATE_BUDGET, detail: `agents=${snapshot.candidates.declaringAgents}; endpoints=${snapshot.candidates.declaredEndpoints}` },
@@ -405,6 +406,41 @@ function sanitizedBaseUrl(value: string): string {
     throw new Error("WP0_CONFIG:baseUrl");
   }
   return url.origin;
+}
+
+async function boundedResponseBytes(response: Response, maxResponseBytes: number): Promise<Uint8Array> {
+  const declaredLength = response.headers.get("content-length");
+  if (declaredLength && /^\d+$/.test(declaredLength) && Number(declaredLength) > maxResponseBytes) {
+    await response.body?.cancel();
+    throw new Error("WP0_RESPONSE_TOO_LARGE");
+  }
+  if (!response.body) return new Uint8Array();
+
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > maxResponseBytes) {
+        await reader.cancel();
+        throw new Error("WP0_RESPONSE_TOO_LARGE");
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return bytes;
 }
 
 export async function runFunnelSnapshot(options: RunFunnelSnapshotOptions): Promise<FunnelSnapshot> {
@@ -439,6 +475,7 @@ export async function runFunnelSnapshot(options: RunFunnelSnapshotOptions): Prom
     const response = await fetchImpl(url, {
       method: "GET",
       headers: { Accept: "application/json" },
+      redirect: "error",
       signal: AbortSignal.timeout(requestTimeoutMs),
     });
     for (const [name, rawValue] of response.headers.entries()) {
@@ -450,12 +487,7 @@ export async function runFunnelSnapshot(options: RunFunnelSnapshotOptions): Prom
     }
     if (response.status === 429) http429Responses += 1;
     if (!response.ok) throw new Error(`WP0_HTTP:${response.status}`);
-    const declaredLength = response.headers.get("content-length");
-    if (declaredLength && /^\d+$/.test(declaredLength) && Number(declaredLength) > maxResponseBytes) {
-      throw new Error("WP0_RESPONSE_TOO_LARGE");
-    }
-    const bytes = new Uint8Array(await response.arrayBuffer());
-    if (bytes.byteLength > maxResponseBytes) throw new Error("WP0_RESPONSE_TOO_LARGE");
+    const bytes = await boundedResponseBytes(response, maxResponseBytes);
     try {
       return { value: JSON.parse(new TextDecoder().decode(bytes)) as unknown, bytes: bytes.byteLength };
     } catch {
@@ -541,6 +573,12 @@ export async function runFunnelSnapshot(options: RunFunnelSnapshotOptions): Prom
         hostCounts.set(hostname, (hostCounts.get(hostname) ?? 0) + 1);
       }
     }
+    await options.onPage?.({
+      pages: pageOffsets.length,
+      offset,
+      processed,
+      expectedTotal,
+    });
     if (page.agents.length === 0) break;
   }
 
@@ -552,7 +590,11 @@ export async function runFunnelSnapshot(options: RunFunnelSnapshotOptions): Prom
     const params = new URLSearchParams(listParams);
     params.set("offset", String(offset));
     const sample = parsePage((await requestJson("/api/app/agents", params)).value);
-    if (sample.agents.map((entry) => entry.agentId).join(",") !== pageIds.get(offset)?.join(",")) {
+    const originalIds = pageIds.get(offset)!;
+    const currentIds = sample.agents.map((entry) => entry.agentId);
+    const allowNewSuffix = index === pageOffsets.length - 1
+      && offset + pageSize > expectedTotal;
+    if (!sampleIdsMatch(originalIds, currentIds, allowNewSuffix)) {
       ascendingSampleConfirmed = false;
     }
   }
