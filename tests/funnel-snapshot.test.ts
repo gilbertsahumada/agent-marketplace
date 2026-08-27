@@ -51,6 +51,18 @@ describe("WP0 protocol classification", () => {
   ])("treats invalid entries inside %s as unknown", (_field, input) => {
     expect(classifyProtocolBucket(input)).toBe("protocolUnknown");
   });
+
+  it.each([
+    ["services", agent({ services: [{ name: "web" }] })],
+    ["endpoints", agent({ endpoints: [{ type: "custom" }] })],
+  ])("keeps valid unknown protocol labels in %s as other or none", (_field, input) => {
+    expect(classifyProtocolBucket(input)).toBe("otherOrNone");
+  });
+
+  it("treats a present non-string protocol label as unknown", () => {
+    expect(classifyProtocolBucket(agent({ services: [{ name: 123 }] })))
+      .toBe("protocolUnknown");
+  });
 });
 
 describe("WP0 endpoint safety", () => {
@@ -103,6 +115,7 @@ describe("WP0 full snapshot", () => {
     ];
     const requestedUrls: URL[] = [];
     let elapsed = 0;
+    let lastPageReads = 0;
     const fetchImpl = (async (input: string | URL | Request) => {
       const url = new URL(input instanceof Request ? input.url : input.toString());
       requestedUrls.push(url);
@@ -118,8 +131,14 @@ describe("WP0 full snapshot", () => {
         return Response.json({ items: [], total: 3, limit: 1, offset: 0 }, { headers });
       }
       const offset = Number(url.searchParams.get("offset"));
-      const pageItems = offset === 0 ? items.slice(0, 2) : offset === 2 ? items.slice(1) : [];
-      return Response.json({ items: pageItems, total: 3, limit: 2, offset }, { headers });
+      let pageItems = offset === 0 ? items.slice(0, 2) : offset === 2 ? items.slice(1) : [];
+      if (offset === 2) {
+        lastPageReads += 1;
+        if (lastPageReads > 1) {
+          pageItems = [...pageItems, agent({ agentId: "12", registeredAt: 11 })];
+        }
+      }
+      return Response.json({ items: pageItems, total: lastPageReads > 1 ? 4 : 3, limit: 2, offset }, { headers });
     }) as typeof fetch;
 
     const snapshot = await runFunnelSnapshot({
@@ -181,6 +200,7 @@ describe("WP0 full snapshot", () => {
       onchainWalletSource: "ownerOf",
       onchainWalletBlockNumber: "123",
     });
+    expect(snapshot.apiValidation.ascendingSampleConfirmed).toBe(true);
     expect(snapshot.source.rateLimitHeaders).toEqual({
       "x-ratelimit-limit": ["60"],
       "x-ratelimit-remaining": ["59"],
