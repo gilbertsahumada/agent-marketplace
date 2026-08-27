@@ -37,7 +37,7 @@ export function AgentProfile({ agent, passport }: { agent: MarketplaceAgent; pas
               <Badge variant="outline">BSC · #{agent.agentId}</Badge>
               {agent.operator === "marketplace" && <Badge className="border-cyan-400/30 bg-cyan-400/10 text-cyan-200" variant="outline">Marketplace-operated · not official BNB reference</Badge>}
               <Badge className={agent.hireability.canHire ? "border-primary/40 bg-primary/10 text-primary" : "border-zinc-700 bg-zinc-900 text-zinc-300"} variant="outline">
-                {agent.hireability.canHire ? "Hireable now" : agent.hireability.status === "mcp_only" ? "MCP only" : evaluated ? "Not hireable" : "Not evaluated"}
+                {agent.hireability.canHire ? "Hireable now" : agent.hireability.status === "mcp_only" ? "MCP only" : agent.hireability.status === "quote_stale" ? "Quote refresh required" : agent.hireability.status === "wallet_ambiguous" ? "Wallet attribution ambiguous" : evaluated ? "Not hireable" : "Not evaluated"}
               </Badge>
             </div>
             <h1 className="mt-3 text-3xl font-light tracking-tight text-white sm:text-4xl">{agent.name}</h1>

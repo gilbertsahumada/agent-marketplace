@@ -42,6 +42,7 @@ export function deriveAgentPassportState(
     || agent.verification?.freshness === "stale"
     || agent.verification?.identity.status === "mismatch"
     || agent.verification?.identity.status === "read_error"
+    || agent.verification?.identity.walletAttribution?.status === "ambiguous"
     || agent.verification?.tools.reachability === "failed"
   ) return "attention";
   if (agent.onchainIdentity.status === "match" && agent.agentId === provenAgentId) return "job_proven";
@@ -161,6 +162,15 @@ function endpointCheck(input: EvidencePassportInput): EvidencePassportCheck {
 }
 
 function quoteCheck(input: EvidencePassportInput): AgentEvidencePassport["checks"]["quote"] {
+  if (input.hireability.status === "quote_stale") {
+    return {
+      status: "stale",
+      provenance: "observed",
+      observedAt: input.hireability.observedAt,
+      detail: "A signed ERC-8183 quote was verified previously, but it is outside the 60-second hireable-now window.",
+      hireabilityStatus: input.hireability.status,
+    };
+  }
   if (input.verification?.freshness === "stale" && input.hireability.status === "quote_verified") {
     return {
       status: "stale",
@@ -238,6 +248,9 @@ export function buildEvidencePassport(input: EvidencePassportInput): AgentEviden
   }
   if (input.onchainIdentity.status === "unavailable" || input.verification?.identityStatus === "read_error") {
     attentionReasons.push("Direct BSC identity evidence is currently unavailable.");
+  }
+  if (input.hireability.status === "wallet_ambiguous") {
+    attentionReasons.push("Seller wallet attribution is ambiguous across the evaluated Agent IDs.");
   }
 
   let state: EvidencePassportState = "registered";

@@ -24,7 +24,7 @@ function unpromotedHireabilityStatus(evidence: AgentValidationEvidence): Hireabi
     return "protocol_discovered";
   }
   if (evidence.endpointChecks.some(({ protocol }) => protocol === "mcp")) return "mcp_only";
-  return "not_declared";
+  return "no_transport_declared";
 }
 
 export class ValidateMarketplaceAgent {

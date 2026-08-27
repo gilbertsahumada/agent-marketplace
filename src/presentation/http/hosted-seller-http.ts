@@ -48,7 +48,7 @@ export async function parseHostedSellerRequest(request: Request): Promise<{
       (candidate as JsonRecord).kind === "data",
   );
   const data = record(record(part, "data part").data, "data");
-  if (data.skill === "negotiate-erc8183-job") {
+  if (data.skill === "negotiate-erc8183-job" || data.skill === "negotiate") {
     if (
       typeof data.task_description !== "string" ||
       data.task_description.length === 0 ||
@@ -59,7 +59,7 @@ export async function parseHostedSellerRequest(request: Request): Promise<{
     return {
       id: rpc.id ?? null,
       message: {
-        skill: "negotiate-erc8183-job",
+        skill: data.skill,
         taskDescription: data.task_description,
         terms: record(data.terms, "terms"),
       },

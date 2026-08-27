@@ -37,7 +37,7 @@ export interface AgentCardViewModel {
   operator: "third_party" | "marketplace";
   categories: MarketplaceCategory[];
   href: string;
-  hireability: "hireable" | "mcp_only" | "listed_only";
+  hireability: "hireable" | "mcp_only" | "quote_stale" | "wallet_ambiguous" | "listed_only";
   evidence: EvidenceStepViewModel[];
   trustScore?: number;
   verification?: VerificationDriftViewModel | null;
@@ -53,6 +53,11 @@ export interface VerificationDriftViewModel {
   identityMismatchFields: Array<"owner" | "metadata_uri">;
   identityObservedAt: string;
   identityOnchainProvenance: "onchain" | "unavailable";
+  walletAttribution?: {
+    status: "unique" | "ambiguous" | "not_checked";
+    candidateCount: number;
+    candidateAgentIds: string[];
+  };
   toolsStatus: "observed" | "not_probed";
   toolReachability: "verified" | "failed" | "not_probed";
   toolProbeOutcomes: string[];

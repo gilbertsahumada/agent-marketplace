@@ -51,6 +51,12 @@ export function buildAgentCard(baseUrl: string): JsonObject {
         tags: ["erc8183", "testing", "bnb-chain"],
       },
       {
+        id: "negotiate",
+        name: "Negotiate an ERC-8183 fixture job",
+        description: "Return a provider-signed ERC-8183 quote.",
+        tags: ["erc8183", "testing", "bnb-chain"],
+      },
+      {
         id: "notify_funded",
         name: "Submit a funded ERC-8183 fixture job",
         description: "Verify a FUNDED job and submit a deterministic result.",
@@ -270,7 +276,7 @@ async function serve(config: SellerConfig): Promise<void> {
           400,
         );
       }
-      if (request.data.skill === "negotiate-erc8183-job") {
+      if (request.data.skill === "negotiate-erc8183-job" || request.data.skill === "negotiate") {
         const task = request.data.task_description;
         const terms = request.data.terms;
         if (typeof task !== "string" || typeof terms !== "object" || !terms) {

@@ -81,6 +81,37 @@ export function parsePublicVerificationSnapshot(value: unknown): PublicVerificat
     if ((identityStatus === "mismatch") !== (mismatchFields.length > 0)) {
       throw new Error("identity.mismatchFields does not match identity.status");
     }
+    let walletAttribution: PublicAgentVerification["identity"]["walletAttribution"];
+    if (identity.walletAttribution !== undefined) {
+      const attribution = object(identity.walletAttribution, "identity.walletAttribution");
+      const attributionStatus = string(attribution.status, "identity.walletAttribution.status");
+      if (!["unique", "ambiguous", "not_checked"].includes(attributionStatus)) {
+        throw new Error("identity.walletAttribution.status is unsupported");
+      }
+      const candidateCount = attribution.candidateCount;
+      if (typeof candidateCount !== "number" || !Number.isSafeInteger(candidateCount) || candidateCount < 0) {
+        throw new Error("identity.walletAttribution.candidateCount must be a non-negative integer");
+      }
+      const candidateAgentIds = stringArray(
+        attribution.candidateAgentIds,
+        "identity.walletAttribution.candidateAgentIds",
+      );
+      if (candidateCount !== candidateAgentIds.length && attributionStatus !== "not_checked") {
+        throw new Error("identity.walletAttribution.candidateCount does not match candidateAgentIds");
+      }
+      if (candidateAgentIds.some((agentId) => !/^\d+$/.test(agentId))) {
+        throw new Error("identity.walletAttribution.candidateAgentIds must be numeric strings");
+      }
+      if (attribution.provenance !== "derived:marketplace-readiness") {
+        throw new Error("identity.walletAttribution.provenance is unsupported");
+      }
+      walletAttribution = {
+        status: attributionStatus as NonNullable<PublicAgentVerification["identity"]["walletAttribution"]>["status"],
+        candidateCount,
+        candidateAgentIds,
+        provenance: "derived:marketplace-readiness",
+      };
+    }
     const toolStatus = string(tools.status, "tools.status");
     if (toolStatus !== "observed" && toolStatus !== "not_probed") {
       throw new Error("tools.status is unsupported");
@@ -132,8 +163,8 @@ export function parsePublicVerificationSnapshot(value: unknown): PublicVerificat
       throw new Error("qualification.provenance is unsupported");
     }
     const qualificationObservedAt = timestamp(qualification.observedAt, "qualification.observedAt");
-    if (qualificationObservedAt !== generatedAt) {
-      throw new Error("qualification.observedAt must match snapshot generatedAt");
+    if (Date.parse(qualificationObservedAt) > Date.parse(generatedAt) + MAX_FUTURE_CLOCK_SKEW_MS) {
+      throw new Error("qualification.observedAt cannot be in the future of snapshot generatedAt");
     }
     const toolsObservedAt = tools.observedAt === null ? null : timestamp(tools.observedAt, "tools.observedAt");
     if ((toolsObservedAt !== null) !== attemptedProbe) {
@@ -160,6 +191,7 @@ export function parsePublicVerificationSnapshot(value: unknown): PublicVerificat
         mismatchFields: mismatchFields as PublicAgentVerification["identity"]["mismatchFields"],
         observedAt: timestamp(identity.observedAt, "identity.observedAt"),
         provenance: ["declared", expectedIdentitySource] as const,
+        ...(walletAttribution ? { walletAttribution } : {}),
       },
       tools: {
         status: toolStatus as PublicAgentVerification["tools"]["status"],

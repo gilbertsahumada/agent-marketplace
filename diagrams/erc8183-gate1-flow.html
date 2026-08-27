@@ -48,13 +48,13 @@
         <div class="pulse-dot"></div>
         <h1>Gate 1 — cómo funciona ERC-8183</h1>
       </div>
-      <p class="subtitle">ERC-8004 permite descubrir quién es el agente; A2A permite acordar el trabajo; ERC-8183 convierte ese acuerdo en un job financiado y verificable onchain.</p>
+      <p class="subtitle">ERC-8004 permite descubrir quién es el agente; el catálogo une las declaraciones de transporte en <code>services[]</code> y <code>endpoints[]</code>; A2A permite acordar el trabajo; ERC-8183 convierte ese acuerdo en un job financiado y verificable onchain.</p>
     </header>
 
     <section class="diagram-container" aria-label="Diagrama del flujo ERC-8183">
       <svg viewBox="0 0 1200 850" role="img" aria-labelledby="diagram-title diagram-desc">
         <title id="diagram-title">Flujo completo del buyer y seller durante Gate 1</title>
-        <desc id="diagram-desc">El buyer descubre al seller mediante ERC-8004, negocia por A2A, crea y financia un job ERC-8183, notifica al seller y comprueba el resultado enviado onchain.</desc>
+        <desc id="diagram-desc">El buyer descubre al seller mediante ERC-8004, une sus declaraciones services y endpoints, negocia por A2A, crea y financia un job ERC-8183, notifica al seller y comprueba el resultado enviado onchain.</desc>
         <defs>
           <marker id="arrow-slate" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#94a3b8"/></marker>
           <marker id="arrow-cyan" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#22d3ee"/></marker>
@@ -72,7 +72,7 @@
         <text x="846" y="136" fill="#94a3b8" font-size="9" text-anchor="middle">2 · endpoint A2A</text>
 
         <path d="M950 241 H250" fill="none" stroke="#22d3ee" stroke-width="2" marker-end="url(#arrow-cyan)"/>
-        <text x="600" y="231" fill="#22d3ee" font-size="9" text-anchor="middle">3 · negotiate-erc8183-job → quote firmada</text>
+        <text x="600" y="231" fill="#22d3ee" font-size="9" text-anchor="middle">3 · negotiate / negotiate-erc8183-job → quote firmada</text>
 
         <path d="M250 337 H458" fill="none" stroke="#a78bfa" stroke-width="2" marker-end="url(#arrow-violet)"/>
         <text x="354" y="327" fill="#a78bfa" font-size="9" text-anchor="middle">4 · createJob</text>
@@ -163,7 +163,7 @@
         <rect x="950" y="108" width="196" height="76" rx="6" fill="#0f172a"/>
         <rect x="950" y="108" width="196" height="76" rx="6" fill="rgba(6,78,59,.4)" stroke="#34d399" stroke-width="1.5"/>
         <text x="1048" y="132" fill="white" font-size="11" font-weight="600" text-anchor="middle">Agent Card HTTPS</text>
-        <text x="1048" y="152" fill="#94a3b8" font-size="9" text-anchor="middle">endpoint + skills A2A</text>
+        <text x="1048" y="152" fill="#94a3b8" font-size="9" text-anchor="middle">endpoint + skills A2A / ERC-8183</text>
         <text x="1048" y="168" fill="#34d399" font-size="8" text-anchor="middle">publicado en ERC-8004</text>
 
         <rect x="950" y="204" width="196" height="76" rx="6" fill="#0f172a"/>

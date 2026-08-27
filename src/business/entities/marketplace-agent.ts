@@ -25,9 +25,11 @@ export interface MarketplaceCategoryAssignment {
 
 export type HireabilityStatus =
   | "quote_verified"
+  | "quote_stale"
+  | "wallet_ambiguous"
   | "mcp_only"
   | "protocol_discovered"
-  | "not_declared"
+  | "no_transport_declared"
   | "not_evaluated";
 
 export interface MarketplaceHireability {
@@ -107,6 +109,12 @@ export interface MarketplaceAgent {
       mismatchFields: Array<"owner" | "metadata_uri">;
       observedAt: string;
       provenance: readonly ["declared", "onchain" | "unavailable"];
+      walletAttribution?: {
+        status: "unique" | "ambiguous" | "not_checked";
+        candidateCount: number;
+        candidateAgentIds: string[];
+        provenance: "derived:marketplace-readiness";
+      };
     };
     tools: {
       status: "observed" | "not_probed";

@@ -37,7 +37,7 @@ export function CatalogPage({ data, query, provenAgentId }: { data: MarketplaceA
             ? `Browse active indexed records for chainId 56 returned by trust8004. The count is response.total for active=true and was fetched ${new Date(data.fetchedAt).toLocaleString("en-US", { timeZone: "UTC", timeZoneName: "short" })}. These records are registered, not automatically evaluated or hireable.`
             : "A small, evidence-backed inventory selected for the four marketplace outcomes. It does not represent every BSC agent in each category."}
         </PageIntro>
-        <CoverageBadge {...(allView ? { total: data.pagination.total } : {})} />
+        <CoverageBadge {...(allView ? { total: data.pagination.total, fetchedAt: data.fetchedAt } : {})} />
       </div>
 
       <nav aria-label="Catalog view" className="mt-8 flex gap-2 border-b border-white/10 pb-3">

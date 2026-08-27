@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { agentCardUrl, fetchAgentCard, sendSkill } from "../src/a2a.ts";
+import { agentCardUrl, fetchAgentCard, negotiate, sendSkill } from "../src/a2a.ts";
 
 describe("A2A transport", () => {
   it("builds the well-known URL before a query string", () => {
@@ -42,6 +42,21 @@ describe("A2A transport", () => {
     expect(fakeFetch.mock.calls[0]?.[1]?.headers).toMatchObject({
       authorization: "Bearer token",
     });
+  });
+
+  it("can negotiate with the ecosystem's short skill alias", async () => {
+    const fakeFetch = vi.fn().mockResolvedValue(
+      Response.json({ result: { parts: [{ data: { accepted: true } }] } }),
+    );
+
+    await expect(
+      negotiate("https://seller.example/a2a", null, fakeFetch, "negotiate"),
+    ).resolves.toEqual({ accepted: true });
+
+    const body = JSON.parse(String(fakeFetch.mock.calls[0]?.[1]?.body)) as {
+      params?: { message?: { parts?: Array<{ data?: { skill?: string } }> } };
+    };
+    expect(body.params?.message?.parts?.[0]?.data?.skill).toBe("negotiate");
   });
 
   it("rejects oversized A2A responses before parsing", async () => {

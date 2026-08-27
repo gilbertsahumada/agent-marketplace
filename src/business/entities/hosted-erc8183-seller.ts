@@ -9,7 +9,7 @@ export interface HostedSellerAgentCard {
   defaultInputModes: ["application/json"];
   defaultOutputModes: ["application/json"];
   skills: Array<{
-    id: "negotiate-erc8183-job" | "notify_funded";
+    id: "negotiate-erc8183-job" | "negotiate" | "notify_funded";
     name: string;
     description: string;
     tags: string[];
@@ -18,7 +18,7 @@ export interface HostedSellerAgentCard {
 
 export type HostedSellerMessage =
   | {
-      skill: "negotiate-erc8183-job";
+      skill: "negotiate-erc8183-job" | "negotiate";
       taskDescription: string;
       terms: Record<string, unknown>;
     }

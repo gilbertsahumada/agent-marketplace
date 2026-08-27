@@ -4,6 +4,17 @@ import type {
 } from "../entities/public-verification-snapshot.ts";
 
 export const VERIFICATION_CLOCK_SKEW_MS = 5 * 60 * 1_000;
+export const MAX_RELEASE_QUOTE_AGE_MS = 60 * 1_000;
+
+export function isReleaseQuoteCurrent(
+  observedAt: string,
+  now = Date.now(),
+): boolean {
+  const observedAtMs = Date.parse(observedAt);
+  return Number.isFinite(observedAtMs)
+    && observedAtMs <= now + VERIFICATION_CLOCK_SKEW_MS
+    && now - observedAtMs <= MAX_RELEASE_QUOTE_AGE_MS;
+}
 
 export function isVerificationSnapshotCurrent(
   snapshot: PublicVerificationSnapshot,
@@ -28,5 +39,6 @@ export function isReleaseAgentHireable(
 ): boolean {
   return isVerificationSnapshotCurrent(snapshot, now)
     && agent.qualification.status === "qualified"
-    && agent.selection !== "operator_explicit";
+    && agent.selection !== "operator_explicit"
+    && isReleaseQuoteCurrent(agent.qualification.observedAt, now);
 }

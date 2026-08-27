@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { readBoundedJson } from "./verification/bounded-json.ts";
+import type { Erc8183NegotiationSkill } from "./erc8183/skills.ts";
 
 export interface AgentCard {
   name: string;
@@ -122,11 +123,12 @@ export async function negotiate(
   messageUrl: string,
   bearerToken: string | null,
   fetchImpl: typeof fetch = fetch,
+  skill: Erc8183NegotiationSkill = "negotiate-erc8183-job",
 ): Promise<QuoteEnvelope> {
   return (await sendSkill(
     messageUrl,
     {
-      skill: "negotiate-erc8183-job",
+      skill,
       task_description: "Gate 1 ERC-8183 buyer spike",
       terms: {
         deliverables: "A deterministic text receipt proving seller execution",

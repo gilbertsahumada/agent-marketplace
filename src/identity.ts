@@ -53,24 +53,30 @@ export function extractA2aEndpoint(
   metadata: Record<string, unknown>,
 ): string {
   const services = metadata.services;
-  if (!Array.isArray(services)) {
-    throw new Error("ERC-8004 metadata has no services array");
+  const endpoints = metadata.endpoints;
+  if (!Array.isArray(services) && !Array.isArray(endpoints)) {
+    throw new Error("ERC-8004 metadata has no services or endpoints array");
   }
-  const endpoints = services
+  const declarations = [
+    ...(Array.isArray(services) ? services : []),
+    ...(Array.isArray(endpoints) ? endpoints : []),
+  ];
+  const a2aEndpoints = declarations
     .filter(
       (service): service is { name: string; endpoint: string } =>
         typeof service === "object" &&
         service !== null &&
         "name" in service &&
         "endpoint" in service &&
-        String(service.name).toUpperCase() === "A2A" &&
+        String(service.name).trim().toUpperCase() === "A2A" &&
         typeof service.endpoint === "string",
     )
-    .map((service) => service.endpoint);
-  if (endpoints.length !== 1) {
-    throw new Error(`Expected exactly one A2A endpoint, found ${endpoints.length}`);
+    .map((service) => service.endpoint)
+    .filter((endpoint, index, values) => values.indexOf(endpoint) === index);
+  if (a2aEndpoints.length !== 1) {
+    throw new Error(`Expected exactly one A2A endpoint, found ${a2aEndpoints.length}`);
   }
-  const url = new URL(endpoints[0]!);
+  const url = new URL(a2aEndpoints[0]!);
   if (url.protocol !== "https:") {
     throw new Error("The registered A2A endpoint must use HTTPS");
   }

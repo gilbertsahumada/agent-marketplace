@@ -26,6 +26,7 @@ export function VerificationDrift({
   compact?: boolean;
 }) {
   const attention = verification.identityStatus !== "match"
+    || verification.walletAttribution?.status === "ambiguous"
     || verification.toolReachability === "failed"
     || verification.declaredOnlyTools.length > 0
     || verification.observedOnlyTools.length > 0;
@@ -36,7 +37,9 @@ export function VerificationDrift({
     : notProbed
       ? "text-zinc-400"
       : "text-emerald-300";
-  const title = verification.identityStatus === "mismatch"
+  const title = verification.walletAttribution?.status === "ambiguous"
+    ? `Wallet attribution ambiguous · ${toolSummary(verification)}`
+    : verification.identityStatus === "mismatch"
     ? `Identity mismatch · ${toolSummary(verification)}`
     : verification.identityStatus === "read_error"
       ? `Identity unavailable · ${toolSummary(verification)}`
@@ -69,6 +72,9 @@ export function VerificationDrift({
         <div>
           <div className="flex flex-wrap items-center gap-2"><strong className="text-zinc-200">Identity</strong><ProvenanceBadge provenance="declared" /><ProvenanceBadge provenance={verification.identityOnchainProvenance} /></div>
           <p className="mt-1">{verification.identityStatus === "match" ? "Declared owner and metadata matched the pinned BSC read." : verification.identityStatus === "mismatch" ? `Mismatched field: ${verification.identityMismatchFields.join(", ").replaceAll("_", " ")}.` : "The direct identity read did not complete."}</p>
+          {verification.walletAttribution?.status === "ambiguous" && (
+            <p className="mt-2 text-amber-200">Wallet attribution is ambiguous across {verification.walletAttribution.candidateCount} evaluated agents ({verification.walletAttribution.candidateAgentIds.join(", ")}); payments cannot be assigned to one Agent ID from this evidence.</p>
+          )}
           <p className="font-stat mt-1 text-[10px] text-zinc-500">Block {verification.blockNumber} · {verification.identityObservedAt}</p>
         </div>
         <div>

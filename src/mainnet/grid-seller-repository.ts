@@ -134,7 +134,7 @@ export class MainnetGridSellerRepository implements HostedErc8183SellerRepositor
   async handleMessage(message: HostedSellerMessage): Promise<HostedSellerReply> {
     assertRequestBudget();
     const current = await this.loadRuntime();
-    if (message.skill === "negotiate-erc8183-job") {
+    if ("taskDescription" in message) {
       parseGridTaskDescription(message.taskDescription);
       if (
         message.terms.deliverables !== GRID_NEGOTIATION_TERMS.deliverables ||

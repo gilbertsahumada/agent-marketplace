@@ -1,4 +1,4 @@
-import { getAddress, isAddress } from "viem";
+import { getAddress, isAddress, isAddressEqual } from "viem";
 import { buildBscCandidateInventory } from "../trust8004/inventory.ts";
 import type { Trust8004Provider } from "../trust8004/provider.ts";
 import type { BscCandidateInventory, MarketplaceAgent, MarketplaceCategory } from "../trust8004/types.ts";
@@ -11,6 +11,7 @@ import type {
   IdentityVerification,
   McpEndpointVerification,
   VerificationError,
+  WalletAttribution,
 } from "./types.ts";
 
 export interface BuildVerificationReportOptions {
@@ -105,17 +106,48 @@ async function verifyIdentity(
 
 function mcpTargets(agent: MarketplaceAgent): Array<{ endpoint: string; tools: string[] }> {
   const targets = new Map<string, Set<string>>();
-  for (const service of agent.services) {
-    if (service.name.toLowerCase() !== "mcp" || !service.endpoint) continue;
-    const tools = targets.get(service.endpoint) ?? new Set<string>();
-    for (const tool of service.tools) tools.add(tool);
-    targets.set(service.endpoint, tools);
+  const declarations = [
+    ...agent.services.map(({ name, endpoint, tools }) => ({ name, endpoint, tools })),
+    ...agent.endpoints.map(({ name, endpoint }) => ({ name, endpoint, tools: [] as string[] })),
+  ];
+  for (const declaration of declarations) {
+    if (
+      !declaration.endpoint
+      || !declaration.name
+      || declaration.name.toLowerCase().replace(/[^a-z0-9]/g, "") !== "mcp"
+    ) continue;
+    const tools = targets.get(declaration.endpoint) ?? new Set<string>();
+    for (const tool of declaration.tools) tools.add(tool);
+    targets.set(declaration.endpoint, tools);
   }
   return [...targets].map(([endpoint, tools]) => ({ endpoint, tools: [...tools] }));
 }
 
 function hasToolDrift(endpoint: McpEndpointVerification): boolean {
   return endpoint.comparison.declaredOnly.length > 0 || endpoint.comparison.observedOnly.length > 0;
+}
+
+function walletAttribution(
+  agent: AgentVerification,
+  walletGroups: ReadonlyMap<string, string[]>,
+): WalletAttribution {
+  const owner = agent.identity.onchain.owner;
+  const wallet = agent.identity.onchain.agentWallet;
+  if (!owner || !wallet || !isAddressEqual(owner, wallet)) {
+    return {
+      status: "not_checked",
+      candidateCount: 0,
+      candidateAgentIds: [],
+      provenance: "derived:marketplace-readiness",
+    };
+  }
+  const candidateAgentIds = walletGroups.get(wallet.toLowerCase()) ?? [agent.agentId];
+  return {
+    status: candidateAgentIds.length > 1 ? "ambiguous" : "unique",
+    candidateCount: candidateAgentIds.length,
+    candidateAgentIds: [...candidateAgentIds],
+    provenance: "derived:marketplace-readiness",
+  };
 }
 
 function notProbedMcp(
@@ -192,18 +224,39 @@ export async function buildBscVerificationReport(
     });
   }
 
-  const endpoints = agents.flatMap((agent) => agent.mcpEndpoints);
-  const identityMatches = agents.filter((agent) => agent.identity.status === "match").length;
+  const walletGroups = new Map<string, string[]>();
+  for (const agent of agents) {
+    const owner = agent.identity.onchain.owner;
+    const wallet = agent.identity.onchain.agentWallet;
+    if (owner && wallet && isAddressEqual(owner, wallet)) {
+      const ids = walletGroups.get(wallet.toLowerCase()) ?? [];
+      ids.push(agent.agentId);
+      walletGroups.set(wallet.toLowerCase(), ids);
+    }
+  }
+  const attributedAgents = agents.map((agent) => ({
+    ...agent,
+    identity: {
+      ...agent.identity,
+      walletAttribution: walletAttribution(agent, walletGroups),
+    },
+  }));
+  const endpoints = attributedAgents.flatMap((agent) => agent.mcpEndpoints);
+  const identityMatches = attributedAgents.filter((agent) => agent.identity.status === "match").length;
   const endpointsValid = endpoints.filter((endpoint) => endpoint.status === "protocol_valid").length;
   const endpointsNotProbed = endpoints.filter((endpoint) => endpoint.status === "not_probed").length;
-  const agentsWithoutMcpEndpoint = agents.filter((agent) => agent.mcpEndpoints.length === 0).length;
+  const agentsWithoutMcpEndpoint = attributedAgents.filter((agent) => agent.mcpEndpoints.length === 0).length;
   const toolDriftEndpoints = endpoints.filter(hasToolDrift).length;
-  const identityAttention = agents.length - identityMatches;
+  const identityAttention = attributedAgents.length - identityMatches;
   const endpointAttention = endpoints.length - endpointsValid;
+  const walletAmbiguousAgents = attributedAgents.filter(
+    (agent) => agent.identity.walletAttribution?.status === "ambiguous",
+  ).length;
   const attentionRequired = identityAttention > 0
     || endpointAttention > 0
     || agentsWithoutMcpEndpoint > 0
-    || toolDriftEndpoints > 0;
+    || toolDriftEndpoints > 0
+    || walletAmbiguousAgents > 0;
 
   return {
     schemaVersion: 2,
@@ -231,7 +284,8 @@ export async function buildBscVerificationReport(
       endpointAttention,
       agentsWithoutMcpEndpoint,
       toolDriftEndpoints,
+      walletAmbiguousAgents,
     },
-    agents,
+    agents: attributedAgents,
   };
 }

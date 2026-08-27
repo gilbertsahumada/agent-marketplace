@@ -138,6 +138,7 @@ describe("marketplace business catalogue", () => {
   it("builds the landing catalogue from the sanitized release snapshot without live profile reads", () => {
     const result = new GetMarketplaceLandingCatalog(
       new GetPublicVerificationSnapshot(new StaticPublicVerificationRepository()),
+      () => Date.parse("2026-08-25T23:39:16.000Z"),
     ).execute();
 
     expect(result.source).toBe("release_snapshot");

@@ -8,6 +8,7 @@ import {
 import { resolveNetwork } from "@bnbagent/sdk";
 import { getAddress, isAddress, type Address, type PublicClient } from "viem";
 import { fetchAgentCard, sendSkill } from "../a2a.ts";
+import { negotiationSkillForCard, ERC8183_NOTIFY_FUNDED_SKILL_ID } from "../erc8183/skills.ts";
 import type { MarketplaceAgent } from "../trust8004/types.ts";
 import { readBoundedJson } from "../verification/bounded-json.ts";
 import {
@@ -123,26 +124,40 @@ function sanitizedError(error: unknown, code: string): VerificationError {
   };
 }
 
+function sellerTransport(name: string | null): SellerTransport | null {
+  if (!name) return null;
+  const normalized = name.toLowerCase().replace(/[^a-z0-9]/g, "");
+  if (normalized === "a2a") return "a2a";
+  if (normalized === "erc8183") return "erc8183_http";
+  return null;
+}
+
 function declaredProtocols(agent: MarketplaceAgent): Array<{
   transport: SellerTransport;
   endpoint: string;
 }> {
   const protocols = new Map<string, { transport: SellerTransport; endpoint: string }>();
-  for (const service of agent.services) {
-    if (!service.endpoint) continue;
-    const normalized = service.name.toLowerCase().replace(/[^a-z0-9]/g, "");
-    const transport = normalized === "a2a"
-      ? "a2a"
-      : normalized === "erc8183"
-        ? "erc8183_http"
-        : null;
-    if (transport) protocols.set(`${transport}:${service.endpoint}`, { transport, endpoint: service.endpoint });
+  // Registration payloads may expose the same transport under either
+  // `services` or `endpoints`; read both so a change upstream cannot silently
+  // hide a seller.
+  const declarations = [
+    ...agent.services.map(({ name, endpoint }) => ({ name, endpoint })),
+    ...agent.endpoints,
+  ];
+  for (const { name, endpoint } of declarations) {
+    if (!endpoint) continue;
+    const transport = sellerTransport(name);
+    if (transport) protocols.set(`${transport}:${endpoint}`, { transport, endpoint });
   }
   return [...protocols.values()];
 }
 
 function hasMcp(agent: MarketplaceAgent): boolean {
-  return agent.services.some((service) => service.name.toLowerCase() === "mcp" && service.endpoint);
+  return [
+    ...agent.services.map(({ name, endpoint }) => ({ name, endpoint })),
+    ...agent.endpoints,
+  ].some(({ name, endpoint }) => Boolean(endpoint) && name
+    && name.toLowerCase().replace(/[^a-z0-9]/g, "") === "mcp");
 }
 
 async function fetchJsonObject(
@@ -411,7 +426,11 @@ async function assessProtocol(
     if (protocol.transport === "a2a") {
       const card = await fetchAgentCard(protocol.endpoint, null, fetchImpl);
       const skills = [...new Set(card.skills.map((skill) => skill.id))].sort();
-      const missing = ["negotiate-erc8183-job", "notify_funded"].filter((skill) => !skills.includes(skill));
+      const negotiationSkill = negotiationSkillForCard(card.skills);
+      const missing = [
+        ...(negotiationSkill ? [] : ["negotiate or negotiate-erc8183-job"]),
+        ...(!skills.includes(ERC8183_NOTIFY_FUNDED_SKILL_ID) ? [ERC8183_NOTIFY_FUNDED_SKILL_ID] : []),
+      ];
       if (missing.length > 0) {
         return result(protocol.transport, protocol.endpoint, observedAt, {
           status: "protocol_valid",
@@ -430,7 +449,7 @@ async function assessProtocol(
       }
       const quote = await sendSkill(
         card.url,
-        { skill: "negotiate-erc8183-job", ...probe.request },
+        { skill: negotiationSkill!, ...probe.request },
         null,
         fetchImpl,
       );
@@ -539,7 +558,7 @@ function summarize(
       transport: mcp ? "mcp_only" : "none",
       declaredSellerProtocols: [],
       quoteStatus: "not_applicable",
-      hireability: mcp ? "mcp_only" : "not_declared",
+      hireability: mcp ? "mcp_only" : "no_transport_declared",
       protocols: [],
       probe,
       note: mcp

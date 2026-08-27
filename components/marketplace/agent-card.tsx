@@ -26,6 +26,8 @@ const categoryLabels: Record<MarketplaceCategory, string> = {
 const hireabilityLabels = {
   hireable: "Hireable now",
   mcp_only: "MCP only",
+  quote_stale: "Quote refresh required",
+  wallet_ambiguous: "Wallet attribution ambiguous",
   listed_only: "Not evaluated",
 } satisfies Record<AgentCardViewModel["hireability"], string>;
 
@@ -110,7 +112,7 @@ export function AgentCard({ agent }: { agent: AgentCardViewModel }) {
         )}
         <Button asChild size="sm" variant={isHireable ? "default" : "outline"}>
           <Link href={isHireable ? `/hire/${agent.agentId}` : agent.href} prefetch={false}>
-            {isHireable ? "Hire agent" : "View evidence"}
+            {isHireable ? "Hire agent" : agent.hireability === "quote_stale" ? "Refresh quote" : "View evidence"}
             <ArrowUpRight aria-hidden="true" data-icon="inline-end" />
           </Link>
         </Button>

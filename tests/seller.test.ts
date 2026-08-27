@@ -8,7 +8,7 @@ import {
 } from "../src/seller.ts";
 
 describe("A2A seller fixture", () => {
-  it("advertises exactly the skills required by the buyer", () => {
+  it("advertises both accepted negotiation skill identifiers and notify_funded", () => {
     const card = buildAgentCard("https://fixture.example") as {
       url: string;
       skills: Array<{ id: string }>;
@@ -16,6 +16,7 @@ describe("A2A seller fixture", () => {
     expect(card.url).toBe("https://fixture.example/a2a");
     expect(card.skills.map(({ id }) => id)).toEqual([
       "negotiate-erc8183-job",
+      "negotiate",
       "notify_funded",
     ]);
   });

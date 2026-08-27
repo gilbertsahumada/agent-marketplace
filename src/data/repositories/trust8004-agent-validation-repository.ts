@@ -194,6 +194,21 @@ export class Trust8004AgentValidationRepository implements AgentValidationReposi
       });
       const activation = await assessHireability(agent, verifiedAgent.identity);
       const identity = verifiedAgent.identity;
+      const declaredServices = new Map<string, { name: string; hasEndpoint: boolean; tools: string[] }>();
+      for (const service of agent.services) {
+        declaredServices.set(`${service.name}:${service.endpoint ?? ""}`, {
+          name: service.name,
+          hasEndpoint: service.endpoint !== null,
+          tools: service.tools,
+        });
+      }
+      for (const endpoint of agent.endpoints) {
+        const name = endpoint.name ?? "Endpoint";
+        const key = `${name}:${endpoint.endpoint}`;
+        if (!declaredServices.has(key)) {
+          declaredServices.set(key, { name, hasEndpoint: true, tools: [] });
+        }
+      }
 
       return {
         chainId: 56,
@@ -205,11 +220,7 @@ export class Trust8004AgentValidationRepository implements AgentValidationReposi
           metadataUri: agent.metadataUri,
           operator: this.marketplaceOperatedGridSellerAgentId === agent.agentId ? "marketplace" : "third_party",
           indexedAt: agent.freshness.fetchedAt,
-          declaredServices: agent.services.map((service) => ({
-            name: service.name,
-            hasEndpoint: service.endpoint !== null,
-            tools: service.tools,
-          })),
+          declaredServices: [...declaredServices.values()],
         },
         identity: {
           status: identity.status,

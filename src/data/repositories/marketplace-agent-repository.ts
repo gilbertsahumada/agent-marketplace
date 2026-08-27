@@ -57,6 +57,12 @@ export interface MarketplaceAgentData {
       mismatchFields: Array<"owner" | "metadata_uri">;
       observedAt: string;
       provenance: readonly ["declared", "onchain" | "unavailable"];
+      walletAttribution?: {
+        status: "unique" | "ambiguous" | "not_checked";
+        candidateCount: number;
+        candidateAgentIds: string[];
+        provenance: "derived:marketplace-readiness";
+      };
     };
     tools: {
       status: "observed" | "not_probed";
