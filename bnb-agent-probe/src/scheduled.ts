@@ -32,6 +32,7 @@ const CURATED_IDS = CURATED_INVENTORY.entries.map(({ agentId }) => agentId);
 const CURATED_ID_SET = new Set(CURATED_IDS);
 
 export type SchedulerPhase = "header" | "sweep" | "probe";
+export type ScheduledRunResult = "completed" | "duplicate" | "locked";
 
 interface PhaseStateRow {
   readonly key: string;
@@ -71,7 +72,7 @@ export function createWp2ScheduledRunner(dependencies: ScheduledRuntimeDependenc
     env: Env,
     _context: ExecutionContext,
     config: WorkerConfig,
-  ): Promise<void> {
+  ): Promise<ScheduledRunResult> {
     const startedAt = now();
     const runId = randomUUID();
     const leaseMs = config.plan === "free" ? FREE_LEASE_MS : PAID_LEASE_MS;
@@ -99,7 +100,7 @@ export function createWp2ScheduledRunner(dependencies: ScheduledRuntimeDependenc
         requests: 0,
         wallTimeMs: Math.max(0, finishedAt - startedAt),
       }), finishedAt).run();
-      return;
+      return "locked";
     }
 
     let phase: SchedulerPhase = "header";
@@ -115,7 +116,7 @@ export function createWp2ScheduledRunner(dependencies: ScheduledRuntimeDependenc
       if (controller.cron === "queue"
         && completedQueueScheduledTime !== undefined
         && completedQueueScheduledTime !== null
-        && completedQueueScheduledTime >= controller.scheduledTime) return;
+        && completedQueueScheduledTime >= controller.scheduledTime) return "duplicate";
       phase = parsePhase(state.get("next_scheduler_phase")?.textValue);
       await executePhase({
         phase,
@@ -131,6 +132,7 @@ export function createWp2ScheduledRunner(dependencies: ScheduledRuntimeDependenc
           ? { completedQueueScheduledTime: controller.scheduledTime }
           : {}),
       });
+      return "completed";
     } catch (error) {
       const finishedAt = now();
       try {
