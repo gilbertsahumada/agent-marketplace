@@ -12,6 +12,8 @@ export interface WorkerConfig {
   sweepLimit: number;
   sweepPagesPerRun: number;
   probeBatchSize: number;
+  probeAgentAllowlist: readonly string[];
+  probeEndpointAllowlist: readonly string[];
   trust8004RequestsPerRun: number;
   externalSubrequestsPerRun: number;
   d1QueriesPerRun: number;
@@ -47,7 +49,13 @@ export interface WorkerConfig {
 
 type NumericConfig = Omit<
   WorkerConfig,
-  "plan" | "killSwitch" | "schedulerMode" | "platformLimits" | "projectedDailyBudget"
+  | "plan"
+  | "killSwitch"
+  | "schedulerMode"
+  | "probeAgentAllowlist"
+  | "probeEndpointAllowlist"
+  | "platformLimits"
+  | "projectedDailyBudget"
 >;
 
 interface Profile {
@@ -62,6 +70,8 @@ const FREE_QUEUE_OPERATIONS_PER_DAY = 10_000;
 const FREE_SAFETY_RATIO = 0.8;
 const QUEUE_MAX_RETRIES = 3;
 const QUEUE_OPERATIONS_PER_MESSAGE = 3 + QUEUE_MAX_RETRIES;
+const WP3_AGENT_ID = "303779";
+const WP3_ENDPOINT = "https://bnb-agent-marketplace-ruby.vercel.app/api/sellers/grid/a2a";
 
 const FREE_PROFILE: Profile = {
   schedulerMode: "single_phase",
@@ -201,6 +211,65 @@ function configEnvironment(env: Partial<Env>): Record<string, string | undefined
   return env as Record<string, string | undefined>;
 }
 
+function parseAgentAllowlist(raw: string | undefined, plan: WorkersPlan): readonly string[] {
+  const values = parseCsv("PROBE_AGENT_ALLOWLIST", raw ?? WP3_AGENT_ID);
+  if (plan === "free" && (values.length !== 1 || values[0] !== WP3_AGENT_ID)) {
+    throw new ConfigError("PROBE_AGENT_ALLOWLIST", `Free must contain only ${WP3_AGENT_ID}`);
+  }
+  if (values.length > (plan === "free" ? 1 : 100)) {
+    throw new ConfigError("PROBE_AGENT_ALLOWLIST", "contains too many entries for the plan");
+  }
+  for (const value of values) {
+    if (!/^[1-9]\d*$/.test(value)) {
+      throw new ConfigError("PROBE_AGENT_ALLOWLIST", "must contain positive decimal agent IDs");
+    }
+  }
+  return values;
+}
+
+function parseEndpointAllowlist(raw: string | undefined, plan: WorkersPlan): readonly string[] {
+  const values = parseCsv("PROBE_ENDPOINT_ALLOWLIST", raw ?? WP3_ENDPOINT);
+  if (values.length > (plan === "free" ? 1 : 100)) {
+    throw new ConfigError("PROBE_ENDPOINT_ALLOWLIST", "contains too many entries for the plan");
+  }
+  return values.map((value) => {
+    let url: URL;
+    try {
+      url = new URL(value);
+    } catch {
+      throw new ConfigError("PROBE_ENDPOINT_ALLOWLIST", "must contain valid URLs");
+    }
+    const hostname = url.hostname.toLowerCase();
+    if (
+      url.protocol !== "https:"
+      || url.username !== ""
+      || url.password !== ""
+      || url.search !== ""
+      || url.hash !== ""
+      || hostname === "localhost"
+      || hostname.endsWith(".localhost")
+      || hostname.endsWith(".local")
+    ) {
+      throw new ConfigError(
+        "PROBE_ENDPOINT_ALLOWLIST",
+        "must contain public HTTPS URLs without credentials, query or fragment",
+      );
+    }
+    return url.toString();
+  });
+}
+
+function parseCsv(field: string, raw: string): readonly string[] {
+  const values = raw.split(",").map((value) => value.trim());
+  if (values.length === 0 || values.some((value) => value.length === 0)) {
+    throw new ConfigError(field, "must contain at least one non-empty entry");
+  }
+  if (new Set(values).size !== values.length) {
+    throw new ConfigError(field, "must not contain duplicate entries");
+  }
+  return values;
+}
+
 export function loadConfig(env: Partial<Env>): WorkerConfig {
   const source = configEnvironment(env);
   const plan = parsePlan(source.CLOUDFLARE_WORKERS_PLAN);
@@ -272,6 +341,8 @@ export function loadConfig(env: Partial<Env>): WorkerConfig {
     plan,
     killSwitch: parseKillSwitch(source.KILL_SWITCH),
     schedulerMode: profile.schedulerMode,
+    probeAgentAllowlist: parseAgentAllowlist(source.PROBE_AGENT_ALLOWLIST, plan),
+    probeEndpointAllowlist: parseEndpointAllowlist(source.PROBE_ENDPOINT_ALLOWLIST, plan),
     ...values,
     platformLimits: plan === "free"
       ? {
