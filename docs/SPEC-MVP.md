@@ -1277,9 +1277,10 @@ Una lectura D1 cruda y hasheada de `next_scheduler_phase` y
 `last_queue_scheduled_time`, iniciada y completada dentro de los cinco minutos
 anteriores al primer tick, fija la fase inicial y demuestra que el scheduler
 persistió el tick inmediatamente anterior. No demuestra por sí sola que su
-mensaje Queue ya terminó: esa terminalidad se reconcilia después contra el
-ledger de intentos y las operaciones `DeleteMessage`; inferir la fase inicial
-del propio ledger tampoco sería evidencia independiente. Un spill-in solo cierra si termina
+mensaje Queue ya terminó. El ledger de intentos y las operaciones
+`DeleteMessage` prueban por separado la terminalidad de los 288 ticks de la
+ventana; inferir la fase inicial del propio ledger tampoco sería evidencia
+independiente. Un spill-in solo cierra si termina
 en `completed`/`duplicate`, no por agotar retries en `failed`.
 La captura se ejecuta con
 `npm run evidence:wp2-window-start -- ../evidence/raw/window-start.json`; recibe
