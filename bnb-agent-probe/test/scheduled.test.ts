@@ -5,6 +5,7 @@ import type {
   D1PreparedStatementLike,
   D1ResultLike,
 } from "../src/db/client";
+import { D1RowBudgetExceededError } from "../src/db/query-budget";
 import { createWp2ScheduledRunner, type SchedulerPhase } from "../src/scheduled";
 import type { Env } from "../src/types";
 
@@ -158,6 +159,27 @@ describe("WP2 scheduled runner", () => {
 
     expect(phases).toEqual(["sweep"]);
     expect(db.acquisitions).toBe(1);
+    expect(db.releases).toBe(1);
+  });
+
+  it("aborts phase work after crossing the row budget but still releases the lease", async () => {
+    const db = new LeaseDatabase();
+    let executed = false;
+    const runner = createWp2ScheduledRunner({
+      now: () => 1_000,
+      randomUUID: () => "run-row-budget",
+      executePhase: async () => { executed = true; },
+    });
+
+    await expect(runner(
+      controller,
+      { DB: db } as unknown as Env,
+      context,
+      loadConfig({ D1_ROWS_READ_PER_RUN: "1" }),
+    )).rejects.toBeInstanceOf(D1RowBudgetExceededError);
+
+    expect(executed).toBe(false);
+    expect(db.summaries).toHaveLength(1);
     expect(db.releases).toBe(1);
   });
 });
