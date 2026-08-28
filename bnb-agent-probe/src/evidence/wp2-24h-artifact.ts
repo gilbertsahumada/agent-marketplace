@@ -708,11 +708,14 @@ async function validateRawAnalytics(
   }
 
   const deploymentRaw = record(parsed.get(REQUIRED_RAW_ANALYTICS[5]), "RAW_DEPLOYMENT", "deployment raw");
+  const deploymentRequest = record(deploymentRaw.request, "RAW_DEPLOYMENT", "deployment request");
   const deploymentResponse = record(deploymentRaw.response, "RAW_DEPLOYMENT", "deployment response");
-  const deployment = record(deploymentResponse.result, "RAW_DEPLOYMENT", "deployment result");
-  if (deployment.scriptName !== context.workerName
-    || deployment.versionId !== context.deploymentVersion
-    || deployment.commit !== context.commit) {
+  const annotations = record(deploymentResponse.annotations, "RAW_DEPLOYMENT", "deployment annotations");
+  if (deploymentRequest.scriptName !== context.workerName
+    || deploymentRequest.versionId !== context.deploymentVersion
+    || deploymentResponse.id !== context.deploymentVersion
+    || annotations["workers/message"] !== `git_commit=${context.commit}`
+    || annotations["workers/tag"] !== `git-${context.commit.slice(0, 12)}`) {
     fail("RAW_DEPLOYMENT", "deployment metadata does not match the artifact");
   }
 
