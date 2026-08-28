@@ -169,6 +169,67 @@ describe("WP3 full Workers runtime", () => {
     ).first<{ textValue: string }>();
     expect(JSON.parse(ledger?.textValue ?? "{}").d1Queries).toBeLessThanOrEqual(40);
   });
+
+  it("commits a timeout instead of retrying when the shared deadline expires after BSC", async () => {
+    await env.DB.prepare(
+      `INSERT INTO probe_targets (
+         agentId, chainId, transport, endpoint, name, categoriesJson,
+         categoryProvenance, declarationState, currentMetadataUpdatedAt,
+         lastMetadataCheckedAt, firstSeenAt, lastChangedAt, lastSeenAt, priority
+       ) VALUES ('303779', 56, 'a2a', ?, 'Grid', '["grid_trading"]',
+         'derived:marketplace-inventory', 'current', ?, ?, ?, ?, ?, 1)`,
+    ).bind(ENDPOINT, NOW_MS - 1_000, NOW_MS, NOW_MS, NOW_MS, NOW_MS).run();
+    await env.DB.prepare(
+      "INSERT INTO runtime_state (key, textValue, updatedAt) VALUES ('next_scheduler_phase', 'probe', ?)",
+    ).bind(NOW_MS - 1_000).run();
+    let clock = NOW_MS;
+    let sellerRequests = 0;
+    const fetchImpl: typeof fetch = async (input, init) => {
+      const url = new URL(String(input));
+      if (url.hostname === "trust8004.xyz") {
+        return Response.json({
+          chainId: 56,
+          agentId: "303779",
+          name: "Grid",
+          registeredAt: NOW_MS - 10_000,
+          metadataUpdatedAt: NOW_MS,
+          metadataReasonCode: "ok",
+          services: [],
+          endpoints: [{ type: "A2A", url: ENDPOINT }],
+        });
+      }
+      if (url.hostname === "rpc.example.com") {
+        const request = JSON.parse(String(init?.body)) as {
+          id: number;
+          method: string;
+          params?: unknown[];
+        };
+        const result = rpcResult(request, account.address);
+        if (request.method === "eth_call") clock = NOW_MS + 5_001;
+        return Response.json({ jsonrpc: "2.0", id: request.id, result });
+      }
+      sellerRequests += 1;
+      return new Response(null, { status: 500 });
+    };
+    const runner = createWp2ScheduledRunner({
+      now: () => clock,
+      randomUUID: () => "wp3-timeout",
+      fetch: fetchImpl,
+    });
+
+    await expect(runner(
+      { scheduledTime: NOW_MS, cron: "queue" },
+      { ...env, BSC_RPC_URL: "https://rpc.example.com/bsc" } as unknown as Env,
+      createExecutionContext(),
+      loadConfig({ KILL_SWITCH: "0" }),
+    )).resolves.toBe("completed");
+
+    expect(await env.DB.prepare(
+      "SELECT outcome, errorCode FROM probe_observations",
+    ).first()).toEqual({ outcome: "unreachable", errorCode: "SELLER_TIMEOUT" });
+    expect(sellerRequests).toBe(0);
+    expect(await runtimeText("next_scheduler_phase")).toBe("header");
+  });
 });
 
 async function signedQuote(provider: Address): Promise<Record<string, unknown>> {
