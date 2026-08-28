@@ -90,6 +90,7 @@ function sha256(value: string): string {
 
 function validArtifact(): Record<string, unknown> {
   const ledger = Array.from({ length: 288 }, (_, index) => ({
+    messageId: `message-${index}`,
     scheduledTime: WINDOW_START + 14_000 + index * 5 * 60_000,
     attempt: 1,
     phase: (["header", "sweep", "probe"] as const)[index % 3],
@@ -213,6 +214,7 @@ describe("WP2 24-hour evidence artifact validator", () => {
     const artifact = validArtifact() as any;
     artifact.quotaLedger.unshift({
       ...artifact.ledger[0],
+      messageId: "spill-in-message",
       scheduledTime: WINDOW_START - 5 * 60_000 + 14_000,
       startedAt: WINDOW_START + 1_000,
       finishedAt: WINDOW_START + 2_000,
