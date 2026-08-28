@@ -6,6 +6,7 @@
   "workers_dev": true,
   "preview_urls": false,
   "observability": { "enabled": true },
+  "triggers": { "crons": [] },
   "vars": {
     "DEPLOYMENT_ENV": "production",
     "STAGING_MANUAL_RUN": "0",
@@ -43,13 +44,15 @@
         "queue": "bnb-agent-probe",
         "max_batch_size": 1,
         "max_batch_timeout": 1,
-        "max_retries": 3
+        "max_retries": 3,
+        "max_concurrency": 1
       }
     ]
   },
   "env": {
     "staging": {
       "name": "bnb-agent-probe-staging",
+      "triggers": { "crons": [] },
       "vars": {
         "DEPLOYMENT_ENV": "staging",
         "STAGING_MANUAL_RUN": "0",
@@ -87,7 +90,8 @@
             "queue": "bnb-agent-probe-staging",
             "max_batch_size": 1,
             "max_batch_timeout": 1,
-            "max_retries": 3
+            "max_retries": 3,
+            "max_concurrency": 1
           }
         ]
       }
