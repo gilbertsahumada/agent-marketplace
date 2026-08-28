@@ -72,7 +72,7 @@ describe("WP3 full Workers runtime", () => {
     ).bind(NOW_MS - 1_000).run();
 
     const quote = await signedQuote(provider);
-    const rpcMethods: string[] = [];
+    const rpcRequests: Array<{ id: number; method: string; params?: unknown[] }> = [];
     const fetchImpl: typeof fetch = async (input, init) => {
       const url = new URL(String(input));
       if (url.hostname === "trust8004.xyz") {
@@ -108,7 +108,7 @@ describe("WP3 full Workers runtime", () => {
           method: string;
           params?: unknown[];
         };
-        rpcMethods.push(request.method);
+        rpcRequests.push(request);
         return Response.json({
           jsonrpc: "2.0",
           id: request.id,
@@ -153,7 +153,15 @@ describe("WP3 full Workers runtime", () => {
       "eth_getBlockByNumber",
     ];
     if (signatureMethod === "erc1271") expectedRpcMethods.push("eth_getCode", "eth_call");
-    expect(rpcMethods).toEqual(expectedRpcMethods);
+    expect(rpcRequests.map(({ method }) => method)).toEqual(expectedRpcMethods);
+    const fixedBlockTag = `0x${BLOCK_NUMBER.toString(16)}`;
+    expect(rpcRequests[1]?.params?.[0]).toBe("latest");
+    expect(rpcRequests[2]?.params?.at(-1)).toBe(fixedBlockTag);
+    expect(rpcRequests[4]?.params?.[0]).toBe(fixedBlockTag);
+    if (signatureMethod === "erc1271") {
+      expect(rpcRequests[5]?.params?.at(-1)).toBe(fixedBlockTag);
+      expect(rpcRequests[6]?.params?.at(-1)).toBe(fixedBlockTag);
+    }
     expect(await runtimeText("next_scheduler_phase")).toBe("header");
     expect(await runtimeInteger("last_queue_scheduled_time")).toBe(NOW_MS);
     const ledger = await env.DB.prepare(
