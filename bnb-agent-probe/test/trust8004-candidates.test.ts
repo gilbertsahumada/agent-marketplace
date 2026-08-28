@@ -64,6 +64,40 @@ describe("WP2 live target filter", () => {
       { chainId: 56, agentId: "42", transport: "erc8183_http", endpoint: "https://seller.example.com/jobs" },
     ]);
   });
+
+  it.each([
+    [
+      "https://bnb-agent-marketplace-ruby.vercel.app/grid/.well-known/agent-card.json",
+      "https://bnb-agent-marketplace-ruby.vercel.app/grid",
+    ],
+    [
+      "https://seller.example.com/.well-known/agent-card.json",
+      "https://seller.example.com",
+    ],
+  ])("normalizes an A2A Agent Card declaration %s to logical base %s", (endpoint, expected) => {
+    expect(selectLiveTargets(agent({
+      declarations: { a2a: true, erc8183: false },
+      declaredEndpoints: [
+        { transport: "a2a", endpoint, source: "services", sourceIndex: 0 },
+      ],
+    }), { curatedAgentIds: new Set(["42"]) })).toEqual([
+      { chainId: 56, agentId: "42", transport: "a2a", endpoint: expected },
+    ]);
+  });
+
+  it.each([
+    ["a2a", "https://seller.example.com/grid/.well-known/agent-card.json-extra"],
+    ["a2a", "https://seller.example.com/grid/.well-known/not-agent-card.json"],
+    ["erc8183_http", "https://seller.example.com/grid/.well-known/agent-card.json"],
+  ] as const)("does not rewrite %s near-suffix endpoint %s", (transport, endpoint) => {
+    expect(selectLiveTargets(agent({
+      declaredEndpoints: [
+        { transport, endpoint, source: "services", sourceIndex: 0 },
+      ],
+    }), { curatedAgentIds: new Set(["42"]) })).toEqual([
+      { chainId: 56, agentId: "42", transport, endpoint },
+    ]);
+  });
 });
 
 describe("syntactically public HTTPS policy", () => {
