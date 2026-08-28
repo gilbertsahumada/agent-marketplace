@@ -216,11 +216,12 @@ export async function healthResponse(
     const nextPhase = nextPhaseValue === "header" || nextPhaseValue === "sweep" || nextPhaseValue === "probe"
       ? nextPhaseValue
       : "header";
+    const currentDailyBudget = dailyBudget(byKey.get(dailyBudgetKey), utcDate);
     const degraded = lastPhase?.errorCode !== undefined || (
       lastPhase?.status !== undefined
       && lastPhase.status !== "ok"
       && lastPhase.status !== "success"
-    );
+    ) || (!config.killSwitch && currentDailyBudget === null);
 
     return json({
       status: degraded ? "degraded" : "ok",
@@ -254,7 +255,7 @@ export async function healthResponse(
       headerHighWater: headerHighWater(byKey.get("header_high_water")?.textValue),
       headerWindowExhausted: lastHeader?.headerWindowExhausted ?? false,
       targets: { available: false },
-      dailyBudget: dailyBudget(byKey.get(dailyBudgetKey), utcDate),
+      dailyBudget: currentDailyBudget,
       lastPhase,
       lastScheduler,
     }, 200);
