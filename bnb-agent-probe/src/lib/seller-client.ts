@@ -90,7 +90,13 @@ async function fetchJson(
       redirect: "manual",
       signal: AbortSignal.timeout(remainingMs),
     });
-  } catch {
+  } catch (error) {
+    if (
+      error instanceof DOMException
+      && (error.name === "TimeoutError" || error.name === "AbortError")
+    ) {
+      throw new SellerProbeError("SELLER_TIMEOUT");
+    }
     throw new SellerProbeError("SELLER_UNREACHABLE");
   }
   if (response.type === "opaqueredirect" || (response.status >= 300 && response.status < 400)) {
