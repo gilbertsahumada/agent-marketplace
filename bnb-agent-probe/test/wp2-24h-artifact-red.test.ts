@@ -33,18 +33,24 @@ const RAW_PAYLOADS = {
       start: "2026-08-29T00:00:00.000Z",
       endInclusive: "2026-08-29T23:59:59.999Z",
     },
-    response: { data: { viewer: { accounts: [{ workersInvocationsAdaptive: [{
-      dimensions: {
-        datetime: "2026-08-29T00:00:14Z",
-        scriptName: "bnb-agent-probe-staging",
-        scriptVersion: DEPLOYMENT_VERSION,
-        status: "success",
+    response: { data: { viewer: { accounts: [{ workersInvocationsAdaptive: [
+      {
+        dimensions: { datetime: "2026-08-29T00:00:14Z", scriptName: "bnb-agent-probe-staging",
+          scriptVersion: DEPLOYMENT_VERSION, status: "success" },
+        quantiles: { cpuTimeP50: 1_000, cpuTimeP99: 1_140, durationP50: 0.03,
+          memoryUsageBytesP50: 8_000_000, memoryUsageBytesP99: 9_000_000,
+          memoryUsageBytesP999: 10_000_000 },
+        sum: { errors: 0, requests: 288, subrequests: 0 },
       },
-      quantiles: { cpuTimeP50: 100_000, cpuTimeP99: 200_000, durationP50: 0.2,
-        memoryUsageBytesP50: 8_000_000, memoryUsageBytesP99: 11_000_000,
-        memoryUsageBytesP999: 12_000_000 },
-      sum: { errors: 0, requests: 576, subrequests: 288 },
-    }] }] } }, errors: null },
+      {
+        dimensions: { datetime: "2026-08-29T00:00:18Z", scriptName: "bnb-agent-probe-staging",
+          scriptVersion: DEPLOYMENT_VERSION, status: "success" },
+        quantiles: { cpuTimeP50: 100_000, cpuTimeP99: 200_000, durationP50: 0.2,
+          memoryUsageBytesP50: 8_000_000, memoryUsageBytesP99: 11_000_000,
+          memoryUsageBytesP999: 12_000_000 },
+        sum: { errors: 0, requests: 288, subrequests: 288 },
+      },
+    ] }] } }, errors: null },
   },
   "evidence/raw/queue.json": {
     request: {
@@ -124,8 +130,7 @@ const RAW_PAYLOADS = {
     response: { capturedAt: "2026-08-28T21:50:00.000Z", schedules: [], backlogCount: 0 },
   },
   "evidence/raw/activation.json": {
-    response: { capturedAt: "2026-08-28T21:52:00.000Z", schedules: ["*/5 * * * *"], backlogCount: 0,
-      producerCpuMsP99: 1.14 },
+    response: { capturedAt: "2026-08-28T21:52:00.000Z", schedules: ["*/5 * * * *"], backlogCount: 0 },
   },
   "evidence/raw/cleanup.json": {
     response: { capturedAt: "2026-08-30T00:15:00.000Z", schedules: [], backlogCount: 0, killSwitch: true,
@@ -280,7 +285,22 @@ describe("WP2 24-hour evidence artifact validator", () => {
     });
     artifact.totals.quotaAttempts = 289;
     artifact.totals.spillIn = 1;
-    await expect(validateWp224hArtifact(artifact, { readRawEvidence })).resolves.toMatchObject({ passed: true });
+    artifact.totals.queueOperations = 965;
+    const queue = structuredClone(RAW_PAYLOADS["evidence/raw/queue.json"]) as any;
+    queue.response.data.viewer.accounts[0].queueDayOperations[2].count = 289;
+    queue.response.data.viewer.accounts[0].queueDayOperations[2].sum.billableOperations = 289;
+    queue.response.data.viewer.accounts[0].queueTerminalOperations[2].count = 289;
+    queue.response.data.viewer.accounts[0].queueTerminalOperations[2].sum.billableOperations = 289;
+    const account = structuredClone(RAW_PAYLOADS["evidence/raw/queue-account.json"]) as any;
+    account.response.data.viewer.accounts[0].queueMessageOperationsAdaptiveGroups[0].sum.billableOperations = 865;
+    const overrides: Record<string, string> = {
+      "evidence/raw/queue.json": JSON.stringify(queue),
+      "evidence/raw/queue-account.json": JSON.stringify(account),
+    };
+    for (const [path, contents] of Object.entries(overrides)) artifact.rawAnalytics[path].sha256 = sha256(contents);
+    await expect(validateWp224hArtifact(artifact, {
+      readRawEvidence: async (path) => overrides[path] ?? readRawEvidence(path),
+    })).resolves.toMatchObject({ passed: true });
   });
 
   it("rejects a second Queue message for the same scheduled tick", async () => {
