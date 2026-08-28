@@ -115,7 +115,7 @@ export class HeaderQueryBudgetExceededError extends Error {
 
 const MAX_BOUND_AGENT_IDS = 100;
 const MAX_D1_BOUND_STRING_BYTES = 1_500_000;
-const RUNTIME_STATE_WRITES = 3;
+const RUNTIME_STATE_WRITES = 1;
 
 export function createD1HeaderPersistence(db: D1DatabaseLike): HeaderPersistence {
   return {
@@ -177,24 +177,30 @@ export function createD1HeaderPersistence(db: D1DatabaseLike): HeaderPersistence
                priority = excluded.priority`,
             [serialized],
           ));
-      const runtimeStatements = [
-        runtimeStateStatement(db, "header_high_water", input.highWater, null, input.summary.finishedAt),
-        runtimeStateStatement(
-          db,
+      const runtimeStatement = prepareStatement(
+        db,
+        `INSERT INTO runtime_state (key, textValue, integerValue, updatedAt)
+         VALUES (?, ?, ?, ?), (?, ?, ?, ?), (?, ?, ?, ?)
+         ON CONFLICT(key) DO UPDATE SET
+           textValue = excluded.textValue,
+           integerValue = excluded.integerValue,
+           updatedAt = excluded.updatedAt`,
+        [
+          "header_high_water",
+          input.highWater,
+          null,
+          input.summary.finishedAt,
           "last_header_summary",
           JSON.stringify(input.summary),
           null,
           input.summary.finishedAt,
-        ),
-        runtimeStateStatement(
-          db,
           "next_scheduler_phase",
           input.nextSchedulerPhase,
           null,
           input.summary.finishedAt,
-        ),
-      ];
-      await executeBatch(db, [...targetStatements, ...runtimeStatements]);
+        ],
+      );
+      await executeBatch(db, [...targetStatements, runtimeStatement]);
     },
   };
 }
@@ -227,7 +233,16 @@ export async function runHeader(
     validateAgent(agent, index);
     return agent;
   });
-  const agentIds = unique(agents.map(({ agentId }) => agentId));
+  const eligibleAgents = agents.map((agent) => {
+    const categories = curatedCategories(agent.agentId);
+    const targets = agent.declaresErc8183 || categories.length > 0
+      ? agent.targets.slice(0, 2)
+      : [];
+    return { agent, categories, targets };
+  });
+  const agentIds = unique(eligibleAgents
+    .filter(({ targets }) => targets.length > 0)
+    .map(({ agent }) => agent.agentId));
   if (agentIds.length > MAX_BOUND_AGENT_IDS) {
     throw new Error(`HEADER target lookup exceeds ${MAX_BOUND_AGENT_IDS} bound parameters`);
   }
@@ -240,10 +255,8 @@ export async function runHeader(
   assertNonNegativeInteger(finishedAt, "now");
   const candidateByKey = new Map<string, HeaderTargetWrite>();
 
-  for (const agent of agents) {
-    const categories = curatedCategories(agent.agentId);
-    const eligibleTargets = agent.declaresErc8183 || categories.length > 0 ? agent.targets : [];
-    for (const target of eligibleTargets.slice(0, 2)) {
+  for (const { agent, categories, targets } of eligibleAgents) {
+    for (const target of targets) {
       const key = targetKey({ ...agent, ...target });
       if (candidateByKey.has(key)) continue;
       const stored = existingByKey.get(key);
@@ -295,10 +308,7 @@ export async function runHeader(
     received,
     agentsValidated: agents.length,
     invalidItems,
-    candidateTargets: agents.reduce((total, agent) => {
-      const eligible = agent.declaresErc8183 || curatedCategories(agent.agentId).length > 0;
-      return total + (eligible ? Math.min(agent.targets.length, 2) : 0);
-    }, 0),
+    candidateTargets: eligibleAgents.reduce((total, { targets }) => total + targets.length, 0),
     materialWrites: targetWrites.length,
     headerWindowExhausted,
     requests: 1,
@@ -405,25 +415,6 @@ function assertPositiveInteger(value: number, label: string): void {
 
 function assertNonNegativeInteger(value: number, label: string): void {
   if (!Number.isSafeInteger(value) || value < 0) throw new Error(`HEADER_CONFIG:${label}`);
-}
-
-function runtimeStateStatement(
-  db: D1DatabaseLike,
-  key: string,
-  textValue: string | null,
-  integerValue: number | null,
-  updatedAt: number,
-) {
-  return prepareStatement(
-    db,
-    `INSERT INTO runtime_state (key, textValue, integerValue, updatedAt)
-     VALUES (?, ?, ?, ?)
-     ON CONFLICT(key) DO UPDATE SET
-       textValue = excluded.textValue,
-       integerValue = excluded.integerValue,
-       updatedAt = excluded.updatedAt`,
-    [key, textValue, integerValue, updatedAt],
-  );
 }
 
 function serializableTarget(target: HeaderTargetWrite) {
