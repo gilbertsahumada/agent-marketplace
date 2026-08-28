@@ -162,11 +162,18 @@ function parseInteger(field: keyof typeof NUMERIC_FIELDS, raw: string, maximum: 
   }
   const value = Number(raw);
   if (!Number.isSafeInteger(value)) throw new ConfigError(field, "must be a safe integer");
-  if (field === "CRON_INTERVAL_MINUTES" && value === 0) {
+  if ([
+    "CRON_INTERVAL_MINUTES",
+    "HEADER_LIMIT",
+    "SWEEP_LIMIT",
+    "SWEEP_PAGES_PER_RUN",
+    "TRUST8004_REQUESTS_PER_RUN",
+    "EXTERNAL_SUBREQUESTS_PER_RUN",
+  ].includes(field) && value === 0) {
     throw new ConfigError(field, "must be at least 1");
   }
-  if (field === "D1_QUERIES_PER_RUN" && value < 3) {
-    throw new ConfigError(field, "must reserve at least acquire, summary and release queries");
+  if (field === "D1_QUERIES_PER_RUN" && value < 7) {
+    throw new ConfigError(field, "must cover an empty phase plus error and lease cleanup reserves");
   }
   if (field === "MAX_CATALOG_RESPONSE_BYTES" && value === 0) {
     throw new ConfigError(field, "must be at least 1");
