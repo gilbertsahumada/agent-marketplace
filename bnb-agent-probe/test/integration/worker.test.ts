@@ -8,6 +8,7 @@ import {
   D1QueryBudgetExceededError,
 } from "../../src/db/query-budget";
 import { acquireSchedulerLease } from "../../src/lib/scheduler-lease";
+import { healthResponse } from "../../src/routes/health";
 import { createWp2ScheduledRunner, runWp2Scheduled } from "../../src/scheduled";
 
 beforeEach(async () => {
@@ -119,6 +120,42 @@ describe("WP1 in the Workers runtime", () => {
       received: 0,
       d1Queries: 6,
     });
+  });
+
+  it("persists a sanitized failure in D1 without advancing state", async () => {
+    await env.DB.batch([
+      env.DB.prepare("INSERT INTO runtime_state (key, textValue, updatedAt) VALUES ('next_scheduler_phase', 'sweep', 9000)"),
+      env.DB.prepare("INSERT INTO runtime_state (key, integerValue, updatedAt) VALUES ('sweep_offset', 17, 9000)"),
+      env.DB.prepare("INSERT INTO runtime_state (key, textValue, updatedAt) VALUES ('header_high_water', '1000:9', 9000)"),
+    ]);
+    let clock = 10_000;
+    const runner = createWp2ScheduledRunner({
+      now: () => clock++,
+      randomUUID: () => "failure-run",
+      executePhase: async () => {
+        throw new Error("secret=https://private.example/token?raw-body");
+      },
+    });
+    const config = loadConfig({ KILL_SWITCH: "0" });
+
+    await expect(runner(
+      { scheduledTime: 10_000, cron: "*/5 * * * *" },
+      env,
+      createExecutionContext(),
+      config,
+    )).rejects.toThrow();
+
+    expect(await runtimeText("next_scheduler_phase")).toBe("sweep");
+    expect(await runtimeInteger("sweep_offset")).toBe(17);
+    expect(await runtimeText("header_high_water")).toBe("1000:9");
+    const health = await (await healthResponse(env.DB, config, 20_000)).json() as Record<string, unknown>;
+    expect(health).toMatchObject({
+      status: "degraded",
+      lease: { active: false },
+      lastPhase: { phase: "sweep", status: "error", errorCode: "PHASE_FAILED" },
+    });
+    expect(JSON.stringify(health)).not.toContain("private.example");
+    expect(JSON.stringify(health)).not.toContain("raw-body");
   });
 
   it("runs HEADER and rolling SWEEP atomically and preserves a removed endpoint", async () => {
