@@ -17,7 +17,7 @@ describe("scheduler attempt audit schema", () => {
     expect(getTableName(schedulerAttempts)).toBe("scheduler_attempts");
     const columns = Object.values(getTableColumns(schedulerAttempts)).map(({ name }) => name);
     for (const column of columns) {
-      expect(migration).toMatch(new RegExp(`(^|\\n)\\s*${column}\\s`, "m"));
+      expect(`${migration}\n${messageMigration}`).toMatch(new RegExp(`(^|\\n)\\s*${column}\\s`, "m"));
     }
     expect(migration).toContain("attempt BETWEEN 1 AND 4");
     expect(migration).toContain("d1Queries BETWEEN 1 AND 40");
