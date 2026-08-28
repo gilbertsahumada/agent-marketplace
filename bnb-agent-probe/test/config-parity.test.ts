@@ -14,8 +14,8 @@ describe("observation configuration parity", () => {
       TRUST8004_REQUESTS_PER_RUN: "6",
       EXTERNAL_SUBREQUESTS_PER_RUN: "16",
       D1_QUERIES_PER_RUN: "35",
-      D1_ROWS_READ_PER_RUN: "20000",
-      D1_ROWS_WRITTEN_PER_RUN: "400",
+      D1_ROWS_READ_PER_RUN: "5000",
+      D1_ROWS_WRITTEN_PER_RUN: "100",
     },
   ])("matches the marketplace bootstrap contract for %o", (env) => {
     expect(loadConfig(env)).toEqual(loadObservationWorkerConfig(env));
