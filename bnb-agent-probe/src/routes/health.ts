@@ -8,11 +8,6 @@ type RuntimeRow = {
   updatedAt: number;
 };
 
-type TargetCountRow = {
-  declarationState: string;
-  count: number;
-};
-
 type SafeSummary = {
   phase?: "header" | "sweep" | "probe";
   status?: string;
@@ -196,20 +191,13 @@ export async function healthResponse(
     const utcDate = new Date(now).toISOString().slice(0, 10);
     const dailyBudgetKey = `daily_budget_${utcDate.replaceAll("-", "")}`;
     const runtimeKeys = [...RUNTIME_KEYS, dailyBudgetKey];
-    const [runtimeResult, targetsResult] = await Promise.all([
-      db.prepare(
-        `SELECT key, textValue, integerValue, updatedAt
-         FROM runtime_state
-         WHERE key IN (${runtimeKeys.map(() => "?").join(", ")})`,
-      ).bind(...runtimeKeys).all<RuntimeRow>(),
-      db.prepare(
-        `SELECT declarationState, COUNT(*) AS count
-         FROM probe_targets
-         GROUP BY declarationState`,
-      ).all<TargetCountRow>(),
-    ]);
+    const runtimeResult = await db.prepare(
+      `SELECT key, textValue, integerValue, updatedAt
+       FROM runtime_state
+       WHERE key IN (${runtimeKeys.map(() => "?").join(", ")})`,
+    ).bind(...runtimeKeys).all<RuntimeRow>();
 
-    if (!runtimeResult.success || !targetsResult.success) throw new Error("D1 read failed");
+    if (!runtimeResult.success) throw new Error("D1 read failed");
 
     const rows = runtimeResult.results ?? [];
     const byKey = new Map(rows.map((row) => [row.key, row]));
@@ -223,20 +211,6 @@ export async function healthResponse(
     const lastHeader = safeSummary(byKey.get("last_header_summary"));
     const lastScheduler = safeSummary(byKey.get("last_scheduler_summary"));
     const leaseExpiresAt = integer(byKey.get("scheduler_lease")?.integerValue);
-
-    const targets: Record<string, number> = {
-      current: 0,
-      removed: 0,
-      metadata_unavailable: 0,
-    };
-    let targetTotal = 0;
-    for (const row of targetsResult.results ?? []) {
-      if (!(row.declarationState in targets)) continue;
-      const count = integer(row.count) ?? 0;
-      targets[row.declarationState] = count;
-      targetTotal += count;
-    }
-    targets.total = targetTotal;
 
     const nextPhaseValue = byKey.get("next_scheduler_phase")?.textValue;
     const nextPhase = nextPhaseValue === "header" || nextPhaseValue === "sweep" || nextPhaseValue === "probe"
@@ -279,7 +253,7 @@ export async function healthResponse(
       sweepRound: integer(byKey.get("sweep_round")?.integerValue) ?? 0,
       headerHighWater: headerHighWater(byKey.get("header_high_water")?.textValue),
       headerWindowExhausted: lastHeader?.headerWindowExhausted ?? false,
-      targets,
+      targets: { available: false },
       dailyBudget: dailyBudget(byKey.get(dailyBudgetKey), utcDate),
       lastPhase,
       lastScheduler,
