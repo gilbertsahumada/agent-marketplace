@@ -1,6 +1,6 @@
 # Capa de observación de contratabilidad — SPEC MVP v5 Free-first
 
-**Estado:** WP0, WP1 y WP3 completos. WP2 tiene implementación y gates remotos de Queue completos; la ventana final D1/account Analytics corre en staging durante el día UTC 2026-08-29 con Free y Cron temporal `*/5`. Producción continúa sin Cron. Convenciones endurecidas tras la revisión de ejecución del 2026-08-28.
+**Estado:** WP0, WP1 y WP3 completos. WP2 tiene implementación y gates remotos de Queue completos; la ventana final D1/account Analytics está preparada en staging para el día UTC 2026-08-29 con Free y Cron temporal `*/5`. Producción continúa sin Cron. Convenciones endurecidas tras la revisión de ejecución del 2026-08-28.
 **Fecha de corte del diseño:** 2026-08-28.
 **Objetivo:** completar la capa de observación necesaria para recorrer:
 
