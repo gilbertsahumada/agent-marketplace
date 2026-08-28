@@ -183,7 +183,10 @@ function parseInteger(field: keyof typeof NUMERIC_FIELDS, raw: string, maximum: 
     throw new ConfigError(field, "must be at least 1");
   }
   if (field === "D1_QUERIES_PER_RUN" && value < 12) {
-    throw new ConfigError(field, "must cover the minimum Queue SWEEP plus error and lease cleanup reserves");
+    throw new ConfigError(
+      field,
+      "must cover the minimum Queue SWEEP plus error, lease cleanup, and daily ledger reserves",
+    );
   }
   if (field === "MAX_CATALOG_RESPONSE_BYTES" && value === 0) {
     throw new ConfigError(field, "must be at least 1");
