@@ -299,10 +299,10 @@ function parseInteger(
   ].includes(field) && value === 0) {
     throw new ObservationWorkerConfigError(field, "must be at least 1");
   }
-  if (field === "D1_QUERIES_PER_RUN" && value < 12) {
+  if (field === "D1_QUERIES_PER_RUN" && value < 13) {
     throw new ObservationWorkerConfigError(
       field,
-      "must cover the minimum Queue SWEEP plus error, lease cleanup, and daily ledger reserves",
+      "must cover the minimum Queue SWEEP plus error, lease cleanup, attempt and daily ledger reserves",
     );
   }
   if (field === "MAX_CATALOG_RESPONSE_BYTES" && value === 0) {
