@@ -1,6 +1,6 @@
-# Capa de observación de contratabilidad — SPEC MVP v4 Free-first
+# Capa de observación de contratabilidad — SPEC MVP v5 Free-first
 
-**Estado:** WP0 y WP1 completos; WP2 sigue únicamente con perfil Free, staging y kill switch.
+**Estado:** WP0 y WP1 completos; WP2 implementado y en gate final mediante Queue Free, con staging en kill switch y sin Cron activo.
 **Fecha de corte del diseño:** 2026-08-28.
 **Objetivo:** completar la capa de observación necesaria para recorrer:
 
@@ -83,6 +83,11 @@ Consulta oficial revisada el 2026-08-28:
 - Workers Free dispone de 128 MiB por isolate, 10 ms de CPU, 50 subrequests
   externos por invocación y 15 min de wall time para Cron Triggers.
 - Workers Free permite 100.000 requests por día para la cuenta.
+- Cloudflare Queues está disponible en Workers Free: incluye 10.000 operaciones
+  por día y 24 horas de retención. El cálculo conservador usa tres operaciones
+  por mensaje entregado: write, read y delete.
+- Un Queue consumer dispone por defecto de 30 s de CPU configurable y 15 min de
+  wall time. Esta cuota es distinta de los 10 ms del Cron producer Free.
 - D1 Free permite 5 millones de filas leídas/día, 100.000 escritas/día y 5 GB
   totales, con máximo de 500 MB para una base. Esta spec reserva 20 % de las
   cuotas diarias.
@@ -103,12 +108,15 @@ Fuentes:
 - <https://developers.cloudflare.com/d1/platform/limits/>
 - <https://developers.cloudflare.com/d1/worker-api/d1-database/#batch>
 - <https://developers.cloudflare.com/workers/reference/how-workers-works/>
+- <https://developers.cloudflare.com/queues/platform/pricing/>
+- <https://developers.cloudflare.com/queues/platform/limits/>
 
-Consecuencia normativa: no existe token bucket global en memoria. Un lease
-atómico en D1 serializa el cron y un presupuesto fijo limita cada corrida. Los
-10 ms son CPU activa, no wall time: esperar red no los consume, pero parsear JSON
-y serializar D1 sí. El Worker no puede medir con precisión su CPU activa desde el
-código; el gate usa métricas de staging de Cloudflare y lotes máximos estrictos.
+Consecuencia normativa: no existe token bucket global en memoria. El Cron Free
+solo publica un tick versionado; un Queue consumer de batch unitario deduplica el
+tick y ejecuta una fase bajo lease D1. Un presupuesto fijo limita cada entrega.
+Los 10 ms del producer y los 30 s de CPU del consumer son CPU activa, no wall
+time. El Worker no puede medirla con precisión desde el código; el gate usa
+métricas de staging de Cloudflare y lotes máximos estrictos.
 
 ### 1.3 Baseline que WP0 debe reemplazar
 
@@ -159,7 +167,7 @@ Si cambia un punto, se actualiza esta spec antes de WP1.
           v                                  v
  +---------------------------------------------------------+
  | Cloudflare Worker Free por defecto                      |
- | cron: lease D1 → una fase acotada → cursor persistido   |
+ | cron → Queue; consumer → lease → fase → cursor          |
  | GET  /observations  público y cacheado                  |
  | GET  /health        público, sin secretos               |
  | POST /hire-events   solo servidor-a-servidor            |
@@ -179,14 +187,16 @@ Si cambia un punto, se actualiza esta spec antes de WP1.
    - una ruta server-side reenvía telemetría mínima
 ```
 
-No se añaden Queue, Durable Object, KV, R2 ni otro Worker. El funnel global usa
+Se añade exactamente una Cloudflare Queue por entorno para aislar las fases del
+límite de CPU del Cron producer. No se añaden Durable Object, KV, R2 ni otro
+Worker. El funnel global usa
 el snapshot WP0 versionado. Como ese artefacto conservó el conteo de 16
 declarantes ERC-8183 pero no sus IDs, el conjunto live inicial contiene el
 inventario curado que preserva las cuatro categorías y añade declaraciones
 ERC-8183 observadas por HEADER. No se afirma que los 16 históricos estén live
 sin un artefacto de IDs versionado, ni se ejecuta un rescan global dentro de
-Workers Free. Si WP2 demuestra que el cron Free acotado no basta, se detiene el
-gate y se registra una decisión antes de ampliar arquitectura o activar Paid.
+Workers Free. La Queue no amplía el catálogo ni habilita Paid; solo proporciona
+el presupuesto de CPU que las mediciones directas demostraron necesario.
 
 ---
 
@@ -363,30 +373,37 @@ daily_budget_YYYYMMDD textValue=JSON con invocations/requests/D1 rows observadas
 
 ## 4. Scheduler, concurrencia y presupuesto
 
-### 4.1 Un solo cron Free-first
+### 4.1 Un Cron producer y un Queue consumer Free-first
 
-`*/5 * * * *` invoca un `scheduled()` en el perfil Free. Cada invocación ejecuta
-exactamente una fase (`HEADER`, `SWEEP` o `PROBE`) y persiste la siguiente en
+`*/5 * * * *` invoca `scheduled()` en el perfil Free. Esa invocación solo envía
+`{schemaVersion: 1, scheduledTime}` a `WP2_QUEUE`. Un consumer con batch máximo
+uno reclama el timestamp de forma monotónica; un duplicado o tick anterior se
+confirma sin ejecutar trabajo. Cada entrega aceptada ejecuta exactamente una
+fase (`HEADER`, `SWEEP` o `PROBE`) y persiste la siguiente en
 `next_scheduler_phase`; nunca carga el funnel completo en memoria. La expresión
-cron se despliega desde la configuración y debe coincidir con
+Cron se despliega desde la configuración y debe coincidir con
 `CRON_INTERVAL_MINUTES`.
 
-1. Genera `runId` aleatorio.
-2. Adquiere `scheduler_lease` mediante `INSERT ... ON CONFLICT DO UPDATE ...
+1. Rechaza un batch distinto de uno y valida versión/timestamp del mensaje.
+2. Reclama `last_queue_scheduled_time` con un upsert condicional en D1; esta
+   primera query se reserva en el presupuesto de la invocación.
+3. Genera `runId` aleatorio.
+4. Adquiere `scheduler_lease` mediante `INSERT ... ON CONFLICT DO UPDATE ...
    WHERE integerValue <= now RETURNING key`.
-3. El lease Free expira antes de la siguiente ventana útil y siempre bajo el
+5. El lease Free expira antes de la siguiente ventana útil y siempre bajo el
    límite de 15 min de wall time.
-4. Si no obtiene la fila, registra `skipped_locked` y termina sin red ni writes
+6. Si no obtiene la fila, registra `skipped_locked` y termina sin red ni writes
    de datos.
-5. Libera con `UPDATE ... WHERE textValue = runId`; una corrida no libera el
+7. Libera con `UPDATE ... WHERE textValue = runId`; una corrida no libera el
    lease de otra.
 
 El lock es obligatorio aunque normalmente la corrida dure segundos. La fase no
 avanza si su batch o resumen falla.
 
-El perfil Paid puede ejecutar el pipeline `HEADER → SWEEP → PROBE`, pero solo si
-`CLOUDFLARE_WORKERS_PLAN=paid` se configura explícitamente. Cambiar el perfil no
-desactiva `KILL_SWITCH` ni activa el cron por sí solo.
+El perfil Paid queda bloqueado en runtime hasta validar su pipeline
+`HEADER → SWEEP → PROBE` en staging y configurar explícitamente
+`CLOUDFLARE_WORKERS_PLAN=paid`. Cambiar el perfil no desactiva `KILL_SWITCH` ni
+activa el Cron por sí solo.
 
 ### 4.2 Presupuesto trust8004
 
@@ -419,21 +436,28 @@ D1_ROWS_WRITTEN_PER_RUN=250
 PROBE_TIMEOUT_MS=5000
 MAX_CATALOG_RESPONSE_BYTES=16777216
 MAX_SELLER_RESPONSE_BYTES=32768
+
+binding WP2_QUEUE                  Queue del mismo entorno
+consumer max_batch_size=1, max_batch_timeout=1, max_retries=3
 ```
 
-Con cinco minutos y rotación de tres fases hay hasta 96 ejecuciones de SWEEP por
-día. A cuatro detalles son 384 agentes/día: una reconciliación global sería
+Con cinco minutos hay 288 ticks/día y, conservadoramente, 864 operaciones de
+Queue/día. La configuración rechaza una proyección mayor de 8.000, dejando 20 %
+de margen bajo las 10.000 operaciones Free. Con rotación de tres fases hay hasta
+96 ejecuciones de SWEEP por día. A cuatro detalles son 384 agentes/día: una reconciliación global sería
 inaceptablemente lenta, por lo que SWEEP Free opera sobre el conjunto live
 priorizado y el funnel global permanece snapshot-backed. WP2 solo aumenta un
 valor dentro del sobre Free si dos vueltas prueban:
 
-- cero `exceededCpu` y CPU observada con margen bajo 10 ms;
+- Cron producer con margen bajo 10 ms y Queue consumer con margen bajo 30 s de
+  CPU, ambos sin `exceededCpu`;
 - memoria pico < 96 MiB;
 - wall time p95 < 30 s;
 - máximo 40 subrequests externos por invocación y presupuesto upstream
   configurado, incluyendo detalles;
-- máximo 40 queries D1 por invocación; una sentencia dentro de `db.batch()`
-  cuenta individualmente y el contador rechaza el exceso antes de acceder a D1;
+- máximo 40 queries D1 por invocación; la deduplicación previa de Queue cuenta
+  como una query, cada sentencia dentro de `db.batch()` cuenta individualmente y
+  el contador rechaza el exceso antes de acceder a D1;
 - proyección y métricas reales por debajo de 4 millones de filas D1 leídas/día
   y 80.000 escritas/día;
 - cero 429;
@@ -917,6 +941,10 @@ MAX_CATALOG_RESPONSE_BYTES=16777216
 MAX_SELLER_RESPONSE_BYTES=32768
 ```
 
+`WP2_QUEUE` no es una variable: es un binding Wrangler obligatorio cuando el
+kill switch está abierto. Staging y producción usan nombres de Queue distintos.
+El Cron falla cerrado si falta el binding y nunca ejecuta la fase directamente.
+
 `bnb-agent-probe/src/config.ts` es la fuente ejecutable WP1 de defaults, máximos
 y validación. Mientras convive con el bootstrap previo
 `src/observation/worker-config.ts`, un test de paridad impide drift entre ambos;
@@ -949,10 +977,11 @@ curl --fail "http://localhost:8787/__scheduled?cron=*/5+*+*+*+*"
 ```
 
 El endpoint scheduled local se invoca primero con `KILL_SWITCH=1`: debe devolver
-éxito sin adquirir trabajo, hacer fetch externo ni escribir datos de fases.
-Después, un archivo `.dev.vars` no versionado puede usar `KILL_SWITCH=0` para las
-pruebas controladas. Secrets reales nunca se incluyen en fixtures, comandos,
-logs o configuración versionada.
+éxito sin encolar, hacer fetch externo ni escribir datos de fases. Después, un
+archivo `.dev.vars` no versionado puede usar `KILL_SWITCH=0`: el endpoint encola
+un tick y Wrangler entrega un batch unitario al consumer, que adquiere el lease
+y ejecuta la fase. Secrets reales nunca se incluyen en fixtures, comandos, logs
+o configuración versionada.
 
 El gate local termina con:
 
@@ -969,20 +998,24 @@ Checks bloqueantes:
 - `/health` informa `plan=free`, `schedulerMode=single_phase`, kill switch,
   budgets y disponibilidad D1 sin exponer valores secretos;
 - dos adquisiciones concurrentes del lease producen exactamente un ganador;
-- cada llamada a `/__scheduled` ejecuta como máximo la fase persistida y rota
-  `header → sweep → probe → header` solo después de éxito atómico;
+- cada llamada a `/__scheduled` encola como máximo un tick y cada entrega Queue
+  ejecuta como máximo la fase persistida; rota `header → sweep → probe → header`
+  solo después de éxito atómico;
+- un tick duplicado o anterior queda confirmado sin ejecutar otra fase, y un
+  batch de tamaño distinto de uno falla antes de acceder a D1;
 - kill switch impide red y writes de fases, aunque permite leer `/health`;
 - contadores observados nunca superan los presupuestos configurados;
-- el contador D1 admite como máximo 40 queries Free, cuenta cada sentencia de un
-  batch y rechaza la siguiente antes de acceder a D1;
+- el contador D1 admite como máximo 40 queries Free, incluye la query de claim
+  Queue, cuenta cada sentencia de un batch y rechaza la siguiente antes de
+  acceder a D1;
 - tests prueban que las tablas append-only no reciben `UPDATE`/`DELETE` desde la
   aplicación;
 - el dry-run compila el mismo entrypoint y bindings que staging.
 
-La corrida WP2 local del 2026-08-28 queda
-registrada en `evidence/wp2-local-wrangler-2026-08-28.json`: verificó el kill
-switch y una rotación `HEADER → SWEEP → PROBE → HEADER` con 7, 9 y 5 queries D1
-respectivamente, todas dentro del presupuesto Free de 40.
+La corrida WP2 local del 2026-08-28 queda registrada en
+`evidence/wp2-local-wrangler-2026-08-28.json`. La validación posterior del flujo
+real Cron → Queue → HEADER con Wrangler completó en 2.441 ms y dejó HEADER en 4
+queries de fase más 1 claim Queue, dentro del presupuesto Free de 40.
 
 Wrangler/Miniflare valida comportamiento, bindings y persistencia local, pero no
 demuestra el límite real de 10 ms de CPU ni el egress productivo de Cloudflare.
@@ -991,18 +1024,22 @@ demuestra el límite real de 10 ms de CPU ni el egress productivo de Cloudflare.
 
 Staging usa una D1 separada y comienza sin Cron Trigger. El orden es obligatorio:
 
-1. provisionar `bnb-agent-probe-staging` y aplicar migraciones usando
-   explícitamente el entorno Wrangler `staging`;
-2. desplegar ese entorno con `CLOUDFLARE_WORKERS_PLAN=free`, `KILL_SWITCH=1` y
-   sin cron;
+1. provisionar `bnb-agent-probe-staging`, su D1 y la Queue
+   `bnb-agent-probe-staging`; aplicar migraciones usando explícitamente el
+   entorno Wrangler `staging`;
+2. desplegar ese entorno con `CLOUDFLARE_WORKERS_PLAN=free`, `KILL_SWITCH=1`,
+   producer y consumer enlazados, y sin Cron;
 3. comprobar `/health` y que ninguna métrica contiene secretos o payloads;
 4. ejecutar manualmente HEADER con límite 1, después 5 y finalmente 25;
 5. comprobar en métricas/logs Cloudflare CPU, wall time, outcome, subrequests y
    filas D1 leídas/escritas;
 6. ejecutar manualmente una fase SWEEP del conjunto live;
 7. ejecutar un único PROBE allowlisted para Grid `303779`;
-8. habilitar `*/5 * * * *` solo tras dos rotaciones completas sin
-   `exceededCpu`, 429, exceso de presupuesto ni avance incorrecto de cursor.
+8. habilitar temporalmente `*/5 * * * *` y comprobar que el Cron solo encola,
+   mientras cada consumer recibe exactamente un tick y ejecuta una fase;
+9. activar la cadencia continua solo tras dos rotaciones Queue completas sin
+   `exceededCpu`, 429, exceso de presupuesto, duplicación ni avance incorrecto
+   de cursor.
 
 El disparo manual del deployment nominal usa la ruta administrativa publicada
 `POST /__admin/run-scheduled`, cerrada por cuatro condiciones simultáneas:
@@ -1035,23 +1072,31 @@ subrequests se conserva en
 `evidence/wp2-workers-analytics-raw-2026-08-28.json`. Registró muestras
 representativas por encima de 10.000 µs: preview HEADER=25 en 15.442 µs,
 SWEEP=4 en 11.098 µs y HEADER=1 en 17.124 µs; el trigger HTTP nominal midió
-HEADER=1 en 11.676 µs. Sin embargo, HTTP incluye routing y autenticación, y el
-único Cron propagado alcanzó después el early return de `KILL_SWITCH=1`, sin
-ejecutar una fase. Por tanto el gate Cron Free queda **no demostrado**, no
-declarado como fallo concluyente del handler. WP2 sigue no promovible: kill
-switch activo, schedules vacíos y Paid sin activar.
+HEADER=1 en 11.676 µs. HTTP incluye routing y autenticación, por lo que esas
+muestras no resolvieron el gate de CPU del Cron.
 
-Un segundo intento controlado dejó `HEADER_LIMIT=1`, `SWEEP_LIMIT=1`, la ruta
-HTTP deshabilitada y un schedule por minuto durante cinco minutos. La API de
-schedules confirmó el trigger, pero D1 no registró ninguna fase antes del
-cierre; se restauró el deployment nominal y se eliminó el schedule de forma
-explícita. La ausencia de ejecución no se interpreta como un pase de CPU.
+Los intentos directos posteriores sí resolvieron el gate. HEADER=1 midió 21.364
+µs inicialmente, 16.336 µs tras reducir D1 y 16.508 µs tras lazy loading. Una
+serie de diez ejecuciones registradas en D1 produjo una muestra fría de 14.962
+µs y ocho muestras warm entre 5.953 y 9.251 µs; Analytics omitió una muestra.
+Por tanto el camino Cron → fase falla el requisito frío/P99 de 10 ms aunque el
+warm path pase. La evidencia está en
+`evidence/wp2-cron-cpu-raw-2026-08-28.json`.
 
-Cada incremento exige margen bajo 10 ms; que una ejecución aislada reciba
-flexibilidad de plataforma no cuenta como gate pasado. Si HEADER=1, SWEEP=1 o el
-probe único exceden CPU de forma repetible, se reactiva el kill switch y se
-detiene WP2/WP3. No se activa Paid automáticamente ni se mueve trabajo a otro
-servicio sin una nueva decisión.
+La mitigación Free implementada es Cron → Queue → fase. El producer observado
+midió 1.140 µs. Los consumers reales completaron HEADER=1 en 16.747 µs y
+SWEEP=1 en 15.107 µs, ambos dentro de su cuota de 30 s; D1 registró 5 y 10
+queries respectivamente, incluyendo el claim de deduplicación, y la rotación
+avanzó `header → sweep → probe`. La evidencia raw está en
+`evidence/wp2-queue-analytics-raw-2026-08-28.json`. Tras la ventana se eliminaron
+los schedules y secretos, se restauró `KILL_SWITCH=1` y se conservaron un
+producer y un consumer únicamente en staging.
+
+Cada incremento exige margen del producer bajo 10 ms y del Queue consumer bajo
+30 s. Que una ejecución aislada reciba flexibilidad de plataforma no cuenta como
+gate pasado. Si un producer, HEADER=1, SWEEP=1 o el probe único excede su cuota
+de forma repetible, se reactiva el kill switch y se detiene WP2/WP3. No se activa
+Paid automáticamente.
 
 ### 11.3 Promoción explícita Free → Paid
 
@@ -1067,7 +1112,7 @@ Checklist:
 4. probar manualmente defaults Paid: HEADER 200, SWEEP 2000×2 y PROBE 10;
 5. demostrar dos pipelines completos bajo los gates de CPU, memoria, wall time,
    upstream y D1;
-6. configurar el cron de un minuto manteniendo el kill switch;
+6. configurar el cron producer de un minuto manteniendo el kill switch;
 7. habilitar con `KILL_SWITCH=0` y observar al menos dos vueltas antes de dar la
    promoción por terminada.
 
@@ -1134,12 +1179,12 @@ Gate:
 - segunda ejecución idéntica: cero writes materiales;
 - fallo de batch no adelanta offset;
 - rotación Free ejecuta exactamente una fase y persiste la siguiente;
-- dos vueltas del conjunto live cumplen sección 4.2, cero `exceededCpu` y cero
-  429;
+- dos vueltas Queue del conjunto live cumplen sección 4.2, cero `exceededCpu`,
+  cero duplicaciones y cero 429;
 - métricas D1 reales confirman la reserva diaria de 20 %;
-- HEADER y SWEEP permanecen en `D1_QUERIES_PER_RUN <= 40`, incluyendo lease,
-  resumen, cursor y rotación; staging demuestra el límite porque Miniflare no lo
-  impone;
+- HEADER y SWEEP permanecen en `D1_QUERIES_PER_RUN <= 40`, incluyendo claim
+  Queue, lease, resumen, cursor y rotación; staging demuestra el límite porque
+  Miniflare no lo impone;
 - gate de staging Free de sección 11.2 pasa antes de activar el cron;
 - endpoint retirado queda visible como `removed`.
 
@@ -1265,7 +1310,7 @@ type PhaseSummary = {
 - indexer global ERC-8183, multichain o reorg projection;
 - cambios productivos en trust8004 durante freeze;
 - cuatro sellers propietarios;
-- Queue, Durable Objects, KV, R2 o Workflows especulativos;
+- Queues adicionales, Durable Objects, KV, R2 o Workflows especulativos;
 - custodia de llaves/fondos;
 - social, terminal, x402/B402 para este Worker;
 - payloads crudos/entregables arbitrarios;
