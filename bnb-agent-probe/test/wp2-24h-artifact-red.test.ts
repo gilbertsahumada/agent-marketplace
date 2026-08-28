@@ -480,6 +480,21 @@ describe("WP2 24-hour evidence artifact validator", () => {
     })).rejects.toThrow("RAW_WORKERS");
   });
 
+  it("ignores a post-window-control deployment in the same UTC Workers response", async () => {
+    const artifact = validArtifact() as any;
+    const workers = structuredClone(RAW_PAYLOADS["evidence/raw/workers.json"]) as any;
+    const controlRequest = structuredClone(workers.response.data.viewer.accounts[0].workersInvocationsAdaptive[0]);
+    controlRequest.dimensions.datetime = "2026-08-29T23:56:00Z";
+    controlRequest.dimensions.scriptVersion = "00000000-0000-4000-8000-000000000099";
+    controlRequest.sum.requests = 1;
+    workers.response.data.viewer.accounts[0].workersInvocationsAdaptive.push(controlRequest);
+    const contents = JSON.stringify(workers);
+    artifact.rawAnalytics["evidence/raw/workers.json"].sha256 = sha256(contents);
+    await expect(validateWp224hArtifact(artifact, {
+      readRawEvidence: async (path) => path === "evidence/raw/workers.json" ? contents : readRawEvidence(path),
+    })).resolves.toMatchObject({ passed: true });
+  });
+
   it("rejects cleanup captured before the final tick attempt finishes", async () => {
     const artifact = validArtifact() as any;
     const last = artifact.ledger.at(-1);
