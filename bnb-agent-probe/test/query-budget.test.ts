@@ -13,6 +13,11 @@ class CountingDatabase implements D1DatabaseLike {
   executedQueries = 0;
   batchCalls = 0;
 
+  constructor(
+    private readonly individualMetas: unknown[] = [],
+    private readonly batchMetas: unknown[] = [],
+  ) {}
+
   prepare(_query: string): D1PreparedStatementLike {
     const database = this;
     return {
@@ -25,11 +30,18 @@ class CountingDatabase implements D1DatabaseLike {
       },
       async all<Row>() {
         database.executedQueries += 1;
-        return { success: true, meta: {}, results: [] as Row[] };
+        return {
+          success: true,
+          meta: database.individualMetas.shift(),
+          results: [] as Row[],
+        };
       },
       async run<Meta>() {
         database.executedQueries += 1;
-        return { success: true, meta: {} as Meta };
+        return {
+          success: true,
+          meta: database.individualMetas.shift() as Meta,
+        };
       },
     };
   }
@@ -39,7 +51,10 @@ class CountingDatabase implements D1DatabaseLike {
   ): Promise<readonly D1ResultLike<Meta>[]> {
     this.batchCalls += 1;
     this.executedQueries += statements.length;
-    return statements.map(() => ({ success: true, meta: {} as Meta }));
+    return statements.map(() => ({
+      success: true,
+      meta: this.batchMetas.shift() as Meta,
+    }));
   }
 }
 
@@ -93,5 +108,41 @@ describe("D1 per-invocation query budget", () => {
       "not prepared by this budgeted database",
     );
     expect(raw.batchCalls).toBe(0);
+  });
+
+  it("accumulates rows read and written from all, run, and every batch result", async () => {
+    const raw = new CountingDatabase([
+      { rows_read: 3, rows_written: 0 },
+      { rows_read: 2, rows_written: 1 },
+    ], [
+      { rows_read: 5, rows_written: 2 },
+      { rows_read: 7, rows_written: 4 },
+    ]);
+    const { db, usage } = createBudgetedD1Database(raw, 40);
+
+    await db.prepare("SELECT").all();
+    await db.prepare("UPDATE").run();
+    await db.batch([db.prepare("INSERT"), db.prepare("DELETE")]);
+
+    expect(usage).toEqual({ rowsRead: 17, rowsWritten: 7 });
+  });
+
+  it("counts absent or malformed row metadata as zero", async () => {
+    const raw = new CountingDatabase([
+      undefined,
+      { rows_read: -1, rows_written: 1.5 },
+      { rows_read: Number.POSITIVE_INFINITY, rows_written: "2" },
+    ], [
+      null,
+      { rows_read: 4, rows_written: Number.NaN },
+    ]);
+    const { db, usage } = createBudgetedD1Database(raw, 40);
+
+    await db.prepare("SELECT").all();
+    await db.prepare("UPDATE").run();
+    await db.prepare("SELECT").all();
+    await db.batch([db.prepare("INSERT"), db.prepare("SELECT")]);
+
+    expect(usage).toEqual({ rowsRead: 4, rowsWritten: 0 });
   });
 });
