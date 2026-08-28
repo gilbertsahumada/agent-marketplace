@@ -22,6 +22,8 @@ one phase. The completion timestamp is committed atomically with phase state, so
 a failed delivery can retry while a completed duplicate cannot advance another
 phase. At five-minute cadence this projects to 864 nominal operations/day and
 1,728 with all three configured retries, below the Free safety ceiling of 8,000.
+If another invocation owns the D1 lease, the message is not acknowledged and is
+retried after 240 seconds; completed and stale ticks are acknowledged normally.
 
 ```bash
 npm install
