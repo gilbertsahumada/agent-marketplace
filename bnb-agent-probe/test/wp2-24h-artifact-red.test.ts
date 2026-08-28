@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 
 import { validateWp224hArtifact } from "../src/evidence/wp2-24h-artifact";
+import { WP2_WORKERS_ANALYTICS_QUERY } from "../src/evidence/wp2-24h-queries";
 
 const WINDOW_START = Date.parse("2026-08-29T00:00:00.000Z");
 const DEPLOYMENT_VERSION = "00000000-0000-4000-8000-000000000001";
@@ -33,6 +34,7 @@ const RAW_PAYLOADS = {
       scriptName: "bnb-agent-probe-staging",
       start: "2026-08-29T00:00:00.000Z",
       endInclusive: "2026-08-29T23:59:59.999Z",
+      terminalityEndInclusive: "2026-08-30T00:15:00.000Z",
     },
     response: { data: { viewer: { accounts: [{ workersInvocationsAdaptive: [
       {
@@ -261,6 +263,10 @@ const readRawEvidence = async (path: string): Promise<string> => {
 };
 
 describe("WP2 24-hour evidence artifact validator", () => {
+  it("queries Workers through the post-midnight terminality cutoff", () => {
+    expect(WP2_WORKERS_ANALYTICS_QUERY).toContain("$terminalityEndInclusive: Time!");
+    expect(WP2_WORKERS_ANALYTICS_QUERY).toContain("datetime_leq: $terminalityEndInclusive");
+  });
   it("accepts one exact UTC day with 288 aligned ticks and 96 completed phases each", async () => {
     await expect(validateWp224hArtifact(validArtifact(), { readRawEvidence })).resolves.toMatchObject({
       passed: true,
@@ -518,11 +524,11 @@ describe("WP2 24-hour evidence artifact validator", () => {
     })).rejects.toThrow("RAW_WORKERS");
   });
 
-  it("includes an authenticated drain-version consumer in resource metrics", async () => {
+  it("includes a post-midnight authenticated drain consumer in resource metrics", async () => {
     const artifact = validArtifact() as any;
     const workers = structuredClone(RAW_PAYLOADS["evidence/raw/workers.json"]) as any;
     const drainConsumer = structuredClone(workers.response.data.viewer.accounts[0].workersInvocationsAdaptive[1]);
-    drainConsumer.dimensions.datetime = "2026-08-29T23:56:00Z";
+    drainConsumer.dimensions.datetime = "2026-08-30T00:05:00Z";
     drainConsumer.dimensions.scriptVersion = DRAIN_VERSION;
     drainConsumer.quantiles.cpuTimeP99 = 300_000;
     drainConsumer.quantiles.memoryUsageBytesP999 = 13_000_000;
@@ -536,6 +542,17 @@ describe("WP2 24-hour evidence artifact validator", () => {
     await expect(validateWp224hArtifact(artifact, {
       readRawEvidence: async (path) => path === "evidence/raw/workers.json" ? contents : readRawEvidence(path),
     })).resolves.toMatchObject({ passed: true });
+  });
+
+  it("rejects Workers evidence that ends before terminality grace", async () => {
+    const artifact = validArtifact() as any;
+    const workers = structuredClone(RAW_PAYLOADS["evidence/raw/workers.json"]) as any;
+    workers.request.terminalityEndInclusive = "2026-08-29T23:59:59.999Z";
+    const contents = JSON.stringify(workers);
+    artifact.rawAnalytics["evidence/raw/workers.json"].sha256 = sha256(contents);
+    await expect(validateWp224hArtifact(artifact, {
+      readRawEvidence: async (path) => path === "evidence/raw/workers.json" ? contents : readRawEvidence(path),
+    })).rejects.toThrow("RAW_WORKERS");
   });
 
   it("counts a blocked drain-version producer without inventing a Queue write", async () => {
