@@ -25,6 +25,7 @@ interface ValidationDependencies {
 }
 
 interface LedgerEntry {
+  readonly messageId: string;
   readonly scheduledTime: number;
   readonly attempt: number;
   readonly phase: Phase | null;
@@ -237,20 +238,27 @@ function validateLedger(
     const scheduledTime = start + tickOffset + index * TICK_MS;
     const attempts = byTick.get(scheduledTime);
     if (attempts === undefined) fail("TICK_COUNT", `missing tick ${scheduledTime}`);
-    attempts.sort((left, right) => left.attempt - right.attempt);
-    for (let attemptIndex = 0; attemptIndex < attempts.length; attemptIndex += 1) {
-      if (attempts[attemptIndex]!.attempt !== attemptIndex + 1) {
-        fail("RETRY_SEQUENCE", `tick ${scheduledTime} has a non-contiguous retry sequence`);
+    const byMessage = new Map<string, LedgerEntry[]>();
+    for (const attempt of attempts) {
+      const deliveries = byMessage.get(attempt.messageId) ?? [];
+      deliveries.push(attempt);
+      byMessage.set(attempt.messageId, deliveries);
+    }
+    for (const [messageId, deliveries] of byMessage) {
+      deliveries.sort((left, right) => left.attempt - right.attempt);
+      for (let attemptIndex = 0; attemptIndex < deliveries.length; attemptIndex += 1) {
+        if (deliveries[attemptIndex]!.attempt !== attemptIndex + 1) {
+          fail("RETRY_SEQUENCE", `message ${messageId} has a non-contiguous retry sequence`);
+        }
       }
     }
     const completed = attempts.filter(({ outcome }) => outcome === "completed");
-    if (completed.length !== 1
-      || (attempts.at(-1)?.outcome !== "completed" && attempts.at(-1)?.outcome !== "duplicate")) {
-      fail("RETRY_OUTCOME", `tick ${scheduledTime} must contain one completion and finish terminally`);
-    }
-    const completedIndex = attempts.indexOf(completed[0]!);
-    if (attempts.slice(0, completedIndex).some(({ outcome }) => outcome !== "failed" && outcome !== "locked")
-      || attempts.slice(completedIndex + 1).some(({ outcome }) => outcome !== "duplicate")) {
+    if (completed.length !== 1) fail("RETRY_OUTCOME", `tick ${scheduledTime} must contain one completion`);
+    const completedDeliveries = byMessage.get(completed[0]!.messageId)!;
+    const completedIndex = completedDeliveries.indexOf(completed[0]!);
+    if (completedDeliveries.slice(0, completedIndex)
+      .some(({ outcome }) => outcome !== "failed" && outcome !== "locked")
+      || completedDeliveries.slice(completedIndex + 1).some(({ outcome }) => outcome !== "duplicate")) {
       fail("RETRY_OUTCOME", `tick ${scheduledTime} has an invalid retry or duplicate sequence`);
     }
     const completedPhase = completed[0]!.phase;
@@ -280,7 +288,10 @@ function ledgerEntry(value: unknown, index: number): LedgerEntry {
   if (outcome === "completed" && phase === null) {
     fail("PHASE_COUNT", `ledger[${index}].phase is required for a completed attempt`);
   }
+  const messageId = nonEmptyString(entry.messageId, "LEDGER", `ledger[${index}].messageId`);
+  if (messageId.length > 256) fail("LEDGER", `ledger[${index}].messageId is too long`);
   return {
+    messageId,
     scheduledTime: nonNegativeInteger(entry.scheduledTime, "LEDGER", `ledger[${index}].scheduledTime`),
     attempt: positiveInteger(entry.attempt, "RETRY_SEQUENCE", `ledger[${index}].attempt`, 4),
     phase,
@@ -320,13 +331,13 @@ function validateQuotaLedger(
       fail("QUOTA_COHORT", "quotaLedger contains an attempt outside the UTC quota day");
     }
     if (entry.d1Queries > d1QueryLimit) fail("D1_QUERY_LIMIT", "quota attempt exceeded D1 query limit");
-    const key = `${entry.scheduledTime}:${entry.attempt}`;
+    const key = `${entry.messageId}:${entry.attempt}`;
     if (quotaKeys.has(key)) fail("QUOTA_COHORT", `duplicate quota attempt ${key}`);
     quotaKeys.add(key);
   }
   for (const entry of tickEntries) {
     const belongsToQuotaDay = entry.startedAt >= start && entry.startedAt < end;
-    if (quotaKeys.has(`${entry.scheduledTime}:${entry.attempt}`) !== belongsToQuotaDay) {
+    if (quotaKeys.has(`${entry.messageId}:${entry.attempt}`) !== belongsToQuotaDay) {
       fail("QUOTA_COHORT", "tick and quota cohorts do not reconcile");
     }
   }
