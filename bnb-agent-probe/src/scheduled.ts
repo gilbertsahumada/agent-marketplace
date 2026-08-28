@@ -65,7 +65,7 @@ export interface ScheduledRuntimeDependencies {
 export function createWp2ScheduledRunner(dependencies: ScheduledRuntimeDependencies = {}) {
   const now = dependencies.now ?? Date.now;
   const randomUUID = dependencies.randomUUID ?? crypto.randomUUID.bind(crypto);
-  const fetchImpl = dependencies.fetch ?? fetch;
+  const fetchImpl = dependencies.fetch ?? globalThis.fetch.bind(globalThis);
   const executePhase = dependencies.executePhase
     ?? ((input: PhaseExecution) => executeWp2Phase(input, fetchImpl));
 
@@ -79,7 +79,7 @@ export function createWp2ScheduledRunner(dependencies: ScheduledRuntimeDependenc
     const runId = randomUUID();
     const leaseMs = config.plan === "free" ? FREE_LEASE_MS : PAID_LEASE_MS;
     const rawDb = env.DB as unknown as D1DatabaseLike;
-    // Reserve one raw query so finally can always attempt an owner-checked
+    // Reserve raw queries for a sanitized error summary and an owner-checked
     // lease release before the platform hard limit.
     const { db, budget } = createBudgetedD1Database(rawDb, config.d1QueriesPerRun - 2);
     const acquired = await acquireSchedulerLease(db, {
