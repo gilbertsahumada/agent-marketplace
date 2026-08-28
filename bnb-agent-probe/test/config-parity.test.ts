@@ -9,7 +9,7 @@ describe("observation configuration parity", () => {
     {
       CRON_INTERVAL_MINUTES: "10",
       HEADER_LIMIT: "40",
-      SWEEP_LIMIT: "40",
+      SWEEP_LIMIT: "6",
       PROBE_BATCH_SIZE: "0",
       TRUST8004_REQUESTS_PER_RUN: "6",
       EXTERNAL_SUBREQUESTS_PER_RUN: "16",
