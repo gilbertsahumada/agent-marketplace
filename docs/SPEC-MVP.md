@@ -1,6 +1,6 @@
 # Capa de observación de contratabilidad — SPEC MVP v5 Free-first
 
-**Estado:** WP0, WP1 y WP3 completos. WP2 tiene implementación y gates remotos de Queue completos, pero conserva pendiente la ventana final D1/account Analytics de 24 h. Staging está en kill switch y sin Cron activo. Convenciones endurecidas tras la revisión de ejecución del 2026-08-28.
+**Estado:** WP0, WP1 y WP3 completos. WP2 tiene implementación y gates remotos de Queue completos; la ventana final D1/account Analytics corre en staging durante el día UTC 2026-08-29 con Free y Cron temporal `*/5`. Producción continúa sin Cron. Convenciones endurecidas tras la revisión de ejecución del 2026-08-28.
 **Fecha de corte del diseño:** 2026-08-28.
 **Objetivo:** completar la capa de observación necesaria para recorrer:
 
@@ -451,7 +451,7 @@ SWEEP_LIMIT=4                   máximo Free 40 y siempre <= TRUST8004_REQUESTS_
 SWEEP_PAGES_PER_RUN=1           máximo Free 1
 TRUST8004_REQUESTS_PER_RUN=4
 EXTERNAL_SUBREQUESTS_PER_RUN=12 máximo Free 40, plataforma 50
-D1_QUERIES_PER_RUN=40           mínimo 12, máximo Free 40, plataforma D1 50
+D1_QUERIES_PER_RUN=40           mínimo 13, máximo Free 40, plataforma D1 50
 D1_ROWS_READ_PER_RUN=3000
 D1_ROWS_WRITTEN_PER_RUN=60
 PROBE_TIMEOUT_MS=5000
@@ -467,7 +467,7 @@ Con cinco minutos hay 288 ticks/día. Queue consume 864 operaciones nominales
 (write+read+delete) y 1.728 si cada mensaje usa los tres retries. D1 puede recibir
 288 intentos nominales o hasta 1.152 intentos (entrega inicial + tres retries por
 tick); son presupuestos distintos. Con los defaults, la proyección D1 es
-864.000/17.280 filas leídas/escritas nominales y 3.456.000/69.120 en el peor
+864.000/17.856 filas leídas/escritas nominales y 3.456.000/71.424 en el peor
 caso de retries. La configuración valida este último caso contra los techos
 Free reservados de 4.000.000/80.000 y rechaza Queue por encima de 8.000
 operaciones, manteniendo 20 % de margen. Con rotación de tres fases hay hasta
@@ -1241,19 +1241,21 @@ datasets adaptativos de Queue y Workers corroboran métricas, pero no sustituyen
 ese ledger D1.
 
 El máximo histórico de 11 queries corresponde a la versión ensayada. La versión
-vigente añade una única escritura atómica de reconciliación diaria y reportaría
-12 para esa misma fase; conserva el techo duro de 40 reservando tres queries
-fuera del presupuesto de fase: resumen de fallo, liberación del lease y ledger.
-El ledger ayuda a detectar drift durante una corrida, pero no sustituye las
-métricas de facturación de Cloudflare: omite su propia fila escrita y no incluye
-uso D1 ajeno al Worker.
+vigente añade dos escrituras de telemetría: reconciliación diaria y un intento
+append-only identificado por `(scheduledTime, attempt)`; reportaría 13 para esa
+misma fase. Conserva el techo duro de 40 reservando cuatro queries fuera del
+presupuesto de fase: resumen de fallo, liberación del lease y ambos ledgers.
+El ledger diario ayuda a detectar drift, pero no sustituye las métricas de
+facturación de Cloudflare: omite sus propias filas escritas y no incluye uso D1
+ajeno al Worker. El ledger de intentos existe para reconciliar exactamente los
+288 ticks y sus reentregas, no para calcular la cuota account-wide.
 
 WP3 cerró su gate nominal remoto y los negativos deterministas de transporte.
 Sigue pendiente únicamente la ventana D1 final de 24 h de WP2. El gate final usa
 staging con el código candidato completo y una
 ventana completa de cuota `00:00:00Z–24:00:00Z`: 288 ticks esperados, 96 éxitos
 por fase en el camino nominal y cada retry/outcome reconciliado por
-`scheduledTime`. Se capturan sin resumir el ledger D1, los resultados por query
+`scheduledTime` y número de entrega. Se capturan sin resumir el ledger D1, los resultados por query
 o base de D1 Analytics y el total de uso de la cuenta, porque las cuotas Free
 son account-wide. Debe demostrar `<4.000.000` filas leídas, `<80.000` escritas,
 `<=40` queries por intento, cero errores de cuota y explicar cualquier tick o
@@ -1266,12 +1268,22 @@ ventana UTC, límites aplicados, ledger por `scheduledTime`, outcomes y retries,
 hashes y rutas de las respuestas Analytics crudas por base y por cuenta, uso
 ajeno observado, conteos totales, máximos CPU/memoria y un veredicto por gate.
 No se resume ni descarta la respuesta cruda usada para calcular esos campos.
+Las consultas versionadas están en `bnb-agent-probe/src/evidence/wp2-24h-queries.ts`.
+Workers y Queue usan inicio inclusivo `00:00:00.000Z` y fin inclusivo
+`23:59:59.999Z`; el artefacto conserva como ventana lógica el final exclusivo
+del siguiente `00:00:00.000Z`. D1 Analytics se consulta por la fecha UTC exacta,
+tanto para la base de staging como para el total de cuenta, y cada respuesta raw
+se conserva con SHA-256 antes de derivar totales.
 
 Antes y después de cada ventana se verifican por API `schedules=[]` y backlog
 Queue cero; declarar `crons: []` en un deploy no sustituye esa comprobación por
 la propagación eventual de Cron Triggers. Para la ventana final se instala un
 Cron staging temporal solo después del preflight y se elimina al finalizar; no
-autoriza cadencia productiva. Como el backlog REST es best-effort y puede omitir
+autoriza cadencia productiva. Tras el tick de `23:55Z` se retira el schedule
+antes de `00:00Z`; `KILL_SWITCH=0` puede permanecer solo durante la gracia de
+retries pertenecientes al día y vuelve a `1` después de confirmar backlog cero.
+La Queue, su consumer y D1 de staging se conservan: la eliminación aplica solo a
+recursos efímeros del entorno `validation`. Como el backlog REST es best-effort y puede omitir
 mensajes con retry diferido, cada prueba destructiva de reentrega crea una Queue
 de validación con ID nuevo. Después de capturar Analytics elimina, en orden, el
 consumer, el Worker temporal y la Queue; la D1 separada se conserva para
