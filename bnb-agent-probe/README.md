@@ -115,8 +115,10 @@ The clean retry and two-round records are in
 `../evidence/wp2-retry-remote-clean-2026-08-28.json` and
 `../evidence/wp2-default-rounds-2026-08-28.json`.
 They close the remote HEADER/SWEEP retry, resource and two-round gates only.
-The WP3 implementation and local Workerd gates are present, but its controlled
-remote Grid probe and transport-negative staging evidence remain pending. The
+The WP3 implementation and local Workerd gates are present, including complete
+EIP-191 (8 subrequests) and ERC-1271 (10 subrequests) paths through D1,
+trust8004, BSC RPC, Agent Card and A2A. Its controlled remote Grid probe and
+transport-negative staging evidence remain pending. The
 24-hour D1 gate runs only after those pass, against the complete staging
 candidate for a full `00:00–24:00 UTC` quota day. Continuous scheduling stays
 disabled until both gates pass.
