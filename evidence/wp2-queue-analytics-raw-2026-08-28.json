@@ -28,10 +28,12 @@
   "d1Evidence": {
     "header": { "status": "ok", "requests": 1, "d1Queries": 5, "wallTimeMs": 1335, "nextPhase": "sweep" },
     "sweep": { "status": "ok", "requests": 1, "d1Queries": 10, "wallTimeMs": 923, "nextPhase": "probe" },
-    "note": "Each total includes the Queue deduplication claim before the phase runner."
+    "note": "Each total includes the Queue deduplication operation used by the trial implementation."
   },
   "limitations": [
     "The adaptive dataset can omit low-volume invocations; the first Cron producer was not returned in this window.",
-    "Trigger attribution is inferred from timestamp, subrequest count and matching D1 timestamps because this dataset has no event-type dimension."
+    "Trigger attribution is inferred from timestamp, subrequest count and matching D1 timestamps because this dataset has no event-type dimension.",
+    "durationP50 is Worker active execution duration, while the D1 summary uses wall-clock elapsed time including waits; the two values are not expected to match.",
+    "This successful-delivery trial predates the atomic completion-marker retry fix. It proves Queue CPU and phase rotation, not failure redelivery semantics; the latter is covered by the Workers+D1 E2E and remains a remote gate."
   ]
 }
