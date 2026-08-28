@@ -6,6 +6,7 @@ import type { D1Database, D1PreparedStatement, Env, ExecutionContext } from "../
 interface TestMessage {
   readonly body: unknown;
   ack(): void;
+  retry(options: { delaySeconds: number }): void;
 }
 
 interface TestBatch {
@@ -61,7 +62,7 @@ function queueEnv(db = new TickDatabase(), killSwitch = "0") {
 }
 
 function message(body: unknown) {
-  return { body, ack: vi.fn() };
+  return { body, ack: vi.fn(), retry: vi.fn() };
 }
 
 describe("WP2 Free queue dispatch", () => {
@@ -132,6 +133,18 @@ describe("WP2 Free queue dispatch", () => {
 
     expect(runScheduled).not.toHaveBeenCalled();
     expect(tick.ack).toHaveBeenCalledOnce();
+    expect(tick.retry).not.toHaveBeenCalled();
+  });
+
+  it("retries without acknowledging when another invocation owns the lease", async () => {
+    const runScheduled = vi.fn().mockResolvedValue("locked");
+    const worker = createWorker({ runScheduled }) as unknown as QueueWorker;
+    const tick = message({ schemaVersion: 1, scheduledTime: 1_800_000_000_000 });
+
+    await worker.queue({ messages: [tick] }, queueEnv(), context);
+
+    expect(tick.ack).not.toHaveBeenCalled();
+    expect(tick.retry).toHaveBeenCalledWith({ delaySeconds: 240 });
   });
 
   it("re-executes the same tick after a failed delivery", async () => {
