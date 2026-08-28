@@ -123,8 +123,11 @@ export function createWorker(dependencies: WorkerDependencies = {}): WorkerEntry
       }
       if (dependencies.runScheduled === undefined) throw new Error("WP2_QUEUE_RUNNER_REQUIRED");
       const scheduledTime = queueScheduledTime(message.body, now());
+      if (!Number.isSafeInteger(message.attempts) || message.attempts < 1 || message.attempts > 4) {
+        throw new Error("WP2_QUEUE_MESSAGE_INVALID");
+      }
       const result = await dependencies.runScheduled(
-        { scheduledTime, cron: "queue" },
+        { scheduledTime, cron: "queue", attempt: message.attempts },
         env,
         context,
         config,
