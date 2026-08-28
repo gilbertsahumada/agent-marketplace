@@ -1,17 +1,35 @@
 import type { WorkerConfig } from "./config";
 import { executeBatch, prepareStatement, type D1DatabaseLike } from "./db/client";
-import { createBudgetedD1Database, type D1QueryBudget } from "./db/query-budget";
-import { createD1HeaderPersistence, runHeader, type HeaderAgent } from "./phases/header";
+import {
+  createBudgetedD1Database,
+  D1QueryBudgetExceededError,
+  type D1QueryBudget,
+} from "./db/query-budget";
+import {
+  createD1HeaderPersistence,
+  HeaderQueryBudgetExceededError,
+  runHeader,
+  type HeaderAgent,
+} from "./phases/header";
 import {
   createD1LiveAgentPageReader,
   runSweepPhase,
+  SweepQueryBudgetExceededError,
+  SweepRequestBudgetExceededError,
   type SweepAgentResult,
   type SweepTargetCandidate,
 } from "./phases/sweep";
 import { acquireSchedulerLease, releaseSchedulerLease } from "./lib/scheduler-lease";
 import { CURATED_INVENTORY, CURATED_INVENTORY_CATEGORIES } from "./manifest/curated-inventory";
 import { selectLiveTargets } from "./trust8004/candidates";
-import { Trust8004CatalogClient } from "./trust8004/client";
+import {
+  CatalogBodyLimitError,
+  CatalogHttpError,
+  CatalogInvalidJsonError,
+  CatalogRedirectError,
+  CatalogTimeoutError,
+  Trust8004CatalogClient,
+} from "./trust8004/client";
 import type { CatalogAgent } from "./trust8004/types";
 import type { Env, ExecutionContext, ScheduledController } from "./types";
 
@@ -32,6 +50,8 @@ interface PhaseExecution {
   readonly env: Env;
   readonly config: WorkerConfig;
   readonly nowMs: number;
+  readonly startedAtMs: number;
+  readonly now: () => number;
   readonly headerHighWater: string | null;
 }
 
@@ -61,7 +81,7 @@ export function createWp2ScheduledRunner(dependencies: ScheduledRuntimeDependenc
     const rawDb = env.DB as unknown as D1DatabaseLike;
     // Reserve one raw query so finally can always attempt an owner-checked
     // lease release before the platform hard limit.
-    const { db, budget } = createBudgetedD1Database(rawDb, config.d1QueriesPerRun - 1);
+    const { db, budget } = createBudgetedD1Database(rawDb, config.d1QueriesPerRun - 2);
     const acquired = await acquireSchedulerLease(db, {
       runId,
       nowMs: startedAt,
@@ -85,6 +105,7 @@ export function createWp2ScheduledRunner(dependencies: ScheduledRuntimeDependenc
       return;
     }
 
+    let phase: SchedulerPhase = "header";
     try {
       const stateResult = await db.prepare(
         `SELECT key, textValue
@@ -93,15 +114,33 @@ export function createWp2ScheduledRunner(dependencies: ScheduledRuntimeDependenc
       ).all<PhaseStateRow>();
       if (!stateResult.success) throw new Error("Could not read scheduler phase state");
       const state = new Map((stateResult.results ?? []).map((row) => [row.key, row.textValue]));
+      phase = parsePhase(state.get("next_scheduler_phase"));
       await executePhase({
-        phase: parsePhase(state.get("next_scheduler_phase")),
+        phase,
         db,
         queryBudget: budget,
         env,
         config,
         nowMs: now(),
+        startedAtMs: startedAt,
+        now,
         headerHighWater: state.get("header_high_water") ?? null,
       });
+    } catch (error) {
+      const finishedAt = now();
+      try {
+        await persistPhaseFailure(rawDb, {
+          phase,
+          errorCode: phaseErrorCode(error),
+          d1Queries: budget.used + 2,
+          wallTimeMs: Math.max(0, finishedAt - startedAt),
+          finishedAt,
+        });
+      } catch {
+        // Preserve the original failure. The owner-checked lease release below
+        // still runs even if D1 cannot record the sanitized error summary.
+      }
+      throw error;
     } finally {
       await releaseSchedulerLease(rawDb, runId, now());
     }
@@ -123,17 +162,23 @@ async function executeWp2Phase(input: PhaseExecution, fetchImpl: typeof fetch): 
     await runHeader({
       fetchNewestPage: async (limit) => {
         const page = await catalog.listHeader(limit);
-        if (page.invalidItems.length > 0) throw new Error("HEADER_INVALID_CATALOG_ITEM");
-        return { items: page.items };
+        const items = page.items.filter((agent) => agent.registeredAt !== null);
+        return {
+          items,
+          received: page.items.length + page.invalidItems.length,
+          invalidItems: page.invalidItems.length + page.items.length - items.length,
+        };
       },
       parseAgent: (value) => toHeaderAgent(value as CatalogAgent, curatedSet),
       persistence: createD1HeaderPersistence(input.db),
       queryBudget: input.queryBudget,
-      now: () => input.nowMs,
+      now: input.now,
     }, {
       limit: input.config.headerLimit,
       previousHighWater: input.headerHighWater,
       reserveQueriesAfterCommit: 0,
+      invocationQueriesAfterCommit: 1,
+      startedAtMs: input.startedAtMs,
     });
     return;
   }
@@ -145,6 +190,9 @@ async function executeWp2Phase(input: PhaseExecution, fetchImpl: typeof fetch): 
       nowMs: input.nowMs,
       queryBudget: input.queryBudget,
       requestBudget: { remaining: input.config.trust8004RequestsPerRun },
+      invocationQueriesAfterCommit: 1,
+      startedAtMs: input.startedAtMs,
+      now: input.now,
     }, {
       listLiveAgentPage: createD1LiveAgentPageReader(input.db, curatedIds),
       fetchAgents: async ({ agentIds }) => {
@@ -160,19 +208,26 @@ async function executeWp2Phase(input: PhaseExecution, fetchImpl: typeof fetch): 
 
   // WP2 keeps the state machine moving but never contacts a seller. WP3
   // replaces this explicit pending phase with the allowlisted probe.
+  const finishedAt = input.now();
   await executeBatch(input.db, [
     prepareStatement(input.db,
       `INSERT INTO runtime_state (key, textValue, integerValue, updatedAt)
        VALUES ('last_probe_summary', ?, NULL, ?)
        ON CONFLICT(key) DO UPDATE SET textValue=excluded.textValue,
          integerValue=NULL, updatedAt=excluded.updatedAt`,
-      [JSON.stringify({ phase: "probe", status: "pending_wp3", requests: 0, wallTimeMs: 0 }), input.nowMs]),
+      [JSON.stringify({
+        phase: "probe",
+        status: "pending_wp3",
+        requests: 0,
+        d1Queries: input.queryBudget.used + 3,
+        wallTimeMs: Math.max(0, finishedAt - input.startedAtMs),
+      }), finishedAt]),
     prepareStatement(input.db,
       `INSERT INTO runtime_state (key, textValue, integerValue, updatedAt)
        VALUES ('next_scheduler_phase', 'header', NULL, ?)
        ON CONFLICT(key) DO UPDATE SET textValue='header',
          integerValue=NULL, updatedAt=excluded.updatedAt`,
-      [input.nowMs]),
+      [finishedAt]),
   ]);
 }
 
@@ -219,6 +274,50 @@ function curatedCategories(agentId: string): string[] {
 
 function parsePhase(value: string | null | undefined): SchedulerPhase {
   return value === "sweep" || value === "probe" ? value : "header";
+}
+
+async function persistPhaseFailure(db: D1DatabaseLike, input: {
+  readonly phase: SchedulerPhase;
+  readonly errorCode: string;
+  readonly d1Queries: number;
+  readonly wallTimeMs: number;
+  readonly finishedAt: number;
+}): Promise<void> {
+  const result = await db.prepare(
+    `INSERT INTO runtime_state (key, textValue, integerValue, updatedAt)
+     VALUES (?, ?, NULL, ?)
+     ON CONFLICT(key) DO UPDATE SET
+       textValue = excluded.textValue,
+       integerValue = NULL,
+       updatedAt = excluded.updatedAt`,
+  ).bind(
+    `last_${input.phase}_summary`,
+    JSON.stringify({
+      phase: input.phase,
+      status: "error",
+      requests: 0,
+      d1Queries: input.d1Queries,
+      wallTimeMs: input.wallTimeMs,
+      errorCode: input.errorCode,
+    }),
+    input.finishedAt,
+  ).run();
+  if (!result.success) throw new Error("Could not persist phase failure summary");
+}
+
+function phaseErrorCode(error: unknown): string {
+  if (error instanceof CatalogTimeoutError) return "TRUST8004_TIMEOUT";
+  if (error instanceof CatalogBodyLimitError) return "TRUST8004_RESPONSE_TOO_LARGE";
+  if (error instanceof CatalogRedirectError) return "TRUST8004_REDIRECT";
+  if (error instanceof CatalogInvalidJsonError) return "TRUST8004_INVALID_JSON";
+  if (error instanceof CatalogHttpError) return error.status === 429
+    ? "TRUST8004_HTTP_429"
+    : "TRUST8004_HTTP_ERROR";
+  if (error instanceof D1QueryBudgetExceededError
+    || error instanceof HeaderQueryBudgetExceededError
+    || error instanceof SweepQueryBudgetExceededError) return "D1_QUERY_BUDGET";
+  if (error instanceof SweepRequestBudgetExceededError) return "TRUST8004_REQUEST_BUDGET";
+  return "PHASE_FAILED";
 }
 
 export const runWp2Scheduled = createWp2ScheduledRunner();
