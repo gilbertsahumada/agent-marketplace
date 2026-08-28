@@ -7,6 +7,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { Address, PublicClient } from "viem";
 
 import { validateProbeQuote } from "../src/lib/quote";
+import { BscProbeError } from "../src/lib/chain";
 import { buildGridProbeRequest, GRID_PROBE_REQUEST_HASH } from "../src/lib/terms";
 
 const PROVIDER = "0x1111111111111111111111111111111111111111" as Address;
@@ -176,6 +177,15 @@ describe("WP3 quote validation", () => {
       method: "erc1271",
       signer: OTHER,
     }))).rejects.toMatchObject({ code: "QUOTE_SIGNER" });
+  });
+
+  it("normalizes a viem-wrapped RPC failure during signature verification", async () => {
+    const wrapped = new Error("Unknown RPC error", {
+      cause: new BscProbeError("BSC_RPC_TIMEOUT"),
+    });
+    await expect(validateProbeQuote(acceptedEnvelope(), context(), async () => {
+      throw wrapped;
+    })).rejects.toMatchObject({ code: "BSC_SIGNATURE_RPC", message: "BSC_SIGNATURE_RPC" });
   });
 
   it("fails closed when the policy or configured payment token is not valid", async () => {
