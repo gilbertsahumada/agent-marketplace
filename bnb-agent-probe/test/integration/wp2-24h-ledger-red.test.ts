@@ -128,4 +128,22 @@ describe("WP2 durable scheduler-attempt ledger", () => {
     ]);
     expect(attempts.every(({ d1Queries }) => d1Queries <= 40)).toBe(true);
   });
+
+  it("rejects UPDATE and DELETE against durable attempt evidence", async () => {
+    const scheduledTime = WINDOW_START + 10 * 60_000;
+    await env.DB.prepare(
+      `INSERT INTO scheduler_attempts (
+         scheduledTime, attempt, phase, outcome, startedAt, finishedAt,
+         upstreamRequests, d1Queries, rowsReadObservedBeforeLedger,
+         rowsWrittenObservedBeforeLedger, errorCode
+       ) VALUES (?, 1, 'header', 'completed', ?, ?, 1, 5, 1, 1, NULL)`,
+    ).bind(scheduledTime, scheduledTime, scheduledTime + 1).run();
+
+    await expect(env.DB.prepare(
+      "UPDATE scheduler_attempts SET outcome = 'failed' WHERE scheduledTime = ?",
+    ).bind(scheduledTime).run()).rejects.toThrow("scheduler_attempts is append-only");
+    await expect(env.DB.prepare(
+      "DELETE FROM scheduler_attempts WHERE scheduledTime = ?",
+    ).bind(scheduledTime).run()).rejects.toThrow("scheduler_attempts is append-only");
+  });
 });
