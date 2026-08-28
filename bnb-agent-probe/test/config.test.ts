@@ -75,6 +75,8 @@ describe("loadConfig", () => {
     [{ MAX_CATALOG_RESPONSE_BYTES: "16777217" }, "MAX_CATALOG_RESPONSE_BYTES"],
     [{ MAX_CATALOG_RESPONSE_BYTES: "0" }, "MAX_CATALOG_RESPONSE_BYTES"],
     [{ CRON_INTERVAL_MINUTES: "0" }, "CRON_INTERVAL_MINUTES"],
+    [{ CRON_INTERVAL_MINUTES: "7" }, "CRON_INTERVAL_MINUTES"],
+    [{ CRON_INTERVAL_MINUTES: "120" }, "CRON_INTERVAL_MINUTES"],
     [{ HEADER_LIMIT: "1.5" }, "HEADER_LIMIT"],
   ])("rejects an unsafe or malformed Free setting", (env, field) => {
     expect(() => loadConfig(env)).toThrow(new RegExp(`^${field}:`));
