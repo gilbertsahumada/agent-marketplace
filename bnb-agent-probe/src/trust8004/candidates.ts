@@ -6,6 +6,15 @@ export interface LiveTargetPolicy {
   maxEndpointsPerAgent?: number;
 }
 
+const A2A_AGENT_CARD_SUFFIX = "/.well-known/agent-card.json";
+
+export function a2aBaseEndpoint(endpoint: string): string {
+  const url = new URL(endpoint);
+  if (!url.pathname.endsWith(A2A_AGENT_CARD_SUFFIX)) return endpoint;
+  const basePath = url.pathname.slice(0, -A2A_AGENT_CARD_SUFFIX.length).replace(/\/+$/, "");
+  return `${url.origin}${basePath}`;
+}
+
 export function selectLiveTargets(
   agent: CatalogAgent,
   policy: LiveTargetPolicy,
@@ -20,14 +29,17 @@ export function selectLiveTargets(
   const targets: LiveTargetCandidate[] = [];
   for (const declaration of agent.declaredEndpoints) {
     if (!isSyntacticallyPublicHttpsUrl(declaration.endpoint)) continue;
-    const key = `${declaration.transport}\u0000${declaration.endpoint}`;
+    const endpoint = declaration.transport === "a2a"
+      ? a2aBaseEndpoint(declaration.endpoint)
+      : declaration.endpoint;
+    const key = `${declaration.transport}\u0000${endpoint}`;
     if (seen.has(key)) continue;
     seen.add(key);
     targets.push({
       chainId: 56,
       agentId: agent.agentId,
       transport: declaration.transport,
-      endpoint: declaration.endpoint,
+      endpoint,
     });
     if (targets.length === maximum) break;
   }
