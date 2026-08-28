@@ -634,6 +634,7 @@ async function validateRawAnalytics(
   let queueWrites = 0;
   let successfulDeletes = 0;
   let lastQueueTerminalAt = 0;
+  const deleteSamples: { timestamp: number; remaining: number }[] = [];
   const producerTimestamps = new Set<number>();
   for (const [index, unvalidated] of queueTerminalGroups.entries()) {
     const group = record(unvalidated, "RAW_QUEUE", `queue terminal[${index}]`);
@@ -653,11 +654,13 @@ async function validateRawAnalytics(
     if (actionType === "DeleteMessage") {
       if (outcome !== "success") fail("QUEUE_TERMINALITY", "Queue contains an unsuccessful delete");
       successfulDeletes += count;
-      lastQueueTerminalAt = Math.max(lastQueueTerminalAt, analyticsTimestamp(
+      const timestamp = analyticsTimestamp(
         dimensions.datetime,
         "RAW_QUEUE",
         `queue[${index}].datetime`,
-      ));
+      );
+      lastQueueTerminalAt = Math.max(lastQueueTerminalAt, timestamp);
+      deleteSamples.push({ timestamp, remaining: count });
     }
     const retryCount = nonNegativeNumber(
       record(group.avg, "RAW_QUEUE", `queue[${index}].avg`).retryCount,
@@ -698,12 +701,21 @@ async function validateRawAnalytics(
     fail("RAW_WORKERS", "Workers Analytics cannot separate Cron producer and Queue consumer CPU");
   }
   const spillOutAttempts = context.tickLedger.filter(({ startedAt }) => startedAt >= context.end);
-  for (const attempt of spillOutAttempts) {
-    const correlated = workerSamples.some((sample) =>
-      sample.subrequests > 0 && Math.abs(sample.timestamp - attempt.startedAt) <= 1_000);
-    if (!correlated) {
+  const consumerCapacity = workerSamples.map((sample) => ({ sample, remaining: sample.requests }));
+  deleteSamples.sort((left, right) => left.timestamp - right.timestamp);
+  for (const attempt of [...spillOutAttempts].sort((left, right) => left.startedAt - right.startedAt)) {
+    const workerMatch = consumerCapacity.find(({ sample, remaining }) =>
+      remaining > 0 && sample.subrequests > 0 && Math.abs(sample.timestamp - attempt.startedAt) <= 1_000);
+    if (workerMatch === undefined) {
       fail("RAW_WORKERS", "Workers Analytics is missing a spill-out consumer attempt");
     }
+    workerMatch.remaining -= 1;
+    const deleteMatch = deleteSamples.find(({ timestamp, remaining }) =>
+      remaining > 0 && timestamp + 1_000 >= attempt.finishedAt);
+    if (deleteMatch === undefined) {
+      fail("QUEUE_TERMINALITY", "Queue Analytics is missing a causal spill-out delete");
+    }
+    deleteMatch.remaining -= 1;
   }
   const backlogGroups = nestedGroups(queueRaw, "queueBacklogAdaptiveGroups", "RAW_QUEUE");
   const terminalBacklog = backlogGroups
