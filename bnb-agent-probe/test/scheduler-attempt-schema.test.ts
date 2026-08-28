@@ -8,6 +8,9 @@ import { schedulerAttempts } from "../src/db/schema";
 const migration = readFileSync(fileURLToPath(
   new URL("../migrations/0003_scheduler_attempts.sql", import.meta.url),
 ), "utf8");
+const messageMigration = readFileSync(fileURLToPath(
+  new URL("../migrations/0004_scheduler_attempt_message_id.sql", import.meta.url),
+), "utf8");
 
 describe("scheduler attempt audit schema", () => {
   it("matches the Drizzle columns and bounds delivery attempts", () => {
@@ -18,6 +21,12 @@ describe("scheduler attempt audit schema", () => {
     }
     expect(migration).toContain("attempt BETWEEN 1 AND 4");
     expect(migration).toContain("d1Queries BETWEEN 1 AND 40");
+  });
+
+  it("keys delivery attempts by Queue message instead of only scheduledTime", () => {
+    expect(messageMigration).toContain("messageId");
+    expect(messageMigration).toContain("UNIQUE (messageId, attempt)");
+    expect(messageMigration).not.toContain("UNIQUE (scheduledTime, attempt)");
   });
 
   it("makes the evidence ledger append-only and window-indexed", () => {
