@@ -9,11 +9,19 @@ const wrangler = JSON.parse(readFileSync(resolve(projectRoot, "wrangler.jsonc"),
   triggers?: unknown;
   vars?: Record<string, string>;
   d1_databases?: Array<Record<string, string>>;
+  queues?: {
+    producers?: Array<Record<string, string>>;
+    consumers?: Array<Record<string, string | number>>;
+  };
   env?: Record<string, {
     name?: string;
     triggers?: unknown;
     vars?: Record<string, string>;
     d1_databases?: Array<Record<string, string>>;
+    queues?: {
+      producers?: Array<Record<string, string>>;
+      consumers?: Array<Record<string, string | number>>;
+    };
   }>;
 };
 
@@ -29,6 +37,15 @@ describe("WP1 Wrangler scaffold", () => {
         migrations_dir: "migrations",
       }),
     ]);
+    expect(wrangler.queues).toEqual({
+      producers: [{ binding: "WP2_QUEUE", queue: "bnb-agent-probe" }],
+      consumers: [{
+        queue: "bnb-agent-probe",
+        max_batch_size: 1,
+        max_batch_timeout: 1,
+        max_retries: 3,
+      }],
+    });
   });
 
   it("deploys disabled on the Free profile", () => {
@@ -69,5 +86,14 @@ describe("WP1 Wrangler scaffold", () => {
       ],
     });
     expect(staging?.triggers).toBeUndefined();
+    expect(staging?.queues).toEqual({
+      producers: [{ binding: "WP2_QUEUE", queue: "bnb-agent-probe-staging" }],
+      consumers: [{
+        queue: "bnb-agent-probe-staging",
+        max_batch_size: 1,
+        max_batch_timeout: 1,
+        max_retries: 3,
+      }],
+    });
   });
 });
