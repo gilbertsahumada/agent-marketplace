@@ -123,11 +123,15 @@ describe("WP1 in the Workers runtime", () => {
   });
 
   it("persists a sanitized failure in D1 without advancing state", async () => {
-    await env.DB.batch([
-      env.DB.prepare("INSERT INTO runtime_state (key, textValue, updatedAt) VALUES ('next_scheduler_phase', 'sweep', 9000)"),
-      env.DB.prepare("INSERT INTO runtime_state (key, integerValue, updatedAt) VALUES ('sweep_offset', 17, 9000)"),
-      env.DB.prepare("INSERT INTO runtime_state (key, textValue, updatedAt) VALUES ('header_high_water', '1000:9', 9000)"),
-    ]);
+    await env.DB.prepare(
+      "INSERT INTO runtime_state (key, textValue, updatedAt) VALUES ('next_scheduler_phase', 'sweep', 9000)",
+    ).run();
+    await env.DB.prepare(
+      "INSERT INTO runtime_state (key, integerValue, updatedAt) VALUES ('sweep_offset', 17, 9000)",
+    ).run();
+    await env.DB.prepare(
+      "INSERT INTO runtime_state (key, textValue, updatedAt) VALUES ('header_high_water', '1000:9', 9000)",
+    ).run();
     let clock = 10_000;
     const runner = createWp2ScheduledRunner({
       now: () => clock++,
