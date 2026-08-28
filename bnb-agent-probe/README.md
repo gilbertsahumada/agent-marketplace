@@ -24,6 +24,8 @@ phase. At five-minute cadence this projects to 864 nominal operations/day and
 1,728 with all three configured retries, below the Free safety ceiling of 8,000.
 If another invocation owns the D1 lease, the message is not acknowledged and is
 retried after 240 seconds; completed and stale ticks are acknowledged normally.
+The consumer is fixed at one concurrent invocation, and Queue timestamps more
+than five minutes ahead of the Worker clock are rejected before phase execution.
 
 ```bash
 npm install
@@ -34,14 +36,18 @@ npm run typecheck
 npm run dry-run
 ```
 
-Staging remains on the Free profile, has no Cron Trigger, and deploys with the
-kill switch enabled. It retains one isolated Queue producer and consumer. Apply
-its migrations and deploy explicitly:
+Staging remains on the Free profile, declares an empty Cron list, and deploys
+with the kill switch enabled. It retains one isolated Queue producer and serial
+consumer. Apply its migrations and deploy explicitly:
 
 ```bash
 npx wrangler d1 migrations apply bnb-agent-probe-staging --remote --env staging
 npx wrangler deploy --env staging
 ```
+
+Because Cron removal can propagate after a deployment, operational trials also
+verify the Cloudflare schedules API returns an empty list and the realtime Queue
+backlog is zero before enabling work and again after cleanup.
 
 Controlled nominal measurements may call `POST /__admin/run-scheduled` only
 while `DEPLOYMENT_ENV=staging`, `STAGING_MANUAL_RUN=1`, `KILL_SWITCH=0` and
