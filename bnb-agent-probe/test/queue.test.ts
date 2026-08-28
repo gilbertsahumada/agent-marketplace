@@ -4,7 +4,10 @@ import { createWorker } from "../src/index";
 import type { D1Database, D1PreparedStatement, Env, ExecutionContext } from "../src/types";
 
 interface TestMessage {
+  readonly id: string;
+  readonly timestamp: Date;
   readonly body: unknown;
+  readonly attempts: number;
   ack(): void;
   retry(options: { delaySeconds: number }): void;
 }
@@ -61,8 +64,15 @@ function queueEnv(db = new TickDatabase(), killSwitch = "0") {
   } as Env & { WP2_QUEUE: { send: ReturnType<typeof vi.fn> } };
 }
 
-function message(body: unknown) {
-  return { body, ack: vi.fn(), retry: vi.fn() };
+function message(body: unknown, attempts = 1) {
+  return {
+    id: `message-${attempts}`,
+    timestamp: new Date(1_800_000_000_000),
+    body,
+    attempts,
+    ack: vi.fn(),
+    retry: vi.fn(),
+  };
 }
 
 describe("WP2 Free queue dispatch", () => {
@@ -101,7 +111,7 @@ describe("WP2 Free queue dispatch", () => {
 
     expect(runScheduled).toHaveBeenCalledOnce();
     expect(runScheduled).toHaveBeenCalledWith(
-      { scheduledTime: 1_800_000_000_000, cron: "queue" },
+      { scheduledTime: 1_800_000_000_000, cron: "queue", attempt: 1 },
       activeEnv,
       context,
       expect.objectContaining({ plan: "free", killSwitch: false }),
@@ -119,7 +129,7 @@ describe("WP2 Free queue dispatch", () => {
     await worker.queue({ messages: [tick] }, activeEnv, context);
 
     expect(runScheduled).toHaveBeenCalledWith(
-      { scheduledTime: now, cron: "queue" },
+      { scheduledTime: now, cron: "queue", attempt: 1 },
       activeEnv,
       context,
       expect.objectContaining({ plan: "free", killSwitch: false }),
@@ -173,7 +183,7 @@ describe("WP2 Free queue dispatch", () => {
     const worker = createWorker({ now: () => 1_800_000_000_000, runScheduled }) as unknown as QueueWorker;
     const activeEnv = queueEnv();
     const firstDelivery = message({ schemaVersion: 1, scheduledTime: 1_800_000_000_000 });
-    const retryDelivery = message({ schemaVersion: 1, scheduledTime: 1_800_000_000_000 });
+    const retryDelivery = message({ schemaVersion: 1, scheduledTime: 1_800_000_000_000 }, 2);
 
     await expect(worker.queue({ messages: [firstDelivery] }, activeEnv, context))
       .rejects.toThrow("phase failed");
