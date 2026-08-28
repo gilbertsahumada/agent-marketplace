@@ -24,7 +24,8 @@ file records only decisions that still govern the submission.
 | 2026-08-28 | Reserve 20 % of the D1 per-invocation query limit before WP2 | Active | D1 Free has a hard limit of 50 queries per Worker invocation and local Miniflare allowed 60, so row budgets and local green tests cannot prevent a staging-only failure | Free rejects configurations above 40 queries; every batch statement is counted, the phase preflights before writes, and two queries remain outside the phase budget for a sanitized error summary plus lease release |
 | 2026-08-28 | Bound Free SWEEP by detail-request budget | Active | The live-set cursor contains agent IDs and trust8004 exposes the observed detail route per ID; the former default of 25 would require 25 upstream requests despite a budget of 4 | Free defaults `SWEEP_LIMIT=4`, requires it to be no greater than `TRUST8004_REQUESTS_PER_RUN`, and keeps Paid disabled until its separate promotion gate |
 | 2026-08-28 | Harden WP2 from independent review with TDD regressions | Active | Review reproduced mutable-OFFSET skips, incomplete IPv6 policy, hidden phase failures, unsafe D1 bind sizing and invalid zero budgets despite the initial green suite | SWEEP pages the monotonic set of all persisted eligible target IDs; HEADER chunks binds below 1.5 MB and skips/counts invalid items; failures and allowlisted metrics reach `/health`; executable limits are non-zero and `D1_QUERIES_PER_RUN >= 7` |
-| 2026-08-28 | Keep WP2 cron disabled until the Free CPU gate is demonstrated | Active blocker | Cloudflare Analytics recorded representative preview and authenticated-HTTP samples above 10,000 µs, but no active Cron phase sample; HTTP includes routing/authentication overhead, so these results warn against promotion without conclusively measuring Cron CPU | Staging remains `KILL_SWITCH=1` with an empty schedule list; the manual route additionally requires `DEPLOYMENT_ENV=staging` and the ephemeral `STAGING_MANUAL_RUN=1`. Do not activate cron or Paid until active Cron phases are attributed, preserved and pass with margin, or payment is explicitly approved |
+| 2026-08-28 | Keep WP2 cron disabled until the Free CPU gate is demonstrated | Resolved by Queue isolation | Direct Cron HEADER=1 measured 21,364 µs initially, 16,336 µs after reducing D1 work and 16,508 µs after lazy loading; a ten-run series returned one cold sample at 14,962 µs and eight warm samples below 10,000 µs, so the required cold/P99 Free gate fails | Cron no longer executes a phase. It only publishes a versioned tick to a Free Queue; the consumer owns the 30 s CPU allowance. Staging remains `KILL_SWITCH=1` with no Cron Trigger after each trial |
+| 2026-08-28 | Isolate WP2 phases behind Cloudflare Queues on Free | Active | Queue consumers are available on Free with a 30 s default CPU limit. At five-minute cadence, 288 ticks/day project to about 864 write/read/delete operations, below the executable 8,000-operation safety ceiling; the remote HEADER=1 and SWEEP=1 trial succeeded at 16,747 µs and 15,107 µs respectively | Adds one staging Queue and at-least-once delivery handling. Batch size is exactly one, D1 rejects duplicate/stale ticks, the claim query counts against the 40-query invocation budget, and production cadence remains disabled until two Queue rotations plus WP3 gates pass |
 
 ## Current Mainnet proof boundary
 
@@ -42,7 +43,9 @@ file records only decisions that still govern the submission.
 `docs/SPEC-MVP.md` v3 refines, without widening, the marketplace-observation
 store permitted by clauses 6b and 6c below:
 
-- five minute Cron Trigger on Free, serialized by a conditional lease in D1;
+- five minute Cron Trigger on Free publishes one versioned tick to a Free Queue;
+- the Queue consumer processes exactly one message, deduplicates its scheduled
+  timestamp in D1 and then runs one phase serialized by the existing D1 lease;
 - exactly one of HEADER, SWEEP or PROBE per Free invocation; the next phase and
   cursor are persisted in D1;
 - fixed trust8004 request budget per run; no process-memory token bucket;
