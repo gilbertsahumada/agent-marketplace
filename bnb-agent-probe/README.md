@@ -8,16 +8,17 @@ sanitized `GET /health`. WP3 is fail-closed to BSC Agent `303779` and the exact
 registered Grid endpoint. It refreshes trust8004 metadata, fixes read-only BSC
 checks to one fresh block, validates the canonical signed quote, and persists no
 signature or raw response. It never creates, funds or executes a job. No Cron
-Trigger is active.
+Trigger is active in production. Staging temporarily runs `*/5 * * * *` for the
+UTC 2026-08-29 WP2 gate.
 
 The Free profile caps scheduled work at 40 D1 queries per invocation, below the
 platform limit of 50. Every statement in `DB.batch()` is counted separately and
-three queries are reserved outside the phase budget for a sanitized failure
-summary, lease cleanup and the daily ledger.
+four queries are reserved outside the phase budget for a sanitized failure
+summary, lease cleanup, the daily ledger and the append-only attempt ledger.
 The atomic Queue completion marker is also included in the reported and
-enforced per-invocation total. The minimum accepted budget is 12 queries, which
+enforced per-invocation total. The minimum accepted budget is 13 queries, which
 covers the smallest complete SWEEP plus failure, lease-cleanup and daily-ledger
-reserves.
+reserves, including the attempt ledger.
 Catalogue responses have their own
 16 MiB cap; the smaller seller-response cap is independent.
 
@@ -30,7 +31,7 @@ phase. At five-minute cadence this projects to 864 nominal operations/day and
 Those are Queue operations. D1 is budgeted independently at 288 nominal attempts
 or 1,152 if every tick reaches all four deliveries. With the configurable Free
 defaults `D1_ROWS_READ_PER_RUN=3000` and `D1_ROWS_WRITTEN_PER_RUN=60`, that is
-864,000/17,280 rows nominal and 3,456,000/69,120 retry-worst, below the reserved
+864,000/17,856 rows nominal and 3,456,000/71,424 retry-worst, below the reserved
 4,000,000/80,000 daily ceilings.
 Every D1 result is checked against the configured row budget. Phase work aborts
 after the first result that crosses it and cannot issue another phase query;
@@ -56,9 +57,10 @@ npm run typecheck
 npm run dry-run
 ```
 
-Staging remains on the Free profile, declares an empty Cron list, and deploys
-with the kill switch enabled. It retains one isolated Queue producer and serial
-consumer. Apply its migrations and deploy explicitly:
+Staging remains on the Free profile and retains one isolated Queue producer and
+serial consumer. Outside the exact 24-hour gate it declares an empty Cron list
+and deploys with the kill switch enabled. Apply its migrations and deploy
+explicitly:
 
 ```bash
 npx wrangler d1 migrations apply bnb-agent-probe-staging --remote --env staging
