@@ -86,6 +86,9 @@ adaptive Queue and Workers metrics only corroborate delivery and resource use.
 The clean retry and two-round records are in
 `../evidence/wp2-retry-remote-clean-2026-08-28.json` and
 `../evidence/wp2-default-rounds-2026-08-28.json`.
+They close the remote HEADER/SWEEP retry, resource and two-round gates only.
+PROBE/WP3 and the controlled D1 24-hour window remain pending, so continuous
+scheduling stays disabled.
 
 Controlled nominal measurements may call `POST /__admin/run-scheduled` only
 while `DEPLOYMENT_ENV=staging`, `STAGING_MANUAL_RUN=1`, `KILL_SWITCH=0` and
