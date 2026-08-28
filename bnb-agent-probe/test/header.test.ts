@@ -154,6 +154,7 @@ describe("WP2 HEADER", () => {
 
     expect(summary.candidateTargets).toBe(0);
     expect(summary.materialWrites).toBe(0);
+    expect(fixture.persistence.loads).toEqual([]);
   });
 
   it("deduplicates targets and caps each agent at two", async () => {
@@ -215,10 +216,10 @@ describe("WP2 HEADER", () => {
 
   it("preflights all material and runtime writes while preserving release capacity", async () => {
     const fixture = setup([agent()]);
-    fixture.dependencies.queryBudget.remaining = 4;
+    fixture.dependencies.queryBudget.remaining = 2;
 
     await expect(runHeader(fixture.dependencies, { limit: 25 })).rejects.toEqual(
-      new HeaderQueryBudgetExceededError(4, 5),
+      new HeaderQueryBudgetExceededError(2, 3),
     );
     expect(fixture.persistence.commits).toEqual([]);
   });
@@ -234,7 +235,7 @@ describe("WP2 HEADER", () => {
       nextSchedulerPhase: "sweep",
       summary,
     });
-    expect(summary.d1Queries).toBe(5);
+    expect(summary.d1Queries).toBe(3);
   });
 
   it("does not expose logical progress when the atomic batch fails", async () => {
@@ -253,7 +254,7 @@ describe("WP2 HEADER", () => {
     const summary = await runHeader(fixture.dependencies, { limit: 25 });
 
     expect(fixture.persistence.loads).toEqual([]);
-    expect(summary.d1Queries).toBe(3);
+    expect(summary.d1Queries).toBe(1);
     expect(fixture.persistence.commits[0]?.highWater).toBeNull();
   });
 });
@@ -341,14 +342,23 @@ describe("D1 HEADER persistence adapter", () => {
     await runHeader(fixture.dependencies, { limit: 25 });
 
     expect(db.batches).toHaveLength(1);
-    expect(db.batches[0]).toHaveLength(4);
+    expect(db.batches[0]).toHaveLength(2);
     expect(db.batches[0]?.[0]?.query).toContain("INSERT INTO probe_targets");
-    expect(db.batches[0]?.slice(1).map((statement) => statement.values[0])).toEqual([
+    expect(db.batches[0]?.[1]?.query).toContain("VALUES (?, ?, ?, ?), (?, ?, ?, ?), (?, ?, ?, ?)");
+    expect(db.batches[0]?.[1]?.values).toEqual([
       "header_high_water",
+      "1000:900",
+      null,
+      2_000,
       "last_header_summary",
+      expect.stringContaining('"phase":"header"'),
+      null,
+      2_000,
       "next_scheduler_phase",
+      "sweep",
+      null,
+      2_000,
     ]);
-    expect(db.batches[0]?.[3]?.values[1]).toBe("sweep");
   });
 
   it("fits 25 agents with two changed targets each comfortably below 40 queries", async () => {
@@ -367,9 +377,9 @@ describe("D1 HEADER persistence adapter", () => {
     const summary = await runHeader(fixture.dependencies, { limit: 25 });
 
     expect(summary.materialWrites).toBe(50);
-    expect(summary.d1Queries).toBe(5);
+    expect(summary.d1Queries).toBe(3);
     expect(db.batches).toHaveLength(1);
-    expect(db.batches[0]).toHaveLength(4);
+    expect(db.batches[0]).toHaveLength(2);
     const serializedTargets = db.batches[0]?.[0]?.values[0];
     expect(typeof serializedTargets).toBe("string");
     expect(JSON.parse(String(serializedTargets))).toHaveLength(50);
@@ -378,7 +388,7 @@ describe("D1 HEADER persistence adapter", () => {
 
   it("rejects any unsuccessful batch statement", async () => {
     const db = new RecordingDatabase();
-    db.batchFailureIndex = 2;
+    db.batchFailureIndex = 1;
     const persistence = createD1HeaderPersistence(db);
     const fixture = setup([agent()], persistence);
 
