@@ -541,13 +541,21 @@ async function validateRawAnalytics(
     start: startIso,
     endInclusive: endInclusiveIso,
   }, "RAW_QUEUE");
-  const queueGroups = nestedGroups(queueRaw, "queueMessageOperationsAdaptiveGroups", "RAW_QUEUE");
+  const queueDayGroups = nestedGroups(queueRaw, "queueDayOperations", "RAW_QUEUE");
   let queueOperations = 0;
+  for (const [index, unvalidated] of queueDayGroups.entries()) {
+    const group = record(unvalidated, "RAW_QUEUE", `queue day[${index}]`);
+    const dimensions = record(group.dimensions, "RAW_QUEUE", `queue day[${index}].dimensions`);
+    if (dimensions.queueId !== context.queueId) fail("RAW_QUEUE", "Queue Analytics contains another Queue");
+    const sum = record(group.sum, "RAW_QUEUE", `queue day[${index}].sum`);
+    queueOperations += nonNegativeInteger(sum.billableOperations, "RAW_QUEUE", `queue day[${index}].operations`);
+  }
+  const queueTerminalGroups = nestedGroups(queueRaw, "queueTerminalOperations", "RAW_QUEUE");
   let queueWrites = 0;
   let successfulDeletes = 0;
-  for (const [index, unvalidated] of queueGroups.entries()) {
-    const group = record(unvalidated, "RAW_QUEUE", `queue[${index}]`);
-    const dimensions = record(group.dimensions, "RAW_QUEUE", `queue[${index}].dimensions`);
+  for (const [index, unvalidated] of queueTerminalGroups.entries()) {
+    const group = record(unvalidated, "RAW_QUEUE", `queue terminal[${index}]`);
+    const dimensions = record(group.dimensions, "RAW_QUEUE", `queue terminal[${index}].dimensions`);
     if (dimensions.queueId !== context.queueId) fail("RAW_QUEUE", "Queue Analytics contains another Queue");
     const count = nonNegativeInteger(group.count, "RAW_QUEUE", `queue[${index}].count`);
     const actionType = nonEmptyString(dimensions.actionType, "RAW_QUEUE", `queue[${index}].actionType`);
@@ -563,8 +571,6 @@ async function validateRawAnalytics(
       `queue[${index}].retryCount`,
     );
     if (retryCount > 3) fail("QUEUE_TERMINALITY", "Queue retry count exceeded the configured maximum");
-    const sum = record(group.sum, "RAW_QUEUE", `queue[${index}].sum`);
-    queueOperations += nonNegativeInteger(sum.billableOperations, "RAW_QUEUE", `queue[${index}].operations`);
   }
   if (queueWrites !== EXPECTED_TICKS || successfulDeletes !== EXPECTED_TICKS) {
     fail("QUEUE_TERMINALITY", "Queue Analytics does not contain one write and successful delete per tick");
