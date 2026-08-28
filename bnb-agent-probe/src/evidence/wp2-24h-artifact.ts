@@ -543,12 +543,31 @@ async function validateRawAnalytics(
   }, "RAW_QUEUE");
   const queueGroups = nestedGroups(queueRaw, "queueMessageOperationsAdaptiveGroups", "RAW_QUEUE");
   let queueOperations = 0;
+  let queueWrites = 0;
+  let successfulDeletes = 0;
   for (const [index, unvalidated] of queueGroups.entries()) {
     const group = record(unvalidated, "RAW_QUEUE", `queue[${index}]`);
     const dimensions = record(group.dimensions, "RAW_QUEUE", `queue[${index}].dimensions`);
     if (dimensions.queueId !== context.queueId) fail("RAW_QUEUE", "Queue Analytics contains another Queue");
+    const count = nonNegativeInteger(group.count, "RAW_QUEUE", `queue[${index}].count`);
+    const actionType = nonEmptyString(dimensions.actionType, "RAW_QUEUE", `queue[${index}].actionType`);
+    const outcome = typeof dimensions.outcome === "string" ? dimensions.outcome.toLowerCase() : "";
+    if (actionType === "WriteMessage") queueWrites += count;
+    if (actionType === "DeleteMessage") {
+      if (outcome !== "success") fail("QUEUE_TERMINALITY", "Queue contains an unsuccessful delete");
+      successfulDeletes += count;
+    }
+    const retryCount = nonNegativeNumber(
+      record(group.avg, "RAW_QUEUE", `queue[${index}].avg`).retryCount,
+      "RAW_QUEUE",
+      `queue[${index}].retryCount`,
+    );
+    if (retryCount > 3) fail("QUEUE_TERMINALITY", "Queue retry count exceeded the configured maximum");
     const sum = record(group.sum, "RAW_QUEUE", `queue[${index}].sum`);
     queueOperations += nonNegativeInteger(sum.billableOperations, "RAW_QUEUE", `queue[${index}].operations`);
+  }
+  if (queueWrites !== EXPECTED_TICKS || successfulDeletes !== EXPECTED_TICKS) {
+    fail("QUEUE_TERMINALITY", "Queue Analytics does not contain one write and successful delete per tick");
   }
   const backlogGroups = nestedGroups(queueRaw, "queueBacklogAdaptiveGroups", "RAW_QUEUE");
   const terminalBacklog = backlogGroups
@@ -563,10 +582,11 @@ async function validateRawAnalytics(
       };
     })
     .sort((left, right) => left.timestamp - right.timestamp).at(-1);
+  const lastScheduledTime = Math.max(...context.ledger.map(({ scheduledTime }) => scheduledTime));
   if (terminalBacklog === undefined
-    || terminalBacklog.timestamp < context.end + 15 * 60_000
+    || terminalBacklog.timestamp < lastScheduledTime
     || terminalBacklog.messages !== 0) {
-    fail("QUEUE_TERMINALITY", "Queue Analytics does not prove zero backlog after the grace period");
+    fail("QUEUE_TERMINALITY", "Queue Analytics does not prove zero backlog after the last tick");
   }
 
   const queueAccountRaw = record(parsed.get(REQUIRED_RAW_ANALYTICS[4]), "RAW_QUEUE", "account Queue raw");
