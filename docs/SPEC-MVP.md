@@ -446,7 +446,7 @@ SCHEDULER_MODE=single_phase (derivado, no sobreescribible en Free)
 HEADER_LIMIT=25                  máximo Free 50
 PROBE_BATCH_SIZE=1              máximo Free 1
 PROBE_AGENT_ALLOWLIST=303779    lista CSV obligatoria; vacío/malformado falla cerrado
-PROBE_ENDPOINT_ALLOWLIST=https://bnb-agent-marketplace-ruby.vercel.app/api/sellers/grid/a2a
+PROBE_ENDPOINT_ALLOWLIST=https://bnb-agent-marketplace-ruby.vercel.app/grid
 SWEEP_LIMIT=4                   máximo Free 40 y siempre <= TRUST8004_REQUESTS_PER_RUN
 SWEEP_PAGES_PER_RUN=1           máximo Free 1
 TRUST8004_REQUESTS_PER_RUN=4
@@ -1015,7 +1015,7 @@ SWEEP_LIMIT=4
 SWEEP_PAGES_PER_RUN=1
 PROBE_BATCH_SIZE=1
 PROBE_AGENT_ALLOWLIST=303779
-PROBE_ENDPOINT_ALLOWLIST=https://bnb-agent-marketplace-ruby.vercel.app/api/sellers/grid/a2a
+PROBE_ENDPOINT_ALLOWLIST=https://bnb-agent-marketplace-ruby.vercel.app/grid
 TRUST8004_REQUESTS_PER_RUN=4
 EXTERNAL_SUBREQUESTS_PER_RUN=12
 D1_QUERIES_PER_RUN=40
@@ -1376,7 +1376,7 @@ en sección 11.2. Una ventana previa a WP3 solo puede etiquetarse baseline.
 ```text
 PROBE_BATCH_SIZE=1
 PROBE_AGENT_ALLOWLIST=303779
-PROBE_ENDPOINT_ALLOWLIST=https://bnb-agent-marketplace-ruby.vercel.app/api/sellers/grid/a2a
+PROBE_ENDPOINT_ALLOWLIST=https://bnb-agent-marketplace-ruby.vercel.app/grid
 ```
 
 Gate:
