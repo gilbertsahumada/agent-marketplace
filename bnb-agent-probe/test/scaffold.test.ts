@@ -29,7 +29,7 @@ describe("WP1 Wrangler scaffold", () => {
   it("binds the Worker and D1 without activating a cron", () => {
     expect(wrangler.main).toBe("src/index.ts");
     expect(wrangler.compatibility_date).toBe("2026-08-28");
-    expect(wrangler.triggers).toBeUndefined();
+    expect(wrangler.triggers).toEqual({ crons: [] });
     expect(wrangler.d1_databases).toEqual([
       expect.objectContaining({
         binding: "DB",
@@ -44,6 +44,7 @@ describe("WP1 Wrangler scaffold", () => {
         max_batch_size: 1,
         max_batch_timeout: 1,
         max_retries: 3,
+        max_concurrency: 1,
       }],
     });
   });
@@ -85,7 +86,7 @@ describe("WP1 Wrangler scaffold", () => {
         }),
       ],
     });
-    expect(staging?.triggers).toBeUndefined();
+    expect(staging?.triggers).toEqual({ crons: [] });
     expect(staging?.queues).toEqual({
       producers: [{ binding: "WP2_QUEUE", queue: "bnb-agent-probe-staging" }],
       consumers: [{
@@ -93,6 +94,7 @@ describe("WP1 Wrangler scaffold", () => {
         max_batch_size: 1,
         max_batch_timeout: 1,
         max_retries: 3,
+        max_concurrency: 1,
       }],
     });
   });
