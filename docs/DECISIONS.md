@@ -293,3 +293,18 @@ contracts, index/reconciliation behavior, migration treatment for Jobs `514`,
 `551` and `56662`, and implementation phases. The holographic presentation of the
 Evidence Passport is outside this ADR; only the ledger fields consumed by its
 evidence model belong here.
+
+## 2026-08-29 — Separate producer shutdown from consumer drain
+
+Cloudflare Cron removal is eventually consistent. A single global kill switch
+cannot safely close a measured window: enabling it prevents a late producer tick
+but also acknowledges queued retries without processing them. WP2 therefore adds
+`PRODUCER_KILL_SWITCH`, which blocks Cron and manual producers while leaving the
+Queue consumer governed by `KILL_SWITCH`.
+
+At controlled-window close, the operator activates the producer switch and
+removes the Cron immediately after the last expected tick, keeps the global
+switch off through terminality grace, then enables the global switch. Final raw
+evidence must show no schedule, zero corroborating backlog, and both switches on.
+The variable defaults to the global switch when omitted, preserving fail-closed
+behavior for existing environments.
