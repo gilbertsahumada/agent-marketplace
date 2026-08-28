@@ -1,6 +1,6 @@
 # Capa de observación de contratabilidad — SPEC MVP v5 Free-first
 
-**Estado:** WP0 y WP1 completos; WP2 implementado y en gate final mediante Queue Free, con staging en kill switch y sin Cron activo.
+**Estado:** WP0 y WP1 completos; WP2 implementado y en gate final mediante Queue Free, con staging en kill switch y sin Cron activo. Convenciones endurecidas tras la revisión de ejecución del 2026-08-28.
 **Fecha de corte del diseño:** 2026-08-28.
 **Objetivo:** completar la capa de observación necesaria para recorrer:
 
@@ -48,6 +48,13 @@ comunicado. WP0 la reemplaza por un artefacto versionado.
   `grid_trading`, `yield_optimisation` y `health_factor_monitoring`.
 - Cada CTA primario tiene un destino funcional; no se publica `Hire` si el flujo
   no puede pedir y validar una quote fresca.
+
+### 0.3 Supremacía del artefacto
+
+Si una cifra del spec difiere del artefacto que la respalda, gana el artefacto y
+el spec se corrige en el mismo PR que detecta la diferencia. Ninguna cifra del
+spec cita como fuente otra cosa que un artefacto versionado, código de este
+repositorio o documentación oficial fechada.
 
 ---
 
@@ -131,10 +138,14 @@ Research del 2026-08-27 registró provisionalmente:
 | `metadataReason=ok` | 182.679 (58,95 %) | Sí, artefacto WP0 |
 | `http_unreachable` | 109.506 (35,34 %) | Sí, artefacto WP0 |
 | Declarantes ERC-8183 | 16: 12 solo ERC-8183 + 4 también A2A | Sí, artefacto WP0 |
+| `a2aOnly` | 21.194 | Sí, artefacto WP0 |
+| Declarantes A2A/ERC-8183 | 21.210 agentes; 21.213 endpoints declarados, 21.202 HTTPS públicos | Sí, artefacto WP0 |
 
 La afirmación “0 declaran ERC-8183” queda reemplazada por el conteo reproducible
 anterior. El artefacto es
-`evidence/funnel-bsc-2026-08-27T19-41-17Z.json`.
+`evidence/funnel-bsc-2026-08-27T19-41-17Z.json`. Los declarantes A2A/ERC-8183
+superan 4x el gate de 5.000: son la cifra que motivó el perfil Free-first y el
+conjunto live acotado (decisión 2026-08-28).
 
 ### 1.4 Supuestos de API que WP0 revalida
 
@@ -1046,6 +1057,9 @@ Checks bloqueantes:
   acceder a D1;
 - tests prueban que las tablas append-only no reciben `UPDATE`/`DELETE` desde la
   aplicación;
+- grep del código: ninguna llamada `.prepare(` fuera de `src/db/orm.ts`,
+  `src/lib/scheduler-lease.ts` y `src/db/query-budget.ts` en código nuevo
+  (aplicación total desde la migración de call sites en WP4);
 - el dry-run compila el mismo entrypoint y bindings que staging.
 
 La corrida WP2 local del 2026-08-28 queda registrada en
@@ -1233,6 +1247,17 @@ No se paraleliza antes de estabilizar schema/contratos:
 WP0 → WP1 → WP2 → WP3 → WP4 → {WP5, WP6} → WP7
 ```
 
+### 12.0 Disciplina de ejecución multi-sesión
+
+- Cada sesión trabaja en su propio git worktree y su propia rama; nunca dos
+  sesiones sobre el mismo checkout.
+- Los WPs que corren en paralelo declaran de antemano conjuntos de archivos
+  disjuntos; un PR solo contiene archivos que su sesión creó o modificó.
+- Un gate se considera pasado únicamente cuando `npm ci` más el check del
+  paquete (`npm run check` en el Worker; typecheck+tests+build en el
+  marketplace) pasan en un checkout limpio — CI es el árbitro. Una corrida
+  local sobre un árbol compartido no cierra gates.
+
 ### WP0 — Evidencia y presupuesto
 
 Entrega: snapshot reproducible, API/headers revalidados, benchmark `limit=2000` y
@@ -1323,7 +1348,9 @@ Gate:
 - metadata propia cambia/degrada en siguiente observación prioritaria;
 - Worker apagado no rompe páginas;
 - unreachable/removed visibles;
-- Hire nunca consume quote del probe.
+- Hire nunca consume quote del probe;
+- los call sites crudos heredados quedan migrados a `db/orm.ts` y el grep de
+  `.prepare(` pasa en su forma total.
 
 ### WP5 — Landing
 
@@ -1389,7 +1416,16 @@ bnb-agent-probe/
 
 Convenciones:
 
-- `drizzle-orm/sqlite-core`, migraciones versionadas, no SQL manual en prod;
+- acceso a datos en runtime a través de `src/db/orm.ts` (`drizzle-orm/d1`), con
+  tipos de fila derivados del schema (`$inferSelect`); `drizzle-orm/sqlite-core`
+  para el schema y migraciones versionadas con drizzle-kit; no SQL manual en
+  prod;
+- excepciones nombradas que permanecen SQL crudo parametrizado:
+  `lib/scheduler-lease.ts` (la semántica de contención del lease se audita como
+  SQL exacto) y `db/query-budget.ts` (cuenta sentencias al nivel del binding,
+  cubriendo también lo que ejecuta Drizzle). Ninguna otra llamada `.prepare(`
+  fuera de esos dos archivos y `db/orm.ts`; los call sites crudos existentes
+  migran al tocarse y quedan prohibidos en código nuevo;
 - `db.batch()` para página+cursor;
 - viem y `Address`/`getAddress()` para BSC;
 - pin exacto `@bnbagent/sdk@0.5.0` durante WP0–WP7; el SDK construye/valida y
@@ -1397,7 +1433,9 @@ Convenciones:
 - `strict`, `noUncheckedIndexedAccess` y parsers para JSON externo;
 - módulo único de enums;
 - routes no importa phases; phases no importa routes; lib no importa ninguno;
-- Vitest/Miniflare para lógica; staging para egress.
+- lógica que toca D1 se testea contra Miniflare con migraciones aplicadas
+  (infra en `test/integration/`); los fakes de D1 se reservan para lógica pura
+  sin acceso a datos; staging para egress.
 
 ```ts
 type PhaseSummary = {
