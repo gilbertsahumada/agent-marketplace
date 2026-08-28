@@ -36,6 +36,22 @@ type SafeSummary = {
   invalidItems?: number;
 };
 
+type DailyBudget = {
+  schemaVersion: 1;
+  utcDate: string;
+  measurementScope: "worker_metered_before_daily_ledger";
+  updatedAt: number;
+  invocations: number;
+  completed: number;
+  failed: number;
+  duplicate: number;
+  locked: number;
+  upstreamRequests: number;
+  d1Queries: number;
+  rowsReadObservedBeforeLedger: number;
+  rowsWrittenObservedBeforeLedger: number;
+};
+
 const RUNTIME_KEYS = [
   "scheduler_lease",
   "sweep_offset",
@@ -121,18 +137,71 @@ function headerHighWater(value: string | null | undefined): string | null {
   return typeof value === "string" && /^\d+:\d+$/.test(value) ? value : null;
 }
 
+function dailyBudget(row: RuntimeRow | undefined, utcDate: string): DailyBudget | null {
+  if (!row?.textValue) return null;
+  try {
+    const parsed: unknown = JSON.parse(row.textValue);
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return null;
+    const source = parsed as Record<string, unknown>;
+    const numericFields = [
+      "updatedAt",
+      "invocations",
+      "completed",
+      "failed",
+      "duplicate",
+      "locked",
+      "upstreamRequests",
+      "d1Queries",
+      "rowsReadObservedBeforeLedger",
+      "rowsWrittenObservedBeforeLedger",
+    ] as const;
+    for (const field of numericFields) {
+      if (!Number.isSafeInteger(source[field]) || (source[field] as number) < 0) return null;
+    }
+    if (
+      source.schemaVersion !== 1
+      || source.utcDate !== utcDate
+      || source.measurementScope !== "worker_metered_before_daily_ledger"
+      || source.completed as number
+        + (source.failed as number)
+        + (source.duplicate as number)
+        + (source.locked as number) !== source.invocations
+    ) return null;
+    return {
+      schemaVersion: 1,
+      utcDate,
+      measurementScope: "worker_metered_before_daily_ledger",
+      updatedAt: source.updatedAt as number,
+      invocations: source.invocations as number,
+      completed: source.completed as number,
+      failed: source.failed as number,
+      duplicate: source.duplicate as number,
+      locked: source.locked as number,
+      upstreamRequests: source.upstreamRequests as number,
+      d1Queries: source.d1Queries as number,
+      rowsReadObservedBeforeLedger: source.rowsReadObservedBeforeLedger as number,
+      rowsWrittenObservedBeforeLedger: source.rowsWrittenObservedBeforeLedger as number,
+    };
+  } catch {
+    return null;
+  }
+}
+
 export async function healthResponse(
   db: D1Database,
   config: WorkerConfig,
   now: number,
 ): Promise<Response> {
   try {
+    const utcDate = new Date(now).toISOString().slice(0, 10);
+    const dailyBudgetKey = `daily_budget_${utcDate.replaceAll("-", "")}`;
+    const runtimeKeys = [...RUNTIME_KEYS, dailyBudgetKey];
     const [runtimeResult, targetsResult] = await Promise.all([
       db.prepare(
         `SELECT key, textValue, integerValue, updatedAt
          FROM runtime_state
-         WHERE key IN (${RUNTIME_KEYS.map(() => "?").join(", ")})`,
-      ).bind(...RUNTIME_KEYS).all<RuntimeRow>(),
+         WHERE key IN (${runtimeKeys.map(() => "?").join(", ")})`,
+      ).bind(...runtimeKeys).all<RuntimeRow>(),
       db.prepare(
         `SELECT declarationState, COUNT(*) AS count
          FROM probe_targets
@@ -211,6 +280,7 @@ export async function healthResponse(
       headerHighWater: headerHighWater(byKey.get("header_high_water")?.textValue),
       headerWindowExhausted: lastHeader?.headerWindowExhausted ?? false,
       targets,
+      dailyBudget: dailyBudget(byKey.get(dailyBudgetKey), utcDate),
       lastPhase,
       lastScheduler,
     }, 200);
