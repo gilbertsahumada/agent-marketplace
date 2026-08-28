@@ -1324,6 +1324,12 @@ El cleanup debe ser posterior no solo a `00:15Z`, sino también al último
 `finishedAt` y al último `DeleteMessage` terminal observado.
 Recién entonces `KILL_SWITCH` vuelve a `1`; el raw final debe demostrar ambos
 switches en `1`.
+El deploy medido se publica con annotations Cloudflare
+`workers/message=git_commit=<SHA completo>` y `workers/tag=git-<SHA12>`; el raw
+de versión vincula esos valores con su `versionId`. Una versión posterior usada
+solo para cerrar controles permanece visible en el raw Workers pero no se mezcla
+con la cohorte del deployment medido. Cualquier emisión extra sigue fallando la
+reconciliación exacta de 288 operaciones `WriteMessage`.
 La Queue, su consumer y D1 de staging se conservan: la eliminación aplica solo a
 recursos efímeros del entorno `validation`. Como el backlog REST es best-effort y puede omitir
 mensajes con retry diferido, cada prueba destructiva de reentrega crea una Queue
