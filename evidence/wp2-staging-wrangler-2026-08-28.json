@@ -40,6 +40,7 @@
   },
   "workersAnalytics": {
     "source": "Cloudflare GraphQL workersInvocationsAdaptive",
+    "rawEvidence": "evidence/wp2-workers-analytics-raw-2026-08-28.json",
     "unit": "microseconds",
     "allStatuses": "success",
     "preview": {
@@ -62,14 +63,16 @@
     "rowsRead": 377,
     "rowsWritten": 46,
     "queryDurationMs": 24.6236,
-    "scope": "Manual phase runs plus health reads in the same staging window."
+    "scope": "Manual phase runs plus health reads in the same staging window.",
+    "limitation": "This aggregate does not prove a per-invocation query or row count and the historical per-query response was not preserved. Runtime query-budget tests are the source for the hard per-invocation cap."
   },
   "cronTrial": {
     "schedule": "* * * * *",
-    "observedInvocations": 0,
-    "reason": "The trigger did not propagate during two minute boundaries and was removed instead of leaving staging active.",
+    "phaseInvocations": 0,
+    "killSwitchedHandlerInvocationsAfterTrial": 9,
+    "reason": "No phase invocation was observed while KILL_SWITCH=0. The retained schedule later reached the redeployed KILL_SWITCH=1 handler at 15:00:56Z through 15:08:56Z, performed no phase work and was then removed explicitly.",
     "schedulesAfterCleanup": []
   },
-  "promotionGate": "failed_cpu",
-  "blockingReason": "HEADER=25 and SWEEP=4 exceeded the 10000 microsecond Workers Free CPU budget; even limit-one HEADER exceeded it in preview and through the authenticated nominal route."
+  "promotionGate": "not_demonstrated_cpu",
+  "blockingReason": "Representative preview and authenticated HTTP samples exceeded the 10000 microsecond Workers Free CPU budget, but no active Cron phase sample was captured. The HTTP route includes authentication overhead, so the Cron CPU gate remains unproven rather than conclusively failed."
 }
