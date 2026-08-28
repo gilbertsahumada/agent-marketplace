@@ -45,27 +45,37 @@ class LeaseStatement implements D1PreparedStatementLike {
   }
 
   async first<Row = Record<string, unknown>>(): Promise<Row | null> {
+    throw new Error("lease queries must retain D1 metadata via all()");
+  }
+
+  async all<Row = Record<string, unknown>>(): Promise<D1ResultLike<unknown, Row>> {
     if (this.query.includes("INSERT INTO runtime_state")) {
       const [runId, expiresAt, updatedAt, now] = this.values as [string, number, number, number];
       if (this.db.lease === null || this.db.lease.integerValue <= now) {
         this.db.lease = { textValue: runId, integerValue: expiresAt, updatedAt };
-        return { key: "scheduler_lease" } as Row;
+        return {
+          success: true,
+          meta: { rows_read: 1, rows_written: 1 },
+          results: [{ key: "scheduler_lease" } as Row],
+        };
       }
-      return null;
+      return { success: true, meta: { rows_read: 1, rows_written: 0 }, results: [] };
     }
 
     if (this.query.includes("UPDATE runtime_state")) {
       const [expiresAt, updatedAt, runId] = this.values as [number, number, string];
-      if (this.db.lease?.textValue !== runId) return null;
+      if (this.db.lease?.textValue !== runId) {
+        return { success: true, meta: { rows_read: 1, rows_written: 0 }, results: [] };
+      }
       this.db.lease = { textValue: null, integerValue: expiresAt, updatedAt };
-      return { key: "scheduler_lease" } as Row;
+      return {
+        success: true,
+        meta: { rows_read: 1, rows_written: 1 },
+        results: [{ key: "scheduler_lease" } as Row],
+      };
     }
 
     throw new Error(`Unexpected query: ${this.query}`);
-  }
-
-  async all<Row = Record<string, unknown>>(): Promise<D1ResultLike<unknown, Row>> {
-    return { success: true, meta: {}, results: [] };
   }
 
   async run<Meta = unknown>(): Promise<D1ResultLike<Meta>> {
