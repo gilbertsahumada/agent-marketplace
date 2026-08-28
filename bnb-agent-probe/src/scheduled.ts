@@ -1,25 +1,55 @@
 import type { WorkerConfig } from "./config";
-import { writeRuntimeState, type D1DatabaseLike } from "./db/client";
-import { createBudgetedD1Database } from "./db/query-budget";
+import { executeBatch, prepareStatement, type D1DatabaseLike } from "./db/client";
+import { createBudgetedD1Database, type D1QueryBudget } from "./db/query-budget";
+import { createD1HeaderPersistence, runHeader, type HeaderAgent } from "./phases/header";
 import {
-  acquireSchedulerLease,
-  releaseSchedulerLease,
-} from "./lib/scheduler-lease";
+  createD1LiveAgentPageReader,
+  runSweepPhase,
+  type SweepAgentResult,
+  type SweepTargetCandidate,
+} from "./phases/sweep";
+import { acquireSchedulerLease, releaseSchedulerLease } from "./lib/scheduler-lease";
+import { CURATED_INVENTORY, CURATED_INVENTORY_CATEGORIES } from "./manifest/curated-inventory";
+import { selectLiveTargets } from "./trust8004/candidates";
+import { Trust8004CatalogClient } from "./trust8004/client";
+import type { CatalogAgent } from "./trust8004/types";
 import type { Env, ExecutionContext, ScheduledController } from "./types";
 
 const FREE_LEASE_MS = 4 * 60_000;
 const PAID_LEASE_MS = 14 * 60_000;
 
+export type SchedulerPhase = "header" | "sweep" | "probe";
+
+interface PhaseStateRow {
+  readonly key: string;
+  readonly textValue: string | null;
+}
+
+interface PhaseExecution {
+  readonly phase: SchedulerPhase;
+  readonly db: D1DatabaseLike;
+  readonly queryBudget: D1QueryBudget;
+  readonly env: Env;
+  readonly config: WorkerConfig;
+  readonly nowMs: number;
+  readonly headerHighWater: string | null;
+}
+
 export interface ScheduledRuntimeDependencies {
   now?: () => number;
   randomUUID?: () => string;
+  fetch?: typeof fetch;
+  executePhase?: (input: PhaseExecution) => Promise<void>;
 }
 
-export function createWp1ScheduledRunner(dependencies: ScheduledRuntimeDependencies = {}) {
+export function createWp2ScheduledRunner(dependencies: ScheduledRuntimeDependencies = {}) {
   const now = dependencies.now ?? Date.now;
   const randomUUID = dependencies.randomUUID ?? crypto.randomUUID.bind(crypto);
+  const fetchImpl = dependencies.fetch ?? fetch;
+  const executePhase = dependencies.executePhase
+    ?? ((input: PhaseExecution) => executeWp2Phase(input, fetchImpl));
 
-  return async function runWp1Scheduled(
+  return async function runWp2Scheduled(
     _controller: ScheduledController,
     env: Env,
     _context: ExecutionContext,
@@ -29,9 +59,9 @@ export function createWp1ScheduledRunner(dependencies: ScheduledRuntimeDependenc
     const runId = randomUUID();
     const leaseMs = config.plan === "free" ? FREE_LEASE_MS : PAID_LEASE_MS;
     const rawDb = env.DB as unknown as D1DatabaseLike;
-    // The phase budget excludes one cleanup query so an acquired lease can be
-    // released before the invocation reaches the platform hard limit.
-    const { db } = createBudgetedD1Database(rawDb, config.d1QueriesPerRun - 1);
+    // Reserve one raw query so finally can always attempt an owner-checked
+    // lease release before the platform hard limit.
+    const { db, budget } = createBudgetedD1Database(rawDb, config.d1QueriesPerRun - 1);
     const acquired = await acquireSchedulerLease(db, {
       runId,
       nowMs: startedAt,
@@ -40,25 +70,155 @@ export function createWp1ScheduledRunner(dependencies: ScheduledRuntimeDependenc
 
     if (!acquired) {
       const finishedAt = now();
-      await writeRuntimeState(db, {
-        key: "last_scheduler_summary",
-        textValue: JSON.stringify({
-          status: "skipped_locked",
-          requests: 0,
-          wallTimeMs: Math.max(0, finishedAt - startedAt),
-        }),
-        integerValue: null,
-        updatedAt: finishedAt,
-      });
+      await db.prepare(
+        `INSERT INTO runtime_state (key, textValue, integerValue, updatedAt)
+         VALUES ('last_scheduler_summary', ?, NULL, ?)
+         ON CONFLICT(key) DO UPDATE SET
+           textValue = excluded.textValue,
+           integerValue = NULL,
+           updatedAt = excluded.updatedAt`,
+      ).bind(JSON.stringify({
+        status: "skipped_locked",
+        requests: 0,
+        wallTimeMs: Math.max(0, finishedAt - startedAt),
+      }), finishedAt).run();
       return;
     }
 
     try {
-      // WP1 deliberately runs no HEADER, SWEEP or PROBE phase.
+      const stateResult = await db.prepare(
+        `SELECT key, textValue
+         FROM runtime_state
+         WHERE key IN ('next_scheduler_phase', 'header_high_water')`,
+      ).all<PhaseStateRow>();
+      if (!stateResult.success) throw new Error("Could not read scheduler phase state");
+      const state = new Map((stateResult.results ?? []).map((row) => [row.key, row.textValue]));
+      await executePhase({
+        phase: parsePhase(state.get("next_scheduler_phase")),
+        db,
+        queryBudget: budget,
+        env,
+        config,
+        nowMs: now(),
+        headerHighWater: state.get("header_high_water") ?? null,
+      });
     } finally {
       await releaseSchedulerLease(rawDb, runId, now());
     }
   };
 }
 
-export const runWp1Scheduled = createWp1ScheduledRunner();
+async function executeWp2Phase(input: PhaseExecution, fetchImpl: typeof fetch): Promise<void> {
+  if (input.config.plan !== "free") throw new Error("WP2_PAID_PIPELINE_NOT_VALIDATED");
+  const catalog = new Trust8004CatalogClient({
+    baseUrl: input.env.TRUST8004_BASE_URL ?? "https://trust8004.xyz/api/app",
+    timeoutMs: input.config.probeTimeoutMs,
+    maxResponseBytes: input.config.maxCatalogResponseBytes,
+    fetch: fetchImpl,
+  });
+  const curatedIds = CURATED_INVENTORY.entries.map(({ agentId }) => agentId);
+  const curatedSet = new Set(curatedIds);
+
+  if (input.phase === "header") {
+    await runHeader({
+      fetchNewestPage: async (limit) => {
+        const page = await catalog.listHeader(limit);
+        if (page.invalidItems.length > 0) throw new Error("HEADER_INVALID_CATALOG_ITEM");
+        return { items: page.items };
+      },
+      parseAgent: (value) => toHeaderAgent(value as CatalogAgent, curatedSet),
+      persistence: createD1HeaderPersistence(input.db),
+      queryBudget: input.queryBudget,
+      now: () => input.nowMs,
+    }, {
+      limit: input.config.headerLimit,
+      previousHighWater: input.headerHighWater,
+      reserveQueriesAfterCommit: 0,
+    });
+    return;
+  }
+
+  if (input.phase === "sweep") {
+    await runSweepPhase({
+      db: input.db,
+      limit: input.config.sweepLimit,
+      nowMs: input.nowMs,
+      queryBudget: input.queryBudget,
+      requestBudget: { remaining: input.config.trust8004RequestsPerRun },
+    }, {
+      listLiveAgentPage: createD1LiveAgentPageReader(input.db, curatedIds),
+      fetchAgents: async ({ agentIds }) => {
+        const results: SweepAgentResult[] = [];
+        for (const agentId of agentIds) {
+          results.push(toSweepResult(await catalog.getAgent(agentId), curatedSet));
+        }
+        return results;
+      },
+    });
+    return;
+  }
+
+  // WP2 keeps the state machine moving but never contacts a seller. WP3
+  // replaces this explicit pending phase with the allowlisted probe.
+  await executeBatch(input.db, [
+    prepareStatement(input.db,
+      `INSERT INTO runtime_state (key, textValue, integerValue, updatedAt)
+       VALUES ('last_probe_summary', ?, NULL, ?)
+       ON CONFLICT(key) DO UPDATE SET textValue=excluded.textValue,
+         integerValue=NULL, updatedAt=excluded.updatedAt`,
+      [JSON.stringify({ phase: "probe", status: "pending_wp3", requests: 0, wallTimeMs: 0 }), input.nowMs]),
+    prepareStatement(input.db,
+      `INSERT INTO runtime_state (key, textValue, integerValue, updatedAt)
+       VALUES ('next_scheduler_phase', 'header', NULL, ?)
+       ON CONFLICT(key) DO UPDATE SET textValue='header',
+         integerValue=NULL, updatedAt=excluded.updatedAt`,
+      [input.nowMs]),
+  ]);
+}
+
+function toHeaderAgent(agent: CatalogAgent, curatedIds: ReadonlySet<string>): HeaderAgent {
+  if (agent.registeredAt === null) throw new Error("HEADER_MISSING_REGISTERED_AT");
+  return {
+    chainId: 56,
+    agentId: agent.agentId,
+    registeredAt: agent.registeredAt,
+    name: agent.name,
+    metadataUpdatedAt: agent.metadataUpdatedAt,
+    declaresErc8183: agent.declarations.erc8183,
+    targets: selectLiveTargets(agent, { curatedAgentIds: curatedIds }),
+  };
+}
+
+function toSweepResult(agent: CatalogAgent, curatedIds: ReadonlySet<string>): SweepAgentResult {
+  if (!agent.metadataAvailable) {
+    return { status: "metadata_unavailable", agentId: agent.agentId };
+  }
+  const categories = curatedCategories(agent.agentId);
+  const targets: SweepTargetCandidate[] = selectLiveTargets(agent, {
+    curatedAgentIds: curatedIds,
+  }).map(({ transport, endpoint }) => ({
+    transport,
+    endpoint,
+    categoriesJson: JSON.stringify(categories),
+    categoryProvenance: categories.length > 0 ? "derived:marketplace-inventory" : null,
+  }));
+  return {
+    status: "ok",
+    agentId: agent.agentId,
+    name: agent.name,
+    metadataUpdatedAt: agent.metadataUpdatedAt,
+    targets,
+  };
+}
+
+function curatedCategories(agentId: string): string[] {
+  const entry = CURATED_INVENTORY.entries.find((candidate) => candidate.agentId === agentId);
+  const assigned = new Set(entry?.categories.map(({ category }) => category) ?? []);
+  return CURATED_INVENTORY_CATEGORIES.filter((category) => assigned.has(category));
+}
+
+function parsePhase(value: string | null | undefined): SchedulerPhase {
+  return value === "sweep" || value === "probe" ? value : "header";
+}
+
+export const runWp2Scheduled = createWp2ScheduledRunner();
