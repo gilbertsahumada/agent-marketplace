@@ -1331,6 +1331,9 @@ tener el mismo commit y `script.etag`, más un tag `git-<SHA12>-<sufijo>`; sus
 muestras Worker también cuentan para CPU, memoria y errores porque pueden
 procesar retries. Una versión sin esa procedencia falla. Cualquier emisión extra sigue fallando la
 reconciliación exacta de 288 operaciones `WriteMessage`.
+Una invocación autenticada de drenaje con cero subrequests y sin `WriteMessage`
+correlacionado representa un producer bloqueado: aporta al máximo de CPU pero no
+al conteo de mensajes.
 La Queue, su consumer y D1 de staging se conservan: la eliminación aplica solo a
 recursos efímeros del entorno `validation`. Como el backlog REST es best-effort y puede omitir
 mensajes con retry diferido, cada prueba destructiva de reentrega crea una Queue
