@@ -48,15 +48,18 @@ export interface HeaderTargetWrite extends HeaderStoredTarget {
 }
 
 export interface HeaderSummary {
+  readonly phase: "header";
   readonly status: "ok";
   readonly requested: number;
   readonly received: number;
   readonly agentsValidated: number;
+  readonly invalidItems: number;
   readonly candidateTargets: number;
   readonly materialWrites: number;
   readonly headerWindowExhausted: boolean;
   readonly requests: 1;
   readonly d1Queries: number;
+  readonly wallTimeMs: number;
   readonly finishedAt: number;
 }
 
@@ -76,10 +79,15 @@ export interface HeaderPersistence {
 
 export interface HeaderQueryBudget {
   readonly remaining: number;
+  readonly used?: number;
 }
 
 export interface HeaderDependencies {
-  fetchNewestPage(limit: number): Promise<{ readonly items: readonly unknown[] }>;
+  fetchNewestPage(limit: number): Promise<{
+    readonly items: readonly unknown[];
+    readonly received?: number;
+    readonly invalidItems?: number;
+  }>;
   parseAgent(value: unknown, index: number): HeaderAgent;
   persistence: HeaderPersistence;
   queryBudget: HeaderQueryBudget;
@@ -91,6 +99,8 @@ export interface RunHeaderOptions {
   readonly previousHighWater?: string | null;
   /** Queries needed after HEADER, normally the scheduler lease release. */
   readonly reserveQueriesAfterCommit?: number;
+  readonly invocationQueriesAfterCommit?: number;
+  readonly startedAtMs?: number;
 }
 
 export class HeaderQueryBudgetExceededError extends Error {
@@ -104,6 +114,7 @@ export class HeaderQueryBudgetExceededError extends Error {
 }
 
 const MAX_BOUND_AGENT_IDS = 100;
+const MAX_D1_BOUND_STRING_BYTES = 1_500_000;
 const RUNTIME_STATE_WRITES = 3;
 
 export function createD1HeaderPersistence(db: D1DatabaseLike): HeaderPersistence {
@@ -129,9 +140,8 @@ export function createD1HeaderPersistence(db: D1DatabaseLike): HeaderPersistence
       return result.results;
     },
     async commitHeader(input) {
-      const targetStatements = input.targetWrites.length === 0
-        ? []
-        : [prepareStatement(
+      const targetStatements = serializeTargetWriteChunks(input.targetWrites).map((serialized) =>
+        prepareStatement(
             db,
             `INSERT INTO probe_targets (
                agentId, chainId, transport, endpoint, name, categoriesJson,
@@ -165,8 +175,8 @@ export function createD1HeaderPersistence(db: D1DatabaseLike): HeaderPersistence
                lastChangedAt = excluded.lastChangedAt,
                lastSeenAt = excluded.lastSeenAt,
                priority = excluded.priority`,
-            [serializeTargetWrites(input.targetWrites)],
-          )];
+            [serialized],
+          ));
       const runtimeStatements = [
         runtimeStateStatement(db, "header_high_water", input.highWater, null, input.summary.finishedAt),
         runtimeStateStatement(
@@ -198,7 +208,15 @@ export async function runHeader(
   assertNonNegativeInteger(reserveQueriesAfterCommit, "reserveQueriesAfterCommit");
 
   const page = await dependencies.fetchNewestPage(options.limit);
-  if (!Array.isArray(page.items) || page.items.length > options.limit) {
+  const received = page.received ?? page.items.length;
+  const invalidItems = page.invalidItems ?? received - page.items.length;
+  if (!Array.isArray(page.items)
+    || !Number.isSafeInteger(received)
+    || !Number.isSafeInteger(invalidItems)
+    || received < page.items.length
+    || received > options.limit
+    || invalidItems < 0
+    || invalidItems !== received - page.items.length) {
     throw new Error("HEADER page contains more items than requested");
   }
 
@@ -261,9 +279,9 @@ export async function runHeader(
   }, null);
   const highWater = maximumHighWater(previousHighWater, pageHighWater);
   const headerWindowExhausted = previousHighWater !== null
-    && agents.length === options.limit
-    && agents.every((agent) => compareHighWater(agent, previousHighWater) > 0);
-  const batchQueries = (targetWrites.length === 0 ? 0 : 1) + RUNTIME_STATE_WRITES;
+    && received === options.limit
+    && (invalidItems > 0 || agents.every((agent) => compareHighWater(agent, previousHighWater) > 0));
+  const batchQueries = serializeTargetWriteChunks(targetWrites).length + RUNTIME_STATE_WRITES;
   const requiredQueries = batchQueries + reserveQueriesAfterCommit;
 
   if (requiredQueries > dependencies.queryBudget.remaining) {
@@ -271,10 +289,12 @@ export async function runHeader(
   }
 
   const summary: HeaderSummary = {
+    phase: "header",
     status: "ok",
     requested: options.limit,
-    received: agents.length,
+    received,
     agentsValidated: agents.length,
+    invalidItems,
     candidateTargets: agents.reduce((total, agent) => {
       const eligible = agent.declaresErc8183 || curatedCategories(agent.agentId).length > 0;
       return total + (eligible ? Math.min(agent.targets.length, 2) : 0);
@@ -282,7 +302,10 @@ export async function runHeader(
     materialWrites: targetWrites.length,
     headerWindowExhausted,
     requests: 1,
-    d1Queries: (agentIds.length === 0 ? 0 : 1) + batchQueries,
+    d1Queries: dependencies.queryBudget.used === undefined
+      ? (agentIds.length === 0 ? 0 : 1) + batchQueries
+      : dependencies.queryBudget.used + batchQueries + (options.invocationQueriesAfterCommit ?? 0),
+    wallTimeMs: Math.max(0, finishedAt - (options.startedAtMs ?? finishedAt)),
     finishedAt,
   };
 
@@ -403,8 +426,8 @@ function runtimeStateStatement(
   );
 }
 
-function serializeTargetWrites(targets: readonly HeaderTargetWrite[]): string {
-  return JSON.stringify(targets.map((target) => ({
+function serializableTarget(target: HeaderTargetWrite) {
+  return {
     agentId: target.agentId,
     chainId: target.chainId,
     transport: target.transport,
@@ -419,5 +442,28 @@ function serializeTargetWrites(targets: readonly HeaderTargetWrite[]): string {
     lastChangedAt: target.lastChangedAt,
     lastSeenAt: target.lastSeenAt,
     priority: target.priority,
-  })));
+  };
+}
+
+function serializeTargetWriteChunks(targets: readonly HeaderTargetWrite[]): string[] {
+  const encoder = new TextEncoder();
+  const chunks: string[] = [];
+  let current: HeaderTargetWrite[] = [];
+  for (const target of targets) {
+    const candidate = [...current, target];
+    const serialized = JSON.stringify(candidate.map(serializableTarget));
+    if (encoder.encode(serialized).byteLength <= MAX_D1_BOUND_STRING_BYTES) {
+      current = candidate;
+      continue;
+    }
+    if (current.length === 0) throw new Error("HEADER target exceeds the D1 bind-size budget");
+    chunks.push(JSON.stringify(current.map(serializableTarget)));
+    current = [target];
+    const single = JSON.stringify(current.map(serializableTarget));
+    if (encoder.encode(single).byteLength > MAX_D1_BOUND_STRING_BYTES) {
+      throw new Error("HEADER target exceeds the D1 bind-size budget");
+    }
+  }
+  if (current.length > 0) chunks.push(JSON.stringify(current.map(serializableTarget)));
+  return chunks;
 }
