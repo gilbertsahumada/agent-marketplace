@@ -31,6 +31,7 @@ interface ProjectedDailyBudget {
 export interface ObservationWorkerConfig {
   plan: CloudflareWorkersPlan;
   killSwitch: boolean;
+  producerKillSwitch: boolean;
   schedulerMode: ObservationSchedulerMode;
   cronIntervalMinutes: number;
   headerLimit: number;
@@ -54,6 +55,7 @@ export interface ObservationWorkerConfig {
 type WorkerBudgetValues = Omit<ObservationWorkerConfig,
   | "plan"
   | "killSwitch"
+  | "producerKillSwitch"
   | "schedulerMode"
   | "probeAgentAllowlist"
   | "probeEndpointAllowlist"
@@ -180,6 +182,13 @@ function parseKillSwitch(value: string | undefined): boolean {
   if (value === undefined || value === "1") return true;
   if (value === "0") return false;
   throw new ObservationWorkerConfigError("KILL_SWITCH", "must be 0 or 1");
+}
+
+function parseProducerKillSwitch(value: string | undefined, killSwitch: boolean): boolean {
+  if (value === undefined) return killSwitch;
+  if (value === "1") return true;
+  if (value === "0") return false;
+  throw new ObservationWorkerConfigError("PRODUCER_KILL_SWITCH", "must be 0 or 1");
 }
 
 function parseCsv(field: string, raw: string): readonly string[] {
@@ -420,9 +429,11 @@ export function loadObservationWorkerConfig(env: WorkerEnvironment): Observation
     }
   }
 
+  const killSwitch = parseKillSwitch(env.KILL_SWITCH);
   return {
     plan,
-    killSwitch: parseKillSwitch(env.KILL_SWITCH),
+    killSwitch,
+    producerKillSwitch: parseProducerKillSwitch(env.PRODUCER_KILL_SWITCH, killSwitch),
     schedulerMode: profile.schedulerMode,
     probeAgentAllowlist: parseAgentAllowlist(env.PROBE_AGENT_ALLOWLIST, plan),
     probeEndpointAllowlist: parseEndpointAllowlist(env.PROBE_ENDPOINT_ALLOWLIST, plan),
