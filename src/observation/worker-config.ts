@@ -199,7 +199,7 @@ function parseInteger(
   if (field === "D1_QUERIES_PER_RUN" && value < 12) {
     throw new ObservationWorkerConfigError(
       field,
-      "must cover the minimum Queue SWEEP plus error and lease cleanup reserves",
+      "must cover the minimum Queue SWEEP plus error, lease cleanup, and daily ledger reserves",
     );
   }
   if (field === "MAX_CATALOG_RESPONSE_BYTES" && value === 0) {
