@@ -494,3 +494,15 @@ observation; unavailable metadata produces no target write. Cleanup is a
 nominal redeploy (`KILL_SWITCH=1`, `STAGING_MANUAL_RUN=0`) followed by
 `npx wrangler secret delete SHARED_SECRET --env staging`; `BSC_RPC_URL` may
 remain because it grants no custody and scheduled work stays disabled.
+## Data access convention
+
+Runtime queries go through the Drizzle layer in `src/db/orm.ts`, whose row
+types are derived from `src/db/schema.ts` so schema drift breaks compilation
+instead of failing inside a hand-written SQL string at runtime. Two deliberate
+exceptions stay raw D1 SQL: the scheduler lease
+(`src/lib/scheduler-lease.ts`), whose contention semantics must be auditable
+as exact SQL, and the query-budget wrapper (`src/db/query-budget.ts`), which
+counts statements at the binding level and therefore also covers everything
+Drizzle executes. New phase or route code must not add raw `prepare()` calls
+outside those two files; existing raw call sites migrate to `db/orm.ts` as
+they are next touched.
