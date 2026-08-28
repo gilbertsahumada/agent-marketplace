@@ -26,6 +26,9 @@ If another invocation owns the D1 lease, the message is not acknowledged and is
 retried after 240 seconds; completed and stale ticks are acknowledged normally.
 The consumer is fixed at one concurrent invocation, and Queue timestamps more
 than five minutes ahead of the Worker clock are rejected before phase execution.
+Every consumer also declares a 60-second default retry delay for unexpected
+phase exceptions. This is separate from the explicit 240-second lease delay and
+prevents all automatic retries from being exhausted within a few seconds.
 
 ```bash
 npm install
@@ -51,6 +54,27 @@ backlog is zero before enabling work and again after cleanup.
 Queue backlog metrics are best-effort and can omit a delayed retry until it is
 eligible again. A retry trial therefore uses a fresh validation Queue unless the
 drain window is known to cover every pending delivery delay.
+
+Destructive retry tests use the dedicated `validation` environment, never the
+staging D1 or Queue. Its checked-in defaults are Free-sized, contain no Cron
+Trigger or secret, and keep `KILL_SWITCH=1` outside a controlled window:
+
+```bash
+npx wrangler d1 migrations apply bnb-agent-probe-validation-20260828 \
+  --remote --env validation
+npx wrangler deploy --env validation
+```
+
+Before a trial, verify the validation schedules and secrets are empty, the Queue
+has no eligible or delayed messages, and staging state matches its preflight
+snapshot. After the trial, redeploy the nominal validation configuration,
+restore `KILL_SWITCH=1`, remove temporary secrets, resume delivery, verify the
+lease is inactive and recheck a zero backlog after every retry delay has elapsed.
+Exact correctness comes from D1 completion markers keyed by `scheduledTime`;
+adaptive Queue and Workers metrics only corroborate delivery and resource use.
+The clean retry and two-round records are in
+`../evidence/wp2-retry-remote-clean-2026-08-28.json` and
+`../evidence/wp2-default-rounds-2026-08-28.json`.
 
 Controlled nominal measurements may call `POST /__admin/run-scheduled` only
 while `DEPLOYMENT_ENV=staging`, `STAGING_MANUAL_RUN=1`, `KILL_SWITCH=0` and
