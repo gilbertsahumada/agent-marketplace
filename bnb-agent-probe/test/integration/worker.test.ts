@@ -186,7 +186,7 @@ describe("WP1 in the Workers runtime", () => {
     expect(JSON.parse(await runtimeText("last_probe_summary") ?? "{}")).toMatchObject({
       phase: "probe",
       status: "ok",
-      outcome: "no_candidate",
+      outcome: "metadata_unavailable",
       d1Queries: 8,
     });
     const firstSummary = await runtimeText("last_probe_summary");
@@ -503,7 +503,7 @@ describe("WP1 in the Workers runtime", () => {
     expect(await runtimeInteger("sweep_offset")).toBe(4);
     expect(await runtimeText("next_scheduler_phase")).toBe("probe");
 
-    await runner(controller, env, context, config); // PROBE has no allowlisted target
+    await runner(controller, env, context, config); // PROBE bootstraps Grid; metadata is unavailable
     expect(await runtimeText("next_scheduler_phase")).toBe("header");
 
     headerIncludesAgent = false;
@@ -511,7 +511,7 @@ describe("WP1 in the Workers runtime", () => {
     await runner(controller, env, context, config); // HEADER, identical target data
     await runner(controller, env, context, config); // SWEEP page 2/2, round complete
     expect(await runtimeInteger("sweep_round")).toBe(1);
-    await runner(controller, env, context, config); // PROBE has no allowlisted target
+    await runner(controller, env, context, config); // PROBE retries the safe Grid bootstrap
     await runner(controller, env, context, config); // HEADER empty
     await runner(controller, env, context, config); // SWEEP page contains agent 16
 
