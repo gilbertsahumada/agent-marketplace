@@ -55,13 +55,15 @@
     "phase": "header",
     "status": "ok",
     "phaseD1Queries": 4,
-    "totalD1QueriesIncludingClaim": 5,
+    "totalD1QueriesIncludingCompletionMarker": 5,
     "nextPhase": "sweep",
     "retryE2E": {
       "firstDelivery": "failed_without_ack",
       "secondDelivery": "same_tick_completed_and_acked",
       "thirdDelivery": "same_tick_deduplicated_and_acked",
-      "completionMarkerAtomicWithPhaseState": true
+      "completionMarkerAtomicWithPhaseState": true,
+      "leaseContention": "retry_delay_240_seconds_without_ack",
+      "postExpiryDelivery": "same_tick_completed_once_then_deduplicated"
     }
   },
   "regression": {
