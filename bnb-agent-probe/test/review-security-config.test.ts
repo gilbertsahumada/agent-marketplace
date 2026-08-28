@@ -18,11 +18,15 @@ import { isSyntacticallyPublicHttpsUrl } from "../src/trust8004/safe-url";
 
 describe("review: syntactically public IPv6 policy", () => {
   it.each([
+    "https://[::ffff:127.0.0.1]/path",
     "https://[64:ff9b::c000:201]/path",
     "https://[64:ff9b:1::1]/path",
     "https://[100::1]/path",
     "https://[2001::1]/path",
+    "https://[2001:db8::1]/path",
     "https://[2002::1]/path",
+    "https://[fe80::1]/path",
+    "https://[ff00::1]/path",
   ])("rejects reserved or transition prefix %s", (url) => {
     expect(isSyntacticallyPublicHttpsUrl(url)).toBe(false);
   });
