@@ -1,6 +1,4 @@
 import { ConfigError, loadConfig, type WorkerConfig } from "./config";
-import { healthResponse } from "./routes/health";
-import { runWp2Scheduled } from "./scheduled";
 import type {
   Env,
   ExecutionContext,
@@ -60,6 +58,7 @@ export function createWorker(dependencies: WorkerDependencies = {}): WorkerEntry
 
       const url = new URL(request.url);
       if (request.method === "GET" && url.pathname === "/health") {
+        const { healthResponse } = await import("./routes/health");
         return healthResponse(env.DB, config, now());
       }
       if (request.method === "POST" && url.pathname === "/__admin/run-scheduled") {
@@ -98,4 +97,9 @@ export function createWorker(dependencies: WorkerDependencies = {}): WorkerEntry
   };
 }
 
-export default createWorker({ runScheduled: runWp2Scheduled });
+const defaultRunScheduled: NonNullable<WorkerDependencies["runScheduled"]> = async (...args) => {
+  const { runWp2Scheduled } = await import("./scheduled");
+  return runWp2Scheduled(...args);
+};
+
+export default createWorker({ runScheduled: defaultRunScheduled });
