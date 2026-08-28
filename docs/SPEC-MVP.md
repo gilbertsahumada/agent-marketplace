@@ -1257,8 +1257,8 @@ staging con el código candidato completo y una
 ventana completa de cuota `00:00:00Z–24:00:00Z`: 288 ticks esperados, 96 éxitos
 por fase en el camino nominal y cada retry/outcome reconciliado por
 `scheduledTime`, `messageId` y número de entrega. Cada tick admite un único
-mensaje de Queue, debe terminar y debe respetar la secuencia exacta
-HEADER → SWEEP → PROBE. Se capturan sin resumir el ledger D1, los resultados por query
+mensaje de Queue, debe terminar y debe respetar la rotación cíclica exacta
+HEADER → SWEEP → PROBE desde la fase inicial persistida. Se capturan sin resumir el ledger D1, los resultados por query
 o base de D1 Analytics y el total de uso de la cuenta, porque las cuotas Free
 son account-wide. Debe demostrar `<4.000.000` filas leídas, `<80.000` escritas,
 `<=40` queries por intento, cero errores de cuota y explicar cualquier tick o
@@ -1294,9 +1294,14 @@ retries pertenecientes al día. La gracia dura como mínimo hasta `00:15Z`
 tengan un outcome terminal en `scheduler_attempts` y Queue Analytics no muestre
 operaciones pendientes; backlog REST cero solo corrobora y nunca cierra el gate.
 Los raw de preflight, activación y cleanup incluyen `capturedAt`; el validador
-rechaza un cleanup anterior a la gracia. El CPU P99 del producer `<10 ms` se
-conserva en la activación y el ledger deriva wall time p95 `<30 s`; Workers
-Analytics mantiene el gate del consumer `<30 s` y memoria P999.
+rechaza un cleanup anterior a la gracia. Workers Analytics separa el CPU P99
+del producer `<10 ms` correlacionando sus timestamps con `WriteMessage`, y deja
+las demás muestras para el consumer `<30 s`; el ledger deriva wall time p95
+`<30 s` y Workers conserva también memoria P999. Como Queue Analytics no emite
+necesariamente puntos durante la inactividad, se exigen una escritura y un
+delete exitoso por mensaje terminal, el último backlog emitido en cero después
+del último tick y el backlog REST timestamped en cero tras `00:15Z`; la consulta
+se solicita completa hasta ese cutoff.
 Recién entonces `KILL_SWITCH` vuelve a `1`.
 La Queue, su consumer y D1 de staging se conservan: la eliminación aplica solo a
 recursos efímeros del entorno `validation`. Como el backlog REST es best-effort y puede omitir
