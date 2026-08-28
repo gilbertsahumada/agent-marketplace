@@ -71,9 +71,9 @@ describe("review: non-zero executable phase budgets", () => {
   });
 
   it("rejects a D1 budget that cannot cover the minimum Queue SWEEP and cleanup", () => {
-    expect(() => loadConfig({ D1_QUERIES_PER_RUN: "3" }))
+    expect(() => loadConfig({ D1_QUERIES_PER_RUN: "12" }))
       .toThrow(/^D1_QUERIES_PER_RUN:/);
-    expect(loadConfig({ D1_QUERIES_PER_RUN: "12" }).d1QueriesPerRun).toBe(12);
+    expect(loadConfig({ D1_QUERIES_PER_RUN: "13" }).d1QueriesPerRun).toBe(13);
   });
 });
 
