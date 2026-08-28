@@ -235,7 +235,7 @@ function parseEndpointAllowlist(raw: string | undefined, plan: WorkersPlan): rea
   if (values.length > (plan === "free" ? 1 : 100)) {
     throw new ConfigError("PROBE_ENDPOINT_ALLOWLIST", "contains too many entries for the plan");
   }
-  return values.map((value) => {
+  const normalized = values.map((value) => {
     let url: URL;
     try {
       url = new URL(value);
@@ -260,6 +260,10 @@ function parseEndpointAllowlist(raw: string | undefined, plan: WorkersPlan): rea
     }
     return url.toString();
   });
+  if (plan === "free" && (normalized.length !== 1 || normalized[0] !== WP3_ENDPOINT)) {
+    throw new ConfigError("PROBE_ENDPOINT_ALLOWLIST", `Free must contain only ${WP3_ENDPOINT}`);
+  }
+  return normalized;
 }
 
 function parseCsv(field: string, raw: string): readonly string[] {
