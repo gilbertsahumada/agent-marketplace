@@ -19,8 +19,9 @@ beforeEach(async () => {
 });
 
 function queueMessage(body: unknown, attempts = 1) {
+  const scheduledTime = (body as { scheduledTime?: unknown }).scheduledTime;
   return {
-    id: `worker-test-${attempts}`,
+    id: `worker-test-${String(scheduledTime)}`,
     timestamp: new Date(),
     body,
     attempts,
