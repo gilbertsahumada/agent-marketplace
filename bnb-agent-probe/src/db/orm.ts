@@ -15,6 +15,7 @@ export type ProbeObservationRow = typeof schema.probeObservations.$inferSelect;
 export type FunnelSnapshotRow = typeof schema.funnelSnapshots.$inferSelect;
 export type HireEventRow = typeof schema.hireEvents.$inferSelect;
 export type RuntimeStateRow = typeof schema.runtimeState.$inferSelect;
+export type SchedulerAttemptRow = typeof schema.schedulerAttempts.$inferSelect;
 
 export function createDatabase(d1: D1DatabaseLike): Database {
   return drizzle(d1 as Parameters<typeof drizzle>[0], { schema });
