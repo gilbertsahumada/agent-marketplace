@@ -95,6 +95,8 @@ The starting phase comes from a hashed raw D1 read captured within five minutes
 before the first UTC tick. Producer CPU is derived only from complete Workers
 groups matched to all 288 `WriteMessage` operations with zero subrequests;
 ambiguous or incomplete attribution fails closed.
+The Workers query ends at the same post-midnight terminality cutoff as Queue,
+so drain-version retries cannot escape CPU, memory, version or error accounting.
 
 Staging remains on the Free profile and retains one isolated Queue producer and
 serial consumer. Outside the exact 24-hour gate it declares an empty Cron list
