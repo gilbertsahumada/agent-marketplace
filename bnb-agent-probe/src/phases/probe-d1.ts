@@ -17,6 +17,8 @@ export class ProbeQueryBudgetExceededError extends Error {
 }
 
 const TARGET_REFRESH_INTERVAL_MS = 60 * 60_000;
+const GRID_AGENT_ID = "303779";
+const GRID_ENDPOINT = "https://bnb-agent-marketplace-ruby.vercel.app/grid";
 
 export function createD1ProbePersistence(
   d1: D1DatabaseLike,
@@ -54,7 +56,7 @@ export function createD1ProbePersistence(
         inArray(probeTargets.endpoint, [...endpointAllowlist]),
       )).orderBy(desc(probeTargets.priority), latestProbe).limit(1);
       const row = rows[0];
-      if (!row) return null;
+      if (!row) return bootstrapGridTarget(agentAllowlist, endpointAllowlist);
       if (row.chainId !== 56 || (row.transport !== "a2a" && row.transport !== "erc8183_http")) {
         throw new Error("Invalid PROBE target row");
       }
@@ -67,6 +69,42 @@ export function createD1ProbePersistence(
         const currentMetadataUpdatedAt = state === "current"
           ? commit.reconciliation.metadataUpdatedAt
           : commit.target.currentMetadataUpdatedAt;
+        if (commit.target.bootstrapSource === "marketplace-inventory" && state === "current") {
+          statements.push(db.insert(probeTargets).values({
+            agentId: commit.target.agentId,
+            chainId: commit.target.chainId,
+            transport: commit.target.transport,
+            endpoint: commit.target.endpoint,
+            name: "Grid",
+            categoriesJson: commit.target.categoriesJson,
+            categoryProvenance: "derived:marketplace-inventory",
+            declarationState: "current",
+            currentMetadataUpdatedAt,
+            lastMetadataCheckedAt: input.nowMs,
+            firstSeenAt: input.nowMs,
+            lastChangedAt: input.nowMs,
+            lastSeenAt: input.nowMs,
+            priority: commit.nextPriority ?? 0,
+          }).onConflictDoUpdate({
+            target: [
+              probeTargets.chainId,
+              probeTargets.agentId,
+              probeTargets.transport,
+              probeTargets.endpoint,
+            ],
+            set: {
+              name: "Grid",
+              categoriesJson: commit.target.categoriesJson,
+              categoryProvenance: "derived:marketplace-inventory",
+              declarationState: "current",
+              currentMetadataUpdatedAt,
+              lastMetadataCheckedAt: input.nowMs,
+              lastChangedAt: input.nowMs,
+              lastSeenAt: input.nowMs,
+              priority: commit.nextPriority ?? 0,
+            },
+          }));
+        }
         const ageSinceSeen = commit.target.lastSeenAt === undefined
           ? TARGET_REFRESH_INTERVAL_MS
           : input.nowMs - commit.target.lastSeenAt;
@@ -75,7 +113,7 @@ export function createD1ProbePersistence(
           && (commit.nextPriority === null || commit.nextPriority === commit.target.priority)
           && ageSinceSeen >= 0
           && ageSinceSeen < TARGET_REFRESH_INTERVAL_MS;
-        if (!unchangedInsideRefreshWindow) {
+        if (commit.target.bootstrapSource === undefined && !unchangedInsideRefreshWindow) {
           statements.push(db.update(probeTargets).set({
             declarationState: state,
             currentMetadataUpdatedAt,
@@ -118,6 +156,23 @@ export function createD1ProbePersistence(
       }
       await db.batch(statements as unknown as Parameters<typeof db.batch>[0]);
     },
+  };
+}
+
+function bootstrapGridTarget(
+  agentAllowlist: readonly string[],
+  endpointAllowlist: readonly string[],
+): ProbeTarget | null {
+  if (!agentAllowlist.includes(GRID_AGENT_ID) || !endpointAllowlist.includes(GRID_ENDPOINT)) return null;
+  return {
+    agentId: GRID_AGENT_ID,
+    chainId: 56,
+    transport: "a2a",
+    endpoint: GRID_ENDPOINT,
+    categoriesJson: '["grid_trading"]',
+    currentMetadataUpdatedAt: null,
+    priority: 0,
+    bootstrapSource: "marketplace-inventory",
   };
 }
 
