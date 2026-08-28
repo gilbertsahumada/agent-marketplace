@@ -37,6 +37,10 @@ describe("WP2 window-start evidence capture", () => {
       method: "POST",
       headers: { Authorization: "Bearer never-persist-this-token" },
     });
+    expect(JSON.parse((fetch.mock.calls[0]?.[1] as RequestInit).body as string)).toEqual({
+      sql: "SELECT key, textValue AS value FROM runtime_state WHERE key = ? LIMIT 1",
+      params: ["next_scheduler_phase"],
+    });
     const contents = await readFile(outputPath, "utf8");
     expect(contents).not.toContain("never-persist-this-token");
     expect(JSON.parse(contents)).toEqual({
