@@ -1,14 +1,17 @@
 {
-  "capturedAt": "2026-08-28T15:02:00Z",
+  "capturedAt": "2026-08-28T15:21:24Z",
   "deployment": {
     "worker": "bnb-agent-probe-staging",
-    "versionId": "0db51cc4-a73f-4e93-8fb0-f772a53ddfa0",
+    "versionId": "470fee05-aa5b-47cb-b09c-bff85a910407",
     "startupTimeMs": 6,
     "killSwitch": true,
     "cronConfigured": false,
     "healthStatus": 200,
     "sweepLimit": 4,
-    "d1QueriesPerRun": 40
+    "d1QueriesPerRun": 40,
+    "deploymentEnvironment": "staging",
+    "stagingManualRun": false,
+    "sharedSecrets": []
   },
   "manualRunner": "wrangler 4.127.0 --remote --env staging --test-scheduled",
   "manualRuns": [
@@ -72,6 +75,24 @@
     "killSwitchedHandlerInvocationsAfterTrial": 9,
     "reason": "No phase invocation was observed while KILL_SWITCH=0. The retained schedule later reached the redeployed KILL_SWITCH=1 handler at 15:00:56Z through 15:08:56Z, performed no phase work and was then removed explicitly.",
     "schedulesAfterCleanup": []
+  },
+  "secondCronTrial": {
+    "deploymentVersion": "aed83bc5-7e5d-4122-9aae-f01533de727b",
+    "configuredAt": "2026-08-28T15:15:48Z",
+    "schedule": "* * * * *",
+    "configuration": {
+      "killSwitch": false,
+      "stagingManualRun": false,
+      "headerLimit": 1,
+      "sweepLimit": 1,
+      "trust8004RequestsPerRun": 1
+    },
+    "phaseInvocationsObservedBeforeCleanup": 0,
+    "observationEndedAt": "2026-08-28T15:21:00Z",
+    "reason": "The schedule was visible through the schedules API but did not update the HEADER summary or phase state during the controlled five-minute window.",
+    "finalNominalVersion": "470fee05-aa5b-47cb-b09c-bff85a910407",
+    "schedulesAfterCleanup": [],
+    "sharedSecretsAfterCleanup": []
   },
   "promotionGate": "not_demonstrated_cpu",
   "blockingReason": "Representative preview and authenticated HTTP samples exceeded the 10000 microsecond Workers Free CPU budget, but no active Cron phase sample was captured. The HTTP route includes authentication overhead, so the Cron CPU gate remains unproven rather than conclusively failed."
