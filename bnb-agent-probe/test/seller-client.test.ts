@@ -92,6 +92,7 @@ describe("Workers A2A seller probe", () => {
       "https://attacker.example/a2a",
       "https://user:secret@seller.example.com/a2a",
       "https://seller.example.com/a2a?token=secret",
+      "https://seller.example.com/another/same-origin/path",
     ]) {
       await expect(probeA2aSeller({
         endpoint: ENDPOINT,
