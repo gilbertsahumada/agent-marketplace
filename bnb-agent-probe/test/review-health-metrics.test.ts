@@ -194,7 +194,7 @@ describe("WP2 review: failure visibility and health metrics", () => {
     const health = await readHealth(database);
     const serialized = JSON.stringify(health);
     expect(health).toMatchObject({
-      status: "ok",
+      status: "degraded",
       nextPhase: phase,
       sweepOffset: offset,
       lastPhase: {
@@ -211,7 +211,7 @@ describe("WP2 review: failure visibility and health metrics", () => {
     const database = new MemoryDatabase();
     database.seed("last_header_summary", JSON.stringify({
       phase: "header",
-      status: "degraded",
+      status: "ok",
       requests: 1,
       d1Queries: 9,
       wallTimeMs: 37,
