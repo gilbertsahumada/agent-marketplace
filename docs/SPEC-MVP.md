@@ -1326,7 +1326,9 @@ incluye CPU, memoria, errores y versión de cualquier retry spill-out entre
 spill-out sin cambiar el presupuesto de cuota UTC.
 Cada intento spill-out debe correlacionar con una muestra consumer autenticada a
 no más de un segundo de su `startedAt`; ampliar el rango sin observar ese bucket
-no demuestra completitud y falla cerrado.
+no demuestra completitud y falla cerrado. Cada match consume capacidad de
+`sum.requests` y además exige un `DeleteMessage` exitoso causal, a partir de
+`finishedAt` con hasta un segundo de tolerancia por redondeo Analytics.
 El cleanup debe ser posterior no solo a `00:15Z`, sino también al último
 `finishedAt` y al último `DeleteMessage` terminal observado.
 Recién entonces `KILL_SWITCH` vuelve a `1`; el raw final debe demostrar ambos
