@@ -48,6 +48,9 @@ npx wrangler deploy --env staging
 Because Cron removal can propagate after a deployment, operational trials also
 verify the Cloudflare schedules API returns an empty list and the realtime Queue
 backlog is zero before enabling work and again after cleanup.
+Queue backlog metrics are best-effort and can omit a delayed retry until it is
+eligible again. A retry trial therefore uses a fresh validation Queue unless the
+drain window is known to cover every pending delivery delay.
 
 Controlled nominal measurements may call `POST /__admin/run-scheduled` only
 while `DEPLOYMENT_ENV=staging`, `STAGING_MANUAL_RUN=1`, `KILL_SWITCH=0` and
