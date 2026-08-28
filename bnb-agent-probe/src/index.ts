@@ -83,6 +83,7 @@ export function createWorker(dependencies: WorkerDependencies = {}): WorkerEntry
       }
       if (request.method === "POST" && url.pathname === "/__admin/run-scheduled") {
         if (config.killSwitch
+          || config.producerKillSwitch
           || env.DEPLOYMENT_ENV !== "staging"
           || env.STAGING_MANUAL_RUN !== "1"
           || env.SHARED_SECRET === undefined
@@ -106,7 +107,7 @@ export function createWorker(dependencies: WorkerDependencies = {}): WorkerEntry
 
     async scheduled(controller, env, _context) {
       const config = loadConfig(env);
-      if (config.killSwitch) return;
+      if (config.killSwitch || config.producerKillSwitch) return;
       const expectedCron = `*/${config.cronIntervalMinutes} * * * *`;
       if (controller.cron !== expectedCron) throw new Error("WP2_CRON_MISMATCH");
       if (env.WP2_QUEUE === undefined) throw new Error("WP2_QUEUE_BINDING_REQUIRED");
