@@ -97,6 +97,9 @@ groups matched to all 288 `WriteMessage` operations with zero subrequests;
 ambiguous or incomplete attribution fails closed.
 The Workers query ends at the same post-midnight terminality cutoff as Queue,
 so drain-version retries cannot escape CPU, memory, version or error accounting.
+Every spill-out ledger attempt must have an authenticated consumer sample within
+one second of its `startedAt`; requesting the wider interval without that bucket
+is insufficient evidence.
 
 Staging remains on the Free profile and retains one isolated Queue producer and
 serial consumer. Outside the exact 24-hour gate it declares an empty Cron list
