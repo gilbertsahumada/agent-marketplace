@@ -5,19 +5,12 @@ import {
   D1QueryBudgetExceededError,
   type D1QueryBudget,
 } from "./db/query-budget";
-import {
-  createD1HeaderPersistence,
-  HeaderQueryBudgetExceededError,
-  runHeader,
-  type HeaderAgent,
+import type {
+  HeaderAgent,
 } from "./phases/header";
-import {
-  createD1LiveAgentPageReader,
-  runSweepPhase,
-  SweepQueryBudgetExceededError,
-  SweepRequestBudgetExceededError,
-  type SweepAgentResult,
-  type SweepTargetCandidate,
+import type {
+  SweepAgentResult,
+  SweepTargetCandidate,
 } from "./phases/sweep";
 import { acquireSchedulerLease, releaseSchedulerLease } from "./lib/scheduler-lease";
 import { CURATED_INVENTORY, CURATED_INVENTORY_CATEGORIES } from "./manifest/curated-inventory";
@@ -35,6 +28,8 @@ import type { Env, ExecutionContext, ScheduledController } from "./types";
 
 const FREE_LEASE_MS = 4 * 60_000;
 const PAID_LEASE_MS = 14 * 60_000;
+const CURATED_IDS = CURATED_INVENTORY.entries.map(({ agentId }) => agentId);
+const CURATED_ID_SET = new Set(CURATED_IDS);
 
 export type SchedulerPhase = "header" | "sweep" | "probe";
 
@@ -155,10 +150,8 @@ async function executeWp2Phase(input: PhaseExecution, fetchImpl: typeof fetch): 
     maxResponseBytes: input.config.maxCatalogResponseBytes,
     fetch: fetchImpl,
   });
-  const curatedIds = CURATED_INVENTORY.entries.map(({ agentId }) => agentId);
-  const curatedSet = new Set(curatedIds);
-
   if (input.phase === "header") {
+    const { createD1HeaderPersistence, runHeader } = await import("./phases/header");
     await runHeader({
       fetchNewestPage: async (limit) => {
         const page = await catalog.listHeader(limit);
@@ -169,7 +162,7 @@ async function executeWp2Phase(input: PhaseExecution, fetchImpl: typeof fetch): 
           invalidItems: page.invalidItems.length + page.items.length - items.length,
         };
       },
-      parseAgent: (value) => toHeaderAgent(value as CatalogAgent, curatedSet),
+      parseAgent: (value) => toHeaderAgent(value as CatalogAgent, CURATED_ID_SET),
       persistence: createD1HeaderPersistence(input.db),
       queryBudget: input.queryBudget,
       now: input.now,
@@ -184,6 +177,7 @@ async function executeWp2Phase(input: PhaseExecution, fetchImpl: typeof fetch): 
   }
 
   if (input.phase === "sweep") {
+    const { createD1LiveAgentPageReader, runSweepPhase } = await import("./phases/sweep");
     await runSweepPhase({
       db: input.db,
       limit: input.config.sweepLimit,
@@ -194,11 +188,11 @@ async function executeWp2Phase(input: PhaseExecution, fetchImpl: typeof fetch): 
       startedAtMs: input.startedAtMs,
       now: input.now,
     }, {
-      listLiveAgentPage: createD1LiveAgentPageReader(input.db, curatedIds),
+      listLiveAgentPage: createD1LiveAgentPageReader(input.db, CURATED_IDS),
       fetchAgents: async ({ agentIds }) => {
         const results: SweepAgentResult[] = [];
         for (const agentId of agentIds) {
-          results.push(toSweepResult(await catalog.getAgent(agentId), curatedSet));
+          results.push(toSweepResult(await catalog.getAgent(agentId), CURATED_ID_SET));
         }
         return results;
       },
@@ -314,10 +308,15 @@ function phaseErrorCode(error: unknown): string {
     ? "TRUST8004_HTTP_429"
     : "TRUST8004_HTTP_ERROR";
   if (error instanceof D1QueryBudgetExceededError
-    || error instanceof HeaderQueryBudgetExceededError
-    || error instanceof SweepQueryBudgetExceededError) return "D1_QUERY_BUDGET";
-  if (error instanceof SweepRequestBudgetExceededError) return "TRUST8004_REQUEST_BUDGET";
+    || hasErrorName(error, "HeaderQueryBudgetExceededError", "SweepQueryBudgetExceededError")) {
+    return "D1_QUERY_BUDGET";
+  }
+  if (hasErrorName(error, "SweepRequestBudgetExceededError")) return "TRUST8004_REQUEST_BUDGET";
   return "PHASE_FAILED";
+}
+
+function hasErrorName(error: unknown, ...names: readonly string[]): boolean {
+  return error instanceof Error && names.includes(error.name);
 }
 
 export const runWp2Scheduled = createWp2ScheduledRunner();
