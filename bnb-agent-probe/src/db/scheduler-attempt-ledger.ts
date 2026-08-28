@@ -4,6 +4,7 @@ export type SchedulerAttemptOutcome = "completed" | "failed" | "duplicate" | "lo
 export type SchedulerAttemptPhase = "header" | "sweep" | "probe" | null;
 
 export interface SchedulerAttemptInput {
+  readonly messageId: string;
   readonly scheduledTime: number;
   readonly attempt: number;
   readonly phase: SchedulerAttemptPhase;
@@ -21,6 +22,7 @@ export interface SchedulerAttempt extends SchedulerAttemptInput {
 }
 
 interface SchedulerAttemptRow {
+  readonly messageId: string;
   readonly scheduledTime: number;
   readonly attempt: number;
   readonly phase: string | null;
@@ -41,12 +43,13 @@ export async function recordSchedulerAttempt(
   validateAttemptInput(input);
   const result = await db.prepare(
     `INSERT INTO scheduler_attempts (
-       scheduledTime, attempt, phase, outcome, startedAt, finishedAt,
+       messageId, scheduledTime, attempt, phase, outcome, startedAt, finishedAt,
        upstreamRequests, d1Queries, rowsReadObservedBeforeLedger,
        rowsWrittenObservedBeforeLedger, errorCode
      )
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).bind(
+    input.messageId,
     input.scheduledTime,
     input.attempt,
     input.phase,
@@ -71,7 +74,7 @@ export async function listSchedulerAttempts(
   nonNegativeSafeInteger(endExclusive, "endExclusive");
   if (endExclusive <= startInclusive) throw new Error("endExclusive must follow startInclusive");
   const result = await db.prepare(
-    `SELECT scheduledTime, attempt, phase, outcome, startedAt, finishedAt,
+    `SELECT messageId, scheduledTime, attempt, phase, outcome, startedAt, finishedAt,
             upstreamRequests, d1Queries, rowsReadObservedBeforeLedger,
             rowsWrittenObservedBeforeLedger, errorCode
      FROM scheduler_attempts
@@ -87,6 +90,7 @@ function toSchedulerAttempt(row: SchedulerAttemptRow): SchedulerAttempt {
     throw new Error("Scheduler attempt ledger contains an invalid enum");
   }
   const attempt: SchedulerAttempt = {
+    messageId: row.messageId,
     scheduledTime: row.scheduledTime,
     attempt: row.attempt,
     phase: row.phase,
@@ -104,6 +108,9 @@ function toSchedulerAttempt(row: SchedulerAttemptRow): SchedulerAttempt {
 }
 
 function validateAttemptInput(input: SchedulerAttemptInput): void {
+  if (input.messageId.length < 1 || input.messageId.length > 256) {
+    throw new Error("messageId must contain between 1 and 256 characters");
+  }
   nonNegativeSafeInteger(input.scheduledTime, "scheduledTime");
   if (!Number.isSafeInteger(input.attempt) || input.attempt < 1 || input.attempt > 4) {
     throw new Error("attempt must be between 1 and 4");
