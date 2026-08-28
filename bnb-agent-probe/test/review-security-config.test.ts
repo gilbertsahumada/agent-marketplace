@@ -70,10 +70,10 @@ describe("review: non-zero executable phase budgets", () => {
     expect(() => loadConfig(overrides)).toThrow(new RegExp(`^${field}:`));
   });
 
-  it("rejects a D1 budget that cannot cover acquire, empty HEADER state, and cleanup", () => {
+  it("rejects a D1 budget that cannot cover the minimum Queue SWEEP and cleanup", () => {
     expect(() => loadConfig({ D1_QUERIES_PER_RUN: "3" }))
       .toThrow(/^D1_QUERIES_PER_RUN:/);
-    expect(loadConfig({ D1_QUERIES_PER_RUN: "7" }).d1QueriesPerRun).toBe(7);
+    expect(loadConfig({ D1_QUERIES_PER_RUN: "12" }).d1QueriesPerRun).toBe(12);
   });
 });
 
