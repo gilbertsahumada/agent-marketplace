@@ -443,7 +443,8 @@ MAX_CATALOG_RESPONSE_BYTES=16777216
 MAX_SELLER_RESPONSE_BYTES=32768
 
 binding WP2_QUEUE                  Queue del mismo entorno
-consumer max_batch_size=1, max_batch_timeout=1, max_retries=3
+consumer max_batch_size=1, max_batch_timeout=1, max_retries=3,
+         max_concurrency=1
 ```
 
 Con cinco minutos hay 288 ticks/día: 864 operaciones nominales y 1.728 en el
@@ -457,15 +458,16 @@ valor dentro del sobre Free si dos vueltas prueban:
 
 - Cron producer con margen bajo 10 ms y Queue consumer con margen bajo 30 s de
   CPU, ambos sin `exceededCpu`;
-- memoria pico < 96 MiB;
+- `memoryUsageBytesP999 < 100663296` (96 MiB) y cero outcomes de memoria
+  excedida. Analytics expone percentiles muestreados, no un máximo literal;
 - wall time p95 < 30 s;
 - máximo 40 subrequests externos por invocación y presupuesto upstream
   configurado, incluyendo detalles;
 - máximo 40 queries D1 por invocación; la deduplicación previa de Queue cuenta
   como una query, cada sentencia dentro de `db.batch()` cuenta individualmente y
   el contador rechaza el exceso antes de acceder a D1;
-- proyección y métricas reales por debajo de 4 millones de filas D1 leídas/día
-  y 80.000 escritas/día;
+- proyección y una ventana controlada real de 24 h por debajo de 4 millones de
+  filas D1 leídas/día y 80.000 escritas/día;
 - cero 429;
 - una página se procesa/libera antes de pedir la siguiente.
 
@@ -1115,9 +1117,12 @@ de forma repetible, se reactiva el kill switch y se detiene WP2/WP3. No se activ
 Paid automáticamente.
 
 Siguen pendientes antes de activar el schedule continuo: dos rotaciones Queue
-con los defaults Free `HEADER_LIMIT=25`/`SWEEP_LIMIT=4`, memoria pico < 96 MiB,
-confirmación real del margen diario D1 y el gate WP3. Las corridas con límites 1
-son prueba de arquitectura, no promoción completa de WP2.
+con los defaults Free `HEADER_LIMIT=25`/`SWEEP_LIMIT=4` que incrementen
+`sweepRound` dos veces, `memoryUsageBytesP999 < 100663296`, una ventana real
+D1 de 24 h y el gate WP3. Las corridas con límites 1 son prueba de arquitectura,
+no promoción completa de WP2. Antes y después de cada ventana se verifican por
+API `schedules=[]` y backlog Queue cero; declarar `crons: []` en un deploy no
+sustituye esa comprobación por la propagación eventual de Cron Triggers.
 
 ### 11.3 Promoción explícita Free → Paid
 
@@ -1201,8 +1206,10 @@ Gate:
 - fallo de batch no adelanta offset;
 - rotación Free ejecuta exactamente una fase y persiste la siguiente;
 - dos vueltas Queue del conjunto live cumplen sección 4.2, cero `exceededCpu`,
-  cero duplicaciones y cero 429;
-- métricas D1 reales confirman la reserva diaria de 20 %;
+  cero duplicaciones y cero 429; una vuelta cuenta solo cuando `sweepRound`
+  incrementa, no por haber enviado un número fijo de ticks;
+- métricas D1 de una ventana controlada de 24 h confirman la reserva diaria de
+  20 %;
 - HEADER y SWEEP permanecen en `D1_QUERIES_PER_RUN <= 40`, incluyendo marcador
   Queue, lease, resumen, cursor y rotación; staging demuestra el límite porque
   Miniflare no lo impone;
