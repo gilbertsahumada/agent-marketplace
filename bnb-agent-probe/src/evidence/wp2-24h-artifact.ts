@@ -703,13 +703,16 @@ async function validateRawAnalytics(
   const spillOutAttempts = context.tickLedger.filter(({ startedAt }) => startedAt >= context.end);
   const consumerCapacity = workerSamples.map((sample) => ({ sample, remaining: sample.requests }));
   deleteSamples.sort((left, right) => left.timestamp - right.timestamp);
-  for (const attempt of [...spillOutAttempts].sort((left, right) => left.startedAt - right.startedAt)) {
+  const orderedSpillOut = [...spillOutAttempts].sort((left, right) => left.startedAt - right.startedAt);
+  for (const attempt of orderedSpillOut) {
     const workerMatch = consumerCapacity.find(({ sample, remaining }) =>
       remaining > 0 && sample.subrequests > 0 && Math.abs(sample.timestamp - attempt.startedAt) <= 1_000);
     if (workerMatch === undefined) {
       fail("RAW_WORKERS", "Workers Analytics is missing a spill-out consumer attempt");
     }
     workerMatch.remaining -= 1;
+  }
+  for (const attempt of orderedSpillOut) {
     const deleteMatch = deleteSamples.find(({ timestamp, remaining }) =>
       remaining > 0 && timestamp + 1_000 >= attempt.finishedAt);
     if (deleteMatch === undefined) {
