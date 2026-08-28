@@ -61,7 +61,7 @@ const RAW_PAYLOADS = {
         sum: { billableOperations: 864, bytes: 55_296 },
       }],
       queueBacklogAdaptiveGroups: [{
-        dimensions: { datetime: "2026-08-29T23:59:59Z", queueId: "721ba809967d425a91dbc34eb1ac3baa" },
+        dimensions: { datetime: "2026-08-30T00:15:00Z", queueId: "721ba809967d425a91dbc34eb1ac3baa" },
         avg: { messages: 0, bytes: 0 },
       }],
     }] } }, errors: null },
@@ -206,7 +206,7 @@ describe("WP2 24-hour evidence artifact validator", () => {
     ["partial day", (artifact: any) => { artifact.window.end = "2026-08-29T23:59:59.999Z"; }, "WINDOW_DURATION"],
     ["missing tick", (artifact: any) => { artifact.ledger.pop(); }, "TICK_COUNT"],
     ["unaligned tick", (artifact: any) => { artifact.ledger[7].scheduledTime += 1; }, "TICK_ALIGNMENT"],
-    ["wrong phase distribution", (artifact: any) => { artifact.ledger[0].phase = "sweep"; }, "PHASE_COUNT"],
+    ["wrong phase distribution", (artifact: any) => { artifact.ledger[0].phase = "sweep"; }, "PHASE_SEQUENCE"],
     ["D1 query overflow", (artifact: any) => { artifact.ledger[0].d1Queries = 41; }, "D1_QUERY_LIMIT"],
     ["D1 read ceiling", (artifact: any) => { artifact.totals.d1RowsRead = 4_000_000; }, "D1_READ_LIMIT"],
     ["D1 write ceiling", (artifact: any) => { artifact.totals.d1RowsWritten = 80_000; }, "D1_WRITE_LIMIT"],
