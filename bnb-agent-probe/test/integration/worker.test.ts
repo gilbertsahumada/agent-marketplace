@@ -1,6 +1,6 @@
 import { env } from "cloudflare:workers";
 import { createExecutionContext } from "cloudflare:test";
-import worker from "../../src/index";
+import worker, { createWorker } from "../../src/index";
 import { loadConfig } from "../../src/config";
 import type { D1DatabaseLike } from "../../src/db/client";
 import {
@@ -155,6 +155,52 @@ describe("WP1 in the Workers runtime", () => {
 
     expect(duplicateAck).toHaveBeenCalledOnce();
     expect(await runtimeText("last_probe_summary")).toBe(firstSummary);
+  });
+
+  it("retries a failed Queue tick once and deduplicates it only after atomic success", async () => {
+    let fetchCalls = 0;
+    const runner = createWp2ScheduledRunner({
+      now: (() => {
+        let clock = 20_000;
+        return () => clock++;
+      })(),
+      randomUUID: () => "queue-retry-run",
+      fetch: (async () => {
+        fetchCalls += 1;
+        if (fetchCalls === 1) throw new Error("temporary catalogue failure");
+        return Response.json({ items: [], total: 0, limit: 25, offset: 0 });
+      }) as typeof fetch,
+    });
+    const retryWorker = createWorker({ runScheduled: runner });
+    const activeEnv = { ...env, KILL_SWITCH: "0" } as unknown as Env;
+    const tick = { schemaVersion: 1, scheduledTime: 1_800_000_100_000 };
+    const firstAck = vi.fn();
+
+    await expect(retryWorker.queue(
+      { messages: [{ body: tick, ack: firstAck }] },
+      activeEnv,
+      createExecutionContext(),
+    )).rejects.toThrow("temporary catalogue failure");
+    expect(firstAck).not.toHaveBeenCalled();
+
+    const retryAck = vi.fn();
+    await retryWorker.queue(
+      { messages: [{ body: tick, ack: retryAck }] },
+      activeEnv,
+      createExecutionContext(),
+    );
+    expect(retryAck).toHaveBeenCalledOnce();
+    expect(await runtimeText("next_scheduler_phase")).toBe("sweep");
+
+    const duplicateAck = vi.fn();
+    await retryWorker.queue(
+      { messages: [{ body: tick, ack: duplicateAck }] },
+      activeEnv,
+      createExecutionContext(),
+    );
+    expect(duplicateAck).toHaveBeenCalledOnce();
+    expect(fetchCalls).toBe(2);
+    expect(await runtimeText("next_scheduler_phase")).toBe("sweep");
   });
 
   it("persists a sanitized failure in D1 without advancing state", async () => {
