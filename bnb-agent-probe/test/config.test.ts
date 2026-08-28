@@ -116,6 +116,7 @@ describe("loadConfig", () => {
     [{ PROBE_AGENT_ALLOWLIST: "303779,45650" }, "PROBE_AGENT_ALLOWLIST"],
     [{ PROBE_AGENT_ALLOWLIST: "abc" }, "PROBE_AGENT_ALLOWLIST"],
     [{ PROBE_ENDPOINT_ALLOWLIST: "" }, "PROBE_ENDPOINT_ALLOWLIST"],
+    [{ PROBE_ENDPOINT_ALLOWLIST: "https://seller.example/a2a" }, "PROBE_ENDPOINT_ALLOWLIST"],
     [{ PROBE_ENDPOINT_ALLOWLIST: "http://seller.example/a2a" }, "PROBE_ENDPOINT_ALLOWLIST"],
     [{ PROBE_ENDPOINT_ALLOWLIST: "https://seller.example/a2a?token=secret" }, "PROBE_ENDPOINT_ALLOWLIST"],
     [{ PROBE_ENDPOINT_ALLOWLIST: "https://seller.example/a2a#card" }, "PROBE_ENDPOINT_ALLOWLIST"],
@@ -127,10 +128,10 @@ describe("loadConfig", () => {
   it("accepts one explicit Grid target and canonicalizes its endpoint", () => {
     expect(loadConfig({
       PROBE_AGENT_ALLOWLIST: "303779",
-      PROBE_ENDPOINT_ALLOWLIST: "https://seller.example/a2a",
+      PROBE_ENDPOINT_ALLOWLIST: "https://bnb-agent-marketplace-ruby.vercel.app/grid",
     })).toMatchObject({
       probeAgentAllowlist: ["303779"],
-      probeEndpointAllowlist: ["https://seller.example/a2a"],
+      probeEndpointAllowlist: ["https://bnb-agent-marketplace-ruby.vercel.app/grid"],
     });
   });
 
