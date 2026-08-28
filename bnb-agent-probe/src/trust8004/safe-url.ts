@@ -99,7 +99,13 @@ function isDnsHostname(hostname: string): boolean {
 export function isSyntacticallyPublicHttpsUrl(value: string): boolean {
   try {
     const url = new URL(value);
-    if (url.protocol !== "https:" || url.username !== "" || url.password !== "") return false;
+    if (
+      url.protocol !== "https:"
+      || url.username !== ""
+      || url.password !== ""
+      || url.search !== ""
+      || url.hash !== ""
+    ) return false;
     const hostname = url.hostname.toLowerCase().replace(/\.$/, "");
     if (hostname.startsWith("[") && hostname.endsWith("]")) return isPublicIpv6(hostname);
     if (/^[\d.]+$/.test(hostname)) return isPublicIpv4(hostname);
