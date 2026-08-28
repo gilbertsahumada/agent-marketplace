@@ -23,7 +23,7 @@ class LeaseDatabase implements D1DatabaseLike {
         values = nextValues;
         return this;
       },
-      async first<Row>() {
+      async first() {
         throw new Error("scheduled lease queries must use all()");
       },
       async all<Row>() {
