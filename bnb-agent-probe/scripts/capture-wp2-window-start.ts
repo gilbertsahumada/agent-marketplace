@@ -41,7 +41,12 @@ export async function captureWp2WindowStart(options: CaptureOptions): Promise<vo
     readonly errors?: unknown;
     readonly result?: unknown;
   };
-  if (!response.ok || payload.success !== true || !Array.isArray(payload.result) || payload.result.length !== 1) {
+  if (!response.ok
+    || payload.success !== true
+    || !Array.isArray(payload.errors)
+    || payload.errors.length !== 0
+    || !Array.isArray(payload.result)
+    || payload.result.length !== 1) {
     throw new Error("Cloudflare D1 window-start query failed");
   }
   const result = payload.result[0] as { readonly results?: unknown };
