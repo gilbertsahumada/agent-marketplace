@@ -3,14 +3,14 @@ import { describe, expect, it } from "vitest";
 import { loadConfig } from "../src/config";
 
 describe("WP2 retry-aware daily write budget", () => {
-  it("includes the daily telemetry write in every nominal and retried attempt", () => {
+  it("includes the attempt and daily telemetry writes in every delivery", () => {
     const budget = loadConfig({}).projectedDailyBudget;
 
     expect(budget).toMatchObject({
       invocations: 288,
       maxAttempts: 1_152,
-      d1RowsWrittenNominal: 17_568,
-      d1RowsWritten: 70_272,
+      d1RowsWrittenNominal: 17_856,
+      d1RowsWritten: 71_424,
     });
   });
 
