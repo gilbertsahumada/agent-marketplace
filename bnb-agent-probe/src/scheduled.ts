@@ -321,7 +321,9 @@ async function executeWp2Phase(input: PhaseExecution, fetchImpl: typeof fetch): 
   let phaseRequests = 0;
   const probeFetch: typeof fetch = (...args) => {
     if (phaseRequests >= input.config.externalSubrequestsPerRun) {
-      throw new Error("PROBE_EXTERNAL_SUBREQUEST_BUDGET");
+      const error = new Error("PROBE external subrequest budget exhausted");
+      error.name = "ProbeExternalSubrequestBudgetError";
+      throw error;
     }
     phaseRequests += 1;
     return fetchImpl(...args);
@@ -490,11 +492,19 @@ function phaseErrorCode(error: unknown): string {
     ? "TRUST8004_HTTP_429"
     : "TRUST8004_HTTP_ERROR";
   if (error instanceof D1QueryBudgetExceededError
-    || hasErrorName(error, "HeaderQueryBudgetExceededError", "SweepQueryBudgetExceededError")) {
+    || hasErrorName(
+      error,
+      "HeaderQueryBudgetExceededError",
+      "SweepQueryBudgetExceededError",
+      "ProbeQueryBudgetExceededError",
+    )) {
     return "D1_QUERY_BUDGET";
   }
   if (error instanceof D1RowBudgetExceededError) return "D1_ROW_BUDGET";
   if (hasErrorName(error, "SweepRequestBudgetExceededError")) return "TRUST8004_REQUEST_BUDGET";
+  if (hasErrorName(error, "ProbeExternalSubrequestBudgetError")) {
+    return "EXTERNAL_SUBREQUEST_BUDGET";
+  }
   return "PHASE_FAILED";
 }
 
