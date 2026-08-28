@@ -546,9 +546,15 @@ async function validateRawAnalytics(
   for (const [index, unvalidated] of workers.entries()) {
     const group = record(unvalidated, "RAW_WORKERS", `workers[${index}]`);
     const dimensions = record(group.dimensions, "RAW_WORKERS", `workers[${index}].dimensions`);
-    if (dimensions.scriptName !== context.workerName || dimensions.scriptVersion !== context.deploymentVersion) {
-      fail("RAW_DEPLOYMENT", "Workers Analytics contains another script or deployment version");
+    if (dimensions.scriptName !== context.workerName) {
+      fail("RAW_DEPLOYMENT", "Workers Analytics contains another script");
     }
+    const scriptVersion = nonEmptyString(
+      dimensions.scriptVersion,
+      "RAW_WORKERS",
+      `workers[${index}].scriptVersion`,
+    );
+    if (scriptVersion !== context.deploymentVersion) continue;
     const status = nonEmptyString(dimensions.status, "RAW_WORKERS", `workers[${index}].status`).toLowerCase();
     if (status.includes("cpu") && status.includes("exceed")) exceededCpu += 1;
     if (status.includes("memory") && status.includes("exceed")) memoryExceeded += 1;
