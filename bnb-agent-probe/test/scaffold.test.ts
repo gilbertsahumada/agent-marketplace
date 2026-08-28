@@ -78,7 +78,7 @@ describe("WP1 Wrangler scaffold", () => {
     });
   });
 
-  it("keeps staging isolated, disabled and without a cron", () => {
+  it("keeps staging isolated and permits only off or the exact WP2 gate", () => {
     const staging = wrangler.env?.staging;
 
     expect(staging).toMatchObject({
@@ -87,7 +87,6 @@ describe("WP1 Wrangler scaffold", () => {
         DEPLOYMENT_ENV: "staging",
         STAGING_MANUAL_RUN: "0",
         CLOUDFLARE_WORKERS_PLAN: "free",
-        KILL_SWITCH: "1",
         D1_QUERIES_PER_RUN: "40",
         D1_ROWS_READ_PER_RUN: "3000",
         D1_ROWS_WRITTEN_PER_RUN: "60",
@@ -101,7 +100,11 @@ describe("WP1 Wrangler scaffold", () => {
         }),
       ],
     });
-    expect(staging?.triggers).toEqual({ crons: [] });
+    const safeOff = staging?.vars?.KILL_SWITCH === "1"
+      && JSON.stringify(staging.triggers) === JSON.stringify({ crons: [] });
+    const exactWp2Gate = staging?.vars?.KILL_SWITCH === "0"
+      && JSON.stringify(staging.triggers) === JSON.stringify({ crons: ["*/5 * * * *"] });
+    expect(safeOff || exactWp2Gate).toBe(true);
     expect(staging?.queues).toEqual({
       producers: [{ binding: "WP2_QUEUE", queue: "bnb-agent-probe-staging" }],
       consumers: [{
