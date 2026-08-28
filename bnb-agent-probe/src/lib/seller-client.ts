@@ -115,7 +115,19 @@ async function fetchJson(
   if (!response.ok) throw new SellerProbeError("SELLER_HTTP_4XX");
   const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
   if (!contentType.includes("application/json")) throw new SellerProbeError("SELLER_INVALID_JSON");
-  const text = await readBoundedText(response, input.maxResponseBytes, usage);
+  let text: string;
+  try {
+    text = await readBoundedText(response, input.maxResponseBytes, usage);
+  } catch (error) {
+    if (error instanceof SellerProbeError) throw error;
+    if (
+      error instanceof DOMException
+      && (error.name === "TimeoutError" || error.name === "AbortError")
+    ) {
+      throw new SellerProbeError("SELLER_TIMEOUT");
+    }
+    throw new SellerProbeError("SELLER_UNREACHABLE");
+  }
   try {
     return record(JSON.parse(text), "SELLER_INVALID_JSON");
   } catch (error) {
