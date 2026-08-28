@@ -54,7 +54,27 @@ const RAW_PAYLOADS = {
       terminalityEndInclusive: "2026-08-30T00:15:00.000Z",
     },
     response: { data: { viewer: { accounts: [{
-      queueMessageOperationsAdaptiveGroups: [
+      queueDayOperations: [
+        {
+          count: 288,
+          dimensions: { datetime: "2026-08-29T00:00:14Z", queueId: "721ba809967d425a91dbc34eb1ac3baa", actionType: "WriteMessage", consumerType: "", outcome: "" },
+          avg: { lagTime: 0, retryCount: 0 }, max: { messageSize: 64 },
+          sum: { billableOperations: 288, bytes: 18_432 },
+        },
+        {
+          count: 288,
+          dimensions: { datetime: "2026-08-29T23:55:18Z", queueId: "721ba809967d425a91dbc34eb1ac3baa", actionType: "ReadMessage", consumerType: "worker", outcome: "" },
+          avg: { lagTime: 1_000, retryCount: 0 }, max: { messageSize: 64 },
+          sum: { billableOperations: 288, bytes: 18_432 },
+        },
+        {
+          count: 288,
+          dimensions: { datetime: "2026-08-29T23:55:18Z", queueId: "721ba809967d425a91dbc34eb1ac3baa", actionType: "DeleteMessage", consumerType: "", outcome: "success" },
+          avg: { lagTime: 1_000, retryCount: 0 }, max: { messageSize: 64 },
+          sum: { billableOperations: 288, bytes: 18_432 },
+        },
+      ],
+      queueTerminalOperations: [
         {
           count: 288,
           dimensions: { datetime: "2026-08-29T00:00:14Z", queueId: "721ba809967d425a91dbc34eb1ac3baa", actionType: "WriteMessage", consumerType: "", outcome: "" },
@@ -279,6 +299,28 @@ describe("WP2 24-hour evidence artifact validator", () => {
     [artifact.quotaLedger[0].phase, artifact.quotaLedger[1].phase] =
       [artifact.quotaLedger[1].phase, artifact.quotaLedger[0].phase];
     await expect(validateWp224hArtifact(artifact, { readRawEvidence })).rejects.toThrow("PHASE_SEQUENCE");
+  });
+
+  it("accepts a full cyclic rotation that starts with sweep", async () => {
+    const artifact = validArtifact() as any;
+    for (const cohort of [artifact.ledger, artifact.quotaLedger]) {
+      cohort.forEach((entry: any, index: number) => {
+        entry.phase = (["sweep", "probe", "header"] as const)[index % 3];
+      });
+    }
+    await expect(validateWp224hArtifact(artifact, { readRawEvidence })).resolves.toMatchObject({ passed: true });
+  });
+
+  it("accepts a final Queue delete during the post-midnight grace", async () => {
+    const artifact = validArtifact() as any;
+    const queue = structuredClone(RAW_PAYLOADS["evidence/raw/queue.json"]) as any;
+    queue.response.data.viewer.accounts[0].queueTerminalOperations[2].dimensions.datetime =
+      "2026-08-30T00:00:03Z";
+    const contents = JSON.stringify(queue);
+    artifact.rawAnalytics["evidence/raw/queue.json"].sha256 = sha256(contents);
+    await expect(validateWp224hArtifact(artifact, {
+      readRawEvidence: async (path) => path === "evidence/raw/queue.json" ? contents : readRawEvidence(path),
+    })).resolves.toMatchObject({ passed: true });
   });
 
   it("rejects a quota attempt omitted from the tick cohort", async () => {
