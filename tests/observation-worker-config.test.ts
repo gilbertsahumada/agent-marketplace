@@ -30,6 +30,7 @@ describe("observation Worker configuration", () => {
     });
     expect(config.platformLimits).toMatchObject({
       cpuMsPerInvocation: 10,
+      queueConsumerCpuMs: 30_000,
       externalSubrequestsPerInvocation: 50,
       d1QueriesPerInvocation: 50,
       d1RowsReadPerDay: 5_000_000,
@@ -98,7 +99,7 @@ describe("observation Worker configuration", () => {
     [{ PROBE_BATCH_SIZE: "2" }, "PROBE_BATCH_SIZE"],
     [{ EXTERNAL_SUBREQUESTS_PER_RUN: "41" }, "EXTERNAL_SUBREQUESTS_PER_RUN"],
     [{ D1_QUERIES_PER_RUN: "41" }, "D1_QUERIES_PER_RUN"],
-    [{ D1_QUERIES_PER_RUN: "2" }, "D1_QUERIES_PER_RUN"],
+    [{ D1_QUERIES_PER_RUN: "11" }, "D1_QUERIES_PER_RUN"],
     [{ MAX_CATALOG_RESPONSE_BYTES: "16777217" }, "MAX_CATALOG_RESPONSE_BYTES"],
     [{ MAX_CATALOG_RESPONSE_BYTES: "0" }, "MAX_CATALOG_RESPONSE_BYTES"],
     [{ TRUST8004_REQUESTS_PER_RUN: "13" }, "TRUST8004_REQUESTS_PER_RUN"],
@@ -122,9 +123,19 @@ describe("observation Worker configuration", () => {
       invocations: 288,
       d1RowsRead: 2_880_000,
       d1RowsWritten: 72_000,
+      queueOperations: 1_728,
       freeReadCeiling: 4_000_000,
       freeWriteCeiling: 80_000,
+      freeQueueOperationsCeiling: 8_000,
     });
+  });
+
+  it("includes configured Queue retries in the Free cadence budget", () => {
+    expect(() => loadObservationWorkerConfig({
+      CRON_INTERVAL_MINUTES: "1",
+      D1_ROWS_READ_PER_RUN: "1",
+      D1_ROWS_WRITTEN_PER_RUN: "1",
+    })).toThrow("CRON_INTERVAL_MINUTES");
   });
 });
 
