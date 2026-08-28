@@ -13,6 +13,7 @@ const REQUIRED_RAW_ANALYTICS = [
   "evidence/raw/deployment.json",
   "evidence/raw/preflight.json",
   "evidence/raw/activation.json",
+  "evidence/raw/window-start.json",
   "evidence/raw/cleanup.json",
 ] as const;
 const PHASES = ["header", "sweep", "probe"] as const;
@@ -65,6 +66,7 @@ interface RawMetrics {
   readonly preflightCapturedAt: number;
   readonly activationCapturedAt: number;
   readonly cleanupCapturedAt: number;
+  readonly lastQueueTerminalAt: number;
 }
 
 export interface Wp224hValidationSummary {
@@ -74,6 +76,7 @@ export interface Wp224hValidationSummary {
   readonly retries: number;
   readonly attempts: number;
   readonly maxD1QueriesPerAttempt: number;
+  readonly rotationStart: Phase;
 }
 
 export class Wp224hArtifactValidationError extends Error {
@@ -133,12 +136,13 @@ export async function validateWp224hArtifact(
     d1Id,
     start,
     end,
+    rotationStart: ledger.rotationStart,
     tickLedger: ledger.entries,
     quotaLedger,
   });
   const totals = validateTotals(artifact.totals, limits, ledger, quotaLedger, raw, start, end);
   validateAttribution(artifact.accountUsage, totals, raw);
-  validateCleanup(artifact.cleanup, raw, end);
+  validateCleanup(artifact.cleanup, raw, end, ledger.entries);
 
   return {
     passed: true,
@@ -147,6 +151,7 @@ export async function validateWp224hArtifact(
     retries: ledger.retries,
     attempts: ledger.entries.length,
     maxD1QueriesPerAttempt: ledger.maxD1Queries,
+    rotationStart: ledger.rotationStart,
   };
 }
 
@@ -221,6 +226,7 @@ function validateLedger(
   readonly retries: number;
   readonly phaseCompletions: Record<Phase, number>;
   readonly maxD1Queries: number;
+  readonly rotationStart: Phase;
 } {
   if (!Array.isArray(value)) fail("TICK_COUNT", "ledger must be an array");
   const entries = value.map((entry, index) => ledgerEntry(entry, index));
@@ -302,6 +308,7 @@ function validateLedger(
     retries: entries.length - byTick.size,
     phaseCompletions,
     maxD1Queries,
+    rotationStart: rotationStart!,
   };
 }
 
@@ -376,9 +383,7 @@ function validateQuotaLedger(
     if (entry.scheduledTime >= start || entry.scheduledTime >= end) {
       fail("QUOTA_COHORT", "quotaLedger contains an attempt omitted from the tick cohort");
     }
-    const terminal = entry.outcome === "completed"
-      || entry.outcome === "duplicate"
-      || (entry.outcome === "failed" && entry.attempt === 4);
+    const terminal = entry.outcome === "completed" || entry.outcome === "duplicate";
     if (!terminal) fail("QUOTA_COHORT", "spill-in Queue message is not terminal");
   }
   return entries;
@@ -467,6 +472,7 @@ async function validateRawAnalytics(
     readonly d1Id: string;
     readonly start: number;
     readonly end: number;
+    readonly rotationStart: Phase;
     readonly tickLedger: readonly LedgerEntry[];
     readonly quotaLedger: readonly LedgerEntry[];
   },
@@ -522,7 +528,7 @@ async function validateRawAnalytics(
     endInclusive: endInclusiveIso,
   }, "RAW_WORKERS");
   const workers = nestedGroups(workersRaw, "workersInvocationsAdaptive", "RAW_WORKERS");
-  const workerSamples: { timestamp: number; cpuMs: number }[] = [];
+  const workerSamples: { timestamp: number; cpuMs: number; requests: number; subrequests: number }[] = [];
   let memoryUsageBytesP999 = 0;
   let workerErrors = 0;
   let exceededCpu = 0;
@@ -537,13 +543,15 @@ async function validateRawAnalytics(
     if (status.includes("cpu") && status.includes("exceed")) exceededCpu += 1;
     if (status.includes("memory") && status.includes("exceed")) memoryExceeded += 1;
     const quantiles = record(group.quantiles, "RAW_WORKERS", `workers[${index}].quantiles`);
+    const sum = record(group.sum, "RAW_WORKERS", `workers[${index}].sum`);
     workerSamples.push({
       timestamp: analyticsTimestamp(dimensions.datetime, "RAW_WORKERS", `workers[${index}].datetime`),
       cpuMs: nonNegativeNumber(quantiles.cpuTimeP99, "RAW_WORKERS", `workers[${index}].cpuTimeP99`) / 1_000,
+      requests: positiveInteger(sum.requests, "RAW_WORKERS", `workers[${index}].requests`),
+      subrequests: nonNegativeInteger(sum.subrequests, "RAW_WORKERS", `workers[${index}].subrequests`),
     });
     memoryUsageBytesP999 = Math.max(memoryUsageBytesP999,
       nonNegativeNumber(quantiles.memoryUsageBytesP999, "RAW_WORKERS", `workers[${index}].memoryP999`));
-    const sum = record(group.sum, "RAW_WORKERS", `workers[${index}].sum`);
     workerErrors += nonNegativeInteger(sum.errors, "RAW_WORKERS", `workers[${index}].errors`);
   }
 
@@ -573,6 +581,7 @@ async function validateRawAnalytics(
   const queueTerminalGroups = nestedGroups(queueRaw, "queueTerminalOperations", "RAW_QUEUE");
   let queueWrites = 0;
   let successfulDeletes = 0;
+  let lastQueueTerminalAt = 0;
   const producerTimestamps = new Set<number>();
   for (const [index, unvalidated] of queueTerminalGroups.entries()) {
     const group = record(unvalidated, "RAW_QUEUE", `queue terminal[${index}]`);
@@ -592,6 +601,11 @@ async function validateRawAnalytics(
     if (actionType === "DeleteMessage") {
       if (outcome !== "success") fail("QUEUE_TERMINALITY", "Queue contains an unsuccessful delete");
       successfulDeletes += count;
+      lastQueueTerminalAt = Math.max(lastQueueTerminalAt, analyticsTimestamp(
+        dimensions.datetime,
+        "RAW_QUEUE",
+        `queue[${index}].datetime`,
+      ));
     }
     const retryCount = nonNegativeNumber(
       record(group.avg, "RAW_QUEUE", `queue[${index}].avg`).retryCount,
@@ -610,16 +624,21 @@ async function validateRawAnalytics(
   let maxConsumerCpuMs = 0;
   let producerSamples = 0;
   let consumerSamples = 0;
+  let producerRequests = 0;
   for (const sample of workerSamples) {
-    if (producerTimestamps.has(sample.timestamp)) {
+    const nearWrite = [...producerTimestamps].some((timestamp) => Math.abs(timestamp - sample.timestamp) <= 1_000);
+    if (nearWrite && sample.subrequests === 0) {
       producerSamples += 1;
+      producerRequests += sample.requests;
       maxProducerCpuMs = Math.max(maxProducerCpuMs, sample.cpuMs);
-    } else {
+    } else if (!nearWrite && sample.subrequests > 0) {
       consumerSamples += 1;
       maxConsumerCpuMs = Math.max(maxConsumerCpuMs, sample.cpuMs);
+    } else {
+      fail("RAW_WORKERS", "Workers sample is ambiguous between Cron producer and Queue consumer");
     }
   }
-  if (producerSamples === 0 || consumerSamples === 0) {
+  if (producerSamples === 0 || consumerSamples === 0 || producerRequests !== queueWrites) {
     fail("RAW_WORKERS", "Workers Analytics cannot separate Cron producer and Queue consumer CPU");
   }
   const backlogGroups = nestedGroups(queueRaw, "queueBacklogAdaptiveGroups", "RAW_QUEUE");
@@ -678,7 +697,14 @@ async function validateRawAnalytics(
 
   const preflight = controlRaw(parsed.get(REQUIRED_RAW_ANALYTICS[6]), "preflight");
   const activation = controlRaw(parsed.get(REQUIRED_RAW_ANALYTICS[7]), "activation");
-  const cleanup = controlRaw(parsed.get(REQUIRED_RAW_ANALYTICS[8]), "cleanup");
+  const windowStart = windowStartRaw(parsed.get(REQUIRED_RAW_ANALYTICS[8]));
+  const firstScheduledTime = Math.min(...context.tickLedger.map(({ scheduledTime }) => scheduledTime));
+  if (windowStart.capturedAt > firstScheduledTime
+    || windowStart.capturedAt < firstScheduledTime - TICK_MS
+    || windowStart.nextPhase !== context.rotationStart) {
+    fail("PHASE_SEQUENCE", "persisted phase immediately before the window does not match the first tick");
+  }
+  const cleanup = controlRaw(parsed.get(REQUIRED_RAW_ANALYTICS[9]), "cleanup");
   const http429 = context.quotaLedger.filter(({ errorCode }) => errorCode?.includes("429") === true).length;
   const quotaErrors = context.quotaLedger.filter(({ errorCode }) =>
     errorCode !== null && /quota|limit|exceeded/i.test(errorCode)).length;
@@ -710,7 +736,25 @@ async function validateRawAnalytics(
     preflightCapturedAt: preflight.capturedAt,
     activationCapturedAt: activation.capturedAt,
     cleanupCapturedAt: cleanup.capturedAt,
+    lastQueueTerminalAt,
   };
+}
+
+function windowStartRaw(value: unknown): { readonly capturedAt: number; readonly nextPhase: Phase } {
+  const raw = record(value, "RAW_WINDOW_START", "window-start raw");
+  const request = record(raw.request, "RAW_WINDOW_START", "window-start request");
+  const capturedAt = isoTimestamp(request.capturedAt, "RAW_WINDOW_START", "window-start capturedAt");
+  const response = record(raw.response, "RAW_WINDOW_START", "window-start response");
+  if (!Array.isArray(response.result) || response.result.length !== 1) {
+    fail("RAW_WINDOW_START", "window-start D1 response must contain one result");
+  }
+  const result = record(response.result[0], "RAW_WINDOW_START", "window-start result");
+  if (!Array.isArray(result.results) || result.results.length !== 1) {
+    fail("RAW_WINDOW_START", "window-start D1 response must contain one row");
+  }
+  const row = record(result.results[0], "RAW_WINDOW_START", "window-start row");
+  if (row.key !== "next_scheduler_phase") fail("RAW_WINDOW_START", "window-start key is invalid");
+  return { capturedAt, nextPhase: enumValue(row.value, PHASES, "RAW_WINDOW_START", "window-start phase") };
 }
 
 function d1Raw(
@@ -864,13 +908,22 @@ function validateAttribution(
   );
 }
 
-function validateCleanup(value: unknown, raw: RawMetrics, end: number): void {
+function validateCleanup(
+  value: unknown,
+  raw: RawMetrics,
+  end: number,
+  tickLedger: readonly LedgerEntry[],
+): void {
   const cleanup = record(value, "CLEANUP", "cleanup");
   if (raw.preflightCapturedAt > raw.activationCapturedAt || raw.activationCapturedAt >= end) {
     fail("CLEANUP", "control evidence timestamps are out of order");
   }
   if (raw.cleanupCapturedAt < end + 15 * 60_000) {
     fail("CLEANUP_GRACE", "cleanup was captured before the 15-minute terminality grace");
+  }
+  const lastFinishedAt = Math.max(...tickLedger.map(({ finishedAt }) => finishedAt));
+  if (raw.cleanupCapturedAt < lastFinishedAt || raw.cleanupCapturedAt < raw.lastQueueTerminalAt) {
+    fail("CLEANUP_GRACE", "cleanup was captured before the final terminal attempt or Queue delete");
   }
   if (!sameStringArray(cleanup.preflightSchedules, raw.preflightSchedules)
     || !emptyArray(cleanup.preflightSchedules)
