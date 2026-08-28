@@ -27,7 +27,7 @@ describe("loadConfig", () => {
       },
       projectedDailyBudget: {
         invocations: 288,
-        queueOperations: 864,
+        queueOperations: 1_728,
         freeQueueOperationsCeiling: 8_000,
       },
     });
@@ -56,7 +56,7 @@ describe("loadConfig", () => {
     [{ PROBE_BATCH_SIZE: "2" }, "PROBE_BATCH_SIZE"],
     [{ EXTERNAL_SUBREQUESTS_PER_RUN: "41" }, "EXTERNAL_SUBREQUESTS_PER_RUN"],
     [{ D1_QUERIES_PER_RUN: "41" }, "D1_QUERIES_PER_RUN"],
-    [{ D1_QUERIES_PER_RUN: "2" }, "D1_QUERIES_PER_RUN"],
+    [{ D1_QUERIES_PER_RUN: "11" }, "D1_QUERIES_PER_RUN"],
     [{ MAX_CATALOG_RESPONSE_BYTES: "16777217" }, "MAX_CATALOG_RESPONSE_BYTES"],
     [{ MAX_CATALOG_RESPONSE_BYTES: "0" }, "MAX_CATALOG_RESPONSE_BYTES"],
     [{ CRON_INTERVAL_MINUTES: "0" }, "CRON_INTERVAL_MINUTES"],
@@ -72,6 +72,14 @@ describe("loadConfig", () => {
     expect(() => loadConfig({ D1_ROWS_READ_PER_RUN: "13889" })).toThrow(
       /^D1_ROWS_READ_PER_RUN:/,
     );
+  });
+
+  it("budgets the three configured Queue retries at the fastest cadence", () => {
+    expect(() => loadConfig({
+      CRON_INTERVAL_MINUTES: "1",
+      D1_ROWS_READ_PER_RUN: "1",
+      D1_ROWS_WRITTEN_PER_RUN: "1",
+    })).toThrow(/^CRON_INTERVAL_MINUTES:/);
   });
 
   it("requires the upstream request budget to fit the external budget", () => {
