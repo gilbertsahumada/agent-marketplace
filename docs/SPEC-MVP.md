@@ -904,9 +904,13 @@ Nunca devuelve firma, payload crudo, headers o errores externos.
 
 ### 10.2 `GET /health`
 
-Público y sanitizado: última fase, offset/vuelta, targets por estado, lease como
-booleano+expiración (no runId), requests, CPU/wall time, último código de error y
-kill switch. Devuelve 200 aunque una fase esté degradada; 503 solo si no lee D1.
+Público, sanitizado y de costo constante: una sola lectura acotada de
+`runtime_state`, sin `COUNT`/scan de `probe_targets`. Expone última fase,
+offset/vuelta, lease como booleano+expiración (no runId), requests, CPU/wall
+time, último código de error, kill switch y ledger UTC corriente. Los conteos de
+targets se marcan no disponibles aquí y pertenecen a endpoints/artefactos de
+observación deliberados. Devuelve 200 con `status=degraded` ante una fase mala o
+si el scheduler está activo sin ledger diario válido; 503 solo si no lee D1.
 
 ### 10.3 `POST /hire-events`
 
@@ -1019,12 +1023,19 @@ Checks bloqueantes:
 - un tick duplicado o anterior queda confirmado sin ejecutar otra fase, y un
   batch de tamaño distinto de uno falla antes de acceder a D1;
 - kill switch impide red y writes de fases, aunque permite leer `/health`;
-- contadores observados nunca superan los presupuestos configurados;
+- cada resultado D1 se compara con el presupuesto de filas: la fase aborta
+  inmediatamente después del primer resultado que lo cruza y no inicia otra
+  query de fase. Como D1 solo informa filas después de ejecutar, una query
+  individual puede sobrepasar el límite; cleanup acotado sigue permitido para
+  no dejar lease/trabajo completado en retry. Por eso la ventana Analytics de
+  24 h, no esta defensa post-query, cierra el gate diario;
 - cada `D1Result.meta` acumula `rows_read`/`rows_written`; el ledger
   `daily_budget_YYYYMMDD` usa la fecha UTC de inicio, clasifica cada intento como
   `completed|failed|duplicate|locked` y `/health` solo expone el día UTC actual
   con un allowlist estricto. Sus filas terminan en `BeforeLedger` porque excluyen
-  la propia escritura reconciliadora;
+  la propia escritura reconciliadora. Ledger y liberación son best-effort: sus
+  fallos no convierten una fase ya confirmada en retry ni reemplazan el error
+  primario; `/health` degradado y Analytics revelan telemetría ausente;
 - el contador D1 admite como máximo 40 queries Free, incluye el marcador atómico
   de Queue, cuenta cada sentencia de un batch y rechaza la siguiente antes de
   acceder a D1;
