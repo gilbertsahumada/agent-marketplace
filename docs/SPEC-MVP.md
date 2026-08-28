@@ -909,8 +909,9 @@ Público, sanitizado y de costo constante: una sola lectura acotada de
 offset/vuelta, lease como booleano+expiración (no runId), requests, CPU/wall
 time, último código de error, kill switch y ledger UTC corriente. Los conteos de
 targets se marcan no disponibles aquí y pertenecen a endpoints/artefactos de
-observación deliberados. Devuelve 200 con `status=degraded` ante una fase mala o
-si el scheduler está activo sin ledger diario válido/fresco. Fresco significa
+observación deliberados. Devuelve 200 con `status=degraded` ante una fase mala,
+un error de scheduler posterior a la última fase sana o scheduler activo sin
+ledger diario válido/fresco. Fresco significa
 `updatedAt` dentro de tres intervalos Cron, con mínimo de 15 min, y no más de
 cinco minutos en el futuro; 503 solo si no lee D1.
 
