@@ -3,9 +3,12 @@
 Bounded Cloudflare Worker + D1 observation layer for BSC marketplace evidence.
 
 WP2 ships the schema, lease, curated manifest, bounded trust8004 client,
-single-phase HEADER/SWEEP rotation, Free Queue dispatch, kill switch and
-sanitized `GET /health`. PROBE remains an explicit no-network placeholder until
-WP3. No Cron Trigger is active.
+single-phase HEADER/SWEEP/PROBE rotation, Free Queue dispatch, kill switch and
+sanitized `GET /health`. WP3 is fail-closed to BSC Agent `303779` and the exact
+registered Grid endpoint. It refreshes trust8004 metadata, fixes read-only BSC
+checks to one fresh block, validates the canonical signed quote, and persists no
+signature or raw response. It never creates, funds or executes a job. No Cron
+Trigger is active.
 
 The Free profile caps scheduled work at 40 D1 queries per invocation, below the
 platform limit of 50. Every statement in `DB.batch()` is counted separately and
@@ -45,7 +48,7 @@ phase exceptions. This is separate from the explicit 240-second lease delay and
 prevents all automatic retries from being exhausted within a few seconds.
 
 ```bash
-npm install
+npm ci
 npm run cf-typegen
 npm run migrate:local
 npm test
@@ -112,10 +115,11 @@ The clean retry and two-round records are in
 `../evidence/wp2-retry-remote-clean-2026-08-28.json` and
 `../evidence/wp2-default-rounds-2026-08-28.json`.
 They close the remote HEADER/SWEEP retry, resource and two-round gates only.
-PROBE/WP3 remains pending. The controlled D1 gate runs only afterward against
-the complete staging candidate for a full `00:00–24:00 UTC` quota day; running
-it against the placeholder would understate D1 usage. Continuous scheduling
-stays disabled until both gates pass.
+The WP3 implementation and local Workerd gates are present, but its controlled
+remote Grid probe and transport-negative staging evidence remain pending. The
+24-hour D1 gate runs only after those pass, against the complete staging
+candidate for a full `00:00–24:00 UTC` quota day. Continuous scheduling stays
+disabled until both gates pass.
 
 Controlled nominal measurements may call `POST /__admin/run-scheduled` only
 while `DEPLOYMENT_ENV=staging`, `STAGING_MANUAL_RUN=1`, `KILL_SWITCH=0` and
