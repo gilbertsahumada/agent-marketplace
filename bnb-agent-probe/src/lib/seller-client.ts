@@ -37,7 +37,13 @@ export async function probeA2aSeller(input: A2aProbeInput): Promise<A2aProbeResu
   const card = await fetchJson(endpoint, {
     headers: { accept: "application/json" },
   }, input, deadline, usage);
-  const messageUrl = parseMessageUrl(card.url, new URL(input.endpoint).origin);
+  const registeredEndpoint = new URL(input.endpoint);
+  const registeredPath = registeredEndpoint.pathname.replace(/\/+$/, "");
+  const expectedMessageUrl = new URL(
+    `/api/sellers${registeredPath}/a2a`,
+    registeredEndpoint.origin,
+  );
+  const messageUrl = parseMessageUrl(card.url, expectedMessageUrl);
   const skills = parseSkills(card.skills);
   const negotiationSkill = NEGOTIATION_SKILLS.find((skill) => skills.includes(skill));
   if (!negotiationSkill || skills.filter((skill) => skill === "notify_funded").length !== 1) {
@@ -143,12 +149,12 @@ async function readBoundedText(
   }
 }
 
-function parseMessageUrl(value: unknown, expectedOrigin: string): URL {
+function parseMessageUrl(value: unknown, expectedUrl: URL): URL {
   if (typeof value !== "string" || !isSyntacticallyPublicHttpsUrl(value)) {
     throw new SellerProbeError("A2A_CARD_URL");
   }
   const url = new URL(value);
-  if (url.origin !== expectedOrigin) throw new SellerProbeError("A2A_CARD_URL");
+  if (url.toString() !== expectedUrl.toString()) throw new SellerProbeError("A2A_CARD_URL");
   return url;
 }
 
