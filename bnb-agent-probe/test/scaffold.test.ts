@@ -98,4 +98,46 @@ describe("WP1 Wrangler scaffold", () => {
       }],
     });
   });
+
+  it("provides a fully isolated Free validation environment", () => {
+    const staging = wrangler.env?.staging;
+    const validation = wrangler.env?.validation;
+
+    expect(validation).toMatchObject({
+      name: "bnb-agent-probe-validation",
+      triggers: { crons: [] },
+      vars: {
+        DEPLOYMENT_ENV: "validation",
+        STAGING_MANUAL_RUN: "0",
+        CLOUDFLARE_WORKERS_PLAN: "free",
+        KILL_SWITCH: "1",
+        HEADER_LIMIT: "25",
+        SWEEP_LIMIT: "4",
+        D1_QUERIES_PER_RUN: "40",
+      },
+      d1_databases: [{
+        binding: "DB",
+        database_name: "bnb-agent-probe-validation-20260828",
+        database_id: "11253c18-cc4d-489a-8d1d-972d3a31e49f",
+        migrations_dir: "migrations",
+      }],
+      queues: {
+        producers: [{
+          binding: "WP2_QUEUE",
+          queue: "bnb-agent-probe-validation-20260828",
+        }],
+        consumers: [{
+          queue: "bnb-agent-probe-validation-20260828",
+          max_batch_size: 1,
+          max_batch_timeout: 1,
+          max_retries: 3,
+          max_concurrency: 1,
+        }],
+      },
+    });
+    expect(validation?.d1_databases?.[0]?.database_id)
+      .not.toBe(staging?.d1_databases?.[0]?.database_id);
+    expect(validation?.queues?.producers?.[0]?.queue)
+      .not.toBe(staging?.queues?.producers?.[0]?.queue);
+  });
 });
