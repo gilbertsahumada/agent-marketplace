@@ -1,4 +1,5 @@
 import { isSyntacticallyPublicHttpsUrl } from "../trust8004/safe-url";
+import { a2aBaseEndpoint } from "../trust8004/candidates";
 
 const MAX_AGGREGATE_RESPONSE_BYTES = 64 * 1_024;
 const NEGOTIATION_SKILLS = ["negotiate-erc8183-job", "negotiate"] as const;
@@ -28,16 +29,17 @@ export async function probeA2aSeller(input: A2aProbeInput): Promise<A2aProbeResu
   if (!isSyntacticallyPublicHttpsUrl(input.endpoint)) {
     throw new SellerProbeError("SELLER_UNSAFE_URL");
   }
+  const baseEndpoint = a2aBaseEndpoint(input.endpoint);
   const now = input.now ?? performance.now.bind(performance);
   const deadline = now() + input.timeoutMs;
   const usage = { bytes: 0 };
-  const endpoint = new URL(input.endpoint);
+  const endpoint = new URL(baseEndpoint);
   endpoint.pathname = `${endpoint.pathname.replace(/\/+$/, "")}/.well-known/agent-card.json`;
 
   const card = await fetchJson(endpoint, {
     headers: { accept: "application/json" },
   }, input, deadline, usage);
-  const registeredEndpoint = new URL(input.endpoint);
+  const registeredEndpoint = new URL(baseEndpoint);
   const registeredPath = registeredEndpoint.pathname.replace(/\/+$/, "");
   const expectedMessageUrl = new URL(
     `/api/sellers${registeredPath}/a2a`,
