@@ -538,11 +538,20 @@ async function validateRawAnalytics(
   });
 
   const workersRaw = record(parsed.get(REQUIRED_RAW_ANALYTICS[2]), "RAW_WORKERS", "workers raw");
+  const workersRequest = record(workersRaw.request, "RAW_WORKERS", "Workers request");
   validateWindowRequest(workersRaw.request, {
     scriptName: context.workerName,
     start: startIso,
     endInclusive: endInclusiveIso,
   }, "RAW_WORKERS");
+  const workersTerminalityEnd = isoTimestamp(
+    workersRequest.terminalityEndInclusive,
+    "RAW_WORKERS",
+    "Workers terminalityEndInclusive",
+  );
+  if (workersTerminalityEnd < context.end + 15 * 60_000) {
+    fail("RAW_WORKERS", "Workers evidence ended before the terminality grace");
+  }
   const workers = nestedGroups(workersRaw, "workersInvocationsAdaptive", "RAW_WORKERS");
   const workerSamples: {
     timestamp: number;
@@ -576,8 +585,12 @@ async function validateRawAnalytics(
     if (status.includes("memory") && status.includes("exceed")) memoryExceeded += 1;
     const quantiles = record(group.quantiles, "RAW_WORKERS", `workers[${index}].quantiles`);
     const sum = record(group.sum, "RAW_WORKERS", `workers[${index}].sum`);
+    const timestamp = analyticsTimestamp(dimensions.datetime, "RAW_WORKERS", `workers[${index}].datetime`);
+    if (timestamp < context.start || timestamp > workersTerminalityEnd) {
+      fail("RAW_WORKERS", "Workers sample falls outside the requested evidence interval");
+    }
     workerSamples.push({
-      timestamp: analyticsTimestamp(dimensions.datetime, "RAW_WORKERS", `workers[${index}].datetime`),
+      timestamp,
       cpuMs: nonNegativeNumber(quantiles.cpuTimeP99, "RAW_WORKERS", `workers[${index}].cpuTimeP99`) / 1_000,
       requests: positiveInteger(sum.requests, "RAW_WORKERS", `workers[${index}].requests`),
       subrequests: nonNegativeInteger(sum.subrequests, "RAW_WORKERS", `workers[${index}].subrequests`),
@@ -599,6 +612,9 @@ async function validateRawAnalytics(
   );
   if (terminalityEnd < context.end + 15 * 60_000) {
     fail("QUEUE_TERMINALITY", "Queue terminality window ended before the 15-minute grace");
+  }
+  if (terminalityEnd !== workersTerminalityEnd) {
+    fail("RAW_WORKERS", "Workers and Queue terminality cutoffs differ");
   }
   validateWindowRequest(queueRaw.request, {
     queueId: context.queueId,
@@ -747,7 +763,12 @@ async function validateRawAnalytics(
   const http429 = context.quotaLedger.filter(({ errorCode }) => errorCode?.includes("429") === true).length;
   const quotaErrors = context.quotaLedger.filter(({ errorCode }) =>
     errorCode !== null && /quota|limit|exceeded/i.test(errorCode)).length;
-  if (workerErrors !== http429 + quotaErrors + exceededCpu + memoryExceeded) {
+  const spillOutAttempts = context.tickLedger.filter(({ startedAt }) => startedAt >= context.end);
+  const workerErrorCohort = [...context.quotaLedger, ...spillOutAttempts];
+  const workerHttp429 = workerErrorCohort.filter(({ errorCode }) => errorCode?.includes("429") === true).length;
+  const workerQuotaErrors = workerErrorCohort.filter(({ errorCode }) =>
+    errorCode !== null && /quota|limit|exceeded/i.test(errorCode)).length;
+  if (workerErrors !== workerHttp429 + workerQuotaErrors + exceededCpu + memoryExceeded) {
     fail("RAW_WORKERS", "Workers error total is not explained by the durable ledger");
   }
   return {
