@@ -17,6 +17,7 @@ class LeaseDatabase implements D1DatabaseLike {
   nextPhase: SchedulerPhase = "header";
   failRelease = false;
   failLedger = false;
+  queries = 0;
 
   prepare(query: string): D1PreparedStatementLike {
     let values: readonly unknown[] = [];
@@ -30,6 +31,7 @@ class LeaseDatabase implements D1DatabaseLike {
         throw new Error("scheduled lease queries must use all()");
       },
       async all<Row>() {
+        thisDb.queries += 1;
         if (query.includes("INSERT INTO runtime_state") && query.includes("scheduler_lease")) {
           const [runId, expiresAt, , now] = values as [string, number, number, number];
           if (thisDb.lease !== null && thisDb.lease.expiresAt > now) {
@@ -67,6 +69,7 @@ class LeaseDatabase implements D1DatabaseLike {
         return { success: true, meta: {}, results: [] as Row[] };
       },
       async run<Meta>(): Promise<D1ResultLike<Meta>> {
+        thisDb.queries += 1;
         if (!query.includes("INSERT INTO runtime_state")) {
           throw new Error("unexpected run query");
         }
@@ -230,5 +233,23 @@ describe("WP2 scheduled runner", () => {
 
     await expect(runner(controller, { DB: db } as unknown as Env, context, loadConfig({})))
       .resolves.toBe("locked");
+  });
+
+  it("never accesses D1 more than 40 times on an exhausted failure path", async () => {
+    const db = new LeaseDatabase();
+    const runner = createWp2ScheduledRunner({
+      now: () => 1_000,
+      randomUUID: () => "run-query-ceiling",
+      executePhase: async ({ db: phaseDb }) => {
+        for (let index = 0; index < 36; index += 1) {
+          await phaseDb.prepare("SELECT bounded").all();
+        }
+      },
+    });
+
+    await expect(runner(controller, { DB: db } as unknown as Env, context, loadConfig({})))
+      .rejects.toMatchObject({ name: "D1QueryBudgetExceededError" });
+    expect(db.queries).toBe(40);
+    expect(db.releases).toBe(1);
   });
 });
