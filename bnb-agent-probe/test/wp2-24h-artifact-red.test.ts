@@ -149,6 +149,7 @@ const RAW_PAYLOADS = {
   },
   "evidence/raw/cleanup.json": {
     response: { capturedAt: "2026-08-30T00:15:00.000Z", schedules: [], backlogCount: 0, killSwitch: true,
+      producerKillSwitch: true,
       stagingManualRun: false, sharedSecretPresent: false },
   },
 } as const;
@@ -235,6 +236,7 @@ function validArtifact(): Record<string, unknown> {
       finalSchedules: [],
       finalBacklogCount: 0,
       killSwitch: true,
+      producerKillSwitch: true,
       stagingManualRun: false,
       sharedSecretPresent: false,
     },
@@ -414,6 +416,18 @@ describe("WP2 24-hour evidence artifact validator", () => {
     await expect(validateWp224hArtifact(artifact, {
       readRawEvidence: async (path) => path === "evidence/raw/cleanup.json" ? contents : readRawEvidence(path),
     })).rejects.toThrow("CLEANUP_GRACE");
+  });
+
+  it("rejects cleanup without a producer shutdown barrier", async () => {
+    const artifact = validArtifact() as any;
+    const cleanup = structuredClone(RAW_PAYLOADS["evidence/raw/cleanup.json"]) as any;
+    cleanup.response.producerKillSwitch = false;
+    const contents = JSON.stringify(cleanup);
+    artifact.rawAnalytics["evidence/raw/cleanup.json"].sha256 = sha256(contents);
+    artifact.cleanup.producerKillSwitch = false;
+    await expect(validateWp224hArtifact(artifact, {
+      readRawEvidence: async (path) => path === "evidence/raw/cleanup.json" ? contents : readRawEvidence(path),
+    })).rejects.toThrow("CLEANUP");
   });
 
   it("rejects non-zero Queue backlog at the terminality cutoff", async () => {
