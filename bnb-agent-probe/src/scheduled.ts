@@ -6,6 +6,7 @@ import {
   D1RowBudgetExceededError,
   type D1QueryBudget,
 } from "./db/query-budget";
+import { recordSchedulerAttempt } from "./db/scheduler-attempt-ledger";
 import type {
   HeaderAgent,
 } from "./phases/header";
@@ -84,8 +85,8 @@ export function createWp2ScheduledRunner(dependencies: ScheduledRuntimeDependenc
     };
     const executePhase = dependencies.executePhase
       ?? ((input: PhaseExecution) => executeWp2Phase(input, countedFetch));
-    // Reserve queries for a sanitized error summary, an owner-checked lease
-    // release and the raw daily-ledger write before the platform hard limit.
+    // Reserve queries for a sanitized error summary, owner-checked lease
+    // release, append-only attempt ledger and raw daily ledger.
     const rowUsage = { rowsRead: 0, rowsWritten: 0 };
     const rowBudget = {
       rowsRead: config.d1RowsReadPerRun,
@@ -93,14 +94,51 @@ export function createWp2ScheduledRunner(dependencies: ScheduledRuntimeDependenc
     };
     const phaseStore = createBudgetedD1Database(
       rawDb,
-      config.d1QueriesPerRun - 3,
+      config.d1QueriesPerRun - 4,
       rowBudget,
       rowUsage,
     );
     // Cleanup remains executable after a phase crosses its observed row cap.
     // It shares the counter but not the post-query abort rule.
-    const auxiliaryStore = createBudgetedD1Database(rawDb, 2, undefined, rowUsage);
+    const auxiliaryStore = createBudgetedD1Database(rawDb, 3, undefined, rowUsage);
     const { db, budget, usage } = phaseStore;
+    const finalizeAttempt = async (input: {
+      readonly finishedAt: number;
+      readonly phase: SchedulerPhase | null;
+      readonly outcome: DailyBudgetOutcome;
+      readonly errorCode: string | null;
+    }): Promise<void> => {
+      const d1Queries = budget.used + auxiliaryStore.budget.used + 2;
+      const rowsReadObservedBeforeLedger = usage.rowsRead;
+      const rowsWrittenObservedBeforeLedger = usage.rowsWritten;
+      let attemptError: unknown;
+      try {
+        await recordSchedulerAttempt(auxiliaryStore.db, {
+          scheduledTime: controller.scheduledTime,
+          phase: input.phase,
+          outcome: input.outcome,
+          startedAt,
+          finishedAt: input.finishedAt,
+          upstreamRequests,
+          d1Queries,
+          rowsReadObservedBeforeLedger,
+          rowsWrittenObservedBeforeLedger,
+          errorCode: input.errorCode,
+        });
+      } catch (error) {
+        attemptError = error;
+      }
+      await bestEffort(() => recordDailyBudget(rawDb, {
+        startedAtMs: startedAt,
+        finishedAtMs: input.finishedAt,
+        outcome: input.outcome,
+        upstreamRequests,
+        d1Queries,
+        rowsReadObservedBeforeLedger,
+        rowsWrittenObservedBeforeLedger,
+      }));
+      if (attemptError !== undefined) throw attemptError;
+    };
     let acquired: boolean;
     try {
       acquired = await acquireSchedulerLease(db, {
@@ -125,15 +163,12 @@ export function createWp2ScheduledRunner(dependencies: ScheduledRuntimeDependenc
         wallTimeMs: Math.max(0, finishedAt - startedAt),
       }), finishedAt).run());
       await bestEffort(() => releaseSchedulerLease(auxiliaryStore.db, runId, finishedAt));
-      await bestEffort(() => recordDailyBudget(rawDb, {
-        startedAtMs: startedAt,
-        finishedAtMs: finishedAt,
+      await finalizeAttempt({
+        finishedAt,
+        phase: null,
         outcome: "failed",
-        upstreamRequests,
-        d1Queries: budget.used + auxiliaryStore.budget.used + 1,
-        rowsReadObservedBeforeLedger: usage.rowsRead,
-        rowsWrittenObservedBeforeLedger: usage.rowsWritten,
-      }));
+        errorCode: phaseErrorCode(error),
+      });
       throw error;
     }
 
@@ -151,20 +186,13 @@ export function createWp2ScheduledRunner(dependencies: ScheduledRuntimeDependenc
         requests: 0,
         wallTimeMs: Math.max(0, finishedAt - startedAt),
       }), finishedAt).run());
-      await bestEffort(() => recordDailyBudget(rawDb, {
-        startedAtMs: startedAt,
-        finishedAtMs: finishedAt,
-        outcome: "locked",
-        upstreamRequests,
-        d1Queries: budget.used + auxiliaryStore.budget.used + 1,
-        rowsReadObservedBeforeLedger: usage.rowsRead,
-        rowsWrittenObservedBeforeLedger: usage.rowsWritten,
-      }));
+      await finalizeAttempt({ finishedAt, phase: null, outcome: "locked", errorCode: null });
       return "locked";
     }
 
-    let phase: SchedulerPhase = "header";
+    let phase: SchedulerPhase | null = null;
     let outcome: DailyBudgetOutcome = "failed";
+    let attemptErrorCode: string | null = null;
     try {
       const stateResult = await db.prepare(
         `SELECT key, textValue, integerValue
@@ -200,10 +228,11 @@ export function createWp2ScheduledRunner(dependencies: ScheduledRuntimeDependenc
       return "completed";
     } catch (error) {
       const finishedAt = now();
+      attemptErrorCode = phaseErrorCode(error);
       try {
         await persistPhaseFailure(auxiliaryStore.db, {
-          phase,
-          errorCode: phaseErrorCode(error),
+          phase: phase ?? "header",
+          errorCode: attemptErrorCode,
           requests: upstreamRequests,
           d1Queries: budget.used + 3,
           wallTimeMs: Math.max(0, finishedAt - startedAt),
@@ -217,15 +246,12 @@ export function createWp2ScheduledRunner(dependencies: ScheduledRuntimeDependenc
     } finally {
       const finishedAt = now();
       await bestEffort(() => releaseSchedulerLease(auxiliaryStore.db, runId, finishedAt));
-      await bestEffort(() => recordDailyBudget(rawDb, {
-        startedAtMs: startedAt,
-        finishedAtMs: finishedAt,
+      await finalizeAttempt({
+        finishedAt,
+        phase: outcome === "duplicate" ? null : phase,
         outcome,
-        upstreamRequests,
-        d1Queries: budget.used + auxiliaryStore.budget.used + 1,
-        rowsReadObservedBeforeLedger: usage.rowsRead,
-        rowsWrittenObservedBeforeLedger: usage.rowsWritten,
-      }));
+        errorCode: attemptErrorCode,
+      });
     }
   };
 }
