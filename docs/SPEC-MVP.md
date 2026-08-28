@@ -1273,15 +1273,18 @@ outcomes y retries,
 hashes y rutas de las respuestas Analytics crudas por base y por cuenta, uso
 ajeno D1 y Queue observado, conteos totales, CPU separada del producer y
 consumer, wall time p95, memoria y un veredicto por gate.
-Una lectura D1 cruda y hasheada de `next_scheduler_phase`, capturada dentro de
-los cinco minutos anteriores al primer tick, fija la fase inicial; inferirla del
-propio ledger no es evidencia independiente. Un spill-in solo cierra si termina
+Una lectura D1 cruda y hasheada de `next_scheduler_phase` y
+`last_queue_scheduled_time`, iniciada y completada dentro de los cinco minutos
+anteriores al primer tick, fija la fase inicial y demuestra que terminó el tick
+inmediatamente anterior; inferirla del propio ledger no es evidencia
+independiente. Un spill-in solo cierra si termina
 en `completed`/`duplicate`, no por agotar retries en `failed`.
 La captura se ejecuta con
 `npm run evidence:wp2-window-start -- ../evidence/raw/window-start.json`; recibe
 token, cuenta y D1 únicamente por `CLOUDFLARE_API_TOKEN`,
-`CLOUDFLARE_ACCOUNT_ID` y `WP2_D1_DATABASE_ID`, escribe create-only la respuesta
-D1 literal y nunca serializa la credencial.
+`CLOUDFLARE_ACCOUNT_ID` y `WP2_D1_DATABASE_ID`, publica atómicamente y
+create-only la respuesta D1 literal junto con IDs/query/params, y nunca
+serializa la credencial.
 No se resume ni descarta la respuesta cruda usada para calcular esos campos.
 Las consultas versionadas están en `bnb-agent-probe/src/evidence/wp2-24h-queries.ts`.
 Workers y las operaciones Queue usan inicio inclusivo `00:00:00.000Z` y fin inclusivo
