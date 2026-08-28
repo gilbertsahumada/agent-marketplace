@@ -68,7 +68,7 @@ function message(body: unknown) {
 describe("WP2 Free queue dispatch", () => {
   it("keeps Cron below the phase CPU path by enqueueing one versioned tick", async () => {
     const runScheduled = vi.fn();
-    const worker = createWorker({ runScheduled }) as unknown as QueueWorker;
+    const worker = createWorker({ now: () => 1_800_000_000_000, runScheduled }) as unknown as QueueWorker;
     const activeEnv = queueEnv();
 
     await worker.scheduled({ scheduledTime: 1_800_000_000_000, cron: "*/5 * * * *" }, activeEnv, context);
@@ -82,7 +82,7 @@ describe("WP2 Free queue dispatch", () => {
   });
 
   it("requires the Queue producer binding before an active Cron can dispatch", async () => {
-    const worker = createWorker({ runScheduled: vi.fn() }) as unknown as QueueWorker;
+    const worker = createWorker({ now: () => 1_800_000_000_000, runScheduled: vi.fn() }) as unknown as QueueWorker;
 
     await expect(worker.scheduled(
       { scheduledTime: 1_800_000_000_000, cron: "*/5 * * * *" },
@@ -93,7 +93,7 @@ describe("WP2 Free queue dispatch", () => {
 
   it("runs and acknowledges exactly one deduplicated Queue tick", async () => {
     const runScheduled = vi.fn().mockResolvedValue(undefined);
-    const worker = createWorker({ runScheduled }) as unknown as QueueWorker;
+    const worker = createWorker({ now: () => 1_800_000_000_000, runScheduled }) as unknown as QueueWorker;
     const activeEnv = queueEnv();
     const tick = message({ schemaVersion: 1, scheduledTime: 1_800_000_000_000 });
 
@@ -113,7 +113,7 @@ describe("WP2 Free queue dispatch", () => {
     const db = new TickDatabase();
     db.lastScheduledTime = 1_800_000_000_000;
     const runScheduled = vi.fn();
-    const worker = createWorker({ runScheduled }) as unknown as QueueWorker;
+    const worker = createWorker({ now: () => 1_800_000_000_000, runScheduled }) as unknown as QueueWorker;
     const activeEnv = queueEnv(db);
     const tick = message({ schemaVersion: 1, scheduledTime: 1_800_000_000_000 });
 
@@ -125,7 +125,7 @@ describe("WP2 Free queue dispatch", () => {
 
   it("discards queued work while the kill switch is active", async () => {
     const runScheduled = vi.fn();
-    const worker = createWorker({ runScheduled }) as unknown as QueueWorker;
+    const worker = createWorker({ now: () => 1_800_000_000_000, runScheduled }) as unknown as QueueWorker;
     const activeEnv = queueEnv(new TickDatabase(), "1");
     const tick = message({ schemaVersion: 1, scheduledTime: 1_800_000_000_000 });
 
@@ -138,7 +138,7 @@ describe("WP2 Free queue dispatch", () => {
 
   it("retries without acknowledging when another invocation owns the lease", async () => {
     const runScheduled = vi.fn().mockResolvedValue("locked");
-    const worker = createWorker({ runScheduled }) as unknown as QueueWorker;
+    const worker = createWorker({ now: () => 1_800_000_000_000, runScheduled }) as unknown as QueueWorker;
     const tick = message({ schemaVersion: 1, scheduledTime: 1_800_000_000_000 });
 
     await worker.queue({ messages: [tick] }, queueEnv(), context);
@@ -151,7 +151,7 @@ describe("WP2 Free queue dispatch", () => {
     const runScheduled = vi.fn()
       .mockRejectedValueOnce(new Error("phase failed"))
       .mockResolvedValueOnce(undefined);
-    const worker = createWorker({ runScheduled }) as unknown as QueueWorker;
+    const worker = createWorker({ now: () => 1_800_000_000_000, runScheduled }) as unknown as QueueWorker;
     const activeEnv = queueEnv();
     const firstDelivery = message({ schemaVersion: 1, scheduledTime: 1_800_000_000_000 });
     const retryDelivery = message({ schemaVersion: 1, scheduledTime: 1_800_000_000_000 });
@@ -167,10 +167,24 @@ describe("WP2 Free queue dispatch", () => {
 
   it("rejects a misconfigured multi-message batch before D1 access", async () => {
     const db = new TickDatabase();
-    const worker = createWorker({ runScheduled: vi.fn() }) as unknown as QueueWorker;
+    const worker = createWorker({ now: () => 1_800_000_000_000, runScheduled: vi.fn() }) as unknown as QueueWorker;
 
     await expect(worker.queue({ messages: [message({}), message({})] }, queueEnv(db), context))
       .rejects.toThrow("WP2_QUEUE_BATCH_MUST_EQUAL_ONE");
     expect(db.dedupeQueries).toBe(0);
+  });
+
+  it("rejects a Queue tick more than five minutes in the future before phase execution", async () => {
+    const runScheduled = vi.fn();
+    const worker = createWorker({
+      now: () => 1_800_000_000_000,
+      runScheduled,
+    }) as unknown as QueueWorker;
+    const tick = message({ schemaVersion: 1, scheduledTime: 1_800_000_300_001 });
+
+    await expect(worker.queue({ messages: [tick] }, queueEnv(), context))
+      .rejects.toThrow("WP2_QUEUE_MESSAGE_INVALID");
+    expect(runScheduled).not.toHaveBeenCalled();
+    expect(tick.ack).not.toHaveBeenCalled();
   });
 });
