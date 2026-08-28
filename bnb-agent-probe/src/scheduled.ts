@@ -8,6 +8,7 @@ import {
 import type {
   HeaderAgent,
 } from "./phases/header";
+import { recordDailyBudget, type DailyBudgetOutcome } from "./db/daily-budget";
 import type {
   SweepAgentResult,
   SweepTargetCandidate,
@@ -84,7 +85,9 @@ export function createWp2ScheduledRunner(dependencies: ScheduledRuntimeDependenc
       ?? ((input: PhaseExecution) => executeWp2Phase(input, countedFetch));
     // Reserve raw queries for a sanitized error summary and an owner-checked
     // lease release before the platform hard limit.
-    const { db, budget } = createBudgetedD1Database(rawDb, config.d1QueriesPerRun - 2);
+    const phaseStore = createBudgetedD1Database(rawDb, config.d1QueriesPerRun - 3);
+    const auxiliaryStore = createBudgetedD1Database(rawDb, 2);
+    const { db, budget, usage } = phaseStore;
     const acquired = await acquireSchedulerLease(db, {
       runId,
       nowMs: startedAt,
@@ -93,7 +96,7 @@ export function createWp2ScheduledRunner(dependencies: ScheduledRuntimeDependenc
 
     if (!acquired) {
       const finishedAt = now();
-      await db.prepare(
+      await auxiliaryStore.db.prepare(
         `INSERT INTO runtime_state (key, textValue, integerValue, updatedAt)
          VALUES ('last_scheduler_summary', ?, NULL, ?)
          ON CONFLICT(key) DO UPDATE SET
@@ -105,10 +108,20 @@ export function createWp2ScheduledRunner(dependencies: ScheduledRuntimeDependenc
         requests: 0,
         wallTimeMs: Math.max(0, finishedAt - startedAt),
       }), finishedAt).run();
+      await recordDailyBudget(rawDb, {
+        startedAtMs: startedAt,
+        finishedAtMs: finishedAt,
+        outcome: "locked",
+        upstreamRequests,
+        d1Queries: budget.used + auxiliaryStore.budget.used + 1,
+        rowsReadObservedBeforeLedger: usage.rowsRead + auxiliaryStore.usage.rowsRead,
+        rowsWrittenObservedBeforeLedger: usage.rowsWritten + auxiliaryStore.usage.rowsWritten,
+      });
       return "locked";
     }
 
     let phase: SchedulerPhase = "header";
+    let outcome: DailyBudgetOutcome = "failed";
     try {
       const stateResult = await db.prepare(
         `SELECT key, textValue, integerValue
@@ -121,7 +134,10 @@ export function createWp2ScheduledRunner(dependencies: ScheduledRuntimeDependenc
       if (controller.cron === "queue"
         && completedQueueScheduledTime !== undefined
         && completedQueueScheduledTime !== null
-        && completedQueueScheduledTime >= controller.scheduledTime) return "duplicate";
+        && completedQueueScheduledTime >= controller.scheduledTime) {
+        outcome = "duplicate";
+        return "duplicate";
+      }
       phase = parsePhase(state.get("next_scheduler_phase")?.textValue);
       await executePhase({
         phase,
@@ -137,15 +153,16 @@ export function createWp2ScheduledRunner(dependencies: ScheduledRuntimeDependenc
           ? { completedQueueScheduledTime: controller.scheduledTime }
           : {}),
       });
+      outcome = "completed";
       return "completed";
     } catch (error) {
       const finishedAt = now();
       try {
-        await persistPhaseFailure(rawDb, {
+        await persistPhaseFailure(auxiliaryStore.db, {
           phase,
           errorCode: phaseErrorCode(error),
           requests: upstreamRequests,
-          d1Queries: budget.used + 2,
+          d1Queries: budget.used + 3,
           wallTimeMs: Math.max(0, finishedAt - startedAt),
           finishedAt,
         });
@@ -155,7 +172,17 @@ export function createWp2ScheduledRunner(dependencies: ScheduledRuntimeDependenc
       }
       throw error;
     } finally {
-      await releaseSchedulerLease(rawDb, runId, now());
+      const finishedAt = now();
+      await releaseSchedulerLease(auxiliaryStore.db, runId, finishedAt);
+      await recordDailyBudget(rawDb, {
+        startedAtMs: startedAt,
+        finishedAtMs: finishedAt,
+        outcome,
+        upstreamRequests,
+        d1Queries: budget.used + auxiliaryStore.budget.used + 1,
+        rowsReadObservedBeforeLedger: usage.rowsRead + auxiliaryStore.usage.rowsRead,
+        rowsWrittenObservedBeforeLedger: usage.rowsWritten + auxiliaryStore.usage.rowsWritten,
+      });
     }
   };
 }
@@ -188,7 +215,7 @@ async function executeWp2Phase(input: PhaseExecution, fetchImpl: typeof fetch): 
       limit: input.config.headerLimit,
       previousHighWater: input.headerHighWater,
       reserveQueriesAfterCommit: 0,
-      invocationQueriesAfterCommit: 1,
+      invocationQueriesAfterCommit: 2,
       startedAtMs: input.startedAtMs,
       ...(input.completedQueueScheduledTime === undefined
         ? {}
@@ -205,7 +232,7 @@ async function executeWp2Phase(input: PhaseExecution, fetchImpl: typeof fetch): 
       nowMs: input.nowMs,
       queryBudget: input.queryBudget,
       requestBudget: { remaining: input.config.trust8004RequestsPerRun },
-      invocationQueriesAfterCommit: 1,
+      invocationQueriesAfterCommit: 2,
       startedAtMs: input.startedAtMs,
       ...(input.completedQueueScheduledTime === undefined
         ? {}
@@ -246,7 +273,7 @@ async function executeWp2Phase(input: PhaseExecution, fetchImpl: typeof fetch): 
         phase: "probe",
         status: "pending_wp3",
         requests: 0,
-        d1Queries: input.queryBudget.used + probeBatchQueries + 1,
+        d1Queries: input.queryBudget.used + probeBatchQueries + 2,
         wallTimeMs: Math.max(0, finishedAt - input.startedAtMs),
       }), finishedAt]),
     prepareStatement(input.db,
