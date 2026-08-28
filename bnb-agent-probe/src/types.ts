@@ -46,6 +46,7 @@ export interface ScheduledController {
   scheduledTime: number;
   cron: string;
   attempt?: number;
+  messageId?: string;
 }
 
 export interface ExecutionContext {
