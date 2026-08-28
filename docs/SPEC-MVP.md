@@ -977,6 +977,11 @@ Checks bloqueantes:
   aplicación;
 - el dry-run compila el mismo entrypoint y bindings que staging.
 
+La corrida WP2 local del 2026-08-28 queda
+registrada en `evidence/wp2-local-wrangler-2026-08-28.json`: verificó el kill
+switch y una rotación `HEADER → SWEEP → PROBE → HEADER` con 7, 9 y 5 queries D1
+respectivamente, todas dentro del presupuesto Free de 40.
+
 Wrangler/Miniflare valida comportamiento, bindings y persistencia local, pero no
 demuestra el límite real de 10 ms de CPU ni el egress productivo de Cloudflare.
 
