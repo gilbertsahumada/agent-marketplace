@@ -9,7 +9,8 @@ WP3. No Cron Trigger is active.
 
 The Free profile caps scheduled work at 40 D1 queries per invocation, below the
 platform limit of 50. Every statement in `DB.batch()` is counted separately and
-two queries are reserved for a sanitized failure summary plus lease cleanup.
+three queries are reserved outside the phase budget for a sanitized failure
+summary, lease cleanup and the daily ledger.
 The atomic Queue completion marker is also included in the reported and
 enforced per-invocation total. The minimum accepted budget is 12 queries, which
 covers the smallest complete SWEEP plus failure and lease-cleanup reserves.
@@ -22,6 +23,11 @@ one phase. The completion timestamp is committed atomically with phase state, so
 a failed delivery can retry while a completed duplicate cannot advance another
 phase. At five-minute cadence this projects to 864 nominal operations/day and
 1,728 with all three configured retries, below the Free safety ceiling of 8,000.
+Those are Queue operations. D1 is budgeted independently at 288 nominal attempts
+or 1,152 if every tick reaches all four deliveries. With the configurable Free
+defaults `D1_ROWS_READ_PER_RUN=3000` and `D1_ROWS_WRITTEN_PER_RUN=60`, that is
+864,000/17,280 rows nominal and 3,456,000/69,120 retry-worst, below the reserved
+4,000,000/80,000 daily ceilings.
 If another invocation owns the D1 lease, the message is not acknowledged and is
 retried after 240 seconds; completed and stale ticks are acknowledged normally.
 The consumer is fixed at one concurrent invocation, and Queue timestamps more
@@ -83,12 +89,20 @@ Cloudflare refuses to delete a bound Worker or Queue.
 
 Exact correctness comes from D1 completion markers keyed by `scheduledTime`;
 adaptive Queue and Workers metrics only corroborate delivery and resource use.
+Each D1 result also contributes its `meta.rows_read` and `meta.rows_written` to
+`daily_budget_YYYYMMDD`, keyed by the invocation's UTC start date. `/health`
+exposes only the validated current-day allowlist. Row fields are explicitly
+named `BeforeLedger` because they omit the ledger's own write; this operational
+reconciliation does not replace raw per-database and account Cloudflare D1
+Analytics for the quota gate.
 The clean retry and two-round records are in
 `../evidence/wp2-retry-remote-clean-2026-08-28.json` and
 `../evidence/wp2-default-rounds-2026-08-28.json`.
 They close the remote HEADER/SWEEP retry, resource and two-round gates only.
-PROBE/WP3 and the controlled D1 24-hour window remain pending, so continuous
-scheduling stays disabled.
+PROBE/WP3 remains pending. The controlled D1 gate runs only afterward against
+the complete staging candidate for a full `00:00–24:00 UTC` quota day; running
+it against the placeholder would understate D1 usage. Continuous scheduling
+stays disabled until both gates pass.
 
 Controlled nominal measurements may call `POST /__admin/run-scheduled` only
 while `DEPLOYMENT_ENV=staging`, `STAGING_MANUAL_RUN=1`, `KILL_SWITCH=0` and
