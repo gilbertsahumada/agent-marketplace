@@ -60,6 +60,7 @@ function queueEnv(db = new TickDatabase(), killSwitch = "0") {
   return {
     DB: db,
     KILL_SWITCH: killSwitch,
+    PRODUCER_KILL_SWITCH: "0",
     WP2_QUEUE: { send: vi.fn().mockResolvedValue(undefined) },
   } as Env & { WP2_QUEUE: { send: ReturnType<typeof vi.fn> } };
 }
@@ -163,6 +164,20 @@ describe("WP2 Free queue dispatch", () => {
     expect(runScheduled).not.toHaveBeenCalled();
     expect(tick.ack).toHaveBeenCalledOnce();
     expect(tick.retry).not.toHaveBeenCalled();
+  });
+
+  it("stops new ticks while allowing the Queue consumer to drain", async () => {
+    const runScheduled = vi.fn().mockResolvedValue("completed");
+    const worker = createWorker({ now: () => 1_800_000_000_000, runScheduled }) as unknown as QueueWorker;
+    const drainEnv = { ...queueEnv(), PRODUCER_KILL_SWITCH: "1" };
+    const tick = message({ schemaVersion: 1, scheduledTime: 1_799_999_700_000 });
+
+    await worker.scheduled({ scheduledTime: 1_800_000_000_000, cron: "*/5 * * * *" }, drainEnv, context);
+    await worker.queue({ messages: [tick] }, drainEnv, context);
+
+    expect(drainEnv.WP2_QUEUE.send).not.toHaveBeenCalled();
+    expect(runScheduled).toHaveBeenCalledOnce();
+    expect(tick.ack).toHaveBeenCalledOnce();
   });
 
   it("retries without acknowledging when another invocation owns the lease", async () => {
