@@ -38,6 +38,13 @@ export class CatalogTimeoutError extends Error {
   }
 }
 
+export class CatalogInvalidJsonError extends Error {
+  constructor(readonly url: string) {
+    super(`trust8004 catalog returned invalid JSON for ${url}`);
+    this.name = "CatalogInvalidJsonError";
+  }
+}
+
 function positiveInteger(value: number, field: string): number {
   if (!Number.isSafeInteger(value) || value <= 0) throw new Error(`${field} must be a positive integer`);
   return value;
@@ -144,8 +151,8 @@ export class Trust8004CatalogClient {
     let value: unknown;
     try {
       value = JSON.parse(text) as unknown;
-    } catch (error) {
-      throw new Error(`trust8004 catalog returned invalid JSON for ${url}: ${error instanceof Error ? error.message : String(error)}`);
+    } catch {
+      throw new CatalogInvalidJsonError(url.toString());
     }
     return parse(value);
   }
