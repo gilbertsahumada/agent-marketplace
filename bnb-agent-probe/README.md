@@ -66,6 +66,10 @@ tick from the persisted starting phase, checks account-wide Queue usage, and
 requests Queue evidence through the minimum `00:15Z` cutoff. Because inactive
 Queues need not emit a new Analytics bucket, the last emitted zero backlog is
 paired with timestamped REST backlog zero after the cutoff.
+The starting phase comes from a hashed raw D1 read captured within five minutes
+before the first UTC tick. Producer CPU is derived only from complete Workers
+groups matched to all 288 `WriteMessage` operations with zero subrequests;
+ambiguous or incomplete attribution fails closed.
 
 Staging remains on the Free profile and retains one isolated Queue producer and
 serial consumer. Outside the exact 24-hour gate it declares an empty Cron list
