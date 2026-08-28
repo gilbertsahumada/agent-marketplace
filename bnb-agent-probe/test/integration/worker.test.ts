@@ -1,15 +1,18 @@
 import { env } from "cloudflare:workers";
 import { createExecutionContext } from "cloudflare:test";
 import worker from "../../src/index";
+import { loadConfig } from "../../src/config";
 import type { D1DatabaseLike } from "../../src/db/client";
 import {
   createBudgetedD1Database,
   D1QueryBudgetExceededError,
 } from "../../src/db/query-budget";
 import { acquireSchedulerLease } from "../../src/lib/scheduler-lease";
+import { createWp2ScheduledRunner } from "../../src/scheduled";
 
 beforeEach(async () => {
   await env.DB.prepare("DELETE FROM runtime_state").run();
+  await env.DB.prepare("DELETE FROM probe_targets").run();
 });
 
 describe("WP1 in the Workers runtime", () => {
@@ -100,4 +103,87 @@ describe("WP1 in the Workers runtime", () => {
     );
     expect(budget.used).toBe(40);
   });
+
+  it("runs HEADER and rolling SWEEP atomically and preserves a removed endpoint", async () => {
+    let headerIncludesAgent = true;
+    let detailIncludesEndpoint = true;
+    const catalogAgent = (agentId: string, includeEndpoint: boolean) => ({
+      chainId: 56,
+      agentId,
+      name: `Agent ${agentId}`,
+      registeredAt: 1_000,
+      metadataUpdatedAt: 900,
+      metadataReasonCode: "ok",
+      services: includeEndpoint
+        ? [{ name: "ERC-8183", endpoint: "https://seller.example.org/quote" }]
+        : [],
+      endpoints: [],
+    });
+    const fetchCatalog = async (input: RequestInfo | URL) => {
+      const url = new URL(String(input));
+      if (url.pathname.endsWith("/agents")) {
+        const items = headerIncludesAgent ? [catalogAgent("16", true)] : [];
+        return Response.json({
+          items,
+          total: items.length,
+          limit: Number(url.searchParams.get("limit")),
+          offset: Number(url.searchParams.get("offset")),
+        });
+      }
+      const agentId = url.pathname.split("56:")[1];
+      if (agentId === undefined) return new Response(null, { status: 404 });
+      return Response.json(catalogAgent(agentId, agentId === "16" && detailIncludesEndpoint));
+    };
+    let clock = 10_000;
+    const runner = createWp2ScheduledRunner({
+      now: () => clock++,
+      randomUUID: () => `run-${clock}`,
+      fetch: fetchCatalog as typeof fetch,
+    });
+    const config = loadConfig({});
+    const controller = { scheduledTime: 10_000, cron: "*/5 * * * *" };
+    const context = createExecutionContext();
+
+    await runner(controller, env, context, config); // HEADER
+    expect(await env.DB.prepare(
+      "SELECT declarationState FROM probe_targets WHERE agentId = '16'",
+    ).first()).toEqual({ declarationState: "current" });
+    expect(await runtimeText("next_scheduler_phase")).toBe("sweep");
+
+    await runner(controller, env, context, config); // SWEEP page 1/2
+    expect(await runtimeInteger("sweep_offset")).toBe(4);
+    expect(await runtimeText("next_scheduler_phase")).toBe("probe");
+
+    await runner(controller, env, context, config); // WP3 pending, no seller request
+    expect(await runtimeText("next_scheduler_phase")).toBe("header");
+
+    headerIncludesAgent = false;
+    detailIncludesEndpoint = false;
+    await runner(controller, env, context, config); // HEADER, identical target data
+    await runner(controller, env, context, config); // SWEEP page 2/2, round complete
+    expect(await runtimeInteger("sweep_round")).toBe(1);
+    await runner(controller, env, context, config); // WP3 pending
+    await runner(controller, env, context, config); // HEADER empty
+    await runner(controller, env, context, config); // SWEEP page contains agent 16
+
+    expect(await env.DB.prepare(
+      "SELECT declarationState FROM probe_targets WHERE agentId = '16'",
+    ).first()).toEqual({ declarationState: "removed" });
+    const summary = JSON.parse(await runtimeText("last_sweep_summary") ?? "{}");
+    expect(summary).toMatchObject({ requests: 4, removedTargets: 1 });
+  });
 });
+
+async function runtimeText(key: string): Promise<string | null> {
+  const row = await env.DB.prepare("SELECT textValue FROM runtime_state WHERE key = ?")
+    .bind(key)
+    .first<{ textValue: string | null }>();
+  return row?.textValue ?? null;
+}
+
+async function runtimeInteger(key: string): Promise<number | null> {
+  const row = await env.DB.prepare("SELECT integerValue FROM runtime_state WHERE key = ?")
+    .bind(key)
+    .first<{ integerValue: number | null }>();
+  return row?.integerValue ?? null;
+}
