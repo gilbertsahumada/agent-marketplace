@@ -7,6 +7,9 @@ import type {
   WorkerEntrypoint,
 } from "./types";
 
+type ScheduledRunResult = "completed" | "duplicate" | "locked";
+const QUEUE_LEASE_RETRY_DELAY_SECONDS = 240;
+
 export interface WorkerDependencies {
   now?: () => number;
   runScheduled?: (
@@ -14,7 +17,7 @@ export interface WorkerDependencies {
     env: Env,
     context: ExecutionContext,
     config: WorkerConfig,
-  ) => Promise<void>;
+  ) => Promise<ScheduledRunResult | void>;
 }
 
 function errorResponse(error: "not_found" | "invalid_configuration" | "unauthorized", status: number): Response {
@@ -121,12 +124,16 @@ export function createWorker(dependencies: WorkerDependencies = {}): WorkerEntry
       }
       if (dependencies.runScheduled === undefined) throw new Error("WP2_QUEUE_RUNNER_REQUIRED");
       const scheduledTime = queueScheduledTime(message.body);
-      await dependencies.runScheduled(
+      const result = await dependencies.runScheduled(
         { scheduledTime, cron: "queue" },
         env,
         context,
         config,
       );
+      if (result === "locked") {
+        message.retry({ delaySeconds: QUEUE_LEASE_RETRY_DELAY_SECONDS });
+        return;
+      }
       message.ack();
     },
   };
