@@ -20,6 +20,8 @@ export interface ProbeTarget {
   readonly endpoint: string;
   readonly categoriesJson: string;
   readonly currentMetadataUpdatedAt: number | null;
+  readonly lastSeenAt?: number;
+  readonly priority?: number;
 }
 
 export type ProbeReconciliation =
