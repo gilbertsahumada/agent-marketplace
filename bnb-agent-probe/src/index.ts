@@ -14,7 +14,6 @@ export interface WorkerDependencies {
     env: Env,
     context: ExecutionContext,
     config: WorkerConfig,
-    queriesBeforeRun?: number,
   ) => Promise<void>;
 }
 
@@ -57,21 +56,6 @@ function queueScheduledTime(body: unknown): number {
     throw new Error("WP2_QUEUE_MESSAGE_INVALID");
   }
   return value.scheduledTime;
-}
-
-async function claimQueueTick(env: Env, scheduledTime: number, now: number): Promise<boolean> {
-  const row = await env.DB.prepare(
-    `INSERT INTO runtime_state (key, textValue, integerValue, updatedAt)
-     VALUES ('last_queue_scheduled_time', NULL, ?, ?)
-     ON CONFLICT(key) DO UPDATE SET
-       textValue = NULL,
-       integerValue = excluded.integerValue,
-       updatedAt = excluded.updatedAt
-     WHERE runtime_state.integerValue IS NULL
-        OR runtime_state.integerValue < excluded.integerValue
-     RETURNING key`,
-  ).bind(scheduledTime, now).first<{ key: string }>();
-  return row !== null;
 }
 
 export function createWorker(dependencies: WorkerDependencies = {}): WorkerEntrypoint {
@@ -137,16 +121,11 @@ export function createWorker(dependencies: WorkerDependencies = {}): WorkerEntry
       }
       if (dependencies.runScheduled === undefined) throw new Error("WP2_QUEUE_RUNNER_REQUIRED");
       const scheduledTime = queueScheduledTime(message.body);
-      if (!await claimQueueTick(env, scheduledTime, now())) {
-        message.ack();
-        return;
-      }
       await dependencies.runScheduled(
         { scheduledTime, cron: "queue" },
         env,
         context,
         config,
-        1,
       );
       message.ack();
     },
