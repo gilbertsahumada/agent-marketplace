@@ -82,6 +82,8 @@ describe("syntactically public HTTPS policy", () => {
     "https://localhost/path",
     "https://service.local/path",
     "https://seller.example/path",
+    "https://seller.example.com/path?token=secret",
+    "https://seller.example.com/path#credential",
     "https://10.0.0.1/path",
     "https://169.254.1.2/path",
     "https://192.168.1.2/path",
