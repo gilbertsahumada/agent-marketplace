@@ -10,6 +10,7 @@ import {
   keccak256,
   parseAbi,
   stringToHex,
+  type Address,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 
@@ -17,7 +18,6 @@ import { loadConfig } from "../../src/config";
 import {
   BSC_COMMERCE,
   BSC_PAYMENT_TOKEN,
-  BSC_POLICY,
 } from "../../src/lib/chain";
 import { buildGridProbeRequest, GRID_PROBE_REQUEST_HASH } from "../../src/lib/terms";
 import { createWp2ScheduledRunner } from "../../src/scheduled";
@@ -29,6 +29,7 @@ const BLOCK_NUMBER = 50_000_000n;
 const ENDPOINT = "https://bnb-agent-marketplace-ruby.vercel.app/grid";
 const MESSAGE_URL = "https://bnb-agent-marketplace-ruby.vercel.app/api/sellers/grid/a2a";
 const account = privateKeyToAccount(`0x${"11".repeat(32)}`);
+const ERC1271_PROVIDER = "0x2222222222222222222222222222222222222222" as Address;
 const registryAbi = parseAbi([
   "function getAgentWallet(uint256 agentId) view returns (address)",
   "function ownerOf(uint256 tokenId) view returns (address)",
@@ -39,6 +40,9 @@ const tokenAbi = parseAbi(["function decimals() view returns (uint8)"]);
 const multicallAbi = parseAbi([
   "function aggregate3((address target,bool allowFailure,bytes callData)[] calls) payable returns ((bool success,bytes returnData)[] returnData)",
 ]);
+const erc1271Abi = parseAbi([
+  "function isValidSignature(bytes32 hash, bytes signature) view returns (bytes4)",
+]);
 
 beforeEach(async () => {
   await env.DB.prepare("DELETE FROM probe_observations").run();
@@ -47,7 +51,14 @@ beforeEach(async () => {
 });
 
 describe("WP3 full Workers runtime", () => {
-  it("reconciles, verifies a real EIP-191 quote and commits it atomically", async () => {
+  it.each([
+    ["eip191", account.address, 8],
+    ["erc1271", ERC1271_PROVIDER, 10],
+  ] as const)("reconciles, verifies a real %s quote and commits it atomically", async (
+    signatureMethod,
+    provider,
+    expectedRequests,
+  ) => {
     await env.DB.prepare(
       `INSERT INTO probe_targets (
          agentId, chainId, transport, endpoint, name, categoriesJson,
@@ -60,7 +71,7 @@ describe("WP3 full Workers runtime", () => {
       "INSERT INTO runtime_state (key, textValue, updatedAt) VALUES ('next_scheduler_phase', 'probe', ?)",
     ).bind(NOW_MS - 1_000).run();
 
-    const quote = await signedQuote();
+    const quote = await signedQuote(provider);
     const rpcMethods: string[] = [];
     const fetchImpl: typeof fetch = async (input, init) => {
       const url = new URL(String(input));
@@ -95,12 +106,13 @@ describe("WP3 full Workers runtime", () => {
         const request = JSON.parse(String(init?.body)) as {
           id: number;
           method: string;
+          params?: unknown[];
         };
         rpcMethods.push(request.method);
         return Response.json({
           jsonrpc: "2.0",
           id: request.id,
-          result: rpcResult(request.method),
+          result: rpcResult(request, provider),
         });
       }
       return new Response(null, { status: 404 });
@@ -125,21 +137,23 @@ describe("WP3 full Workers runtime", () => {
     ).first<Record<string, unknown>>();
     expect(observation).toMatchObject({
       outcome: "quote_verified",
-      signatureMethod: "eip191",
-      signer: account.address,
+      signatureMethod,
+      signer: provider,
       observedBlockNumber: String(BLOCK_NUMBER),
       requestHash: GRID_PROBE_REQUEST_HASH,
       negotiationHash: quote.negotiation_hash,
     });
     const summary = await runtimeJson("last_probe_summary");
-    expect(summary).toMatchObject({ outcome: "quote_verified", requests: 8 });
-    expect(rpcMethods).toEqual([
+    expect(summary).toMatchObject({ outcome: "quote_verified", requests: expectedRequests });
+    const expectedRpcMethods = [
       "eth_chainId",
       "eth_getBlockByNumber",
       "eth_call",
       "eth_chainId",
       "eth_getBlockByNumber",
-    ]);
+    ];
+    if (signatureMethod === "erc1271") expectedRpcMethods.push("eth_getCode", "eth_call");
+    expect(rpcMethods).toEqual(expectedRpcMethods);
     expect(await runtimeText("next_scheduler_phase")).toBe("header");
     expect(await runtimeInteger("last_queue_scheduled_time")).toBe(NOW_MS);
     const ledger = await env.DB.prepare(
@@ -149,7 +163,7 @@ describe("WP3 full Workers runtime", () => {
   });
 });
 
-async function signedQuote(): Promise<Record<string, unknown>> {
+async function signedQuote(provider: Address): Promise<Record<string, unknown>> {
   const request = buildGridProbeRequest().toDict();
   const response = new NegotiationResponse({
     accepted: true,
@@ -175,24 +189,38 @@ async function signedQuote(): Promise<Record<string, unknown>> {
   return {
     ...unsigned,
     negotiation_hash: negotiationHash,
-    provider_sig: await account.signMessage({ message: negotiationHash }),
-    provider_address: account.address,
+    provider_sig: provider === account.address
+      ? await account.signMessage({ message: negotiationHash })
+      : `0x${"22".repeat(65)}`,
+    provider_address: provider,
   };
 }
 
-function rpcResult(method: string): unknown {
-  if (method === "eth_chainId") return "0x38";
-  if (method === "eth_getBlockByNumber") {
+function rpcResult(
+  request: { method: string; params?: unknown[] },
+  provider: Address,
+): unknown {
+  if (request.method === "eth_chainId") return "0x38";
+  if (request.method === "eth_getBlockByNumber") {
     return {
       number: `0x${BLOCK_NUMBER.toString(16)}`,
       timestamp: `0x${BigInt(NOW_SECONDS - 30).toString(16)}`,
       transactions: [],
     };
   }
-  if (method === "eth_call") {
+  if (request.method === "eth_getCode") return "0x6001600055";
+  if (request.method === "eth_call") {
+    const call = request.params?.[0] as { data?: string } | undefined;
+    if (call?.data?.startsWith("0x1626ba7e")) {
+      return encodeFunctionResult({
+        abi: erc1271Abi,
+        functionName: "isValidSignature",
+        result: "0x1626ba7e",
+      });
+    }
     const returnData = [
-      encodeFunctionResult({ abi: registryAbi, functionName: "getAgentWallet", result: account.address }),
-      encodeFunctionResult({ abi: registryAbi, functionName: "ownerOf", result: account.address }),
+      encodeFunctionResult({ abi: registryAbi, functionName: "getAgentWallet", result: provider }),
+      encodeFunctionResult({ abi: registryAbi, functionName: "ownerOf", result: provider }),
       encodeFunctionResult({ abi: commerceAbi, functionName: "paymentToken", result: BSC_PAYMENT_TOKEN }),
       encodeFunctionResult({ abi: routerAbi, functionName: "policyWhitelist", result: true }),
       encodeFunctionResult({ abi: tokenAbi, functionName: "decimals", result: 18 }),
@@ -203,7 +231,7 @@ function rpcResult(method: string): unknown {
       result: returnData,
     });
   }
-  throw new Error(`Unexpected read-only RPC method: ${method}`);
+  throw new Error(`Unexpected read-only RPC method: ${request.method}`);
 }
 
 function canonicalJson(value: unknown): string {
