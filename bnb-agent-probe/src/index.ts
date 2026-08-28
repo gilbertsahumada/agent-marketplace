@@ -85,19 +85,14 @@ export function createWorker(dependencies: WorkerDependencies = {}): WorkerEntry
         if (config.killSwitch
           || env.DEPLOYMENT_ENV !== "staging"
           || env.STAGING_MANUAL_RUN !== "1"
-          || dependencies.runScheduled === undefined
           || env.SHARED_SECRET === undefined
           || context === undefined) return errorResponse("not_found", 404);
         if (!await bearerMatches(request.headers.get("authorization"), env.SHARED_SECRET)) {
           return errorResponse("unauthorized", 401);
         }
+        if (env.WP2_QUEUE === undefined) return errorResponse("invalid_configuration", 500);
         const scheduledTime = now();
-        await dependencies.runScheduled(
-          { scheduledTime, cron: "manual" },
-          env,
-          context,
-          config,
-        );
+        await env.WP2_QUEUE.send({ schemaVersion: 1, scheduledTime });
         return new Response(null, {
           status: 204,
           headers: {
