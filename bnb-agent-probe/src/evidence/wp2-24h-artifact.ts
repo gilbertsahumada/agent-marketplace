@@ -61,6 +61,7 @@ interface RawMetrics {
   readonly installedSchedules: readonly string[];
   readonly finalSchedules: readonly string[];
   readonly finalKillSwitch: boolean;
+  readonly finalProducerKillSwitch: boolean;
   readonly finalStagingManualRun: boolean;
   readonly finalSharedSecretPresent: boolean;
   readonly preflightCapturedAt: number;
@@ -748,6 +749,7 @@ async function validateRawAnalytics(
     installedSchedules: activation.schedules,
     finalSchedules: cleanup.schedules,
     finalKillSwitch: cleanup.killSwitch,
+    finalProducerKillSwitch: cleanup.producerKillSwitch,
     finalStagingManualRun: cleanup.stagingManualRun,
     finalSharedSecretPresent: cleanup.sharedSecretPresent,
     preflightCapturedAt: preflight.capturedAt,
@@ -887,6 +889,7 @@ function controlRaw(value: unknown, label: "preflight" | "activation" | "cleanup
   readonly schedules: readonly string[];
   readonly backlogCount: number;
   readonly killSwitch: boolean;
+  readonly producerKillSwitch: boolean;
   readonly stagingManualRun: boolean;
   readonly sharedSecretPresent: boolean;
   readonly capturedAt: number;
@@ -898,13 +901,15 @@ function controlRaw(value: unknown, label: "preflight" | "activation" | "cleanup
     fail("RAW_CLEANUP", `${label} schedules are invalid`);
   }
   const defaults = label !== "cleanup"
-    ? { killSwitch: true, stagingManualRun: false, sharedSecretPresent: false }
+    ? { killSwitch: true, producerKillSwitch: true, stagingManualRun: false, sharedSecretPresent: false }
     : {
         killSwitch: response.killSwitch,
+        producerKillSwitch: response.producerKillSwitch,
         stagingManualRun: response.stagingManualRun,
         sharedSecretPresent: response.sharedSecretPresent,
       };
   if (typeof defaults.killSwitch !== "boolean"
+    || typeof defaults.producerKillSwitch !== "boolean"
     || typeof defaults.stagingManualRun !== "boolean"
     || typeof defaults.sharedSecretPresent !== "boolean") {
     fail("RAW_CLEANUP", `${label} safety state is invalid`);
@@ -913,6 +918,7 @@ function controlRaw(value: unknown, label: "preflight" | "activation" | "cleanup
     schedules: response.schedules as string[],
     backlogCount: nonNegativeInteger(response.backlogCount, "RAW_CLEANUP", `${label} backlogCount`),
     killSwitch: defaults.killSwitch as boolean,
+    producerKillSwitch: defaults.producerKillSwitch as boolean,
     stagingManualRun: defaults.stagingManualRun as boolean,
     sharedSecretPresent: defaults.sharedSecretPresent as boolean,
     capturedAt: isoTimestamp(response.capturedAt, "RAW_CLEANUP", `${label} capturedAt`),
@@ -994,6 +1000,8 @@ function validateCleanup(
     || raw.finalBacklogCount !== 0
     || cleanup.killSwitch !== raw.finalKillSwitch
     || raw.finalKillSwitch !== true
+    || cleanup.producerKillSwitch !== raw.finalProducerKillSwitch
+    || raw.finalProducerKillSwitch !== true
     || cleanup.stagingManualRun !== raw.finalStagingManualRun
     || raw.finalStagingManualRun !== false
     || cleanup.sharedSecretPresent !== raw.finalSharedSecretPresent
