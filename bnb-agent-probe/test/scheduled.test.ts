@@ -67,8 +67,11 @@ class LeaseDatabase implements D1DatabaseLike {
         if (!query.includes("INSERT INTO runtime_state")) {
           throw new Error("unexpected run query");
         }
-        if (typeof values[0] === "string" && values[0].startsWith("{")) {
-          thisDb.summaries.push(values[0]);
+        if (!(typeof values[0] === "string" && values[0].startsWith("daily_budget_"))) {
+          const summary = values.find((value): value is string => (
+            typeof value === "string" && value.startsWith("{")
+          ));
+          if (summary !== undefined) thisDb.summaries.push(summary);
         }
         return { success: true, meta: { rows_read: 1, rows_written: 1 } as Meta };
       },
