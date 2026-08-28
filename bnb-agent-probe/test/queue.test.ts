@@ -104,6 +104,7 @@ describe("WP2 Free queue dispatch", () => {
       activeEnv,
       context,
       expect.objectContaining({ plan: "free", killSwitch: false }),
+      1,
     );
     expect(tick.ack).toHaveBeenCalledOnce();
   });
