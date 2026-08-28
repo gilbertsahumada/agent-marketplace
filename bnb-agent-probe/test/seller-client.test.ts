@@ -145,6 +145,24 @@ describe("Workers A2A seller probe", () => {
     })).rejects.toMatchObject({ code: "SELLER_TIMEOUT" });
   });
 
+  it("classifies an aborted response stream as the shared seller timeout", async () => {
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode("{"));
+        controller.error(new DOMException("The operation was aborted", "AbortError"));
+      },
+    });
+    await expect(probeA2aSeller({
+      endpoint: ENDPOINT,
+      request: REQUEST,
+      timeoutMs: 5_000,
+      maxResponseBytes: 32_768,
+      fetch: vi.fn<typeof fetch>().mockResolvedValue(new Response(body, {
+        headers: { "content-type": "application/json" },
+      })),
+    })).rejects.toMatchObject({ code: "SELLER_TIMEOUT" });
+  });
+
   it.each([
     [{ jsonrpc: "1.0", id: "request", result: { parts: [] } }],
     [{ jsonrpc: "2.0", id: "wrong", result: { parts: [] } }],
