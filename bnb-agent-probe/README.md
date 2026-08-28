@@ -2,13 +2,15 @@
 
 Bounded Cloudflare Worker + D1 observation layer for BSC marketplace evidence.
 
-WP1 ships the schema, lease, curated manifest, kill switch and sanitized
-`GET /health`. It intentionally contains no active Cron Trigger and does not run
-HEADER, SWEEP or PROBE phases yet.
+WP2 ships the schema, lease, curated manifest, bounded trust8004 client,
+single-phase HEADER/SWEEP rotation, kill switch and sanitized `GET /health`.
+PROBE remains an explicit no-network placeholder until WP3. No Cron Trigger is
+active.
 
 The Free profile caps scheduled work at 40 D1 queries per invocation, below the
 platform limit of 50. Every statement in `DB.batch()` is counted separately and
-one query is reserved for lease cleanup. Catalogue responses have their own
+two queries are reserved for a sanitized failure summary plus lease cleanup.
+Catalogue responses have their own
 16 MiB cap; the smaller seller-response cap is independent.
 
 ```bash
