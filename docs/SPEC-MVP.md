@@ -407,7 +407,7 @@ CRON_INTERVAL_MINUTES=5
 SCHEDULER_MODE=single_phase (derivado, no sobreescribible en Free)
 HEADER_LIMIT=25                  máximo Free 50
 PROBE_BATCH_SIZE=1              máximo Free 1
-SWEEP_LIMIT=25                  máximo Free 50
+SWEEP_LIMIT=4                   máximo Free 40 y siempre <= TRUST8004_REQUESTS_PER_RUN
 SWEEP_PAGES_PER_RUN=1           máximo Free 1
 TRUST8004_REQUESTS_PER_RUN=4
 EXTERNAL_SUBREQUESTS_PER_RUN=12 máximo Free 40, plataforma 50
@@ -420,7 +420,7 @@ MAX_SELLER_RESPONSE_BYTES=32768
 ```
 
 Con cinco minutos y rotación de tres fases hay hasta 96 ejecuciones de SWEEP por
-día. A 25 registros son 2.400 registros/día: una reconciliación global sería
+día. A cuatro detalles son 384 agentes/día: una reconciliación global sería
 inaceptablemente lenta, por lo que SWEEP Free opera sobre el conjunto live
 priorizado y el funnel global permanece snapshot-backed. WP2 solo aumenta un
 valor dentro del sobre Free si dos vueltas prueban:
@@ -525,7 +525,9 @@ no contra una constante de dos minutos.
 
 Lee páginas ascendentes desde `sweep_offset`. En Free reconcilia únicamente IDs
 ERC-8183 descubiertos por WP0/HEADER y el inventario curado de cuatro categorías;
-no intenta materializar los 309.897 registros globales. Por página:
+no intenta materializar los 309.897 registros globales. El cursor pagina esa
+unión de IDs en D1 y resuelve un detalle trust8004 por agente. Por eso
+`SWEEP_LIMIT` no puede superar `TRUST8004_REQUESTS_PER_RUN` en Free. Por página:
 
 1. valida/procesa una respuesta en memoria;
 2. compara candidatos;
@@ -889,7 +891,7 @@ CLOUDFLARE_WORKERS_PLAN=free
 KILL_SWITCH=1
 CRON_INTERVAL_MINUTES=5
 HEADER_LIMIT=25
-SWEEP_LIMIT=25
+SWEEP_LIMIT=4
 SWEEP_PAGES_PER_RUN=1
 PROBE_BATCH_SIZE=1
 TRUST8004_REQUESTS_PER_RUN=4
