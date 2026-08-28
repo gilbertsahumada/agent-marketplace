@@ -111,7 +111,7 @@ describe("WP2 Free queue dispatch", () => {
 
     expect(runScheduled).toHaveBeenCalledOnce();
     expect(runScheduled).toHaveBeenCalledWith(
-      { scheduledTime: 1_800_000_000_000, cron: "queue", attempt: 1 },
+      { scheduledTime: 1_800_000_000_000, cron: "queue", attempt: 1, messageId: "message-1" },
       activeEnv,
       context,
       expect.objectContaining({ plan: "free", killSwitch: false }),
@@ -129,7 +129,7 @@ describe("WP2 Free queue dispatch", () => {
     await worker.queue({ messages: [tick] }, activeEnv, context);
 
     expect(runScheduled).toHaveBeenCalledWith(
-      { scheduledTime: now, cron: "queue", attempt: 1 },
+      { scheduledTime: now, cron: "queue", attempt: 1, messageId: "message-1" },
       activeEnv,
       context,
       expect.objectContaining({ plan: "free", killSwitch: false }),
