@@ -45,6 +45,7 @@ export interface Env {
 export interface ScheduledController {
   scheduledTime: number;
   cron: string;
+  attempt?: number;
 }
 
 export interface ExecutionContext {
@@ -57,7 +58,10 @@ export interface QueueProducer {
 }
 
 export interface QueueMessage {
+  readonly id: string;
+  readonly timestamp: Date;
   readonly body: unknown;
+  readonly attempts: number;
   ack(): void;
   retry(options: { delaySeconds: number }): void;
 }
