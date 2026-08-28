@@ -1,4 +1,5 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { link, mkdir, unlink, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -87,8 +88,15 @@ export async function captureWp2WindowStart(options: CaptureOptions): Promise<vo
     },
     response: payload,
   }, null, 2)}\n`;
-  await mkdir(dirname(resolve(options.outputPath)), { recursive: true });
-  await writeFile(resolve(options.outputPath), output, { encoding: "utf8", flag: "wx" });
+  const targetPath = resolve(options.outputPath);
+  await mkdir(dirname(targetPath), { recursive: true });
+  const temporaryPath = `${targetPath}.${process.pid}.${randomUUID()}.tmp`;
+  await writeFile(temporaryPath, output, { encoding: "utf8", flag: "wx" });
+  try {
+    await link(temporaryPath, targetPath);
+  } finally {
+    await unlink(temporaryPath).catch(() => undefined);
+  }
 }
 
 async function main(): Promise<void> {
