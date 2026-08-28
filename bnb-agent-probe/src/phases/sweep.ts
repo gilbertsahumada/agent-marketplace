@@ -62,6 +62,7 @@ export interface SweepPhaseInput {
   readonly requestBudget: SweepRequestBudget;
   readonly startedAtMs?: number;
   readonly invocationQueriesAfterCommit?: number;
+  readonly completedQueueScheduledTime?: number;
   readonly now?: () => number;
 }
 
@@ -245,7 +246,8 @@ export async function runSweepPhase(
   const complete = page.complete;
   const nextOffset = complete ? 0 : page.nextOffset;
   const sweepRound = complete ? previousRound + 1 : previousRound;
-  const stateStatementCount = complete ? 4 : 3;
+  const stateStatementCount = (complete ? 4 : 3)
+    + (input.completedQueueScheduledTime === undefined ? 0 : 1);
   const batchQueries = statements.length + stateStatementCount;
   if (batchQueries > input.queryBudget.remaining) {
     throw new SweepQueryBudgetExceededError(input.queryBudget.remaining, batchQueries);
@@ -282,6 +284,14 @@ export async function runSweepPhase(
     input.nowMs,
   ));
   statements.push(prepareRuntimeText(input.db, "next_scheduler_phase", "probe", input.nowMs));
+  if (input.completedQueueScheduledTime !== undefined) {
+    statements.push(input.db.prepare(
+      `INSERT INTO runtime_state (key, textValue, integerValue, updatedAt)
+       VALUES ('last_queue_scheduled_time', NULL, ?, ?)
+       ON CONFLICT(key) DO UPDATE SET textValue=NULL,
+         integerValue=excluded.integerValue, updatedAt=excluded.updatedAt`,
+    ).bind(input.completedQueueScheduledTime, input.nowMs));
+  }
 
   const batchResults = await input.db.batch(statements);
   if (batchResults.length !== statements.length || batchResults.some((result) => !result.success)) {
