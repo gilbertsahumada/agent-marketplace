@@ -526,6 +526,12 @@ describe("WP2 24-hour evidence artifact validator", () => {
 
   it("includes a post-midnight authenticated drain consumer in resource metrics", async () => {
     const artifact = validArtifact() as any;
+    const spillOut = artifact.ledger.at(-1);
+    spillOut.startedAt = Date.parse("2026-08-30T00:05:00.000Z");
+    spillOut.finishedAt = spillOut.startedAt + 1_000;
+    artifact.quotaLedger.pop();
+    artifact.totals.quotaAttempts = 287;
+    artifact.totals.spillOut = 1;
     const workers = structuredClone(RAW_PAYLOADS["evidence/raw/workers.json"]) as any;
     const drainConsumer = structuredClone(workers.response.data.viewer.accounts[0].workersInvocationsAdaptive[1]);
     drainConsumer.dimensions.datetime = "2026-08-30T00:05:00Z";
@@ -542,6 +548,17 @@ describe("WP2 24-hour evidence artifact validator", () => {
     await expect(validateWp224hArtifact(artifact, {
       readRawEvidence: async (path) => path === "evidence/raw/workers.json" ? contents : readRawEvidence(path),
     })).resolves.toMatchObject({ passed: true });
+  });
+
+  it("rejects a spill-out attempt without a correlated Worker sample", async () => {
+    const artifact = validArtifact() as any;
+    const spillOut = artifact.ledger.at(-1);
+    spillOut.startedAt = Date.parse("2026-08-30T00:05:00.000Z");
+    spillOut.finishedAt = spillOut.startedAt + 1_000;
+    artifact.quotaLedger.pop();
+    artifact.totals.quotaAttempts = 287;
+    artifact.totals.spillOut = 1;
+    await expect(validateWp224hArtifact(artifact, { readRawEvidence })).rejects.toThrow("RAW_WORKERS");
   });
 
   it("rejects Workers evidence that ends before terminality grace", async () => {
