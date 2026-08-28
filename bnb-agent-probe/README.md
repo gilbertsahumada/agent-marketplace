@@ -149,13 +149,19 @@ producer barrier because trigger propagation is eventual.
 npx wrangler deploy --env staging --keep-vars \
   --var PRODUCER_KILL_SWITCH:1 --var KILL_SWITCH:0 \
   --message "git_commit=${FULL_SHA}" --tag "git-${SHORT_SHA}-drain"
-# Record DRAIN_VERSION_ID, then remove Cron and verify schedules=[].
+DRAIN_VERSION_ID="<Current Version ID from Wrangler>"
+curl --fail-with-body -X DELETE \
+  -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+  "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/scripts/bnb-agent-probe-staging/schedules/%2A%2F5%20%2A%20%2A%20%2A%20%2A"
+curl --fail-with-body -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+  "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/scripts/bnb-agent-probe-staging/schedules"
 
 # Only after the terminality gate:
 npx wrangler deploy --env staging --keep-vars \
   --var PRODUCER_KILL_SWITCH:1 --var KILL_SWITCH:1 \
   --message "git_commit=${FULL_SHA}" --tag "git-${SHORT_SHA}-cleanup"
-# Record CLEANUP_VERSION_ID, remove Cron again, and verify schedules=[].
+CLEANUP_VERSION_ID="<Current Version ID from Wrangler>"
+# Repeat the DELETE and GET above; the final GET must return result=[].
 ```
 
 Destructive retry tests use the dedicated `validation` environment, never the
