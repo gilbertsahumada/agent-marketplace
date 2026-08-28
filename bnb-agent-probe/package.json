@@ -17,7 +17,8 @@
     "dry-run:validation": "wrangler deploy --dry-run --env validation --outdir dist/worker-validation",
     "cf-typegen": "wrangler types src/worker-configuration.d.ts",
     "manifest:check": "tsx scripts/generate-curated-inventory.ts",
-    "evidence:wp2-24h": "tsx scripts/validate-wp2-24h.ts"
+    "evidence:wp2-24h": "tsx scripts/validate-wp2-24h.ts",
+    "evidence:wp2-window-start": "tsx scripts/capture-wp2-window-start.ts"
   },
   "dependencies": {
     "@bnbagent/sdk": "0.5.0",
