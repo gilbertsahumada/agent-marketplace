@@ -1115,6 +1115,11 @@ intentos en unos tres segundos; por eso todos los consumers declaran ahora
 `retry_delay=60`. El delay específico de 240 s continúa aplicando solo al lease
 ocupado. La evidencia está en
 `evidence/wp2-retry-remote-clean-2026-08-28.json`.
+La auditoría de esa corrida detectó además que el resumen de un fallo HTTP
+guardaba `requests=0` aunque Analytics observaba el intento. El runner cuenta
+ahora cada llamada al `fetch` upstream antes de ejecutarla y persiste ese total
+en el resumen de error; el cero histórico del artefacto describe la versión
+ensayada, no la telemetría vigente.
 
 Cada incremento exige margen del producer bajo 10 ms y del Queue consumer bajo
 30 s. Que una ejecución aislada reciba flexibilidad de plataforma no cuenta como
@@ -1127,9 +1132,10 @@ La misma validación ejecutó los defaults Free `HEADER_LIMIT=25` y
 fases, con máximo observado de 11 queries D1, cuatro requests trust8004, cero
 writes materiales en HEADER y cero 429. Analytics observó CPU máxima de consumer
 de 18.066 µs y `memoryUsageBytesP999=2503018`, ambos dentro del sobre. El ledger
-exacto por `scheduledTime` está en
-`evidence/wp2-default-rounds-2026-08-28.json`; los datasets adaptativos de Queue
-y Workers corroboran métricas, pero no sustituyen ese ledger D1.
+exacto por `scheduledTime` y la consulta Analytics con los grupos que producen
+ambos máximos están en `evidence/wp2-default-rounds-2026-08-28.json`; los
+datasets adaptativos de Queue y Workers corroboran métricas, pero no sustituyen
+ese ledger D1.
 
 Siguen pendientes antes de activar el schedule continuo una ventana real D1 de
 24 h y el gate WP3. Los contadores D1 del día de validación cubren solo una
@@ -1137,9 +1143,10 @@ ventana corta y no cierran el gate de 24 h. Antes y después de cada ventana se
 verifican por API `schedules=[]` y backlog Queue cero; declarar `crons: []` en un
 deploy no sustituye esa comprobación por la propagación eventual de Cron
 Triggers. Como el backlog REST es best-effort y puede omitir mensajes con retry
-diferido, una prueba de reentrega reutiliza la Queue solo si la ventana de
-drenaje cubrió todos los delays pendientes; en caso contrario usa una Queue de
-validación nueva y dedicada. Un único `backlog_count=0` no demuestra aislamiento.
+diferido, cada prueba destructiva de reentrega crea una Queue de validación con
+ID nuevo. Después de capturar Analytics elimina, en orden, el consumer, el
+Worker temporal y la Queue; la D1 separada se conserva para auditoría. Un único
+`backlog_count=0` no demuestra aislamiento ni autoriza reutilizar una Queue.
 
 ### 11.3 Promoción explícita Free → Paid
 
