@@ -10,7 +10,7 @@ describe("loadConfig", () => {
       schedulerMode: "single_phase",
       cronIntervalMinutes: 5,
       headerLimit: 25,
-      sweepLimit: 25,
+      sweepLimit: 4,
       sweepPagesPerRun: 1,
       probeBatchSize: 1,
       trust8004RequestsPerRun: 4,
@@ -42,7 +42,7 @@ describe("loadConfig", () => {
     [{ CLOUDFLARE_WORKERS_PLAN: "enterprise" }, "CLOUDFLARE_WORKERS_PLAN"],
     [{ KILL_SWITCH: "false" }, "KILL_SWITCH"],
     [{ HEADER_LIMIT: "51" }, "HEADER_LIMIT"],
-    [{ SWEEP_LIMIT: "51" }, "SWEEP_LIMIT"],
+    [{ SWEEP_LIMIT: "41", TRUST8004_REQUESTS_PER_RUN: "41", EXTERNAL_SUBREQUESTS_PER_RUN: "41" }, "SWEEP_LIMIT"],
     [{ SWEEP_PAGES_PER_RUN: "2" }, "SWEEP_PAGES_PER_RUN"],
     [{ PROBE_BATCH_SIZE: "2" }, "PROBE_BATCH_SIZE"],
     [{ EXTERNAL_SUBREQUESTS_PER_RUN: "41" }, "EXTERNAL_SUBREQUESTS_PER_RUN"],
@@ -72,6 +72,11 @@ describe("loadConfig", () => {
         EXTERNAL_SUBREQUESTS_PER_RUN: "12",
       }),
     ).toThrow(/^TRUST8004_REQUESTS_PER_RUN:/);
+  });
+
+  it("requires the Free SWEEP detail count to fit the upstream request budget", () => {
+    expect(() => loadConfig({ SWEEP_LIMIT: "5" })).toThrow(/^SWEEP_LIMIT:/);
+    expect(loadConfig({ SWEEP_LIMIT: "5", TRUST8004_REQUESTS_PER_RUN: "5" }).sweepLimit).toBe(5);
   });
 
   it("uses typed configuration errors without including environment values", () => {
