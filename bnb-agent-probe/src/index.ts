@@ -9,6 +9,7 @@ import type {
 
 type ScheduledRunResult = "completed" | "duplicate" | "locked";
 const QUEUE_LEASE_RETRY_DELAY_SECONDS = 240;
+const QUEUE_MAX_FUTURE_SKEW_MS = 5 * 60 * 1_000;
 
 export interface WorkerDependencies {
   now?: () => number;
@@ -47,7 +48,7 @@ async function bearerMatches(header: string | null, secret: string): Promise<boo
   return difference === 0 && candidate.length > 0;
 }
 
-function queueScheduledTime(body: unknown): number {
+function queueScheduledTime(body: unknown, currentTime: number): number {
   if (body === null || typeof body !== "object" || Array.isArray(body)) {
     throw new Error("WP2_QUEUE_MESSAGE_INVALID");
   }
@@ -55,7 +56,8 @@ function queueScheduledTime(body: unknown): number {
   if (value.schemaVersion !== 1
     || typeof value.scheduledTime !== "number"
     || !Number.isSafeInteger(value.scheduledTime)
-    || value.scheduledTime < 0) {
+    || value.scheduledTime < 0
+    || value.scheduledTime > currentTime + QUEUE_MAX_FUTURE_SKEW_MS) {
     throw new Error("WP2_QUEUE_MESSAGE_INVALID");
   }
   return value.scheduledTime;
@@ -123,7 +125,7 @@ export function createWorker(dependencies: WorkerDependencies = {}): WorkerEntry
         return;
       }
       if (dependencies.runScheduled === undefined) throw new Error("WP2_QUEUE_RUNNER_REQUIRED");
-      const scheduledTime = queueScheduledTime(message.body);
+      const scheduledTime = queueScheduledTime(message.body, now());
       const result = await dependencies.runScheduled(
         { scheduledTime, cron: "queue" },
         env,
