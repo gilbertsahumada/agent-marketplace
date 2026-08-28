@@ -204,6 +204,9 @@ function parseInteger(field: keyof typeof NUMERIC_FIELDS, raw: string, maximum: 
       "must cover the minimum Queue SWEEP plus error, lease cleanup, attempt and daily ledger reserves",
     );
   }
+  if (field === "CRON_INTERVAL_MINUTES" && (value > 60 || 60 % value !== 0)) {
+    throw new ConfigError(field, "must be a divisor of 60 between 1 and 60");
+  }
   if (field === "MAX_CATALOG_RESPONSE_BYTES" && value === 0) {
     throw new ConfigError(field, "must be at least 1");
   }
