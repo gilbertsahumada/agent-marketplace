@@ -1,4 +1,22 @@
-export const WP2_D1_DAILY_ANALYTICS_QUERY = `query Wp2D1Daily(
+export const WP2_D1_DATABASE_ANALYTICS_QUERY = `query Wp2D1DatabaseDaily(
+  $accountTag: String!
+  $date: Date!
+  $databaseId: String!
+) {
+  viewer {
+    accounts(filter: { accountTag: $accountTag }) {
+      d1AnalyticsAdaptiveGroups(
+        limit: 1000
+        filter: { date_geq: $date, date_leq: $date, databaseId: $databaseId }
+      ) {
+        dimensions { date databaseId }
+        sum { readQueries writeQueries rowsRead rowsWritten }
+      }
+    }
+  }
+}`;
+
+export const WP2_D1_ACCOUNT_ANALYTICS_QUERY = `query Wp2D1AccountDaily(
   $accountTag: String!
   $date: Date!
 ) {
