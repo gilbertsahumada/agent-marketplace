@@ -191,6 +191,63 @@ describe("Worker runtime", () => {
     expect(runScheduled).not.toHaveBeenCalled();
   });
 
+  it.each([
+    { DEPLOYMENT_ENV: "production", STAGING_MANUAL_RUN: "1" },
+    { DEPLOYMENT_ENV: "staging", STAGING_MANUAL_RUN: "0" },
+    { DEPLOYMENT_ENV: "staging" },
+  ])("keeps the manual scheduler route hidden outside an explicitly enabled staging run", async (guard) => {
+    const runScheduled = vi.fn();
+    const response = await createWorker({ runScheduled }).fetch(
+      new Request("https://worker.test/__admin/run-scheduled", {
+        method: "POST",
+        headers: { authorization: "Bearer must-never-leak" },
+      }),
+      { ...env(), ...guard, KILL_SWITCH: "0" },
+      { waitUntil: vi.fn(), passThroughOnException: vi.fn() },
+    );
+
+    expect(response.status).toBe(404);
+    expect(runScheduled).not.toHaveBeenCalled();
+  });
+
+  it("keeps the manual scheduler route hidden when the staging secret is absent", async () => {
+    const runScheduled = vi.fn();
+    const activeEnv = {
+      ...env(),
+      DEPLOYMENT_ENV: "staging",
+      STAGING_MANUAL_RUN: "1",
+      KILL_SWITCH: "0",
+      SHARED_SECRET: undefined,
+    };
+    const response = await createWorker({ runScheduled }).fetch(
+      new Request("https://worker.test/__admin/run-scheduled", { method: "POST" }),
+      activeEnv,
+      { waitUntil: vi.fn(), passThroughOnException: vi.fn() },
+    );
+
+    expect(response.status).toBe(404);
+    expect(runScheduled).not.toHaveBeenCalled();
+  });
+
+  it("does not expose the manual scheduler route through a cross-origin preflight", async () => {
+    const response = await createWorker({ runScheduled: vi.fn() }).fetch(
+      new Request("https://worker.test/__admin/run-scheduled", {
+        method: "OPTIONS",
+        headers: { origin: "https://attacker.example" },
+      }),
+      {
+        ...env(),
+        DEPLOYMENT_ENV: "staging",
+        STAGING_MANUAL_RUN: "1",
+        KILL_SWITCH: "0",
+      },
+      { waitUntil: vi.fn(), passThroughOnException: vi.fn() },
+    );
+
+    expect(response.status).toBe(404);
+    expect(response.headers.get("access-control-allow-origin")).toBeNull();
+  });
+
   it("rejects an invalid manual scheduler credential without running work", async () => {
     const runScheduled = vi.fn();
     const response = await createWorker({ runScheduled }).fetch(
@@ -198,21 +255,33 @@ describe("Worker runtime", () => {
         method: "POST",
         headers: { authorization: "Bearer wrong-secret" },
       }),
-      { ...env(), KILL_SWITCH: "0" },
+      {
+        ...env(),
+        DEPLOYMENT_ENV: "staging",
+        STAGING_MANUAL_RUN: "1",
+        KILL_SWITCH: "0",
+      },
       { waitUntil: vi.fn(), passThroughOnException: vi.fn() },
     );
 
+    const text = await response.text();
     expect(response.status).toBe(401);
     expect(response.headers.get("cache-control")).toBe("no-store");
     expect(runScheduled).not.toHaveBeenCalled();
-    expect(await response.text()).not.toContain("must-never-leak");
+    expect(text).not.toContain("must-never-leak");
+    expect(text).not.toContain("wrong-secret");
   });
 
   it("runs exactly one phase through the authenticated manual scheduler route", async () => {
     const now = 1_800_000_000_000;
     const runScheduled = vi.fn().mockResolvedValue(undefined);
     const context = { waitUntil: vi.fn(), passThroughOnException: vi.fn() };
-    const activeEnv = { ...env(), KILL_SWITCH: "0" };
+    const activeEnv = {
+      ...env(),
+      DEPLOYMENT_ENV: "staging",
+      STAGING_MANUAL_RUN: "1",
+      KILL_SWITCH: "0",
+    };
     const response = await createWorker({ now: () => now, runScheduled }).fetch(
       new Request("https://worker.test/__admin/run-scheduled", {
         method: "POST",
