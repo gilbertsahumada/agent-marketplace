@@ -77,6 +77,41 @@ describe("Workers A2A seller probe", () => {
   });
 
   it.each([
+    [
+      "https://bnb-agent-marketplace-ruby.vercel.app/grid/.well-known/agent-card.json",
+      "https://bnb-agent-marketplace-ruby.vercel.app/grid/.well-known/agent-card.json",
+      "https://bnb-agent-marketplace-ruby.vercel.app/api/sellers/grid/a2a",
+    ],
+    [
+      "https://seller.example.com/.well-known/agent-card.json",
+      "https://seller.example.com/.well-known/agent-card.json",
+      "https://seller.example.com/api/sellers/a2a",
+    ],
+  ])("derives one card and message URL from Agent Card declaration %s", async (
+    endpoint,
+    expectedCardUrl,
+    expectedMessageUrl,
+  ) => {
+    const fetchImpl = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(json({ ...card(), url: expectedMessageUrl }))
+      .mockImplementationOnce(async (_input, init) => {
+        const requestId = JSON.parse(String(init?.body)).id as string;
+        return reply({ request_hash: "0x01" }, requestId);
+      });
+
+    await expect(probeA2aSeller({
+      endpoint,
+      request: REQUEST,
+      timeoutMs: 5_000,
+      maxResponseBytes: 32_768,
+      fetch: fetchImpl,
+    })).resolves.toMatchObject({ quote: { request_hash: "0x01" } });
+
+    expect(fetchImpl.mock.calls[0]?.[0].toString()).toBe(expectedCardUrl);
+    expect(fetchImpl.mock.calls[1]?.[0].toString()).toBe(expectedMessageUrl);
+  });
+
+  it.each([
     [["negotiate-erc8183-job"], "A2A_REQUIRED_SKILLS"],
     [["negotiate-erc8183-job", "notify_funded", "notify_funded"], "A2A_REQUIRED_SKILLS"],
     [["notify_funded"], "A2A_REQUIRED_SKILLS"],
