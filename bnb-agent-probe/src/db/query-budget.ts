@@ -104,7 +104,7 @@ export function createBudgetedD1Database(
   };
 
   const wrap = (raw: D1PreparedStatementLike): D1PreparedStatementLike => {
-    const statement: D1PreparedStatementLike = {
+    const statement = {
       bind(...values) {
         return wrap(raw.bind(...values));
       },
@@ -129,6 +129,21 @@ export function createBudgetedD1Database(
         assertRowsWithinBudget();
         return result;
       },
+      async raw<Row extends unknown[]>(options?: { columnNames?: boolean }): Promise<Row[]> {
+        assertRowsWithinBudget();
+        budget.reserve(1);
+        const result = await raw.all<Record<string, unknown>>();
+        recordUsage(result.meta);
+        assertRowsWithinBudget();
+        const rows = result.results ?? [];
+        const values = rows.map((row) => Object.values(row)) as Row[];
+        if (options?.columnNames && rows[0]) {
+          values.unshift(Object.keys(rows[0]) as Row);
+        }
+        return values;
+      },
+    } as D1PreparedStatementLike & {
+      raw<Row extends unknown[]>(options?: { columnNames?: boolean }): Promise<Row[]>;
     };
     rawStatements.set(statement, raw);
     return statement;
