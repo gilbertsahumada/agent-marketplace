@@ -6,6 +6,7 @@ export type SchedulerMode = "single_phase" | "pipeline";
 export interface WorkerConfig {
   plan: WorkersPlan;
   killSwitch: boolean;
+  producerKillSwitch: boolean;
   schedulerMode: SchedulerMode;
   cronIntervalMinutes: number;
   headerLimit: number;
@@ -51,6 +52,7 @@ type NumericConfig = Omit<
   WorkerConfig,
   | "plan"
   | "killSwitch"
+  | "producerKillSwitch"
   | "schedulerMode"
   | "probeAgentAllowlist"
   | "probeEndpointAllowlist"
@@ -175,6 +177,13 @@ function parseKillSwitch(value: string | undefined): boolean {
   if (value === undefined || value === "1") return true;
   if (value === "0") return false;
   throw new ConfigError("KILL_SWITCH", "must be 0 or 1");
+}
+
+function parseProducerKillSwitch(value: string | undefined, killSwitch: boolean): boolean {
+  if (value === undefined) return killSwitch;
+  if (value === "1") return true;
+  if (value === "0") return false;
+  throw new ConfigError("PRODUCER_KILL_SWITCH", "must be 0 or 1");
 }
 
 function parseInteger(field: keyof typeof NUMERIC_FIELDS, raw: string, maximum: number): number {
@@ -350,9 +359,11 @@ export function loadConfig(env: Partial<Env>): WorkerConfig {
     }
   }
 
+  const killSwitch = parseKillSwitch(source.KILL_SWITCH);
   return {
     plan,
-    killSwitch: parseKillSwitch(source.KILL_SWITCH),
+    killSwitch,
+    producerKillSwitch: parseProducerKillSwitch(source.PRODUCER_KILL_SWITCH, killSwitch),
     schedulerMode: profile.schedulerMode,
     probeAgentAllowlist: parseAgentAllowlist(source.PROBE_AGENT_ALLOWLIST, plan),
     probeEndpointAllowlist: parseEndpointAllowlist(source.PROBE_ENDPOINT_ALLOWLIST, plan),
