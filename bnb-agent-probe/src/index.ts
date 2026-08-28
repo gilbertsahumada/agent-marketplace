@@ -14,6 +14,7 @@ export interface WorkerDependencies {
     env: Env,
     context: ExecutionContext,
     config: WorkerConfig,
+    queriesBeforeRun?: number,
   ) => Promise<void>;
 }
 
@@ -145,6 +146,7 @@ export function createWorker(dependencies: WorkerDependencies = {}): WorkerEntry
         env,
         context,
         config,
+        1,
       );
       message.ack();
     },
