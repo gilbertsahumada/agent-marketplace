@@ -103,7 +103,8 @@ uses one bounded `runtime_state` query and never scans `probe_targets`; target
 counts are deliberately unavailable on this public endpoint. It exposes only
 the validated current-day allowlist and becomes degraded when scheduling is
 active without valid daily telemetry, or when `updatedAt` is older than three
-Cron intervals (minimum 15 minutes). Row fields are explicitly
+Cron intervals (minimum 15 minutes). A scheduler error newer than the latest
+healthy phase also degrades the endpoint. Row fields are explicitly
 named `BeforeLedger` because they omit the ledger's own write; this operational
 reconciliation does not replace raw per-database and account Cloudflare D1
 Analytics for the quota gate.
