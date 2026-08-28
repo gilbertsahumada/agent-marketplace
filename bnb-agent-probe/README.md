@@ -62,8 +62,10 @@ The final validator parses and reconciles the hashed raw D1, Workers, Queue,
 deployment and timestamped control-plane responses. It keeps the 288 scheduled
 ticks separate from the UTC quota cohort so retries crossing midnight are
 explicit, requires one terminal Queue message and the exact phase rotation per
-tick, checks account-wide Queue usage, and extends Queue backlog evidence
-through the minimum `00:15Z` terminality cutoff.
+tick from the persisted starting phase, checks account-wide Queue usage, and
+requests Queue evidence through the minimum `00:15Z` cutoff. Because inactive
+Queues need not emit a new Analytics bucket, the last emitted zero backlog is
+paired with timestamped REST backlog zero after the cutoff.
 
 Staging remains on the Free profile and retains one isolated Queue producer and
 serial consumer. Outside the exact 24-hour gate it declares an empty Cron list
