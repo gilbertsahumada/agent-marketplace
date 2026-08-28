@@ -217,11 +217,15 @@ export async function healthResponse(
       ? nextPhaseValue
       : "header";
     const currentDailyBudget = dailyBudget(byKey.get(dailyBudgetKey), utcDate);
+    const dailyBudgetMaxAgeMs = Math.max(15 * 60_000, config.cronIntervalMinutes * 3 * 60_000);
+    const dailyBudgetFresh = currentDailyBudget !== null
+      && currentDailyBudget.updatedAt <= now + 5 * 60_000
+      && now - currentDailyBudget.updatedAt <= dailyBudgetMaxAgeMs;
     const degraded = lastPhase?.errorCode !== undefined || (
       lastPhase?.status !== undefined
       && lastPhase.status !== "ok"
       && lastPhase.status !== "success"
-    ) || (!config.killSwitch && currentDailyBudget === null);
+    ) || (!config.killSwitch && !dailyBudgetFresh);
 
     return json({
       status: degraded ? "degraded" : "ok",
