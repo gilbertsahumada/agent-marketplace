@@ -15,6 +15,8 @@ class LeaseDatabase implements D1DatabaseLike {
   releases = 0;
   summaries: string[] = [];
   nextPhase: SchedulerPhase = "header";
+  failRelease = false;
+  failLedger = false;
 
   prepare(query: string): D1PreparedStatementLike {
     let values: readonly unknown[] = [];
@@ -42,6 +44,7 @@ class LeaseDatabase implements D1DatabaseLike {
           };
         }
         if (query.includes("UPDATE runtime_state") && query.includes("scheduler_lease")) {
+          if (thisDb.failRelease) throw new Error("cleanup-release-failed");
           const [releasedAt, , runId] = values as [number, number, string];
           if (thisDb.lease?.runId !== runId) {
             return { success: true, meta: { rows_read: 1, rows_written: 0 }, results: [] };
@@ -67,7 +70,9 @@ class LeaseDatabase implements D1DatabaseLike {
         if (!query.includes("INSERT INTO runtime_state")) {
           throw new Error("unexpected run query");
         }
-        if (!(typeof values[0] === "string" && values[0].startsWith("daily_budget_"))) {
+        const isDailyLedger = typeof values[0] === "string" && values[0].startsWith("daily_budget_");
+        if (isDailyLedger && thisDb.failLedger) throw new Error("daily-ledger-failed");
+        if (!isDailyLedger) {
           const summary = values.find((value): value is string => (
             typeof value === "string" && value.startsWith("{")
           ));
@@ -184,5 +189,46 @@ describe("WP2 scheduled runner", () => {
     expect(executed).toBe(false);
     expect(db.summaries).toHaveLength(1);
     expect(db.releases).toBe(1);
+  });
+
+  it("does not retry completed phase work when only the daily ledger fails", async () => {
+    const db = new LeaseDatabase();
+    db.failLedger = true;
+    const runner = createWp2ScheduledRunner({
+      now: () => 1_000,
+      randomUUID: () => "run-ledger-failure",
+      executePhase: async () => {},
+    });
+
+    await expect(runner(controller, { DB: db } as unknown as Env, context, loadConfig({})))
+      .resolves.toBe("completed");
+    expect(db.releases).toBe(1);
+  });
+
+  it("preserves the phase error when lease cleanup also fails", async () => {
+    const db = new LeaseDatabase();
+    db.failRelease = true;
+    const runner = createWp2ScheduledRunner({
+      now: () => 1_000,
+      randomUUID: () => "run-primary-error",
+      executePhase: async () => { throw new Error("phase-primary"); },
+    });
+
+    await expect(runner(controller, { DB: db } as unknown as Env, context, loadConfig({})))
+      .rejects.toThrow("phase-primary");
+  });
+
+  it("keeps the explicit locked result when its ledger write fails", async () => {
+    const db = new LeaseDatabase();
+    db.lease = { runId: "existing", expiresAt: 10_000 };
+    db.failLedger = true;
+    const runner = createWp2ScheduledRunner({
+      now: () => 1_000,
+      randomUUID: () => "run-locked-ledger",
+      executePhase: async () => { throw new Error("must not execute"); },
+    });
+
+    await expect(runner(controller, { DB: db } as unknown as Env, context, loadConfig({})))
+      .resolves.toBe("locked");
   });
 });
