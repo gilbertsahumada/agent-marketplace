@@ -32,6 +32,10 @@ export interface WorkerConfig {
   };
   projectedDailyBudget: {
     invocations: number;
+    maxAttemptsPerInvocation: number;
+    maxAttempts: number;
+    d1RowsReadNominal: number;
+    d1RowsWrittenNominal: number;
     d1RowsRead: number;
     d1RowsWritten: number;
     queueOperations: number;
@@ -70,8 +74,8 @@ const FREE_PROFILE: Profile = {
     trust8004RequestsPerRun: 4,
     externalSubrequestsPerRun: 12,
     d1QueriesPerRun: 40,
-    d1RowsReadPerRun: 10_000,
-    d1RowsWrittenPerRun: 250,
+    d1RowsReadPerRun: 3_000,
+    d1RowsWrittenPerRun: 60,
     probeTimeoutMs: 5_000,
     maxCatalogResponseBytes: 16 * 1_024 * 1_024,
     maxSellerResponseBytes: 32_768,
@@ -220,11 +224,17 @@ export function loadConfig(env: Partial<Env>): WorkerConfig {
   }
 
   const invocations = Math.ceil(1_440 / values.cronIntervalMinutes);
+  const maxAttemptsPerInvocation = QUEUE_MAX_RETRIES + 1;
+  const maxAttempts = invocations * maxAttemptsPerInvocation;
   const projectedDailyBudget = plan === "free"
     ? {
         invocations,
-        d1RowsRead: invocations * values.d1RowsReadPerRun,
-        d1RowsWritten: invocations * values.d1RowsWrittenPerRun,
+        maxAttemptsPerInvocation,
+        maxAttempts,
+        d1RowsReadNominal: invocations * values.d1RowsReadPerRun,
+        d1RowsWrittenNominal: invocations * values.d1RowsWrittenPerRun,
+        d1RowsRead: maxAttempts * values.d1RowsReadPerRun,
+        d1RowsWritten: maxAttempts * values.d1RowsWrittenPerRun,
         queueOperations: invocations * QUEUE_OPERATIONS_PER_MESSAGE,
         freeReadCeiling: FREE_D1_READS_PER_DAY * FREE_SAFETY_RATIO,
         freeWriteCeiling: FREE_D1_WRITES_PER_DAY * FREE_SAFETY_RATIO,
