@@ -84,8 +84,8 @@ Consulta oficial revisada el 2026-08-28:
   externos por invocación y 15 min de wall time para Cron Triggers.
 - Workers Free permite 100.000 requests por día para la cuenta.
 - Cloudflare Queues está disponible en Workers Free: incluye 10.000 operaciones
-  por día y 24 horas de retención. El cálculo conservador usa tres operaciones
-  por mensaje entregado: write, read y delete.
+  por día y 24 horas de retención. Un mensaje exitoso usa tres operaciones
+  nominales —write, read y delete— y cada retry añade otra lectura.
 - Un Queue consumer dispone por defecto de 30 s de CPU configurable y 15 min de
   wall time. Esta cuota es distinta de los 10 ms del Cron producer Free.
 - D1 Free permite 5 millones de filas leídas/día, 100.000 escritas/día y 5 GB
@@ -108,6 +108,7 @@ Fuentes:
 - <https://developers.cloudflare.com/d1/platform/limits/>
 - <https://developers.cloudflare.com/d1/worker-api/d1-database/#batch>
 - <https://developers.cloudflare.com/workers/reference/how-workers-works/>
+- <https://developers.cloudflare.com/workers/observability/metrics-and-analytics/>
 - <https://developers.cloudflare.com/queues/platform/pricing/>
 - <https://developers.cloudflare.com/queues/platform/limits/>
 
@@ -385,8 +386,8 @@ Cron se despliega desde la configuración y debe coincidir con
 `CRON_INTERVAL_MINUTES`.
 
 1. Rechaza un batch distinto de uno y valida versión/timestamp del mensaje.
-2. Reclama `last_queue_scheduled_time` con un upsert condicional en D1; esta
-   primera query se reserva en el presupuesto de la invocación.
+2. Después de adquirir el lease, lee `last_queue_scheduled_time` junto al estado
+   de fase. Un timestamp completado o anterior termina sin otra fase.
 3. Genera `runId` aleatorio.
 4. Adquiere `scheduler_lease` mediante `INSERT ... ON CONFLICT DO UPDATE ...
    WHERE integerValue <= now RETURNING key`.
@@ -394,7 +395,10 @@ Cron se despliega desde la configuración y debe coincidir con
    límite de 15 min de wall time.
 6. Si no obtiene la fila, registra `skipped_locked` y termina sin red ni writes
    de datos.
-7. Libera con `UPDATE ... WHERE textValue = runId`; una corrida no libera el
+7. Persiste `last_queue_scheduled_time` en el mismo `db.batch()` que el resumen,
+   cursor y próxima fase; un fallo deja el tick reintentable y un éxito no puede
+   avanzar dos fases al reentregarse.
+8. Libera con `UPDATE ... WHERE textValue = runId`; una corrida no libera el
    lease de otra.
 
 El lock es obligatorio aunque normalmente la corrida dure segundos. La fase no
@@ -430,7 +434,7 @@ SWEEP_LIMIT=4                   máximo Free 40 y siempre <= TRUST8004_REQUESTS_
 SWEEP_PAGES_PER_RUN=1           máximo Free 1
 TRUST8004_REQUESTS_PER_RUN=4
 EXTERNAL_SUBREQUESTS_PER_RUN=12 máximo Free 40, plataforma 50
-D1_QUERIES_PER_RUN=40           mínimo 7, máximo Free 40, plataforma D1 50
+D1_QUERIES_PER_RUN=40           mínimo 12, máximo Free 40, plataforma D1 50
 D1_ROWS_READ_PER_RUN=10000
 D1_ROWS_WRITTEN_PER_RUN=250
 PROBE_TIMEOUT_MS=5000
@@ -441,9 +445,10 @@ binding WP2_QUEUE                  Queue del mismo entorno
 consumer max_batch_size=1, max_batch_timeout=1, max_retries=3
 ```
 
-Con cinco minutos hay 288 ticks/día y, conservadoramente, 864 operaciones de
-Queue/día. La configuración rechaza una proyección mayor de 8.000, dejando 20 %
-de margen bajo las 10.000 operaciones Free. Con rotación de tres fases hay hasta
+Con cinco minutos hay 288 ticks/día: 864 operaciones nominales y 1.728 en el
+peor caso configurado de tres retries. La configuración usa este peor caso y
+rechaza una proyección mayor de 8.000, dejando 20 % de margen bajo las 10.000
+operaciones Free. Con rotación de tres fases hay hasta
 96 ejecuciones de SWEEP por día. A cuatro detalles son 384 agentes/día: una reconciliación global sería
 inaceptablemente lenta, por lo que SWEEP Free opera sobre el conjunto live
 priorizado y el funnel global permanece snapshot-backed. WP2 solo aumenta un
@@ -1005,8 +1010,8 @@ Checks bloqueantes:
   batch de tamaño distinto de uno falla antes de acceder a D1;
 - kill switch impide red y writes de fases, aunque permite leer `/health`;
 - contadores observados nunca superan los presupuestos configurados;
-- el contador D1 admite como máximo 40 queries Free, incluye la query de claim
-  Queue, cuenta cada sentencia de un batch y rechaza la siguiente antes de
+- el contador D1 admite como máximo 40 queries Free, incluye el marcador atómico
+  de Queue, cuenta cada sentencia de un batch y rechaza la siguiente antes de
   acceder a D1;
 - tests prueban que las tablas append-only no reciben `UPDATE`/`DELETE` desde la
   aplicación;
@@ -1015,7 +1020,8 @@ Checks bloqueantes:
 La corrida WP2 local del 2026-08-28 queda registrada en
 `evidence/wp2-local-wrangler-2026-08-28.json`. La validación posterior del flujo
 real Cron → Queue → HEADER con Wrangler completó en 2.441 ms y dejó HEADER en 4
-queries de fase más 1 claim Queue, dentro del presupuesto Free de 40.
+queries de fase más 1 operación de deduplicación Queue, dentro del presupuesto
+Free de 40.
 
 Wrangler/Miniflare valida comportamiento, bindings y persistencia local, pero no
 demuestra el límite real de 10 ms de CPU ni el egress productivo de Cloudflare.
@@ -1086,17 +1092,31 @@ warm path pase. La evidencia está en
 La mitigación Free implementada es Cron → Queue → fase. El producer observado
 midió 1.140 µs. Los consumers reales completaron HEADER=1 en 16.747 µs y
 SWEEP=1 en 15.107 µs, ambos dentro de su cuota de 30 s; D1 registró 5 y 10
-queries respectivamente, incluyendo el claim de deduplicación, y la rotación
+queries respectivamente, incluyendo la operación de deduplicación, y la rotación
 avanzó `header → sweep → probe`. La evidencia raw está en
 `evidence/wp2-queue-analytics-raw-2026-08-28.json`. Tras la ventana se eliminaron
 los schedules y secretos, se restauró `KILL_SWITCH=1` y se conservaron un
 producer y un consumer únicamente en staging.
+
+`durationP50` de `workersInvocationsAdaptive` mide tiempo de ejecución activo,
+no el wall time completo que el resumen D1 calcula con reloj de pared; por eso
+0,207 s de Analytics y 1.335 ms de HEADER D1 no deben coincidir. La atribución a
+consumer sigue siendo inferida por versión, timestamp, subrequest y estado D1,
+porque el dataset adaptativo no expone dimensión de tipo de trigger. La prueba
+remota anterior al fix de retries demuestra entrega/CPU/rotación exitosa, no la
+reentrega: fallo → retry → éxito → duplicado queda demostrado en el E2E real
+Workers+D1 local y requiere repetición remota antes de habilitar cadencia.
 
 Cada incremento exige margen del producer bajo 10 ms y del Queue consumer bajo
 30 s. Que una ejecución aislada reciba flexibilidad de plataforma no cuenta como
 gate pasado. Si un producer, HEADER=1, SWEEP=1 o el probe único excede su cuota
 de forma repetible, se reactiva el kill switch y se detiene WP2/WP3. No se activa
 Paid automáticamente.
+
+Siguen pendientes antes de activar el schedule continuo: dos rotaciones Queue
+con los defaults Free `HEADER_LIMIT=25`/`SWEEP_LIMIT=4`, memoria pico < 96 MiB,
+confirmación real del margen diario D1 y el gate WP3. Las corridas con límites 1
+son prueba de arquitectura, no promoción completa de WP2.
 
 ### 11.3 Promoción explícita Free → Paid
 
@@ -1182,7 +1202,7 @@ Gate:
 - dos vueltas Queue del conjunto live cumplen sección 4.2, cero `exceededCpu`,
   cero duplicaciones y cero 429;
 - métricas D1 reales confirman la reserva diaria de 20 %;
-- HEADER y SWEEP permanecen en `D1_QUERIES_PER_RUN <= 40`, incluyendo claim
+- HEADER y SWEEP permanecen en `D1_QUERIES_PER_RUN <= 40`, incluyendo marcador
   Queue, lease, resumen, cursor y rotación; staging demuestra el límite porque
   Miniflare no lo impone;
 - gate de staging Free de sección 11.2 pasa antes de activar el cron;
