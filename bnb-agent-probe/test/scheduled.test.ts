@@ -150,7 +150,7 @@ describe("WP2 scheduled runner", () => {
     });
 
     await runner(
-      { ...controller, cron: "queue", attempt: 1 },
+      { ...controller, cron: "queue", attempt: 1, messageId: "minimum-budget" },
       { DB: db } as unknown as Env,
       context,
       loadConfig({ D1_QUERIES_PER_RUN: "13" }),
