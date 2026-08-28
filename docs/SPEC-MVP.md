@@ -1021,8 +1021,19 @@ secretos. `--remote` accede a recursos reales y nunca se usa contra producción.
 
 La corrida remota del 2026-08-28 con HEADER 1/5/25 y tres rotaciones está en
 `evidence/wp2-staging-wrangler-2026-08-28.json`: prueba respuestas 200, cursores,
-queries D1 y cero 429. Wrangler preview no expuso CPU, filas D1 ni outcome del
-deployment nominal, por lo que esos criterios permanecen pendientes.
+queries D1 y cero 429. La consulta posterior a Workers Analytics midió
+HEADER=25 en 15.442 µs y SWEEP=4 en 11.098 µs. Incluso HEADER=1 registró
+17.124 µs en preview y 11.676 µs mediante el trigger HTTP nominal autenticado.
+Todos los outcomes fueron `success`, pero la tolerancia de plataforma no cumple
+el gate de 10.000 µs. WP2 queda implementado pero no promovible: kill switch
+activo, schedules vacíos y Paid sin activar.
+
+Para medir el deployment nominal sin dejar un cron activo, el Worker ofrece
+`POST /__admin/run-scheduled`. Solo existe operativamente cuando
+`KILL_SWITCH=0`, `SHARED_SECRET` está configurado y el Bearer coincide mediante
+comparación de hashes; en cualquier otro caso queda oculto o devuelve 401. No
+tiene CORS y ejecuta una sola fase. El secreto de medición se elimina al cerrar
+el gate.
 
 Cada incremento exige margen bajo 10 ms; que una ejecución aislada reciba
 flexibilidad de plataforma no cuenta como gate pasado. Si HEADER=1, SWEEP=1 o el
