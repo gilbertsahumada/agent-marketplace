@@ -132,7 +132,7 @@ describe("WP1 in the Workers runtime", () => {
     const tick = { schemaVersion: 1, scheduledTime: 1_800_000_000_000 };
 
     await worker.queue(
-      { messages: [{ body: tick, ack: firstAck }] },
+      { messages: [{ body: tick, ack: firstAck, retry: vi.fn() }] },
       activeEnv,
       createExecutionContext(),
     );
@@ -148,7 +148,7 @@ describe("WP1 in the Workers runtime", () => {
     const duplicateAck = vi.fn();
 
     await worker.queue(
-      { messages: [{ body: tick, ack: duplicateAck }] },
+      { messages: [{ body: tick, ack: duplicateAck, retry: vi.fn() }] },
       activeEnv,
       createExecutionContext(),
     );
@@ -177,7 +177,7 @@ describe("WP1 in the Workers runtime", () => {
     const firstAck = vi.fn();
 
     await expect(retryWorker.queue(
-      { messages: [{ body: tick, ack: firstAck }] },
+      { messages: [{ body: tick, ack: firstAck, retry: vi.fn() }] },
       activeEnv,
       createExecutionContext(),
     )).rejects.toThrow("temporary catalogue failure");
@@ -185,7 +185,7 @@ describe("WP1 in the Workers runtime", () => {
 
     const retryAck = vi.fn();
     await retryWorker.queue(
-      { messages: [{ body: tick, ack: retryAck }] },
+      { messages: [{ body: tick, ack: retryAck, retry: vi.fn() }] },
       activeEnv,
       createExecutionContext(),
     );
@@ -194,12 +194,64 @@ describe("WP1 in the Workers runtime", () => {
 
     const duplicateAck = vi.fn();
     await retryWorker.queue(
-      { messages: [{ body: tick, ack: duplicateAck }] },
+      { messages: [{ body: tick, ack: duplicateAck, retry: vi.fn() }] },
       activeEnv,
       createExecutionContext(),
     );
     expect(duplicateAck).toHaveBeenCalledOnce();
     expect(fetchCalls).toBe(2);
+    expect(await runtimeText("next_scheduler_phase")).toBe("sweep");
+  });
+
+  it("delays a locked Queue tick, then completes and deduplicates it after lease expiry", async () => {
+    await env.DB.prepare(
+      `INSERT INTO runtime_state (key, textValue, integerValue, updatedAt)
+       VALUES ('scheduler_lease', 'dead-owner', 30_000, 10_000)`,
+    ).run();
+    let fetchCalls = 0;
+    const runner = createWp2ScheduledRunner({
+      now: () => 20_000,
+      randomUUID: () => "queue-after-expiry",
+      fetch: (async () => {
+        fetchCalls += 1;
+        return Response.json({ items: [], total: 0, limit: 25, offset: 0 });
+      }) as typeof fetch,
+    });
+    const retryWorker = createWorker({ runScheduled: runner });
+    const activeEnv = { ...env, KILL_SWITCH: "0" } as unknown as Env;
+    const tick = { schemaVersion: 1, scheduledTime: 1_800_000_200_000 };
+    const lockedAck = vi.fn();
+    const lockedRetry = vi.fn();
+
+    await retryWorker.queue(
+      { messages: [{ body: tick, ack: lockedAck, retry: lockedRetry }] },
+      activeEnv,
+      createExecutionContext(),
+    );
+    expect(lockedAck).not.toHaveBeenCalled();
+    expect(lockedRetry).toHaveBeenCalledWith({ delaySeconds: 240 });
+    expect(await runtimeInteger("last_queue_scheduled_time")).toBeNull();
+
+    await env.DB.prepare(
+      "UPDATE runtime_state SET integerValue = 0 WHERE key = 'scheduler_lease'",
+    ).run();
+    const completedAck = vi.fn();
+    await retryWorker.queue(
+      { messages: [{ body: tick, ack: completedAck, retry: vi.fn() }] },
+      activeEnv,
+      createExecutionContext(),
+    );
+    expect(completedAck).toHaveBeenCalledOnce();
+    expect(await runtimeText("next_scheduler_phase")).toBe("sweep");
+
+    const duplicateAck = vi.fn();
+    await retryWorker.queue(
+      { messages: [{ body: tick, ack: duplicateAck, retry: vi.fn() }] },
+      activeEnv,
+      createExecutionContext(),
+    );
+    expect(duplicateAck).toHaveBeenCalledOnce();
+    expect(fetchCalls).toBe(1);
     expect(await runtimeText("next_scheduler_phase")).toBe("sweep");
   });
 
