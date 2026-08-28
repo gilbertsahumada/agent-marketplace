@@ -1,0 +1,211 @@
+{
+  "capturedAt": "2026-08-28T18:05:30Z",
+  "status": "pass",
+  "scope": "WP2 HEADER/SWEEP Free-default execution until sweepRound advanced from 0 to 2",
+  "commit": "de3c595",
+  "worker": {
+    "name": "bnb-agent-probe-validation",
+    "url": "https://bnb-agent-probe-validation.gilbertsahumada.workers.dev",
+    "versionIdAfterCleanup": "b5e567d1-1093-4e9d-83b4-374aee967454"
+  },
+  "queue": {
+    "name": "bnb-agent-probe-validation-20260828",
+    "id": "14feedfc8e904e2d956661d028dcbec3",
+    "batchSize": 1,
+    "maxRetries": 3,
+    "maxConcurrency": 1,
+    "retryDelaySeconds": 60
+  },
+  "database": {
+    "name": "bnb-agent-probe-validation-20260828",
+    "id": "11253c18-cc4d-489a-8d1d-972d3a31e49f"
+  },
+  "freeDefaults": {
+    "headerLimit": 25,
+    "sweepLimit": 4,
+    "sweepPagesPerRun": 1,
+    "trust8004RequestsPerRun": 4,
+    "d1QueriesPerRun": 40,
+    "cronTriggers": []
+  },
+  "baseline": {
+    "nextPhase": "header",
+    "sweepOffset": 0,
+    "sweepRound": 0
+  },
+  "phaseLedger": [
+    {
+      "scheduledTime": 1787939189526,
+      "phase": "header",
+      "nextPhase": "sweep",
+      "sweepOffset": 0,
+      "sweepRound": 0,
+      "requests": 1,
+      "d1Queries": 5,
+      "wallTimeMs": 1892,
+      "requested": 25,
+      "received": 25,
+      "materialWrites": 0
+    },
+    {
+      "scheduledTime": 1787939989131,
+      "phase": "sweep",
+      "nextPhase": "probe",
+      "previousOffset": 0,
+      "sweepOffset": 4,
+      "sweepRound": 0,
+      "complete": false,
+      "requests": 4,
+      "d1Queries": 10,
+      "wallTimeMs": 1335
+    },
+    {
+      "scheduledTime": 1787940157322,
+      "phase": "probe",
+      "status": "pending_wp3",
+      "nextPhase": "header",
+      "sweepOffset": 4,
+      "sweepRound": 0,
+      "d1Queries": 6,
+      "wallTimeMs": 209
+    },
+    {
+      "scheduledTime": 1787940161792,
+      "phase": "header",
+      "nextPhase": "sweep",
+      "sweepOffset": 4,
+      "sweepRound": 0,
+      "requests": 1,
+      "d1Queries": 5,
+      "wallTimeMs": 1286,
+      "requested": 25,
+      "materialWrites": 0
+    },
+    {
+      "scheduledTime": 1787940165013,
+      "phase": "sweep",
+      "nextPhase": "probe",
+      "previousOffset": 4,
+      "sweepOffset": 0,
+      "sweepRound": 1,
+      "complete": true,
+      "requests": 1,
+      "d1Queries": 11,
+      "wallTimeMs": 606
+    },
+    {
+      "scheduledTime": 1787940166540,
+      "phase": "probe",
+      "status": "pending_wp3",
+      "nextPhase": "header",
+      "sweepOffset": 0,
+      "sweepRound": 1,
+      "d1Queries": 6,
+      "wallTimeMs": 217
+    },
+    {
+      "scheduledTime": 1787940169103,
+      "phase": "header",
+      "nextPhase": "sweep",
+      "sweepOffset": 0,
+      "sweepRound": 1,
+      "requests": 1,
+      "d1Queries": 5,
+      "wallTimeMs": 477,
+      "requested": 25,
+      "materialWrites": 0
+    },
+    {
+      "scheduledTime": 1787940171538,
+      "phase": "sweep",
+      "nextPhase": "probe",
+      "previousOffset": 0,
+      "sweepOffset": 4,
+      "sweepRound": 1,
+      "complete": false,
+      "requests": 4,
+      "d1Queries": 10,
+      "wallTimeMs": 870
+    },
+    {
+      "scheduledTime": 1787940174068,
+      "phase": "probe",
+      "status": "pending_wp3",
+      "nextPhase": "header",
+      "sweepOffset": 4,
+      "sweepRound": 1,
+      "d1Queries": 6,
+      "wallTimeMs": 221
+    },
+    {
+      "scheduledTime": 1787940175491,
+      "phase": "header",
+      "nextPhase": "sweep",
+      "sweepOffset": 4,
+      "sweepRound": 1,
+      "requests": 1,
+      "d1Queries": 5,
+      "wallTimeMs": 464,
+      "requested": 25,
+      "materialWrites": 0
+    },
+    {
+      "scheduledTime": 1787940177768,
+      "phase": "sweep",
+      "nextPhase": "probe",
+      "previousOffset": 4,
+      "sweepOffset": 0,
+      "sweepRound": 2,
+      "complete": true,
+      "requests": 1,
+      "d1Queries": 11,
+      "wallTimeMs": 596
+    },
+    {
+      "scheduledTime": 1787940180380,
+      "phase": "probe",
+      "status": "pending_wp3",
+      "nextPhase": "header",
+      "sweepOffset": 0,
+      "sweepRound": 2,
+      "d1Queries": 6,
+      "wallTimeMs": 210
+    }
+  ],
+  "result": {
+    "successfulPhaseExecutions": 12,
+    "headerExecutions": 4,
+    "sweepExecutions": 4,
+    "probePlaceholders": 4,
+    "initialSweepRound": 0,
+    "finalSweepRound": 2,
+    "finalSweepOffset": 0,
+    "finalNextPhase": "header",
+    "maxObservedD1Queries": 11,
+    "maxObservedTrust8004Requests": 4,
+    "headerMaterialWrites": 0,
+    "rateLimitResponsesObserved": 0
+  },
+  "workerMetrics": {
+    "source": "workersInvocationsAdaptive",
+    "successfulConsumerCpuTimeMicrosecondsMaxObserved": 18066,
+    "memoryUsageBytesP999MaxObserved": 2503018,
+    "consumerCpuLimitMicroseconds": 30000000,
+    "memoryGateBytes": 100663296,
+    "exceededCpuGroups": 0,
+    "exceededMemoryGroups": 0
+  },
+  "cleanup": {
+    "killSwitch": true,
+    "schedules": [],
+    "secrets": [],
+    "queueBacklogCount": 0,
+    "leaseActive": false,
+    "stagingStateMatchedPreflight": true
+  },
+  "limitations": [
+    "PROBE remained the explicit pending_wp3 placeholder and is not validated by this run.",
+    "Workers and Queue GraphQL datasets are adaptive and may aggregate or omit individual invocations; D1 scheduledTime markers are the exact phase ledger.",
+    "The current-day D1 counters are a short validation window, not the controlled 24-hour D1 gate."
+  ]
+}
