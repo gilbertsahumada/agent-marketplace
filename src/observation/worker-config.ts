@@ -5,6 +5,7 @@ type WorkerEnvironment = Readonly<Record<string, string | undefined>>;
 
 interface PlatformLimits {
   cpuMsPerInvocation: number;
+  queueConsumerCpuMs: number;
   wallTimeMsPerInvocation: number;
   externalSubrequestsPerInvocation: number;
   internalSubrequestsPerInvocation: number;
@@ -17,8 +18,10 @@ interface ProjectedDailyBudget {
   invocations: number;
   d1RowsRead: number;
   d1RowsWritten: number;
+  queueOperations: number;
   freeReadCeiling: number;
   freeWriteCeiling: number;
+  freeQueueOperationsCeiling: number;
 }
 
 export interface ObservationWorkerConfig {
@@ -53,7 +56,9 @@ interface PlanProfile {
 
 const FREE_D1_READS_PER_DAY = 5_000_000;
 const FREE_D1_WRITES_PER_DAY = 100_000;
+const FREE_QUEUE_OPERATIONS_PER_DAY = 10_000;
 const FREE_D1_RESERVE_RATIO = 0.2;
+const QUEUE_OPERATIONS_PER_MESSAGE = 3;
 
 const FREE_PROFILE: PlanProfile = {
   schedulerMode: "single_phase",
@@ -205,6 +210,7 @@ function platformLimits(plan: CloudflareWorkersPlan, cronIntervalMinutes: number
   if (plan === "free") {
     return {
       cpuMsPerInvocation: 10,
+      queueConsumerCpuMs: 30_000,
       wallTimeMsPerInvocation: 15 * 60_000,
       externalSubrequestsPerInvocation: 50,
       internalSubrequestsPerInvocation: 1_000,
@@ -215,6 +221,7 @@ function platformLimits(plan: CloudflareWorkersPlan, cronIntervalMinutes: number
   }
   return {
     cpuMsPerInvocation: cronIntervalMinutes < 60 ? 30_000 : 15 * 60_000,
+    queueConsumerCpuMs: 30_000,
     wallTimeMsPerInvocation: 15 * 60_000,
     externalSubrequestsPerInvocation: 10_000,
     internalSubrequestsPerInvocation: 10_000,
@@ -234,8 +241,10 @@ function projectedFreeDailyBudget(
     invocations,
     d1RowsRead: invocations * d1RowsReadPerRun,
     d1RowsWritten: invocations * d1RowsWrittenPerRun,
+    queueOperations: invocations * QUEUE_OPERATIONS_PER_MESSAGE,
     freeReadCeiling: FREE_D1_READS_PER_DAY * (1 - FREE_D1_RESERVE_RATIO),
     freeWriteCeiling: FREE_D1_WRITES_PER_DAY * (1 - FREE_D1_RESERVE_RATIO),
+    freeQueueOperationsCeiling: FREE_QUEUE_OPERATIONS_PER_DAY * (1 - FREE_D1_RESERVE_RATIO),
   };
 }
 
@@ -282,6 +291,12 @@ export function loadObservationWorkerConfig(env: WorkerEnvironment): Observation
       throw new ObservationWorkerConfigError(
         "D1_ROWS_READ_PER_RUN",
         `projects ${projectedDailyBudget.d1RowsRead} rows/day; Free safety ceiling is ${projectedDailyBudget.freeReadCeiling}`,
+      );
+    }
+    if (projectedDailyBudget.queueOperations > projectedDailyBudget.freeQueueOperationsCeiling) {
+      throw new ObservationWorkerConfigError(
+        "CRON_INTERVAL_MINUTES",
+        `projects ${projectedDailyBudget.queueOperations} Queue operations/day; Free safety ceiling is ${projectedDailyBudget.freeQueueOperationsCeiling}`,
       );
     }
   }
