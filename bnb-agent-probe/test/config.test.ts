@@ -15,7 +15,7 @@ describe("loadConfig", () => {
       probeBatchSize: 1,
       probeAgentAllowlist: ["303779"],
       probeEndpointAllowlist: [
-        "https://bnb-agent-marketplace-ruby.vercel.app/api/sellers/grid/a2a",
+        "https://bnb-agent-marketplace-ruby.vercel.app/grid",
       ],
       trust8004RequestsPerRun: 4,
       externalSubrequestsPerRun: 12,
