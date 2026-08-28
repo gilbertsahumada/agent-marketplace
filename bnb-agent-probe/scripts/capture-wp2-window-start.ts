@@ -5,13 +5,15 @@ import { fileURLToPath } from "node:url";
 const PHASES = new Set(["header", "sweep", "probe"]);
 const ACCOUNT_ID = /^[a-f0-9]{32}$/;
 const DATABASE_ID = /^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/;
+const PHASE_SQL = "SELECT key, textValue AS value, integerValue FROM runtime_state WHERE key IN (?, ?) ORDER BY key ASC";
+const PHASE_PARAMS = ["last_queue_scheduled_time", "next_scheduler_phase"] as const;
 
 interface CaptureOptions {
   readonly accountId: string;
   readonly apiToken: string;
-  readonly capturedAt?: () => string;
   readonly databaseId: string;
   readonly fetch?: typeof globalThis.fetch;
+  readonly now?: () => string;
   readonly outputPath: string;
 }
 
@@ -22,6 +24,8 @@ export async function captureWp2WindowStart(options: CaptureOptions): Promise<vo
   if (options.outputPath.length === 0) throw new Error("output path is required");
 
   const fetch = options.fetch ?? globalThis.fetch;
+  const now = options.now ?? (() => new Date().toISOString());
+  const startedAt = now();
   const response = await fetch(
     `https://api.cloudflare.com/client/v4/accounts/${options.accountId}/d1/database/${options.databaseId}/query`,
     {
@@ -31,8 +35,8 @@ export async function captureWp2WindowStart(options: CaptureOptions): Promise<vo
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        sql: "SELECT key, textValue AS value FROM runtime_state WHERE key = ? LIMIT 1",
-        params: ["next_scheduler_phase"],
+        sql: PHASE_SQL,
+        params: PHASE_PARAMS,
       }),
     },
   );
@@ -50,17 +54,39 @@ export async function captureWp2WindowStart(options: CaptureOptions): Promise<vo
     throw new Error("Cloudflare D1 window-start query failed");
   }
   const result = payload.result[0] as { readonly results?: unknown };
-  if (!Array.isArray(result.results) || result.results.length !== 1) {
-    throw new Error("D1 did not return one next_scheduler_phase row");
+  if (!Array.isArray(result.results) || result.results.length !== 2) {
+    throw new Error("D1 did not return the phase and final pre-window tick rows");
   }
-  const row = result.results[0] as { readonly key?: unknown; readonly value?: unknown };
-  if (row.key !== "next_scheduler_phase" || typeof row.value !== "string" || !PHASES.has(row.value)) {
+  const rows = new Map(result.results.map((row) => {
+    const parsed = row as { readonly key?: unknown };
+    return [parsed.key, row] as const;
+  }));
+  const phase = rows.get("next_scheduler_phase") as { readonly value?: unknown } | undefined;
+  const finalTick = rows.get("last_queue_scheduled_time") as { readonly integerValue?: unknown } | undefined;
+  if (typeof phase?.value !== "string" || !PHASES.has(phase.value)) {
     throw new Error("D1 returned an invalid next_scheduler_phase");
   }
+  if (!Number.isSafeInteger(finalTick?.integerValue) || (finalTick?.integerValue as number) < 0) {
+    throw new Error("D1 returned an invalid last_queue_scheduled_time");
+  }
 
-  const capturedAt = (options.capturedAt ?? (() => new Date().toISOString()))();
-  if (new Date(capturedAt).toISOString() !== capturedAt) throw new Error("capturedAt is not canonical UTC");
-  const output = `${JSON.stringify({ request: { capturedAt }, response: payload }, null, 2)}\n`;
+  const completedAt = now();
+  for (const [label, timestamp] of [["startedAt", startedAt], ["completedAt", completedAt]] as const) {
+    if (new Date(timestamp).toISOString() !== timestamp) throw new Error(`${label} is not canonical UTC`);
+  }
+  if (Date.parse(completedAt) < Date.parse(startedAt)) throw new Error("capture completed before it started");
+  const output = `${JSON.stringify({
+    request: {
+      accountId: options.accountId,
+      capturedAt: completedAt,
+      completedAt,
+      databaseId: options.databaseId,
+      params: PHASE_PARAMS,
+      sql: PHASE_SQL,
+      startedAt,
+    },
+    response: payload,
+  }, null, 2)}\n`;
   await mkdir(dirname(resolve(options.outputPath)), { recursive: true });
   await writeFile(resolve(options.outputPath), output, { encoding: "utf8", flag: "wx" });
 }
