@@ -1242,7 +1242,8 @@ ese ledger D1.
 
 El máximo histórico de 11 queries corresponde a la versión ensayada. La versión
 vigente añade dos escrituras de telemetría: reconciliación diaria y un intento
-append-only identificado por `(scheduledTime, attempt)`; reportaría 13 para esa
+append-only identificado por `(messageId, attempt)` e indexado por
+`scheduledTime`; reportaría 13 para esa
 misma fase. Conserva el techo duro de 40 reservando cuatro queries fuera del
 presupuesto de fase: resumen de fallo, liberación del lease y ambos ledgers.
 El ledger diario ayuda a detectar drift, pero no sustituye las métricas de
@@ -1264,7 +1265,9 @@ contaminada que no permita atribuir el margen se repite.
 
 El artefacto final se llama `evidence/wp2-d1-24h-<YYYY-MM-DD>.json`, usa
 `schemaVersion=1` e incluye commit y deployment exactos, IDs de Worker/Queue/D1,
-ventana UTC, límites aplicados, ledger por `scheduledTime`, outcomes y retries,
+ventana UTC, límites aplicados, `ledger` de los 288 ticks y `quotaLedger` de los
+intentos cuyo `startedAt` cae en el día (con spill-in/spill-out explícitos),
+outcomes y retries,
 hashes y rutas de las respuestas Analytics crudas por base y por cuenta, uso
 ajeno observado, conteos totales, máximos CPU/memoria y un veredicto por gate.
 No se resume ni descarta la respuesta cruda usada para calcular esos campos.
@@ -1281,7 +1284,11 @@ la propagación eventual de Cron Triggers. Para la ventana final se instala un
 Cron staging temporal solo después del preflight y se elimina al finalizar; no
 autoriza cadencia productiva. Tras el tick de `23:55Z` se retira el schedule
 antes de `00:00Z`; `KILL_SWITCH=0` puede permanecer solo durante la gracia de
-retries pertenecientes al día y vuelve a `1` después de confirmar backlog cero.
+retries pertenecientes al día. La gracia dura como mínimo hasta `00:15Z`
+(tres delays de lease de 240 s más margen) y no termina hasta que los 288 ticks
+tengan un outcome terminal en `scheduler_attempts` y Queue Analytics no muestre
+operaciones pendientes; backlog REST cero solo corrobora y nunca cierra el gate.
+Recién entonces `KILL_SWITCH` vuelve a `1`.
 La Queue, su consumer y D1 de staging se conservan: la eliminación aplica solo a
 recursos efímeros del entorno `validation`. Como el backlog REST es best-effort y puede omitir
 mensajes con retry diferido, cada prueba destructiva de reentrega crea una Queue
@@ -1368,9 +1375,9 @@ Resultado verificado el 2026-08-28: el subproyecto `bnb-agent-probe` pasa
 typecheck, 46 tests unitarios/schema, 5 tests dentro del runtime Workers, dos
 aplicaciones idempotentes de migraciones locales y `wrangler deploy --dry-run`.
 El entorno `bnb-agent-probe-staging` usa una D1 separada, responde en
-`/health`, conserva `KILL_SWITCH=1`, no define Cron Trigger y mantiene las fases
-de red sin implementar. El gate WP1 no autoriza ejecutar HEADER, SWEEP o PROBE;
-esas pruebas y sus métricas corresponden a WP2 y WP3.
+`/health`; ese baseline se verificó con `KILL_SWITCH=1`, sin Cron Trigger y antes
+de implementar las fases de red. La ventana temporal activa descrita en 11.2 es
+estado posterior de WP2/WP3 y no cambia el alcance histórico del gate WP1.
 
 ### WP2 — HEADER y SWEEP
 
