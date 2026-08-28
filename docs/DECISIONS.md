@@ -44,8 +44,8 @@ file records only decisions that still govern the submission.
 store permitted by clauses 6b and 6c below:
 
 - five minute Cron Trigger on Free publishes one versioned tick to a Free Queue;
-- the Queue consumer processes exactly one message, deduplicates its scheduled
-  timestamp in D1 and then runs one phase serialized by the existing D1 lease;
+- the Queue consumer processes exactly one message, acquires the D1 lease,
+  rejects an already-completed or stale timestamp and then runs one phase;
 - exactly one of HEADER, SWEEP or PROBE per Free invocation; the next phase and
   cursor are persisted in D1;
 - fixed trust8004 request budget per run; no process-memory token bucket;
