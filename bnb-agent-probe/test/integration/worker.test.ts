@@ -8,6 +8,7 @@ import {
   D1QueryBudgetExceededError,
 } from "../../src/db/query-budget";
 import { acquireSchedulerLease } from "../../src/lib/scheduler-lease";
+import { recordDailyBudget } from "../../src/db/daily-budget";
 import { healthResponse } from "../../src/routes/health";
 import { createWp2ScheduledRunner, runWp2Scheduled } from "../../src/scheduled";
 import type { Env } from "../../src/types";
@@ -104,6 +105,49 @@ describe("WP1 in the Workers runtime", () => {
       D1QueryBudgetExceededError,
     );
     expect(budget.used).toBe(40);
+  });
+
+  it("atomically records metered usage under the invocation start UTC date", async () => {
+    const database = env.DB as unknown as D1DatabaseLike;
+    await Promise.all([
+      recordDailyBudget(database, {
+        startedAtMs: Date.parse("2026-08-28T23:59:59.000Z"),
+        finishedAtMs: Date.parse("2026-08-29T00:00:01.000Z"),
+        outcome: "completed",
+        upstreamRequests: 4,
+        d1Queries: 11,
+        rowsReadObservedBeforeLedger: 9,
+        rowsWrittenObservedBeforeLedger: 5,
+      }),
+      recordDailyBudget(database, {
+        startedAtMs: Date.parse("2026-08-28T12:00:00.000Z"),
+        finishedAtMs: Date.parse("2026-08-28T12:00:01.000Z"),
+        outcome: "failed",
+        upstreamRequests: 1,
+        d1Queries: 7,
+        rowsReadObservedBeforeLedger: 3,
+        rowsWrittenObservedBeforeLedger: 1,
+      }),
+    ]);
+
+    const row = await env.DB.prepare(
+      "SELECT textValue FROM runtime_state WHERE key = 'daily_budget_20260828'",
+    ).first<{ textValue: string }>();
+    expect(JSON.parse(row?.textValue ?? "{}")).toEqual({
+      schemaVersion: 1,
+      utcDate: "2026-08-28",
+      measurementScope: "worker_metered_before_daily_ledger",
+      updatedAt: Date.parse("2026-08-29T00:00:01.000Z"),
+      invocations: 2,
+      completed: 1,
+      failed: 1,
+      duplicate: 0,
+      locked: 0,
+      upstreamRequests: 5,
+      d1Queries: 18,
+      rowsReadObservedBeforeLedger: 12,
+      rowsWrittenObservedBeforeLedger: 6,
+    });
   });
 
   it("uses the runtime fetch binding for a real HEADER invocation", async () => {
