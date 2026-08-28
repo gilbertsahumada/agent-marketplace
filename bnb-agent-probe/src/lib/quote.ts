@@ -13,6 +13,7 @@ import {
   type PublicClient,
 } from "viem";
 
+import { BscProbeError } from "./chain";
 import { GRID_PROBE_REQUEST_HASH } from "./terms";
 
 const MAX_QUOTE_AGE_SECONDS = 60;
@@ -158,13 +159,19 @@ export async function validateProbeQuote(
     || quoteExpiresAt - negotiatedAt > MAX_QUOTE_TTL_SECONDS
   ) throw new QuoteValidationError("QUOTE_EXPIRY");
 
-  const signature = await verify({
-    envelope,
-    provider,
-    publicClient: context.publicClient,
-    expectedVerifyingContract: commerce,
-    blockNumber: context.blockNumber,
-  });
+  let signature: QuoteSigVerdict;
+  try {
+    signature = await verify({
+      envelope,
+      provider,
+      publicClient: context.publicClient,
+      expectedVerifyingContract: commerce,
+      blockNumber: context.blockNumber,
+    });
+  } catch (error) {
+    if (hasBscProbeCause(error)) throw new BscProbeError("BSC_SIGNATURE_RPC");
+    throw error;
+  }
   if (!signature.valid) throw new QuoteValidationError("QUOTE_SIGNATURE");
   const signer = getAddress(signature.signer);
   if (signer !== provider) throw new QuoteValidationError("QUOTE_SIGNER");
@@ -182,6 +189,16 @@ export async function validateProbeQuote(
     quoteNegotiatedAt: negotiatedAt * 1_000,
     quoteExpiresAt: quoteExpiresAt * 1_000,
   };
+}
+
+function hasBscProbeCause(error: unknown): boolean {
+  let current = error;
+  for (let depth = 0; depth < 8; depth += 1) {
+    if (current instanceof BscProbeError) return true;
+    if (!(current instanceof Error) || current.cause === undefined) return false;
+    current = current.cause;
+  }
+  return false;
 }
 
 function record(value: unknown, code: string): Record<string, unknown> {
