@@ -107,6 +107,8 @@ export function createWorker(dependencies: WorkerDependencies = {}): WorkerEntry
     async scheduled(controller, env, _context) {
       const config = loadConfig(env);
       if (config.killSwitch) return;
+      const expectedCron = `*/${config.cronIntervalMinutes} * * * *`;
+      if (controller.cron !== expectedCron) throw new Error("WP2_CRON_MISMATCH");
       if (env.WP2_QUEUE === undefined) throw new Error("WP2_QUEUE_BINDING_REQUIRED");
       await env.WP2_QUEUE.send({ schemaVersion: 1, scheduledTime: controller.scheduledTime });
     },
