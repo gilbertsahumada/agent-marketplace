@@ -646,6 +646,9 @@ con una URL de `PROBE_ENDPOINT_ALLOWLIST` (scheme, host, puerto y path; sin
 query ni fragment). Un ID o endpoint fuera de allowlist no consume red ni crea
 observación. En Free ambas listas admiten un único elemento; ampliar cualquiera
 requiere promoción explícita del perfil y repetir los gates de staging.
+Para el target Grid de WP3, la Agent Card también debe anunciar exactamente la
+ruta derivada `https://bnb-agent-marketplace-ruby.vercel.app/api/sellers/grid/a2a`;
+otra ruta, aunque comparta origin, falla antes del POST.
 
 Clasificación:
 
@@ -830,9 +833,10 @@ configurado es una fuente operativa explícitamente confiada y toda llamada usa
 el mismo contador de subrequests. Un bloque con timestamp futuro o más de 120 s
 de atraso aborta el probe como `error`, sin contactar al seller.
 Las lecturas read-only se agrupan en Multicall después de fijar el bloque. El
-peor caso WP3 usa 1 trust8004 + 2 seller + 5 RPC: `eth_chainId`, bloque,
-Multicall de contratos y, para ERC-1271, bytecode + validación de firma. Son 8
-subrequests en total, por debajo del default Free 12; EOA usa dos menos.
+peor caso WP3 usa 1 trust8004 + 2 seller + 7 RPC: contexto inicial
+(`eth_chainId`, bloque y Multicall) y verificación SDK (`eth_chainId`, relectura
+del mismo bloque, bytecode e `isValidSignature`). Son 10 subrequests en total,
+por debajo del default Free 12; EOA evita las dos últimas y usa 8.
 
 Para A2A, `notify_funded` significa un único skill ID exacto presente; skills
 adicionales son válidas. Si ambos aliases de negociación existen se prefiere
