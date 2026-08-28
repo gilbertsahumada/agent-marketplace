@@ -161,6 +161,20 @@ describe("Worker runtime", () => {
     expect(await response.json()).toMatchObject({ status: "ok", dailyBudget: null });
   });
 
+  it("degrades when active scheduling has no valid current-day ledger", async () => {
+    const now = Date.parse("2026-08-28T12:00:00.000Z");
+    const response = await createWorker({ now: () => now }).fetch(
+      new Request("https://worker.test/health"),
+      { ...env(), KILL_SWITCH: "0" },
+    );
+
+    expect(await response.json()).toMatchObject({
+      status: "degraded",
+      killSwitch: false,
+      dailyBudget: null,
+    });
+  });
+
   it("reports runtime state but never returns the lease runId or arbitrary summary fields", async () => {
     const now = 1_800_000_000_000;
     const db = database({
