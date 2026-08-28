@@ -47,6 +47,7 @@ export interface SweepPhaseDependencies {
 
 export interface SweepQueryBudget {
   readonly remaining: number;
+  readonly used?: number;
 }
 
 export interface SweepRequestBudget {
@@ -59,9 +60,13 @@ export interface SweepPhaseInput {
   readonly nowMs: number;
   readonly queryBudget: SweepQueryBudget;
   readonly requestBudget: SweepRequestBudget;
+  readonly startedAtMs?: number;
+  readonly invocationQueriesAfterCommit?: number;
+  readonly now?: () => number;
 }
 
 export interface SweepPhaseSummary {
+  readonly phase: "sweep";
   readonly status: "ok";
   readonly processedAgents: number;
   readonly candidatesRead: number;
@@ -75,6 +80,7 @@ export interface SweepPhaseSummary {
   readonly requests: number;
   readonly d1Queries: number;
   readonly batchQueries: number;
+  readonly wallTimeMs: number;
 }
 
 export class SweepQueryBudgetExceededError extends Error {
@@ -141,8 +147,6 @@ export function createD1LiveAgentPageReader(
            SELECT DISTINCT agentId
            FROM probe_targets
            WHERE chainId = 56
-             AND transport = 'erc8183_http'
-             AND declarationState = 'current'
            UNION
            ${curatedSelect}
          )
@@ -248,6 +252,7 @@ export async function runSweepPhase(
   }
 
   const summary: SweepPhaseSummary = {
+    phase: "sweep",
     status: "ok",
     processedAgents: results.length,
     candidatesRead: existing.length,
@@ -259,8 +264,11 @@ export async function runSweepPhase(
     sweepRound,
     complete,
     requests: page.agentIds.length,
-    d1Queries: 2 + Math.ceil(page.agentIds.length / MAX_BOUND_PARAMETERS) + batchQueries,
+    d1Queries: input.queryBudget.used === undefined
+      ? 2 + Math.ceil(page.agentIds.length / MAX_BOUND_PARAMETERS) + batchQueries
+      : input.queryBudget.used + batchQueries + (input.invocationQueriesAfterCommit ?? 0),
     batchQueries,
+    wallTimeMs: Math.max(0, (input.now?.() ?? input.nowMs) - (input.startedAtMs ?? input.nowMs)),
   };
 
   statements.push(prepareRuntimeInteger(input.db, "sweep_offset", nextOffset, input.nowMs));
