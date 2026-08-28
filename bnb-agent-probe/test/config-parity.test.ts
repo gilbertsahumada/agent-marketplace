@@ -7,10 +7,14 @@ describe("observation configuration parity", () => {
     {},
     { CLOUDFLARE_WORKERS_PLAN: "paid" },
     {
+      CLOUDFLARE_WORKERS_PLAN: "paid",
       CRON_INTERVAL_MINUTES: "10",
       HEADER_LIMIT: "40",
       SWEEP_LIMIT: "6",
       PROBE_BATCH_SIZE: "0",
+      PROBE_AGENT_ALLOWLIST: "303779,303780",
+      PROBE_ENDPOINT_ALLOWLIST:
+        "https://bnb-agent-marketplace-ruby.vercel.app/grid,https://seller.example/a2a",
       TRUST8004_REQUESTS_PER_RUN: "6",
       EXTERNAL_SUBREQUESTS_PER_RUN: "16",
       D1_QUERIES_PER_RUN: "35",
