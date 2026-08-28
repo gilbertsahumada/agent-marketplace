@@ -55,7 +55,12 @@ npm run migrate:local
 npm test
 npm run typecheck
 npm run dry-run
+npm run evidence:wp2-24h -- ../evidence/wp2-d1-24h-2026-08-29.json
 ```
+
+The final validator parses and reconciles the hashed raw D1, Workers, Queue,
+deployment and control-plane responses. It keeps the 288 scheduled ticks
+separate from the UTC quota cohort so retries crossing midnight are explicit.
 
 Staging remains on the Free profile and retains one isolated Queue producer and
 serial consumer. Outside the exact 24-hour gate it declares an empty Cron list
