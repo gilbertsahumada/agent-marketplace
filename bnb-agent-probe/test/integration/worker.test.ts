@@ -361,6 +361,48 @@ describe("WP1 in the Workers runtime", () => {
     });
   });
 
+  it("records completed and failed scheduler attempts in the daily ledger", async () => {
+    let clock = Date.parse("2026-08-28T10:00:00.000Z");
+    const successRunner = createWp2ScheduledRunner({
+      now: () => clock++,
+      randomUUID: () => "daily-success",
+      executePhase: async () => {},
+    });
+    await successRunner(
+      { scheduledTime: clock, cron: "queue" },
+      env,
+      createExecutionContext(),
+      loadConfig({ KILL_SWITCH: "0" }),
+    );
+
+    const failureRunner = createWp2ScheduledRunner({
+      now: () => clock++,
+      randomUUID: () => "daily-failure",
+      executePhase: async () => { throw new Error("controlled failure"); },
+    });
+    await expect(failureRunner(
+      { scheduledTime: clock, cron: "queue" },
+      env,
+      createExecutionContext(),
+      loadConfig({ KILL_SWITCH: "0" }),
+    )).rejects.toThrow("controlled failure");
+
+    const row = await env.DB.prepare(
+      "SELECT textValue FROM runtime_state WHERE key = 'daily_budget_20260828'",
+    ).first<{ textValue: string }>();
+    expect(JSON.parse(row?.textValue ?? "{}")).toMatchObject({
+      invocations: 2,
+      completed: 1,
+      failed: 1,
+      duplicate: 0,
+      locked: 0,
+      upstreamRequests: 0,
+      d1Queries: 9,
+      rowsReadObservedBeforeLedger: expect.any(Number),
+      rowsWrittenObservedBeforeLedger: expect.any(Number),
+    });
+  });
+
   it("runs HEADER and rolling SWEEP atomically and preserves a removed endpoint", async () => {
     let headerIncludesAgent = true;
     let detailIncludesEndpoint = true;
