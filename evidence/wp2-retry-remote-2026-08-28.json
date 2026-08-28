@@ -1,0 +1,124 @@
+{
+  "capturedAt": "2026-08-28T17:33:40Z",
+  "status": "invalidated_by_delayed_queue_messages",
+  "accountTag": "bc8d4adf4860284fda426b24e7377bc2",
+  "worker": "bnb-agent-probe-staging",
+  "activeTrialVersionId": "f06247e8-1fea-49cc-ad46-ef1609c8043c",
+  "safeCleanupVersionIds": [
+    "a56b5e21-7b20-41a4-bfa5-4d10441af301",
+    "79ad5aad-81fd-4879-9d54-2093a773c32a"
+  ],
+  "queueId": "721ba809967d425a91dbc34eb1ac3baa",
+  "databaseId": "6fbeea3e-4516-4c4e-a5c4-392cb067198a",
+  "configuration": {
+    "plan": "free",
+    "killSwitchDuringTrial": false,
+    "cronIntervalMinutes": 5,
+    "headerLimit": 25,
+    "sweepLimit": 4,
+    "d1QueriesPerRun": 40,
+    "queueBatchSize": 1,
+    "queueMaxRetries": 3,
+    "queueMaxConcurrency": 1,
+    "stagingManualRun": false,
+    "sharedSecrets": 0
+  },
+  "controlledMessage": {
+    "schemaVersion": 1,
+    "scheduledTime": 1787936862696,
+    "pushedAt": "2026-08-28T17:08:01Z",
+    "initialPushBacklogCount": 1
+  },
+  "controlledLease": {
+    "owner": "wp2-remote-retry",
+    "createdAt": 1787936861696,
+    "expiresAt": 1787937041696
+  },
+  "verifiedLockedState": {
+    "lastSchedulerSummary": {
+      "status": "skipped_locked",
+      "requests": 0
+    },
+    "observedUpdatedAt": [1787936897139, 1787936932347, 1787936992633],
+    "phaseBefore": "header",
+    "completionMarkerBefore": 1787934290000,
+    "phaseAdvanced": false,
+    "completionMarkerAdvanced": false
+  },
+  "analyticsCorrelation": {
+    "initialRead": {
+      "datetime": "2026-08-28T17:08:12Z",
+      "lagTimeMs": 11480,
+      "retryCount": 0
+    },
+    "redeliveryRead": {
+      "datetime": "2026-08-28T17:12:14Z",
+      "lagTimeMs": 253102,
+      "retryCount": 1
+    },
+    "redeliveryDelete": {
+      "datetime": "2026-08-28T17:12:14Z",
+      "outcome": "success"
+    },
+    "matchingConsumerInvocation": {
+      "datetime": "2026-08-28T17:12:13Z",
+      "status": "success",
+      "cpuTimeMicroseconds": 10267,
+      "memoryUsageBytesP999": 2450893,
+      "subrequests": 1
+    }
+  },
+  "contamination": {
+    "reason": "A one-minute Cron Trigger that had already propagated continued to enqueue ticks while delivery was paused, despite the schedules API later returning an empty list.",
+    "observedProducerWrites": [
+      "2026-08-28T17:07:51Z",
+      "2026-08-28T17:08:51Z",
+      "2026-08-28T17:09:51Z"
+    ],
+    "unexpectedCompletionMarker": 1787936870000,
+    "unexpectedNextPhase": "probe",
+    "decision": "Do not use this run as the remote atomic retry gate because another queued tick advanced state before the post-retry D1 snapshot. Keep the locked-state and Queue redelivery metrics as diagnostic evidence only."
+  },
+  "secondAttempt": {
+    "activeTrialVersionId": "7aaba6e0-007f-418d-8e05-7feda6bebef1",
+    "scheduledTime": 1787938131062,
+    "preflightAt": "2026-08-28T17:28:00Z",
+    "preflight": {
+      "schedules": [],
+      "realtimeBacklogCount": 0,
+      "realtimeBacklogBytes": 0,
+      "leaseActive": false,
+      "killSwitch": true,
+      "secrets": [],
+      "minutesSinceCleanup": 15
+    },
+    "pushResult": {
+      "backlogCount": 2,
+      "backlogBytes": 98,
+      "oldestMessageTimestampMs": 1787936991471
+    },
+    "result": "aborted_before_acceptance",
+    "reason": "The successful push response exposed a delayed message from the earlier trial that the best-effort realtime metrics preflight had reported as backlog zero. The Worker was returned to KILL_SWITCH=1 immediately. Delayed retry messages are not returned by the Queue peek endpoint before they become eligible.",
+    "requiredNextIsolation": "Use a fresh dedicated validation Queue, or prove an empty Queue across a window that covers every configured retry/delivery delay before accepting a retry result. A single realtime backlog=0 response is not sufficient."
+  },
+  "cleanup": {
+    "killSwitch": true,
+    "schedules": [],
+    "queueDeliveryPaused": false,
+    "realtimeBacklogCount": 0,
+    "realtimeBacklogBytes": 0,
+    "oldestMessageTimestampMs": 0,
+    "leaseActive": false,
+    "secrets": [],
+    "consumerMaxConcurrency": 1,
+    "finalPropagationRecheck": "pass at 2026-08-28T17:33:40Z"
+  },
+  "sources": [
+    "Cloudflare Workers GraphQL workersInvocationsAdaptive",
+    "Cloudflare Queues GraphQL queueMessageOperationsAdaptiveGroups",
+    "Cloudflare Queues GraphQL queueBacklogAdaptiveGroups",
+    "Cloudflare Queues REST realtime metrics",
+    "Cloudflare Workers schedules REST API",
+    "staging D1 runtime_state snapshots"
+  ]
+}
