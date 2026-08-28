@@ -29,6 +29,8 @@ type SafeSummary = {
   materialWrites?: number;
   candidateTargets?: number;
   invalidItems?: number;
+  processedTargets?: number;
+  outcome?: string;
 };
 
 type DailyBudget = {
@@ -106,6 +108,7 @@ function safeSummary(row: RuntimeRow | undefined): SafeSummary | null {
       "materialWrites",
       "candidateTargets",
       "invalidItems",
+      "processedTargets",
     ] as const;
     for (const field of numericFields) {
       const value = finiteNonNegative(source[field]);
@@ -115,6 +118,14 @@ function safeSummary(row: RuntimeRow | undefined): SafeSummary | null {
       result.headerWindowExhausted = source.headerWindowExhausted;
     }
     if (typeof source.complete === "boolean") result.complete = source.complete;
+    if (
+      typeof source.outcome === "string"
+      && [
+        "quote_verified", "protocol_valid", "quote_rejected", "quote_invalid",
+        "reachable", "unreachable", "unsafe_url", "error", "no_candidate",
+        "metadata_unavailable", "removed",
+      ].includes(source.outcome)
+    ) result.outcome = source.outcome;
     if (typeof source.errorCode === "string" && /^[A-Z0-9_]{1,64}$/.test(source.errorCode)) {
       result.errorCode = source.errorCode;
     }
