@@ -111,6 +111,13 @@ export async function validateWp224hArtifact(
 
   const limits = validateLimits(artifact.limits);
   const ledger = validateLedger(artifact.ledger, start, end, limits.d1QueriesPerAttempt);
+  const quotaLedger = validateQuotaLedger(
+    artifact.quotaLedger,
+    start,
+    end,
+    limits.d1QueriesPerAttempt,
+    ledger.entries,
+  );
   const raw = await validateRawAnalytics(artifact.rawAnalytics, dependencies, {
     commit: artifact.commit as string,
     deploymentVersion: artifact.deploymentVersion as string,
@@ -119,9 +126,9 @@ export async function validateWp224hArtifact(
     d1Id,
     start,
     end,
-    ledger,
+    ledger: quotaLedger,
   });
-  const totals = validateTotals(artifact.totals, limits, ledger, raw);
+  const totals = validateTotals(artifact.totals, limits, ledger, quotaLedger, raw, start, end);
   validateAttribution(artifact.accountUsage, totals, raw);
   validateCleanup(artifact.cleanup, raw);
 
@@ -298,11 +305,42 @@ function ledgerEntry(value: unknown, index: number): LedgerEntry {
   };
 }
 
+function validateQuotaLedger(
+  value: unknown,
+  start: number,
+  end: number,
+  d1QueryLimit: number,
+  tickEntries: readonly LedgerEntry[],
+): readonly LedgerEntry[] {
+  if (!Array.isArray(value)) fail("QUOTA_COHORT", "quotaLedger must be an array");
+  const entries = value.map((entry, index) => ledgerEntry(entry, index));
+  const quotaKeys = new Set<string>();
+  for (const entry of entries) {
+    if (entry.startedAt < start || entry.startedAt >= end) {
+      fail("QUOTA_COHORT", "quotaLedger contains an attempt outside the UTC quota day");
+    }
+    if (entry.d1Queries > d1QueryLimit) fail("D1_QUERY_LIMIT", "quota attempt exceeded D1 query limit");
+    const key = `${entry.scheduledTime}:${entry.attempt}`;
+    if (quotaKeys.has(key)) fail("QUOTA_COHORT", `duplicate quota attempt ${key}`);
+    quotaKeys.add(key);
+  }
+  for (const entry of tickEntries) {
+    const belongsToQuotaDay = entry.startedAt >= start && entry.startedAt < end;
+    if (quotaKeys.has(`${entry.scheduledTime}:${entry.attempt}`) !== belongsToQuotaDay) {
+      fail("QUOTA_COHORT", "tick and quota cohorts do not reconcile");
+    }
+  }
+  return entries;
+}
+
 function validateTotals(
   value: unknown,
   limits: ReturnType<typeof validateLimits>,
   ledger: ReturnType<typeof validateLedger>,
+  quotaLedger: readonly LedgerEntry[],
   raw: RawMetrics,
+  start: number,
+  end: number,
 ): { readonly d1RowsRead: number; readonly d1RowsWritten: number } {
   const totals = record(value, "TOTALS", "totals");
   integerEqual(totals.ticks, ledger.ticks, "TOTALS", "totals.ticks");
@@ -310,6 +348,19 @@ function validateTotals(
   integerEqual(totals.sweepCompleted, ledger.phaseCompletions.sweep, "PHASE_COUNT", "totals.sweepCompleted");
   integerEqual(totals.probeCompleted, ledger.phaseCompletions.probe, "PHASE_COUNT", "totals.probeCompleted");
   integerEqual(totals.retries, ledger.retries, "RETRY_COUNT", "totals.retries");
+  integerEqual(totals.quotaAttempts, quotaLedger.length, "QUOTA_COHORT", "totals.quotaAttempts");
+  integerEqual(
+    totals.spillIn,
+    quotaLedger.filter(({ scheduledTime }) => scheduledTime < start).length,
+    "QUOTA_COHORT",
+    "totals.spillIn",
+  );
+  integerEqual(
+    totals.spillOut,
+    ledger.entries.filter(({ startedAt }) => startedAt >= end).length,
+    "QUOTA_COHORT",
+    "totals.spillOut",
+  );
   integerEqual(
     totals.maxD1QueriesPerAttempt,
     ledger.maxD1Queries,
@@ -358,7 +409,7 @@ async function validateRawAnalytics(
     readonly d1Id: string;
     readonly start: number;
     readonly end: number;
-    readonly ledger: ReturnType<typeof validateLedger>;
+    readonly ledger: readonly LedgerEntry[];
   },
 ): Promise<RawMetrics> {
   if (typeof dependencies?.readRawEvidence !== "function") {
@@ -463,8 +514,8 @@ async function validateRawAnalytics(
   const preflight = controlRaw(parsed.get(REQUIRED_RAW_ANALYTICS[5]), "preflight");
   const activation = controlRaw(parsed.get(REQUIRED_RAW_ANALYTICS[6]), "activation");
   const cleanup = controlRaw(parsed.get(REQUIRED_RAW_ANALYTICS[7]), "cleanup");
-  const http429 = context.ledger.entries.filter(({ errorCode }) => errorCode?.includes("429") === true).length;
-  const quotaErrors = context.ledger.entries.filter(({ errorCode }) =>
+  const http429 = context.ledger.filter(({ errorCode }) => errorCode?.includes("429") === true).length;
+  const quotaErrors = context.ledger.filter(({ errorCode }) =>
     errorCode !== null && /quota|limit|exceeded/i.test(errorCode)).length;
   if (workerErrors !== http429 + quotaErrors + exceededCpu + memoryExceeded) {
     fail("RAW_WORKERS", "Workers error total is not explained by the durable ledger");
