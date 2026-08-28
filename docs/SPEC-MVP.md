@@ -1041,6 +1041,12 @@ ejecutar una fase. Por tanto el gate Cron Free queda **no demostrado**, no
 declarado como fallo concluyente del handler. WP2 sigue no promovible: kill
 switch activo, schedules vacíos y Paid sin activar.
 
+Un segundo intento controlado dejó `HEADER_LIMIT=1`, `SWEEP_LIMIT=1`, la ruta
+HTTP deshabilitada y un schedule por minuto durante cinco minutos. La API de
+schedules confirmó el trigger, pero D1 no registró ninguna fase antes del
+cierre; se restauró el deployment nominal y se eliminó el schedule de forma
+explícita. La ausencia de ejecución no se interpreta como un pase de CPU.
+
 Cada incremento exige margen bajo 10 ms; que una ejecución aislada reciba
 flexibilidad de plataforma no cuenta como gate pasado. Si HEADER=1, SWEEP=1 o el
 probe único exceden CPU de forma repetible, se reactiva el kill switch y se
