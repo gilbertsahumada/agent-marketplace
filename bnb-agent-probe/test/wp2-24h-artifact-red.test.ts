@@ -541,12 +541,25 @@ describe("WP2 24-hour evidence artifact validator", () => {
     drainConsumer.sum.requests = 1;
     drainConsumer.sum.subrequests = 1;
     workers.response.data.viewer.accounts[0].workersInvocationsAdaptive.push(drainConsumer);
-    const contents = JSON.stringify(workers);
-    artifact.rawAnalytics["evidence/raw/workers.json"].sha256 = sha256(contents);
+    const workerContents = JSON.stringify(workers);
+    artifact.rawAnalytics["evidence/raw/workers.json"].sha256 = sha256(workerContents);
+    const queue = structuredClone(RAW_PAYLOADS["evidence/raw/queue.json"]) as any;
+    const deletes = queue.response.data.viewer.accounts[0].queueTerminalOperations;
+    deletes[2].count = 287;
+    const spillOutDelete = structuredClone(deletes[2]);
+    spillOutDelete.count = 1;
+    spillOutDelete.dimensions.datetime = "2026-08-30T00:05:02Z";
+    deletes.push(spillOutDelete);
+    const queueContents = JSON.stringify(queue);
+    artifact.rawAnalytics["evidence/raw/queue.json"].sha256 = sha256(queueContents);
     artifact.totals.maxConsumerCpuMs = 300;
     artifact.totals.memoryUsageBytesP999 = 13_000_000;
     await expect(validateWp224hArtifact(artifact, {
-      readRawEvidence: async (path) => path === "evidence/raw/workers.json" ? contents : readRawEvidence(path),
+      readRawEvidence: async (path) => {
+        if (path === "evidence/raw/workers.json") return workerContents;
+        if (path === "evidence/raw/queue.json") return queueContents;
+        return readRawEvidence(path);
+      },
     })).resolves.toMatchObject({ passed: true });
   });
 
@@ -559,6 +572,28 @@ describe("WP2 24-hour evidence artifact validator", () => {
     artifact.totals.quotaAttempts = 287;
     artifact.totals.spillOut = 1;
     await expect(validateWp224hArtifact(artifact, { readRawEvidence })).rejects.toThrow("RAW_WORKERS");
+  });
+
+  it("does not reuse one Worker request for multiple spill-out attempts", async () => {
+    const artifact = validArtifact() as any;
+    for (const entry of artifact.ledger.slice(-2)) {
+      entry.startedAt = Date.parse("2026-08-30T00:05:00.000Z");
+      entry.finishedAt = entry.startedAt + 1_000;
+    }
+    artifact.quotaLedger.splice(-2);
+    artifact.totals.quotaAttempts = 286;
+    artifact.totals.spillOut = 2;
+    const workers = structuredClone(RAW_PAYLOADS["evidence/raw/workers.json"]) as any;
+    const drainConsumer = structuredClone(workers.response.data.viewer.accounts[0].workersInvocationsAdaptive[1]);
+    drainConsumer.dimensions.datetime = "2026-08-30T00:05:00Z";
+    drainConsumer.dimensions.scriptVersion = DRAIN_VERSION;
+    drainConsumer.sum.requests = 1;
+    workers.response.data.viewer.accounts[0].workersInvocationsAdaptive.push(drainConsumer);
+    const contents = JSON.stringify(workers);
+    artifact.rawAnalytics["evidence/raw/workers.json"].sha256 = sha256(contents);
+    await expect(validateWp224hArtifact(artifact, {
+      readRawEvidence: async (path) => path === "evidence/raw/workers.json" ? contents : readRawEvidence(path),
+    })).rejects.toThrow("RAW_WORKERS");
   });
 
   it("rejects Workers evidence that ends before terminality grace", async () => {
