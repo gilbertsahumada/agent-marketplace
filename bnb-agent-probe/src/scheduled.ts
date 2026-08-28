@@ -69,6 +69,7 @@ export function createWp2ScheduledRunner(dependencies: ScheduledRuntimeDependenc
     env: Env,
     _context: ExecutionContext,
     config: WorkerConfig,
+    queriesBeforeRun = 0,
   ): Promise<void> {
     const startedAt = now();
     const runId = randomUUID();
@@ -77,6 +78,7 @@ export function createWp2ScheduledRunner(dependencies: ScheduledRuntimeDependenc
     // Reserve raw queries for a sanitized error summary and an owner-checked
     // lease release before the platform hard limit.
     const { db, budget } = createBudgetedD1Database(rawDb, config.d1QueriesPerRun - 2);
+    if (queriesBeforeRun !== 0) budget.reserve(queriesBeforeRun);
     const acquired = await acquireSchedulerLease(db, {
       runId,
       nowMs: startedAt,
