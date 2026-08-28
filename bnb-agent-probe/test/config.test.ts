@@ -16,8 +16,8 @@ describe("loadConfig", () => {
       trust8004RequestsPerRun: 4,
       externalSubrequestsPerRun: 12,
       d1QueriesPerRun: 40,
-      d1RowsReadPerRun: 10_000,
-      d1RowsWrittenPerRun: 250,
+      d1RowsReadPerRun: 3_000,
+      d1RowsWrittenPerRun: 60,
       probeTimeoutMs: 5_000,
       maxCatalogResponseBytes: 16_777_216,
       maxSellerResponseBytes: 32_768,
@@ -27,6 +27,12 @@ describe("loadConfig", () => {
       },
       projectedDailyBudget: {
         invocations: 288,
+        maxAttemptsPerInvocation: 4,
+        maxAttempts: 1_152,
+        d1RowsReadNominal: 864_000,
+        d1RowsWrittenNominal: 17_280,
+        d1RowsRead: 3_456_000,
+        d1RowsWritten: 69_120,
         queueOperations: 1_728,
         freeQueueOperationsCeiling: 8_000,
       },
@@ -65,11 +71,11 @@ describe("loadConfig", () => {
     expect(() => loadConfig(env)).toThrow(new RegExp(`^${field}:`));
   });
 
-  it("rejects daily Free D1 projections above the reserved quota", () => {
-    expect(() => loadConfig({ D1_ROWS_WRITTEN_PER_RUN: "278" })).toThrow(
+  it("rejects retry-aware daily Free D1 projections above the reserved quota", () => {
+    expect(() => loadConfig({ D1_ROWS_WRITTEN_PER_RUN: "70" })).toThrow(
       /^D1_ROWS_WRITTEN_PER_RUN:/,
     );
-    expect(() => loadConfig({ D1_ROWS_READ_PER_RUN: "13889" })).toThrow(
+    expect(() => loadConfig({ D1_ROWS_READ_PER_RUN: "3473" })).toThrow(
       /^D1_ROWS_READ_PER_RUN:/,
     );
   });
