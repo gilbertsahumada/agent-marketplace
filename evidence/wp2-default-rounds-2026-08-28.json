@@ -225,12 +225,15 @@
     "attribution": "The 17:51:29 and 18:01:02 groups corroborate the first HEADER and SWEEP in the ledger. Groups from 18:02:41 through 18:03:01 corroborate eight of the ten continuation ticks; the adaptive dataset omitted two invocations. The 17:52:28 and 18:02:10 groups are duplicates and 18:03:56 is nominal cleanup, so D1 scheduledTime markers remain the exact execution ledger."
   },
   "cleanup": {
+    "safeStateObservedBeforeEphemeralDeletion": true,
     "killSwitch": true,
     "schedules": [],
     "secrets": [],
     "queueBacklogCount": 0,
     "leaseActive": false,
-    "stagingStateMatchedPreflight": true
+    "stagingObservedFieldsMatchedPreflight": true,
+    "ephemeralWorkerAndQueueDeleted": true,
+    "cleanupEvidence": "evidence/wp2-retry-remote-clean-2026-08-28.json#cleanup.finalResourceCleanup"
   },
   "limitations": [
     "PROBE remained the explicit pending_wp3 placeholder and is not validated by this run.",
