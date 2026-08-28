@@ -13,17 +13,21 @@ describe("WP2 window-start evidence capture", () => {
     const response = {
       success: true,
       errors: [],
-      result: [{ results: [{ key: "next_scheduler_phase", value: "sweep" }] }],
+      result: [{ results: [
+        { key: "last_queue_scheduled_time", value: null, integerValue: 1_787_961_314_000 },
+        { key: "next_scheduler_phase", value: "sweep", integerValue: null },
+      ] }],
     };
     const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify(response), {
       status: 200,
       headers: { "Content-Type": "application/json" },
     }));
 
+    const times = ["2026-08-28T23:59:29.000Z", "2026-08-28T23:59:30.000Z"];
     await captureWp2WindowStart({
       accountId: "bc8d4adf4860284fda426b24e7377bc2",
       apiToken: "never-persist-this-token",
-      capturedAt: () => "2026-08-28T23:59:30.000Z",
+      now: () => times.shift()!,
       databaseId: "6fbeea3e-4516-4c4e-a5c4-392cb067198a",
       fetch,
       outputPath,
@@ -38,8 +42,8 @@ describe("WP2 window-start evidence capture", () => {
       headers: { Authorization: "Bearer never-persist-this-token" },
     });
     expect(JSON.parse((fetch.mock.calls[0]?.[1] as RequestInit).body as string)).toEqual({
-      sql: "SELECT key, textValue AS value FROM runtime_state WHERE key = ? LIMIT 1",
-      params: ["next_scheduler_phase"],
+      sql: "SELECT key, textValue AS value, integerValue FROM runtime_state WHERE key IN (?, ?) ORDER BY key ASC",
+      params: ["last_queue_scheduled_time", "next_scheduler_phase"],
     });
     const contents = await readFile(outputPath, "utf8");
     expect(contents).not.toContain("never-persist-this-token");
@@ -47,9 +51,11 @@ describe("WP2 window-start evidence capture", () => {
       request: {
         accountId: "bc8d4adf4860284fda426b24e7377bc2",
         capturedAt: "2026-08-28T23:59:30.000Z",
+        completedAt: "2026-08-28T23:59:30.000Z",
         databaseId: "6fbeea3e-4516-4c4e-a5c4-392cb067198a",
-        params: ["next_scheduler_phase"],
-        sql: "SELECT key, textValue AS value FROM runtime_state WHERE key = ? LIMIT 1",
+        params: ["last_queue_scheduled_time", "next_scheduler_phase"],
+        sql: "SELECT key, textValue AS value, integerValue FROM runtime_state WHERE key IN (?, ?) ORDER BY key ASC",
+        startedAt: "2026-08-28T23:59:29.000Z",
       },
       response,
     });
@@ -68,7 +74,7 @@ describe("WP2 window-start evidence capture", () => {
       await expect(captureWp2WindowStart({
         accountId: "bc8d4adf4860284fda426b24e7377bc2",
         apiToken: "token",
-        capturedAt: () => "2026-08-28T23:59:30.000Z",
+        now: () => "2026-08-28T23:59:30.000Z",
         databaseId: "6fbeea3e-4516-4c4e-a5c4-392cb067198a",
         fetch: vi.fn().mockResolvedValue(new Response(JSON.stringify(response))),
         outputPath,
@@ -81,12 +87,14 @@ describe("WP2 window-start evidence capture", () => {
     const directory = await mkdtemp(join(tmpdir(), "wp2-window-start-"));
     const outputPath = join(directory, "window-start.json");
     await writeFile(outputPath, "original\n", "utf8");
-    const response = { success: true, errors: [],
-      result: [{ results: [{ key: "next_scheduler_phase", value: "sweep" }] }] };
+    const response = { success: true, errors: [], result: [{ results: [
+      { key: "last_queue_scheduled_time", value: null, integerValue: 1_787_961_314_000 },
+      { key: "next_scheduler_phase", value: "sweep", integerValue: null },
+    ] }] };
     await expect(captureWp2WindowStart({
       accountId: "bc8d4adf4860284fda426b24e7377bc2",
       apiToken: "token",
-      capturedAt: () => "2026-08-28T23:59:30.000Z",
+      now: () => "2026-08-28T23:59:30.000Z",
       databaseId: "6fbeea3e-4516-4c4e-a5c4-392cb067198a",
       fetch: vi.fn().mockResolvedValue(new Response(JSON.stringify(response))),
       outputPath,
