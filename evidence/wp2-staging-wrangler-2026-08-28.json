@@ -122,12 +122,13 @@
     "header": { "status": "ok", "requests": 1, "d1Queries": 5, "wallTimeMs": 1335, "cpuTime": 16747 },
     "cronProducer": { "status": "success", "cpuTime": 1140, "subrequests": 0 },
     "sweep": { "status": "ok", "requests": 1, "d1Queries": 10, "wallTimeMs": 923, "cpuTime": 15107 },
-    "queueOperationProjectionPerDay": 864,
+    "nominalQueueOperationProjectionPerDay": 864,
+    "threeRetryQueueOperationProjectionPerDay": 1728,
     "freeQueueOperationSafetyCeilingPerDay": 8000,
     "finalNominalVersion": "f1b2000d-ec3c-4338-9314-c61f78ae6ac1",
     "schedulesAfterCleanup": [],
     "sharedSecretsAfterCleanup": []
   },
   "promotionGate": "queue_architecture_demonstrated_limits1",
-  "blockingReason": "Direct Cron phase execution cannot meet the Workers Free cold/P99 CPU gate. Cron-to-Queue isolates phase work in a Free Queue consumer with a 30000 ms CPU allowance and passed real HEADER=1 and SWEEP=1 delivery, D1 accounting and phase rotation. Scheduled production traffic remains disabled until the remaining two-rotation Queue gate and WP3 PROBE gate pass."
+  "blockingReason": "Direct Cron phase execution cannot meet the Workers Free cold/P99 CPU gate. Cron-to-Queue isolates phase work in a Free Queue consumer with a 30000 ms CPU allowance and passed real HEADER=1 and SWEEP=1 delivery, D1 accounting and phase rotation. The trial predates the atomic retry fix, whose failure-to-success redelivery is proven locally in Workers+D1. Scheduled production traffic remains disabled until remote retry validation, two Queue rotations at Free defaults, memory below 96 MiB, real daily D1 margin and the WP3 PROBE gate pass."
 }
