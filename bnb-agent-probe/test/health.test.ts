@@ -176,6 +176,63 @@ describe("Worker runtime", () => {
     expect(runScheduled).not.toHaveBeenCalled();
   });
 
+  it("keeps the manual scheduler route hidden while the kill switch is active", async () => {
+    const runScheduled = vi.fn();
+    const response = await createWorker({ runScheduled }).fetch(
+      new Request("https://worker.test/__admin/run-scheduled", {
+        method: "POST",
+        headers: { authorization: "Bearer must-never-leak" },
+      }),
+      env(),
+      { waitUntil: vi.fn(), passThroughOnException: vi.fn() },
+    );
+
+    expect(response.status).toBe(404);
+    expect(runScheduled).not.toHaveBeenCalled();
+  });
+
+  it("rejects an invalid manual scheduler credential without running work", async () => {
+    const runScheduled = vi.fn();
+    const response = await createWorker({ runScheduled }).fetch(
+      new Request("https://worker.test/__admin/run-scheduled", {
+        method: "POST",
+        headers: { authorization: "Bearer wrong-secret" },
+      }),
+      { ...env(), KILL_SWITCH: "0" },
+      { waitUntil: vi.fn(), passThroughOnException: vi.fn() },
+    );
+
+    expect(response.status).toBe(401);
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(runScheduled).not.toHaveBeenCalled();
+    expect(await response.text()).not.toContain("must-never-leak");
+  });
+
+  it("runs exactly one phase through the authenticated manual scheduler route", async () => {
+    const now = 1_800_000_000_000;
+    const runScheduled = vi.fn().mockResolvedValue(undefined);
+    const context = { waitUntil: vi.fn(), passThroughOnException: vi.fn() };
+    const activeEnv = { ...env(), KILL_SWITCH: "0" };
+    const response = await createWorker({ now: () => now, runScheduled }).fetch(
+      new Request("https://worker.test/__admin/run-scheduled", {
+        method: "POST",
+        headers: { authorization: "Bearer must-never-leak" },
+      }),
+      activeEnv,
+      context,
+    );
+
+    expect(response.status).toBe(204);
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(runScheduled).toHaveBeenCalledOnce();
+    expect(runScheduled).toHaveBeenCalledWith(
+      { scheduledTime: now, cron: "manual" },
+      activeEnv,
+      context,
+      expect.objectContaining({ killSwitch: false, plan: "free" }),
+    );
+  });
+
   it("validates configuration before reading D1", async () => {
     const db = database({ fail: true });
     const invalidEnv = { ...env(db), HEADER_LIMIT: "51" };
