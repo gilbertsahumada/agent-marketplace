@@ -58,7 +58,7 @@ const FREE_PROFILE: Profile = {
   defaults: {
     cronIntervalMinutes: 5,
     headerLimit: 25,
-    sweepLimit: 25,
+    sweepLimit: 4,
     sweepPagesPerRun: 1,
     probeBatchSize: 1,
     trust8004RequestsPerRun: 4,
@@ -73,7 +73,7 @@ const FREE_PROFILE: Profile = {
   maximums: {
     cronIntervalMinutes: 1_440,
     headerLimit: 50,
-    sweepLimit: 50,
+    sweepLimit: 40,
     sweepPagesPerRun: 1,
     probeBatchSize: 1,
     trust8004RequestsPerRun: 40,
@@ -196,6 +196,13 @@ export function loadConfig(env: Partial<Env>): WorkerConfig {
     throw new ConfigError(
       "TRUST8004_REQUESTS_PER_RUN",
       "must not exceed EXTERNAL_SUBREQUESTS_PER_RUN",
+    );
+  }
+
+  if (plan === "free" && values.sweepLimit > values.trust8004RequestsPerRun) {
+    throw new ConfigError(
+      "SWEEP_LIMIT",
+      "must not exceed TRUST8004_REQUESTS_PER_RUN on Free",
     );
   }
 
