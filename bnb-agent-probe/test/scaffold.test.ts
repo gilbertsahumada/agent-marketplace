@@ -33,6 +33,8 @@ describe("WP1 Wrangler scaffold", () => {
 
   it("deploys disabled on the Free profile", () => {
     expect(wrangler.vars).toMatchObject({
+      DEPLOYMENT_ENV: "production",
+      STAGING_MANUAL_RUN: "0",
       CLOUDFLARE_WORKERS_PLAN: "free",
       KILL_SWITCH: "1",
       CRON_INTERVAL_MINUTES: "5",
@@ -51,6 +53,8 @@ describe("WP1 Wrangler scaffold", () => {
     expect(staging).toMatchObject({
       name: "bnb-agent-probe-staging",
       vars: {
+        DEPLOYMENT_ENV: "staging",
+        STAGING_MANUAL_RUN: "0",
         CLOUDFLARE_WORKERS_PLAN: "free",
         KILL_SWITCH: "1",
         D1_QUERIES_PER_RUN: "40",
