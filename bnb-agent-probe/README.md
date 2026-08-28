@@ -52,24 +52,35 @@ Because Cron removal can propagate after a deployment, operational trials also
 verify the Cloudflare schedules API returns an empty list and the realtime Queue
 backlog is zero before enabling work and again after cleanup.
 Queue backlog metrics are best-effort and can omit a delayed retry until it is
-eligible again. A retry trial therefore uses a fresh validation Queue unless the
-drain window is known to cover every pending delivery delay.
+eligible again. Backlog zero is corroborating cleanup evidence, never proof that
+a reusable Queue contains no deferred delivery. Every destructive retry trial
+therefore creates a fresh Queue ID and deletes it after evidence capture.
 
 Destructive retry tests use the dedicated `validation` environment, never the
 staging D1 or Queue. Its checked-in defaults are Free-sized, contain no Cron
 Trigger or secret, and keep `KILL_SWITCH=1` outside a controlled window:
 
 ```bash
+npx wrangler queues create bnb-agent-probe-validation-20260828
 npx wrangler d1 migrations apply bnb-agent-probe-validation-20260828 \
   --remote --env validation
 npx wrangler deploy --env validation
 ```
 
-Before a trial, verify the validation schedules and secrets are empty, the Queue
-has no eligible or delayed messages, and staging state matches its preflight
-snapshot. After the trial, redeploy the nominal validation configuration,
-restore `KILL_SWITCH=1`, remove temporary secrets, resume delivery, verify the
-lease is inactive and recheck a zero backlog after every retry delay has elapsed.
+Record the new Queue ID before every trial; reusing the same name is acceptable
+only after Cloudflare confirms the previous ID was deleted. Use a short-lived
+`Queues Write` API token for direct test pushes and revoke it when the final
+message is accepted. The operator's Wrangler OAuth session may deploy resources,
+but its credential is never copied into commands, logs or evidence.
+
+Before a trial, verify the validation schedules and Worker secrets are empty and
+staging's selected state fields and row counts match a hashed preflight snapshot.
+After collecting Analytics, restore `KILL_SWITCH=1`, remove temporary secrets,
+delete the Queue consumer, delete the ephemeral validation Worker, then delete
+the Queue itself and confirm its ID is absent from the account list. Retain the
+separate validation D1 for audit. This deletion order is required because
+Cloudflare refuses to delete a bound Worker or Queue.
+
 Exact correctness comes from D1 completion markers keyed by `scheduledTime`;
 adaptive Queue and Workers metrics only corroborate delivery and resource use.
 The clean retry and two-round records are in
