@@ -7,6 +7,7 @@ import type {
 import {
   createBudgetedD1Database,
   D1QueryBudgetExceededError,
+  D1RowBudgetExceededError,
 } from "../src/db/query-budget";
 
 class CountingDatabase implements D1DatabaseLike {
@@ -144,5 +145,47 @@ describe("D1 per-invocation query budget", () => {
     await db.batch([db.prepare("INSERT"), db.prepare("SELECT")]);
 
     expect(usage).toEqual({ rowsRead: 4, rowsWritten: 0 });
+  });
+
+  it("aborts immediately after a query crosses the observed row budget", async () => {
+    const raw = new CountingDatabase([
+      { rows_read: 4, rows_written: 0 },
+      { rows_read: 1, rows_written: 0 },
+    ]);
+    const { db, usage } = createBudgetedD1Database(raw, 40, {
+      rowsRead: 3,
+      rowsWritten: 2,
+    });
+
+    await expect(db.prepare("SELECT").all()).rejects.toMatchObject({
+      name: "D1RowBudgetExceededError",
+      dimension: "rows_read",
+      limit: 3,
+      observed: 4,
+    });
+    expect(usage).toEqual({ rowsRead: 4, rowsWritten: 0 });
+    await expect(db.prepare("SELECT").all()).rejects.toBeInstanceOf(
+      D1RowBudgetExceededError,
+    );
+    expect(raw.executedQueries).toBe(1);
+  });
+
+  it("checks every batch result against the observed write budget", async () => {
+    const raw = new CountingDatabase([], [
+      { rows_read: 1, rows_written: 1 },
+      { rows_read: 1, rows_written: 2 },
+    ]);
+    const { db, usage } = createBudgetedD1Database(raw, 40, {
+      rowsRead: 10,
+      rowsWritten: 2,
+    });
+
+    await expect(db.batch([db.prepare("INSERT"), db.prepare("UPDATE")])).rejects.toMatchObject({
+      name: "D1RowBudgetExceededError",
+      dimension: "rows_written",
+      limit: 2,
+      observed: 3,
+    });
+    expect(usage).toEqual({ rowsRead: 2, rowsWritten: 3 });
   });
 });
