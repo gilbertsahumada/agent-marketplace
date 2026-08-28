@@ -51,7 +51,7 @@ export interface ExecutionContext {
 }
 
 export interface QueueProducer {
-  send(message: unknown): Promise<void>;
+  send(message: unknown): Promise<unknown>;
 }
 
 export interface QueueMessage {
