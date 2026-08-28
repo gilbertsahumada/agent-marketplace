@@ -1,6 +1,6 @@
 # Capa de observación de contratabilidad — SPEC MVP v5 Free-first
 
-**Estado:** WP0 y WP1 completos; WP2 implementado y en gate final mediante Queue Free, con staging en kill switch y sin Cron activo. Convenciones endurecidas tras la revisión de ejecución del 2026-08-28.
+**Estado:** WP0 y WP1 completos; WP2 y WP3 implementados localmente y en gate remoto mediante Queue Free, con staging en kill switch y sin Cron activo. Convenciones endurecidas tras la revisión de ejecución del 2026-08-28.
 **Fecha de corte del diseño:** 2026-08-28.
 **Objetivo:** completar la capa de observación necesaria para recorrer:
 
@@ -1053,7 +1053,7 @@ plan Paid.
 Desde `bnb-agent-probe`:
 
 ```bash
-npm install
+npm ci
 npx wrangler d1 migrations list bnb-agent-probe --local
 npx wrangler d1 migrations apply bnb-agent-probe --local
 npx wrangler dev --test-scheduled
@@ -1155,10 +1155,14 @@ El disparo manual del deployment nominal usa la ruta administrativa publicada
 `SHARED_SECRET` efímero cuyo Bearer se compara mediante hashes. Producción fija
 `DEPLOYMENT_ENV=production`; el staging nominal fija `STAGING_MANUAL_RUN=0` y
 `KILL_SWITCH=1`, por lo que la ruta responde 404 aunque exista accidentalmente
-un secreto. No tiene CORS y cada llamada autorizada ejecuta una sola fase.
+un secreto. No tiene CORS. Cada llamada autorizada publica exactamente un tick
+versionado en `WP2_QUEUE`; nunca ejecuta una fase, lee D1 ni contacta trust8004,
+BSC o al seller dentro del request HTTP. El consumer serial es el único que
+ejecuta la fase y escribe el marcador Queue, bajo su cuota Free de 30 s CPU.
 
 ```bash
 # instalar un secreto aleatorio únicamente durante la ventana controlada
+npx wrangler secret put BSC_RPC_URL --env staging
 npx wrangler secret put SHARED_SECRET --env staging
 npx wrangler deploy --env staging --var DEPLOYMENT_ENV:staging \
   --var STAGING_MANUAL_RUN:1 --var KILL_SWITCH:0 --var HEADER_LIMIT:1
@@ -1255,6 +1259,13 @@ son account-wide. Debe demostrar `<4.000.000` filas leídas, `<80.000` escritas,
 `<=40` queries por intento, cero errores de cuota y explicar cualquier tick o
 retry faltante/sobrante. Se registra además el uso ajeno al staging; una corrida
 contaminada que no permita atribuir el margen se repite.
+
+El artefacto final se llama `evidence/wp2-d1-24h-<YYYY-MM-DD>.json`, usa
+`schemaVersion=1` e incluye commit y deployment exactos, IDs de Worker/Queue/D1,
+ventana UTC, límites aplicados, ledger por `scheduledTime`, outcomes y retries,
+hashes y rutas de las respuestas Analytics crudas por base y por cuenta, uso
+ajeno observado, conteos totales, máximos CPU/memoria y un veredicto por gate.
+No se resume ni descarta la respuesta cruda usada para calcular esos campos.
 
 Antes y después de cada ventana se verifican por API `schedules=[]` y backlog
 Queue cero; declarar `crons: []` en un deploy no sustituye esa comprobación por
@@ -1372,7 +1383,9 @@ Gate:
 
 Estado 2026-08-28: los gates remotos de reentrega, idempotencia, dos vueltas
 HEADER/SWEEP con defaults Free, CPU, memoria, queries y 429 están pasados en el
-entorno de validación aislado. WP2 no se promociona todavía a cadencia continua:
+entorno de validación aislado. Esa evidencia valida las mecánicas destructivas
+de Queue, pero no sustituye el probe nominal del candidato vigente en staging.
+WP2 no se promociona todavía a cadencia continua:
 falta WP3 y después la ventana D1 real de 24 h del candidato completo descrita
 en sección 11.2. Una ventana previa a WP3 solo puede etiquetarse baseline.
 
@@ -1384,20 +1397,37 @@ PROBE_AGENT_ALLOWLIST=303779
 PROBE_ENDPOINT_ALLOWLIST=https://bnb-agent-marketplace-ruby.vercel.app/grid
 ```
 
+Una D1 vacía no se prepara con SQL manual. Si no existe un target `current`, el
+runner sintetiza únicamente este par exacto, lo reconcilia primero contra
+trust8004 y lo inserta o reactiva atómicamente con provenance
+`derived:marketplace-inventory`; un conflicto conserva `firstSeenAt`. Metadata
+no disponible o endpoint retirado no materializan el bootstrap.
+
 Gate:
 
 - `quote_verified`, signer=wallet onchain y hash canónico idéntico;
 - age, TTL, currency, Commerce, Router y Policy válidos;
 - acepta ambas skills de negociación y exige exactamente `notify_funded`;
-- staging demuestra timeout, body cap y redirects bloqueados;
+- Workerd demuestra de forma determinista timeout, body cap y redirects
+  bloqueados; staging demuestra el egress nominal real contra Grid. No se
+  modifica el seller real ni se incluye fault injection en el Worker candidato;
 - no crea ni financia job.
 
 Evidencia WP3: `evidence/wp3-grid-303779-<UTC>.json`, con schema version, commit,
 entorno, request/hash, bloque y timestamp, observación D1, resumen de fase,
 marcador Queue, métricas Cloudflare crudas enlazadas y conteo pre/post de eventos
-`JobCreated`, `BudgetSet` y `JobFunded` sin variación atribuible al probe. Se
-ejecuta un intento nominal y uno por cada gate negativo de transporte; ningún
-intento negativo puede avanzar fase ni prioridad si falla antes del batch.
+`JobCreated`, `BudgetSet` y `JobFunded` sin variación atribuible al probe. Para
+hacerlo reproducible se fijan los bloques BSC inmediatamente anterior al
+enqueue y posterior al completion marker, y se conserva la respuesta cruda de
+`eth_getLogs` del Commerce en ese rango para los tres topic0 versionados en el
+runbook. Todo evento global ajeno se conserva y clasifica por transaction hash;
+el probe no emite transacción. Se
+ejecuta un intento nominal remoto y uno determinista en Workerd por cada gate
+negativo de transporte. Un fallo esperado del seller se persiste como observación
+sanitizada, baja la prioridad del target a cero y rota la fase atómicamente para
+que una caída no bloquee todo el catálogo. Una excepción inesperada de
+infraestructura no ejecuta el batch, no cambia fase/prioridad y queda disponible
+para retry de Queue.
 
 Si falla, se corrige antes de ampliar.
 
