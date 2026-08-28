@@ -2,6 +2,7 @@ import { ConfigError, loadConfig, type WorkerConfig } from "./config";
 import type {
   Env,
   ExecutionContext,
+  QueueBatch,
   ScheduledController,
   WorkerEntrypoint,
 } from "./types";
@@ -41,6 +42,35 @@ async function bearerMatches(header: string | null, secret: string): Promise<boo
     difference |= (left[index] ?? 0) ^ (right[index] ?? 0);
   }
   return difference === 0 && candidate.length > 0;
+}
+
+function queueScheduledTime(body: unknown): number {
+  if (body === null || typeof body !== "object" || Array.isArray(body)) {
+    throw new Error("WP2_QUEUE_MESSAGE_INVALID");
+  }
+  const value = body as Record<string, unknown>;
+  if (value.schemaVersion !== 1
+    || typeof value.scheduledTime !== "number"
+    || !Number.isSafeInteger(value.scheduledTime)
+    || value.scheduledTime < 0) {
+    throw new Error("WP2_QUEUE_MESSAGE_INVALID");
+  }
+  return value.scheduledTime;
+}
+
+async function claimQueueTick(env: Env, scheduledTime: number, now: number): Promise<boolean> {
+  const row = await env.DB.prepare(
+    `INSERT INTO runtime_state (key, textValue, integerValue, updatedAt)
+     VALUES ('last_queue_scheduled_time', NULL, ?, ?)
+     ON CONFLICT(key) DO UPDATE SET
+       textValue = NULL,
+       integerValue = excluded.integerValue,
+       updatedAt = excluded.updatedAt
+     WHERE runtime_state.integerValue IS NULL
+        OR runtime_state.integerValue < excluded.integerValue
+     RETURNING key`,
+  ).bind(scheduledTime, now).first<{ key: string }>();
+  return row !== null;
 }
 
 export function createWorker(dependencies: WorkerDependencies = {}): WorkerEntrypoint {
@@ -89,10 +119,34 @@ export function createWorker(dependencies: WorkerDependencies = {}): WorkerEntry
       return errorResponse("not_found", 404);
     },
 
-    async scheduled(controller, env, context) {
+    async scheduled(controller, env, _context) {
       const config = loadConfig(env);
-      if (config.killSwitch || dependencies.runScheduled === undefined) return;
-      await dependencies.runScheduled(controller, env, context, config);
+      if (config.killSwitch) return;
+      if (env.WP2_QUEUE === undefined) throw new Error("WP2_QUEUE_BINDING_REQUIRED");
+      await env.WP2_QUEUE.send({ schemaVersion: 1, scheduledTime: controller.scheduledTime });
+    },
+
+    async queue(batch: QueueBatch, env, context) {
+      if (batch.messages.length !== 1) throw new Error("WP2_QUEUE_BATCH_MUST_EQUAL_ONE");
+      const message = batch.messages[0]!;
+      const config = loadConfig(env);
+      if (config.killSwitch) {
+        message.ack();
+        return;
+      }
+      if (dependencies.runScheduled === undefined) throw new Error("WP2_QUEUE_RUNNER_REQUIRED");
+      const scheduledTime = queueScheduledTime(message.body);
+      if (!await claimQueueTick(env, scheduledTime, now())) {
+        message.ack();
+        return;
+      }
+      await dependencies.runScheduled(
+        { scheduledTime, cron: "queue" },
+        env,
+        context,
+        config,
+      );
+      message.ack();
     },
   };
 }
