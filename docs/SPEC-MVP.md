@@ -1,6 +1,6 @@
 # Capa de observación de contratabilidad — SPEC MVP v5 Free-first
 
-**Estado:** WP0 y WP1 completos; WP2 y WP3 implementados localmente y en gate remoto mediante Queue Free, con staging en kill switch y sin Cron activo. Convenciones endurecidas tras la revisión de ejecución del 2026-08-28.
+**Estado:** WP0, WP1 y WP3 completos. WP2 tiene implementación y gates remotos de Queue completos, pero conserva pendiente la ventana final D1/account Analytics de 24 h. Staging está en kill switch y sin Cron activo. Convenciones endurecidas tras la revisión de ejecución del 2026-08-28.
 **Fecha de corte del diseño:** 2026-08-28.
 **Objetivo:** completar la capa de observación necesaria para recorrer:
 
@@ -1248,9 +1248,9 @@ El ledger ayuda a detectar drift durante una corrida, pero no sustituye las
 métricas de facturación de Cloudflare: omite su propia fila escrita y no incluye
 uso D1 ajeno al Worker.
 
-Siguen pendientes el gate WP3 y, después de integrarlo, la ventana D1 final de
-24 h. Ejecutarla antes de WP3 solo mediría el placeholder PROBE y no dimensiona
-la versión candidata. El gate final usa staging con el código candidato y una
+WP3 cerró su gate nominal remoto y los negativos deterministas de transporte.
+Sigue pendiente únicamente la ventana D1 final de 24 h de WP2. El gate final usa
+staging con el código candidato completo y una
 ventana completa de cuota `00:00:00Z–24:00:00Z`: 288 ticks esperados, 96 éxitos
 por fase en el camino nominal y cada retry/outcome reconciliado por
 `scheduledTime`. Se capturan sin resumir el ledger D1, los resultados por query
@@ -1385,9 +1385,9 @@ Estado 2026-08-28: los gates remotos de reentrega, idempotencia, dos vueltas
 HEADER/SWEEP con defaults Free, CPU, memoria, queries y 429 están pasados en el
 entorno de validación aislado. Esa evidencia valida las mecánicas destructivas
 de Queue, pero no sustituye el probe nominal del candidato vigente en staging.
-WP2 no se promociona todavía a cadencia continua:
-falta WP3 y después la ventana D1 real de 24 h del candidato completo descrita
-en sección 11.2. Una ventana previa a WP3 solo puede etiquetarse baseline.
+WP2 no se promociona todavía a cadencia continua: falta la ventana D1 real de
+24 h del candidato completo descrita en sección 11.2. Una ventana previa a WP3
+solo puede etiquetarse baseline.
 
 ### WP3 — PROBE solo Grid 303779
 
@@ -1430,6 +1430,33 @@ infraestructura no ejecuta el batch, no cambia fase/prioridad y queda disponible
 para retry de Queue.
 
 Si falla, se corrige antes de ampliar.
+
+Estado 2026-08-28: WP3 pasó. La corrida nominal remota `header → sweep → probe`
+terminó en `quote_verified` para Grid `303779`, con signer igual al wallet
+onchain, hashes canónicos persistidos, 8 subrequests de PROBE, 10 queries D1 y
+2.635 ms de reloj de pared. Cloudflare Analytics registró cero errores,
+170.404 µs de CPU máxima y 11.297.484 bytes de memoria P999 para la ventana del
+deployment, dentro de la cuota de 30 s CPU del consumer y 96 MiB. Queue entregó
+y eliminó con éxito los tres ticks, sin retry y con backlog final cero.
+
+El rango BSC inclusivo `0x7126285–0x71262eb` devolvió cero eventos
+`JobCreated`, `BudgetSet` o `JobFunded` para Commerce y el probe no emitió
+transacción. El RPC público oficial de BNB devolvió `-32005 limit exceeded` aun
+en rangos pequeños; la auditoría se repitió mediante el endpoint gratuito de
+PublicNode y se conserva la respuesta cruda vacía. Los negativos de redirect,
+body cap y timeout pasan en Workerd. La evidencia nominal está en
+`evidence/wp3-grid-303779-2026-08-28T21-12-31Z.json` y la respuesta cruda de
+Workers/Queue Analytics en
+`evidence/wp3-grid-303779-analytics-raw-2026-08-28.json`.
+
+Dos intentos diagnósticos previos expusieron formas reales de trust8004: arrays
+opcionales `null` y una declaración A2A que apunta a la Agent Card completa.
+El parser acepta solo `null`/ausente para esos arrays, y A2A normaliza únicamente
+el sufijo exacto `/.well-known/agent-card.json` después de validar la URL. Una
+fila staging anterior al fix conserva la URL completa; el allowlist exacto de
+WP3 la ignora y un SWEEP completo normalizado la retirará sin mutación manual.
+Tras el gate se restauraron `KILL_SWITCH=1`, `STAGING_MANUAL_RUN=0`, schedules
+vacíos y se eliminaron el secreto administrativo efímero y su archivo temporal.
 
 ### WP4 — Probe general y `/observations`
 
