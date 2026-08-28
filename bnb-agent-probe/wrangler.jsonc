@@ -55,13 +55,13 @@
   "env": {
     "staging": {
       "name": "bnb-agent-probe-staging",
-      "triggers": { "crons": [] },
+      "triggers": { "crons": ["*/5 * * * *"] },
       "vars": {
         "DEPLOYMENT_ENV": "staging",
         "STAGING_MANUAL_RUN": "0",
         "TRUST8004_BASE_URL": "https://trust8004.xyz/api/app",
         "CLOUDFLARE_WORKERS_PLAN": "free",
-        "KILL_SWITCH": "1",
+        "KILL_SWITCH": "0",
         "CRON_INTERVAL_MINUTES": "5",
         "HEADER_LIMIT": "25",
         "SWEEP_LIMIT": "4",
