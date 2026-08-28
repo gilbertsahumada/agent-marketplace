@@ -215,6 +215,15 @@ async function readRpcReply(response: Response): Promise<Record<string, unknown>
       }
       chunks.push(value);
     }
+  } catch (error) {
+    if (error instanceof BscProbeError) throw error;
+    if (
+      error instanceof DOMException
+      && (error.name === "TimeoutError" || error.name === "AbortError")
+    ) {
+      throw new BscProbeError("BSC_RPC_TIMEOUT");
+    }
+    throw new BscProbeError("BSC_RPC_RESPONSE");
   } finally {
     reader.releaseLock();
   }
