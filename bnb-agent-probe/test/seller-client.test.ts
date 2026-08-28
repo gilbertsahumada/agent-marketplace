@@ -24,10 +24,10 @@ function card(skills = ["negotiate-erc8183-job", "notify_funded"]): Record<strin
   };
 }
 
-function reply(data: Record<string, unknown>): Response {
+function reply(data: Record<string, unknown>, id = "response"): Response {
   return json({
     jsonrpc: "2.0",
-    id: "response",
+    id,
     result: { parts: [{ kind: "data", data }] },
   });
 }
@@ -41,7 +41,10 @@ describe("Workers A2A seller probe", () => {
     const quote = { request_hash: "0x01" };
     const fetchImpl = vi.fn<typeof fetch>()
       .mockResolvedValueOnce(json(card([...skills])))
-      .mockResolvedValueOnce(reply(quote));
+      .mockImplementationOnce(async (_input, init) => {
+        const requestId = JSON.parse(String(init?.body)).id as string;
+        return reply(quote, requestId);
+      });
 
     await expect(probeA2aSeller({
       endpoint: ENDPOINT,
@@ -140,5 +143,21 @@ describe("Workers A2A seller probe", () => {
       maxResponseBytes: 32_768,
       fetch: vi.fn<typeof fetch>().mockRejectedValue(timeout),
     })).rejects.toMatchObject({ code: "SELLER_TIMEOUT" });
+  });
+
+  it.each([
+    [{ jsonrpc: "1.0", id: "request", result: { parts: [] } }],
+    [{ jsonrpc: "2.0", id: "wrong", result: { parts: [] } }],
+  ])("rejects an uncorrelated JSON-RPC reply", async (invalidReply) => {
+    const fetchImpl = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(json(card()))
+      .mockResolvedValueOnce(json(invalidReply));
+    await expect(probeA2aSeller({
+      endpoint: ENDPOINT,
+      request: REQUEST,
+      timeoutMs: 5_000,
+      maxResponseBytes: 32_768,
+      fetch: fetchImpl,
+    })).rejects.toMatchObject({ code: "A2A_PROTOCOL_ERROR" });
   });
 });
