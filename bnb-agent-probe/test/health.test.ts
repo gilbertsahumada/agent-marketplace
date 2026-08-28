@@ -78,6 +78,8 @@ describe("Worker runtime", () => {
         maxSellerResponseBytes: 32_768,
       },
       platformLimits: {
+        cpuMsPerInvocation: 10,
+        queueConsumerCpuMs: 30_000,
         d1QueriesPerInvocation: 50,
       },
       sweepRound: 0,
