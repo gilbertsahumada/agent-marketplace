@@ -18,6 +18,17 @@ beforeEach(async () => {
   await env.DB.prepare("DELETE FROM probe_targets").run();
 });
 
+function queueMessage(body: unknown, attempts = 1) {
+  return {
+    id: `worker-test-${attempts}`,
+    timestamp: new Date(),
+    body,
+    attempts,
+    ack: vi.fn(),
+    retry: vi.fn(),
+  };
+}
+
 describe("WP1 in the Workers runtime", () => {
   it("serves sanitized health from a migrated local D1", async () => {
     const response = await worker.fetch(
@@ -176,7 +187,7 @@ describe("WP1 in the Workers runtime", () => {
     const tick = { schemaVersion: 1, scheduledTime: Date.now() };
 
     await worker.queue(
-      { messages: [{ body: tick, ack: firstAck, retry: vi.fn() }] },
+      { messages: [{ ...queueMessage(tick), ack: firstAck }] },
       activeEnv,
       createExecutionContext(),
     );
@@ -193,7 +204,7 @@ describe("WP1 in the Workers runtime", () => {
     const duplicateAck = vi.fn();
 
     await worker.queue(
-      { messages: [{ body: tick, ack: duplicateAck, retry: vi.fn() }] },
+      { messages: [{ ...queueMessage(tick, 2), ack: duplicateAck }] },
       activeEnv,
       createExecutionContext(),
     );
@@ -222,7 +233,7 @@ describe("WP1 in the Workers runtime", () => {
     const firstAck = vi.fn();
 
     await expect(retryWorker.queue(
-      { messages: [{ body: tick, ack: firstAck, retry: vi.fn() }] },
+      { messages: [{ ...queueMessage(tick), ack: firstAck }] },
       activeEnv,
       createExecutionContext(),
     )).rejects.toThrow("temporary catalogue failure");
@@ -230,7 +241,7 @@ describe("WP1 in the Workers runtime", () => {
 
     const retryAck = vi.fn();
     await retryWorker.queue(
-      { messages: [{ body: tick, ack: retryAck, retry: vi.fn() }] },
+      { messages: [{ ...queueMessage(tick, 2), ack: retryAck }] },
       activeEnv,
       createExecutionContext(),
     );
@@ -239,7 +250,7 @@ describe("WP1 in the Workers runtime", () => {
 
     const duplicateAck = vi.fn();
     await retryWorker.queue(
-      { messages: [{ body: tick, ack: duplicateAck, retry: vi.fn() }] },
+      { messages: [{ ...queueMessage(tick, 3), ack: duplicateAck }] },
       activeEnv,
       createExecutionContext(),
     );
@@ -269,7 +280,7 @@ describe("WP1 in the Workers runtime", () => {
     const lockedRetry = vi.fn();
 
     await retryWorker.queue(
-      { messages: [{ body: tick, ack: lockedAck, retry: lockedRetry }] },
+      { messages: [{ ...queueMessage(tick), ack: lockedAck, retry: lockedRetry }] },
       activeEnv,
       createExecutionContext(),
     );
@@ -282,7 +293,7 @@ describe("WP1 in the Workers runtime", () => {
     ).run();
     const completedAck = vi.fn();
     await retryWorker.queue(
-      { messages: [{ body: tick, ack: completedAck, retry: vi.fn() }] },
+      { messages: [{ ...queueMessage(tick, 2), ack: completedAck }] },
       activeEnv,
       createExecutionContext(),
     );
@@ -291,7 +302,7 @@ describe("WP1 in the Workers runtime", () => {
 
     const duplicateAck = vi.fn();
     await retryWorker.queue(
-      { messages: [{ body: tick, ack: duplicateAck, retry: vi.fn() }] },
+      { messages: [{ ...queueMessage(tick, 3), ack: duplicateAck }] },
       activeEnv,
       createExecutionContext(),
     );
