@@ -444,7 +444,7 @@ MAX_SELLER_RESPONSE_BYTES=32768
 
 binding WP2_QUEUE                  Queue del mismo entorno
 consumer max_batch_size=1, max_batch_timeout=1, max_retries=3,
-         max_concurrency=1
+         max_concurrency=1, retry_delay=60
 ```
 
 Con cinco minutos hay 288 ticks/día: 864 operaciones nominales y 1.728 en el
@@ -1105,10 +1105,16 @@ producer y un consumer únicamente en staging.
 no el wall time completo que el resumen D1 calcula con reloj de pared; por eso
 0,207 s de Analytics y 1.335 ms de HEADER D1 no deben coincidir. La atribución a
 consumer sigue siendo inferida por versión, timestamp, subrequest y estado D1,
-porque el dataset adaptativo no expone dimensión de tipo de trigger. La prueba
-remota anterior al fix de retries demuestra entrega/CPU/rotación exitosa, no la
-reentrega: fallo → retry → éxito → duplicado queda demostrado en el E2E real
-Workers+D1 local y requiere repetición remota antes de habilitar cadencia.
+porque el dataset adaptativo no expone dimensión de tipo de trigger. La
+validación remota limpia posterior se ejecutó en un entorno aislado con D1 y
+Queue propias. Demostró ambos caminos de reentrega: lease ocupado
+`skipped_locked → retry a 240 s → éxito → duplicado`, y excepción de fase
+`fallo sin avance → retry automático → éxito → duplicado`. La prueba diagnóstica
+previa descubrió que el valor implícito `retry_delay=0` agotaba los cuatro
+intentos en unos tres segundos; por eso todos los consumers declaran ahora
+`retry_delay=60`. El delay específico de 240 s continúa aplicando solo al lease
+ocupado. La evidencia está en
+`evidence/wp2-retry-remote-clean-2026-08-28.json`.
 
 Cada incremento exige margen del producer bajo 10 ms y del Queue consumer bajo
 30 s. Que una ejecución aislada reciba flexibilidad de plataforma no cuenta como
@@ -1116,17 +1122,24 @@ gate pasado. Si un producer, HEADER=1, SWEEP=1 o el probe único excede su cuota
 de forma repetible, se reactiva el kill switch y se detiene WP2/WP3. No se activa
 Paid automáticamente.
 
-Siguen pendientes antes de activar el schedule continuo: dos rotaciones Queue
-con los defaults Free `HEADER_LIMIT=25`/`SWEEP_LIMIT=4` que incrementen
-`sweepRound` dos veces, `memoryUsageBytesP999 < 100663296`, una ventana real
-D1 de 24 h y el gate WP3. Las corridas con límites 1 son prueba de arquitectura,
-no promoción completa de WP2. Antes y después de cada ventana se verifican por
-API `schedules=[]` y backlog Queue cero; declarar `crons: []` en un deploy no
-sustituye esa comprobación por la propagación eventual de Cron Triggers. Como
-el backlog REST es best-effort y puede omitir mensajes con retry diferido, una
-prueba de reentrega reutiliza la Queue solo si la ventana de drenaje cubrió todos
-los delays pendientes; en caso contrario usa una Queue de validación nueva y
-dedicada. Un único `backlog_count=0` no demuestra aislamiento.
+La misma validación ejecutó los defaults Free `HEADER_LIMIT=25` y
+`SWEEP_LIMIT=4` hasta incrementar `sweepRound` exactamente de 0 a 2: fueron 12
+fases, con máximo observado de 11 queries D1, cuatro requests trust8004, cero
+writes materiales en HEADER y cero 429. Analytics observó CPU máxima de consumer
+de 18.066 µs y `memoryUsageBytesP999=2503018`, ambos dentro del sobre. El ledger
+exacto por `scheduledTime` está en
+`evidence/wp2-default-rounds-2026-08-28.json`; los datasets adaptativos de Queue
+y Workers corroboran métricas, pero no sustituyen ese ledger D1.
+
+Siguen pendientes antes de activar el schedule continuo una ventana real D1 de
+24 h y el gate WP3. Los contadores D1 del día de validación cubren solo una
+ventana corta y no cierran el gate de 24 h. Antes y después de cada ventana se
+verifican por API `schedules=[]` y backlog Queue cero; declarar `crons: []` en un
+deploy no sustituye esa comprobación por la propagación eventual de Cron
+Triggers. Como el backlog REST es best-effort y puede omitir mensajes con retry
+diferido, una prueba de reentrega reutiliza la Queue solo si la ventana de
+drenaje cubrió todos los delays pendientes; en caso contrario usa una Queue de
+validación nueva y dedicada. Un único `backlog_count=0` no demuestra aislamiento.
 
 ### 11.3 Promoción explícita Free → Paid
 
@@ -1219,6 +1232,11 @@ Gate:
   Miniflare no lo impone;
 - gate de staging Free de sección 11.2 pasa antes de activar el cron;
 - endpoint retirado queda visible como `removed`.
+
+Estado 2026-08-28: los gates remotos de reentrega, idempotencia, dos vueltas
+HEADER/SWEEP con defaults Free, CPU, memoria, queries y 429 están pasados en el
+entorno de validación aislado. WP2 no se promociona todavía a cadencia continua:
+faltan la ventana D1 real de 24 h y el gate WP3 descritos en sección 11.2.
 
 ### WP3 — PROBE solo Grid 303779
 
