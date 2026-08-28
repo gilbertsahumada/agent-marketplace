@@ -57,6 +57,7 @@ export interface QueueProducer {
 export interface QueueMessage {
   readonly body: unknown;
   ack(): void;
+  retry(options: { delaySeconds: number }): void;
 }
 
 export interface QueueBatch {
