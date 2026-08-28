@@ -31,7 +31,7 @@ export async function captureWp2Deployment(options: CaptureOptions): Promise<voi
   const ids = [options.measuredVersionId, ...options.drainVersionIds];
   if (new Set(ids).size !== ids.length) throw new Error("version IDs must be unique");
 
-  const [measured, ...drainVersions] = await Promise.all(ids.map(options.readVersion));
+  const [measured, ...drainVersions] = await Promise.all(ids.map((id) => options.readVersion(id)));
   const measuredEtag = validateVersion(
     measured,
     options.measuredVersionId,
