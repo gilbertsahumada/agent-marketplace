@@ -10,6 +10,7 @@ import {
 import { acquireSchedulerLease } from "../../src/lib/scheduler-lease";
 import { healthResponse } from "../../src/routes/health";
 import { createWp2ScheduledRunner, runWp2Scheduled } from "../../src/scheduled";
+import type { Env } from "../../src/types";
 
 beforeEach(async () => {
   await env.DB.prepare("DELETE FROM runtime_state").run();
@@ -120,6 +121,39 @@ describe("WP1 in the Workers runtime", () => {
       received: 0,
       d1Queries: 4,
     });
+  });
+
+  it("runs one Queue phase and deduplicates its scheduled tick in real D1", async () => {
+    await env.DB.prepare(
+      "INSERT INTO runtime_state (key, textValue, updatedAt) VALUES ('next_scheduler_phase', 'probe', 9000)",
+    ).run();
+    const activeEnv = { ...env, KILL_SWITCH: "0" } as unknown as Env;
+    const firstAck = vi.fn();
+    const tick = { schemaVersion: 1, scheduledTime: 1_800_000_000_000 };
+
+    await worker.queue(
+      { messages: [{ body: tick, ack: firstAck }] },
+      activeEnv,
+      createExecutionContext(),
+    );
+
+    expect(firstAck).toHaveBeenCalledOnce();
+    expect(await runtimeText("next_scheduler_phase")).toBe("header");
+    expect(JSON.parse(await runtimeText("last_probe_summary") ?? "{}")).toMatchObject({
+      phase: "probe",
+      status: "pending_wp3",
+    });
+    const firstSummary = await runtimeText("last_probe_summary");
+    const duplicateAck = vi.fn();
+
+    await worker.queue(
+      { messages: [{ body: tick, ack: duplicateAck }] },
+      activeEnv,
+      createExecutionContext(),
+    );
+
+    expect(duplicateAck).toHaveBeenCalledOnce();
+    expect(await runtimeText("last_probe_summary")).toBe(firstSummary);
   });
 
   it("persists a sanitized failure in D1 without advancing state", async () => {
