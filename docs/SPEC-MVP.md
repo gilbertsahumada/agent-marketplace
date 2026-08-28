@@ -106,6 +106,8 @@ Fuentes:
 - <https://developers.cloudflare.com/workers/platform/limits/>
 - <https://developers.cloudflare.com/d1/platform/pricing/>
 - <https://developers.cloudflare.com/d1/platform/limits/>
+- <https://developers.cloudflare.com/d1/worker-api/return-object/>
+- <https://developers.cloudflare.com/d1/observability/metrics-analytics/>
 - <https://developers.cloudflare.com/d1/worker-api/d1-database/#batch>
 - <https://developers.cloudflare.com/workers/reference/how-workers-works/>
 - <https://developers.cloudflare.com/workers/observability/metrics-and-analytics/>
@@ -367,7 +369,8 @@ last_probe_summary    textValue=JSON sanitizado
 last_scheduler_summary textValue=JSON sanitizado (`skipped_locked`, sin runId)
 last_funnel_snapshot  integerValue=funnel_snapshots.id
 next_scheduler_phase  textValue=header|sweep|probe
-daily_budget_YYYYMMDD textValue=JSON con invocations/requests/D1 rows observadas
+daily_budget_YYYYMMDD textValue=JSON sanitizado con invocaciones, outcomes,
+                      requests, queries y filas D1 observadas antes del propio ledger
 ```
 
 ---
@@ -436,8 +439,8 @@ SWEEP_PAGES_PER_RUN=1           máximo Free 1
 TRUST8004_REQUESTS_PER_RUN=4
 EXTERNAL_SUBREQUESTS_PER_RUN=12 máximo Free 40, plataforma 50
 D1_QUERIES_PER_RUN=40           mínimo 12, máximo Free 40, plataforma D1 50
-D1_ROWS_READ_PER_RUN=10000
-D1_ROWS_WRITTEN_PER_RUN=250
+D1_ROWS_READ_PER_RUN=3000
+D1_ROWS_WRITTEN_PER_RUN=60
 PROBE_TIMEOUT_MS=5000
 MAX_CATALOG_RESPONSE_BYTES=16777216
 MAX_SELLER_RESPONSE_BYTES=32768
@@ -447,10 +450,14 @@ consumer max_batch_size=1, max_batch_timeout=1, max_retries=3,
          max_concurrency=1, retry_delay=60
 ```
 
-Con cinco minutos hay 288 ticks/día: 864 operaciones nominales y 1.728 en el
-peor caso configurado de tres retries. La configuración usa este peor caso y
-rechaza una proyección mayor de 8.000, dejando 20 % de margen bajo las 10.000
-operaciones Free. Con rotación de tres fases hay hasta
+Con cinco minutos hay 288 ticks/día. Queue consume 864 operaciones nominales
+(write+read+delete) y 1.728 si cada mensaje usa los tres retries. D1 puede recibir
+288 intentos nominales o hasta 1.152 intentos (entrega inicial + tres retries por
+tick); son presupuestos distintos. Con los defaults, la proyección D1 es
+864.000/17.280 filas leídas/escritas nominales y 3.456.000/69.120 en el peor
+caso de retries. La configuración valida este último caso contra los techos
+Free reservados de 4.000.000/80.000 y rechaza Queue por encima de 8.000
+operaciones, manteniendo 20 % de margen. Con rotación de tres fases hay hasta
 96 ejecuciones de SWEEP por día. A cuatro detalles son 384 agentes/día: una reconciliación global sería
 inaceptablemente lenta, por lo que SWEEP Free opera sobre el conjunto live
 priorizado y el funnel global permanece snapshot-backed. WP2 solo aumenta un
@@ -466,8 +473,8 @@ valor dentro del sobre Free si dos vueltas prueban:
 - máximo 40 queries D1 por invocación; la deduplicación previa de Queue cuenta
   como una query, cada sentencia dentro de `db.batch()` cuenta individualmente y
   el contador rechaza el exceso antes de acceder a D1;
-- proyección y una ventana controlada real de 24 h por debajo de 4 millones de
-  filas D1 leídas/día y 80.000 escritas/día;
+- proyección retry-aware y una ventana controlada real de 24 h por debajo de 4
+  millones de filas D1 leídas/día y 80.000 escritas/día;
 - cero 429;
 - una página se procesa/libera antes de pedir la siguiente.
 
@@ -942,8 +949,8 @@ PROBE_BATCH_SIZE=1
 TRUST8004_REQUESTS_PER_RUN=4
 EXTERNAL_SUBREQUESTS_PER_RUN=12
 D1_QUERIES_PER_RUN=40
-D1_ROWS_READ_PER_RUN=10000
-D1_ROWS_WRITTEN_PER_RUN=250
+D1_ROWS_READ_PER_RUN=3000
+D1_ROWS_WRITTEN_PER_RUN=60
 PROBE_TIMEOUT_MS=5000
 MAX_CATALOG_RESPONSE_BYTES=16777216
 MAX_SELLER_RESPONSE_BYTES=32768
@@ -1013,6 +1020,11 @@ Checks bloqueantes:
   batch de tamaño distinto de uno falla antes de acceder a D1;
 - kill switch impide red y writes de fases, aunque permite leer `/health`;
 - contadores observados nunca superan los presupuestos configurados;
+- cada `D1Result.meta` acumula `rows_read`/`rows_written`; el ledger
+  `daily_budget_YYYYMMDD` usa la fecha UTC de inicio, clasifica cada intento como
+  `completed|failed|duplicate|locked` y `/health` solo expone el día UTC actual
+  con un allowlist estricto. Sus filas terminan en `BeforeLedger` porque excluyen
+  la propia escritura reconciliadora;
 - el contador D1 admite como máximo 40 queries Free, incluye el marcador atómico
   de Queue, cuenta cada sentencia de un batch y rechaza la siguiente antes de
   acceder a D1;
@@ -1137,16 +1149,36 @@ ambos máximos están en `evidence/wp2-default-rounds-2026-08-28.json`; los
 datasets adaptativos de Queue y Workers corroboran métricas, pero no sustituyen
 ese ledger D1.
 
-Siguen pendientes antes de activar el schedule continuo una ventana real D1 de
-24 h y el gate WP3. Los contadores D1 del día de validación cubren solo una
-ventana corta y no cierran el gate de 24 h. Antes y después de cada ventana se
-verifican por API `schedules=[]` y backlog Queue cero; declarar `crons: []` en un
-deploy no sustituye esa comprobación por la propagación eventual de Cron
-Triggers. Como el backlog REST es best-effort y puede omitir mensajes con retry
-diferido, cada prueba destructiva de reentrega crea una Queue de validación con
-ID nuevo. Después de capturar Analytics elimina, en orden, el consumer, el
-Worker temporal y la Queue; la D1 separada se conserva para auditoría. Un único
-`backlog_count=0` no demuestra aislamiento ni autoriza reutilizar una Queue.
+El máximo histórico de 11 queries corresponde a la versión ensayada. La versión
+vigente añade una única escritura atómica de reconciliación diaria y reportaría
+12 para esa misma fase; conserva el techo duro de 40 reservando tres queries
+fuera del presupuesto de fase: resumen de fallo, liberación del lease y ledger.
+El ledger ayuda a detectar drift durante una corrida, pero no sustituye las
+métricas de facturación de Cloudflare: omite su propia fila escrita y no incluye
+uso D1 ajeno al Worker.
+
+Siguen pendientes el gate WP3 y, después de integrarlo, la ventana D1 final de
+24 h. Ejecutarla antes de WP3 solo mediría el placeholder PROBE y no dimensiona
+la versión candidata. El gate final usa staging con el código candidato y una
+ventana completa de cuota `00:00:00Z–24:00:00Z`: 288 ticks esperados, 96 éxitos
+por fase en el camino nominal y cada retry/outcome reconciliado por
+`scheduledTime`. Se capturan sin resumir el ledger D1, los resultados por query
+o base de D1 Analytics y el total de uso de la cuenta, porque las cuotas Free
+son account-wide. Debe demostrar `<4.000.000` filas leídas, `<80.000` escritas,
+`<=40` queries por intento, cero errores de cuota y explicar cualquier tick o
+retry faltante/sobrante. Se registra además el uso ajeno al staging; una corrida
+contaminada que no permita atribuir el margen se repite.
+
+Antes y después de cada ventana se verifican por API `schedules=[]` y backlog
+Queue cero; declarar `crons: []` en un deploy no sustituye esa comprobación por
+la propagación eventual de Cron Triggers. Para la ventana final se instala un
+Cron staging temporal solo después del preflight y se elimina al finalizar; no
+autoriza cadencia productiva. Como el backlog REST es best-effort y puede omitir
+mensajes con retry diferido, cada prueba destructiva de reentrega crea una Queue
+de validación con ID nuevo. Después de capturar Analytics elimina, en orden, el
+consumer, el Worker temporal y la Queue; la D1 separada se conserva para
+auditoría. Un único `backlog_count=0` no demuestra aislamiento ni autoriza
+reutilizar una Queue.
 
 ### 11.3 Promoción explícita Free → Paid
 
@@ -1232,8 +1264,8 @@ Gate:
 - dos vueltas Queue del conjunto live cumplen sección 4.2, cero `exceededCpu`,
   cero duplicaciones y cero 429; una vuelta cuenta solo cuando `sweepRound`
   incrementa, no por haber enviado un número fijo de ticks;
-- métricas D1 de una ventana controlada de 24 h confirman la reserva diaria de
-  20 %;
+- después de WP3, métricas D1 de una ventana UTC controlada de 24 h sobre el
+  candidato completo confirman la reserva diaria de 20 %;
 - HEADER y SWEEP permanecen en `D1_QUERIES_PER_RUN <= 40`, incluyendo marcador
   Queue, lease, resumen, cursor y rotación; staging demuestra el límite porque
   Miniflare no lo impone;
@@ -1243,7 +1275,8 @@ Gate:
 Estado 2026-08-28: los gates remotos de reentrega, idempotencia, dos vueltas
 HEADER/SWEEP con defaults Free, CPU, memoria, queries y 429 están pasados en el
 entorno de validación aislado. WP2 no se promociona todavía a cadencia continua:
-faltan la ventana D1 real de 24 h y el gate WP3 descritos en sección 11.2.
+falta WP3 y después la ventana D1 real de 24 h del candidato completo descrita
+en sección 11.2. Una ventana previa a WP3 solo puede etiquetarse baseline.
 
 ### WP3 — PROBE solo Grid 303779
 
