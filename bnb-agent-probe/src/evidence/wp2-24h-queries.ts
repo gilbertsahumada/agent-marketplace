@@ -70,12 +70,27 @@ export const WP2_QUEUE_ANALYTICS_QUERY = `query Wp2QueueWindow(
 ) {
   viewer {
     accounts(filter: { accountTag: $accountTag }) {
-      queueMessageOperationsAdaptiveGroups(
+      queueDayOperations: queueMessageOperationsAdaptiveGroups(
         limit: 10000
         filter: {
           queueId: $queueId
           datetime_geq: $start
           datetime_leq: $endInclusive
+        }
+        orderBy: [datetime_ASC]
+      ) {
+        avg { lagTime retryCount }
+        count
+        dimensions { actionType consumerType datetime outcome queueId }
+        max { messageSize }
+        sum { billableOperations bytes }
+      }
+      queueTerminalOperations: queueMessageOperationsAdaptiveGroups(
+        limit: 10000
+        filter: {
+          queueId: $queueId
+          datetime_geq: $start
+          datetime_leq: $terminalityEndInclusive
         }
         orderBy: [datetime_ASC]
       ) {
