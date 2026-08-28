@@ -531,6 +531,12 @@ async function validateRawAnalytics(
     fail("RAW_D1", "database and account Analytics disagree for staging D1");
   }
 
+  const trustedWorkerVersions = deploymentVersionsRaw(parsed.get(REQUIRED_RAW_ANALYTICS[5]), {
+    scriptName: context.workerName,
+    measuredVersionId: context.deploymentVersion,
+    commit: context.commit,
+  });
+
   const workersRaw = record(parsed.get(REQUIRED_RAW_ANALYTICS[2]), "RAW_WORKERS", "workers raw");
   validateWindowRequest(workersRaw.request, {
     scriptName: context.workerName,
@@ -555,8 +561,10 @@ async function validateRawAnalytics(
       "RAW_WORKERS",
       `workers[${index}].scriptVersion`,
     );
-    if (scriptVersion !== context.deploymentVersion) continue;
-    measuredVersionGroups += 1;
+    if (!trustedWorkerVersions.has(scriptVersion)) {
+      fail("RAW_DEPLOYMENT", "Workers Analytics contains an unauthenticated deployment version");
+    }
+    if (scriptVersion === context.deploymentVersion) measuredVersionGroups += 1;
     const status = nonEmptyString(dimensions.status, "RAW_WORKERS", `workers[${index}].status`).toLowerCase();
     if (status.includes("cpu") && status.includes("exceed")) exceededCpu += 1;
     if (status.includes("memory") && status.includes("exceed")) memoryExceeded += 1;
@@ -707,18 +715,6 @@ async function validateRawAnalytics(
     fail("RAW_QUEUE", "staging and account-wide Queue Analytics disagree");
   }
 
-  const deploymentRaw = record(parsed.get(REQUIRED_RAW_ANALYTICS[5]), "RAW_DEPLOYMENT", "deployment raw");
-  const deploymentRequest = record(deploymentRaw.request, "RAW_DEPLOYMENT", "deployment request");
-  const deploymentResponse = record(deploymentRaw.response, "RAW_DEPLOYMENT", "deployment response");
-  const annotations = record(deploymentResponse.annotations, "RAW_DEPLOYMENT", "deployment annotations");
-  if (deploymentRequest.scriptName !== context.workerName
-    || deploymentRequest.versionId !== context.deploymentVersion
-    || deploymentResponse.id !== context.deploymentVersion
-    || annotations["workers/message"] !== `git_commit=${context.commit}`
-    || annotations["workers/tag"] !== `git-${context.commit.slice(0, 12)}`) {
-    fail("RAW_DEPLOYMENT", "deployment metadata does not match the artifact");
-  }
-
   const preflight = controlRaw(parsed.get(REQUIRED_RAW_ANALYTICS[6]), "preflight");
   const activation = controlRaw(parsed.get(REQUIRED_RAW_ANALYTICS[7]), "activation");
   const windowStart = windowStartRaw(
@@ -827,6 +823,71 @@ function windowStartRaw(
     nextPhase: enumValue(phase.value, PHASES, "RAW_WINDOW_START", "window-start phase"),
     startedAt,
   };
+}
+
+function deploymentVersionsRaw(
+  value: unknown,
+  expected: { readonly scriptName: string; readonly measuredVersionId: string; readonly commit: string },
+): ReadonlySet<string> {
+  const raw = record(value, "RAW_DEPLOYMENT", "deployment raw");
+  const request = record(raw.request, "RAW_DEPLOYMENT", "deployment request");
+  if (!Array.isArray(request.drainVersionIds)
+    || request.drainVersionIds.some((versionId) => typeof versionId !== "string" || versionId.length === 0)) {
+    fail("RAW_DEPLOYMENT", "drainVersionIds are invalid");
+  }
+  const drainVersionIds = request.drainVersionIds as string[];
+  if (request.scriptName !== expected.scriptName
+    || request.measuredVersionId !== expected.measuredVersionId
+    || drainVersionIds.length === 0) {
+    fail("RAW_DEPLOYMENT", "deployment request does not match the measured window");
+  }
+  const response = record(raw.response, "RAW_DEPLOYMENT", "deployment response");
+  const measured = record(response.measured, "RAW_DEPLOYMENT", "measured deployment");
+  if (!Array.isArray(response.drainVersions)) fail("RAW_DEPLOYMENT", "drain deployments are invalid");
+  const drainVersions = response.drainVersions;
+  if (drainVersions.length !== drainVersionIds.length) {
+    fail("RAW_DEPLOYMENT", "drain deployment responses do not match the request");
+  }
+
+  const expectedMessage = `git_commit=${expected.commit}`;
+  const tagPrefix = `git-${expected.commit.slice(0, 12)}`;
+  const measuredEtag = deploymentVersionMetadata(
+    measured,
+    expected.measuredVersionId,
+    expectedMessage,
+    tagPrefix,
+    true,
+  );
+  const trusted = new Set<string>([expected.measuredVersionId]);
+  for (const [index, unvalidated] of drainVersions.entries()) {
+    const version = record(unvalidated, "RAW_DEPLOYMENT", `drain deployment ${index}`);
+    const versionId = drainVersionIds[index]!;
+    if (trusted.has(versionId)) fail("RAW_DEPLOYMENT", "deployment version IDs are duplicated");
+    const etag = deploymentVersionMetadata(version, versionId, expectedMessage, tagPrefix, false);
+    if (etag !== measuredEtag) fail("RAW_DEPLOYMENT", "drain deployment bundle differs from measured bundle");
+    trusted.add(versionId);
+  }
+  return trusted;
+}
+
+function deploymentVersionMetadata(
+  value: Record<string, unknown>,
+  expectedVersionId: string,
+  expectedMessage: string,
+  tagPrefix: string,
+  measured: boolean,
+): string {
+  const annotations = record(value.annotations, "RAW_DEPLOYMENT", "deployment annotations");
+  const resources = record(value.resources, "RAW_DEPLOYMENT", "deployment resources");
+  const script = record(resources.script, "RAW_DEPLOYMENT", "deployment script");
+  const tag = nonEmptyString(annotations["workers/tag"], "RAW_DEPLOYMENT", "deployment tag");
+  const validTag = measured ? tag === tagPrefix : tag.startsWith(`${tagPrefix}-`);
+  if (value.id !== expectedVersionId
+    || annotations["workers/message"] !== expectedMessage
+    || !validTag) {
+    fail("RAW_DEPLOYMENT", "deployment metadata does not match the artifact");
+  }
+  return stringPattern(script.etag, /^[a-f0-9]{64}$/, "RAW_DEPLOYMENT", "deployment script etag");
 }
 
 function d1Raw(
