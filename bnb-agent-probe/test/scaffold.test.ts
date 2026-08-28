@@ -72,6 +72,8 @@ describe("WP1 Wrangler scaffold", () => {
       SWEEP_PAGES_PER_RUN: "1",
       PROBE_BATCH_SIZE: "1",
       D1_QUERIES_PER_RUN: "40",
+      D1_ROWS_READ_PER_RUN: "3000",
+      D1_ROWS_WRITTEN_PER_RUN: "60",
       MAX_CATALOG_RESPONSE_BYTES: "16777216",
     });
   });
@@ -87,6 +89,8 @@ describe("WP1 Wrangler scaffold", () => {
         CLOUDFLARE_WORKERS_PLAN: "free",
         KILL_SWITCH: "1",
         D1_QUERIES_PER_RUN: "40",
+        D1_ROWS_READ_PER_RUN: "3000",
+        D1_ROWS_WRITTEN_PER_RUN: "60",
         MAX_CATALOG_RESPONSE_BYTES: "16777216",
       },
       d1_databases: [
@@ -126,6 +130,8 @@ describe("WP1 Wrangler scaffold", () => {
         HEADER_LIMIT: "25",
         SWEEP_LIMIT: "4",
         D1_QUERIES_PER_RUN: "40",
+        D1_ROWS_READ_PER_RUN: "3000",
+        D1_ROWS_WRITTEN_PER_RUN: "60",
       },
       d1_databases: [{
         binding: "DB",
