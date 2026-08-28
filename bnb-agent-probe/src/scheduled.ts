@@ -79,9 +79,14 @@ export function createWp2ScheduledRunner(dependencies: ScheduledRuntimeDependenc
     const leaseMs = config.plan === "free" ? FREE_LEASE_MS : PAID_LEASE_MS;
     const rawDb = env.DB as unknown as D1DatabaseLike;
     const deliveryAttempt = controller.attempt;
+    const messageId = controller.messageId;
     if (deliveryAttempt !== undefined
       && (!Number.isSafeInteger(deliveryAttempt) || deliveryAttempt < 1 || deliveryAttempt > 4)) {
       throw new Error("WP2_QUEUE_ATTEMPT_INVALID");
+    }
+    if (deliveryAttempt !== undefined
+      && (messageId === undefined || messageId.length < 1 || messageId.length > 256)) {
+      throw new Error("WP2_QUEUE_MESSAGE_ID_INVALID");
     }
     let upstreamRequests = 0;
     const countedFetch: typeof fetch = (...args) => {
@@ -120,6 +125,7 @@ export function createWp2ScheduledRunner(dependencies: ScheduledRuntimeDependenc
       let attemptError: unknown;
       try {
         if (deliveryAttempt !== undefined) await recordSchedulerAttempt(auxiliaryStore.db, {
+          messageId: messageId!,
           scheduledTime: controller.scheduledTime,
           attempt: deliveryAttempt,
           phase: input.phase,
