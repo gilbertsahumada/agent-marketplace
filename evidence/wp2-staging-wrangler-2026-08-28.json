@@ -1,8 +1,8 @@
 {
-  "capturedAt": "2026-08-28T14:45:00Z",
+  "capturedAt": "2026-08-28T15:02:00Z",
   "deployment": {
     "worker": "bnb-agent-probe-staging",
-    "versionId": "132a6819-58b6-49c9-8563-241ca3a3bfcd",
+    "versionId": "0db51cc4-a73f-4e93-8fb0-f772a53ddfa0",
     "startupTimeMs": 6,
     "killSwitch": true,
     "cronConfigured": false,
@@ -38,10 +38,38 @@
     "leaseActiveAfterRuns": false,
     "maximumObservedD1Queries": 10
   },
-  "notProvenByRemotePreview": [
-    "CPU milliseconds per invocation",
-    "D1 rows read and written per invocation",
-    "production deployment outcome analytics"
-  ],
-  "promotionGate": "pending"
+  "workersAnalytics": {
+    "source": "Cloudflare GraphQL workersInvocationsAdaptive",
+    "unit": "microseconds",
+    "allStatuses": "success",
+    "preview": {
+      "header25CpuP50": 15442,
+      "sweep4CpuP50": 11098,
+      "header1CpuP50": 17124,
+      "sweep1CpuP50": 10871
+    },
+    "nominalAuthenticatedManualRoute": {
+      "probeCpuP50": 4146,
+      "header1CpuP50": 11676,
+      "sweep1CpuP50": 8439,
+      "note": "These fetch invocations include authentication and HTTP route overhead that a Cron Trigger does not."
+    }
+  },
+  "d1AnalyticsOneHour": {
+    "source": "wrangler d1 insights",
+    "queryShapes": 9,
+    "queryExecutions": 78,
+    "rowsRead": 377,
+    "rowsWritten": 46,
+    "queryDurationMs": 24.6236,
+    "scope": "Manual phase runs plus health reads in the same staging window."
+  },
+  "cronTrial": {
+    "schedule": "* * * * *",
+    "observedInvocations": 0,
+    "reason": "The trigger did not propagate during two minute boundaries and was removed instead of leaving staging active.",
+    "schedulesAfterCleanup": []
+  },
+  "promotionGate": "failed_cpu",
+  "blockingReason": "HEADER=25 and SWEEP=4 exceeded the 10000 microsecond Workers Free CPU budget; even limit-one HEADER exceeded it in preview and through the authenticated nominal route."
 }
