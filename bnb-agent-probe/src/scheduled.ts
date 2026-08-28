@@ -78,6 +78,11 @@ export function createWp2ScheduledRunner(dependencies: ScheduledRuntimeDependenc
     const runId = randomUUID();
     const leaseMs = config.plan === "free" ? FREE_LEASE_MS : PAID_LEASE_MS;
     const rawDb = env.DB as unknown as D1DatabaseLike;
+    const deliveryAttempt = controller.attempt;
+    if (deliveryAttempt !== undefined
+      && (!Number.isSafeInteger(deliveryAttempt) || deliveryAttempt < 1 || deliveryAttempt > 4)) {
+      throw new Error("WP2_QUEUE_ATTEMPT_INVALID");
+    }
     let upstreamRequests = 0;
     const countedFetch: typeof fetch = (...args) => {
       upstreamRequests += 1;
@@ -108,13 +113,15 @@ export function createWp2ScheduledRunner(dependencies: ScheduledRuntimeDependenc
       readonly outcome: DailyBudgetOutcome;
       readonly errorCode: string | null;
     }): Promise<void> => {
-      const d1Queries = budget.used + auxiliaryStore.budget.used + 2;
+      const d1Queries = budget.used + auxiliaryStore.budget.used
+        + (deliveryAttempt === undefined ? 1 : 2);
       const rowsReadObservedBeforeLedger = usage.rowsRead;
       const rowsWrittenObservedBeforeLedger = usage.rowsWritten;
       let attemptError: unknown;
       try {
-        await recordSchedulerAttempt(auxiliaryStore.db, {
+        if (deliveryAttempt !== undefined) await recordSchedulerAttempt(auxiliaryStore.db, {
           scheduledTime: controller.scheduledTime,
+          attempt: deliveryAttempt,
           phase: input.phase,
           outcome: input.outcome,
           startedAt,
