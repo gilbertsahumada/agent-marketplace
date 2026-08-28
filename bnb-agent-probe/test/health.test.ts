@@ -208,6 +208,56 @@ describe("Worker runtime", () => {
     expect(await response.json()).toMatchObject({ status: "degraded" });
   });
 
+  it("degrades for a scheduler error newer than the latest healthy phase", async () => {
+    const now = Date.parse("2026-08-28T12:00:00.000Z");
+    const dailyBudget = JSON.stringify({
+      schemaVersion: 1,
+      utcDate: "2026-08-28",
+      measurementScope: "worker_metered_before_daily_ledger",
+      updatedAt: now,
+      invocations: 1,
+      completed: 0,
+      failed: 1,
+      duplicate: 0,
+      locked: 0,
+      upstreamRequests: 0,
+      d1Queries: 4,
+      rowsReadObservedBeforeLedger: 2,
+      rowsWrittenObservedBeforeLedger: 2,
+    });
+    const db = database({
+      runtime: [
+        {
+          key: "last_header_summary",
+          textValue: JSON.stringify({ phase: "header", status: "ok" }),
+          integerValue: null,
+          updatedAt: now - 1_000,
+        },
+        {
+          key: "last_scheduler_summary",
+          textValue: JSON.stringify({ status: "error", errorCode: "D1_ROW_BUDGET" }),
+          integerValue: null,
+          updatedAt: now,
+        },
+        {
+          key: "daily_budget_20260828",
+          textValue: dailyBudget,
+          integerValue: null,
+          updatedAt: now,
+        },
+      ],
+    });
+    const response = await createWorker({ now: () => now }).fetch(
+      new Request("https://worker.test/health"),
+      { ...env(db), KILL_SWITCH: "0" },
+    );
+
+    expect(await response.json()).toMatchObject({
+      status: "degraded",
+      lastScheduler: { status: "error", errorCode: "D1_ROW_BUDGET" },
+    });
+  });
+
   it("reports runtime state but never returns the lease runId or arbitrary summary fields", async () => {
     const now = 1_800_000_000_000;
     const db = database({
