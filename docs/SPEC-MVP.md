@@ -411,7 +411,7 @@ SWEEP_LIMIT=4                   máximo Free 40 y siempre <= TRUST8004_REQUESTS_
 SWEEP_PAGES_PER_RUN=1           máximo Free 1
 TRUST8004_REQUESTS_PER_RUN=4
 EXTERNAL_SUBREQUESTS_PER_RUN=12 máximo Free 40, plataforma 50
-D1_QUERIES_PER_RUN=40           máximo Free 40, plataforma D1 50
+D1_QUERIES_PER_RUN=40           mínimo 7, máximo Free 40, plataforma D1 50
 D1_ROWS_READ_PER_RUN=10000
 D1_ROWS_WRITTEN_PER_RUN=250
 PROBE_TIMEOUT_MS=5000
@@ -514,7 +514,13 @@ HEADER obtiene los targets existentes con una lectura acotada y agrupa todos los
 writes de la página. No ejecuta `SELECT + INSERT/UPDATE` por elemento. El batch,
 el resumen, el avance de fase y la liberación del lease deben caber juntos en
 `D1_QUERIES_PER_RUN`; si el preflight excede el presupuesto, no se inicia ningún
-write.
+write. Los upserts se fragmentan dentro del mismo batch atómico para que ningún
+parámetro enlazado supere 1,5 MB, con margen frente al máximo D1 de 2 MB.
+
+Un elemento inválido o sin `registeredAt` se contabiliza como `invalidItems` y
+no bloquea los elementos válidos de la página. No participa del high-water; si
+la ventana completa contiene inválidos, `header_window_exhausted=true` fuerza la
+señal conservadora de posible hueco.
 
 Si una caída supera la ventana, `/health` muestra
 `header_window_exhausted=true`; SWEEP recupera lo omitido dentro del conjunto
@@ -528,6 +534,11 @@ ERC-8183 descubiertos por WP0/HEADER y el inventario curado de cuatro categoría
 no intenta materializar los 309.897 registros globales. El cursor pagina esa
 unión de IDs en D1 y resuelve un detalle trust8004 por agente. Por eso
 `SWEEP_LIMIT` no puede superar `TRUST8004_REQUESTS_PER_RUN` en Free. Por página:
+
+La unión usa todos los IDs que ya tienen un target elegible persistido,
+independientemente de transporte o `declarationState`, más los IDs curados. Esa
+base es monotónica: marcar un target `removed` o `metadata_unavailable` no reduce
+el conjunto bajo un `OFFSET` ya persistido.
 
 1. valida/procesa una respuesta en memoria;
 2. compara candidatos;
