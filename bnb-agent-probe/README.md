@@ -66,7 +66,9 @@ writes atomically with create-only semantics, preserves account/database/query
 provenance plus the literal D1 API response, and never serializes the token. The
 same snapshot must show that `last_queue_scheduled_time` is the immediately
 preceding tick; request start and completion must both fall inside the final
-five-minute interval before the UTC window.
+five-minute interval before the UTC window. This proves scheduler emission and
+the persisted phase boundary, not Queue terminality; the final ledger and
+`DeleteMessage` reconciliation prove that separately.
 
 The final validator parses and reconciles the hashed raw D1, Workers, Queue,
 deployment and timestamped control-plane responses. It keeps the 288 scheduled
