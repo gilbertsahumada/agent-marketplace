@@ -72,6 +72,9 @@ const RAW_PAYLOADS = {
   "evidence/raw/preflight.json": {
     response: { schedules: [], backlogCount: 0 },
   },
+  "evidence/raw/activation.json": {
+    response: { schedules: ["*/5 * * * *"], backlogCount: 0 },
+  },
   "evidence/raw/cleanup.json": {
     response: { schedules: [], backlogCount: 0, killSwitch: true,
       stagingManualRun: false, sharedSecretPresent: false },
