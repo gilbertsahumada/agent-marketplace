@@ -72,6 +72,7 @@ const FREE_QUEUE_OPERATIONS_PER_DAY = 10_000;
 const FREE_D1_RESERVE_RATIO = 0.2;
 const QUEUE_MAX_RETRIES = 3;
 const QUEUE_OPERATIONS_PER_MESSAGE = 3 + QUEUE_MAX_RETRIES;
+const D1_TELEMETRY_WRITES_PER_ATTEMPT = 2;
 const WP3_AGENT_ID = "303779";
 const WP3_ENDPOINT = "https://bnb-agent-marketplace-ruby.vercel.app/grid";
 
@@ -351,9 +352,11 @@ function projectedFreeDailyBudget(
     maxAttemptsPerInvocation,
     maxAttempts,
     d1RowsReadNominal: invocations * d1RowsReadPerRun,
-    d1RowsWrittenNominal: invocations * d1RowsWrittenPerRun,
+    d1RowsWrittenNominal: invocations
+      * (d1RowsWrittenPerRun + D1_TELEMETRY_WRITES_PER_ATTEMPT),
     d1RowsRead: maxAttempts * d1RowsReadPerRun,
-    d1RowsWritten: maxAttempts * d1RowsWrittenPerRun,
+    d1RowsWritten: maxAttempts
+      * (d1RowsWrittenPerRun + D1_TELEMETRY_WRITES_PER_ATTEMPT),
     queueOperations: invocations * QUEUE_OPERATIONS_PER_MESSAGE,
     freeReadCeiling: FREE_D1_READS_PER_DAY * (1 - FREE_D1_RESERVE_RATIO),
     freeWriteCeiling: FREE_D1_WRITES_PER_DAY * (1 - FREE_D1_RESERVE_RATIO),
