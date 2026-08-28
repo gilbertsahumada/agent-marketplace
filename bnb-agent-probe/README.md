@@ -109,8 +109,21 @@ FULL_SHA=$(git rev-parse HEAD)
 SHORT_SHA=$(git rev-parse --short=12 HEAD)
 npx wrangler deploy --env staging \
   --message "git_commit=${FULL_SHA}" --tag "git-${SHORT_SHA}"
-npx wrangler versions view "$VERSION_ID" --env staging --json
 ```
+
+Record the `Current Version ID` printed by deploy. After the drain and cleanup
+deploys print their IDs, build the create-only composite raw directly:
+
+```bash
+npm run evidence:wp2-deployment -- \
+  ../evidence/raw/deployment.json bnb-agent-probe-staging "$FULL_SHA" \
+  "$MEASURED_VERSION_ID" "$DRAIN_VERSION_ID" "$CLEANUP_VERSION_ID"
+```
+
+The command executes `wrangler versions view <id> --env staging --json` for each
+ID, verifies the full commit annotation and identical script etag, and only then
+atomically publishes the literal responses. Assign each `*_VERSION_ID` from the
+corresponding Wrangler deploy output; no ID is inferred from list order.
 
 Because Cron removal can propagate after a deployment, operational trials also
 verify the Cloudflare schedules API returns an empty list and the realtime Queue
