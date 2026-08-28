@@ -1,9 +1,9 @@
 {
-  "capturedAt": "2026-08-28T15:21:24Z",
+  "capturedAt": "2026-08-28T16:27:00Z",
   "deployment": {
     "worker": "bnb-agent-probe-staging",
-    "versionId": "470fee05-aa5b-47cb-b09c-bff85a910407",
-    "startupTimeMs": 6,
+    "versionId": "f1b2000d-ec3c-4338-9314-c61f78ae6ac1",
+    "startupTimeMs": 8,
     "killSwitch": true,
     "cronConfigured": false,
     "healthStatus": 200,
@@ -11,7 +11,10 @@
     "d1QueriesPerRun": 40,
     "deploymentEnvironment": "staging",
     "stagingManualRun": false,
-    "sharedSecrets": []
+    "sharedSecrets": [],
+    "queue": "bnb-agent-probe-staging",
+    "queueProducers": 1,
+    "queueConsumers": 1
   },
   "manualRunner": "wrangler 4.127.0 --remote --env staging --test-scheduled",
   "manualRuns": [
@@ -94,6 +97,37 @@
     "schedulesAfterCleanup": [],
     "sharedSecretsAfterCleanup": []
   },
-  "promotionGate": "not_demonstrated_cpu",
-  "blockingReason": "Representative preview and authenticated HTTP samples exceeded the 10000 microsecond Workers Free CPU budget, but no active Cron phase sample was captured. The HTTP route includes authentication overhead, so the Cron CPU gate remains unproven rather than conclusively failed."
+  "directCronCpu": {
+    "rawEvidence": "evidence/wp2-cron-cpu-raw-2026-08-28.json",
+    "header1BaselineCpu": 21364,
+    "header1AfterD1OptimizationCpu": 16336,
+    "header1AfterLazyLoadingCpu": 16508,
+    "tenRunSeries": {
+      "d1Executions": 10,
+      "analyticsSamples": 9,
+      "coldCpu": 14962,
+      "warmCpu": [6722, 7551, 9251, 7044, 5953, 8354, 7361, 6024]
+    },
+    "conclusion": "The warm path fits below 10000 microseconds, but the cold path does not; direct Cron execution fails the required Free cold/P99 gate."
+  },
+  "queueTrial": {
+    "deploymentVersion": "cb2e0e2b-cc88-4949-967c-d5eb78f66911",
+    "rawEvidence": "evidence/wp2-queue-analytics-raw-2026-08-28.json",
+    "configuration": {
+      "killSwitch": false,
+      "headerLimit": 1,
+      "sweepLimit": 1,
+      "queueBatchSize": 1
+    },
+    "header": { "status": "ok", "requests": 1, "d1Queries": 5, "wallTimeMs": 1335, "cpuTime": 16747 },
+    "cronProducer": { "status": "success", "cpuTime": 1140, "subrequests": 0 },
+    "sweep": { "status": "ok", "requests": 1, "d1Queries": 10, "wallTimeMs": 923, "cpuTime": 15107 },
+    "queueOperationProjectionPerDay": 864,
+    "freeQueueOperationSafetyCeilingPerDay": 8000,
+    "finalNominalVersion": "f1b2000d-ec3c-4338-9314-c61f78ae6ac1",
+    "schedulesAfterCleanup": [],
+    "sharedSecretsAfterCleanup": []
+  },
+  "promotionGate": "queue_architecture_demonstrated_limits1",
+  "blockingReason": "Direct Cron phase execution cannot meet the Workers Free cold/P99 CPU gate. Cron-to-Queue isolates phase work in a Free Queue consumer with a 30000 ms CPU allowance and passed real HEADER=1 and SWEEP=1 delivery, D1 accounting and phase rotation. Scheduled production traffic remains disabled until the remaining two-rotation Queue gate and WP3 PROBE gate pass."
 }
