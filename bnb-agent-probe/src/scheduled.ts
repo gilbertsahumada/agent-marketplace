@@ -108,7 +108,7 @@ export function createWp2ScheduledRunner(dependencies: ScheduledRuntimeDependenc
 
     if (!acquired) {
       const finishedAt = now();
-      await auxiliaryStore.db.prepare(
+      await bestEffort(() => auxiliaryStore.db.prepare(
         `INSERT INTO runtime_state (key, textValue, integerValue, updatedAt)
          VALUES ('last_scheduler_summary', ?, NULL, ?)
          ON CONFLICT(key) DO UPDATE SET
@@ -119,8 +119,8 @@ export function createWp2ScheduledRunner(dependencies: ScheduledRuntimeDependenc
         status: "skipped_locked",
         requests: 0,
         wallTimeMs: Math.max(0, finishedAt - startedAt),
-      }), finishedAt).run();
-      await recordDailyBudget(rawDb, {
+      }), finishedAt).run());
+      await bestEffort(() => recordDailyBudget(rawDb, {
         startedAtMs: startedAt,
         finishedAtMs: finishedAt,
         outcome: "locked",
@@ -128,7 +128,7 @@ export function createWp2ScheduledRunner(dependencies: ScheduledRuntimeDependenc
         d1Queries: budget.used + auxiliaryStore.budget.used + 1,
         rowsReadObservedBeforeLedger: usage.rowsRead,
         rowsWrittenObservedBeforeLedger: usage.rowsWritten,
-      });
+      }));
       return "locked";
     }
 
@@ -185,8 +185,8 @@ export function createWp2ScheduledRunner(dependencies: ScheduledRuntimeDependenc
       throw error;
     } finally {
       const finishedAt = now();
-      await releaseSchedulerLease(auxiliaryStore.db, runId, finishedAt);
-      await recordDailyBudget(rawDb, {
+      await bestEffort(() => releaseSchedulerLease(auxiliaryStore.db, runId, finishedAt));
+      await bestEffort(() => recordDailyBudget(rawDb, {
         startedAtMs: startedAt,
         finishedAtMs: finishedAt,
         outcome,
@@ -194,9 +194,18 @@ export function createWp2ScheduledRunner(dependencies: ScheduledRuntimeDependenc
         d1Queries: budget.used + auxiliaryStore.budget.used + 1,
         rowsReadObservedBeforeLedger: usage.rowsRead,
         rowsWrittenObservedBeforeLedger: usage.rowsWritten,
-      });
+      }));
     }
   };
+}
+
+async function bestEffort(operation: () => Promise<unknown>): Promise<void> {
+  try {
+    await operation();
+  } catch {
+    // Completion markers protect phase correctness. Cleanup and reconciliation
+    // must not turn completed work into a Queue retry or replace its root error.
+  }
 }
 
 async function executeWp2Phase(input: PhaseExecution, fetchImpl: typeof fetch): Promise<void> {
