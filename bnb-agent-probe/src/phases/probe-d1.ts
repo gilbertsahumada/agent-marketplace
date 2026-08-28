@@ -16,6 +16,8 @@ export class ProbeQueryBudgetExceededError extends Error {
   }
 }
 
+const TARGET_REFRESH_INTERVAL_MS = 60 * 60_000;
+
 export function createD1ProbePersistence(
   d1: D1DatabaseLike,
   input: {
@@ -43,6 +45,8 @@ export function createD1ProbePersistence(
         endpoint: probeTargets.endpoint,
         categoriesJson: probeTargets.categoriesJson,
         currentMetadataUpdatedAt: probeTargets.currentMetadataUpdatedAt,
+        lastSeenAt: probeTargets.lastSeenAt,
+        priority: probeTargets.priority,
       }).from(probeTargets).where(and(
         eq(probeTargets.chainId, 56),
         eq(probeTargets.declarationState, "current"),
@@ -63,17 +67,27 @@ export function createD1ProbePersistence(
         const currentMetadataUpdatedAt = state === "current"
           ? commit.reconciliation.metadataUpdatedAt
           : commit.target.currentMetadataUpdatedAt;
-        statements.push(db.update(probeTargets).set({
-          declarationState: state,
-          currentMetadataUpdatedAt,
-          lastMetadataCheckedAt: input.nowMs,
-          ...(state === "current" ? { lastSeenAt: input.nowMs } : {}),
-          ...(state !== "current"
-            || currentMetadataUpdatedAt !== commit.target.currentMetadataUpdatedAt
-            ? { lastChangedAt: input.nowMs }
-            : {}),
-          ...(commit.nextPriority === null ? {} : { priority: commit.nextPriority }),
-        }).where(targetPredicate(commit.target)));
+        const ageSinceSeen = commit.target.lastSeenAt === undefined
+          ? TARGET_REFRESH_INTERVAL_MS
+          : input.nowMs - commit.target.lastSeenAt;
+        const unchangedInsideRefreshWindow = state === "current"
+          && currentMetadataUpdatedAt === commit.target.currentMetadataUpdatedAt
+          && (commit.nextPriority === null || commit.nextPriority === commit.target.priority)
+          && ageSinceSeen >= 0
+          && ageSinceSeen < TARGET_REFRESH_INTERVAL_MS;
+        if (!unchangedInsideRefreshWindow) {
+          statements.push(db.update(probeTargets).set({
+            declarationState: state,
+            currentMetadataUpdatedAt,
+            lastMetadataCheckedAt: input.nowMs,
+            ...(state === "current" ? { lastSeenAt: input.nowMs } : {}),
+            ...(state !== "current"
+              || currentMetadataUpdatedAt !== commit.target.currentMetadataUpdatedAt
+              ? { lastChangedAt: input.nowMs }
+              : {}),
+            ...(commit.nextPriority === null ? {} : { priority: commit.nextPriority }),
+          }).where(targetPredicate(commit.target)));
+        }
       }
       if (commit.target && commit.observation) {
         statements.push(db.insert(probeObservations).values(observationRow(
