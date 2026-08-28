@@ -295,6 +295,28 @@ describe("WP1 in the Workers runtime", () => {
     expect(JSON.stringify(health)).not.toContain("raw-body");
   });
 
+  it("counts an attempted upstream request in a failed phase summary", async () => {
+    const runner = createWp2ScheduledRunner({
+      now: () => 10_000,
+      randomUUID: () => "failed-upstream-run",
+      fetch: async () => new Response("unavailable", { status: 503 }),
+    });
+
+    await expect(runner(
+      { scheduledTime: 10_000, cron: "*/5 * * * *" },
+      env,
+      createExecutionContext(),
+      loadConfig({ KILL_SWITCH: "0" }),
+    )).rejects.toThrow("HTTP 503");
+
+    expect(JSON.parse(await runtimeText("last_header_summary") ?? "{}")).toMatchObject({
+      phase: "header",
+      status: "error",
+      errorCode: "TRUST8004_HTTP_ERROR",
+      requests: 1,
+    });
+  });
+
   it("runs HEADER and rolling SWEEP atomically and preserves a removed endpoint", async () => {
     let headerIncludesAgent = true;
     let detailIncludesEndpoint = true;
