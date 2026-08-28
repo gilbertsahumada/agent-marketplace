@@ -34,7 +34,8 @@ after the first result that crosses it and cannot issue another phase query;
 because D1 reports row counts after execution, one query can overshoot. Bounded
 cleanup remains allowed so a completed phase is not retried merely because lease
 release or telemetry failed. Raw 24-hour Analytics therefore remains the quota
-gate.
+gate. A row-budget failure during lease acquisition still performs an
+owner-checked release before propagating the error.
 If another invocation owns the D1 lease, the message is not acknowledged and is
 retried after 240 seconds; completed and stale ticks are acknowledged normally.
 The consumer is fixed at one concurrent invocation, and Queue timestamps more
@@ -101,7 +102,8 @@ Each D1 result also contributes its `meta.rows_read` and `meta.rows_written` to
 uses one bounded `runtime_state` query and never scans `probe_targets`; target
 counts are deliberately unavailable on this public endpoint. It exposes only
 the validated current-day allowlist and becomes degraded when scheduling is
-active without valid daily telemetry. Row fields are explicitly
+active without valid daily telemetry, or when `updatedAt` is older than three
+Cron intervals (minimum 15 minutes). Row fields are explicitly
 named `BeforeLedger` because they omit the ledger's own write; this operational
 reconciliation does not replace raw per-database and account Cloudflare D1
 Analytics for the quota gate.
