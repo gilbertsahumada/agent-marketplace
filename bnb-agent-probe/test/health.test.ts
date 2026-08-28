@@ -391,6 +391,7 @@ describe("Worker runtime", () => {
       new Request("https://worker.test/__admin/run-scheduled", {
         method: "POST",
         headers: { authorization: "Bearer must-never-leak" },
+        body: JSON.stringify({ phase: "probe", scheduledTime: 1 }),
       }),
       {
         ...env(),
@@ -484,15 +485,17 @@ describe("Worker runtime", () => {
     expect(text).not.toContain("wrong-secret");
   });
 
-  it("runs exactly one phase through the authenticated manual scheduler route", async () => {
+  it("enqueues exactly one versioned tick through the authenticated manual scheduler route", async () => {
     const now = 1_800_000_000_000;
-    const runScheduled = vi.fn().mockResolvedValue(undefined);
+    const runScheduled = vi.fn();
+    const send = vi.fn().mockResolvedValue(undefined);
     const context = { waitUntil: vi.fn(), passThroughOnException: vi.fn() };
     const activeEnv = {
-      ...env(),
+      ...env(database({ fail: true })),
       DEPLOYMENT_ENV: "staging",
       STAGING_MANUAL_RUN: "1",
       KILL_SWITCH: "0",
+      WP2_QUEUE: { send },
     };
     const response = await createWorker({ now: () => now, runScheduled }).fetch(
       new Request("https://worker.test/__admin/run-scheduled", {
@@ -505,13 +508,30 @@ describe("Worker runtime", () => {
 
     expect(response.status).toBe(204);
     expect(response.headers.get("cache-control")).toBe("no-store");
-    expect(runScheduled).toHaveBeenCalledOnce();
-    expect(runScheduled).toHaveBeenCalledWith(
-      { scheduledTime: now, cron: "manual" },
-      activeEnv,
-      context,
-      expect.objectContaining({ killSwitch: false, plan: "free" }),
+    expect(send).toHaveBeenCalledOnce();
+    expect(send).toHaveBeenCalledWith({ schemaVersion: 1, scheduledTime: now });
+    expect(runScheduled).not.toHaveBeenCalled();
+  });
+
+  it("returns a sanitized configuration error when the Queue binding is absent", async () => {
+    const runScheduled = vi.fn();
+    const response = await createWorker({ now: () => 1_800_000_000_000, runScheduled }).fetch(
+      new Request("https://worker.test/__admin/run-scheduled", {
+        method: "POST",
+        headers: { authorization: "Bearer must-never-leak" },
+      }),
+      {
+        ...env(database({ fail: true })),
+        DEPLOYMENT_ENV: "staging",
+        STAGING_MANUAL_RUN: "1",
+        KILL_SWITCH: "0",
+      },
+      { waitUntil: vi.fn(), passThroughOnException: vi.fn() },
     );
+
+    expect(response.status).toBe(500);
+    expect(await response.json()).toEqual({ error: "invalid_configuration" });
+    expect(runScheduled).not.toHaveBeenCalled();
   });
 
   it("validates configuration before reading D1", async () => {
