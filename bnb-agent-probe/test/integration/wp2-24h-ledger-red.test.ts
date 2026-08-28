@@ -25,7 +25,7 @@ describe("WP2 durable scheduler-attempt ledger", () => {
       fetch: async () => { throw new Error("controlled upstream failure"); },
     });
     await expect(failed(
-      { scheduledTime: TICK_A, cron: "queue", attempt: 1 },
+      { scheduledTime: TICK_A, cron: "queue", attempt: 1, messageId: "tick-a" },
       env,
       createExecutionContext(),
       loadConfig({ KILL_SWITCH: "0" }),
@@ -38,7 +38,7 @@ describe("WP2 durable scheduler-attempt ledger", () => {
       fetch: async () => Response.json({ items: [], total: 0, limit: 25, offset: 0 }),
     });
     await expect(completed(
-      { scheduledTime: TICK_A, cron: "queue", attempt: 2 },
+      { scheduledTime: TICK_A, cron: "queue", attempt: 2, messageId: "tick-a" },
       env,
       createExecutionContext(),
       loadConfig({ KILL_SWITCH: "0" }),
@@ -51,7 +51,7 @@ describe("WP2 durable scheduler-attempt ledger", () => {
       executePhase: async () => { throw new Error("duplicate must not execute a phase"); },
     });
     await expect(duplicate(
-      { scheduledTime: TICK_A, cron: "queue", attempt: 3 },
+      { scheduledTime: TICK_A, cron: "queue", attempt: 3, messageId: "tick-a" },
       env,
       createExecutionContext(),
       loadConfig({ KILL_SWITCH: "0" }),
@@ -72,7 +72,7 @@ describe("WP2 durable scheduler-attempt ledger", () => {
       executePhase: async () => { throw new Error("locked must not execute a phase"); },
     });
     await expect(locked(
-      { scheduledTime: TICK_B, cron: "queue", attempt: 1 },
+      { scheduledTime: TICK_B, cron: "queue", attempt: 1, messageId: "tick-b" },
       env,
       createExecutionContext(),
       loadConfig({ KILL_SWITCH: "0" }),
@@ -86,6 +86,7 @@ describe("WP2 durable scheduler-attempt ledger", () => {
 
     expect(attempts).toEqual([
       expect.objectContaining({
+        messageId: "tick-a",
         scheduledTime: TICK_A,
         attempt: 1,
         phase: "header",
@@ -96,6 +97,7 @@ describe("WP2 durable scheduler-attempt ledger", () => {
         rowsWrittenObservedBeforeLedger: expect.any(Number),
       }),
       expect.objectContaining({
+        messageId: "tick-a",
         scheduledTime: TICK_A,
         attempt: 2,
         phase: "header",
@@ -106,6 +108,7 @@ describe("WP2 durable scheduler-attempt ledger", () => {
         rowsWrittenObservedBeforeLedger: expect.any(Number),
       }),
       expect.objectContaining({
+        messageId: "tick-a",
         scheduledTime: TICK_A,
         attempt: 3,
         phase: null,
@@ -116,6 +119,7 @@ describe("WP2 durable scheduler-attempt ledger", () => {
         rowsWrittenObservedBeforeLedger: expect.any(Number),
       }),
       expect.objectContaining({
+        messageId: "tick-b",
         scheduledTime: TICK_B,
         attempt: 1,
         phase: null,
@@ -133,10 +137,10 @@ describe("WP2 durable scheduler-attempt ledger", () => {
     const scheduledTime = WINDOW_START + 10 * 60_000;
     await env.DB.prepare(
       `INSERT INTO scheduler_attempts (
-         scheduledTime, attempt, phase, outcome, startedAt, finishedAt,
+         messageId, scheduledTime, attempt, phase, outcome, startedAt, finishedAt,
          upstreamRequests, d1Queries, rowsReadObservedBeforeLedger,
          rowsWrittenObservedBeforeLedger, errorCode
-       ) VALUES (?, 1, 'header', 'completed', ?, ?, 1, 5, 1, 1, NULL)`,
+       ) VALUES ('append-only-test', ?, 1, 'header', 'completed', ?, ?, 1, 5, 1, 1, NULL)`,
     ).bind(scheduledTime, scheduledTime, scheduledTime + 1).run();
 
     await expect(env.DB.prepare(
