@@ -19,7 +19,21 @@ type SafeSummary = {
   requests?: number;
   cpuMs?: number;
   wallTimeMs?: number;
+  d1Queries?: number;
   errorCode?: string;
+  headerWindowExhausted?: boolean;
+  complete?: boolean;
+  previousOffset?: number;
+  nextOffset?: number;
+  sweepRound?: number;
+  processedAgents?: number;
+  candidatesRead?: number;
+  changedTargets?: number;
+  removedTargets?: number;
+  metadataUnavailableTargets?: number;
+  materialWrites?: number;
+  candidateTargets?: number;
+  invalidItems?: number;
 };
 
 const RUNTIME_KEYS = [
@@ -68,6 +82,28 @@ function safeSummary(row: RuntimeRow | undefined): SafeSummary | null {
     if (requests !== undefined) result.requests = requests;
     if (cpuMs !== undefined) result.cpuMs = cpuMs;
     if (wallTimeMs !== undefined) result.wallTimeMs = wallTimeMs;
+    const numericFields = [
+      "d1Queries",
+      "previousOffset",
+      "nextOffset",
+      "sweepRound",
+      "processedAgents",
+      "candidatesRead",
+      "changedTargets",
+      "removedTargets",
+      "metadataUnavailableTargets",
+      "materialWrites",
+      "candidateTargets",
+      "invalidItems",
+    ] as const;
+    for (const field of numericFields) {
+      const value = finiteNonNegative(source[field]);
+      if (value !== undefined) result[field] = value;
+    }
+    if (typeof source.headerWindowExhausted === "boolean") {
+      result.headerWindowExhausted = source.headerWindowExhausted;
+    }
+    if (typeof source.complete === "boolean") result.complete = source.complete;
     if (typeof source.errorCode === "string" && /^[A-Z0-9_]{1,64}$/.test(source.errorCode)) {
       result.errorCode = source.errorCode;
     }
@@ -115,6 +151,7 @@ export async function healthResponse(
     ].filter((row): row is RuntimeRow => row !== undefined);
     summaryRows.sort((left, right) => right.updatedAt - left.updatedAt);
     const lastPhase = safeSummary(summaryRows[0]);
+    const lastHeader = safeSummary(byKey.get("last_header_summary"));
     const lastScheduler = safeSummary(byKey.get("last_scheduler_summary"));
     const leaseExpiresAt = integer(byKey.get("scheduler_lease")?.integerValue);
 
@@ -172,6 +209,7 @@ export async function healthResponse(
       sweepOffset: integer(byKey.get("sweep_offset")?.integerValue) ?? 0,
       sweepRound: integer(byKey.get("sweep_round")?.integerValue) ?? 0,
       headerHighWater: headerHighWater(byKey.get("header_high_water")?.textValue),
+      headerWindowExhausted: lastHeader?.headerWindowExhausted ?? false,
       targets,
       lastPhase,
       lastScheduler,
