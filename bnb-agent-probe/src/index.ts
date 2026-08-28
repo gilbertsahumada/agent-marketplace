@@ -1,6 +1,6 @@
 import { ConfigError, loadConfig, type WorkerConfig } from "./config";
 import { healthResponse } from "./routes/health";
-import { runWp1Scheduled } from "./scheduled";
+import { runWp2Scheduled } from "./scheduled";
 import type {
   Env,
   ExecutionContext,
@@ -57,4 +57,4 @@ export function createWorker(dependencies: WorkerDependencies = {}): WorkerEntry
   };
 }
 
-export default createWorker({ runScheduled: runWp1Scheduled });
+export default createWorker({ runScheduled: runWp2Scheduled });
