@@ -195,6 +195,35 @@
     "exceededCpuGroups": 0,
     "exceededMemoryGroups": 0
   },
+  "rawWorkerAnalytics": {
+    "retrievedAt": "2026-08-28T18:19:00Z",
+    "query": "query($accountTag: string!, $start: Time!, $end: Time!) { viewer { accounts(filter: { accountTag: $accountTag }) { workersInvocationsAdaptive(limit: 1000, filter: { datetime_geq: $start, datetime_leq: $end, scriptName: \"bnb-agent-probe-validation\" }, orderBy: [datetime_ASC]) { dimensions { datetime scriptName scriptVersion status } quantiles { cpuTimeP50 cpuTimeP99 durationP50 memoryUsageBytesP50 memoryUsageBytesP99 memoryUsageBytesP999 } sum { requests errors subrequests } } } } }",
+    "variables": {
+      "accountTag": "bc8d4adf4860284fda426b24e7377bc2",
+      "start": "2026-08-28T17:51:00Z",
+      "end": "2026-08-28T18:04:00Z"
+    },
+    "statusGroups": [
+      { "status": "scriptThrewException", "groups": 3, "requests": 4, "errors": 4 },
+      { "status": "success", "groups": 13, "requests": 13, "errors": 0 }
+    ],
+    "successfulGroups": [
+      { "datetime": "2026-08-28T17:51:29Z", "scriptVersion": "354e28c9-8176-4d00-b9ff-a4e42b2ac5b3", "cpuTimeP99": 10505, "memoryUsageBytesP999": 2228341, "subrequests": 1 },
+      { "datetime": "2026-08-28T17:52:28Z", "scriptVersion": "354e28c9-8176-4d00-b9ff-a4e42b2ac5b3", "cpuTimeP99": 6393, "memoryUsageBytesP999": 1835020, "subrequests": 0 },
+      { "datetime": "2026-08-28T18:01:02Z", "scriptVersion": "34bdefdb-ce1b-40fc-8c8a-59fbd16a6aa8", "cpuTimeP99": 18066, "memoryUsageBytesP999": 2156075, "subrequests": 4 },
+      { "datetime": "2026-08-28T18:02:10Z", "scriptVersion": "34bdefdb-ce1b-40fc-8c8a-59fbd16a6aa8", "cpuTimeP99": 8329, "memoryUsageBytesP999": 1835020, "subrequests": 0 },
+      { "datetime": "2026-08-28T18:02:41Z", "scriptVersion": "34bdefdb-ce1b-40fc-8c8a-59fbd16a6aa8", "cpuTimeP99": 5329, "memoryUsageBytesP999": 1835020, "subrequests": 0 },
+      { "datetime": "2026-08-28T18:02:42Z", "scriptVersion": "34bdefdb-ce1b-40fc-8c8a-59fbd16a6aa8", "cpuTimeP99": 8686, "memoryUsageBytesP999": 2199458, "subrequests": 1 },
+      { "datetime": "2026-08-28T18:02:45Z", "scriptVersion": "34bdefdb-ce1b-40fc-8c8a-59fbd16a6aa8", "cpuTimeP99": 6926, "memoryUsageBytesP999": 2477193, "subrequests": 1 },
+      { "datetime": "2026-08-28T18:02:47Z", "scriptVersion": "34bdefdb-ce1b-40fc-8c8a-59fbd16a6aa8", "cpuTimeP99": 2045, "memoryUsageBytesP999": 2477193, "subrequests": 0 },
+      { "datetime": "2026-08-28T18:02:52Z", "scriptVersion": "34bdefdb-ce1b-40fc-8c8a-59fbd16a6aa8", "cpuTimeP99": 7909, "memoryUsageBytesP999": 1860845, "subrequests": 4 },
+      { "datetime": "2026-08-28T18:02:56Z", "scriptVersion": "34bdefdb-ce1b-40fc-8c8a-59fbd16a6aa8", "cpuTimeP99": 3404, "memoryUsageBytesP999": 2225283, "subrequests": 1 },
+      { "datetime": "2026-08-28T18:02:58Z", "scriptVersion": "34bdefdb-ce1b-40fc-8c8a-59fbd16a6aa8", "cpuTimeP99": 4658, "memoryUsageBytesP999": 2503018, "subrequests": 1 },
+      { "datetime": "2026-08-28T18:03:01Z", "scriptVersion": "34bdefdb-ce1b-40fc-8c8a-59fbd16a6aa8", "cpuTimeP99": 1850, "memoryUsageBytesP999": 2503018, "subrequests": 0 },
+      { "datetime": "2026-08-28T18:03:56Z", "scriptVersion": "b5e567d1-1093-4e9d-83b4-374aee967454", "cpuTimeP99": 3917, "memoryUsageBytesP999": 1835020, "subrequests": 0 }
+    ],
+    "attribution": "The 17:51:29 and 18:01:02 groups corroborate the first HEADER and SWEEP in the ledger. Groups from 18:02:41 through 18:03:01 corroborate eight of the ten continuation ticks; the adaptive dataset omitted two invocations. The 17:52:28 and 18:02:10 groups are duplicates and 18:03:56 is nominal cleanup, so D1 scheduledTime markers remain the exact execution ledger."
+  },
   "cleanup": {
     "killSwitch": true,
     "schedules": [],
