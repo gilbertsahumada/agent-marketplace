@@ -2,8 +2,8 @@
   "capturedAt": "2026-08-28T16:27:00Z",
   "deployment": {
     "worker": "bnb-agent-probe-staging",
-    "versionId": "f1b2000d-ec3c-4338-9314-c61f78ae6ac1",
-    "startupTimeMs": 8,
+    "versionId": "cf34dea9-d96e-4de8-9b61-e6c35465c940",
+    "startupTimeMs": 5,
     "killSwitch": true,
     "cronConfigured": false,
     "healthStatus": 200,
@@ -125,7 +125,7 @@
     "nominalQueueOperationProjectionPerDay": 864,
     "threeRetryQueueOperationProjectionPerDay": 1728,
     "freeQueueOperationSafetyCeilingPerDay": 8000,
-    "finalNominalVersion": "f1b2000d-ec3c-4338-9314-c61f78ae6ac1",
+    "finalNominalVersion": "cf34dea9-d96e-4de8-9b61-e6c35465c940",
     "schedulesAfterCleanup": [],
     "sharedSecretsAfterCleanup": []
   },
