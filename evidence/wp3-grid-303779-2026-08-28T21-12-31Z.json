@@ -104,9 +104,9 @@
     "deploymentRequests": 18,
     "deploymentErrors": 0,
     "deploymentSubrequests": 13,
-    "maximumCpuTimeMicroseconds": 170404,
-    "maximumDurationSeconds": 0.19678925,
-    "maximumMemoryBytesP999": 11297484,
+    "maximumCpuTimeP99MicrosecondsAcrossGroups": 170404,
+    "maximumDurationP50SecondsAcrossGroups": 0.19678925,
+    "maximumMemoryBytesP999AcrossGroups": 11297484,
     "queueOperations": 9
   },
   "noJobInvariant": {
