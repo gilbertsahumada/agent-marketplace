@@ -14,7 +14,7 @@ export async function acquireSchedulerLease(
 ): Promise<boolean> {
   validateLeaseRequest(request);
 
-  const acquired = await db
+  const result = await db
     .prepare(
       `INSERT INTO runtime_state (key, textValue, integerValue, updatedAt)
        VALUES ('scheduler_lease', ?, ?, ?)
@@ -26,9 +26,10 @@ export async function acquireSchedulerLease(
        RETURNING key`,
     )
     .bind(request.runId, request.expiresAtMs, request.nowMs, request.nowMs)
-    .first<{ key: string }>();
+    .all<{ key: string }>();
 
-  return acquired?.key === SCHEDULER_LEASE_KEY;
+  if (!result.success) throw new Error("Could not acquire scheduler lease");
+  return result.results?.[0]?.key === SCHEDULER_LEASE_KEY;
 }
 
 export async function releaseSchedulerLease(
@@ -39,7 +40,7 @@ export async function releaseSchedulerLease(
   assertRunId(runId);
   assertEpochMilliseconds(nowMs, "nowMs");
 
-  const released = await db
+  const result = await db
     .prepare(
       `UPDATE runtime_state
        SET textValue = NULL, integerValue = ?, updatedAt = ?
@@ -47,9 +48,10 @@ export async function releaseSchedulerLease(
        RETURNING key`,
     )
     .bind(nowMs, nowMs, runId)
-    .first<{ key: string }>();
+    .all<{ key: string }>();
 
-  return released?.key === SCHEDULER_LEASE_KEY;
+  if (!result.success) throw new Error("Could not release scheduler lease");
+  return result.results?.[0]?.key === SCHEDULER_LEASE_KEY;
 }
 
 function validateLeaseRequest(request: SchedulerLeaseRequest): void {
