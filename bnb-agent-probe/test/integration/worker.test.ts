@@ -118,7 +118,7 @@ describe("WP1 in the Workers runtime", () => {
       phase: "header",
       status: "ok",
       received: 0,
-      d1Queries: 6,
+      d1Queries: 4,
     });
   });
 
@@ -203,6 +203,11 @@ describe("WP1 in the Workers runtime", () => {
     const context = createExecutionContext();
 
     await runner(controller, env, context, config); // HEADER
+    expect(JSON.parse(await runtimeText("last_header_summary") ?? "{}")).toMatchObject({
+      candidateTargets: 1,
+      materialWrites: 1,
+      d1Queries: 6,
+    });
     expect(await env.DB.prepare(
       "SELECT declarationState FROM probe_targets WHERE agentId = '16'",
     ).first()).toEqual({ declarationState: "current" });
