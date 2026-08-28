@@ -193,6 +193,8 @@ function parseInteger(
     "SWEEP_PAGES_PER_RUN",
     "TRUST8004_REQUESTS_PER_RUN",
     "EXTERNAL_SUBREQUESTS_PER_RUN",
+    "D1_ROWS_READ_PER_RUN",
+    "D1_ROWS_WRITTEN_PER_RUN",
   ].includes(field) && value === 0) {
     throw new ObservationWorkerConfigError(field, "must be at least 1");
   }
