@@ -142,6 +142,7 @@ describe("WP1 in the Workers runtime", () => {
     expect(JSON.parse(await runtimeText("last_probe_summary") ?? "{}")).toMatchObject({
       phase: "probe",
       status: "pending_wp3",
+      d1Queries: 6,
     });
     const firstSummary = await runtimeText("last_probe_summary");
     const duplicateAck = vi.fn();
