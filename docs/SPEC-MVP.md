@@ -1434,10 +1434,11 @@ Si falla, se corrige antes de ampliar.
 Estado 2026-08-28: WP3 pasó. La corrida nominal remota `header → sweep → probe`
 terminó en `quote_verified` para Grid `303779`, con signer igual al wallet
 onchain, hashes canónicos persistidos, 8 subrequests de PROBE, 10 queries D1 y
-2.635 ms de reloj de pared. Cloudflare Analytics registró cero errores,
-170.404 µs de CPU máxima y 11.297.484 bytes de memoria P999 para la ventana del
-deployment, dentro de la cuota de 30 s CPU del consumer y 96 MiB. Queue entregó
-y eliminó con éxito los tres ticks, sin retry y con backlog final cero.
+2.635 ms de reloj de pared. Cloudflare Analytics registró cero errores; entre
+sus buckets, el mayor `cpuTimeP99` fue 170.404 µs y el mayor
+`memoryUsageBytesP999` fue 11.297.484 bytes. La ejecución terminó sin exceder la
+cuota de 30 s CPU del consumer ni 96 MiB. Queue entregó y eliminó con éxito los
+tres ticks, sin retry y con backlog final cero.
 
 El rango BSC inclusivo `0x7126285–0x71262eb` devolvió cero eventos
 `JobCreated`, `BudgetSet` o `JobFunded` para Commerce y el probe no emitió
