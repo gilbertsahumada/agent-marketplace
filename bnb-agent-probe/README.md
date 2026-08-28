@@ -79,10 +79,11 @@ tick from the persisted starting phase, checks account-wide Queue usage, and
 requests Queue evidence through the minimum `00:15Z` cutoff.
 The measured deploy must use `--message git_commit=<40-char SHA>` and
 `--tag git-<first 12 chars>`; `deployment.json` preserves the literal
-`wrangler versions view --json` response plus requested script/version IDs.
-Workers samples from later control-only versions remain in raw evidence but are
-excluded from the measured deployment cohort; Queue reconciliation still rejects
-any extra producer message.
+`wrangler versions view "$VERSION_ID" --env staging --json` response plus
+requested script/version IDs. Drain deployments use the same message and bundle,
+with a suffixed tag such as `git-<SHA12>-drain`; their literal version responses
+are recorded too. Workers metrics include every authenticated measured or drain
+version, while Queue reconciliation still rejects any extra producer message.
 
 Because inactive
 Queues need not emit a new Analytics bucket, the last emitted zero backlog is
@@ -99,7 +100,11 @@ explicitly:
 
 ```bash
 npx wrangler d1 migrations apply bnb-agent-probe-staging --remote --env staging
-npx wrangler deploy --env staging
+FULL_SHA=$(git rev-parse HEAD)
+SHORT_SHA=$(git rev-parse --short=12 HEAD)
+npx wrangler deploy --env staging \
+  --message "git_commit=${FULL_SHA}" --tag "git-${SHORT_SHA}"
+npx wrangler versions view "$VERSION_ID" --env staging --json
 ```
 
 Because Cron removal can propagate after a deployment, operational trials also
