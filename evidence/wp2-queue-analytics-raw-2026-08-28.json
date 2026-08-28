@@ -1,0 +1,37 @@
+{
+  "capturedAt": "2026-08-28T16:26:00Z",
+  "source": "Cloudflare GraphQL workersInvocationsAdaptive",
+  "accountTag": "bc8d4adf4860284fda426b24e7377bc2",
+  "query": "query($accountTag: string!, $start: Time!, $end: Time!) { viewer { accounts(filter: { accountTag: $accountTag }) { workersInvocationsAdaptive(limit: 1000, filter: { datetime_geq: $start, datetime_leq: $end, scriptName: \"bnb-agent-probe-staging\" }, orderBy: [datetime_ASC]) { dimensions { datetime scriptName scriptVersion status } quantiles { cpuTimeP50 cpuTimeP99 durationP50 } sum { requests errors subrequests } } } } }",
+  "variables": {
+    "start": "2026-08-28T16:22:00Z",
+    "end": "2026-08-28T16:26:00Z",
+    "scriptName": "bnb-agent-probe-staging"
+  },
+  "unitNotes": {
+    "cpuTimeP50": "microseconds",
+    "cpuTimeP99": "microseconds",
+    "durationP50": "seconds"
+  },
+  "response": [
+    { "datetime": "2026-08-28T16:23:52Z", "scriptVersion": "cb2e0e2b-cc88-4949-967c-d5eb78f66911", "status": "success", "cpuTimeP50": 16747, "cpuTimeP99": 16747, "durationP50": 0.20724538, "requests": 1, "errors": 0, "subrequests": 1 },
+    { "datetime": "2026-08-28T16:24:50Z", "scriptVersion": "cb2e0e2b-cc88-4949-967c-d5eb78f66911", "status": "success", "cpuTimeP50": 1140, "cpuTimeP99": 1140, "durationP50": 0.033269875, "requests": 1, "errors": 0, "subrequests": 0 },
+    { "datetime": "2026-08-28T16:24:53Z", "scriptVersion": "cb2e0e2b-cc88-4949-967c-d5eb78f66911", "status": "success", "cpuTimeP50": 15107, "cpuTimeP99": 15107, "durationP50": 0.16813213, "requests": 1, "errors": 0, "subrequests": 1 },
+    { "datetime": "2026-08-28T16:25:50Z", "scriptVersion": "f1b2000d-ec3c-4338-9314-c61f78ae6ac1", "status": "success", "cpuTimeP50": 973, "cpuTimeP99": 973, "durationP50": 0.000973, "requests": 1, "errors": 0, "subrequests": 0 }
+  ],
+  "attribution": {
+    "16:23:52Z": "Queue consumer HEADER limit 1; D1 claim at 16:23:52.496Z and HEADER summary at 16:23:53.933Z",
+    "16:24:50Z": "Cron producer; no catalogue subrequest",
+    "16:24:53Z": "Queue consumer SWEEP limit 1; D1 claim at 16:24:53.036Z and SWEEP summary at 16:24:53.345Z",
+    "16:25:50Z": "nominal kill-switched deployment after trigger cleanup"
+  },
+  "d1Evidence": {
+    "header": { "status": "ok", "requests": 1, "d1Queries": 5, "wallTimeMs": 1335, "nextPhase": "sweep" },
+    "sweep": { "status": "ok", "requests": 1, "d1Queries": 10, "wallTimeMs": 923, "nextPhase": "probe" },
+    "note": "Each total includes the Queue deduplication claim before the phase runner."
+  },
+  "limitations": [
+    "The adaptive dataset can omit low-volume invocations; the first Cron producer was not returned in this window.",
+    "Trigger attribution is inferred from timestamp, subrequest count and matching D1 timestamps because this dataset has no event-type dimension."
+  ]
+}
