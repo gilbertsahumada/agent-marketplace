@@ -1338,6 +1338,9 @@ reconciliación exacta de 288 operaciones `WriteMessage`.
 Una invocación autenticada de drenaje con cero subrequests y sin `WriteMessage`
 correlacionado representa un producer bloqueado: aporta al máximo de CPU pero no
 al conteo de mensajes.
+El raw compuesto se crea con `npm run evidence:wp2-deployment -- <salida>
+<script> <commit> <version-medida> <version-drain...>`; el comando consulta cada
+ID explícito con Wrangler, valida annotations y etag, y publica create-only.
 La Queue, su consumer y D1 de staging se conservan: la eliminación aplica solo a
 recursos efímeros del entorno `validation`. Como el backlog REST es best-effort y puede omitir
 mensajes con retry diferido, cada prueba destructiva de reentrega crea una Queue
