@@ -102,6 +102,13 @@ export async function validateWp224hArtifact(
 
   const worker = record(artifact.worker, "STRUCTURE", "worker");
   const workerName = nonEmptyString(worker.name, "STRUCTURE", "worker.name");
+  const cloudflare = record(artifact.cloudflare, "STRUCTURE", "cloudflare");
+  const accountId = stringPattern(
+    cloudflare.accountId,
+    /^[a-f0-9]{32}$/,
+    "STRUCTURE",
+    "cloudflare.accountId",
+  );
   const queue = record(artifact.queue, "STRUCTURE", "queue");
   const queueId = stringPattern(queue.id, /^[a-f0-9]{32}$/, "STRUCTURE", "queue.id");
   const d1 = record(artifact.d1, "STRUCTURE", "d1");
@@ -130,6 +137,7 @@ export async function validateWp224hArtifact(
   );
   const raw = await validateRawAnalytics(artifact.rawAnalytics, dependencies, {
     commit: artifact.commit as string,
+    accountId,
     deploymentVersion: artifact.deploymentVersion as string,
     workerName,
     queueId,
@@ -466,6 +474,7 @@ async function validateRawAnalytics(
   dependencies: ValidationDependencies,
   context: {
     readonly commit: string;
+    readonly accountId: string;
     readonly deploymentVersion: string;
     readonly workerName: string;
     readonly queueId: string;
@@ -697,11 +706,19 @@ async function validateRawAnalytics(
 
   const preflight = controlRaw(parsed.get(REQUIRED_RAW_ANALYTICS[6]), "preflight");
   const activation = controlRaw(parsed.get(REQUIRED_RAW_ANALYTICS[7]), "activation");
-  const windowStart = windowStartRaw(parsed.get(REQUIRED_RAW_ANALYTICS[8]));
+  const windowStart = windowStartRaw(
+    parsed.get(REQUIRED_RAW_ANALYTICS[8]),
+    context.accountId,
+    context.d1Id,
+  );
   const firstScheduledTime = Math.min(...context.tickLedger.map(({ scheduledTime }) => scheduledTime));
-  if (windowStart.capturedAt > firstScheduledTime
-    || windowStart.capturedAt < firstScheduledTime - TICK_MS
-    || windowStart.nextPhase !== context.rotationStart) {
+  if (windowStart.startedAt < firstScheduledTime - TICK_MS
+    || windowStart.completedAt >= firstScheduledTime
+    || windowStart.completedAt < windowStart.startedAt
+    || windowStart.lastQueueScheduledTime !== firstScheduledTime - TICK_MS) {
+    fail("RAW_WINDOW_START", "window-start capture timing or final pre-window tick is invalid");
+  }
+  if (windowStart.nextPhase !== context.rotationStart) {
     fail("PHASE_SEQUENCE", "persisted phase immediately before the window does not match the first tick");
   }
   const cleanup = controlRaw(parsed.get(REQUIRED_RAW_ANALYTICS[9]), "cleanup");
@@ -740,21 +757,60 @@ async function validateRawAnalytics(
   };
 }
 
-function windowStartRaw(value: unknown): { readonly capturedAt: number; readonly nextPhase: Phase } {
+function windowStartRaw(
+  value: unknown,
+  expectedAccountId: string,
+  expectedDatabaseId: string,
+): {
+  readonly completedAt: number;
+  readonly lastQueueScheduledTime: number;
+  readonly nextPhase: Phase;
+  readonly startedAt: number;
+} {
   const raw = record(value, "RAW_WINDOW_START", "window-start raw");
   const request = record(raw.request, "RAW_WINDOW_START", "window-start request");
-  const capturedAt = isoTimestamp(request.capturedAt, "RAW_WINDOW_START", "window-start capturedAt");
+  if (request.accountId !== expectedAccountId
+    || request.databaseId !== expectedDatabaseId
+    || request.sql !== "SELECT key, textValue AS value, integerValue FROM runtime_state WHERE key IN (?, ?) ORDER BY key ASC"
+    || !sameStringArray(request.params, ["last_queue_scheduled_time", "next_scheduler_phase"])) {
+    fail("RAW_WINDOW_START", "window-start request provenance does not match the artifact");
+  }
+  const startedAt = isoTimestamp(request.startedAt, "RAW_WINDOW_START", "window-start startedAt");
+  const completedAt = isoTimestamp(request.completedAt, "RAW_WINDOW_START", "window-start completedAt");
+  if (request.capturedAt !== request.completedAt) {
+    fail("RAW_WINDOW_START", "window-start capturedAt must equal completedAt");
+  }
   const response = record(raw.response, "RAW_WINDOW_START", "window-start response");
+  if (response.success !== true || !Array.isArray(response.errors) || response.errors.length !== 0) {
+    fail("RAW_WINDOW_START", "window-start D1 response is not successful");
+  }
   if (!Array.isArray(response.result) || response.result.length !== 1) {
     fail("RAW_WINDOW_START", "window-start D1 response must contain one result");
   }
   const result = record(response.result[0], "RAW_WINDOW_START", "window-start result");
-  if (!Array.isArray(result.results) || result.results.length !== 1) {
-    fail("RAW_WINDOW_START", "window-start D1 response must contain one row");
+  if (!Array.isArray(result.results) || result.results.length !== 2) {
+    fail("RAW_WINDOW_START", "window-start D1 response must contain two rows");
   }
-  const row = record(result.results[0], "RAW_WINDOW_START", "window-start row");
-  if (row.key !== "next_scheduler_phase") fail("RAW_WINDOW_START", "window-start key is invalid");
-  return { capturedAt, nextPhase: enumValue(row.value, PHASES, "RAW_WINDOW_START", "window-start phase") };
+  const rows = new Map(result.results.map((entry, index) => {
+    const row = record(entry, "RAW_WINDOW_START", `window-start row ${index}`);
+    return [row.key, row] as const;
+  }));
+  if (rows.size !== 2) fail("RAW_WINDOW_START", "window-start D1 rows are duplicated");
+  const phase = rows.get("next_scheduler_phase");
+  const finalTick = rows.get("last_queue_scheduled_time");
+  if (phase === undefined || finalTick === undefined) {
+    fail("RAW_WINDOW_START", "window-start D1 keys are invalid");
+  }
+  return {
+    completedAt,
+    lastQueueScheduledTime: nonNegativeInteger(
+      finalTick.integerValue,
+      "RAW_WINDOW_START",
+      "window-start last_queue_scheduled_time",
+    ),
+    nextPhase: enumValue(phase.value, PHASES, "RAW_WINDOW_START", "window-start phase"),
+    startedAt,
+  };
 }
 
 function d1Raw(
