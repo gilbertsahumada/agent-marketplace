@@ -71,7 +71,7 @@ const FREE_SAFETY_RATIO = 0.8;
 const QUEUE_MAX_RETRIES = 3;
 const QUEUE_OPERATIONS_PER_MESSAGE = 3 + QUEUE_MAX_RETRIES;
 const WP3_AGENT_ID = "303779";
-const WP3_ENDPOINT = "https://bnb-agent-marketplace-ruby.vercel.app/api/sellers/grid/a2a";
+const WP3_ENDPOINT = "https://bnb-agent-marketplace-ruby.vercel.app/grid";
 
 const FREE_PROFILE: Profile = {
   schedulerMode: "single_phase",
