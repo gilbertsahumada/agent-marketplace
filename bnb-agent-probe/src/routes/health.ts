@@ -207,9 +207,11 @@ export async function healthResponse(
       byKey.get("last_probe_summary"),
     ].filter((row): row is RuntimeRow => row !== undefined);
     summaryRows.sort((left, right) => right.updatedAt - left.updatedAt);
-    const lastPhase = safeSummary(summaryRows[0]);
+    const latestPhaseRow = summaryRows[0];
+    const lastPhase = safeSummary(latestPhaseRow);
     const lastHeader = safeSummary(byKey.get("last_header_summary"));
-    const lastScheduler = safeSummary(byKey.get("last_scheduler_summary"));
+    const lastSchedulerRow = byKey.get("last_scheduler_summary");
+    const lastScheduler = safeSummary(lastSchedulerRow);
     const leaseExpiresAt = integer(byKey.get("scheduler_lease")?.integerValue);
 
     const nextPhaseValue = byKey.get("next_scheduler_phase")?.textValue;
@@ -221,11 +223,13 @@ export async function healthResponse(
     const dailyBudgetFresh = currentDailyBudget !== null
       && currentDailyBudget.updatedAt <= now + 5 * 60_000
       && now - currentDailyBudget.updatedAt <= dailyBudgetMaxAgeMs;
+    const schedulerDegraded = lastScheduler?.errorCode !== undefined
+      && (latestPhaseRow === undefined || (lastSchedulerRow?.updatedAt ?? 0) > latestPhaseRow.updatedAt);
     const degraded = lastPhase?.errorCode !== undefined || (
       lastPhase?.status !== undefined
       && lastPhase.status !== "ok"
       && lastPhase.status !== "success"
-    ) || (!config.killSwitch && !dailyBudgetFresh);
+    ) || schedulerDegraded || (!config.killSwitch && !dailyBudgetFresh);
 
     return json({
       status: degraded ? "degraded" : "ok",
