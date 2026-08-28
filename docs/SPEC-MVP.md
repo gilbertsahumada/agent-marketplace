@@ -1,0 +1,1222 @@
+# Capa de observación de contratabilidad — SPEC MVP v4 Free-first
+
+**Estado:** WP0 y WP1 completos; WP2 sigue únicamente con perfil Free, staging y kill switch.
+**Fecha de corte del diseño:** 2026-08-28.
+**Objetivo:** completar la capa de observación necesaria para recorrer:
+
+```text
+Discover → Understand → Compare → Hire → Track → Result
+```
+
+Esta spec gobierna el futuro repositorio `bnb-agent-probe` y su integración con
+este marketplace. El contrato ejecutable de configuración se mantiene primero
+en `src/observation/worker-config.ts` para que perfiles y gates se prueben junto
+al código existente antes de extraer WP1. No autoriza cambios en producción de
+trust8004 durante su ventana de congelación.
+
+---
+
+## 0. Reglas de lectura
+
+### 0.1 Niveles de evidencia
+
+| Marca | Significado | Puede publicarse |
+| --- | --- | --- |
+| `VERIFICADO_LOCAL` | Comprobado en código o dependencias instaladas | Sí, citando archivo/versión |
+| `VERIFICADO_PLATAFORMA` | Comprobado contra documentación oficial vigente | Sí, citando URL y fecha |
+| `SNAPSHOT_REQUERIDO` | Observado durante research, pero sin artefacto reproducible versionado | No, hasta WP0 |
+| `ONCHAIN_REQUERIDO` | Debe leerse de BSC en el momento de uso | Solo con bloque, timestamp y tx/hash cuando aplique |
+
+Una afirmación `SNAPSHOT_REQUERIDO` no entra en landing, presentación ni
+comunicado. WP0 la reemplaza por un artefacto versionado.
+
+### 0.2 Invariantes del producto
+
+- Cada dato se etiqueta como `declared`, `observed`, `onchain` o `derived`.
+- Nunca se persiste un booleano `hireable` ni un score compuesto.
+- MCP/A2A disponible no equivale a ERC-8183 contratable.
+- Identidad, contratos, fondos, allowance y estado del job se resuelven desde
+  BSC; trust8004 se consume solo por API.
+- La contratación sigue siendo no custodial. La llave del comprador nunca pasa
+  por el marketplace, el Worker ni trust8004.
+- Token, allowance exacto, presupuesto, deadline y propósito de cada transacción
+  se muestran antes de pedir una firma.
+- Un fallo de sondeo no borra silenciosamente un agente ya visible.
+- Los sellers operados por el marketplace se identifican como tales y nunca se
+  presentan como agentes oficiales de BNB.
+- Las cuatro categorías siguen siendo de primera clase: `rebalancing`,
+  `grid_trading`, `yield_optimisation` y `health_factor_monitoring`.
+- Cada CTA primario tiene un destino funcional; no se publica `Hire` si el flujo
+  no puede pedir y validar una quote fresca.
+
+---
+
+## 1. Hechos que gobiernan la implementación
+
+### 1.1 Verificados en este repositorio
+
+| Hecho | Evidencia | Estado |
+| --- | --- | --- |
+| BSC Mainnet | `chainId = 56` | `src/trust8004/types.ts` |
+| SDK ERC-8183 | `@bnbagent/sdk@0.5.0` | `package.json` |
+| TTL máximo del SDK | `NegotiationHandler.MAX_QUOTE_TTL_SECONDS = 900` | dependencia instalada, comprobado 2026-08-27 |
+| Edad máxima aceptada | 60 s | `src/readiness/protocols.ts` |
+| Tolerancia de reloj | 60 s | `src/readiness/protocols.ts` |
+| Respuesta máxima de seller | 64 KiB | `src/readiness/protocols.ts` y `src/verification/safe-http.ts` |
+| Timeout seguro por defecto | 10 s | `src/verification/safe-http.ts` |
+| Skill de negociación | `negotiate-erc8183-job` o `negotiate` | `src/erc8183/skills.ts` |
+| Skill posterior a funding | exactamente `notify_funded` | `src/erc8183/skills.ts` |
+| Seller propio | Agent `303779`, A2A, operado por el marketplace | `docs/DECISIONS.md` |
+| Registry ERC-8004 BSC | `0x8004a169fb4a3325136eb29fa0ceb6d2e539a432` | configuración validada del proyecto |
+| Commerce | `0xEa4DAa3100A767e86FDed867729ae7446476EBA6` | `src/mainnet/contracts.ts` |
+| Router | `0x51895229E12F9876011789B04f8698af06cCD6DA` | `src/mainnet/contracts.ts` |
+| Policy | `0x9C01845705b3078Aa2e8cfF7520a6376FD766dE5` | `src/mainnet/contracts.ts` |
+| Token `$U` | `0xcE24439F2D9C6a2289F741120FE202248B666666` | `src/mainnet/contracts.ts` |
+
+Las direcciones son configuración esperada, no sustituyen lecturas onchain. En
+cada probe se comprueba `paymentToken()` y que la Policy continúa allowlisted.
+
+### 1.2 Verificados contra Cloudflare
+
+Consulta oficial revisada el 2026-08-28:
+
+- Workers Free dispone de 128 MiB por isolate, 10 ms de CPU, 50 subrequests
+  externos por invocación y 15 min de wall time para Cron Triggers.
+- Workers Free permite 100.000 requests por día para la cuenta.
+- D1 Free permite 5 millones de filas leídas/día, 100.000 escritas/día y 5 GB
+  totales, con máximo de 500 MB para una base. Esta spec reserva 20 % de las
+  cuotas diarias.
+- D1 permite como máximo 50 queries por invocación Worker Free y 1.000 en Paid;
+  cada sentencia de `db.batch()` cuenta como una query. El presupuesto operativo
+  reserva 20 % y deja capacidad explícita para liberar el lease.
+- Una query D1 admite como máximo 100 parámetros enlazados.
+- Workers Paid, cuando se active explícitamente, permite 30 s de CPU para un
+  cron menor de una hora y 10.000 subrequests externos por invocación.
+- D1 `batch()` es transaccional y revierte el lote si falla una sentencia.
+- Cada invocación es independiente; memoria no sirve como lock/rate limiter
+  global.
+
+Fuentes:
+
+- <https://developers.cloudflare.com/workers/platform/limits/>
+- <https://developers.cloudflare.com/d1/platform/pricing/>
+- <https://developers.cloudflare.com/d1/platform/limits/>
+- <https://developers.cloudflare.com/d1/worker-api/d1-database/#batch>
+- <https://developers.cloudflare.com/workers/reference/how-workers-works/>
+
+Consecuencia normativa: no existe token bucket global en memoria. Un lease
+atómico en D1 serializa el cron y un presupuesto fijo limita cada corrida. Los
+10 ms son CPU activa, no wall time: esperar red no los consume, pero parsear JSON
+y serializar D1 sí. El Worker no puede medir con precisión su CPU activa desde el
+código; el gate usa métricas de staging de Cloudflare y lotes máximos estrictos.
+
+### 1.3 Baseline que WP0 debe reemplazar
+
+Research del 2026-08-27 registró provisionalmente:
+
+| Métrica | Baseline provisional | Publicable ahora |
+| --- | ---: | --- |
+| Total BSC | 309.897, bloque inicial 118441354, 2026-08-27T19:41:17.543Z | Sí, artefacto WP0 |
+| `metadataReason=ok` | 182.679 (58,95 %) | Sí, artefacto WP0 |
+| `http_unreachable` | 109.506 (35,34 %) | Sí, artefacto WP0 |
+| Declarantes ERC-8183 | 16: 12 solo ERC-8183 + 4 también A2A | Sí, artefacto WP0 |
+
+La afirmación “0 declaran ERC-8183” queda reemplazada por el conteo reproducible
+anterior. El artefacto es
+`evidence/funnel-bsc-2026-08-27T19-41-17Z.json`.
+
+### 1.4 Supuestos de API que WP0 revalida
+
+WP0 guarda respuesta y headers que prueben o corrijan:
+
+- ruta gratuita `/api/app/agents`;
+- límite anunciado de 60 req/min;
+- `limit=2000` devuelve 2.000 registros y el snapshot WP0 midió una página máxima
+  de 7.056.330 bytes. El cliente de catálogo usa un límite independiente de
+  16 MiB (`MAX_CATALOG_RESPONSE_BYTES=16777216`); no reutiliza el límite de
+  respuestas de sellers;
+- `sortBy=id` ordena lexicográficamente y no se usa; la pasada usa
+  `sortBy=registered&sortOrder=asc`, tolera timestamps ausentes, deduplica IDs y
+  confirma primera/media/última página por relectura exacta;
+- campos de servicios, endpoints, metadata y timestamps;
+- detalle `/api/app/agents/56:AGENT_ID`;
+- el `agentWallet` del detalle HTTP no es fuente onchain; `getAgentWallet` se lee
+  directamente de BSC, con fallback `ownerOf` cuando es zero/vacío;
+- el RPC público no garantiza estado histórico reciente. El artefacto distingue
+  bloque inicial del barrido y bloque de lectura wallet, sin fingir un corte HTTP
+  transaccional.
+
+Si cambia un punto, se actualiza esta spec antes de WP1.
+
+---
+
+## 2. Arquitectura mínima
+
+```text
+ trust8004 /api/app                  sellers externos
+ catálogo + metadata                A2A / HTTP ERC-8183
+          |                                  |
+          v                                  v
+ +---------------------------------------------------------+
+ | Cloudflare Worker Free por defecto                      |
+ | cron: lease D1 → una fase acotada → cursor persistido   |
+ | GET  /observations  público y cacheado                  |
+ | GET  /health        público, sin secretos               |
+ | POST /hire-events   solo servidor-a-servidor            |
+ +---------------------------+-----------------------------+
+                             |
+                    +--------v---------+
+                    | D1, cinco tablas |
+                    +------------------+
+                             |
+                       BSC RPC / viem
+
+ Marketplace en Vercel
+   - lee /observations fuera de la ruta crítica de render
+   - conserva fallback estático versionado
+   - pide quote fresca al pulsar Hire
+   - el navegador firma directamente contra BSC
+   - una ruta server-side reenvía telemetría mínima
+```
+
+No se añaden Queue, Durable Object, KV, R2 ni otro Worker. El funnel global usa
+el snapshot WP0 versionado. El conjunto live inicial contiene los 16 declarantes
+ERC-8183 y el inventario curado que preserva las cuatro categorías; los demás
+declarantes A2A permanecen visibles en el funnel, pero no se copian ni sondean
+continuamente. Si WP2 demuestra que el cron Free acotado no basta, se detiene el
+gate y se registra una decisión antes de ampliar arquitectura o activar Paid.
+
+---
+
+## 3. Modelo de datos D1
+
+Timestamps: epoch milisegundos. IDs/cantidades onchain: `TEXT` decimal para no
+depender del límite seguro de JavaScript.
+
+### 3.1 Schema normativo
+
+```sql
+CREATE TABLE probe_targets (
+  agentId                   TEXT NOT NULL,
+  chainId                   INTEGER NOT NULL CHECK (chainId = 56),
+  transport                 TEXT NOT NULL
+    CHECK (transport IN ('a2a', 'erc8183_http')),
+  endpoint                  TEXT NOT NULL,
+  name                      TEXT,
+  categoriesJson            TEXT NOT NULL DEFAULT '[]',
+  categoryProvenance        TEXT CHECK (
+    categoryProvenance IS NULL OR categoryProvenance = 'derived:marketplace-inventory'
+  ),
+  declarationState          TEXT NOT NULL
+    CHECK (declarationState IN ('current', 'removed', 'metadata_unavailable')),
+  currentMetadataUpdatedAt  INTEGER,
+  lastMetadataCheckedAt     INTEGER NOT NULL,
+  firstSeenAt               INTEGER NOT NULL,
+  lastChangedAt             INTEGER NOT NULL,
+  lastSeenAt                INTEGER NOT NULL,
+  priority                  INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (chainId, agentId, transport, endpoint)
+);
+CREATE INDEX idx_targets_probe
+  ON probe_targets (declarationState, priority DESC, chainId, agentId);
+
+CREATE TABLE probe_observations (
+  id                         INTEGER PRIMARY KEY AUTOINCREMENT,
+  agentId                    TEXT NOT NULL,
+  chainId                    INTEGER NOT NULL CHECK (chainId = 56),
+  transport                  TEXT NOT NULL
+    CHECK (transport IN ('a2a', 'erc8183_http')),
+  endpoint                   TEXT NOT NULL,
+  probedAt                   INTEGER NOT NULL,
+  probeCategory              TEXT CHECK (
+    probeCategory IS NULL OR probeCategory IN (
+      'rebalancing', 'grid_trading', 'yield_optimisation',
+      'health_factor_monitoring'
+    )
+  ),
+  outcome                    TEXT NOT NULL CHECK (outcome IN (
+    'quote_verified', 'protocol_valid', 'quote_rejected', 'quote_invalid',
+    'reachable', 'unreachable', 'unsafe_url', 'error'
+  )),
+  observedMetadataUpdatedAt  INTEGER,
+  observedWallet             TEXT,
+  observedWalletSource       TEXT
+    CHECK (observedWalletSource IS NULL OR observedWalletSource IN ('agentWallet', 'ownerOf')),
+  observedBlockNumber        TEXT,
+  onchainObservedAt          INTEGER,
+  commerce                   TEXT,
+  router                     TEXT,
+  policy                     TEXT,
+  priceRaw                   TEXT,
+  currency                   TEXT,
+  decimals                   INTEGER,
+  signatureMethod            TEXT
+    CHECK (signatureMethod IS NULL OR signatureMethod IN ('eip191', 'erc1271')),
+  signer                     TEXT,
+  requestHash                TEXT,
+  negotiationHash            TEXT,
+  quoteNegotiatedAt          INTEGER,
+  quoteExpiresAt             INTEGER,
+  httpStatus                 INTEGER,
+  errorCode                  TEXT,
+  durationMs                 INTEGER NOT NULL
+);
+CREATE INDEX idx_obs_agent
+  ON probe_observations (chainId, agentId, probedAt DESC);
+CREATE INDEX idx_obs_target
+  ON probe_observations (chainId, agentId, transport, endpoint, probedAt DESC);
+CREATE INDEX idx_obs_target_category
+  ON probe_observations (
+    chainId, agentId, transport, endpoint, probeCategory, probedAt DESC
+  );
+
+CREATE TABLE funnel_snapshots (
+  id                         INTEGER PRIMARY KEY AUTOINCREMENT,
+  measuredAt                 INTEGER NOT NULL,
+  blockNumber                TEXT NOT NULL,
+  sourcePath                 TEXT NOT NULL,
+  sourceSha256               TEXT NOT NULL,
+  registeredTotal            INTEGER NOT NULL,
+  metadataOk                 INTEGER NOT NULL,
+  metadataHttpUnreachable    INTEGER NOT NULL,
+  metadataOther              INTEGER NOT NULL,
+  a2aOnly                    INTEGER NOT NULL,
+  erc8183Only                INTEGER NOT NULL,
+  both                       INTEGER NOT NULL,
+  mcpOnly                    INTEGER NOT NULL,
+  otherOrNone                INTEGER NOT NULL,
+  protocolUnknown            INTEGER NOT NULL,
+  declaredCandidateEndpoints INTEGER NOT NULL,
+  publicCandidateEndpoints   INTEGER NOT NULL
+);
+
+CREATE TABLE hire_events (
+  id               INTEGER PRIMARY KEY AUTOINCREMENT,
+  eventKey         TEXT NOT NULL UNIQUE,
+  agentId          TEXT NOT NULL,
+  chainId          INTEGER NOT NULL CHECK (chainId = 56),
+  phase            TEXT NOT NULL CHECK (phase IN (
+    'clicked', 'quoted', 'quote_rejected',
+    'created', 'funded', 'submitted', 'settled', 'refunded'
+  )),
+  provenance       TEXT NOT NULL
+    CHECK (provenance IN ('marketplace_observed', 'chain_verified')),
+  jobId            TEXT,
+  txHash           TEXT,
+  blockNumber      TEXT,
+  occurredAt       INTEGER NOT NULL,
+  verifiedAt       INTEGER
+);
+CREATE INDEX idx_hire_agent
+  ON hire_events (chainId, agentId, occurredAt DESC);
+
+CREATE TABLE runtime_state (
+  key          TEXT PRIMARY KEY,
+  textValue    TEXT,
+  integerValue INTEGER,
+  updatedAt    INTEGER NOT NULL
+);
+```
+
+### 3.2 Invariantes de escritura
+
+- `probe_observations`, `funnel_snapshots` y `hire_events` son append-only. La
+  aplicación no ejecuta `UPDATE` ni `DELETE` sobre ellas.
+- `probe_targets` solo se escribe si cambia un campo material. `lastSeenAt` se
+  refresca como máximo una vez por hora.
+- Un endpoint retirado pasa a `declarationState=removed`; no se borra ni se
+  vuelve a sondear, pero permanece visible con explicación.
+- `MAX(probedAt)` deriva la última observación; no existe `lastProbedAt` mutable.
+- `eventKey` hace idempotentes los reintentos:
+  - telemetría: UUID generado server-side;
+  - chain: `chainId:txHash:phase`.
+- `expired` se deriva del deadline/estado onchain y no se persiste como evento.
+- No se guardan user ID, IP, cookie, sesión, user-agent, headers, payloads crudos
+  del seller ni entregables arbitrarios.
+- No hay purga automática durante la ventana de submission. WP0 estima el
+  crecimiento de 30 días; cualquier retención posterior requiere un ADR y una
+  exportación verificable antes de borrar observaciones.
+- Buckets exclusivos:
+  `a2aOnly + erc8183Only + both + mcpOnly + otherOrNone + protocolUnknown = registeredTotal`.
+  `protocolUnknown` contiene metadata no resoluble; nunca se mezcla “desconocido”
+  con “no declara protocolo”.
+
+### 3.3 Claves de `runtime_state`
+
+```text
+scheduler_lease       textValue=runId, integerValue=expiresAt
+sweep_offset          integerValue=offset
+sweep_round           integerValue=vueltas completas
+header_high_water     textValue=registeredAt:agentId
+last_header_summary   textValue=JSON sanitizado
+last_sweep_summary    textValue=JSON sanitizado
+last_probe_summary    textValue=JSON sanitizado
+last_scheduler_summary textValue=JSON sanitizado (`skipped_locked`, sin runId)
+last_funnel_snapshot  integerValue=funnel_snapshots.id
+next_scheduler_phase  textValue=header|sweep|probe
+daily_budget_YYYYMMDD textValue=JSON con invocations/requests/D1 rows observadas
+```
+
+---
+
+## 4. Scheduler, concurrencia y presupuesto
+
+### 4.1 Un solo cron Free-first
+
+`*/5 * * * *` invoca un `scheduled()` en el perfil Free. Cada invocación ejecuta
+exactamente una fase (`HEADER`, `SWEEP` o `PROBE`) y persiste la siguiente en
+`next_scheduler_phase`; nunca carga el funnel completo en memoria. La expresión
+cron se despliega desde la configuración y debe coincidir con
+`CRON_INTERVAL_MINUTES`.
+
+1. Genera `runId` aleatorio.
+2. Adquiere `scheduler_lease` mediante `INSERT ... ON CONFLICT DO UPDATE ...
+   WHERE integerValue <= now RETURNING key`.
+3. El lease Free expira antes de la siguiente ventana útil y siempre bajo el
+   límite de 15 min de wall time.
+4. Si no obtiene la fila, registra `skipped_locked` y termina sin red ni writes
+   de datos.
+5. Libera con `UPDATE ... WHERE textValue = runId`; una corrida no libera el
+   lease de otra.
+
+El lock es obligatorio aunque normalmente la corrida dure segundos. La fase no
+avanza si su batch o resumen falla.
+
+El perfil Paid puede ejecutar el pipeline `HEADER → SWEEP → PROBE`, pero solo si
+`CLOUDFLARE_WORKERS_PLAN=paid` se configura explícitamente. Cambiar el perfil no
+desactiva `KILL_SWITCH` ni activa el cron por sí solo.
+
+### 4.2 Presupuesto trust8004
+
+```text
+Free: max(1 HEADER, SWEEP_PAGES_PER_RUN, PROBE_BATCH_SIZE detalles)
+Paid pipeline: 1 HEADER + SWEEP_PAGES_PER_RUN + PROBE_BATCH_SIZE detalles
++ 0 retries automáticos
+<= TRUST8004_REQUESTS_PER_RUN
+
+toda llamada trust8004 + BSC RPC + seller
+<= EXTERNAL_SUBREQUESTS_PER_RUN
+<= máximo operativo del perfil
+```
+
+Defaults iniciales:
+
+```text
+CLOUDFLARE_WORKERS_PLAN=free
+CRON_INTERVAL_MINUTES=5
+SCHEDULER_MODE=single_phase (derivado, no sobreescribible en Free)
+HEADER_LIMIT=25                  máximo Free 50
+PROBE_BATCH_SIZE=1              máximo Free 1
+SWEEP_LIMIT=25                  máximo Free 50
+SWEEP_PAGES_PER_RUN=1           máximo Free 1
+TRUST8004_REQUESTS_PER_RUN=4
+EXTERNAL_SUBREQUESTS_PER_RUN=12 máximo Free 40, plataforma 50
+D1_QUERIES_PER_RUN=40           máximo Free 40, plataforma D1 50
+D1_ROWS_READ_PER_RUN=10000
+D1_ROWS_WRITTEN_PER_RUN=250
+PROBE_TIMEOUT_MS=5000
+MAX_CATALOG_RESPONSE_BYTES=16777216
+MAX_SELLER_RESPONSE_BYTES=32768
+```
+
+Con cinco minutos y rotación de tres fases hay hasta 96 ejecuciones de SWEEP por
+día. A 25 registros son 2.400 registros/día: una reconciliación global sería
+inaceptablemente lenta, por lo que SWEEP Free opera sobre el conjunto live
+priorizado y el funnel global permanece snapshot-backed. WP2 solo aumenta un
+valor dentro del sobre Free si dos vueltas prueban:
+
+- cero `exceededCpu` y CPU observada con margen bajo 10 ms;
+- memoria pico < 96 MiB;
+- wall time p95 < 30 s;
+- máximo 40 subrequests externos por invocación y presupuesto upstream
+  configurado, incluyendo detalles;
+- máximo 40 queries D1 por invocación; una sentencia dentro de `db.batch()`
+  cuenta individualmente y el contador rechaza el exceso antes de acceder a D1;
+- proyección y métricas reales por debajo de 4 millones de filas D1 leídas/día
+  y 80.000 escritas/día;
+- cero 429;
+- una página se procesa/libera antes de pedir la siguiente.
+
+El código rechaza al arrancar una configuración Free que exceda el sobre o la
+proyección diaria. Los valores medidos se documentan en `docs/DECISIONS.md`.
+
+---
+
+## 5. Flujos
+
+### 5.1 WP0 / SNAPSHOT — evidencia y dimensionamiento
+
+Una pasada completa ordenada por `registeredAt` ascendente, acotada a 55 req/min,
+genera:
+
+```text
+evidence/funnel-bsc-YYYY-MM-DDTHH-mm-ssZ.json
+```
+
+Contiene:
+
+- schemaVersion, generatedAt, chainId, bloque inicial y bloque de lectura wallet;
+- URL base/parámetros sin secretos y headers de rate limit;
+- total y distribución de metadata;
+- buckets `a2aOnly`, `erc8183Only`, `both`, `mcpOnly`, `otherOrNone` y
+  `protocolUnknown`;
+- endpoints candidatos declarados y HTTPS sintácticamente públicos;
+- top 10 dominios agregado, sin payloads;
+- páginas, primer/último ID, timestamps ausentes, IDs duplicados por deriva de
+  offset, errores y duración;
+- SHA-256 del contenido canónico.
+
+`sourceSha256` se calcula sobre el JSON canónico omitiendo el propio campo
+`sourceSha256`; después se inserta el digest. Así el artefacto no contiene un hash
+autorreferencial.
+
+Clasificación exclusiva del protocolo:
+
+1. metadata no resoluble/parseable → `protocolUnknown`;
+2. A2A y ERC-8183 → `both`;
+3. solo ERC-8183 → `erc8183Only`;
+4. solo A2A → `a2aOnly`;
+5. MCP sin A2A/ERC-8183 → `mcpOnly`;
+6. cualquier otro caso con metadata resoluble → `otherOrNone`.
+
+Checks bloqueantes:
+
+- los seis buckets suman `registeredTotal`;
+- `metadataOk + metadataHttpUnreachable + metadataOther = registeredTotal`;
+- total a menos de 1 % del `countOnly` leído al inicio de la misma ventana de
+  observación; la API no ofrece pinning transaccional y esa limitación queda
+  explícita;
+- una segunda lectura de páginas de muestra confirma el orden;
+- artefacto sin secretos ni payloads completos;
+- si declarantes A2A/ERC-8183 o endpoints candidatos superan 5.000, se detiene
+  WP1 y se recalcula almacenamiento/cadencia. El snapshot encontró 21.210
+  declarantes y 21.213 endpoints; el gate queda resuelto por el perfil Free y el
+  conjunto live priorizado de esta versión, no aumentando infraestructura.
+
+Después se actualiza la landing. WP1 importa el mismo resumen en
+`funnel_snapshots` al sembrar la base por primera vez.
+
+### 5.2 HEADER — registros recientes
+
+Cada fase HEADER pide `HEADER_LIMIT` registros más recientes y procesa la página
+completa (25 por defecto y máximo 50 en Free; 200 por defecto en Paid);
+nunca corta al encontrar el primer ID conocido.
+
+Por elemento:
+
+1. valida payload;
+2. actualiza high-water `(registeredAt, agentId)`;
+3. aplica filtro de sección 6;
+4. upsert solo si cambió;
+5. target nuevo/modificado recibe `priority=1`.
+
+HEADER obtiene los targets existentes con una lectura acotada y agrupa todos los
+writes de la página. No ejecuta `SELECT + INSERT/UPDATE` por elemento. El batch,
+el resumen, el avance de fase y la liberación del lease deben caber juntos en
+`D1_QUERIES_PER_RUN`; si el preflight excede el presupuesto, no se inicia ningún
+write.
+
+Si una caída supera la ventana, `/health` muestra
+`header_window_exhausted=true`; SWEEP recupera lo omitido dentro del conjunto
+live. El check de frescura se calcula contra la cadencia y el límite del perfil,
+no contra una constante de dos minutos.
+
+### 5.3 SWEEP — reconciliación rodante
+
+Lee páginas ascendentes desde `sweep_offset`. En Free reconcilia únicamente IDs
+ERC-8183 descubiertos por WP0/HEADER y el inventario curado de cuatro categorías;
+no intenta materializar los 309.897 registros globales. Por página:
+
+1. valida/procesa una respuesta en memoria;
+2. compara candidatos;
+3. actualiza solo cambios;
+4. marca `removed` endpoints antes declarados que ya no aparecen;
+5. ejecuta writes y nuevo offset en un `db.batch()`.
+
+Cada sentencia del batch consume una query del presupuesto. SWEEP calcula el
+costo completo antes de ejecutar el batch; no lo divide después de comenzar a
+escribir. La lectura de candidatos usa una consulta acotada y respeta el máximo
+de 100 parámetros enlazados por query.
+
+Al final guarda resumen y vuelve el offset a cero. Un fallo antes del batch no
+adelanta cursor; repetir página es idempotente.
+
+### 5.4 PROBE — candidatos
+
+Selección inicial Free: declarantes ERC-8183 primero y después inventario curado;
+los A2A globales no curados no consumen probes. Selección:
+
+```sql
+SELECT current targets
+LEFT JOIN latest observation per target
+ORDER BY priority DESC, latest.probedAt ASC NULLS FIRST
+LIMIT PROBE_BATCH_SIZE
+```
+
+Cada target, secuencialmente:
+
+1. pide perfil actual y reconcilia metadata/endpoints; si falla, marca
+   `metadata_unavailable`, conserva la última observación, no contacta al seller
+   y no lo clasifica como `unreachable`;
+2. si endpoint ya no está declarado, actualiza target y no lo contacta;
+3. elige la categoría menos recientemente probada de `categoriesJson`, usando el
+   orden estable `rebalancing`, `grid_trading`, `yield_optimisation`,
+   `health_factor_monitoring` para desempatar; si está vacío usa readiness neutro;
+4. resuelve `getAgentWallet`; si zero/vacío, usa `ownerOf` y
+   `walletSource=ownerOf`;
+5. crea transporte seguro;
+6. obtiene Agent Card o `/erc8183/health` + `/erc8183/status`;
+7. envía términos deterministas de categoría;
+8. valida rechazo/quote;
+9. inserta una observación sanitizada, incluido `probeCategory`;
+10. mantiene `priority=1` mientras alguna categoría curada no tenga observación;
+    cuando todas tengan al menos una, pone `priority=0`.
+
+Clasificación:
+
+```text
+URL rechazada antes de fetch                         -> unsafe_url
+timeout, red, HTTP 5xx                               -> unreachable
+HTTP responde pero JSON/protocolo es inválido        -> reachable
+rechazo ERC-8183 estructurado y validado              -> quote_rejected
+protocolo válido sin quote por condición demostrable -> protocol_valid
+quote presente que falla una condición               -> quote_invalid
+quote que pasa todas las condiciones                  -> quote_verified
+error interno/RPC/D1                                  -> error
+```
+
+Un 4xx u objeto con `error` no prueba el protocolo. El rechazo debe pasar el
+parser ERC-8183/A2A cubierto por tests.
+
+### 5.5 Términos por categoría
+
+Los strings siguientes son normativos: cambiar un carácter cambia el hash y
+requiere actualizar fixture, test y `schemaVersion` del template.
+
+| Categoría | `taskDescription` exacto |
+| --- | --- |
+| `rebalancing` | `REBALANCE_READINESS_V1:{"currentBps":{"BNB":6000,"USDT":4000},"targetBps":{"BNB":5000,"USDT":5000}}` |
+| `grid_trading` | `GRID_PLAN_V1:{"pair":"BNB/USDT","lowerPrice":"700","upperPrice":"900","capital":"1000","gridCount":9}` |
+| `yield_optimisation` | `YIELD_READINESS_V1:{"capital":"1000","currency":"USDT","maxProtocols":3,"risk":"moderate"}` |
+| `health_factor_monitoring` | `HEALTH_FACTOR_READINESS_V1:{"collateral":"10 BNB","debt":"2000 USDT","warningThreshold":"1.50","criticalThreshold":"1.20"}` |
+
+`TermSpecification` exacta:
+
+| Categoría | `deliverables` | `qualityStandards` |
+| --- | --- | --- |
+| `rebalancing` | `Deterministic portfolio rebalancing plan with target deltas and assumptions` | `Analysis only, deterministic output, no order execution and no custody` |
+| `grid_trading` | `Deterministic Grid plan JSON with levels, allocation, triggers and assumptions` | `Deterministic output, no order execution and no custody` |
+| `yield_optimisation` | `Deterministic comparison of yield options with allocation rationale and assumptions` | `Analysis only, no deposits, no transaction execution and no custody` |
+| `health_factor_monitoring` | `Deterministic health-factor assessment with thresholds, alerts and suggested actions` | `Analysis only, no transaction execution and no custody` |
+
+Hashes esperados, calculados con `@bnbagent/sdk@0.5.0` el 2026-08-27:
+
+| Categoría | `NegotiationRequest.computeHash()` |
+| --- | --- |
+| `rebalancing` | `0x30c4d87009384d98601811722a9982fbe95d4efd65b5f891e46937832e9c0288` |
+| `grid_trading` | `0x697a15f62a1748230d3e4bdbbe24f6a619d1b82d45f1e4c82787e268ab2497d3` |
+| `yield_optimisation` | `0xf932f814bf58850fca34c32d25dc38890041079f75014d4e400bb92d607c9970` |
+| `health_factor_monitoring` | `0xb31d452e27e497cb57af53f4f0caa9ed394d1c19acdab34e18aefe4924378ef4` |
+
+El template Grid coincide con `GRID_CANONICAL_INPUT`, `GRID_NEGOTIATION_TERMS` y
+`gridTaskDescription()` del marketplace; WP3 compara ambos hashes como gate. Cada
+template tiene fixture, hash esperado y test. Si no se puede asignar categoría,
+se usa el `NegotiationRequest` neutro de `src/readiness/protocols.ts` y
+`categoriesJson=[]`; nunca se autoasigna categoría por la respuesta del seller.
+
+### 5.6 RENDER
+
+```text
+Worker disponible -> snapshot cacheado -> etiqueta calculada al leer
+Worker no disponible -> snapshot público versionado -> aviso de frescura
+```
+
+La ficha puede consultar trust8004 en vivo, pero una caída no elimina contenido.
+
+### 5.7 HIRE y TRACK
+
+1. `Hire` registra `clicked` mediante ruta server-side.
+2. Marketplace vuelve a resolver perfil, endpoint y wallet.
+3. Pide quote fresca; nunca reutiliza la del probe.
+4. Valida con sección 8.
+5. Muestra token, allowance, budget, deadline y transacciones.
+6. Wallet inyectada firma/envía directamente a BSC.
+7. Tras cada receipt, lee receipt/estado onchain antes de emitir
+   `chain_verified`.
+8. Track/Result leen BSC; D1 conserva solo referencia idempotente observada.
+
+`SHARED_SECRET` solo existe en Vercel server y Worker. El navegador llama una
+ruta same-origin; esta valida, elimina contexto y reenvía.
+
+---
+
+## 6. Descubrimiento y catálogo monotónico
+
+### 6.1 Filtro
+
+Un endpoint entra como target actual si cumple el filtro técnico siguiente y,
+en Free, su agente declara ERC-8183 o pertenece al inventario curado:
+
+1. `chainId === 56`;
+2. metadata disponible y parseada;
+3. está en `services[]` o `endpoints[]`;
+4. nombre normalizado con `toLowerCase().replace(/[^a-z0-9]/g, "")`:
+   - `a2a` → `a2a`;
+   - `erc8183` → `erc8183_http`;
+5. HTTPS sin credenciales y aceptada por política segura;
+6. máximo dos endpoints por agente, en orden estable.
+
+No se exige `agentWallet` de trust8004. MCP-only y A2A global no curado alimentan
+el funnel, no targets live en Free.
+`categoriesJson` es un array ordenado y sin duplicados exportado desde
+`marketplaceInventoryEntries()` de
+`src/data/inventory/marketplace-inventory.ts`, con provenance
+`derived:marketplace-inventory` y estado `candidate_unverified`. El Worker no
+ejecuta `classifyProfile()` sobre el catálogo global y la respuesta del probe
+nunca añade categorías. Targets fuera del inventario curado usan `[]`.
+
+### 6.2 Estados visibles
+
+- `current`: declarado; elegible para probe.
+- `removed`: ya no declarado; visible sin Hire.
+- `metadata_unavailable`: no reconciliado; visible con última evidencia buena.
+- `unreachable`: target actual cuyo último probe falló; visible.
+
+Ausencia temporal nunca equivale a eliminación o fraude.
+
+---
+
+## 7. Transporte seguro
+
+La implementación Node existente no se copia literalmente: Workers no ofrece el
+mismo pinning mediante `undici.Agent`. Se reutilizan listas, normalización,
+límites, mensajes y tests; se escribe adaptador Workers.
+
+Controles:
+
+- solo `https:` y sin username/password;
+- rechazar `localhost`, `.localhost`, `.local` y literales IP no públicos;
+- portar todos los rangos de `src/verification/safe-http.ts`, no solo RFC1918;
+- usar proxy de salida público de Workers; no fingir DNS pinning;
+- `redirect: "error"`;
+- timeout total 10 s por target;
+- máximo 64 KiB descomprimidos, abortando el stream;
+- `Accept: application/json` y parseo en el borde;
+- máximo dos endpoints por agente; probes secuenciales;
+- nunca enviar cookies, Authorization, secretos ni headers de usuario;
+- nunca persistir/reflejar payloads o errores crudos.
+
+Tests mínimos: IPv4/IPv6 privados/reservados/documentación/multicast/mapped,
+credenciales, redirects, timeout, body mayor de 64 KiB (también comprimido), DNS
+sin respuesta, JSON inválido y sanitización de query/body.
+
+El egress real se prueba en staging; Miniflare no demuestra el proxy productivo.
+
+---
+
+## 8. Quote verificada
+
+`quote_verified` exige:
+
+1. request/response pasan parser SDK;
+2. `request_hash` coincide con `NegotiationRequest` exacto;
+3. `negotiation_hash` válido y conservado;
+4. firma EIP-191/ERC-1271 válida;
+5. signer/provider igual a wallet resuelta onchain en el mismo probe, nunca a la
+   address autodeclarada por quote;
+6. `negotiated_at`: máximo 60 s futuro y edad máxima 60 s;
+7. expiración futura/posterior a negociación y ventana máxima 900 s;
+8. price entero positivo raw;
+9. currency igual a `paymentToken()` y `$U` configurado;
+10. `verifying_contract` igual a Commerce;
+11. Router/Policy/Commerce allowlisted y `policyWhitelist(policy)=true`;
+12. para HTTP, `/status` coincide en agent, contratos, currency y decimals.
+
+El probe no crea, financia ni ejecuta jobs.
+
+---
+
+## 9. Etiqueta calculada al leer
+
+```text
+removed              -> Declaration changed
+metadata_unavailable -> Metadata unavailable · last good <timestamp>
+metadata version != observed -> Reverification required
+latest unreachable   -> Unreachable at <timestamp> · last verified <timestamp|null>
+
+latest quote_verified
+AND now <= quoteExpiresAt
+AND now - quoteNegotiatedAt <= 60 s
+AND metadata version matches
+AND endpoint current
+  -> Hireable now · verified <timestamp>
+
+otherwise -> literal outcome + timestamp
+```
+
+En una vista filtrada por categoría se usa la última observación de esa categoría,
+no la última observación global del endpoint. Para targets sin categoría se usa
+la observación neutra/global.
+
+`Hireable now` significa que pasó la política con evidencia vigente, no promesa
+ni endorsement. Hire vuelve a pedir quote y leer wallet/allowlist antes de firma.
+`ownerOf` se muestra como `onchain default`, no wallet específica verificada.
+
+---
+
+## 10. Contrato HTTP del Worker
+
+### 10.1 `GET /observations`
+
+Público:
+
+```text
+Cache-Control: public, s-maxage=60, stale-while-revalidate=300
+Content-Type: application/json
+```
+
+```ts
+type Outcome =
+  | "quote_verified" | "protocol_valid" | "quote_rejected" | "quote_invalid"
+  | "reachable" | "unreachable" | "unsafe_url" | "error";
+
+type MarketplaceCategory =
+  | "rebalancing" | "grid_trading"
+  | "yield_optimisation" | "health_factor_monitoring";
+
+type LatestObservation = {
+  probedAt: number;
+  probeCategory: MarketplaceCategory | null;
+  outcome: Outcome;
+  observedMetadataUpdatedAt: number | null;
+  observedWallet: string | null;
+  observedWalletSource: "agentWallet" | "ownerOf" | null;
+  observedBlockNumber: string | null;
+  onchainObservedAt: number | null;
+  commerce: string | null;
+  router: string | null;
+  policy: string | null;
+  priceRaw: string | null;
+  currency: string | null;
+  decimals: number | null;
+  requestHash: string | null;
+  negotiationHash: string | null;
+  quoteNegotiatedAt: number | null;
+  quoteExpiresAt: number | null;
+  signatureMethod: "eip191" | "erc1271" | null;
+  errorCode: string | null;
+};
+
+type ObservationsResponse = {
+  schemaVersion: 1;
+  generatedAt: number;
+  funnel: {
+    measuredAt: number;
+    blockNumber: string;
+    sourceSha256: string;
+    registeredTotal: number;
+    metadataOk: number;
+    metadataHttpUnreachable: number;
+    metadataOther: number;
+    a2aOnly: number;
+    erc8183Only: number;
+    both: number;
+    mcpOnly: number;
+    otherOrNone: number;
+    protocolUnknown: number;
+    declaredCandidateEndpoints: number;
+    publicCandidateEndpoints: number;
+  } | null;
+  targets: Array<{
+    agentId: string;
+    chainId: 56;
+    transport: "a2a" | "erc8183_http";
+    endpoint: string;
+    name: string | null;
+    categories: MarketplaceCategory[];
+    categoryProvenance: "derived:marketplace-inventory" | null;
+    declarationState: "current" | "removed" | "metadata_unavailable";
+    currentMetadataUpdatedAt: number | null;
+    lastMetadataCheckedAt: number;
+    latest: LatestObservation | null;
+    latestByCategory: Partial<Record<MarketplaceCategory, LatestObservation>>;
+    lastQuoteVerifiedAt: number | null;
+    lastQuoteVerifiedAtByCategory: Partial<Record<MarketplaceCategory, number>>;
+  }>;
+};
+```
+
+Nunca devuelve firma, payload crudo, headers o errores externos.
+
+### 10.2 `GET /health`
+
+Público y sanitizado: última fase, offset/vuelta, targets por estado, lease como
+booleano+expiración (no runId), requests, CPU/wall time, último código de error y
+kill switch. Devuelve 200 aunque una fase esté degradada; 503 solo si no lee D1.
+
+### 10.3 `POST /hire-events`
+
+Privado servidor-a-servidor:
+
+- Bearer secret, body JSON máximo 8 KiB, enum cerrado/campos desconocidos fuera;
+- comparación constante del secreto;
+- telemetría con `marketplace_observed`;
+- fases onchain con `chain_verified`, jobId y txHash obligatorios;
+- receipt, contrato, evento y jobId verificados por RPC antes del insert; el
+  estado actual debe existir y ser compatible con haber pasado por la fase, no
+  ser exactamente una fase histórica que el job ya superó;
+- `occurredAt` lo asigna el servidor: hora de recepción para telemetría y
+  timestamp del bloque para chain; nunca se acepta como verdad desde browser;
+- conflicto `eventKey` devuelve 200 idempotente;
+- sin CORS de escritura; navegador nunca conoce la ruta.
+
+---
+
+## 11. Configuración
+
+Secrets:
+
+```text
+SHARED_SECRET
+BSC_RPC_URL
+```
+
+Variables:
+
+```text
+TRUST8004_BASE_URL=https://trust8004.xyz/api/app
+CLOUDFLARE_WORKERS_PLAN=free
+KILL_SWITCH=1
+CRON_INTERVAL_MINUTES=5
+HEADER_LIMIT=25
+SWEEP_LIMIT=25
+SWEEP_PAGES_PER_RUN=1
+PROBE_BATCH_SIZE=1
+TRUST8004_REQUESTS_PER_RUN=4
+EXTERNAL_SUBREQUESTS_PER_RUN=12
+D1_QUERIES_PER_RUN=40
+D1_ROWS_READ_PER_RUN=10000
+D1_ROWS_WRITTEN_PER_RUN=250
+PROBE_TIMEOUT_MS=5000
+MAX_CATALOG_RESPONSE_BYTES=16777216
+MAX_SELLER_RESPONSE_BYTES=32768
+```
+
+`bnb-agent-probe/src/config.ts` es la fuente ejecutable WP1 de defaults, máximos
+y validación. Mientras convive con el bootstrap previo
+`src/observation/worker-config.ts`, un test de paridad impide drift entre ambos;
+WP2 elimina el bootstrap al mover la política de rotación al Worker. Free es el
+fallback cuando falta la variable de plan. En Paid los
+defaults vuelven a 200/2000×2/10 y pipeline, pero requieren
+`CLOUDFLARE_WORKERS_PLAN=paid`; cualquier cambio de plan se despliega primero con
+`KILL_SWITCH=1` y sin Cron Trigger activo.
+
+### 11.1 Runbook local obligatorio con Wrangler
+
+WP1–WP3 se validan primero contra el runtime y D1 locales de Wrangler. Ningún
+comando local usa `--remote`, crea recursos productivos ni necesita activar el
+plan Paid.
+
+Desde `bnb-agent-probe`:
+
+```bash
+npm install
+npx wrangler d1 migrations list bnb-agent-probe --local
+npx wrangler d1 migrations apply bnb-agent-probe --local
+npx wrangler dev --test-scheduled
+```
+
+Con el servidor local activo:
+
+```bash
+curl --fail http://localhost:8787/health
+curl --fail "http://localhost:8787/__scheduled?cron=*/5+*+*+*+*"
+```
+
+El endpoint scheduled local se invoca primero con `KILL_SWITCH=1`: debe devolver
+éxito sin adquirir trabajo, hacer fetch externo ni escribir datos de fases.
+Después, un archivo `.dev.vars` no versionado puede usar `KILL_SWITCH=0` para las
+pruebas controladas. Secrets reales nunca se incluyen en fixtures, comandos,
+logs o configuración versionada.
+
+El gate local termina con:
+
+```bash
+npm test
+npm run typecheck
+npx wrangler deploy --dry-run --outdir dist/worker
+```
+
+Checks bloqueantes:
+
+- migraciones aplican sobre una D1 vacía y una segunda aplicación no altera el
+  schema;
+- `/health` informa `plan=free`, `schedulerMode=single_phase`, kill switch,
+  budgets y disponibilidad D1 sin exponer valores secretos;
+- dos adquisiciones concurrentes del lease producen exactamente un ganador;
+- cada llamada a `/__scheduled` ejecuta como máximo la fase persistida y rota
+  `header → sweep → probe → header` solo después de éxito atómico;
+- kill switch impide red y writes de fases, aunque permite leer `/health`;
+- contadores observados nunca superan los presupuestos configurados;
+- el contador D1 admite como máximo 40 queries Free, cuenta cada sentencia de un
+  batch y rechaza la siguiente antes de acceder a D1;
+- tests prueban que las tablas append-only no reciben `UPDATE`/`DELETE` desde la
+  aplicación;
+- el dry-run compila el mismo entrypoint y bindings que staging.
+
+Wrangler/Miniflare valida comportamiento, bindings y persistencia local, pero no
+demuestra el límite real de 10 ms de CPU ni el egress productivo de Cloudflare.
+
+### 11.2 Gate de staging Free
+
+Staging usa una D1 separada y comienza sin Cron Trigger. El orden es obligatorio:
+
+1. provisionar `bnb-agent-probe-staging` y aplicar migraciones usando
+   explícitamente el entorno Wrangler `staging`;
+2. desplegar ese entorno con `CLOUDFLARE_WORKERS_PLAN=free`, `KILL_SWITCH=1` y
+   sin cron;
+3. comprobar `/health` y que ninguna métrica contiene secretos o payloads;
+4. ejecutar manualmente HEADER con límite 1, después 5 y finalmente 25;
+5. comprobar en métricas/logs Cloudflare CPU, wall time, outcome, subrequests y
+   filas D1 leídas/escritas;
+6. ejecutar manualmente una fase SWEEP del conjunto live;
+7. ejecutar un único PROBE allowlisted para Grid `303779`;
+8. habilitar `*/5 * * * *` solo tras dos rotaciones completas sin
+   `exceededCpu`, 429, exceso de presupuesto ni avance incorrecto de cursor.
+
+Cada incremento exige margen bajo 10 ms; que una ejecución aislada reciba
+flexibilidad de plataforma no cuenta como gate pasado. Si HEADER=1, SWEEP=1 o el
+probe único exceden CPU de forma repetible, se reactiva el kill switch y se
+detiene WP2/WP3. No se activa Paid automáticamente ni se mueve trabajo a otro
+servicio sin una nueva decisión.
+
+### 11.3 Promoción explícita Free → Paid
+
+El cambio requiere confirmación de que la cuenta ya tiene Workers Paid y una
+decisión operativa registrada. No existe detección automática del plan.
+
+Checklist:
+
+1. conservar export/backup de D1 y métricas base Free;
+2. desplegar staging con `CLOUDFLARE_WORKERS_PLAN=paid`, `KILL_SWITCH=1` y cron
+   todavía desactivado;
+3. ejecutar tests, typecheck, dry-run, migraciones y smoke de `/health`;
+4. probar manualmente defaults Paid: HEADER 200, SWEEP 2000×2 y PROBE 10;
+5. demostrar dos pipelines completos bajo los gates de CPU, memoria, wall time,
+   upstream y D1;
+6. configurar el cron de un minuto manteniendo el kill switch;
+7. habilitar con `KILL_SWITCH=0` y observar al menos dos vueltas antes de dar la
+   promoción por terminada.
+
+Rollback:
+
+1. poner `KILL_SWITCH=1` inmediatamente;
+2. desactivar el cron de un minuto;
+3. restaurar `CLOUDFLARE_WORKERS_PLAN=free` y los defaults Free;
+4. desplegar y verificar `/health` antes de reactivar el cron de cinco minutos;
+5. no revertir ni borrar observaciones append-only; corregir cursor/lease solo
+   mediante una migración o reparación documentada e idempotente.
+
+---
+
+## 12. Implementación paso a paso y gates
+
+No se paraleliza antes de estabilizar schema/contratos:
+
+```text
+WP0 → WP1 → WP2 → WP3 → WP4 → {WP5, WP6} → WP7
+```
+
+### WP0 — Evidencia y presupuesto
+
+Entrega: snapshot reproducible, API/headers revalidados, benchmark `limit=2000` y
+conteos definitivos.
+
+Gate: sumas/corte pasan, toda cifra tiene artefacto y cualquier exceso del sizing
+original produce un perfil documentado que cabe en el plan operativo vigente.
+
+### WP1 — Worker, schema y `/health`
+
+Entrega: repo, Wrangler, Drizzle SQLite, migraciones, cinco tablas, lease,
+`/health`, kill switch, sin cron y manifest versionado de categorías curadas
+exportado desde `marketplaceInventoryEntries()`.
+
+Gate:
+
+- config ausente selecciona Free, kill switch encendido y `single_phase`;
+- configuraciones Free fuera del sobre fallan antes de acceder a red/D1;
+- runbook local completo de sección 11.1 pasa antes de crear staging;
+- tests D1 pasan y `wrangler deploy --dry-run` pasa;
+- staging responde;
+- dos adquisiciones concurrentes producen un ganador;
+- el manifest conserva los cinco IDs/categorías actuales, incluido Grid 303779,
+  y todo assignment sigue marcado `candidate_unverified`;
+- cero UPDATE/DELETE sobre tablas append-only.
+
+Resultado verificado el 2026-08-28: el subproyecto `bnb-agent-probe` pasa
+typecheck, 46 tests unitarios/schema, 5 tests dentro del runtime Workers, dos
+aplicaciones idempotentes de migraciones locales y `wrangler deploy --dry-run`.
+El entorno `bnb-agent-probe-staging` usa una D1 separada, responde en
+`/health`, conserva `KILL_SWITCH=1`, no define Cron Trigger y mantiene las fases
+de red sin implementar. El gate WP1 no autoriza ejecutar HEADER, SWEEP o PROBE;
+esas pruebas y sus métricas corresponden a WP2 y WP3.
+
+### WP2 — HEADER y SWEEP
+
+Entrega: parser, filtro, HEADER completo, SWEEP página+cursor atómico, presupuesto
+y métricas.
+
+Gate:
+
+- segunda ejecución idéntica: cero writes materiales;
+- fallo de batch no adelanta offset;
+- rotación Free ejecuta exactamente una fase y persiste la siguiente;
+- dos vueltas del conjunto live cumplen sección 4.2, cero `exceededCpu` y cero
+  429;
+- métricas D1 reales confirman la reserva diaria de 20 %;
+- HEADER y SWEEP permanecen en `D1_QUERIES_PER_RUN <= 40`, incluyendo lease,
+  resumen, cursor y rotación; staging demuestra el límite porque Miniflare no lo
+  impone;
+- gate de staging Free de sección 11.2 pasa antes de activar el cron;
+- endpoint retirado queda visible como `removed`.
+
+### WP3 — PROBE solo Grid 303779
+
+```text
+PROBE_BATCH_SIZE=1
+PROBE_AGENT_ALLOWLIST=303779
+```
+
+Gate:
+
+- `quote_verified`, signer=wallet onchain y hash canónico idéntico;
+- age, TTL, currency, Commerce, Router y Policy válidos;
+- acepta ambas skills de negociación y exige exactamente `notify_funded`;
+- staging demuestra timeout, body cap y redirects bloqueados;
+- no crea ni financia job.
+
+Si falla, se corrige antes de ampliar.
+
+### WP4 — Probe general y `/observations`
+
+Entrega: lote 1 en Free (10 por defecto Paid), contrato sección 10.1, fallback e
+integración cacheada.
+
+Gate:
+
+- contract test Worker↔marketplace;
+- quote expirada degrada sin write;
+- metadata propia cambia/degrada en siguiente observación prioritaria;
+- Worker apagado no rompe páginas;
+- unreachable/removed visibles;
+- Hire nunca consume quote del probe.
+
+### WP5 — Landing
+
+Empieza después de WP0. Entrega: hero/funnel respaldado, definición y límites de
+hireable, procedencias, seller propio identificado y cierre sobre escrow.
+
+Gate: toda cifra con hash/fecha/bloque, ningún cero no demostrado, copy aprobado
+por Gilberts antes de merge.
+
+### WP6 — Eventos mínimos de contratación
+
+Entrega: ruta same-origin Vercel, reenvío autenticado, idempotencia y verificación
+onchain.
+
+Gate:
+
+- retry no duplica;
+- funded/settled falsos se rechazan;
+- secreto ausente del bundle browser;
+- D1 sin user ID/IP/sesión;
+- Track lee BSC, no confía en fase persistida.
+
+### WP7 — Recorrido y release
+
+```text
+Discover  catálogo/funnel con fallback
+Understand procedencias/frescura visibles
+Compare   cuatro categorías presentes
+Hire      quote fresca + intención + firmas no custodiales
+Track     estado directo BSC
+Result    evidencia/hash verificables
+```
+
+Gate final: tests Worker/marketplace, production build, smoke staging encendido y
+apagado, kill switch, observabilidad/rollback. Solo entonces cron en producción.
+
+---
+
+## 13. Estructura del repositorio nuevo
+
+Hasta crear `bnb-agent-probe`, `src/observation/worker-config.ts`,
+`src/observation/scheduler-policy.ts` y
+`tests/observation-worker-config.test.ts` son la fuente canónica de perfiles y
+rotación. WP1 los mueve sin cambiar comportamiento ni defaults.
+
+```text
+bnb-agent-probe/
+├── wrangler.toml
+├── package.json
+├── drizzle.config.ts
+├── src/
+│   ├── index.ts
+│   ├── db/{schema.ts,client.ts}
+│   ├── phases/{header.ts,sweep.ts,probe.ts}
+│   ├── routes/{observations.ts,health.ts,hire-events.ts}
+│   ├── lib/{trust8004.ts,chain.ts,candidates.ts,quote.ts,safe-url.ts,
+│   │        scheduler-lease.ts,terms.ts}
+│   └── types.ts
+├── migrations/
+├── evidence/
+└── test/{candidates,quote,safe-url,scheduler-lease,phases,routes}.test.ts
+```
+
+Convenciones:
+
+- `drizzle-orm/sqlite-core`, migraciones versionadas, no SQL manual en prod;
+- `db.batch()` para página+cursor;
+- viem y `Address`/`getAddress()` para BSC;
+- pin exacto `@bnbagent/sdk@0.5.0` durante WP0–WP7; el SDK construye/valida y
+  queda prohibido reimplementar el hash;
+- `strict`, `noUncheckedIndexedAccess` y parsers para JSON externo;
+- módulo único de enums;
+- routes no importa phases; phases no importa routes; lib no importa ninguno;
+- Vitest/Miniflare para lógica; staging para egress.
+
+```ts
+type PhaseSummary = {
+  processed: number;
+  written: number;
+  requestsUsed: number;
+  durationMs: number;
+  errors: string[];
+};
+```
+
+---
+
+## 14. Fuera de alcance
+
+- indexer global ERC-8183, multichain o reorg projection;
+- cambios productivos en trust8004 durante freeze;
+- cuatro sellers propietarios;
+- Queue, Durable Objects, KV, R2 o Workflows especulativos;
+- custodia de llaves/fondos;
+- social, terminal, x402/B402 para este Worker;
+- payloads crudos/entregables arbitrarios;
+- backfill global de jobs.
+
+El funnel de jobs sigue siendo harvest único con bloque y JSON versionado.
+
+---
+
+## 15. Evidencia pendiente no bloqueante para WP0–WP4
+
+- Lista canónica de jobs propios: publicar solo tras reconciliar jobId, creador,
+  fondos, tx hashes y BSC.
+- Job Mainnet `56662`: una fecha futura de settle es plan, no hecho ocurrido.
+- Captura final y release build se ejecutan en WP7.
+
+Bloquean claims públicos de track record, no discovery/probe.

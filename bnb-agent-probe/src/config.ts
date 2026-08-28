@@ -1,0 +1,254 @@
+import type { Env } from "./types";
+
+export type WorkersPlan = "free" | "paid";
+export type SchedulerMode = "single_phase" | "pipeline";
+
+export interface WorkerConfig {
+  plan: WorkersPlan;
+  killSwitch: boolean;
+  schedulerMode: SchedulerMode;
+  cronIntervalMinutes: number;
+  headerLimit: number;
+  sweepLimit: number;
+  sweepPagesPerRun: number;
+  probeBatchSize: number;
+  trust8004RequestsPerRun: number;
+  externalSubrequestsPerRun: number;
+  d1QueriesPerRun: number;
+  d1RowsReadPerRun: number;
+  d1RowsWrittenPerRun: number;
+  probeTimeoutMs: number;
+  maxCatalogResponseBytes: number;
+  maxSellerResponseBytes: number;
+  platformLimits: {
+    cpuMsPerInvocation: number;
+    wallTimeMsPerInvocation: number;
+    externalSubrequestsPerInvocation: number;
+    internalSubrequestsPerInvocation: number;
+    d1QueriesPerInvocation: number;
+    d1RowsReadPerDay: number | null;
+    d1RowsWrittenPerDay: number | null;
+  };
+  projectedDailyBudget: {
+    invocations: number;
+    d1RowsRead: number;
+    d1RowsWritten: number;
+    freeReadCeiling: number;
+    freeWriteCeiling: number;
+  } | null;
+}
+
+type NumericConfig = Omit<
+  WorkerConfig,
+  "plan" | "killSwitch" | "schedulerMode" | "platformLimits" | "projectedDailyBudget"
+>;
+
+interface Profile {
+  schedulerMode: SchedulerMode;
+  defaults: NumericConfig;
+  maximums: NumericConfig;
+}
+
+const FREE_D1_READS_PER_DAY = 5_000_000;
+const FREE_D1_WRITES_PER_DAY = 100_000;
+const FREE_SAFETY_RATIO = 0.8;
+
+const FREE_PROFILE: Profile = {
+  schedulerMode: "single_phase",
+  defaults: {
+    cronIntervalMinutes: 5,
+    headerLimit: 25,
+    sweepLimit: 25,
+    sweepPagesPerRun: 1,
+    probeBatchSize: 1,
+    trust8004RequestsPerRun: 4,
+    externalSubrequestsPerRun: 12,
+    d1QueriesPerRun: 40,
+    d1RowsReadPerRun: 10_000,
+    d1RowsWrittenPerRun: 250,
+    probeTimeoutMs: 5_000,
+    maxCatalogResponseBytes: 16 * 1_024 * 1_024,
+    maxSellerResponseBytes: 32_768,
+  },
+  maximums: {
+    cronIntervalMinutes: 1_440,
+    headerLimit: 50,
+    sweepLimit: 50,
+    sweepPagesPerRun: 1,
+    probeBatchSize: 1,
+    trust8004RequestsPerRun: 40,
+    externalSubrequestsPerRun: 40,
+    d1QueriesPerRun: 40,
+    d1RowsReadPerRun: 4_000_000,
+    d1RowsWrittenPerRun: 80_000,
+    probeTimeoutMs: 10_000,
+    maxCatalogResponseBytes: 16 * 1_024 * 1_024,
+    maxSellerResponseBytes: 65_536,
+  },
+};
+
+const PAID_PROFILE: Profile = {
+  schedulerMode: "pipeline",
+  defaults: {
+    cronIntervalMinutes: 1,
+    headerLimit: 200,
+    sweepLimit: 2_000,
+    sweepPagesPerRun: 2,
+    probeBatchSize: 10,
+    trust8004RequestsPerRun: 20,
+    externalSubrequestsPerRun: 55,
+    d1QueriesPerRun: 800,
+    d1RowsReadPerRun: 100_000,
+    d1RowsWrittenPerRun: 10_000,
+    probeTimeoutMs: 10_000,
+    maxCatalogResponseBytes: 16 * 1_024 * 1_024,
+    maxSellerResponseBytes: 65_536,
+  },
+  maximums: {
+    cronIntervalMinutes: 1_440,
+    headerLimit: 2_000,
+    sweepLimit: 2_000,
+    sweepPagesPerRun: 20,
+    probeBatchSize: 100,
+    trust8004RequestsPerRun: 55,
+    externalSubrequestsPerRun: 1_000,
+    d1QueriesPerRun: 800,
+    d1RowsReadPerRun: 25_000_000,
+    d1RowsWrittenPerRun: 1_000_000,
+    probeTimeoutMs: 30_000,
+    maxCatalogResponseBytes: 16 * 1_024 * 1_024,
+    maxSellerResponseBytes: 65_536,
+  },
+};
+
+const NUMERIC_FIELDS = {
+  CRON_INTERVAL_MINUTES: "cronIntervalMinutes",
+  HEADER_LIMIT: "headerLimit",
+  SWEEP_LIMIT: "sweepLimit",
+  SWEEP_PAGES_PER_RUN: "sweepPagesPerRun",
+  PROBE_BATCH_SIZE: "probeBatchSize",
+  TRUST8004_REQUESTS_PER_RUN: "trust8004RequestsPerRun",
+  EXTERNAL_SUBREQUESTS_PER_RUN: "externalSubrequestsPerRun",
+  D1_QUERIES_PER_RUN: "d1QueriesPerRun",
+  D1_ROWS_READ_PER_RUN: "d1RowsReadPerRun",
+  D1_ROWS_WRITTEN_PER_RUN: "d1RowsWrittenPerRun",
+  PROBE_TIMEOUT_MS: "probeTimeoutMs",
+  MAX_CATALOG_RESPONSE_BYTES: "maxCatalogResponseBytes",
+  MAX_SELLER_RESPONSE_BYTES: "maxSellerResponseBytes",
+} as const;
+
+export class ConfigError extends Error {
+  constructor(field: string, message: string) {
+    super(`${field}: ${message}`);
+    this.name = "ConfigError";
+  }
+}
+
+function parsePlan(value: string | undefined): WorkersPlan {
+  if (value === undefined || value === "free") return "free";
+  if (value === "paid") return "paid";
+  throw new ConfigError("CLOUDFLARE_WORKERS_PLAN", "must be free or paid");
+}
+
+function parseKillSwitch(value: string | undefined): boolean {
+  if (value === undefined || value === "1") return true;
+  if (value === "0") return false;
+  throw new ConfigError("KILL_SWITCH", "must be 0 or 1");
+}
+
+function parseInteger(field: keyof typeof NUMERIC_FIELDS, raw: string, maximum: number): number {
+  if (!/^\d+$/.test(raw)) {
+    throw new ConfigError(field, "must be a non-negative integer");
+  }
+  const value = Number(raw);
+  if (!Number.isSafeInteger(value)) throw new ConfigError(field, "must be a safe integer");
+  if (field === "CRON_INTERVAL_MINUTES" && value === 0) {
+    throw new ConfigError(field, "must be at least 1");
+  }
+  if (field === "D1_QUERIES_PER_RUN" && value < 3) {
+    throw new ConfigError(field, "must reserve at least acquire, summary and release queries");
+  }
+  if (field === "MAX_CATALOG_RESPONSE_BYTES" && value === 0) {
+    throw new ConfigError(field, "must be at least 1");
+  }
+  if (value > maximum) throw new ConfigError(field, `must not exceed ${maximum}`);
+  return value;
+}
+
+function configEnvironment(env: Partial<Env>): Record<string, string | undefined> {
+  return env as Record<string, string | undefined>;
+}
+
+export function loadConfig(env: Partial<Env>): WorkerConfig {
+  const source = configEnvironment(env);
+  const plan = parsePlan(source.CLOUDFLARE_WORKERS_PLAN);
+  const profile = plan === "free" ? FREE_PROFILE : PAID_PROFILE;
+  const values = { ...profile.defaults };
+
+  for (const [field, property] of Object.entries(NUMERIC_FIELDS) as Array<
+    [keyof typeof NUMERIC_FIELDS, keyof NumericConfig]
+  >) {
+    const raw = source[field];
+    if (raw !== undefined) values[property] = parseInteger(field, raw, profile.maximums[property]);
+  }
+
+  if (values.trust8004RequestsPerRun > values.externalSubrequestsPerRun) {
+    throw new ConfigError(
+      "TRUST8004_REQUESTS_PER_RUN",
+      "must not exceed EXTERNAL_SUBREQUESTS_PER_RUN",
+    );
+  }
+
+  const invocations = Math.ceil(1_440 / values.cronIntervalMinutes);
+  const projectedDailyBudget = plan === "free"
+    ? {
+        invocations,
+        d1RowsRead: invocations * values.d1RowsReadPerRun,
+        d1RowsWritten: invocations * values.d1RowsWrittenPerRun,
+        freeReadCeiling: FREE_D1_READS_PER_DAY * FREE_SAFETY_RATIO,
+        freeWriteCeiling: FREE_D1_WRITES_PER_DAY * FREE_SAFETY_RATIO,
+      }
+    : null;
+
+  if (projectedDailyBudget !== null) {
+    if (projectedDailyBudget.d1RowsRead > projectedDailyBudget.freeReadCeiling) {
+      throw new ConfigError(
+        "D1_ROWS_READ_PER_RUN",
+        "projected daily reads exceed Free safety ceiling",
+      );
+    }
+    if (projectedDailyBudget.d1RowsWritten > projectedDailyBudget.freeWriteCeiling) {
+      throw new ConfigError(
+        "D1_ROWS_WRITTEN_PER_RUN",
+        "projected daily writes exceed Free safety ceiling",
+      );
+    }
+  }
+
+  return {
+    plan,
+    killSwitch: parseKillSwitch(source.KILL_SWITCH),
+    schedulerMode: profile.schedulerMode,
+    ...values,
+    platformLimits: plan === "free"
+      ? {
+          cpuMsPerInvocation: 10,
+          wallTimeMsPerInvocation: 15 * 60_000,
+          externalSubrequestsPerInvocation: 50,
+          internalSubrequestsPerInvocation: 1_000,
+          d1QueriesPerInvocation: 50,
+          d1RowsReadPerDay: FREE_D1_READS_PER_DAY,
+          d1RowsWrittenPerDay: FREE_D1_WRITES_PER_DAY,
+        }
+      : {
+          cpuMsPerInvocation: values.cronIntervalMinutes < 60 ? 30_000 : 15 * 60_000,
+          wallTimeMsPerInvocation: 15 * 60_000,
+          externalSubrequestsPerInvocation: 10_000,
+          internalSubrequestsPerInvocation: 10_000,
+          d1QueriesPerInvocation: 1_000,
+          d1RowsReadPerDay: null,
+          d1RowsWrittenPerDay: null,
+        },
+    projectedDailyBudget,
+  };
+}

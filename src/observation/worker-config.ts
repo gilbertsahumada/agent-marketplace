@@ -1,0 +1,284 @@
+export type CloudflareWorkersPlan = "free" | "paid";
+export type ObservationSchedulerMode = "single_phase" | "pipeline";
+
+type WorkerEnvironment = Readonly<Record<string, string | undefined>>;
+
+interface PlatformLimits {
+  cpuMsPerInvocation: number;
+  wallTimeMsPerInvocation: number;
+  externalSubrequestsPerInvocation: number;
+  internalSubrequestsPerInvocation: number;
+  d1QueriesPerInvocation: number;
+  d1RowsReadPerDay: number | null;
+  d1RowsWrittenPerDay: number | null;
+}
+
+interface ProjectedDailyBudget {
+  invocations: number;
+  d1RowsRead: number;
+  d1RowsWritten: number;
+  freeReadCeiling: number;
+  freeWriteCeiling: number;
+}
+
+export interface ObservationWorkerConfig {
+  plan: CloudflareWorkersPlan;
+  killSwitch: boolean;
+  schedulerMode: ObservationSchedulerMode;
+  cronIntervalMinutes: number;
+  headerLimit: number;
+  sweepLimit: number;
+  sweepPagesPerRun: number;
+  probeBatchSize: number;
+  trust8004RequestsPerRun: number;
+  externalSubrequestsPerRun: number;
+  d1QueriesPerRun: number;
+  d1RowsReadPerRun: number;
+  d1RowsWrittenPerRun: number;
+  probeTimeoutMs: number;
+  maxCatalogResponseBytes: number;
+  maxSellerResponseBytes: number;
+  platformLimits: PlatformLimits;
+  projectedDailyBudget: ProjectedDailyBudget | null;
+}
+
+type WorkerBudgetValues = Omit<ObservationWorkerConfig,
+  "plan" | "killSwitch" | "schedulerMode" | "platformLimits" | "projectedDailyBudget">;
+
+interface PlanProfile {
+  schedulerMode: ObservationSchedulerMode;
+  defaults: WorkerBudgetValues;
+  maximums: WorkerBudgetValues;
+}
+
+const FREE_D1_READS_PER_DAY = 5_000_000;
+const FREE_D1_WRITES_PER_DAY = 100_000;
+const FREE_D1_RESERVE_RATIO = 0.2;
+
+const FREE_PROFILE: PlanProfile = {
+  schedulerMode: "single_phase",
+  defaults: {
+    cronIntervalMinutes: 5,
+    headerLimit: 25,
+    sweepLimit: 25,
+    sweepPagesPerRun: 1,
+    probeBatchSize: 1,
+    trust8004RequestsPerRun: 4,
+    externalSubrequestsPerRun: 12,
+    d1QueriesPerRun: 40,
+    d1RowsReadPerRun: 10_000,
+    d1RowsWrittenPerRun: 250,
+    probeTimeoutMs: 5_000,
+    maxCatalogResponseBytes: 16 * 1_024 * 1_024,
+    maxSellerResponseBytes: 32_768,
+  },
+  maximums: {
+    cronIntervalMinutes: 1_440,
+    headerLimit: 50,
+    sweepLimit: 50,
+    sweepPagesPerRun: 1,
+    probeBatchSize: 1,
+    trust8004RequestsPerRun: 40,
+    externalSubrequestsPerRun: 40,
+    d1QueriesPerRun: 40,
+    d1RowsReadPerRun: 4_000_000,
+    d1RowsWrittenPerRun: 80_000,
+    probeTimeoutMs: 10_000,
+    maxCatalogResponseBytes: 16 * 1_024 * 1_024,
+    maxSellerResponseBytes: 65_536,
+  },
+};
+
+const PAID_PROFILE: PlanProfile = {
+  schedulerMode: "pipeline",
+  defaults: {
+    cronIntervalMinutes: 1,
+    headerLimit: 200,
+    sweepLimit: 2_000,
+    sweepPagesPerRun: 2,
+    probeBatchSize: 10,
+    trust8004RequestsPerRun: 20,
+    externalSubrequestsPerRun: 55,
+    d1QueriesPerRun: 800,
+    d1RowsReadPerRun: 100_000,
+    d1RowsWrittenPerRun: 10_000,
+    probeTimeoutMs: 10_000,
+    maxCatalogResponseBytes: 16 * 1_024 * 1_024,
+    maxSellerResponseBytes: 65_536,
+  },
+  maximums: {
+    cronIntervalMinutes: 1_440,
+    headerLimit: 2_000,
+    sweepLimit: 2_000,
+    sweepPagesPerRun: 20,
+    probeBatchSize: 100,
+    trust8004RequestsPerRun: 55,
+    externalSubrequestsPerRun: 1_000,
+    d1QueriesPerRun: 800,
+    d1RowsReadPerRun: 25_000_000,
+    d1RowsWrittenPerRun: 1_000_000,
+    probeTimeoutMs: 30_000,
+    maxCatalogResponseBytes: 16 * 1_024 * 1_024,
+    maxSellerResponseBytes: 65_536,
+  },
+};
+
+const ENV_FIELDS = {
+  CRON_INTERVAL_MINUTES: "cronIntervalMinutes",
+  HEADER_LIMIT: "headerLimit",
+  SWEEP_LIMIT: "sweepLimit",
+  SWEEP_PAGES_PER_RUN: "sweepPagesPerRun",
+  PROBE_BATCH_SIZE: "probeBatchSize",
+  TRUST8004_REQUESTS_PER_RUN: "trust8004RequestsPerRun",
+  EXTERNAL_SUBREQUESTS_PER_RUN: "externalSubrequestsPerRun",
+  D1_QUERIES_PER_RUN: "d1QueriesPerRun",
+  D1_ROWS_READ_PER_RUN: "d1RowsReadPerRun",
+  D1_ROWS_WRITTEN_PER_RUN: "d1RowsWrittenPerRun",
+  PROBE_TIMEOUT_MS: "probeTimeoutMs",
+  MAX_CATALOG_RESPONSE_BYTES: "maxCatalogResponseBytes",
+  MAX_SELLER_RESPONSE_BYTES: "maxSellerResponseBytes",
+} as const;
+
+export class ObservationWorkerConfigError extends Error {
+  constructor(field: string, message: string) {
+    super(`${field}: ${message}`);
+    this.name = "ObservationWorkerConfigError";
+  }
+}
+
+function parsePlan(value: string | undefined): CloudflareWorkersPlan {
+  if (value === undefined || value === "free") return "free";
+  if (value === "paid") return "paid";
+  throw new ObservationWorkerConfigError(
+    "CLOUDFLARE_WORKERS_PLAN",
+    "must be either free or paid",
+  );
+}
+
+function parseKillSwitch(value: string | undefined): boolean {
+  if (value === undefined || value === "1") return true;
+  if (value === "0") return false;
+  throw new ObservationWorkerConfigError("KILL_SWITCH", "must be 0 or 1");
+}
+
+function parseInteger(
+  env: WorkerEnvironment,
+  field: keyof typeof ENV_FIELDS,
+  fallback: number,
+  maximum: number,
+): number {
+  const raw = env[field];
+  if (raw === undefined) return fallback;
+  if (!/^\d+$/.test(raw)) {
+    throw new ObservationWorkerConfigError(field, "must be a non-negative integer");
+  }
+  const value = Number(raw);
+  if (!Number.isSafeInteger(value)) {
+    throw new ObservationWorkerConfigError(field, "must be a safe integer");
+  }
+  if (field === "CRON_INTERVAL_MINUTES" && value === 0) {
+    throw new ObservationWorkerConfigError(field, "must be at least 1");
+  }
+  if (field === "D1_QUERIES_PER_RUN" && value < 3) {
+    throw new ObservationWorkerConfigError(
+      field,
+      "must reserve at least acquire, summary and release queries",
+    );
+  }
+  if (field === "MAX_CATALOG_RESPONSE_BYTES" && value === 0) {
+    throw new ObservationWorkerConfigError(field, "must be at least 1");
+  }
+  if (value > maximum) {
+    throw new ObservationWorkerConfigError(field, `must not exceed ${maximum}`);
+  }
+  return value;
+}
+
+function platformLimits(plan: CloudflareWorkersPlan, cronIntervalMinutes: number): PlatformLimits {
+  if (plan === "free") {
+    return {
+      cpuMsPerInvocation: 10,
+      wallTimeMsPerInvocation: 15 * 60_000,
+      externalSubrequestsPerInvocation: 50,
+      internalSubrequestsPerInvocation: 1_000,
+      d1QueriesPerInvocation: 50,
+      d1RowsReadPerDay: FREE_D1_READS_PER_DAY,
+      d1RowsWrittenPerDay: FREE_D1_WRITES_PER_DAY,
+    };
+  }
+  return {
+    cpuMsPerInvocation: cronIntervalMinutes < 60 ? 30_000 : 15 * 60_000,
+    wallTimeMsPerInvocation: 15 * 60_000,
+    externalSubrequestsPerInvocation: 10_000,
+    internalSubrequestsPerInvocation: 10_000,
+    d1QueriesPerInvocation: 1_000,
+    d1RowsReadPerDay: null,
+    d1RowsWrittenPerDay: null,
+  };
+}
+
+function projectedFreeDailyBudget(
+  cronIntervalMinutes: number,
+  d1RowsReadPerRun: number,
+  d1RowsWrittenPerRun: number,
+): ProjectedDailyBudget {
+  const invocations = Math.ceil(1_440 / cronIntervalMinutes);
+  return {
+    invocations,
+    d1RowsRead: invocations * d1RowsReadPerRun,
+    d1RowsWritten: invocations * d1RowsWrittenPerRun,
+    freeReadCeiling: FREE_D1_READS_PER_DAY * (1 - FREE_D1_RESERVE_RATIO),
+    freeWriteCeiling: FREE_D1_WRITES_PER_DAY * (1 - FREE_D1_RESERVE_RATIO),
+  };
+}
+
+export function loadObservationWorkerConfig(env: WorkerEnvironment): ObservationWorkerConfig {
+  const plan = parsePlan(env.CLOUDFLARE_WORKERS_PLAN);
+  const profile = plan === "free" ? FREE_PROFILE : PAID_PROFILE;
+  const values = { ...profile.defaults };
+
+  for (const [field, property] of Object.entries(ENV_FIELDS) as Array<
+    [keyof typeof ENV_FIELDS, keyof typeof values]
+  >) {
+    values[property] = parseInteger(env, field, values[property], profile.maximums[property]);
+  }
+
+  if (values.trust8004RequestsPerRun > values.externalSubrequestsPerRun) {
+    throw new ObservationWorkerConfigError(
+      "TRUST8004_REQUESTS_PER_RUN",
+      "must not exceed EXTERNAL_SUBREQUESTS_PER_RUN",
+    );
+  }
+
+  const projectedDailyBudget = plan === "free"
+    ? projectedFreeDailyBudget(
+      values.cronIntervalMinutes,
+      values.d1RowsReadPerRun,
+      values.d1RowsWrittenPerRun,
+    )
+    : null;
+
+  if (projectedDailyBudget !== null) {
+    if (projectedDailyBudget.d1RowsWritten > projectedDailyBudget.freeWriteCeiling) {
+      throw new ObservationWorkerConfigError(
+        "D1_ROWS_WRITTEN_PER_RUN",
+        `projects ${projectedDailyBudget.d1RowsWritten} rows/day; Free safety ceiling is ${projectedDailyBudget.freeWriteCeiling}`,
+      );
+    }
+    if (projectedDailyBudget.d1RowsRead > projectedDailyBudget.freeReadCeiling) {
+      throw new ObservationWorkerConfigError(
+        "D1_ROWS_READ_PER_RUN",
+        `projects ${projectedDailyBudget.d1RowsRead} rows/day; Free safety ceiling is ${projectedDailyBudget.freeReadCeiling}`,
+      );
+    }
+  }
+
+  return {
+    plan,
+    killSwitch: parseKillSwitch(env.KILL_SWITCH),
+    schedulerMode: profile.schedulerMode,
+    ...values,
+    platformLimits: platformLimits(plan, values.cronIntervalMinutes),
+    projectedDailyBudget,
+  };
+}

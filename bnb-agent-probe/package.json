@@ -1,0 +1,31 @@
+{
+  "name": "bnb-agent-probe",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev --test-scheduled",
+    "test": "npm run test:unit && npm run test:worker",
+    "test:unit": "vitest run --config vitest.config.ts",
+    "test:worker": "vitest run --config vitest.worker.config.ts",
+    "typecheck": "tsc --noEmit",
+    "check": "npm run typecheck && npm run manifest:check && npm test && npm run dry-run",
+    "migrate:local": "wrangler d1 migrations apply bnb-agent-probe --local",
+    "migrations:list:local": "wrangler d1 migrations list bnb-agent-probe --local",
+    "dry-run": "wrangler deploy --dry-run --env=\"\" --outdir dist/worker",
+    "cf-typegen": "wrangler types src/worker-configuration.d.ts",
+    "manifest:check": "tsx scripts/generate-curated-inventory.ts"
+  },
+  "dependencies": {
+    "drizzle-orm": "0.45.2"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-plugin": "1.1.1",
+    "@types/node": "22.17.2",
+    "drizzle-kit": "0.31.10",
+    "tsx": "4.20.5",
+    "typescript": "5.9.2",
+    "vitest": "4.1.10",
+    "wrangler": "4.127.0"
+  }
+}
