@@ -543,6 +543,7 @@ async function validateRawAnalytics(
   let workerErrors = 0;
   let exceededCpu = 0;
   let memoryExceeded = 0;
+  let measuredVersionGroups = 0;
   for (const [index, unvalidated] of workers.entries()) {
     const group = record(unvalidated, "RAW_WORKERS", `workers[${index}]`);
     const dimensions = record(group.dimensions, "RAW_WORKERS", `workers[${index}].dimensions`);
@@ -555,6 +556,7 @@ async function validateRawAnalytics(
       `workers[${index}].scriptVersion`,
     );
     if (scriptVersion !== context.deploymentVersion) continue;
+    measuredVersionGroups += 1;
     const status = nonEmptyString(dimensions.status, "RAW_WORKERS", `workers[${index}].status`).toLowerCase();
     if (status.includes("cpu") && status.includes("exceed")) exceededCpu += 1;
     if (status.includes("memory") && status.includes("exceed")) memoryExceeded += 1;
@@ -569,6 +571,9 @@ async function validateRawAnalytics(
     memoryUsageBytesP999 = Math.max(memoryUsageBytesP999,
       nonNegativeNumber(quantiles.memoryUsageBytesP999, "RAW_WORKERS", `workers[${index}].memoryP999`));
     workerErrors += nonNegativeInteger(sum.errors, "RAW_WORKERS", `workers[${index}].errors`);
+  }
+  if (measuredVersionGroups === 0) {
+    fail("RAW_DEPLOYMENT", "Workers Analytics does not contain the measured deployment version");
   }
 
   const queueRaw = record(parsed.get(REQUIRED_RAW_ANALYTICS[3]), "RAW_QUEUE", "queue raw");
