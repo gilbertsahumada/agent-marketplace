@@ -115,8 +115,19 @@ export async function readProbeChainContext(
   input: { readonly agentId: string; readonly nowSeconds: number },
 ): Promise<ProbeChainContext> {
   if (!/^[1-9]\d*$/.test(input.agentId)) throw new BscProbeError("BSC_AGENT_ID");
-  if (await client.getChainId() !== 56) throw new BscProbeError("BSC_CHAIN_ID");
-  const block = await client.getBlock();
+  let chainId: number;
+  try {
+    chainId = await client.getChainId();
+  } catch {
+    throw new BscProbeError("BSC_CHAIN_RPC");
+  }
+  if (chainId !== 56) throw new BscProbeError("BSC_CHAIN_ID");
+  let block: Awaited<ReturnType<ProbeChainReader["getBlock"]>>;
+  try {
+    block = await client.getBlock();
+  } catch {
+    throw new BscProbeError("BSC_BLOCK_RPC");
+  }
   if (block.number === null) throw new BscProbeError("BSC_BLOCK");
   const age = BigInt(input.nowSeconds) - block.timestamp;
   if (age < 0n || age > BigInt(MAX_BLOCK_AGE_SECONDS)) throw new BscProbeError("BSC_BLOCK_FRESHNESS");
