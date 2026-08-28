@@ -166,10 +166,11 @@ curl --fail --silent --show-error \
 ```
 
 Store both raw JSON responses, including their capture timestamps, without the
-request headers. The exact Workers and Queue Analytics GraphQL documents are
-versioned in `../evidence/wp2-default-rounds-2026-08-28.json`; reuse them with
-the WP3 deployment version, Queue ID and bounded UTC interval instead of
-reconstructing a dashboard value.
+request headers. The exact Workers Analytics GraphQL document is versioned in
+`../evidence/wp2-default-rounds-2026-08-28.json`; the Queue operations and
+backlog documents are in `../evidence/wp2-retry-remote-2026-08-28.json`.
+Reuse them with the WP3 deployment version, Queue ID and bounded UTC interval
+instead of reconstructing a dashboard value.
 
 For the no-job invariant, record the BSC block immediately before enqueue and
 immediately after Queue completion. Query `eth_getLogs` for Commerce
