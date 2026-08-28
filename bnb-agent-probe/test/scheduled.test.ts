@@ -150,7 +150,7 @@ describe("WP2 scheduled runner", () => {
     });
 
     await runner(
-      controller,
+      { ...controller, cron: "queue", attempt: 1 },
       { DB: db } as unknown as Env,
       context,
       loadConfig({ D1_QUERIES_PER_RUN: "13" }),
@@ -158,6 +158,7 @@ describe("WP2 scheduled runner", () => {
 
     expect(db.acquisitions).toBe(1);
     expect(db.releases).toBe(1);
+    expect(db.queries).toBe(5);
   });
 
   it("reads and executes only the persisted phase", async () => {
