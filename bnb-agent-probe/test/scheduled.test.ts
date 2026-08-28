@@ -120,7 +120,7 @@ describe("WP2 scheduled runner", () => {
       controller,
       { DB: db } as unknown as Env,
       context,
-      loadConfig({ D1_QUERIES_PER_RUN: "7" }),
+      loadConfig({ D1_QUERIES_PER_RUN: "12" }),
     );
 
     expect(db.acquisitions).toBe(1);
