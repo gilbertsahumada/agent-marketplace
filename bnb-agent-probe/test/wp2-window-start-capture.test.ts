@@ -44,7 +44,13 @@ describe("WP2 window-start evidence capture", () => {
     const contents = await readFile(outputPath, "utf8");
     expect(contents).not.toContain("never-persist-this-token");
     expect(JSON.parse(contents)).toEqual({
-      request: { capturedAt: "2026-08-28T23:59:30.000Z" },
+      request: {
+        accountId: "bc8d4adf4860284fda426b24e7377bc2",
+        capturedAt: "2026-08-28T23:59:30.000Z",
+        databaseId: "6fbeea3e-4516-4c4e-a5c4-392cb067198a",
+        params: ["next_scheduler_phase"],
+        sql: "SELECT key, textValue AS value FROM runtime_state WHERE key = ? LIMIT 1",
+      },
       response,
     });
   });
