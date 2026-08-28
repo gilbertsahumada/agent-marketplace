@@ -3,6 +3,9 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const projectRoot = resolve(import.meta.dirname, "..");
+const packageJson = JSON.parse(readFileSync(resolve(projectRoot, "package.json"), "utf8")) as {
+  scripts?: Record<string, string>;
+};
 const wrangler = JSON.parse(readFileSync(resolve(projectRoot, "wrangler.jsonc"), "utf8")) as {
   main?: string;
   compatibility_date?: string;
@@ -26,6 +29,13 @@ const wrangler = JSON.parse(readFileSync(resolve(projectRoot, "wrangler.jsonc"),
 };
 
 describe("WP1 Wrangler scaffold", () => {
+  it("compiles the isolated validation environment in the standard check", () => {
+    expect(packageJson.scripts?.["dry-run:validation"]).toBe(
+      "wrangler deploy --dry-run --env validation --outdir dist/worker-validation",
+    );
+    expect(packageJson.scripts?.check).toContain("npm run dry-run:validation");
+  });
+
   it("binds the Worker and D1 without activating a cron", () => {
     expect(wrangler.main).toBe("src/index.ts");
     expect(wrangler.compatibility_date).toBe("2026-08-28");
