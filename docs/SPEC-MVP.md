@@ -1019,6 +1019,11 @@ endpoint de prueba. El deployment nominal permanece con `KILL_SWITCH=1`; los
 valores usados y las métricas se guardan en un artefacto de evidencia sin
 secretos. `--remote` accede a recursos reales y nunca se usa contra producción.
 
+La corrida remota del 2026-08-28 con HEADER 1/5/25 y tres rotaciones está en
+`evidence/wp2-staging-wrangler-2026-08-28.json`: prueba respuestas 200, cursores,
+queries D1 y cero 429. Wrangler preview no expuso CPU, filas D1 ni outcome del
+deployment nominal, por lo que esos criterios permanecen pendientes.
+
 Cada incremento exige margen bajo 10 ms; que una ejecución aislada reciba
 flexibilidad de plataforma no cuenta como gate pasado. Si HEADER=1, SWEEP=1 o el
 probe único exceden CPU de forma repetible, se reactiva el kill switch y se
