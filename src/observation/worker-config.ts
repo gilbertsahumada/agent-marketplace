@@ -60,7 +60,7 @@ const FREE_PROFILE: PlanProfile = {
   defaults: {
     cronIntervalMinutes: 5,
     headerLimit: 25,
-    sweepLimit: 25,
+    sweepLimit: 4,
     sweepPagesPerRun: 1,
     probeBatchSize: 1,
     trust8004RequestsPerRun: 4,
@@ -75,7 +75,7 @@ const FREE_PROFILE: PlanProfile = {
   maximums: {
     cronIntervalMinutes: 1_440,
     headerLimit: 50,
-    sweepLimit: 50,
+    sweepLimit: 40,
     sweepPagesPerRun: 1,
     probeBatchSize: 1,
     trust8004RequestsPerRun: 40,
@@ -247,6 +247,12 @@ export function loadObservationWorkerConfig(env: WorkerEnvironment): Observation
     throw new ObservationWorkerConfigError(
       "TRUST8004_REQUESTS_PER_RUN",
       "must not exceed EXTERNAL_SUBREQUESTS_PER_RUN",
+    );
+  }
+  if (plan === "free" && values.sweepLimit > values.trust8004RequestsPerRun) {
+    throw new ObservationWorkerConfigError(
+      "SWEEP_LIMIT",
+      "must not exceed TRUST8004_REQUESTS_PER_RUN on Free",
     );
   }
 
