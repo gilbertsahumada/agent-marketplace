@@ -640,7 +640,7 @@ describe("WP2 24-hour evidence artifact validator", () => {
     const artifact = validArtifact() as any;
     const last = artifact.ledger.at(-1);
     last.startedAt = Date.parse("2026-08-30T00:14:58.000Z");
-    last.finishedAt = Date.parse("2026-08-30T00:15:05.000Z");
+    last.finishedAt = Date.parse("2026-08-30T00:15:00.500Z");
     artifact.quotaLedger.pop();
     artifact.totals.quotaAttempts = 287;
     artifact.totals.spillOut = 1;
@@ -652,8 +652,21 @@ describe("WP2 24-hour evidence artifact validator", () => {
     workers.response.data.viewer.accounts[0].workersInvocationsAdaptive.push(drainConsumer);
     const contents = JSON.stringify(workers);
     artifact.rawAnalytics["evidence/raw/workers.json"].sha256 = sha256(contents);
+    const queue = structuredClone(RAW_PAYLOADS["evidence/raw/queue.json"]) as any;
+    const deletes = queue.response.data.viewer.accounts[0].queueTerminalOperations;
+    deletes[2].count = 287;
+    const spillOutDelete = structuredClone(deletes[2]);
+    spillOutDelete.count = 1;
+    spillOutDelete.dimensions.datetime = "2026-08-30T00:15:00Z";
+    deletes.push(spillOutDelete);
+    const queueContents = JSON.stringify(queue);
+    artifact.rawAnalytics["evidence/raw/queue.json"].sha256 = sha256(queueContents);
     await expect(validateWp224hArtifact(artifact, {
-      readRawEvidence: async (path) => path === "evidence/raw/workers.json" ? contents : readRawEvidence(path),
+      readRawEvidence: async (path) => {
+        if (path === "evidence/raw/workers.json") return contents;
+        if (path === "evidence/raw/queue.json") return queueContents;
+        return readRawEvidence(path);
+      },
     })).rejects.toThrow("CLEANUP_GRACE");
   });
 
