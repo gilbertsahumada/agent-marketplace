@@ -10,15 +10,18 @@ WP3. No Cron Trigger is active.
 The Free profile caps scheduled work at 40 D1 queries per invocation, below the
 platform limit of 50. Every statement in `DB.batch()` is counted separately and
 two queries are reserved for a sanitized failure summary plus lease cleanup.
-The Queue deduplication claim is also included in the reported and enforced
-per-invocation total.
+The atomic Queue completion marker is also included in the reported and
+enforced per-invocation total. The minimum accepted budget is 12 queries, which
+covers the smallest complete SWEEP plus failure and lease-cleanup reserves.
 Catalogue responses have their own
 16 MiB cap; the smaller seller-response cap is independent.
 
 Cron never executes a phase directly. It publishes one versioned tick to
 `WP2_QUEUE`; a batch-size-one consumer deduplicates the timestamp in D1 and runs
-one phase. At five-minute cadence this projects to 864 Queue operations/day,
-below the configured Free safety ceiling of 8,000.
+one phase. The completion timestamp is committed atomically with phase state, so
+a failed delivery can retry while a completed duplicate cannot advance another
+phase. At five-minute cadence this projects to 864 nominal operations/day and
+1,728 with all three configured retries, below the Free safety ceiling of 8,000.
 
 ```bash
 npm install
