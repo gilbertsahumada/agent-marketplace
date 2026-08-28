@@ -108,7 +108,7 @@ describe("WP2 scheduled runner", () => {
     });
   });
 
-  it("reserves cleanup capacity at the minimum valid D1 query budget", async () => {
+  it("reserves failure and cleanup capacity at the minimum valid D1 query budget", async () => {
     const db = new LeaseDatabase();
     const runner = createWp2ScheduledRunner({
       now: () => 1_000,
@@ -120,7 +120,7 @@ describe("WP2 scheduled runner", () => {
       controller,
       { DB: db } as unknown as Env,
       context,
-      loadConfig({ D1_QUERIES_PER_RUN: "3" }),
+      loadConfig({ D1_QUERIES_PER_RUN: "7" }),
     );
 
     expect(db.acquisitions).toBe(1);
