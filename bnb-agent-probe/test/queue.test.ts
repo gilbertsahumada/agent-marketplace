@@ -104,7 +104,6 @@ describe("WP2 Free queue dispatch", () => {
       activeEnv,
       context,
       expect.objectContaining({ plan: "free", killSwitch: false }),
-      1,
     );
     expect(tick.ack).toHaveBeenCalledOnce();
   });
@@ -135,15 +134,22 @@ describe("WP2 Free queue dispatch", () => {
     expect(tick.ack).toHaveBeenCalledOnce();
   });
 
-  it("does not acknowledge a failed phase so Queues can retry it", async () => {
-    const worker = createWorker({
-      runScheduled: vi.fn().mockRejectedValue(new Error("phase failed")),
-    }) as unknown as QueueWorker;
-    const tick = message({ schemaVersion: 1, scheduledTime: 1_800_000_000_000 });
+  it("re-executes the same tick after a failed delivery", async () => {
+    const runScheduled = vi.fn()
+      .mockRejectedValueOnce(new Error("phase failed"))
+      .mockResolvedValueOnce(undefined);
+    const worker = createWorker({ runScheduled }) as unknown as QueueWorker;
+    const activeEnv = queueEnv();
+    const firstDelivery = message({ schemaVersion: 1, scheduledTime: 1_800_000_000_000 });
+    const retryDelivery = message({ schemaVersion: 1, scheduledTime: 1_800_000_000_000 });
 
-    await expect(worker.queue({ messages: [tick] }, queueEnv(), context))
+    await expect(worker.queue({ messages: [firstDelivery] }, activeEnv, context))
       .rejects.toThrow("phase failed");
-    expect(tick.ack).not.toHaveBeenCalled();
+    await worker.queue({ messages: [retryDelivery] }, activeEnv, context);
+
+    expect(firstDelivery.ack).not.toHaveBeenCalled();
+    expect(retryDelivery.ack).toHaveBeenCalledOnce();
+    expect(runScheduled).toHaveBeenCalledTimes(2);
   });
 
   it("rejects a misconfigured multi-message batch before D1 access", async () => {
