@@ -1320,6 +1320,10 @@ necesariamente puntos durante la inactividad, se exigen una escritura y un
 delete exitoso por mensaje terminal, el último backlog emitido en cero después
 del último tick y el backlog REST timestamped en cero tras `00:15Z`; la consulta
 se solicita completa hasta ese cutoff.
+Workers Analytics usa el mismo cutoff de terminalidad, no el fin del día: así
+incluye CPU, memoria, errores y versión de cualquier retry spill-out entre
+`00:00Z` y `00:15Z`. Su cohorte de errores une los intentos del día con esos
+spill-out sin cambiar el presupuesto de cuota UTC.
 El cleanup debe ser posterior no solo a `00:15Z`, sino también al último
 `finishedAt` y al último `DeleteMessage` terminal observado.
 Recién entonces `KILL_SWITCH` vuelve a `1`; el raw final debe demostrar ambos
