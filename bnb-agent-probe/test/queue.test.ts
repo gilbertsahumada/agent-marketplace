@@ -187,4 +187,19 @@ describe("WP2 Free queue dispatch", () => {
     expect(runScheduled).not.toHaveBeenCalled();
     expect(tick.ack).not.toHaveBeenCalled();
   });
+
+  it("accepts a Queue tick exactly five minutes ahead of the Worker clock", async () => {
+    const runScheduled = vi.fn().mockResolvedValue("completed");
+    const worker = createWorker({
+      now: () => 1_800_000_000_000,
+      runScheduled,
+    }) as unknown as QueueWorker;
+    const tick = message({ schemaVersion: 1, scheduledTime: 1_800_000_300_000 });
+
+    await worker.queue({ messages: [tick] }, queueEnv(), context);
+
+    expect(runScheduled).toHaveBeenCalledOnce();
+    expect(tick.ack).toHaveBeenCalledOnce();
+    expect(tick.retry).not.toHaveBeenCalled();
+  });
 });
