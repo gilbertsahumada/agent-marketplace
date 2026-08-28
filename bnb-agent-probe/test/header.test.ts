@@ -204,7 +204,6 @@ describe("WP2 HEADER", () => {
   it("rejects an oversized target lookup before database access", async () => {
     const items = Array.from({ length: 101 }, (_, index) => agent({
       agentId: String(index + 1),
-      targets: [],
     }));
     const fixture = setup(items);
 
