@@ -308,3 +308,10 @@ switch off through terminality grace, then enables the global switch. Final raw
 evidence must show no schedule, zero corroborating backlog, and both switches on.
 The variable defaults to the global switch when omitted, preserving fail-closed
 behavior for existing environments.
+
+The measured Worker version is deployed with a Cloudflare message containing
+the full Git SHA and a tag containing its first 12 characters. This makes the
+version-to-commit link independently visible in `wrangler versions view`.
+Control-only versions created during shutdown are retained in raw Workers
+Analytics but excluded from the measured version cohort; exact Queue writes
+still prevent them from hiding an extra scheduled message.
