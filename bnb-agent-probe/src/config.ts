@@ -187,10 +187,13 @@ function parseInteger(field: keyof typeof NUMERIC_FIELDS, raw: string, maximum: 
     "HEADER_LIMIT",
     "SWEEP_LIMIT",
     "SWEEP_PAGES_PER_RUN",
+    "PROBE_BATCH_SIZE",
     "TRUST8004_REQUESTS_PER_RUN",
     "EXTERNAL_SUBREQUESTS_PER_RUN",
     "D1_ROWS_READ_PER_RUN",
     "D1_ROWS_WRITTEN_PER_RUN",
+    "PROBE_TIMEOUT_MS",
+    "MAX_SELLER_RESPONSE_BYTES",
   ].includes(field) && value === 0) {
     throw new ConfigError(field, "must be at least 1");
   }
