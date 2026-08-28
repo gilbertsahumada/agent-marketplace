@@ -126,8 +126,11 @@ export function createWorker(dependencies: WorkerDependencies = {}): WorkerEntry
       if (!Number.isSafeInteger(message.attempts) || message.attempts < 1 || message.attempts > 4) {
         throw new Error("WP2_QUEUE_MESSAGE_INVALID");
       }
+      if (message.id.length < 1 || message.id.length > 256) {
+        throw new Error("WP2_QUEUE_MESSAGE_ID_INVALID");
+      }
       const result = await dependencies.runScheduled(
-        { scheduledTime, cron: "queue", attempt: message.attempts },
+        { scheduledTime, cron: "queue", attempt: message.attempts, messageId: message.id },
         env,
         context,
         config,
