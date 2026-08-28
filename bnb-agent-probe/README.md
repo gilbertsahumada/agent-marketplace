@@ -118,7 +118,11 @@ They close the remote HEADER/SWEEP retry, resource and two-round gates only.
 The WP3 implementation and local Workerd gates are present, including complete
 EIP-191 (8 subrequests) and ERC-1271 (10 subrequests) paths through D1,
 trust8004, BSC RPC, Agent Card and A2A. Its controlled remote Grid probe and
-transport-negative staging evidence remain pending. The
+nominal staging evidence remain pending. Timeout, response-cap and redirect
+failures are deterministic Workerd gates: the candidate Worker does not contain
+fault injection and the real Grid seller is never modified to manufacture a
+failure. Expected seller failures are persisted and rotate normally; unexpected
+infrastructure exceptions leave phase and priority unchanged for Queue retry. The
 24-hour D1 gate runs only after those pass, against the complete staging
 candidate for a full `00:00–24:00 UTC` quota day. Continuous scheduling stays
 disabled until both gates pass.
@@ -126,7 +130,91 @@ disabled until both gates pass.
 Controlled nominal measurements may call `POST /__admin/run-scheduled` only
 while `DEPLOYMENT_ENV=staging`, `STAGING_MANUAL_RUN=1`, `KILL_SWITCH=0` and
 `SHARED_SECRET` is installed. The route requires the matching Bearer
-credential, has no CORS, and is hidden unless every guard passes. Production
+credential, has no CORS, and is hidden unless every guard passes. It only
+publishes one versioned tick to `WP2_QUEUE`; the serial Queue consumer performs
+all phase work and writes `last_queue_scheduled_time`. The request body cannot
+select a phase or timestamp. Production
 fixes `DEPLOYMENT_ENV=production`; nominal staging fixes
 `STAGING_MANUAL_RUN=0`. Restore both staging guards and remove the temporary
 secret immediately after measurement.
+
+Before opening the window, the deployed version must match the candidate and
+the following read-only checks must pass:
+
+```bash
+npx wrangler deployments status --env staging --json
+npx wrangler secret list --env staging
+npx wrangler d1 migrations list bnb-agent-probe-staging --remote --env staging
+npx wrangler d1 info bnb-agent-probe-staging --json
+npx wrangler queues info bnb-agent-probe-staging
+npx wrangler queues consumer list bnb-agent-probe-staging
+```
+
+Cloudflare's schedules API must return an empty list and Queue backlog must be
+zero before and after the window; Wrangler configuration alone is not evidence
+of remote trigger state. Install the public BSC RPC URL and the random
+administrative credential without placing either value in shell history or an
+evidence file:
+
+```bash
+curl --fail --silent --show-error \
+  -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+  "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/bnb-agent-probe-staging/schedules"
+curl --fail --silent --show-error \
+  -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+  "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/queues/$WP3_QUEUE_ID/metrics"
+```
+
+Store both raw JSON responses, including their capture timestamps, without the
+request headers. The exact Workers and Queue Analytics GraphQL documents are
+versioned in `../evidence/wp2-default-rounds-2026-08-28.json`; reuse them with
+the WP3 deployment version, Queue ID and bounded UTC interval instead of
+reconstructing a dashboard value.
+
+For the no-job invariant, record the BSC block immediately before enqueue and
+immediately after Queue completion. Query `eth_getLogs` for Commerce
+`0xEa4DAa3100A767e86FDed867729ae7446476EBA6` over that inclusive range with the
+OR-list of topic0 values below, and retain the raw RPC response:
+
+```text
+JobCreated  0xb0f0239bfdd96453e24733e18bfc24b70d8fadf123dd977473518dd577ee79b9
+BudgetSet   0x869e2577b006bf47ee981cf6fec2e25583548081c14b98deab587f77b5068038
+JobFunded   0xbdb056de345bfeadca7c9fd7df6430bdb83c677c8eefbb601dff56f34d3dac52
+```
+
+With `WP3_FROM_BLOCK_HEX`, `WP3_TO_BLOCK_HEX` and a read-only
+`BSC_LOGS_RPC_URL` set, capture the interval without embedding credentials in
+the JSON:
+
+```bash
+jq -n --arg from "$WP3_FROM_BLOCK_HEX" --arg to "$WP3_TO_BLOCK_HEX" '{
+  jsonrpc:"2.0", id:1, method:"eth_getLogs", params:[{
+    fromBlock:$from, toBlock:$to,
+    address:"0xEa4DAa3100A767e86FDed867729ae7446476EBA6",
+    topics:[["0xb0f0239bfdd96453e24733e18bfc24b70d8fadf123dd977473518dd577ee79b9",
+      "0x869e2577b006bf47ee981cf6fec2e25583548081c14b98deab587f77b5068038",
+      "0xbdb056de345bfeadca7c9fd7df6430bdb83c677c8eefbb601dff56f34d3dac52"]]
+  }]
+}' | curl --fail --silent --show-error -H 'content-type: application/json' \
+  --data-binary @- "$BSC_LOGS_RPC_URL"
+```
+
+The RPC used for this audit must support `eth_getLogs`; the public BNB endpoint
+used by the probe may not. Any unrelated global event in the interval is kept
+with its transaction hash and classified, never discarded. The probe passes
+only when it emitted no transaction and no event is attributable to it.
+
+```bash
+npx wrangler secret put BSC_RPC_URL --env staging
+npx wrangler secret put SHARED_SECRET --env staging
+```
+
+Drive `header → sweep → probe` with one authenticated enqueue at a time and
+wait for `/health` plus the D1 Queue marker after each tick. Never update
+`next_scheduler_phase` or seed a target manually in remote D1. If Grid is not
+yet present, PROBE synthesizes only the exact allowlisted pair, verifies it live
+through trust8004 and atomically inserts or reactivates it before persisting the
+observation; unavailable metadata produces no target write. Cleanup is a
+nominal redeploy (`KILL_SWITCH=1`, `STAGING_MANUAL_RUN=0`) followed by
+`npx wrangler secret delete SHARED_SECRET --env staging`; `BSC_RPC_URL` may
+remain because it grants no custody and scheduled work stays disabled.
