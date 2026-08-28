@@ -68,6 +68,7 @@ export interface HeaderCommit {
   readonly highWater: string | null;
   readonly summary: HeaderSummary;
   readonly nextSchedulerPhase: "sweep";
+  readonly completedQueueScheduledTime?: number;
 }
 
 export interface HeaderPersistence {
@@ -101,6 +102,7 @@ export interface RunHeaderOptions {
   readonly reserveQueriesAfterCommit?: number;
   readonly invocationQueriesAfterCommit?: number;
   readonly startedAtMs?: number;
+  readonly completedQueueScheduledTime?: number;
 }
 
 export class HeaderQueryBudgetExceededError extends Error {
@@ -200,7 +202,17 @@ export function createD1HeaderPersistence(db: D1DatabaseLike): HeaderPersistence
           input.summary.finishedAt,
         ],
       );
-      await executeBatch(db, [...targetStatements, runtimeStatement]);
+      const completionStatement = input.completedQueueScheduledTime === undefined
+        ? []
+        : [prepareStatement(
+            db,
+            `INSERT INTO runtime_state (key, textValue, integerValue, updatedAt)
+             VALUES ('last_queue_scheduled_time', NULL, ?, ?)
+             ON CONFLICT(key) DO UPDATE SET textValue=NULL,
+               integerValue=excluded.integerValue, updatedAt=excluded.updatedAt`,
+            [input.completedQueueScheduledTime, input.summary.finishedAt],
+          )];
+      await executeBatch(db, [...targetStatements, runtimeStatement, ...completionStatement]);
     },
   };
 }
@@ -294,7 +306,9 @@ export async function runHeader(
   const headerWindowExhausted = previousHighWater !== null
     && received === options.limit
     && (invalidItems > 0 || agents.every((agent) => compareHighWater(agent, previousHighWater) > 0));
-  const batchQueries = serializeTargetWriteChunks(targetWrites).length + RUNTIME_STATE_WRITES;
+  const batchQueries = serializeTargetWriteChunks(targetWrites).length
+    + RUNTIME_STATE_WRITES
+    + (options.completedQueueScheduledTime === undefined ? 0 : 1);
   const requiredQueries = batchQueries + reserveQueriesAfterCommit;
 
   if (requiredQueries > dependencies.queryBudget.remaining) {
@@ -324,6 +338,9 @@ export async function runHeader(
     highWater: highWater === null ? null : formatHighWater(highWater),
     summary,
     nextSchedulerPhase: "sweep",
+    ...(options.completedQueueScheduledTime === undefined
+      ? {}
+      : { completedQueueScheduledTime: options.completedQueueScheduledTime }),
   });
   return summary;
 }
