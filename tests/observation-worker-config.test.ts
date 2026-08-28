@@ -105,6 +105,7 @@ describe("observation Worker configuration", () => {
     [{ PROBE_TIMEOUT_MS: "0" }, "PROBE_TIMEOUT_MS"],
     [{ MAX_SELLER_RESPONSE_BYTES: "0" }, "MAX_SELLER_RESPONSE_BYTES"],
     [{ PROBE_AGENT_ALLOWLIST: "303779,45650" }, "PROBE_AGENT_ALLOWLIST"],
+    [{ PROBE_ENDPOINT_ALLOWLIST: "https://seller.example/a2a" }, "PROBE_ENDPOINT_ALLOWLIST"],
     [{ PROBE_ENDPOINT_ALLOWLIST: "http://seller.example/a2a" }, "PROBE_ENDPOINT_ALLOWLIST"],
     [{ PROBE_ENDPOINT_ALLOWLIST: "https://seller.example/a2a?key=secret" }, "PROBE_ENDPOINT_ALLOWLIST"],
     [{ EXTERNAL_SUBREQUESTS_PER_RUN: "41" }, "EXTERNAL_SUBREQUESTS_PER_RUN"],
