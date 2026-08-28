@@ -175,6 +175,39 @@ describe("Worker runtime", () => {
     });
   });
 
+  it("degrades when active daily telemetry has stopped advancing", async () => {
+    const now = Date.parse("2026-08-28T12:00:00.000Z");
+    const updatedAt = now - 16 * 60_000;
+    const db = database({
+      runtime: [{
+        key: "daily_budget_20260828",
+        textValue: JSON.stringify({
+          schemaVersion: 1,
+          utcDate: "2026-08-28",
+          measurementScope: "worker_metered_before_daily_ledger",
+          updatedAt,
+          invocations: 1,
+          completed: 1,
+          failed: 0,
+          duplicate: 0,
+          locked: 0,
+          upstreamRequests: 1,
+          d1Queries: 12,
+          rowsReadObservedBeforeLedger: 10,
+          rowsWrittenObservedBeforeLedger: 4,
+        }),
+        integerValue: null,
+        updatedAt,
+      }],
+    });
+    const response = await createWorker({ now: () => now }).fetch(
+      new Request("https://worker.test/health"),
+      { ...env(db), KILL_SWITCH: "0" },
+    );
+
+    expect(await response.json()).toMatchObject({ status: "degraded" });
+  });
+
   it("reports runtime state but never returns the lease runId or arbitrary summary fields", async () => {
     const now = 1_800_000_000_000;
     const db = database({
