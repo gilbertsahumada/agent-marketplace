@@ -30,9 +30,48 @@
     "queueSeparateFromStaging": true,
     "schedulesBefore": [],
     "secretsBefore": [],
+    "secretsScope": "Worker secrets only; the trial used the operator's existing Wrangler OAuth session and does not claim an ephemeral Queue publisher token was revoked.",
     "initialBacklogCount": 0,
     "initialRuntimeStateRows": 0,
-    "stagingUnchanged": true
+    "stagingBindings": {
+      "worker": "bnb-agent-probe-staging",
+      "databaseName": "bnb-agent-probe-staging",
+      "databaseId": "6fbeea3e-4516-4c4e-a5c4-392cb067198a",
+      "queueName": "bnb-agent-probe-staging"
+    },
+    "validationBindings": {
+      "worker": "bnb-agent-probe-validation",
+      "databaseName": "bnb-agent-probe-validation-20260828",
+      "databaseId": "11253c18-cc4d-489a-8d1d-972d3a31e49f",
+      "queueName": "bnb-agent-probe-validation-20260828",
+      "queueId": "14feedfc8e904e2d956661d028dcbec3"
+    },
+    "stagingObservedSnapshot": {
+      "canonicalization": "JSON.stringify with the field order preserved below",
+      "sha256": "b6654c4bc7fcb8b5d5a518290d6b64d89c7f306f821381ac2d167aad2cc2d095",
+      "before": {
+        "headerHighWater": "1787937068000:315657",
+        "lastQueueScheduledTime": 1787936870000,
+        "nextPhase": "header",
+        "sweepOffset": 0,
+        "sweepRound": 3,
+        "rowCounts": { "funnelSnapshots": 1, "hireEvents": 0, "probeObservations": 0, "probeTargets": 0 }
+      },
+      "after": {
+        "headerHighWater": "1787937068000:315657",
+        "lastQueueScheduledTime": 1787936870000,
+        "nextPhase": "header",
+        "sweepOffset": 0,
+        "sweepRound": 3,
+        "rowCounts": { "funnelSnapshots": 1, "hireEvents": 0, "probeObservations": 0, "probeTargets": 0 }
+      },
+      "afterQueries": [
+        "SELECT key, textValue, integerValue, updatedAt FROM runtime_state ORDER BY key",
+        "SELECT table row counts for funnel_snapshots, hire_events, probe_observations and probe_targets ORDER BY tableName"
+      ],
+      "afterRetrievedAt": "2026-08-28T18:19:12Z",
+      "scope": "Only these preflight-captured state fields and row counts are claimed unchanged; summary timestamps and expired lease text are excluded."
+    }
   },
   "configuration": {
     "plan": "free",
@@ -193,12 +232,13 @@
     "killSwitch": true,
     "schedules": [],
     "secrets": [],
+    "secretsScope": "Worker secrets",
     "deliveryPaused": false,
     "backlogCount": 0,
     "backlogBytes": 0,
     "leaseActive": false,
     "stagingKillSwitch": true,
-    "stagingStateMatchedPreflight": true
+    "stagingObservedFieldsMatchedPreflight": true
   },
   "limitations": [
     "The failed no-backoff diagnostic is excluded from the passing exception-retry scenario.",
