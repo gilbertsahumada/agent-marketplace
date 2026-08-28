@@ -69,7 +69,7 @@ describe("Worker runtime", () => {
       targets: { current: 4, removed: 1, total: 5 },
       budgets: {
         headerLimit: 25,
-        sweepLimit: 25,
+        sweepLimit: 4,
         probeBatchSize: 1,
         externalSubrequestsPerRun: 12,
         d1QueriesPerRun: 40,
