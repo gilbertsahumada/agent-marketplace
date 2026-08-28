@@ -133,8 +133,19 @@ const RAW_PAYLOADS = {
     response: { capturedAt: "2026-08-28T21:52:00.000Z", schedules: ["*/5 * * * *"], backlogCount: 0 },
   },
   "evidence/raw/window-start.json": {
-    request: { capturedAt: "2026-08-28T23:59:30.000Z" },
-    response: { result: [{ results: [{ key: "next_scheduler_phase", value: "header" }] }] },
+    request: {
+      accountId: "bc8d4adf4860284fda426b24e7377bc2",
+      capturedAt: "2026-08-28T23:59:30.000Z",
+      completedAt: "2026-08-28T23:59:30.000Z",
+      databaseId: D1_ID,
+      params: ["last_queue_scheduled_time", "next_scheduler_phase"],
+      sql: "SELECT key, textValue AS value, integerValue FROM runtime_state WHERE key IN (?, ?) ORDER BY key ASC",
+      startedAt: "2026-08-28T23:59:29.000Z",
+    },
+    response: { success: true, errors: [], result: [{ results: [
+      { key: "last_queue_scheduled_time", value: null, integerValue: WINDOW_START - 5 * 60_000 + 14_000 },
+      { key: "next_scheduler_phase", value: "header", integerValue: null },
+    ] }] },
   },
   "evidence/raw/cleanup.json": {
     response: { capturedAt: "2026-08-30T00:15:00.000Z", schedules: [], backlogCount: 0, killSwitch: true,
@@ -169,6 +180,7 @@ function validArtifact(): Record<string, unknown> {
     commit: "0123456789abcdef0123456789abcdef01234567",
     deploymentVersion: DEPLOYMENT_VERSION,
     worker: { name: "bnb-agent-probe-staging" },
+    cloudflare: { accountId: "bc8d4adf4860284fda426b24e7377bc2" },
     queue: { id: "721ba809967d425a91dbc34eb1ac3baa" },
     d1: { id: D1_ID },
     window: {
@@ -334,7 +346,7 @@ describe("WP2 24-hour evidence artifact validator", () => {
       });
     }
     const windowStart = structuredClone(RAW_PAYLOADS["evidence/raw/window-start.json"]) as any;
-    windowStart.response.result[0].results[0].value = "sweep";
+    windowStart.response.result[0].results[1].value = "sweep";
     const contents = JSON.stringify(windowStart);
     artifact.rawAnalytics["evidence/raw/window-start.json"].sha256 = sha256(contents);
     await expect(validateWp224hArtifact(artifact, {
@@ -350,6 +362,28 @@ describe("WP2 24-hour evidence artifact validator", () => {
       });
     }
     await expect(validateWp224hArtifact(artifact, { readRawEvidence })).rejects.toThrow("PHASE_SEQUENCE");
+  });
+
+  it("rejects window-start evidence from another D1, with errors, stale timing or an incomplete final tick", async () => {
+    for (const mutate of [
+      (raw: any) => { raw.request.databaseId = "00000000-0000-4000-8000-000000000002"; },
+      (raw: any) => { raw.response.errors = [{ message: "contradictory" }]; },
+      (raw: any) => { raw.request.startedAt = "2026-08-28T23:55:13.999Z"; },
+      (raw: any) => {
+        raw.request.completedAt = "2026-08-29T00:00:14.000Z";
+        raw.request.capturedAt = raw.request.completedAt;
+      },
+      (raw: any) => { raw.response.result[0].results[0].integerValue -= 5 * 60_000; },
+    ]) {
+      const artifact = validArtifact() as any;
+      const raw = structuredClone(RAW_PAYLOADS["evidence/raw/window-start.json"]) as any;
+      mutate(raw);
+      const contents = JSON.stringify(raw);
+      artifact.rawAnalytics["evidence/raw/window-start.json"].sha256 = sha256(contents);
+      await expect(validateWp224hArtifact(artifact, {
+        readRawEvidence: async (path) => path === "evidence/raw/window-start.json" ? contents : readRawEvidence(path),
+      })).rejects.toThrow("RAW_WINDOW_START");
+    }
   });
 
   it("accepts a final Queue delete during the post-midnight grace", async () => {
