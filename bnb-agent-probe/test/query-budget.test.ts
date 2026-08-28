@@ -128,6 +128,18 @@ describe("D1 per-invocation query budget", () => {
     expect(usage).toEqual({ rowsRead: 17, rowsWritten: 7 });
   });
 
+  it("backs Drizzle raw rows with metered all() results", async () => {
+    const raw = new CountingDatabase([{ rows_read: 2, rows_written: 0 }]);
+    const { db, budget, usage } = createBudgetedD1Database(raw, 40);
+    const statement = db.prepare("SELECT value") as D1PreparedStatementLike & {
+      raw<Row extends unknown[]>(): Promise<Row[]>;
+    };
+
+    await expect(statement.raw()).resolves.toEqual([]);
+    expect(budget.used).toBe(1);
+    expect(usage).toEqual({ rowsRead: 2, rowsWritten: 0 });
+  });
+
   it("counts absent or malformed row metadata as zero", async () => {
     const raw = new CountingDatabase([
       undefined,
