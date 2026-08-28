@@ -7,7 +7,9 @@
   "worker": {
     "name": "bnb-agent-probe-validation",
     "url": "https://bnb-agent-probe-validation.gilbertsahumada.workers.dev",
-    "nominalVersionId": "b5e567d1-1093-4e9d-83b4-374aee967454"
+    "nominalVersionId": "b5e567d1-1093-4e9d-83b4-374aee967454",
+    "ephemeral": true,
+    "deletedAfterEvidenceCapture": true
   },
   "queue": {
     "name": "bnb-agent-probe-validation-20260828",
@@ -228,6 +230,7 @@
     }
   },
   "cleanup": {
+    "stateScope": "Safe nominal state observed before deleting the ephemeral Worker and Queue",
     "nominalVersionId": "b5e567d1-1093-4e9d-83b4-374aee967454",
     "killSwitch": true,
     "schedules": [],
@@ -238,7 +241,16 @@
     "backlogBytes": 0,
     "leaseActive": false,
     "stagingKillSwitch": true,
-    "stagingObservedFieldsMatchedPreflight": true
+    "stagingObservedFieldsMatchedPreflight": true,
+    "finalResourceCleanup": {
+      "completedAt": "2026-08-28T18:20:20Z",
+      "consumerDeleted": "ae7b79a69dd74dfe9e21213aa9ff1862",
+      "workerDeleted": "bnb-agent-probe-validation",
+      "queueDeleted": "14feedfc8e904e2d956661d028dcbec3",
+      "queueListVerifiedAbsent": true,
+      "workerGetVerifiedNotFound": true,
+      "databaseRetainedForAudit": "11253c18-cc4d-489a-8d1d-972d3a31e49f"
+    }
   },
   "limitations": [
     "The failed no-backoff diagnostic is excluded from the passing exception-retry scenario.",
