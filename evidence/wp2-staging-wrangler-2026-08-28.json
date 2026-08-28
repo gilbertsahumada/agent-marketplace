@@ -1,0 +1,47 @@
+{
+  "capturedAt": "2026-08-28T14:45:00Z",
+  "deployment": {
+    "worker": "bnb-agent-probe-staging",
+    "versionId": "132a6819-58b6-49c9-8563-241ca3a3bfcd",
+    "startupTimeMs": 6,
+    "killSwitch": true,
+    "cronConfigured": false,
+    "healthStatus": 200,
+    "sweepLimit": 4,
+    "d1QueriesPerRun": 40
+  },
+  "manualRunner": "wrangler 4.127.0 --remote --env staging --test-scheduled",
+  "manualRuns": [
+    {
+      "headerLimit": 1,
+      "header": { "status": "ok", "requests": 1, "d1Queries": 7, "wallTimeMs": 1722, "headerWindowExhausted": false },
+      "sweep": { "status": "ok", "requests": 4, "d1Queries": 9, "wallTimeMs": 1979 },
+      "probe": { "status": "pending_wp3", "requests": 0, "d1Queries": 5, "wallTimeMs": 337 }
+    },
+    {
+      "headerLimit": 5,
+      "header": { "status": "ok", "requests": 1, "d1Queries": 7, "wallTimeMs": 1526, "headerWindowExhausted": true },
+      "sweep": { "status": "ok", "requests": 1, "d1Queries": 10, "wallTimeMs": 984 },
+      "probe": { "status": "pending_wp3", "requests": 0, "d1Queries": 5, "wallTimeMs": 339 }
+    },
+    {
+      "headerLimit": 25,
+      "header": { "status": "ok", "requests": 1, "d1Queries": 7, "wallTimeMs": 1539, "headerWindowExhausted": false },
+      "sweep": { "status": "ok", "requests": 4, "d1Queries": 9, "wallTimeMs": 1235 },
+      "probe": { "status": "pending_wp3", "requests": 0, "d1Queries": 5, "wallTimeMs": 284 }
+    }
+  ],
+  "observed": {
+    "scheduledHttpStatuses": [200],
+    "http429Responses": 0,
+    "phaseRotationReturnedToHeader": true,
+    "leaseActiveAfterRuns": false,
+    "maximumObservedD1Queries": 10
+  },
+  "notProvenByRemotePreview": [
+    "CPU milliseconds per invocation",
+    "D1 rows read and written per invocation",
+    "production deployment outcome analytics"
+  ],
+  "promotionGate": "pending"
+}
