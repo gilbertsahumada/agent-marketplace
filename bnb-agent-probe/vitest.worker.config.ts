@@ -27,6 +27,7 @@ export default defineConfig({
   ],
   test: {
     globals: true,
+    testTimeout: 10_000,
     include: ["test/integration/**/*.test.ts"],
     setupFiles: ["./test/integration/apply-migrations.ts"],
   },
