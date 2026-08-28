@@ -3,9 +3,9 @@ import { createExecutionContext } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { loadConfig } from "../../src/config";
+import type { D1DatabaseLike } from "../../src/db/client";
 import { listSchedulerAttempts } from "../../src/db/scheduler-attempt-ledger";
 import { createWp2ScheduledRunner } from "../../src/scheduled";
-import type { Env } from "../../src/types";
 
 const WINDOW_START = Date.parse("2026-08-29T00:00:00.000Z");
 const TICK_A = WINDOW_START;
@@ -79,7 +79,7 @@ describe("WP2 durable scheduler-attempt ledger", () => {
     )).resolves.toBe("locked");
 
     const attempts = await listSchedulerAttempts(
-      env.DB,
+      env.DB as unknown as D1DatabaseLike,
       WINDOW_START,
       WINDOW_START + 24 * 60 * 60_000,
     );
