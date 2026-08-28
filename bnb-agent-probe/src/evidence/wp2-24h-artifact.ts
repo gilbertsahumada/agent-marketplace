@@ -544,7 +544,13 @@ async function validateRawAnalytics(
     endInclusive: endInclusiveIso,
   }, "RAW_WORKERS");
   const workers = nestedGroups(workersRaw, "workersInvocationsAdaptive", "RAW_WORKERS");
-  const workerSamples: { timestamp: number; cpuMs: number; requests: number; subrequests: number }[] = [];
+  const workerSamples: {
+    timestamp: number;
+    cpuMs: number;
+    requests: number;
+    subrequests: number;
+    scriptVersion: string;
+  }[] = [];
   let memoryUsageBytesP999 = 0;
   let workerErrors = 0;
   let exceededCpu = 0;
@@ -575,6 +581,7 @@ async function validateRawAnalytics(
       cpuMs: nonNegativeNumber(quantiles.cpuTimeP99, "RAW_WORKERS", `workers[${index}].cpuTimeP99`) / 1_000,
       requests: positiveInteger(sum.requests, "RAW_WORKERS", `workers[${index}].requests`),
       subrequests: nonNegativeInteger(sum.subrequests, "RAW_WORKERS", `workers[${index}].subrequests`),
+      scriptVersion,
     });
     memoryUsageBytesP999 = Math.max(memoryUsageBytesP999,
       nonNegativeNumber(quantiles.memoryUsageBytesP999, "RAW_WORKERS", `workers[${index}].memoryP999`));
@@ -659,6 +666,10 @@ async function validateRawAnalytics(
     if (nearWrite && sample.subrequests === 0) {
       producerSamples += 1;
       producerRequests += sample.requests;
+      maxProducerCpuMs = Math.max(maxProducerCpuMs, sample.cpuMs);
+    } else if (!nearWrite
+      && sample.subrequests === 0
+      && sample.scriptVersion !== context.deploymentVersion) {
       maxProducerCpuMs = Math.max(maxProducerCpuMs, sample.cpuMs);
     } else if (!nearWrite && sample.subrequests > 0) {
       consumerSamples += 1;
