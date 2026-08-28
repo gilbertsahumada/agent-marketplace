@@ -1324,6 +1324,9 @@ Workers Analytics usa el mismo cutoff de terminalidad, no el fin del día: así
 incluye CPU, memoria, errores y versión de cualquier retry spill-out entre
 `00:00Z` y `00:15Z`. Su cohorte de errores une los intentos del día con esos
 spill-out sin cambiar el presupuesto de cuota UTC.
+Cada intento spill-out debe correlacionar con una muestra consumer autenticada a
+no más de un segundo de su `startedAt`; ampliar el rango sin observar ese bucket
+no demuestra completitud y falla cerrado.
 El cleanup debe ser posterior no solo a `00:15Z`, sino también al último
 `finishedAt` y al último `DeleteMessage` terminal observado.
 Recién entonces `KILL_SWITCH` vuelve a `1`; el raw final debe demostrar ambos
