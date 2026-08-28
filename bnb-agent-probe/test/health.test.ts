@@ -312,6 +312,44 @@ describe("Worker runtime", () => {
     expect(text).not.toContain("secret-high-water");
   });
 
+  it("exposes sanitized PROBE outcome counters without quote or wallet material", async () => {
+    const now = 1_800_000_000_000;
+    const db = database({
+      runtime: [{
+        key: "last_probe_summary",
+        textValue: JSON.stringify({
+          phase: "probe",
+          status: "ok",
+          outcome: "quote_verified",
+          processedTargets: 1,
+          requests: 6,
+          d1Queries: 8,
+          wallTimeMs: 25,
+          signer: "must-not-leak",
+          priceRaw: "must-not-leak",
+        }),
+        integerValue: null,
+        updatedAt: now,
+      }],
+    });
+    const response = await createWorker({ now: () => now }).fetch(
+      new Request("https://worker.test/health"),
+      env(db),
+    );
+    const text = await response.text();
+    expect(JSON.parse(text)).toMatchObject({
+      lastPhase: {
+        phase: "probe",
+        status: "ok",
+        outcome: "quote_verified",
+        processedTargets: 1,
+        requests: 6,
+        d1Queries: 8,
+      },
+    });
+    expect(text).not.toContain("must-not-leak");
+  });
+
   it("returns 503 only when D1 cannot be read and sanitizes the failure", async () => {
     const response = await createWorker().fetch(
       new Request("https://worker.test/health"),
