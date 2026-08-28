@@ -51,6 +51,32 @@ class MemoryStatement implements D1PreparedStatementLike {
   }
 
   async all<Row>(): Promise<D1ResultLike<unknown, Row>> {
+    if (this.query.includes("VALUES ('scheduler_lease'")) {
+      const [runId, expiresAt, nowMs] = this.values;
+      const lease = this.database.state.get("scheduler_lease");
+      if (lease !== undefined && (lease.integerValue ?? 0) > Number(nowMs)) {
+        return { success: true, meta: { rows_read: 1, rows_written: 0 }, results: [] };
+      }
+      this.database.seed("scheduler_lease", String(runId), Number(expiresAt), Number(nowMs));
+      return {
+        success: true,
+        meta: { rows_read: 1, rows_written: 1 },
+        results: [{ key: "scheduler_lease" } as Row],
+      };
+    }
+    if (this.query.includes("WHERE key = 'scheduler_lease' AND textValue = ?")) {
+      const [nowMs, updatedAt, runId] = this.values;
+      const lease = this.database.state.get("scheduler_lease");
+      if (lease?.textValue !== runId) {
+        return { success: true, meta: { rows_read: 1, rows_written: 0 }, results: [] };
+      }
+      this.database.seed("scheduler_lease", null, Number(nowMs), Number(updatedAt));
+      return {
+        success: true,
+        meta: { rows_read: 1, rows_written: 1 },
+        results: [{ key: "scheduler_lease" } as Row],
+      };
+    }
     if (this.query.includes("FROM runtime_state")) {
       const requested = new Set(this.values.filter((value): value is string => typeof value === "string"));
       const rows = [...this.database.state.values()].filter((row) => (
