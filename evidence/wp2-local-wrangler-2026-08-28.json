@@ -11,7 +11,8 @@
     "queueConsumerCpuMs": 30000,
     "queueOperationsPerDay": 10000,
     "configuredQueueOperationsSafetyCeiling": 8000,
-    "projectedQueueOperationsPerDay": 864
+    "nominalQueueOperationsPerDay": 864,
+    "projectedQueueOperationsPerDayWithThreeRetries": 1728
   },
   "killSwitchGate": {
     "enabled": true,
@@ -55,7 +56,13 @@
     "status": "ok",
     "phaseD1Queries": 4,
     "totalD1QueriesIncludingClaim": 5,
-    "nextPhase": "sweep"
+    "nextPhase": "sweep",
+    "retryE2E": {
+      "firstDelivery": "failed_without_ack",
+      "secondDelivery": "same_tick_completed_and_acked",
+      "thirdDelivery": "same_tick_deduplicated_and_acked",
+      "completionMarkerAtomicWithPhaseState": true
+    }
   },
   "regression": {
     "observed": "The first live HEADER attempt failed with Cloudflare Illegal invocation because global fetch was detached from globalThis.",
