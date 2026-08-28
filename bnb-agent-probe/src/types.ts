@@ -33,6 +33,8 @@ export interface Env {
   MAX_CATALOG_RESPONSE_BYTES?: string;
   MAX_SELLER_RESPONSE_BYTES?: string;
   TRUST8004_BASE_URL?: string;
+  DEPLOYMENT_ENV?: string;
+  STAGING_MANUAL_RUN?: string;
   SHARED_SECRET?: string;
   BSC_RPC_URL?: string;
 }
