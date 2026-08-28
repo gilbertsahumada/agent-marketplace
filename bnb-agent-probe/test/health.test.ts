@@ -83,10 +83,78 @@ describe("Worker runtime", () => {
         d1QueriesPerInvocation: 50,
       },
       sweepRound: 0,
+      dailyBudget: null,
     });
     expect(text).not.toContain("must-never-leak");
     expect(text).not.toContain("secret-token");
     expect(text).not.toContain("runId");
+  });
+
+  it("exposes only the current UTC daily ledger allowlist", async () => {
+    const now = Date.parse("2026-08-28T12:00:00.000Z");
+    const db = database({
+      runtime: [{
+        key: "daily_budget_20260828",
+        textValue: JSON.stringify({
+          schemaVersion: 1,
+          utcDate: "2026-08-28",
+          measurementScope: "worker_metered_before_daily_ledger",
+          updatedAt: now,
+          invocations: 2,
+          completed: 1,
+          failed: 1,
+          duplicate: 0,
+          locked: 0,
+          upstreamRequests: 5,
+          d1Queries: 18,
+          rowsReadObservedBeforeLedger: 12,
+          rowsWrittenObservedBeforeLedger: 6,
+          secret: "must-not-leak",
+        }),
+        integerValue: null,
+        updatedAt: now,
+      }],
+    });
+
+    const response = await createWorker({ now: () => now }).fetch(
+      new Request("https://worker.test/health"),
+      env(db),
+    );
+    const text = await response.text();
+    expect(JSON.parse(text).dailyBudget).toEqual({
+      schemaVersion: 1,
+      utcDate: "2026-08-28",
+      measurementScope: "worker_metered_before_daily_ledger",
+      updatedAt: now,
+      invocations: 2,
+      completed: 1,
+      failed: 1,
+      duplicate: 0,
+      locked: 0,
+      upstreamRequests: 5,
+      d1Queries: 18,
+      rowsReadObservedBeforeLedger: 12,
+      rowsWrittenObservedBeforeLedger: 6,
+    });
+    expect(text).not.toContain("must-not-leak");
+  });
+
+  it("treats a malformed daily ledger as unavailable telemetry", async () => {
+    const now = Date.parse("2026-08-28T12:00:00.000Z");
+    const db = database({
+      runtime: [{
+        key: "daily_budget_20260828",
+        textValue: "not-json",
+        integerValue: null,
+        updatedAt: now,
+      }],
+    });
+
+    const response = await createWorker({ now: () => now }).fetch(
+      new Request("https://worker.test/health"),
+      env(db),
+    );
+    expect(await response.json()).toMatchObject({ status: "ok", dailyBudget: null });
   });
 
   it("reports runtime state but never returns the lease runId or arbitrary summary fields", async () => {
