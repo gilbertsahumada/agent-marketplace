@@ -180,10 +180,12 @@ Si cambia un punto, se actualiza esta spec antes de WP1.
 ```
 
 No se añaden Queue, Durable Object, KV, R2 ni otro Worker. El funnel global usa
-el snapshot WP0 versionado. El conjunto live inicial contiene los 16 declarantes
-ERC-8183 y el inventario curado que preserva las cuatro categorías; los demás
-declarantes A2A permanecen visibles en el funnel, pero no se copian ni sondean
-continuamente. Si WP2 demuestra que el cron Free acotado no basta, se detiene el
+el snapshot WP0 versionado. Como ese artefacto conservó el conteo de 16
+declarantes ERC-8183 pero no sus IDs, el conjunto live inicial contiene el
+inventario curado que preserva las cuatro categorías y añade declaraciones
+ERC-8183 observadas por HEADER. No se afirma que los 16 históricos estén live
+sin un artefacto de IDs versionado, ni se ejecuta un rescan global dentro de
+Workers Free. Si WP2 demuestra que el cron Free acotado no basta, se detiene el
 gate y se registra una decisión antes de ampliar arquitectura o activar Paid.
 
 ---
@@ -530,7 +532,7 @@ no contra una constante de dos minutos.
 ### 5.3 SWEEP — reconciliación rodante
 
 Lee páginas ascendentes desde `sweep_offset`. En Free reconcilia únicamente IDs
-ERC-8183 descubiertos por WP0/HEADER y el inventario curado de cuatro categorías;
+ERC-8183 persistidos por HEADER y el inventario curado de cuatro categorías;
 no intenta materializar los 309.897 registros globales. El cursor pagina esa
 unión de IDs en D1 y resuelve un detalle trust8004 por agente. Por eso
 `SWEEP_LIMIT` no puede superar `TRUST8004_REQUESTS_PER_RUN` en Free. Por página:
@@ -1001,6 +1003,21 @@ Staging usa una D1 separada y comienza sin Cron Trigger. El orden es obligatorio
 7. ejecutar un único PROBE allowlisted para Grid `303779`;
 8. habilitar `*/5 * * * *` solo tras dos rotaciones completas sin
    `exceededCpu`, 429, exceso de presupuesto ni avance incorrecto de cursor.
+
+El disparo manual se hace con una sesión efímera en la red de Cloudflare, ligada
+a la D1 de staging, sin publicar una ruta administrativa ni crear un cron:
+
+```bash
+npx wrangler dev --remote --env staging --test-scheduled \
+  --var KILL_SWITCH:0 --var HEADER_LIMIT:1
+# visitar /__scheduled en la URL local; repetir con HEADER_LIMIT:5 y 25
+```
+
+Para SWEEP se conserva la misma D1 y se invoca de nuevo `/__scheduled` después
+de que `/health` indique `nextPhase=sweep`. Al cerrar Wrangler desaparece el
+endpoint de prueba. El deployment nominal permanece con `KILL_SWITCH=1`; los
+valores usados y las métricas se guardan en un artefacto de evidencia sin
+secretos. `--remote` accede a recursos reales y nunca se usa contra producción.
 
 Cada incremento exige margen bajo 10 ms; que una ejecución aislada reciba
 flexibilidad de plataforma no cuenta como gate pasado. Si HEADER=1, SWEEP=1 o el
