@@ -5,6 +5,7 @@ export type SchedulerAttemptPhase = "header" | "sweep" | "probe" | null;
 
 export interface SchedulerAttemptInput {
   readonly scheduledTime: number;
+  readonly attempt: number;
   readonly phase: SchedulerAttemptPhase;
   readonly outcome: SchedulerAttemptOutcome;
   readonly startedAt: number;
@@ -17,7 +18,6 @@ export interface SchedulerAttemptInput {
 }
 
 export interface SchedulerAttempt extends SchedulerAttemptInput {
-  readonly attempt: number;
 }
 
 interface SchedulerAttemptRow {
@@ -45,11 +45,10 @@ export async function recordSchedulerAttempt(
        upstreamRequests, d1Queries, rowsReadObservedBeforeLedger,
        rowsWrittenObservedBeforeLedger, errorCode
      )
-     SELECT ?, COALESCE(MAX(attempt), 0) + 1, ?, ?, ?, ?, ?, ?, ?, ?, ?
-     FROM scheduler_attempts
-     WHERE scheduledTime = ?`,
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).bind(
     input.scheduledTime,
+    input.attempt,
     input.phase,
     input.outcome,
     input.startedAt,
@@ -59,7 +58,6 @@ export async function recordSchedulerAttempt(
     input.rowsReadObservedBeforeLedger,
     input.rowsWrittenObservedBeforeLedger,
     input.errorCode,
-    input.scheduledTime,
   ).run();
   if (!result.success) throw new Error("Could not persist scheduler attempt");
 }
@@ -102,14 +100,14 @@ function toSchedulerAttempt(row: SchedulerAttemptRow): SchedulerAttempt {
     errorCode: row.errorCode,
   };
   validateAttemptInput(attempt);
-  if (!Number.isSafeInteger(attempt.attempt) || attempt.attempt < 1 || attempt.attempt > 4) {
-    throw new Error("Scheduler attempt ledger contains an invalid attempt number");
-  }
   return attempt;
 }
 
 function validateAttemptInput(input: SchedulerAttemptInput): void {
   nonNegativeSafeInteger(input.scheduledTime, "scheduledTime");
+  if (!Number.isSafeInteger(input.attempt) || input.attempt < 1 || input.attempt > 4) {
+    throw new Error("attempt must be between 1 and 4");
+  }
   nonNegativeSafeInteger(input.startedAt, "startedAt");
   nonNegativeSafeInteger(input.finishedAt, "finishedAt");
   if (input.finishedAt < input.startedAt) throw new Error("finishedAt must not precede startedAt");
