@@ -3,6 +3,7 @@ import { executeBatch, prepareStatement, type D1DatabaseLike } from "./db/client
 import {
   createBudgetedD1Database,
   D1QueryBudgetExceededError,
+  D1RowBudgetExceededError,
   type D1QueryBudget,
 } from "./db/query-budget";
 import type {
@@ -100,11 +101,41 @@ export function createWp2ScheduledRunner(dependencies: ScheduledRuntimeDependenc
     // It shares the counter but not the post-query abort rule.
     const auxiliaryStore = createBudgetedD1Database(rawDb, 2, undefined, rowUsage);
     const { db, budget, usage } = phaseStore;
-    const acquired = await acquireSchedulerLease(db, {
-      runId,
-      nowMs: startedAt,
-      expiresAtMs: startedAt + leaseMs,
-    });
+    let acquired: boolean;
+    try {
+      acquired = await acquireSchedulerLease(db, {
+        runId,
+        nowMs: startedAt,
+        expiresAtMs: startedAt + leaseMs,
+      });
+    } catch (error) {
+      const finishedAt = now();
+      await bestEffort(() => auxiliaryStore.db.prepare(
+        `INSERT INTO runtime_state (key, textValue, integerValue, updatedAt)
+         VALUES ('last_scheduler_summary', ?, NULL, ?)
+         ON CONFLICT(key) DO UPDATE SET
+           textValue = excluded.textValue,
+           integerValue = NULL,
+           updatedAt = excluded.updatedAt`,
+      ).bind(JSON.stringify({
+        status: "error",
+        errorCode: phaseErrorCode(error),
+        requests: 0,
+        d1Queries: budget.used + 3,
+        wallTimeMs: Math.max(0, finishedAt - startedAt),
+      }), finishedAt).run());
+      await bestEffort(() => releaseSchedulerLease(auxiliaryStore.db, runId, finishedAt));
+      await bestEffort(() => recordDailyBudget(rawDb, {
+        startedAtMs: startedAt,
+        finishedAtMs: finishedAt,
+        outcome: "failed",
+        upstreamRequests,
+        d1Queries: budget.used + auxiliaryStore.budget.used + 1,
+        rowsReadObservedBeforeLedger: usage.rowsRead,
+        rowsWrittenObservedBeforeLedger: usage.rowsWritten,
+      }));
+      throw error;
+    }
 
     if (!acquired) {
       const finishedAt = now();
@@ -394,6 +425,7 @@ function phaseErrorCode(error: unknown): string {
     || hasErrorName(error, "HeaderQueryBudgetExceededError", "SweepQueryBudgetExceededError")) {
     return "D1_QUERY_BUDGET";
   }
+  if (error instanceof D1RowBudgetExceededError) return "D1_ROW_BUDGET";
   if (hasErrorName(error, "SweepRequestBudgetExceededError")) return "TRUST8004_REQUEST_BUDGET";
   return "PHASE_FAILED";
 }
