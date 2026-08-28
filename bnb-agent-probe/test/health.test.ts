@@ -183,7 +183,11 @@ describe("Worker runtime", () => {
         method: "POST",
         headers: { authorization: "Bearer must-never-leak" },
       }),
-      env(),
+      {
+        ...env(),
+        DEPLOYMENT_ENV: "staging",
+        STAGING_MANUAL_RUN: "1",
+      },
       { waitUntil: vi.fn(), passThroughOnException: vi.fn() },
     );
 
@@ -193,6 +197,7 @@ describe("Worker runtime", () => {
 
   it.each([
     { DEPLOYMENT_ENV: "production", STAGING_MANUAL_RUN: "1" },
+    { STAGING_MANUAL_RUN: "1" },
     { DEPLOYMENT_ENV: "staging", STAGING_MANUAL_RUN: "0" },
     { DEPLOYMENT_ENV: "staging" },
   ])("keeps the manual scheduler route hidden outside an explicitly enabled staging run", async (guard) => {
