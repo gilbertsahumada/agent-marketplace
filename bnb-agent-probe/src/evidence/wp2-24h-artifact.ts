@@ -175,6 +175,16 @@ function isoTimestamp(value: unknown, code: string, label: string): number {
   return timestamp;
 }
 
+function analyticsTimestamp(value: unknown, code: string, label: string): number {
+  if (typeof value !== "string"
+    || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/.test(value)) {
+    fail(code, `${label} must be a UTC ISO timestamp`);
+  }
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp)) fail(code, `${label} is invalid`);
+  return timestamp;
+}
+
 function validateLimits(value: unknown): {
   readonly d1QueriesPerAttempt: number;
   readonly d1RowsRead: number;
@@ -240,6 +250,7 @@ function validateLedger(
   }
 
   const phaseCompletions: Record<Phase, number> = { header: 0, sweep: 0, probe: 0 };
+  let rotationStart: Phase | null = null;
   for (let index = 0; index < EXPECTED_TICKS; index += 1) {
     const scheduledTime = start + tickOffset + index * TICK_MS;
     const attempts = byTick.get(scheduledTime);
@@ -272,7 +283,9 @@ function validateLedger(
     }
     const completedPhase = completed[0]!.phase;
     if (completedPhase === null) fail("PHASE_COUNT", `completed tick ${scheduledTime} has no phase`);
-    if (completedPhase !== PHASES[index % PHASES.length]) {
+    rotationStart ??= completedPhase;
+    const expectedPhase = PHASES[(PHASES.indexOf(rotationStart) + index) % PHASES.length];
+    if (completedPhase !== expectedPhase) {
       fail("PHASE_SEQUENCE", `tick ${scheduledTime} does not follow header, sweep, probe`);
     }
     phaseCompletions[completedPhase] += 1;
@@ -302,6 +315,9 @@ function ledgerEntry(value: unknown, index: number): LedgerEntry {
   }
   const messageId = nonEmptyString(entry.messageId, "LEDGER", `ledger[${index}].messageId`);
   if (messageId.length > 256) fail("LEDGER", `ledger[${index}].messageId is too long`);
+  const startedAt = nonNegativeInteger(entry.startedAt, "LEDGER", `ledger[${index}].startedAt`);
+  const finishedAt = nonNegativeInteger(entry.finishedAt, "LEDGER", `ledger[${index}].finishedAt`);
+  if (finishedAt < startedAt) fail("LEDGER", `ledger[${index}] finishes before it starts`);
   return {
     messageId,
     scheduledTime: nonNegativeInteger(entry.scheduledTime, "LEDGER", `ledger[${index}].scheduledTime`),
@@ -320,8 +336,8 @@ function ledgerEntry(value: unknown, index: number): LedgerEntry {
       "LEDGER",
       `ledger[${index}].rowsWrittenObservedBeforeLedger`,
     ),
-    startedAt: nonNegativeInteger(entry.startedAt, "LEDGER", `ledger[${index}].startedAt`),
-    finishedAt: nonNegativeInteger(entry.finishedAt, "LEDGER", `ledger[${index}].finishedAt`),
+    startedAt,
+    finishedAt,
     errorCode: entry.errorCode === null
       ? null
       : nonEmptyString(entry.errorCode, "LEDGER", `ledger[${index}].errorCode`),
@@ -582,7 +598,7 @@ async function validateRawAnalytics(
       const dimensions = record(group.dimensions, "RAW_QUEUE", `queue backlog[${index}].dimensions`);
       if (dimensions.queueId !== context.queueId) fail("RAW_QUEUE", "Queue backlog contains another Queue");
       return {
-        timestamp: Date.parse(nonEmptyString(dimensions.datetime, "RAW_QUEUE", "Queue backlog datetime")),
+        timestamp: analyticsTimestamp(dimensions.datetime, "RAW_QUEUE", "Queue backlog datetime"),
         messages: nonNegativeNumber(record(group.avg, "RAW_QUEUE", "Queue backlog avg").messages,
           "RAW_QUEUE", "Queue backlog messages"),
       };
