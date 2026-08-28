@@ -230,6 +230,107 @@ describe("WP3 full Workers runtime", () => {
     expect(sellerRequests).toBe(0);
     expect(await runtimeText("next_scheduler_phase")).toBe("header");
   });
+
+  it.each([
+    ["redirect", "reachable", "SELLER_REDIRECT"],
+    ["oversized", "reachable", "SELLER_RESPONSE_TOO_LARGE"],
+    ["stream-timeout", "unreachable", "SELLER_TIMEOUT"],
+  ] as const)(
+    "persists and rotates a real seller %s transport failure",
+    async (failure, expectedOutcome, expectedErrorCode) => {
+      await env.DB.prepare(
+        `INSERT INTO probe_targets (
+           agentId, chainId, transport, endpoint, name, categoriesJson,
+           categoryProvenance, declarationState, currentMetadataUpdatedAt,
+           lastMetadataCheckedAt, firstSeenAt, lastChangedAt, lastSeenAt, priority
+         ) VALUES ('303779', 56, 'a2a', ?, 'Grid', '["grid_trading"]',
+           'derived:marketplace-inventory', 'current', ?, ?, ?, ?, ?, 1)`,
+      ).bind(ENDPOINT, NOW_MS - 1_000, NOW_MS, NOW_MS, NOW_MS, NOW_MS).run();
+      await env.DB.prepare(
+        "INSERT INTO runtime_state (key, textValue, updatedAt) VALUES ('next_scheduler_phase', 'probe', ?)",
+      ).bind(NOW_MS - 1_000).run();
+
+      let sellerRequests = 0;
+      const fetchImpl: typeof fetch = async (input, init) => {
+        const url = new URL(String(input));
+        if (url.hostname === "trust8004.xyz") {
+          return Response.json({
+            chainId: 56,
+            agentId: "303779",
+            name: "Grid",
+            registeredAt: NOW_MS - 10_000,
+            metadataUpdatedAt: NOW_MS,
+            metadataReasonCode: "ok",
+            services: [],
+            endpoints: [{ type: "A2A", url: ENDPOINT }],
+          });
+        }
+        if (url.hostname === "rpc.example.com") {
+          const request = JSON.parse(String(init?.body)) as {
+            id: number;
+            method: string;
+            params?: unknown[];
+          };
+          return Response.json({
+            jsonrpc: "2.0",
+            id: request.id,
+            result: rpcResult(request, account.address),
+          });
+        }
+        sellerRequests += 1;
+        if (failure === "redirect") {
+          return new Response(null, {
+            status: 302,
+            headers: { location: "https://redirect.example/card" },
+          });
+        }
+        if (failure === "oversized") {
+          return Response.json({ padding: "x".repeat(257) });
+        }
+        const signal = init?.signal;
+        const body = new ReadableStream<Uint8Array>({
+          start(controller) {
+            const abort = () => controller.error(
+              new DOMException("The operation was aborted", "AbortError"),
+            );
+            if (signal?.aborted) abort();
+            else signal?.addEventListener("abort", abort, { once: true });
+          },
+        });
+        return new Response(body, {
+          headers: { "content-type": "application/json" },
+        });
+      };
+      const runner = createWp2ScheduledRunner({
+        now: () => NOW_MS,
+        randomUUID: () => `wp3-${failure}`,
+        fetch: fetchImpl,
+      });
+
+      await expect(runner(
+        { scheduledTime: NOW_MS, cron: "queue" },
+        { ...env, BSC_RPC_URL: "https://rpc.example.com/bsc" } as unknown as Env,
+        createExecutionContext(),
+        loadConfig({
+          KILL_SWITCH: "0",
+          PROBE_TIMEOUT_MS: failure === "stream-timeout" ? "50" : "5000",
+          MAX_SELLER_RESPONSE_BYTES: "128",
+        }),
+      )).resolves.toBe("completed");
+
+      expect(await env.DB.prepare(
+        "SELECT outcome, errorCode FROM probe_observations",
+      ).first()).toEqual({ outcome: expectedOutcome, errorCode: expectedErrorCode });
+      expect(await env.DB.prepare(
+        "SELECT priority FROM probe_targets WHERE agentId = '303779'",
+      ).first()).toEqual({ priority: 0 });
+      expect(await runtimeText("next_scheduler_phase")).toBe("header");
+      expect(await runtimeJson("last_probe_summary")).toMatchObject({
+        outcome: expectedOutcome,
+      });
+      expect(sellerRequests).toBe(1);
+    },
+  );
 });
 
 async function signedQuote(provider: Address): Promise<Record<string, unknown>> {
