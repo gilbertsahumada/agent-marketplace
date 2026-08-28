@@ -6,6 +6,7 @@ import {
   primaryKey,
   sqliteTable,
   text,
+  uniqueIndex,
 } from "drizzle-orm/sqlite-core";
 
 export const probeTargets = sqliteTable(
@@ -193,6 +194,7 @@ export const schedulerAttempts = sqliteTable(
   "scheduler_attempts",
   {
     id: integer().primaryKey({ autoIncrement: true }),
+    messageId: text().notNull(),
     scheduledTime: integer().notNull(),
     attempt: integer().notNull(),
     phase: text(),
@@ -206,7 +208,8 @@ export const schedulerAttempts = sqliteTable(
     errorCode: text(),
   },
   (table) => [
-    index("idx_scheduler_attempts_window").on(table.scheduledTime, table.attempt),
+    index("idx_scheduler_attempts_window").on(table.scheduledTime, table.messageId, table.attempt),
+    uniqueIndex("scheduler_attempts_message_attempt").on(table.messageId, table.attempt),
     check("scheduler_attempts_attempt", sql`${table.attempt} BETWEEN 1 AND 4`),
     check(
       "scheduler_attempts_phase",
