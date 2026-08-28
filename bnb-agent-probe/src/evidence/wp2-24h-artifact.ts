@@ -697,6 +697,14 @@ async function validateRawAnalytics(
   if (producerSamples === 0 || consumerSamples === 0 || producerRequests !== queueWrites) {
     fail("RAW_WORKERS", "Workers Analytics cannot separate Cron producer and Queue consumer CPU");
   }
+  const spillOutAttempts = context.tickLedger.filter(({ startedAt }) => startedAt >= context.end);
+  for (const attempt of spillOutAttempts) {
+    const correlated = workerSamples.some((sample) =>
+      sample.subrequests > 0 && Math.abs(sample.timestamp - attempt.startedAt) <= 1_000);
+    if (!correlated) {
+      fail("RAW_WORKERS", "Workers Analytics is missing a spill-out consumer attempt");
+    }
+  }
   const backlogGroups = nestedGroups(queueRaw, "queueBacklogAdaptiveGroups", "RAW_QUEUE");
   const terminalBacklog = backlogGroups
     .map((unvalidated, index) => {
@@ -763,7 +771,6 @@ async function validateRawAnalytics(
   const http429 = context.quotaLedger.filter(({ errorCode }) => errorCode?.includes("429") === true).length;
   const quotaErrors = context.quotaLedger.filter(({ errorCode }) =>
     errorCode !== null && /quota|limit|exceeded/i.test(errorCode)).length;
-  const spillOutAttempts = context.tickLedger.filter(({ startedAt }) => startedAt >= context.end);
   const workerErrorCohort = [...context.quotaLedger, ...spillOutAttempts];
   const workerHttp429 = workerErrorCohort.filter(({ errorCode }) => errorCode?.includes("429") === true).length;
   const workerQuotaErrors = workerErrorCohort.filter(({ errorCode }) =>
