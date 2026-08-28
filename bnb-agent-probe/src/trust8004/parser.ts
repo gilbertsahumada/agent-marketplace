@@ -50,7 +50,8 @@ function nullableString(value: unknown, path: string): string | null {
 }
 
 function metadataArray(value: unknown, path: string): unknown[] {
-  let parsed = value;
+  if (value === null || value === undefined) return [];
+  let parsed: unknown = value;
   if (typeof parsed === "string") {
     if (parsed.length > MAX_STRING_LENGTH) {
       throw new CatalogSchemaError(path, `JSON array string <= ${MAX_STRING_LENGTH} characters`, parsed);
