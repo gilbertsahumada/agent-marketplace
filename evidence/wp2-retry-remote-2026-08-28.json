@@ -60,12 +60,16 @@
       "datetime": "2026-08-28T17:12:14Z",
       "outcome": "success"
     },
-    "matchingConsumerInvocation": {
+    "matchingAdaptiveGroup": {
       "datetime": "2026-08-28T17:12:13Z",
+      "scriptVersion": "f06247e8-1fea-49cc-ad46-ef1609c8043c",
       "status": "success",
       "cpuTimeMicroseconds": 10267,
       "memoryUsageBytesP999": 2450893,
-      "subrequests": 1
+      "requests": 1,
+      "subrequests": 1,
+      "attribution": "inferred from version, timestamp, subrequest count and the adjacent D1 state; workersInvocationsAdaptive is an adaptive group, not a per-invocation log",
+      "eligibleForMemoryGate": false
     }
   },
   "contamination": {
@@ -112,6 +116,70 @@
     "secrets": [],
     "consumerMaxConcurrency": 1,
     "finalPropagationRecheck": "pass at 2026-08-28T17:33:40Z"
+  },
+  "rawReproducibility": {
+    "workersGraphql": {
+      "query": "query($accountTag: string!, $start: Time!, $end: Time!) { viewer { accounts(filter: { accountTag: $accountTag }) { workersInvocationsAdaptive(limit: 1000, filter: { datetime_geq: $start, datetime_leq: $end, scriptName: \"bnb-agent-probe-staging\" }, orderBy: [datetime_ASC]) { dimensions { datetime scriptName scriptVersion status } quantiles { cpuTimeP50 cpuTimeP99 durationP50 memoryUsageBytesP50 memoryUsageBytesP99 memoryUsageBytesP999 } sum { requests errors subrequests } } } } }",
+      "variables": {
+        "accountTag": "bc8d4adf4860284fda426b24e7377bc2",
+        "start": "2026-08-28T17:07:00Z",
+        "end": "2026-08-28T17:16:00Z"
+      },
+      "sanitizedResponseGroups": [
+        {
+          "dimensions": { "datetime": "2026-08-28T17:12:13Z", "scriptName": "bnb-agent-probe-staging", "scriptVersion": "f06247e8-1fea-49cc-ad46-ef1609c8043c", "status": "success" },
+          "quantiles": { "cpuTimeP50": 10267, "cpuTimeP99": 10267, "durationP50": 0.17327137, "memoryUsageBytesP50": 2450893, "memoryUsageBytesP99": 2450893, "memoryUsageBytesP999": 2450893 },
+          "sum": { "errors": 0, "requests": 1, "subrequests": 1 }
+        },
+        {
+          "dimensions": { "datetime": "2026-08-28T17:12:19Z", "scriptName": "bnb-agent-probe-staging", "scriptVersion": "f06247e8-1fea-49cc-ad46-ef1609c8043c", "status": "success" },
+          "quantiles": { "cpuTimeP50": 7697, "cpuTimeP99": 7697, "durationP50": 0.103982, "memoryUsageBytesP50": 2481083, "memoryUsageBytesP99": 2481083, "memoryUsageBytesP999": 2481083 },
+          "sum": { "errors": 0, "requests": 1, "subrequests": 2 }
+        }
+      ]
+    },
+    "queueGraphql": {
+      "query": "query($accountTag: string!, $queueId: string!, $start: Time!, $end: Time!) { viewer { accounts(filter: { accountTag: $accountTag }) { queueMessageOperationsAdaptiveGroups(limit: 1000, filter: { queueId: $queueId, datetime_geq: $start, datetime_leq: $end }, orderBy: [datetime_ASC]) { count dimensions { datetime queueId actionType consumerType outcome } sum { billableOperations bytes } avg { retryCount lagTime } max { messageSize } } queueBacklogAdaptiveGroups(limit: 1000, filter: { queueId: $queueId, datetime_geq: $start, datetime_leq: $end }, orderBy: [datetime_ASC]) { dimensions { datetime queueId } avg { messages bytes } } } } }",
+      "variables": {
+        "accountTag": "bc8d4adf4860284fda426b24e7377bc2",
+        "queueId": "721ba809967d425a91dbc34eb1ac3baa",
+        "start": "2026-08-28T17:07:00Z",
+        "end": "2026-08-28T17:16:00Z"
+      },
+      "sanitizedResponseGroups": [
+        { "count": 1, "dimensions": { "actionType": "ReadMessage", "consumerType": "worker", "datetime": "2026-08-28T17:08:12Z", "outcome": "", "queueId": "721ba809967d425a91dbc34eb1ac3baa" }, "avg": { "lagTime": 11480, "retryCount": 0 }, "max": { "messageSize": 49 }, "sum": { "billableOperations": 1, "bytes": 49 } },
+        { "count": 1, "dimensions": { "actionType": "ReadMessage", "consumerType": "worker", "datetime": "2026-08-28T17:12:14Z", "outcome": "", "queueId": "721ba809967d425a91dbc34eb1ac3baa" }, "avg": { "lagTime": 253102, "retryCount": 1 }, "max": { "messageSize": 49 }, "sum": { "billableOperations": 1, "bytes": 49 } },
+        { "count": 1, "dimensions": { "actionType": "DeleteMessage", "consumerType": "", "datetime": "2026-08-28T17:12:14Z", "outcome": "success", "queueId": "721ba809967d425a91dbc34eb1ac3baa" }, "avg": { "lagTime": 253125, "retryCount": 0 }, "max": { "messageSize": 49 }, "sum": { "billableOperations": 1, "bytes": 49 } }
+      ]
+    },
+    "d1": {
+      "query": "SELECT key, textValue, integerValue, updatedAt FROM runtime_state WHERE key IN ('scheduler_lease','next_scheduler_phase','last_queue_scheduled_time','last_scheduler_summary','last_header_summary') ORDER BY key",
+      "before": {
+        "last_queue_scheduled_time": 1787934290000,
+        "next_scheduler_phase": "header",
+        "scheduler_lease_owner": "wp2-remote-retry",
+        "scheduler_lease_expires_at": 1787937041696
+      },
+      "locked": {
+        "last_queue_scheduled_time": 1787934290000,
+        "next_scheduler_phase": "header",
+        "last_scheduler_summary": { "status": "skipped_locked", "requests": 0, "wallTimeMs": 79 },
+        "updatedAt": 1787936897139
+      },
+      "contaminatedAfter": {
+        "last_queue_scheduled_time": 1787936870000,
+        "next_scheduler_phase": "probe",
+        "last_header_summary": { "phase": "header", "status": "ok", "requested": 25, "received": 25, "requests": 1, "d1Queries": 5, "wallTimeMs": 1196, "finishedAt": 1787937134704 }
+      }
+    },
+    "rest": {
+      "schedulesRequest": "GET /accounts/bc8d4adf4860284fda426b24e7377bc2/workers/scripts/bnb-agent-probe-staging/schedules",
+      "schedulesFinalResponse": { "schedules": [] },
+      "metricsRequest": "GET /accounts/bc8d4adf4860284fda426b24e7377bc2/queues/721ba809967d425a91dbc34eb1ac3baa/metrics",
+      "metricsPreflightResponse": { "backlog_count": 0, "backlog_bytes": 0, "oldest_message_timestamp_ms": 0 },
+      "pushResponseExposingDelayedMessage": { "backlog_count": 2, "backlog_bytes": 98, "oldest_message_timestamp_ms": 1787936991471 },
+      "metricsFinalResponse": { "backlog_count": 0, "backlog_bytes": 0, "oldest_message_timestamp_ms": 0 }
+    }
   },
   "sources": [
     "Cloudflare Workers GraphQL workersInvocationsAdaptive",
