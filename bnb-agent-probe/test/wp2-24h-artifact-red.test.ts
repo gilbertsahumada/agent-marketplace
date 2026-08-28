@@ -132,6 +132,10 @@ const RAW_PAYLOADS = {
   "evidence/raw/activation.json": {
     response: { capturedAt: "2026-08-28T21:52:00.000Z", schedules: ["*/5 * * * *"], backlogCount: 0 },
   },
+  "evidence/raw/window-start.json": {
+    request: { capturedAt: "2026-08-28T23:59:30.000Z" },
+    response: { result: [{ results: [{ key: "next_scheduler_phase", value: "header" }] }] },
+  },
   "evidence/raw/cleanup.json": {
     response: { capturedAt: "2026-08-30T00:15:00.000Z", schedules: [], backlogCount: 0, killSwitch: true,
       stagingManualRun: false, sharedSecretPresent: false },
@@ -277,12 +281,12 @@ describe("WP2 24-hour evidence artifact validator", () => {
       ...artifact.ledger[0],
       messageId: "spill-in-message",
       scheduledTime: WINDOW_START - 5 * 60_000 + 14_000,
-      attempt: 4,
+      attempt: 2,
       startedAt: WINDOW_START + 1_000,
       finishedAt: WINDOW_START + 2_000,
-      outcome: "failed",
-      phase: null,
-      errorCode: "UPSTREAM_TIMEOUT",
+      outcome: "completed",
+      phase: "header",
+      errorCode: null,
     });
     artifact.totals.quotaAttempts = 289;
     artifact.totals.spillIn = 1;
@@ -329,7 +333,23 @@ describe("WP2 24-hour evidence artifact validator", () => {
         entry.phase = (["sweep", "probe", "header"] as const)[index % 3];
       });
     }
-    await expect(validateWp224hArtifact(artifact, { readRawEvidence })).resolves.toMatchObject({ passed: true });
+    const windowStart = structuredClone(RAW_PAYLOADS["evidence/raw/window-start.json"]) as any;
+    windowStart.response.result[0].results[0].value = "sweep";
+    const contents = JSON.stringify(windowStart);
+    artifact.rawAnalytics["evidence/raw/window-start.json"].sha256 = sha256(contents);
+    await expect(validateWp224hArtifact(artifact, {
+      readRawEvidence: async (path) => path === "evidence/raw/window-start.json" ? contents : readRawEvidence(path),
+    })).resolves.toMatchObject({ passed: true, rotationStart: "sweep" });
+  });
+
+  it("rejects a cyclic rotation that differs from the persisted window-start phase", async () => {
+    const artifact = validArtifact() as any;
+    for (const cohort of [artifact.ledger, artifact.quotaLedger]) {
+      cohort.forEach((entry: any, index: number) => {
+        entry.phase = (["sweep", "probe", "header"] as const)[index % 3];
+      });
+    }
+    await expect(validateWp224hArtifact(artifact, { readRawEvidence })).rejects.toThrow("PHASE_SEQUENCE");
   });
 
   it("accepts a final Queue delete during the post-midnight grace", async () => {
@@ -394,6 +414,33 @@ describe("WP2 24-hour evidence artifact validator", () => {
     await expect(validateWp224hArtifact(artifact, {
       readRawEvidence: async (path) => path === "evidence/raw/workers.json" ? contents : readRawEvidence(path),
     })).rejects.toThrow("CPU_LIMIT");
+  });
+
+  it("rejects ambiguous Workers samples instead of swapping producer and consumer CPU", async () => {
+    const artifact = validArtifact() as any;
+    const workers = structuredClone(RAW_PAYLOADS["evidence/raw/workers.json"]) as any;
+    const [producer, consumer] = workers.response.data.viewer.accounts[0].workersInvocationsAdaptive;
+    producer.quantiles.cpuTimeP99 = 1_000;
+    producer.sum.subrequests = 288;
+    consumer.dimensions.datetime = "2026-08-29T00:00:15Z";
+    consumer.quantiles.cpuTimeP99 = 20_000;
+    consumer.sum.subrequests = 0;
+    const contents = JSON.stringify(workers);
+    artifact.rawAnalytics["evidence/raw/workers.json"].sha256 = sha256(contents);
+    await expect(validateWp224hArtifact(artifact, {
+      readRawEvidence: async (path) => path === "evidence/raw/workers.json" ? contents : readRawEvidence(path),
+    })).rejects.toThrow("RAW_WORKERS");
+  });
+
+  it("rejects cleanup captured before the final tick attempt finishes", async () => {
+    const artifact = validArtifact() as any;
+    const last = artifact.ledger.at(-1);
+    last.startedAt = Date.parse("2026-08-30T00:15:20.000Z");
+    last.finishedAt = Date.parse("2026-08-30T00:15:30.000Z");
+    artifact.quotaLedger.pop();
+    artifact.totals.quotaAttempts = 287;
+    artifact.totals.spillOut = 1;
+    await expect(validateWp224hArtifact(artifact, { readRawEvidence })).rejects.toThrow("CLEANUP_GRACE");
   });
 
   it("rejects quota, HTTP 429, CPU, memory and unattributable account usage", async () => {
