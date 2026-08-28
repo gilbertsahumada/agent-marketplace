@@ -22,6 +22,7 @@ export interface ProbeTarget {
   readonly currentMetadataUpdatedAt: number | null;
   readonly lastSeenAt?: number;
   readonly priority?: number;
+  readonly bootstrapSource?: "marketplace-inventory";
 }
 
 export type ProbeReconciliation =
