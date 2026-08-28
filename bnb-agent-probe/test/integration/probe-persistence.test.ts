@@ -121,4 +121,34 @@ describe("WP3 typed D1 persistence", () => {
     expect(await env.DB.prepare("SELECT COUNT(*) AS count FROM probe_observations").first()).toMatchObject({ count: 0 });
     expect(await env.DB.prepare("SELECT COUNT(*) AS count FROM runtime_state").first()).toMatchObject({ count: 0 });
   });
+
+  it("does not rewrite an unchanged target inside the hourly refresh window", async () => {
+    await env.DB.prepare(
+      `UPDATE probe_targets
+       SET currentMetadataUpdatedAt = ?, lastMetadataCheckedAt = ?, lastSeenAt = ?, priority = 1
+       WHERE agentId = '303779'`,
+    ).bind(NOW - 1_000, NOW - 500, NOW - 500).run();
+    const raw = env.DB as unknown as D1DatabaseLike;
+    const { db, budget } = createBudgetedD1Database(raw, 40);
+    const persistence = createD1ProbePersistence(db, { queryBudget: budget, nowMs: NOW });
+    const target = await persistence.selectTarget({
+      agentAllowlist: ["303779"], endpointAllowlist: [ENDPOINT], limit: 1,
+    });
+
+    await persistence.commit({
+      target: target!,
+      reconciliation: { status: "current", metadataUpdatedAt: NOW - 1_000 },
+      observation: null,
+      nextPriority: 1,
+      summary: {
+        phase: "probe", status: "ok", processedTargets: 1,
+        outcome: "metadata_unavailable", requests: 1, wallTimeMs: 1,
+      },
+    });
+
+    expect(await env.DB.prepare(
+      "SELECT lastMetadataCheckedAt, lastSeenAt FROM probe_targets WHERE agentId = '303779'",
+    ).first()).toEqual({ lastMetadataCheckedAt: NOW - 500, lastSeenAt: NOW - 500 });
+    expect(budget.used).toBe(3);
+  });
 });
