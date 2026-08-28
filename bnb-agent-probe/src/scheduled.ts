@@ -306,7 +306,7 @@ async function executeWp2Phase(input: PhaseExecution, fetchImpl: typeof fetch): 
   const [
     { createCountedBscClient, readProbeChainContext },
     { validateProbeQuote },
-    { probeA2aSeller },
+    { probeA2aSeller, SellerProbeError },
     { buildGridProbeRequest },
     { createD1ProbePersistence },
     { runProbePhase },
@@ -389,7 +389,7 @@ async function executeWp2Phase(input: PhaseExecution, fetchImpl: typeof fetch): 
     probeSeller: async (target) => {
       if (target.transport !== "a2a") throw new Error("WP3_A2A_TARGET_REQUIRED");
       const remainingMs = Math.floor(deadlineMs - input.now());
-      if (remainingMs <= 0) throw new Error("PROBE_DEADLINE_EXCEEDED");
+      if (remainingMs <= 0) throw new SellerProbeError("SELLER_TIMEOUT");
       return probeA2aSeller({
         endpoint: target.endpoint,
         request: buildGridProbeRequest().toDict(),
