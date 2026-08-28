@@ -64,6 +64,8 @@ export function createWorker(dependencies: WorkerDependencies = {}): WorkerEntry
       }
       if (request.method === "POST" && url.pathname === "/__admin/run-scheduled") {
         if (config.killSwitch
+          || env.DEPLOYMENT_ENV !== "staging"
+          || env.STAGING_MANUAL_RUN !== "1"
           || dependencies.runScheduled === undefined
           || env.SHARED_SECRET === undefined
           || context === undefined) return errorResponse("not_found", 404);
