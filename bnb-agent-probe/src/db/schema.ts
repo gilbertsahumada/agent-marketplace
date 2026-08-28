@@ -189,10 +189,46 @@ export const runtimeState = sqliteTable("runtime_state", {
   updatedAt: integer().notNull(),
 });
 
+export const schedulerAttempts = sqliteTable(
+  "scheduler_attempts",
+  {
+    id: integer().primaryKey({ autoIncrement: true }),
+    scheduledTime: integer().notNull(),
+    attempt: integer().notNull(),
+    phase: text(),
+    outcome: text().notNull(),
+    startedAt: integer().notNull(),
+    finishedAt: integer().notNull(),
+    upstreamRequests: integer().notNull(),
+    d1Queries: integer().notNull(),
+    rowsReadObservedBeforeLedger: integer().notNull(),
+    rowsWrittenObservedBeforeLedger: integer().notNull(),
+    errorCode: text(),
+  },
+  (table) => [
+    index("idx_scheduler_attempts_window").on(table.scheduledTime, table.attempt),
+    check("scheduler_attempts_attempt", sql`${table.attempt} BETWEEN 1 AND 4`),
+    check(
+      "scheduler_attempts_phase",
+      sql`${table.phase} IS NULL OR ${table.phase} IN ('header', 'sweep', 'probe')`,
+    ),
+    check(
+      "scheduler_attempts_outcome",
+      sql`${table.outcome} IN ('completed', 'failed', 'duplicate', 'locked')`,
+    ),
+    check("scheduler_attempts_time", sql`${table.finishedAt} >= ${table.startedAt}`),
+    check("scheduler_attempts_requests", sql`${table.upstreamRequests} >= 0`),
+    check("scheduler_attempts_queries", sql`${table.d1Queries} BETWEEN 1 AND 40`),
+    check("scheduler_attempts_rows_read", sql`${table.rowsReadObservedBeforeLedger} >= 0`),
+    check("scheduler_attempts_rows_written", sql`${table.rowsWrittenObservedBeforeLedger} >= 0`),
+  ],
+);
+
 export const schema = {
   probeTargets,
   probeObservations,
   funnelSnapshots,
   hireEvents,
   runtimeState,
+  schedulerAttempts,
 } as const;
