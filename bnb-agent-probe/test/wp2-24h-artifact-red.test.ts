@@ -51,6 +51,7 @@ const RAW_PAYLOADS = {
       queueId: "721ba809967d425a91dbc34eb1ac3baa",
       start: "2026-08-29T00:00:00.000Z",
       endInclusive: "2026-08-29T23:59:59.999Z",
+      terminalityEndInclusive: "2026-08-30T00:15:00.000Z",
     },
     response: { data: { viewer: { accounts: [{
       queueMessageOperationsAdaptiveGroups: [{
@@ -65,18 +66,35 @@ const RAW_PAYLOADS = {
       }],
     }] } }, errors: null },
   },
+  "evidence/raw/queue-account.json": {
+    request: {
+      start: "2026-08-29T00:00:00.000Z",
+      endInclusive: "2026-08-29T23:59:59.999Z",
+    },
+    response: { data: { viewer: { accounts: [{ queueMessageOperationsAdaptiveGroups: [
+      {
+        dimensions: { datetime: "2026-08-29T00:00:00Z", queueId: "721ba809967d425a91dbc34eb1ac3baa" },
+        sum: { billableOperations: 864 },
+      },
+      {
+        dimensions: { datetime: "2026-08-29T00:00:00Z", queueId: "00000000000000000000000000000002" },
+        sum: { billableOperations: 100 },
+      },
+    ] }] } }, errors: null },
+  },
   "evidence/raw/deployment.json": {
     response: { result: { scriptName: "bnb-agent-probe-staging", versionId: DEPLOYMENT_VERSION,
       commit: "0123456789abcdef0123456789abcdef01234567" } },
   },
   "evidence/raw/preflight.json": {
-    response: { schedules: [], backlogCount: 0 },
+    response: { capturedAt: "2026-08-28T21:50:00.000Z", schedules: [], backlogCount: 0 },
   },
   "evidence/raw/activation.json": {
-    response: { schedules: ["*/5 * * * *"], backlogCount: 0 },
+    response: { capturedAt: "2026-08-28T21:52:00.000Z", schedules: ["*/5 * * * *"], backlogCount: 0,
+      producerCpuMsP99: 1.14 },
   },
   "evidence/raw/cleanup.json": {
-    response: { schedules: [], backlogCount: 0, killSwitch: true,
+    response: { capturedAt: "2026-08-30T00:15:00.000Z", schedules: [], backlogCount: 0, killSwitch: true,
       stagingManualRun: false, sharedSecretPresent: false },
   },
 } as const;
@@ -139,8 +157,10 @@ function validArtifact(): Record<string, unknown> {
       memoryExceeded: 0,
       maxD1QueriesPerAttempt: 13,
       maxConsumerCpuMs: 200,
+      maxProducerCpuMs: 1.14,
+      wallTimeP95Ms: 1_000,
       memoryUsageBytesP999: 12_000_000,
-      queueOperations: 864,
+      queueOperations: 964,
       quotaAttempts: 288,
       spillIn: 0,
       spillOut: 0,
@@ -151,7 +171,8 @@ function validArtifact(): Record<string, unknown> {
         sha256: sha256(contents),
       }]),
     ),
-    accountUsage: { attributable: true, unrelatedRowsRead: 50_000, unrelatedRowsWritten: 5_000 },
+    accountUsage: { attributable: true, unrelatedRowsRead: 50_000, unrelatedRowsWritten: 5_000,
+      unrelatedQueueOperations: 100 },
     cleanup: {
       preflightSchedules: [],
       preflightBacklogCount: 0,
@@ -193,7 +214,7 @@ describe("WP2 24-hour evidence artifact validator", () => {
     ["bad raw hash", (artifact: any) => { artifact.rawAnalytics["evidence/raw/queue.json"].sha256 = "0".repeat(64); }, "RAW_HASH"],
     ["fabricated D1 totals", (artifact: any) => { artifact.totals.d1RowsRead -= 1; }, "RAW_D1"],
     ["wrong deployment", (artifact: any) => { artifact.deploymentVersion = "00000000-0000-4000-8000-000000000003"; }, "RAW_DEPLOYMENT"],
-    ["wrong Queue operations", (artifact: any) => { artifact.totals.queueOperations = 863; }, "RAW_QUEUE"],
+    ["wrong Queue operations", (artifact: any) => { artifact.totals.queueOperations = 963; }, "RAW_QUEUE"],
     ["incomplete cleanup", (artifact: any) => { artifact.cleanup.finalSchedules = ["*/5 * * * *"]; }, "CLEANUP"],
   ])("rejects %s", async (_label, mutate, errorCode) => {
     const artifact = validArtifact();
@@ -216,6 +237,7 @@ describe("WP2 24-hour evidence artifact validator", () => {
       ...artifact.ledger[0],
       messageId: "spill-in-message",
       scheduledTime: WINDOW_START - 5 * 60_000 + 14_000,
+      attempt: 4,
       startedAt: WINDOW_START + 1_000,
       finishedAt: WINDOW_START + 2_000,
       outcome: "failed",
@@ -225,6 +247,64 @@ describe("WP2 24-hour evidence artifact validator", () => {
     artifact.totals.quotaAttempts = 289;
     artifact.totals.spillIn = 1;
     await expect(validateWp224hArtifact(artifact, { readRawEvidence })).resolves.toMatchObject({ passed: true });
+  });
+
+  it("rejects a second Queue message for the same scheduled tick", async () => {
+    const artifact = validArtifact() as any;
+    artifact.ledger.push({ ...artifact.ledger[0], messageId: "double-enqueue", outcome: "failed",
+      phase: null, errorCode: "UPSTREAM_TIMEOUT" });
+    artifact.quotaLedger.push({ ...artifact.ledger.at(-1) });
+    artifact.totals.retries = 1;
+    artifact.totals.quotaAttempts = 289;
+    await expect(validateWp224hArtifact(artifact, { readRawEvidence })).rejects.toThrow("MESSAGE_ID");
+  });
+
+  it("rejects phase counts that do not follow header, sweep, probe on every tick", async () => {
+    const artifact = validArtifact() as any;
+    [artifact.ledger[0].phase, artifact.ledger[1].phase] = [artifact.ledger[1].phase, artifact.ledger[0].phase];
+    [artifact.quotaLedger[0].phase, artifact.quotaLedger[1].phase] =
+      [artifact.quotaLedger[1].phase, artifact.quotaLedger[0].phase];
+    await expect(validateWp224hArtifact(artifact, { readRawEvidence })).rejects.toThrow("PHASE_SEQUENCE");
+  });
+
+  it("rejects a quota attempt omitted from the tick cohort", async () => {
+    const artifact = validArtifact() as any;
+    artifact.quotaLedger.push({ ...artifact.ledger[0], messageId: "omitted-from-ledger" });
+    artifact.totals.quotaAttempts = 289;
+    await expect(validateWp224hArtifact(artifact, { readRawEvidence })).rejects.toThrow("QUOTA_COHORT");
+  });
+
+  it("rejects cleanup evidence captured before the terminality grace", async () => {
+    const artifact = validArtifact() as any;
+    const cleanup = structuredClone(RAW_PAYLOADS["evidence/raw/cleanup.json"]) as any;
+    cleanup.response.capturedAt = "2026-08-30T00:14:59.999Z";
+    const contents = JSON.stringify(cleanup);
+    artifact.rawAnalytics["evidence/raw/cleanup.json"].sha256 = sha256(contents);
+    await expect(validateWp224hArtifact(artifact, {
+      readRawEvidence: async (path) => path === "evidence/raw/cleanup.json" ? contents : readRawEvidence(path),
+    })).rejects.toThrow("CLEANUP_GRACE");
+  });
+
+  it("rejects non-zero Queue backlog at the terminality cutoff", async () => {
+    const artifact = validArtifact() as any;
+    const queue = structuredClone(RAW_PAYLOADS["evidence/raw/queue.json"]) as any;
+    queue.response.data.viewer.accounts[0].queueBacklogAdaptiveGroups[0].avg.messages = 1;
+    const contents = JSON.stringify(queue);
+    artifact.rawAnalytics["evidence/raw/queue.json"].sha256 = sha256(contents);
+    await expect(validateWp224hArtifact(artifact, {
+      readRawEvidence: async (path) => path === "evidence/raw/queue.json" ? contents : readRawEvidence(path),
+    })).rejects.toThrow("QUEUE_TERMINALITY");
+  });
+
+  it("rejects producer CPU and wall-time gate violations", async () => {
+    for (const mutate of [
+      (artifact: any) => { artifact.totals.maxProducerCpuMs = 10; },
+      (artifact: any) => { artifact.totals.wallTimeP95Ms = 30_000; },
+    ]) {
+      const artifact = validArtifact();
+      mutate(artifact);
+      await expect(validateWp224hArtifact(artifact, { readRawEvidence })).rejects.toThrow();
+    }
   });
 
   it("rejects quota, HTTP 429, CPU, memory and unattributable account usage", async () => {
