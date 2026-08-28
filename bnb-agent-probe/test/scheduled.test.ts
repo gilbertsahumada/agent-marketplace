@@ -5,7 +5,7 @@ import type {
   D1PreparedStatementLike,
   D1ResultLike,
 } from "../src/db/client";
-import { createWp1ScheduledRunner } from "../src/scheduled";
+import { createWp2ScheduledRunner, type SchedulerPhase } from "../src/scheduled";
 import type { Env } from "../src/types";
 
 class LeaseDatabase implements D1DatabaseLike {
@@ -13,6 +13,7 @@ class LeaseDatabase implements D1DatabaseLike {
   acquisitions = 0;
   releases = 0;
   summaries: string[] = [];
+  nextPhase: SchedulerPhase = "header";
 
   prepare(query: string): D1PreparedStatementLike {
     let values: readonly unknown[] = [];
@@ -37,13 +38,20 @@ class LeaseDatabase implements D1DatabaseLike {
         return { key: "scheduler_lease" } as Row;
       },
       async all<Row>() {
+        if (query.includes("next_scheduler_phase")) {
+          return {
+            success: true,
+            meta: {},
+            results: [{ key: "next_scheduler_phase", textValue: thisDb.nextPhase }] as Row[],
+          };
+        }
         return { success: true, meta: {}, results: [] as Row[] };
       },
       async run<Meta>(): Promise<D1ResultLike<Meta>> {
         if (!query.includes("INSERT INTO runtime_state")) {
           throw new Error("unexpected run query");
         }
-        thisDb.summaries.push(String(values[1]));
+        thisDb.summaries.push(String(values[0]));
         return { success: true, meta: {} as Meta };
       },
     };
@@ -60,28 +68,32 @@ const context = {
   passThroughOnException() {},
 };
 
-describe("WP1 scheduled runner", () => {
-  it("acquires and releases a bounded Free lease without running phases", async () => {
+describe("WP2 scheduled runner", () => {
+  it("acquires and releases a bounded Free lease around exactly one phase", async () => {
     const db = new LeaseDatabase();
     let now = 1_000;
-    const runner = createWp1ScheduledRunner({
+    const phases: SchedulerPhase[] = [];
+    const runner = createWp2ScheduledRunner({
       now: () => now++,
       randomUUID: () => "run-a",
+      executePhase: async ({ phase }) => { phases.push(phase); },
     });
 
     await runner(controller, { DB: db } as unknown as Env, context, loadConfig({}));
 
     expect(db.acquisitions).toBe(1);
     expect(db.releases).toBe(1);
-    expect(db.lease).toEqual({ runId: null, expiresAt: 1_001 });
+    expect(db.lease).toEqual({ runId: null, expiresAt: 1_002 });
+    expect(phases).toEqual(["header"]);
   });
 
   it("does not release a lease held by another invocation", async () => {
     const db = new LeaseDatabase();
     db.lease = { runId: "existing", expiresAt: 10_000 };
-    const runner = createWp1ScheduledRunner({
+    const runner = createWp2ScheduledRunner({
       now: () => 1_000,
       randomUUID: () => "run-b",
+      executePhase: async () => { throw new Error("must not execute"); },
     });
 
     await runner(controller, { DB: db } as unknown as Env, context, loadConfig({}));
@@ -98,9 +110,10 @@ describe("WP1 scheduled runner", () => {
 
   it("reserves cleanup capacity at the minimum valid D1 query budget", async () => {
     const db = new LeaseDatabase();
-    const runner = createWp1ScheduledRunner({
+    const runner = createWp2ScheduledRunner({
       now: () => 1_000,
       randomUUID: () => "run-minimum",
+      executePhase: async () => {},
     });
 
     await runner(
@@ -110,6 +123,23 @@ describe("WP1 scheduled runner", () => {
       loadConfig({ D1_QUERIES_PER_RUN: "3" }),
     );
 
+    expect(db.acquisitions).toBe(1);
+    expect(db.releases).toBe(1);
+  });
+
+  it("reads and executes only the persisted phase", async () => {
+    const db = new LeaseDatabase();
+    db.nextPhase = "sweep";
+    const phases: SchedulerPhase[] = [];
+    const runner = createWp2ScheduledRunner({
+      now: () => 1_000,
+      randomUUID: () => "run-sweep",
+      executePhase: async ({ phase }) => { phases.push(phase); },
+    });
+
+    await runner(controller, { DB: db } as unknown as Env, context, loadConfig({}));
+
+    expect(phases).toEqual(["sweep"]);
     expect(db.acquisitions).toBe(1);
     expect(db.releases).toBe(1);
   });
