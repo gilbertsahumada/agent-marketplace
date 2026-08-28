@@ -37,7 +37,7 @@ describe("WP1 Wrangler scaffold", () => {
       KILL_SWITCH: "1",
       CRON_INTERVAL_MINUTES: "5",
       HEADER_LIMIT: "25",
-      SWEEP_LIMIT: "25",
+      SWEEP_LIMIT: "4",
       SWEEP_PAGES_PER_RUN: "1",
       PROBE_BATCH_SIZE: "1",
       D1_QUERIES_PER_RUN: "40",
