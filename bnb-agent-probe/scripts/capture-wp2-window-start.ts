@@ -31,7 +31,7 @@ export async function captureWp2WindowStart(options: CaptureOptions): Promise<vo
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        sql: "SELECT key, value FROM runtime_state WHERE key = ? LIMIT 1",
+        sql: "SELECT key, textValue AS value FROM runtime_state WHERE key = ? LIMIT 1",
         params: ["next_scheduler_phase"],
       }),
     },
