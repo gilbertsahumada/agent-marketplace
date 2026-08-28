@@ -52,8 +52,10 @@ function env(db = database()): Env {
 describe("Worker runtime", () => {
   it("returns a public, sanitized Free health response", async () => {
     const now = 1_800_000_000_000;
+    const db = database();
+    const prepare = vi.spyOn(db, "prepare");
     const worker = createWorker({ now: () => now });
-    const response = await worker.fetch(new Request("https://worker.test/health"), env());
+    const response = await worker.fetch(new Request("https://worker.test/health"), env(db));
     const text = await response.text();
     const body = JSON.parse(text);
 
@@ -66,7 +68,7 @@ describe("Worker runtime", () => {
       killSwitch: true,
       d1: { available: true },
       lease: { active: false, expiresAt: null },
-      targets: { current: 4, removed: 1, total: 5 },
+      targets: { available: false },
       budgets: {
         headerLimit: 25,
         sweepLimit: 4,
@@ -88,6 +90,8 @@ describe("Worker runtime", () => {
     expect(text).not.toContain("must-never-leak");
     expect(text).not.toContain("secret-token");
     expect(text).not.toContain("runId");
+    expect(prepare).toHaveBeenCalledTimes(1);
+    expect(prepare.mock.calls[0]?.[0]).not.toContain("probe_targets");
   });
 
   it("exposes only the current UTC daily ledger allowlist", async () => {
