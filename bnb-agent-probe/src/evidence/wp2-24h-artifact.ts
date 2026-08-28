@@ -133,7 +133,8 @@ export async function validateWp224hArtifact(
     d1Id,
     start,
     end,
-    ledger: quotaLedger,
+    tickLedger: ledger.entries,
+    quotaLedger,
   });
   const totals = validateTotals(artifact.totals, limits, ledger, quotaLedger, raw, start, end);
   validateAttribution(artifact.accountUsage, totals, raw);
@@ -466,7 +467,8 @@ async function validateRawAnalytics(
     readonly d1Id: string;
     readonly start: number;
     readonly end: number;
-    readonly ledger: readonly LedgerEntry[];
+    readonly tickLedger: readonly LedgerEntry[];
+    readonly quotaLedger: readonly LedgerEntry[];
   },
 ): Promise<RawMetrics> {
   if (typeof dependencies?.readRawEvidence !== "function") {
@@ -520,7 +522,7 @@ async function validateRawAnalytics(
     endInclusive: endInclusiveIso,
   }, "RAW_WORKERS");
   const workers = nestedGroups(workersRaw, "workersInvocationsAdaptive", "RAW_WORKERS");
-  let maxConsumerCpuMs = 0;
+  const workerSamples: { timestamp: number; cpuMs: number }[] = [];
   let memoryUsageBytesP999 = 0;
   let workerErrors = 0;
   let exceededCpu = 0;
@@ -535,8 +537,10 @@ async function validateRawAnalytics(
     if (status.includes("cpu") && status.includes("exceed")) exceededCpu += 1;
     if (status.includes("memory") && status.includes("exceed")) memoryExceeded += 1;
     const quantiles = record(group.quantiles, "RAW_WORKERS", `workers[${index}].quantiles`);
-    maxConsumerCpuMs = Math.max(maxConsumerCpuMs,
-      nonNegativeNumber(quantiles.cpuTimeP99, "RAW_WORKERS", `workers[${index}].cpuTimeP99`) / 1_000);
+    workerSamples.push({
+      timestamp: analyticsTimestamp(dimensions.datetime, "RAW_WORKERS", `workers[${index}].datetime`),
+      cpuMs: nonNegativeNumber(quantiles.cpuTimeP99, "RAW_WORKERS", `workers[${index}].cpuTimeP99`) / 1_000,
+    });
     memoryUsageBytesP999 = Math.max(memoryUsageBytesP999,
       nonNegativeNumber(quantiles.memoryUsageBytesP999, "RAW_WORKERS", `workers[${index}].memoryP999`));
     const sum = record(group.sum, "RAW_WORKERS", `workers[${index}].sum`);
@@ -569,6 +573,7 @@ async function validateRawAnalytics(
   const queueTerminalGroups = nestedGroups(queueRaw, "queueTerminalOperations", "RAW_QUEUE");
   let queueWrites = 0;
   let successfulDeletes = 0;
+  const producerTimestamps = new Set<number>();
   for (const [index, unvalidated] of queueTerminalGroups.entries()) {
     const group = record(unvalidated, "RAW_QUEUE", `queue terminal[${index}]`);
     const dimensions = record(group.dimensions, "RAW_QUEUE", `queue terminal[${index}].dimensions`);
@@ -576,7 +581,14 @@ async function validateRawAnalytics(
     const count = nonNegativeInteger(group.count, "RAW_QUEUE", `queue[${index}].count`);
     const actionType = nonEmptyString(dimensions.actionType, "RAW_QUEUE", `queue[${index}].actionType`);
     const outcome = typeof dimensions.outcome === "string" ? dimensions.outcome.toLowerCase() : "";
-    if (actionType === "WriteMessage") queueWrites += count;
+    if (actionType === "WriteMessage") {
+      queueWrites += count;
+      producerTimestamps.add(analyticsTimestamp(
+        dimensions.datetime,
+        "RAW_QUEUE",
+        `queue[${index}].datetime`,
+      ));
+    }
     if (actionType === "DeleteMessage") {
       if (outcome !== "success") fail("QUEUE_TERMINALITY", "Queue contains an unsuccessful delete");
       successfulDeletes += count;
@@ -588,8 +600,27 @@ async function validateRawAnalytics(
     );
     if (retryCount > 3) fail("QUEUE_TERMINALITY", "Queue retry count exceeded the configured maximum");
   }
-  if (queueWrites !== EXPECTED_TICKS || successfulDeletes !== EXPECTED_TICKS) {
+  const spillInMessages = new Set(context.quotaLedger
+    .filter(({ scheduledTime }) => scheduledTime < context.start)
+    .map(({ messageId }) => messageId)).size;
+  if (queueWrites !== EXPECTED_TICKS || successfulDeletes !== EXPECTED_TICKS + spillInMessages) {
     fail("QUEUE_TERMINALITY", "Queue Analytics does not contain one write and successful delete per tick");
+  }
+  let maxProducerCpuMs = 0;
+  let maxConsumerCpuMs = 0;
+  let producerSamples = 0;
+  let consumerSamples = 0;
+  for (const sample of workerSamples) {
+    if (producerTimestamps.has(sample.timestamp)) {
+      producerSamples += 1;
+      maxProducerCpuMs = Math.max(maxProducerCpuMs, sample.cpuMs);
+    } else {
+      consumerSamples += 1;
+      maxConsumerCpuMs = Math.max(maxConsumerCpuMs, sample.cpuMs);
+    }
+  }
+  if (producerSamples === 0 || consumerSamples === 0) {
+    fail("RAW_WORKERS", "Workers Analytics cannot separate Cron producer and Queue consumer CPU");
   }
   const backlogGroups = nestedGroups(queueRaw, "queueBacklogAdaptiveGroups", "RAW_QUEUE");
   const terminalBacklog = backlogGroups
@@ -604,7 +635,7 @@ async function validateRawAnalytics(
       };
     })
     .sort((left, right) => left.timestamp - right.timestamp).at(-1);
-  const lastScheduledTime = Math.max(...context.ledger.map(({ scheduledTime }) => scheduledTime));
+  const lastScheduledTime = Math.max(...context.tickLedger.map(({ scheduledTime }) => scheduledTime));
   if (terminalBacklog === undefined
     || terminalBacklog.timestamp < lastScheduledTime
     || terminalBacklog.messages !== 0) {
@@ -648,8 +679,8 @@ async function validateRawAnalytics(
   const preflight = controlRaw(parsed.get(REQUIRED_RAW_ANALYTICS[6]), "preflight");
   const activation = controlRaw(parsed.get(REQUIRED_RAW_ANALYTICS[7]), "activation");
   const cleanup = controlRaw(parsed.get(REQUIRED_RAW_ANALYTICS[8]), "cleanup");
-  const http429 = context.ledger.filter(({ errorCode }) => errorCode?.includes("429") === true).length;
-  const quotaErrors = context.ledger.filter(({ errorCode }) =>
+  const http429 = context.quotaLedger.filter(({ errorCode }) => errorCode?.includes("429") === true).length;
+  const quotaErrors = context.quotaLedger.filter(({ errorCode }) =>
     errorCode !== null && /quota|limit|exceeded/i.test(errorCode)).length;
   if (workerErrors !== http429 + quotaErrors + exceededCpu + memoryExceeded) {
     fail("RAW_WORKERS", "Workers error total is not explained by the durable ledger");
@@ -660,7 +691,7 @@ async function validateRawAnalytics(
     d1AccountRowsRead: account.rowsRead,
     d1AccountRowsWritten: account.rowsWritten,
     maxConsumerCpuMs,
-    maxProducerCpuMs: activation.producerCpuMsP99,
+    maxProducerCpuMs,
     memoryUsageBytesP999,
     quotaErrors,
     http429,
@@ -759,7 +790,6 @@ function controlRaw(value: unknown, label: "preflight" | "activation" | "cleanup
   readonly stagingManualRun: boolean;
   readonly sharedSecretPresent: boolean;
   readonly capturedAt: number;
-  readonly producerCpuMsP99: number;
 } {
   const raw = record(value, "RAW_CLEANUP", `${label} raw`);
   const response = record(raw.response, "RAW_CLEANUP", `${label} response`);
@@ -786,9 +816,6 @@ function controlRaw(value: unknown, label: "preflight" | "activation" | "cleanup
     stagingManualRun: defaults.stagingManualRun as boolean,
     sharedSecretPresent: defaults.sharedSecretPresent as boolean,
     capturedAt: isoTimestamp(response.capturedAt, "RAW_CLEANUP", `${label} capturedAt`),
-    producerCpuMsP99: label === "activation"
-      ? nonNegativeNumber(response.producerCpuMsP99, "RAW_WORKERS", "activation producerCpuMsP99")
-      : 0,
   };
 }
 
