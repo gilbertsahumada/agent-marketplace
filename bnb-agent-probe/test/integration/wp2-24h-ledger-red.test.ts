@@ -25,7 +25,7 @@ describe("WP2 durable scheduler-attempt ledger", () => {
       fetch: async () => { throw new Error("controlled upstream failure"); },
     });
     await expect(failed(
-      { scheduledTime: TICK_A, cron: "queue" },
+      { scheduledTime: TICK_A, cron: "queue", attempt: 1 },
       env,
       createExecutionContext(),
       loadConfig({ KILL_SWITCH: "0" }),
@@ -38,7 +38,7 @@ describe("WP2 durable scheduler-attempt ledger", () => {
       fetch: async () => Response.json({ items: [], total: 0, limit: 25, offset: 0 }),
     });
     await expect(completed(
-      { scheduledTime: TICK_A, cron: "queue" },
+      { scheduledTime: TICK_A, cron: "queue", attempt: 2 },
       env,
       createExecutionContext(),
       loadConfig({ KILL_SWITCH: "0" }),
@@ -51,7 +51,7 @@ describe("WP2 durable scheduler-attempt ledger", () => {
       executePhase: async () => { throw new Error("duplicate must not execute a phase"); },
     });
     await expect(duplicate(
-      { scheduledTime: TICK_A, cron: "queue" },
+      { scheduledTime: TICK_A, cron: "queue", attempt: 3 },
       env,
       createExecutionContext(),
       loadConfig({ KILL_SWITCH: "0" }),
@@ -72,7 +72,7 @@ describe("WP2 durable scheduler-attempt ledger", () => {
       executePhase: async () => { throw new Error("locked must not execute a phase"); },
     });
     await expect(locked(
-      { scheduledTime: TICK_B, cron: "queue" },
+      { scheduledTime: TICK_B, cron: "queue", attempt: 1 },
       env,
       createExecutionContext(),
       loadConfig({ KILL_SWITCH: "0" }),
