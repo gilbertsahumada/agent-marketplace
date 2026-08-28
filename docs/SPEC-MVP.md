@@ -829,9 +829,10 @@ lecturas del verdict: `getAgentWallet`/`ownerOf`, `paymentToken`, `decimals`,
 configurado es una fuente operativa explícitamente confiada y toda llamada usa
 el mismo contador de subrequests. Un bloque con timestamp futuro o más de 120 s
 de atraso aborta el probe como `error`, sin contactar al seller.
-Las lecturas read-only se agrupan en JSON-RPC batch después de fijar el bloque:
-el peor caso WP3 usa 1 trust8004 + 2 seller + 3 RPC (bloque/chain, batch de
-contratos y ERC-1271), total 6 subrequests, por debajo del default Free 12.
+Las lecturas read-only se agrupan en Multicall después de fijar el bloque. El
+peor caso WP3 usa 1 trust8004 + 2 seller + 5 RPC: `eth_chainId`, bloque,
+Multicall de contratos y, para ERC-1271, bytecode + validación de firma. Son 8
+subrequests en total, por debajo del default Free 12; EOA usa dos menos.
 
 Para A2A, `notify_funded` significa un único skill ID exacto presente; skills
 adicionales son válidas. Si ambos aliases de negociación existen se prefiere
