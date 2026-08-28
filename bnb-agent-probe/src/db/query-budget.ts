@@ -46,6 +46,10 @@ export class D1QueryBudget {
 export interface BudgetedD1Database {
   db: D1DatabaseLike;
   budget: D1QueryBudget;
+  usage: {
+    readonly rowsRead: number;
+    readonly rowsWritten: number;
+  };
 }
 
 export function createBudgetedD1Database(
@@ -53,7 +57,15 @@ export function createBudgetedD1Database(
   queryLimit: number,
 ): BudgetedD1Database {
   const budget = new D1QueryBudget(queryLimit);
+  const usage = { rowsRead: 0, rowsWritten: 0 };
   const rawStatements = new WeakMap<object, D1PreparedStatementLike>();
+
+  const recordUsage = (meta: unknown): void => {
+    if (typeof meta !== "object" || meta === null || Array.isArray(meta)) return;
+    const source = meta as Record<string, unknown>;
+    usage.rowsRead += rowCount(source.rows_read);
+    usage.rowsWritten += rowCount(source.rows_written);
+  };
 
   const wrap = (raw: D1PreparedStatementLike): D1PreparedStatementLike => {
     const statement: D1PreparedStatementLike = {
@@ -66,11 +78,15 @@ export function createBudgetedD1Database(
       },
       async all<Row>(): Promise<D1ResultLike<unknown, Row>> {
         budget.reserve(1);
-        return raw.all<Row>();
+        const result = await raw.all<Row>();
+        recordUsage(result.meta);
+        return result;
       },
       async run<Meta>() {
         budget.reserve(1);
-        return raw.run<Meta>();
+        const result = await raw.run<Meta>();
+        recordUsage(result.meta);
+        return result;
       },
     };
     rawStatements.set(statement, raw);
@@ -91,9 +107,15 @@ export function createBudgetedD1Database(
       });
       if (raw.length === 0) return [];
       budget.reserve(raw.length);
-      return database.batch<Meta>(raw);
+      const results = await database.batch<Meta>(raw);
+      for (const result of results) recordUsage(result.meta);
+      return results;
     },
   };
 
-  return { db, budget };
+  return { db, budget, usage };
+}
+
+function rowCount(value: unknown): number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : 0;
 }
