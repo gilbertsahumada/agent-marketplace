@@ -24,24 +24,39 @@ class LeaseDatabase implements D1DatabaseLike {
         return this;
       },
       async first<Row>() {
-        if (query.includes("INSERT INTO runtime_state")) {
-          const [runId, expiresAt, , now] = values as [string, number, number, number];
-          if (thisDb.lease !== null && thisDb.lease.expiresAt > now) return null;
-          thisDb.acquisitions += 1;
-          thisDb.lease = { runId, expiresAt };
-          return { key: "scheduler_lease" } as Row;
-        }
-        const [releasedAt, , runId] = values as [number, number, string];
-        if (thisDb.lease?.runId !== runId) return null;
-        thisDb.releases += 1;
-        thisDb.lease = { runId: null, expiresAt: releasedAt };
-        return { key: "scheduler_lease" } as Row;
+        throw new Error("scheduled lease queries must use all()");
       },
       async all<Row>() {
+        if (query.includes("INSERT INTO runtime_state") && query.includes("scheduler_lease")) {
+          const [runId, expiresAt, , now] = values as [string, number, number, number];
+          if (thisDb.lease !== null && thisDb.lease.expiresAt > now) {
+            return { success: true, meta: { rows_read: 1, rows_written: 0 }, results: [] };
+          }
+          thisDb.acquisitions += 1;
+          thisDb.lease = { runId, expiresAt };
+          return {
+            success: true,
+            meta: { rows_read: 1, rows_written: 1 },
+            results: [{ key: "scheduler_lease" } as Row],
+          };
+        }
+        if (query.includes("UPDATE runtime_state") && query.includes("scheduler_lease")) {
+          const [releasedAt, , runId] = values as [number, number, string];
+          if (thisDb.lease?.runId !== runId) {
+            return { success: true, meta: { rows_read: 1, rows_written: 0 }, results: [] };
+          }
+          thisDb.releases += 1;
+          thisDb.lease = { runId: null, expiresAt: releasedAt };
+          return {
+            success: true,
+            meta: { rows_read: 1, rows_written: 1 },
+            results: [{ key: "scheduler_lease" } as Row],
+          };
+        }
         if (query.includes("next_scheduler_phase")) {
           return {
             success: true,
-            meta: {},
+            meta: { rows_read: 1, rows_written: 0 },
             results: [{ key: "next_scheduler_phase", textValue: thisDb.nextPhase }] as Row[],
           };
         }
@@ -51,8 +66,10 @@ class LeaseDatabase implements D1DatabaseLike {
         if (!query.includes("INSERT INTO runtime_state")) {
           throw new Error("unexpected run query");
         }
-        thisDb.summaries.push(String(values[0]));
-        return { success: true, meta: {} as Meta };
+        if (typeof values[0] === "string" && values[0].startsWith("{")) {
+          thisDb.summaries.push(values[0]);
+        }
+        return { success: true, meta: { rows_read: 1, rows_written: 1 } as Meta };
       },
     };
   }
