@@ -212,13 +212,11 @@ describe("Worker runtime", () => {
 
   it("keeps the manual scheduler route hidden when the staging secret is absent", async () => {
     const runScheduled = vi.fn();
-    const activeEnv = {
-      ...env(),
-      DEPLOYMENT_ENV: "staging",
-      STAGING_MANUAL_RUN: "1",
-      KILL_SWITCH: "0",
-      SHARED_SECRET: undefined,
-    };
+    const activeEnv = env();
+    delete activeEnv.SHARED_SECRET;
+    activeEnv.DEPLOYMENT_ENV = "staging";
+    activeEnv.STAGING_MANUAL_RUN = "1";
+    activeEnv.KILL_SWITCH = "0";
     const response = await createWorker({ runScheduled }).fetch(
       new Request("https://worker.test/__admin/run-scheduled", { method: "POST" }),
       activeEnv,
