@@ -129,7 +129,7 @@ describe("WP1 in the Workers runtime", () => {
     ).run();
     const activeEnv = { ...env, KILL_SWITCH: "0" } as unknown as Env;
     const firstAck = vi.fn();
-    const tick = { schemaVersion: 1, scheduledTime: 1_800_000_000_000 };
+    const tick = { schemaVersion: 1, scheduledTime: Date.now() };
 
     await worker.queue(
       { messages: [{ body: tick, ack: firstAck, retry: vi.fn() }] },
@@ -173,7 +173,7 @@ describe("WP1 in the Workers runtime", () => {
     });
     const retryWorker = createWorker({ runScheduled: runner });
     const activeEnv = { ...env, KILL_SWITCH: "0" } as unknown as Env;
-    const tick = { schemaVersion: 1, scheduledTime: 1_800_000_100_000 };
+    const tick = { schemaVersion: 1, scheduledTime: Date.now() };
     const firstAck = vi.fn();
 
     await expect(retryWorker.queue(
@@ -219,7 +219,7 @@ describe("WP1 in the Workers runtime", () => {
     });
     const retryWorker = createWorker({ runScheduled: runner });
     const activeEnv = { ...env, KILL_SWITCH: "0" } as unknown as Env;
-    const tick = { schemaVersion: 1, scheduledTime: 1_800_000_200_000 };
+    const tick = { schemaVersion: 1, scheduledTime: Date.now() };
     const lockedAck = vi.fn();
     const lockedRetry = vi.fn();
 
