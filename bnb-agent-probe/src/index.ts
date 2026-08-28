@@ -18,7 +18,7 @@ export interface WorkerDependencies {
   ) => Promise<void>;
 }
 
-function errorResponse(error: "not_found" | "invalid_configuration", status: number): Response {
+function errorResponse(error: "not_found" | "invalid_configuration" | "unauthorized", status: number): Response {
   return new Response(JSON.stringify({ error }), {
     status,
     headers: {
@@ -29,11 +29,27 @@ function errorResponse(error: "not_found" | "invalid_configuration", status: num
   });
 }
 
+async function bearerMatches(header: string | null, secret: string): Promise<boolean> {
+  const candidate = header?.startsWith("Bearer ") ? header.slice(7) : "";
+  const encoder = new TextEncoder();
+  const [candidateHash, secretHash] = await Promise.all([
+    crypto.subtle.digest("SHA-256", encoder.encode(candidate)),
+    crypto.subtle.digest("SHA-256", encoder.encode(secret)),
+  ]);
+  const left = new Uint8Array(candidateHash);
+  const right = new Uint8Array(secretHash);
+  let difference = left.length ^ right.length;
+  for (let index = 0; index < Math.max(left.length, right.length); index += 1) {
+    difference |= (left[index] ?? 0) ^ (right[index] ?? 0);
+  }
+  return difference === 0 && candidate.length > 0;
+}
+
 export function createWorker(dependencies: WorkerDependencies = {}): WorkerEntrypoint {
   const now = dependencies.now ?? Date.now;
 
   return {
-    async fetch(request, env) {
+    async fetch(request, env, context) {
       let config: WorkerConfig;
       try {
         config = loadConfig(env);
@@ -45,6 +61,29 @@ export function createWorker(dependencies: WorkerDependencies = {}): WorkerEntry
       const url = new URL(request.url);
       if (request.method === "GET" && url.pathname === "/health") {
         return healthResponse(env.DB, config, now());
+      }
+      if (request.method === "POST" && url.pathname === "/__admin/run-scheduled") {
+        if (config.killSwitch
+          || dependencies.runScheduled === undefined
+          || env.SHARED_SECRET === undefined
+          || context === undefined) return errorResponse("not_found", 404);
+        if (!await bearerMatches(request.headers.get("authorization"), env.SHARED_SECRET)) {
+          return errorResponse("unauthorized", 401);
+        }
+        const scheduledTime = now();
+        await dependencies.runScheduled(
+          { scheduledTime, cron: "manual" },
+          env,
+          context,
+          config,
+        );
+        return new Response(null, {
+          status: 204,
+          headers: {
+            "cache-control": "no-store",
+            "x-content-type-options": "nosniff",
+          },
+        });
       }
       return errorResponse("not_found", 404);
     },
