@@ -1122,7 +1122,11 @@ con los defaults Free `HEADER_LIMIT=25`/`SWEEP_LIMIT=4` que incrementen
 D1 de 24 h y el gate WP3. Las corridas con límites 1 son prueba de arquitectura,
 no promoción completa de WP2. Antes y después de cada ventana se verifican por
 API `schedules=[]` y backlog Queue cero; declarar `crons: []` en un deploy no
-sustituye esa comprobación por la propagación eventual de Cron Triggers.
+sustituye esa comprobación por la propagación eventual de Cron Triggers. Como
+el backlog REST es best-effort y puede omitir mensajes con retry diferido, una
+prueba de reentrega reutiliza la Queue solo si la ventana de drenaje cubrió todos
+los delays pendientes; en caso contrario usa una Queue de validación nueva y
+dedicada. Un único `backlog_count=0` no demuestra aislamiento.
 
 ### 11.3 Promoción explícita Free → Paid
 
