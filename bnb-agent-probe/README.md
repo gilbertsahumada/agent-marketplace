@@ -55,8 +55,15 @@ npm run migrate:local
 npm test
 npm run typecheck
 npm run dry-run
+npm run evidence:wp2-window-start -- ../evidence/raw/window-start.json
 npm run evidence:wp2-24h -- ../evidence/wp2-d1-24h-2026-08-29.json
 ```
+
+`evidence:wp2-window-start` requires `CLOUDFLARE_API_TOKEN`,
+`CLOUDFLARE_ACCOUNT_ID` and `WP2_D1_DATABASE_ID` in the process environment.
+Run it after the final pre-window tick and before the first UTC-day tick. It
+writes with create-only semantics, preserves the literal D1 API response and
+never serializes the token.
 
 The final validator parses and reconciles the hashed raw D1, Workers, Queue,
 deployment and timestamped control-plane responses. It keeps the 288 scheduled
