@@ -76,7 +76,15 @@ deployment and timestamped control-plane responses. It keeps the 288 scheduled
 ticks separate from the UTC quota cohort so retries crossing midnight are
 explicit, requires one terminal Queue message and the exact phase rotation per
 tick from the persisted starting phase, checks account-wide Queue usage, and
-requests Queue evidence through the minimum `00:15Z` cutoff. Because inactive
+requests Queue evidence through the minimum `00:15Z` cutoff.
+The measured deploy must use `--message git_commit=<40-char SHA>` and
+`--tag git-<first 12 chars>`; `deployment.json` preserves the literal
+`wrangler versions view --json` response plus requested script/version IDs.
+Workers samples from later control-only versions remain in raw evidence but are
+excluded from the measured deployment cohort; Queue reconciliation still rejects
+any extra producer message.
+
+Because inactive
 Queues need not emit a new Analytics bucket, the last emitted zero backlog is
 paired with timestamped REST backlog zero after the cutoff.
 The starting phase comes from a hashed raw D1 read captured within five minutes
