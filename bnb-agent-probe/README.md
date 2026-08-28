@@ -13,7 +13,8 @@ three queries are reserved outside the phase budget for a sanitized failure
 summary, lease cleanup and the daily ledger.
 The atomic Queue completion marker is also included in the reported and
 enforced per-invocation total. The minimum accepted budget is 12 queries, which
-covers the smallest complete SWEEP plus failure and lease-cleanup reserves.
+covers the smallest complete SWEEP plus failure, lease-cleanup and daily-ledger
+reserves.
 Catalogue responses have their own
 16 MiB cap; the smaller seller-response cap is independent.
 
@@ -28,6 +29,12 @@ or 1,152 if every tick reaches all four deliveries. With the configurable Free
 defaults `D1_ROWS_READ_PER_RUN=3000` and `D1_ROWS_WRITTEN_PER_RUN=60`, that is
 864,000/17,280 rows nominal and 3,456,000/69,120 retry-worst, below the reserved
 4,000,000/80,000 daily ceilings.
+Every D1 result is checked against the configured row budget. Phase work aborts
+after the first result that crosses it and cannot issue another phase query;
+because D1 reports row counts after execution, one query can overshoot. Bounded
+cleanup remains allowed so a completed phase is not retried merely because lease
+release or telemetry failed. Raw 24-hour Analytics therefore remains the quota
+gate.
 If another invocation owns the D1 lease, the message is not acknowledged and is
 retried after 240 seconds; completed and stale ticks are acknowledged normally.
 The consumer is fixed at one concurrent invocation, and Queue timestamps more
@@ -91,7 +98,10 @@ Exact correctness comes from D1 completion markers keyed by `scheduledTime`;
 adaptive Queue and Workers metrics only corroborate delivery and resource use.
 Each D1 result also contributes its `meta.rows_read` and `meta.rows_written` to
 `daily_budget_YYYYMMDD`, keyed by the invocation's UTC start date. `/health`
-exposes only the validated current-day allowlist. Row fields are explicitly
+uses one bounded `runtime_state` query and never scans `probe_targets`; target
+counts are deliberately unavailable on this public endpoint. It exposes only
+the validated current-day allowlist and becomes degraded when scheduling is
+active without valid daily telemetry. Row fields are explicitly
 named `BeforeLedger` because they omit the ledger's own write; this operational
 reconciliation does not replace raw per-database and account Cloudflare D1
 Analytics for the quota gate.
