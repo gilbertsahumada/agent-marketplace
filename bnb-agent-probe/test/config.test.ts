@@ -21,6 +21,15 @@ describe("loadConfig", () => {
       probeTimeoutMs: 5_000,
       maxCatalogResponseBytes: 16_777_216,
       maxSellerResponseBytes: 32_768,
+      platformLimits: {
+        cpuMsPerInvocation: 10,
+        queueConsumerCpuMs: 30_000,
+      },
+      projectedDailyBudget: {
+        invocations: 288,
+        queueOperations: 864,
+        freeQueueOperationsCeiling: 8_000,
+      },
     });
   });
 
