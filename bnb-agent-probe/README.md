@@ -31,6 +31,9 @@ npx wrangler deploy --env staging
 ```
 
 Controlled nominal measurements may call `POST /__admin/run-scheduled` only
-while `KILL_SWITCH=0` and `SHARED_SECRET` is installed. The route requires the
-matching Bearer credential, has no CORS, and is hidden while disabled. Restore
-the kill switch and remove the temporary secret immediately after measurement.
+while `DEPLOYMENT_ENV=staging`, `STAGING_MANUAL_RUN=1`, `KILL_SWITCH=0` and
+`SHARED_SECRET` is installed. The route requires the matching Bearer
+credential, has no CORS, and is hidden unless every guard passes. Production
+fixes `DEPLOYMENT_ENV=production`; nominal staging fixes
+`STAGING_MANUAL_RUN=0`. Restore both staging guards and remove the temporary
+secret immediately after measurement.
