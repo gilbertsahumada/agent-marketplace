@@ -113,6 +113,29 @@ describe("WP3 quote validation", () => {
     });
   });
 
+  it("rejects SDK-coercible non-boolean accepted values", async () => {
+    const quote = acceptedEnvelope();
+    const response = quote.response as Record<string, unknown>;
+    response.accepted = "yes";
+    quote.response_hash = NegotiationResponse.fromDict(response).computeHash();
+
+    await expect(validateProbeQuote(quote, context(), validVerifier()))
+      .rejects.toMatchObject({ code: "QUOTE_RESPONSE" });
+  });
+
+  it("rejects a non-string rejection reason without leaking a TypeError", async () => {
+    const quote = acceptedEnvelope();
+    const response = quote.response as Record<string, unknown>;
+    response.accepted = false;
+    response.reason_code = ReasonCode.BUSY;
+    response.reason = 123;
+    delete response.terms;
+    quote.response_hash = NegotiationResponse.fromDict(response).computeHash();
+
+    await expect(validateProbeQuote(quote, context(), validVerifier()))
+      .rejects.toMatchObject({ code: "QUOTE_REJECTION" });
+  });
+
   it.each([
     ["request hash", (quote: Record<string, unknown>) => { quote.request_hash = `0x${"a".repeat(64)}`; }],
     ["response hash", (quote: Record<string, unknown>) => { quote.response_hash = `0x${"a".repeat(64)}`; }],
