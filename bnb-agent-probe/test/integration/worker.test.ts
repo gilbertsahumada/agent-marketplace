@@ -8,7 +8,7 @@ import {
   D1QueryBudgetExceededError,
 } from "../../src/db/query-budget";
 import { acquireSchedulerLease } from "../../src/lib/scheduler-lease";
-import { createWp2ScheduledRunner } from "../../src/scheduled";
+import { createWp2ScheduledRunner, runWp2Scheduled } from "../../src/scheduled";
 
 beforeEach(async () => {
   await env.DB.prepare("DELETE FROM runtime_state").run();
@@ -102,6 +102,23 @@ describe("WP1 in the Workers runtime", () => {
       D1QueryBudgetExceededError,
     );
     expect(budget.used).toBe(40);
+  });
+
+  it("uses the runtime fetch binding for a real HEADER invocation", async () => {
+    await runWp2Scheduled(
+      { scheduledTime: 10_000, cron: "*/5 * * * *" },
+      env,
+      createExecutionContext(),
+      loadConfig({ KILL_SWITCH: "0" }),
+    );
+
+    expect(await runtimeText("next_scheduler_phase")).toBe("sweep");
+    expect(JSON.parse(await runtimeText("last_header_summary") ?? "{}")).toMatchObject({
+      phase: "header",
+      status: "ok",
+      received: 0,
+      d1Queries: 6,
+    });
   });
 
   it("runs HEADER and rolling SWEEP atomically and preserves a removed endpoint", async () => {
