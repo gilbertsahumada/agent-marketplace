@@ -247,6 +247,7 @@ export async function healthResponse(
       plan: config.plan,
       schedulerMode: config.schedulerMode,
       killSwitch: config.killSwitch,
+      producerKillSwitch: config.producerKillSwitch,
       budgets: {
         cronIntervalMinutes: config.cronIntervalMinutes,
         headerLimit: config.headerLimit,
