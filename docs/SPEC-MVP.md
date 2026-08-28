@@ -445,6 +445,8 @@ CRON_INTERVAL_MINUTES=5
 SCHEDULER_MODE=single_phase (derivado, no sobreescribible en Free)
 HEADER_LIMIT=25                  máximo Free 50
 PROBE_BATCH_SIZE=1              máximo Free 1
+PROBE_AGENT_ALLOWLIST=303779    lista CSV obligatoria; vacío/malformado falla cerrado
+PROBE_ENDPOINT_ALLOWLIST=https://bnb-agent-marketplace-ruby.vercel.app/api/sellers/grid/a2a
 SWEEP_LIMIT=4                   máximo Free 40 y siempre <= TRUST8004_REQUESTS_PER_RUN
 SWEEP_PAGES_PER_RUN=1           máximo Free 1
 TRUST8004_REQUESTS_PER_RUN=4
@@ -637,6 +639,14 @@ Cada target, secuencialmente:
 10. mantiene `priority=1` mientras alguna categoría curada no tenga observación;
     cuando todas tengan al menos una, pone `priority=0`.
 
+WP3 aplica dos allowlists acumulativas y fail-closed antes de cualquier request
+trust8004, seller o RPC: `agentId` debe pertenecer a
+`PROBE_AGENT_ALLOWLIST` y el endpoint reconciliado debe coincidir exactamente
+con una URL de `PROBE_ENDPOINT_ALLOWLIST` (scheme, host, puerto y path; sin
+query ni fragment). Un ID o endpoint fuera de allowlist no consume red ni crea
+observación. En Free ambas listas admiten un único elemento; ampliar cualquiera
+requiere promoción explícita del perfil y repetir los gates de staging.
+
 Clasificación:
 
 ```text
@@ -673,6 +683,12 @@ requiere actualizar fixture, test y `schemaVersion` del template.
 | `grid_trading` | `Deterministic Grid plan JSON with levels, allocation, triggers and assumptions` | `Deterministic output, no order execution and no custody` |
 | `yield_optimisation` | `Deterministic comparison of yield options with allocation rationale and assumptions` | `Analysis only, no deposits, no transaction execution and no custody` |
 | `health_factor_monitoring` | `Deterministic health-factor assessment with thresholds, alerts and suggested actions` | `Analysis only, no transaction execution and no custody` |
+
+El diccionario normativo producido por `@bnbagent/sdk@0.5.0` incluye además
+`terms.evaluation_required=true` y `terms.evaluator_type="uma_oov3"`. Esos dos
+campos participan en el hash y no pueden omitirse. La versión del artefacto es
+`probeRequestSchemaVersion=1`; vive junto a los templates del Worker y todo
+cambio de bytes incrementa esa versión y regenera fixtures y hashes.
 
 Hashes esperados, calculados con `@bnbagent/sdk@0.5.0` el 2026-08-27:
 
@@ -760,12 +776,19 @@ límites, mensajes y tests; se escribe adaptador Workers.
 Controles:
 
 - solo `https:` y sin username/password;
+- rechazar query y fragment; un endpoint persistido nunca contiene secretos URL;
 - rechazar `localhost`, `.localhost`, `.local` y literales IP no públicos;
 - portar todos los rangos de `src/verification/safe-http.ts`, no solo RFC1918;
-- usar proxy de salida público de Workers; no fingir DNS pinning;
-- `redirect: "error"`;
-- timeout total 10 s por target;
-- máximo 64 KiB descomprimidos, abortando el stream;
+- usar proxy de salida público de Workers; no fingir DNS pinning. Para WP3 el
+  hostname/path exacto queda fijado por allowlist; aceptar el egress de
+  Cloudflare como frontera de confianza para targets generales es un gate de
+  arquitectura de WP4, no una garantía ya demostrada;
+- `redirect: "manual"`, rechazar todo 3xx/`opaqueredirect` y nunca leer/seguir
+  `Location`;
+- deadline monotónico único configurable para todo el target (reconciliación,
+  RPC y seller): 5 s por defecto Free y máximo configurable 10 s;
+- 32 KiB descomprimidos por respuesta por defecto Free, máximo configurable
+  64 KiB; además máximo agregado 64 KiB por target, abortando el stream;
 - `Accept: application/json` y parseo en el borde;
 - máximo dos endpoints por agente; probes secuenciales;
 - nunca enviar cookies, Authorization, secretos ni headers de usuario;
@@ -786,16 +809,43 @@ El egress real se prueba en staging; Miniflare no demuestra el proxy productivo.
 1. request/response pasan parser SDK;
 2. `request_hash` coincide con `NegotiationRequest` exacto;
 3. `negotiation_hash` válido y conservado;
-4. firma EIP-191/ERC-1271 válida;
-5. signer/provider igual a wallet resuelta onchain en el mismo probe, nunca a la
-   address autodeclarada por quote;
+4. firma EIP-191/ERC-1271 válida en el bloque fijado para el probe;
+5. `provider_address` es obligatorio; provider y signer recuperado son iguales
+   a la wallet resuelta onchain en el mismo bloque, nunca a una address
+   autodeclarada sin verificación;
 6. `negotiated_at`: máximo 60 s futuro y edad máxima 60 s;
 7. expiración futura/posterior a negociación y ventana máxima 900 s;
 8. price entero positivo raw;
 9. currency igual a `paymentToken()` y `$U` configurado;
 10. `verifying_contract` igual a Commerce;
-11. Router/Policy/Commerce allowlisted y `policyWhitelist(policy)=true`;
-12. para HTTP, `/status` coincide en agent, contratos, currency y decimals.
+11. Commerce y Router coinciden con las constantes BSC Mainnet versionadas,
+    Policy coincide con la constante y `policyWhitelist(policy)=true`;
+12. para HTTP, `/status` coincide en agent, contratos, currency y `decimals()`
+    leído del payment token en el mismo bloque.
+
+El Worker toma primero un bloque BSC fresco y fija `blockNumber` en todas las
+lecturas del verdict: `getAgentWallet`/`ownerOf`, `paymentToken`, `decimals`,
+`policyWhitelist`, bytecode y ERC-1271. Verifica `chainId=56`; el RPC HTTPS
+configurado es una fuente operativa explícitamente confiada y toda llamada usa
+el mismo contador de subrequests. Un bloque con timestamp futuro o más de 120 s
+de atraso aborta el probe como `error`, sin contactar al seller.
+Las lecturas read-only se agrupan en JSON-RPC batch después de fijar el bloque:
+el peor caso WP3 usa 1 trust8004 + 2 seller + 3 RPC (bloque/chain, batch de
+contratos y ERC-1271), total 6 subrequests, por debajo del default Free 12.
+
+Para A2A, `notify_funded` significa un único skill ID exacto presente; skills
+adicionales son válidas. Si ambos aliases de negociación existen se prefiere
+`negotiate-erc8183-job`. El probe jamás invoca `notify_funded`. Un hash de
+negociación repetido dentro de la ventana solo es una observación fresca, no una
+prueba única de liveness; Hire siempre vuelve a cotizar.
+
+Un rechazo verificable es una respuesta SDK bien formada, ligada al
+`request_hash` enviado, con `accepted=false` y un reason/code de protocolo
+sanitizable. `protocol_valid` requiere Agent Card/health/status completos pero
+una condición previa demostrable impide pedir quote. HTTP 4xx, redirect, JSON
+inválido o body excedido prueban como máximo reachability; 5xx/red/timeout son
+`unreachable`. Los campos financieros solo se persisten para quotes que pasaron
+su validación correspondiente.
 
 El probe no crea, financia ni ejecuta jobs.
 
@@ -964,6 +1014,8 @@ HEADER_LIMIT=25
 SWEEP_LIMIT=4
 SWEEP_PAGES_PER_RUN=1
 PROBE_BATCH_SIZE=1
+PROBE_AGENT_ALLOWLIST=303779
+PROBE_ENDPOINT_ALLOWLIST=https://bnb-agent-marketplace-ruby.vercel.app/api/sellers/grid/a2a
 TRUST8004_REQUESTS_PER_RUN=4
 EXTERNAL_SUBREQUESTS_PER_RUN=12
 D1_QUERIES_PER_RUN=40
@@ -1324,6 +1376,7 @@ en sección 11.2. Una ventana previa a WP3 solo puede etiquetarse baseline.
 ```text
 PROBE_BATCH_SIZE=1
 PROBE_AGENT_ALLOWLIST=303779
+PROBE_ENDPOINT_ALLOWLIST=https://bnb-agent-marketplace-ruby.vercel.app/api/sellers/grid/a2a
 ```
 
 Gate:
@@ -1333,6 +1386,13 @@ Gate:
 - acepta ambas skills de negociación y exige exactamente `notify_funded`;
 - staging demuestra timeout, body cap y redirects bloqueados;
 - no crea ni financia job.
+
+Evidencia WP3: `evidence/wp3-grid-303779-<UTC>.json`, con schema version, commit,
+entorno, request/hash, bloque y timestamp, observación D1, resumen de fase,
+marcador Queue, métricas Cloudflare crudas enlazadas y conteo pre/post de eventos
+`JobCreated`, `BudgetSet` y `JobFunded` sin variación atribuible al probe. Se
+ejecuta un intento nominal y uno por cada gate negativo de transporte; ningún
+intento negativo puede avanzar fase ni prioridad si falla antes del batch.
 
 Si falla, se corrige antes de ampliar.
 
