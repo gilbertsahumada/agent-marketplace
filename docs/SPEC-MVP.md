@@ -1004,36 +1004,42 @@ Staging usa una D1 separada y comienza sin Cron Trigger. El orden es obligatorio
 8. habilitar `*/5 * * * *` solo tras dos rotaciones completas sin
    `exceededCpu`, 429, exceso de presupuesto ni avance incorrecto de cursor.
 
-El disparo manual se hace con una sesión efímera en la red de Cloudflare, ligada
-a la D1 de staging, sin publicar una ruta administrativa ni crear un cron:
+El disparo manual del deployment nominal usa la ruta administrativa publicada
+`POST /__admin/run-scheduled`, cerrada por cuatro condiciones simultáneas:
+`DEPLOYMENT_ENV=staging`, `STAGING_MANUAL_RUN=1`, `KILL_SWITCH=0` y un
+`SHARED_SECRET` efímero cuyo Bearer se compara mediante hashes. Producción fija
+`DEPLOYMENT_ENV=production`; el staging nominal fija `STAGING_MANUAL_RUN=0` y
+`KILL_SWITCH=1`, por lo que la ruta responde 404 aunque exista accidentalmente
+un secreto. No tiene CORS y cada llamada autorizada ejecuta una sola fase.
 
 ```bash
-npx wrangler dev --remote --env staging --test-scheduled \
-  --var KILL_SWITCH:0 --var HEADER_LIMIT:1
-# visitar /__scheduled en la URL local; repetir con HEADER_LIMIT:5 y 25
+# instalar un secreto aleatorio únicamente durante la ventana controlada
+npx wrangler secret put SHARED_SECRET --env staging
+npx wrangler deploy --env staging --var DEPLOYMENT_ENV:staging \
+  --var STAGING_MANUAL_RUN:1 --var KILL_SWITCH:0 --var HEADER_LIMIT:1
+curl -X POST -H "Authorization: Bearer $WP2_STAGING_SECRET" \
+  https://bnb-agent-probe-staging.<subdomain>.workers.dev/__admin/run-scheduled
 ```
 
-Para SWEEP se conserva la misma D1 y se invoca de nuevo `/__scheduled` después
-de que `/health` indique `nextPhase=sweep`. Al cerrar Wrangler desaparece el
-endpoint de prueba. El deployment nominal permanece con `KILL_SWITCH=1`; los
-valores usados y las métricas se guardan en un artefacto de evidencia sin
-secretos. `--remote` accede a recursos reales y nunca se usa contra producción.
+Para SWEEP se conserva la misma D1 y se invoca de nuevo la ruta después
+de que `/health` indique `nextPhase=sweep`. Al cerrar la ventana de medición
+desaparece el acceso operativo: se redespliega el perfil nominal con `STAGING_MANUAL_RUN=0`,
+`KILL_SWITCH=1`, se elimina `SHARED_SECRET` y se comprueba la lista vacía de
+schedules. Los valores y métricas se guardan sin secretos. Esta ruta nunca se
+habilita en producción.
 
-La corrida remota del 2026-08-28 con HEADER 1/5/25 y tres rotaciones está en
-`evidence/wp2-staging-wrangler-2026-08-28.json`: prueba respuestas 200, cursores,
-queries D1 y cero 429. La consulta posterior a Workers Analytics midió
-HEADER=25 en 15.442 µs y SWEEP=4 en 11.098 µs. Incluso HEADER=1 registró
-17.124 µs en preview y 11.676 µs mediante el trigger HTTP nominal autenticado.
-Todos los outcomes fueron `success`, pero la tolerancia de plataforma no cumple
-el gate de 10.000 µs. WP2 queda implementado pero no promovible: kill switch
-activo, schedules vacíos y Paid sin activar.
-
-Para medir el deployment nominal sin dejar un cron activo, el Worker ofrece
-`POST /__admin/run-scheduled`. Solo existe operativamente cuando
-`KILL_SWITCH=0`, `SHARED_SECRET` está configurado y el Bearer coincide mediante
-comparación de hashes; en cualquier otro caso queda oculto o devuelve 401. No
-tiene CORS y ejecuta una sola fase. El secreto de medición se elimina al cerrar
-el gate.
+La corrida del 2026-08-28 con HEADER 1/5/25 y tres rotaciones está en
+`evidence/wp2-staging-wrangler-2026-08-28.json`: prueba cursores, presupuesto
+D1 y cero 429. La respuesta GraphQL con ventanas, dimensiones, requests y
+subrequests se conserva en
+`evidence/wp2-workers-analytics-raw-2026-08-28.json`. Registró muestras
+representativas por encima de 10.000 µs: preview HEADER=25 en 15.442 µs,
+SWEEP=4 en 11.098 µs y HEADER=1 en 17.124 µs; el trigger HTTP nominal midió
+HEADER=1 en 11.676 µs. Sin embargo, HTTP incluye routing y autenticación, y el
+único Cron propagado alcanzó después el early return de `KILL_SWITCH=1`, sin
+ejecutar una fase. Por tanto el gate Cron Free queda **no demostrado**, no
+declarado como fallo concluyente del handler. WP2 sigue no promovible: kill
+switch activo, schedules vacíos y Paid sin activar.
 
 Cada incremento exige margen bajo 10 ms; que una ejecución aislada reciba
 flexibilidad de plataforma no cuenta como gate pasado. Si HEADER=1, SWEEP=1 o el
