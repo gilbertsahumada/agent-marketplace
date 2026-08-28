@@ -70,6 +70,7 @@ const FREE_QUEUE_OPERATIONS_PER_DAY = 10_000;
 const FREE_SAFETY_RATIO = 0.8;
 const QUEUE_MAX_RETRIES = 3;
 const QUEUE_OPERATIONS_PER_MESSAGE = 3 + QUEUE_MAX_RETRIES;
+const D1_TELEMETRY_WRITES_PER_ATTEMPT = 1;
 const WP3_AGENT_ID = "303779";
 const WP3_ENDPOINT = "https://bnb-agent-marketplace-ruby.vercel.app/grid";
 
@@ -313,9 +314,11 @@ export function loadConfig(env: Partial<Env>): WorkerConfig {
         maxAttemptsPerInvocation,
         maxAttempts,
         d1RowsReadNominal: invocations * values.d1RowsReadPerRun,
-        d1RowsWrittenNominal: invocations * values.d1RowsWrittenPerRun,
+        d1RowsWrittenNominal: invocations
+          * (values.d1RowsWrittenPerRun + D1_TELEMETRY_WRITES_PER_ATTEMPT),
         d1RowsRead: maxAttempts * values.d1RowsReadPerRun,
-        d1RowsWritten: maxAttempts * values.d1RowsWrittenPerRun,
+        d1RowsWritten: maxAttempts
+          * (values.d1RowsWrittenPerRun + D1_TELEMETRY_WRITES_PER_ATTEMPT),
         queueOperations: invocations * QUEUE_OPERATIONS_PER_MESSAGE,
         freeReadCeiling: FREE_D1_READS_PER_DAY * FREE_SAFETY_RATIO,
         freeWriteCeiling: FREE_D1_WRITES_PER_DAY * FREE_SAFETY_RATIO,
