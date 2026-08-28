@@ -20,6 +20,7 @@ export interface Env {
   WP2_QUEUE?: QueueProducer;
   CLOUDFLARE_WORKERS_PLAN?: string;
   KILL_SWITCH?: string;
+  PRODUCER_KILL_SWITCH?: string;
   CRON_INTERVAL_MINUTES?: string;
   HEADER_LIMIT?: string;
   SWEEP_LIMIT?: string;
