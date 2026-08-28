@@ -56,7 +56,8 @@ const FREE_D1_READS_PER_DAY = 5_000_000;
 const FREE_D1_WRITES_PER_DAY = 100_000;
 const FREE_QUEUE_OPERATIONS_PER_DAY = 10_000;
 const FREE_SAFETY_RATIO = 0.8;
-const QUEUE_OPERATIONS_PER_MESSAGE = 3;
+const QUEUE_MAX_RETRIES = 3;
+const QUEUE_OPERATIONS_PER_MESSAGE = 3 + QUEUE_MAX_RETRIES;
 
 const FREE_PROFILE: Profile = {
   schedulerMode: "single_phase",
@@ -177,8 +178,8 @@ function parseInteger(field: keyof typeof NUMERIC_FIELDS, raw: string, maximum: 
   ].includes(field) && value === 0) {
     throw new ConfigError(field, "must be at least 1");
   }
-  if (field === "D1_QUERIES_PER_RUN" && value < 7) {
-    throw new ConfigError(field, "must cover an empty phase plus error and lease cleanup reserves");
+  if (field === "D1_QUERIES_PER_RUN" && value < 12) {
+    throw new ConfigError(field, "must cover the minimum Queue SWEEP plus error and lease cleanup reserves");
   }
   if (field === "MAX_CATALOG_RESPONSE_BYTES" && value === 0) {
     throw new ConfigError(field, "must be at least 1");
