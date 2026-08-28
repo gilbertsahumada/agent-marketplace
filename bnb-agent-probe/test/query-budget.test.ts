@@ -188,4 +188,24 @@ describe("D1 per-invocation query budget", () => {
     });
     expect(usage).toEqual({ rowsRead: 2, rowsWritten: 3 });
   });
+
+  it("shares one row budget across phase and cleanup query wrappers", async () => {
+    const raw = new CountingDatabase([
+      { rows_read: 2, rows_written: 0 },
+      { rows_read: 2, rows_written: 0 },
+    ]);
+    const sharedUsage = { rowsRead: 0, rowsWritten: 0 };
+    const limits = { rowsRead: 3, rowsWritten: 2 };
+    const phase = createBudgetedD1Database(raw, 37, limits, sharedUsage);
+    const cleanup = createBudgetedD1Database(raw, 2, limits, sharedUsage);
+
+    await phase.db.prepare("SELECT phase").all();
+    await expect(cleanup.db.prepare("SELECT cleanup").all()).rejects.toMatchObject({
+      name: "D1RowBudgetExceededError",
+      dimension: "rows_read",
+      observed: 4,
+    });
+    expect(phase.usage).toBe(sharedUsage);
+    expect(cleanup.usage).toBe(sharedUsage);
+  });
 });
