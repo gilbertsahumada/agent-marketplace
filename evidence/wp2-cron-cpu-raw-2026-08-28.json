@@ -1,0 +1,35 @@
+{
+  "capturedAt": "2026-08-28T16:09:00Z",
+  "source": "Cloudflare GraphQL workersInvocationsAdaptive",
+  "accountTag": "bc8d4adf4860284fda426b24e7377bc2",
+  "unit": "microseconds",
+  "samples": [
+    { "datetime": "2026-08-28T15:35:50Z", "phase": "header", "limit": 1, "change": "baseline direct Cron", "cpuTime": 21364, "durationSeconds": 0.38713387, "subrequests": 1 },
+    { "datetime": "2026-08-28T15:38:50Z", "phase": "sweep", "limit": 1, "change": "baseline direct Cron", "cpuTime": 11573, "durationSeconds": 0.24096525, "subrequests": 1 },
+    { "datetime": "2026-08-28T15:39:50Z", "phase": "probe", "limit": 1, "change": "baseline direct Cron", "cpuTime": 3358, "durationSeconds": 0.11853125, "subrequests": 0 },
+    { "datetime": "2026-08-28T15:41:41Z", "phase": "sweep", "limit": 1, "change": "baseline direct Cron", "cpuTime": 6664, "durationSeconds": 0.2386285, "subrequests": 1 },
+    { "datetime": "2026-08-28T15:42:41Z", "phase": "probe", "limit": 1, "change": "baseline direct Cron", "cpuTime": 3400, "durationSeconds": 0.120004624, "subrequests": 0 },
+    { "datetime": "2026-08-28T15:46:41Z", "phase": "header", "limit": 1, "change": "lean HEADER persistence", "cpuTime": 16336, "durationSeconds": 0.35248488, "subrequests": 1 },
+    { "datetime": "2026-08-28T15:53:44Z", "phase": "header", "limit": 1, "change": "lazy phase loading", "cpuTime": 16508, "durationSeconds": 0.35016736, "subrequests": 1 },
+    { "datetime": "2026-08-28T15:56:44Z", "phase": "header", "limit": 1, "change": "ten-run series cold", "cpuTime": 14962, "durationSeconds": 0.26246336, "subrequests": 1 },
+    { "datetime": "2026-08-28T15:57:44Z", "phase": "header", "limit": 1, "change": "ten-run series warm", "cpuTime": 6722, "durationSeconds": 0.22783987, "subrequests": 1 },
+    { "datetime": "2026-08-28T15:59:44Z", "phase": "header", "limit": 1, "change": "ten-run series warm", "cpuTime": 7551, "durationSeconds": 0.23221426, "subrequests": 1 },
+    { "datetime": "2026-08-28T16:00:45Z", "phase": "header", "limit": 1, "change": "ten-run series warm", "cpuTime": 9251, "durationSeconds": 0.25114763, "subrequests": 1 },
+    { "datetime": "2026-08-28T16:01:44Z", "phase": "header", "limit": 1, "change": "ten-run series warm", "cpuTime": 7044, "durationSeconds": 0.23280488, "subrequests": 1 },
+    { "datetime": "2026-08-28T16:02:44Z", "phase": "header", "limit": 1, "change": "ten-run series warm", "cpuTime": 5953, "durationSeconds": 0.2436025, "subrequests": 1 },
+    { "datetime": "2026-08-28T16:03:44Z", "phase": "header", "limit": 1, "change": "ten-run series warm", "cpuTime": 8354, "durationSeconds": 0.23915413, "subrequests": 1 },
+    { "datetime": "2026-08-28T16:04:44Z", "phase": "header", "limit": 1, "change": "ten-run series warm", "cpuTime": 7361, "durationSeconds": 0.24456137, "subrequests": 1 },
+    { "datetime": "2026-08-28T16:05:44Z", "phase": "header", "limit": 1, "change": "ten-run series warm", "cpuTime": 6024, "durationSeconds": 0.23105174, "subrequests": 1 }
+  ],
+  "seriesNotes": {
+    "executionsRecordedInD1": 10,
+    "samplesReturnedByAdaptiveAnalytics": 9,
+    "coldCpuTime": 14962,
+    "warmCpuTimes": [6722, 7551, 9251, 7044, 5953, 8354, 7361, 6024],
+    "conclusion": "Warm HEADER fits under 10000 microseconds, but cold HEADER does not. A direct Free Cron cannot satisfy the required cold/P99 gate."
+  },
+  "limitations": [
+    "Cloudflare adaptive analytics omitted one of the ten D1-recorded HEADER executions.",
+    "Phase attribution uses the controlled schedule, sequential D1 phase state and matching subrequest count."
+  ]
+}
