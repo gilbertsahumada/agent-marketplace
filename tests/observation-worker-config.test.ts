@@ -24,8 +24,8 @@ describe("observation Worker configuration", () => {
       trust8004RequestsPerRun: 4,
       externalSubrequestsPerRun: 12,
       d1QueriesPerRun: 40,
-      d1RowsReadPerRun: 10_000,
-      d1RowsWrittenPerRun: 250,
+      d1RowsReadPerRun: 3_000,
+      d1RowsWrittenPerRun: 60,
       maxCatalogResponseBytes: 16_777_216,
     });
     expect(config.platformLimits).toMatchObject({
@@ -48,8 +48,8 @@ describe("observation Worker configuration", () => {
       TRUST8004_REQUESTS_PER_RUN: "6",
       EXTERNAL_SUBREQUESTS_PER_RUN: "16",
       D1_QUERIES_PER_RUN: "35",
-      D1_ROWS_READ_PER_RUN: "20000",
-      D1_ROWS_WRITTEN_PER_RUN: "400",
+      D1_ROWS_READ_PER_RUN: "5000",
+      D1_ROWS_WRITTEN_PER_RUN: "100",
     });
 
     expect(config).toMatchObject({
@@ -121,13 +121,26 @@ describe("observation Worker configuration", () => {
 
     expect(config.projectedDailyBudget).toEqual({
       invocations: 288,
-      d1RowsRead: 2_880_000,
-      d1RowsWritten: 72_000,
+      maxAttemptsPerInvocation: 4,
+      maxAttempts: 1_152,
+      d1RowsReadNominal: 864_000,
+      d1RowsWrittenNominal: 17_280,
+      d1RowsRead: 3_456_000,
+      d1RowsWritten: 69_120,
       queueOperations: 1_728,
       freeReadCeiling: 4_000_000,
       freeWriteCeiling: 80_000,
       freeQueueOperationsCeiling: 8_000,
     });
+  });
+
+  it("rejects D1 row budgets whose configured retries cross the reserve", () => {
+    expect(() => loadObservationWorkerConfig({
+      D1_ROWS_READ_PER_RUN: "3473",
+    })).toThrow("D1_ROWS_READ_PER_RUN");
+    expect(() => loadObservationWorkerConfig({
+      D1_ROWS_WRITTEN_PER_RUN: "70",
+    })).toThrow("D1_ROWS_WRITTEN_PER_RUN");
   });
 
   it("includes configured Queue retries in the Free cadence budget", () => {
