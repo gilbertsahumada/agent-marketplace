@@ -22,6 +22,7 @@ export interface WorkerConfig {
   maxSellerResponseBytes: number;
   platformLimits: {
     cpuMsPerInvocation: number;
+    queueConsumerCpuMs: number;
     wallTimeMsPerInvocation: number;
     externalSubrequestsPerInvocation: number;
     internalSubrequestsPerInvocation: number;
@@ -33,8 +34,10 @@ export interface WorkerConfig {
     invocations: number;
     d1RowsRead: number;
     d1RowsWritten: number;
+    queueOperations: number;
     freeReadCeiling: number;
     freeWriteCeiling: number;
+    freeQueueOperationsCeiling: number;
   } | null;
 }
 
@@ -51,7 +54,9 @@ interface Profile {
 
 const FREE_D1_READS_PER_DAY = 5_000_000;
 const FREE_D1_WRITES_PER_DAY = 100_000;
+const FREE_QUEUE_OPERATIONS_PER_DAY = 10_000;
 const FREE_SAFETY_RATIO = 0.8;
+const QUEUE_OPERATIONS_PER_MESSAGE = 3;
 
 const FREE_PROFILE: Profile = {
   schedulerMode: "single_phase",
@@ -219,8 +224,10 @@ export function loadConfig(env: Partial<Env>): WorkerConfig {
         invocations,
         d1RowsRead: invocations * values.d1RowsReadPerRun,
         d1RowsWritten: invocations * values.d1RowsWrittenPerRun,
+        queueOperations: invocations * QUEUE_OPERATIONS_PER_MESSAGE,
         freeReadCeiling: FREE_D1_READS_PER_DAY * FREE_SAFETY_RATIO,
         freeWriteCeiling: FREE_D1_WRITES_PER_DAY * FREE_SAFETY_RATIO,
+        freeQueueOperationsCeiling: FREE_QUEUE_OPERATIONS_PER_DAY * FREE_SAFETY_RATIO,
       }
     : null;
 
@@ -237,6 +244,12 @@ export function loadConfig(env: Partial<Env>): WorkerConfig {
         "projected daily writes exceed Free safety ceiling",
       );
     }
+    if (projectedDailyBudget.queueOperations > projectedDailyBudget.freeQueueOperationsCeiling) {
+      throw new ConfigError(
+        "CRON_INTERVAL_MINUTES",
+        "projected daily Queue operations exceed Free safety ceiling",
+      );
+    }
   }
 
   return {
@@ -247,6 +260,7 @@ export function loadConfig(env: Partial<Env>): WorkerConfig {
     platformLimits: plan === "free"
       ? {
           cpuMsPerInvocation: 10,
+          queueConsumerCpuMs: 30_000,
           wallTimeMsPerInvocation: 15 * 60_000,
           externalSubrequestsPerInvocation: 50,
           internalSubrequestsPerInvocation: 1_000,
@@ -256,6 +270,7 @@ export function loadConfig(env: Partial<Env>): WorkerConfig {
         }
       : {
           cpuMsPerInvocation: values.cronIntervalMinutes < 60 ? 30_000 : 15 * 60_000,
+          queueConsumerCpuMs: 30_000,
           wallTimeMsPerInvocation: 15 * 60_000,
           externalSubrequestsPerInvocation: 10_000,
           internalSubrequestsPerInvocation: 10_000,
