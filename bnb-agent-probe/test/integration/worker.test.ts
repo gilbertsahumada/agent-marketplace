@@ -361,7 +361,7 @@ describe("WP1 in the Workers runtime", () => {
     });
   });
 
-  it("records completed and failed scheduler attempts in the daily ledger", async () => {
+  it("records every scheduler outcome in the daily ledger", async () => {
     let clock = Date.parse("2026-08-28T10:00:00.000Z");
     const successRunner = createWp2ScheduledRunner({
       now: () => clock++,
@@ -387,17 +387,61 @@ describe("WP1 in the Workers runtime", () => {
       loadConfig({ KILL_SWITCH: "0" }),
     )).rejects.toThrow("controlled failure");
 
+    await env.DB.prepare(
+      `INSERT INTO runtime_state (key, textValue, integerValue, updatedAt)
+       VALUES ('scheduler_lease', 'other-run', ?, ?)
+       ON CONFLICT(key) DO UPDATE SET
+         textValue = excluded.textValue,
+         integerValue = excluded.integerValue,
+         updatedAt = excluded.updatedAt`,
+    ).bind(clock + 10_000, clock).run();
+    const lockedRunner = createWp2ScheduledRunner({
+      now: () => clock++,
+      randomUUID: () => "daily-locked",
+      executePhase: async () => { throw new Error("must not execute"); },
+    });
+    await expect(lockedRunner(
+      { scheduledTime: clock, cron: "queue" },
+      env,
+      createExecutionContext(),
+      loadConfig({ KILL_SWITCH: "0" }),
+    )).resolves.toBe("locked");
+
+    await env.DB.prepare(
+      `UPDATE runtime_state SET textValue = NULL, integerValue = 0, updatedAt = ?
+       WHERE key = 'scheduler_lease'`,
+    ).bind(clock).run();
+    await env.DB.prepare(
+      `INSERT INTO runtime_state (key, textValue, integerValue, updatedAt)
+       VALUES ('last_queue_scheduled_time', NULL, ?, ?)
+       ON CONFLICT(key) DO UPDATE SET
+         textValue = NULL,
+         integerValue = excluded.integerValue,
+         updatedAt = excluded.updatedAt`,
+    ).bind(clock + 10_000, clock).run();
+    const duplicateRunner = createWp2ScheduledRunner({
+      now: () => clock++,
+      randomUUID: () => "daily-duplicate",
+      executePhase: async () => { throw new Error("must not execute"); },
+    });
+    await expect(duplicateRunner(
+      { scheduledTime: clock, cron: "queue" },
+      env,
+      createExecutionContext(),
+      loadConfig({ KILL_SWITCH: "0" }),
+    )).resolves.toBe("duplicate");
+
     const row = await env.DB.prepare(
       "SELECT textValue FROM runtime_state WHERE key = 'daily_budget_20260828'",
     ).first<{ textValue: string }>();
     expect(JSON.parse(row?.textValue ?? "{}")).toMatchObject({
-      invocations: 2,
+      invocations: 4,
       completed: 1,
       failed: 1,
-      duplicate: 0,
-      locked: 0,
+      duplicate: 1,
+      locked: 1,
       upstreamRequests: 0,
-      d1Queries: 9,
+      d1Queries: 16,
       rowsReadObservedBeforeLedger: expect.any(Number),
       rowsWrittenObservedBeforeLedger: expect.any(Number),
     });
