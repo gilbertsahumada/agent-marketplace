@@ -910,7 +910,9 @@ offset/vuelta, lease como booleano+expiración (no runId), requests, CPU/wall
 time, último código de error, kill switch y ledger UTC corriente. Los conteos de
 targets se marcan no disponibles aquí y pertenecen a endpoints/artefactos de
 observación deliberados. Devuelve 200 con `status=degraded` ante una fase mala o
-si el scheduler está activo sin ledger diario válido; 503 solo si no lee D1.
+si el scheduler está activo sin ledger diario válido/fresco. Fresco significa
+`updatedAt` dentro de tres intervalos Cron, con mínimo de 15 min, y no más de
+cinco minutos en el futuro; 503 solo si no lee D1.
 
 ### 10.3 `POST /hire-events`
 
@@ -1035,7 +1037,9 @@ Checks bloqueantes:
   con un allowlist estricto. Sus filas terminan en `BeforeLedger` porque excluyen
   la propia escritura reconciliadora. Ledger y liberación son best-effort: sus
   fallos no convierten una fase ya confirmada en retry ni reemplazan el error
-  primario; `/health` degradado y Analytics revelan telemetría ausente;
+  primario; `/health` degradado por ausencia/staleness y Analytics revelan
+  telemetría incompleta. Si el guard de filas salta en la adquisición, se intenta
+  siempre la liberación owner-checked antes de relanzar;
 - el contador D1 admite como máximo 40 queries Free, incluye el marcador atómico
   de Queue, cuenta cada sentencia de un batch y rechaza la siguiente antes de
   acceder a D1;
