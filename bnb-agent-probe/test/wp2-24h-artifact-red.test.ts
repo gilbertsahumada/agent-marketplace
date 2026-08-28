@@ -538,6 +538,23 @@ describe("WP2 24-hour evidence artifact validator", () => {
     })).resolves.toMatchObject({ passed: true });
   });
 
+  it("counts a blocked drain-version producer without inventing a Queue write", async () => {
+    const artifact = validArtifact() as any;
+    const workers = structuredClone(RAW_PAYLOADS["evidence/raw/workers.json"]) as any;
+    const blockedProducer = structuredClone(workers.response.data.viewer.accounts[0].workersInvocationsAdaptive[0]);
+    blockedProducer.dimensions.datetime = "2026-08-29T23:56:00Z";
+    blockedProducer.dimensions.scriptVersion = DRAIN_VERSION;
+    blockedProducer.quantiles.cpuTimeP99 = 9_000;
+    blockedProducer.sum.requests = 1;
+    workers.response.data.viewer.accounts[0].workersInvocationsAdaptive.push(blockedProducer);
+    const contents = JSON.stringify(workers);
+    artifact.rawAnalytics["evidence/raw/workers.json"].sha256 = sha256(contents);
+    artifact.totals.maxProducerCpuMs = 9;
+    await expect(validateWp224hArtifact(artifact, {
+      readRawEvidence: async (path) => path === "evidence/raw/workers.json" ? contents : readRawEvidence(path),
+    })).resolves.toMatchObject({ passed: true });
+  });
+
   it("rejects Workers samples from an unauthenticated version", async () => {
     const artifact = validArtifact() as any;
     const workers = structuredClone(RAW_PAYLOADS["evidence/raw/workers.json"]) as any;
