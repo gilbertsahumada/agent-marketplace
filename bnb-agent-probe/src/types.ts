@@ -17,6 +17,7 @@ export interface D1Database {
 
 export interface Env {
   DB: D1Database;
+  WP2_QUEUE?: QueueProducer;
   CLOUDFLARE_WORKERS_PLAN?: string;
   KILL_SWITCH?: string;
   CRON_INTERVAL_MINUTES?: string;
@@ -49,7 +50,21 @@ export interface ExecutionContext {
   passThroughOnException(): void;
 }
 
+export interface QueueProducer {
+  send(message: unknown): Promise<void>;
+}
+
+export interface QueueMessage {
+  readonly body: unknown;
+  ack(): void;
+}
+
+export interface QueueBatch {
+  readonly messages: readonly QueueMessage[];
+}
+
 export interface WorkerEntrypoint {
   fetch(request: Request, env: Env, context?: ExecutionContext): Promise<Response>;
   scheduled(controller: ScheduledController, env: Env, context: ExecutionContext): Promise<void>;
+  queue(batch: QueueBatch, env: Env, context: ExecutionContext): Promise<void>;
 }
