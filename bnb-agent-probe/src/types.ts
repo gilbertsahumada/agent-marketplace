@@ -25,6 +25,8 @@ export interface Env {
   SWEEP_LIMIT?: string;
   SWEEP_PAGES_PER_RUN?: string;
   PROBE_BATCH_SIZE?: string;
+  PROBE_AGENT_ALLOWLIST?: string;
+  PROBE_ENDPOINT_ALLOWLIST?: string;
   TRUST8004_REQUESTS_PER_RUN?: string;
   EXTERNAL_SUBREQUESTS_PER_RUN?: string;
   D1_QUERIES_PER_RUN?: string;
