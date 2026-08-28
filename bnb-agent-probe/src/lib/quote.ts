@@ -84,6 +84,9 @@ export async function validateProbeQuote(
   }
 
   const responseData = record(envelope.response, "QUOTE_RESPONSE");
+  if (responseData.accepted !== true && responseData.accepted !== false) {
+    throw new QuoteValidationError("QUOTE_RESPONSE");
+  }
   let response: NegotiationResponse;
   try {
     response = NegotiationResponse.fromDict(responseData);
@@ -99,8 +102,8 @@ export async function validateProbeQuote(
     if (
       !response.reasonCode
       || !REJECTION_CODES.has(response.reasonCode)
-      || !response.reason
-      || response.reason.trim().length === 0
+      || typeof responseData.reason !== "string"
+      || responseData.reason.trim().length === 0
     ) throw new QuoteValidationError("QUOTE_REJECTION");
     return {
       outcome: "quote_rejected",
