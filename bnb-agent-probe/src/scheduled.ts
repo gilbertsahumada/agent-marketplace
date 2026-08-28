@@ -83,10 +83,22 @@ export function createWp2ScheduledRunner(dependencies: ScheduledRuntimeDependenc
     };
     const executePhase = dependencies.executePhase
       ?? ((input: PhaseExecution) => executeWp2Phase(input, countedFetch));
-    // Reserve raw queries for a sanitized error summary and an owner-checked
-    // lease release before the platform hard limit.
-    const phaseStore = createBudgetedD1Database(rawDb, config.d1QueriesPerRun - 3);
-    const auxiliaryStore = createBudgetedD1Database(rawDb, 2);
+    // Reserve queries for a sanitized error summary, an owner-checked lease
+    // release and the raw daily-ledger write before the platform hard limit.
+    const rowUsage = { rowsRead: 0, rowsWritten: 0 };
+    const rowBudget = {
+      rowsRead: config.d1RowsReadPerRun,
+      rowsWritten: config.d1RowsWrittenPerRun,
+    };
+    const phaseStore = createBudgetedD1Database(
+      rawDb,
+      config.d1QueriesPerRun - 3,
+      rowBudget,
+      rowUsage,
+    );
+    // Cleanup remains executable after a phase crosses its observed row cap.
+    // It shares the counter but not the post-query abort rule.
+    const auxiliaryStore = createBudgetedD1Database(rawDb, 2, undefined, rowUsage);
     const { db, budget, usage } = phaseStore;
     const acquired = await acquireSchedulerLease(db, {
       runId,
@@ -114,8 +126,8 @@ export function createWp2ScheduledRunner(dependencies: ScheduledRuntimeDependenc
         outcome: "locked",
         upstreamRequests,
         d1Queries: budget.used + auxiliaryStore.budget.used + 1,
-        rowsReadObservedBeforeLedger: usage.rowsRead + auxiliaryStore.usage.rowsRead,
-        rowsWrittenObservedBeforeLedger: usage.rowsWritten + auxiliaryStore.usage.rowsWritten,
+        rowsReadObservedBeforeLedger: usage.rowsRead,
+        rowsWrittenObservedBeforeLedger: usage.rowsWritten,
       });
       return "locked";
     }
@@ -180,8 +192,8 @@ export function createWp2ScheduledRunner(dependencies: ScheduledRuntimeDependenc
         outcome,
         upstreamRequests,
         d1Queries: budget.used + auxiliaryStore.budget.used + 1,
-        rowsReadObservedBeforeLedger: usage.rowsRead + auxiliaryStore.usage.rowsRead,
-        rowsWrittenObservedBeforeLedger: usage.rowsWritten + auxiliaryStore.usage.rowsWritten,
+        rowsReadObservedBeforeLedger: usage.rowsRead,
+        rowsWrittenObservedBeforeLedger: usage.rowsWritten,
       });
     }
   };
