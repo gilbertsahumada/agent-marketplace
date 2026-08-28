@@ -18,7 +18,7 @@ describe("observation Worker configuration", () => {
       schedulerMode: "single_phase",
       cronIntervalMinutes: 5,
       headerLimit: 25,
-      sweepLimit: 25,
+      sweepLimit: 4,
       sweepPagesPerRun: 1,
       probeBatchSize: 1,
       trust8004RequestsPerRun: 4,
