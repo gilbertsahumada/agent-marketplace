@@ -37,7 +37,7 @@ export const WP2_WORKERS_ANALYTICS_QUERY = `query Wp2WorkersWindow(
   $accountTag: string!
   $scriptName: string!
   $start: Time!
-  $endInclusive: Time!
+  $terminalityEndInclusive: Time!
 ) {
   viewer {
     accounts(filter: { accountTag: $accountTag }) {
@@ -46,7 +46,7 @@ export const WP2_WORKERS_ANALYTICS_QUERY = `query Wp2WorkersWindow(
         filter: {
           scriptName: $scriptName
           datetime_geq: $start
-          datetime_leq: $endInclusive
+          datetime_leq: $terminalityEndInclusive
         }
         orderBy: [datetime_ASC]
       ) {
