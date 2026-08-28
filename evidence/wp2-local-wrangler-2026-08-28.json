@@ -1,0 +1,51 @@
+{
+  "capturedAt": "2026-08-28T14:33:23Z",
+  "runtime": "wrangler 4.127.0 --test-scheduled",
+  "storage": "isolated local D1 with migrations 0001 and 0002",
+  "profile": "free",
+  "platformLimits": {
+    "cpuMsPerInvocation": 10,
+    "d1QueriesPerInvocation": 50,
+    "configuredD1QueriesPerRun": 40,
+    "externalSubrequestsPerInvocation": 50
+  },
+  "killSwitchGate": {
+    "enabled": true,
+    "scheduledHttpStatus": 200,
+    "leaseActiveAfterRun": false,
+    "nextPhaseAfterRun": "header",
+    "lastPhaseAfterRun": null
+  },
+  "rotation": [
+    {
+      "phase": "header",
+      "status": "ok",
+      "requests": 1,
+      "d1Queries": 7,
+      "wallTimeMs": 2489,
+      "nextPhase": "sweep"
+    },
+    {
+      "phase": "sweep",
+      "status": "ok",
+      "requests": 4,
+      "d1Queries": 9,
+      "wallTimeMs": 2796,
+      "processedAgents": 4,
+      "nextPhase": "probe"
+    },
+    {
+      "phase": "probe",
+      "status": "pending_wp3",
+      "requests": 0,
+      "d1Queries": 5,
+      "wallTimeMs": 1,
+      "nextPhase": "header"
+    }
+  ],
+  "regression": {
+    "observed": "The first live HEADER attempt failed with Cloudflare Illegal invocation because global fetch was detached from globalThis.",
+    "containment": "The lease was released, the phase and cursors did not advance, and health exposed only PHASE_FAILED with four D1 queries.",
+    "resolution": "Bind the default runtime fetch to globalThis and cover it through the Workers runtime with a mocked outbound service."
+  }
+}
