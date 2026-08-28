@@ -1303,8 +1303,9 @@ Queue cero; declarar `crons: []` en un deploy no sustituye esa comprobación por
 la propagación eventual de Cron Triggers. Para la ventana final se instala un
 Cron staging temporal solo después del preflight y se elimina al finalizar; no
 autoriza cadencia productiva. Tras el tick de `23:55Z` se retira el schedule
-antes de `00:00Z`; `KILL_SWITCH=0` puede permanecer solo durante la gracia de
-retries pertenecientes al día. La gracia dura como mínimo hasta `00:15Z`
+antes de `00:00Z` y se activa `PRODUCER_KILL_SWITCH=1` como barrera contra un
+trigger tardío mientras `KILL_SWITCH=0` mantiene vivo exclusivamente el consumer
+durante la gracia de retries pertenecientes al día. La gracia dura como mínimo hasta `00:15Z`
 (tres delays de lease de 240 s más margen) y no termina hasta que los 288 ticks
 tengan un outcome terminal en `scheduler_attempts` y Queue Analytics no muestre
 operaciones pendientes; backlog REST cero solo corrobora y nunca cierra el gate.
@@ -1321,7 +1322,8 @@ del último tick y el backlog REST timestamped en cero tras `00:15Z`; la consult
 se solicita completa hasta ese cutoff.
 El cleanup debe ser posterior no solo a `00:15Z`, sino también al último
 `finishedAt` y al último `DeleteMessage` terminal observado.
-Recién entonces `KILL_SWITCH` vuelve a `1`.
+Recién entonces `KILL_SWITCH` vuelve a `1`; el raw final debe demostrar ambos
+switches en `1`.
 La Queue, su consumer y D1 de staging se conservan: la eliminación aplica solo a
 recursos efímeros del entorno `validation`. Como el backlog REST es best-effort y puede omitir
 mensajes con retry diferido, cada prueba destructiva de reentrega crea una Queue
