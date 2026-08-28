@@ -66,6 +66,7 @@ export const WP2_QUEUE_ANALYTICS_QUERY = `query Wp2QueueWindow(
   $queueId: string!
   $start: Time!
   $endInclusive: Time!
+  $terminalityEndInclusive: Time!
 ) {
   viewer {
     accounts(filter: { accountTag: $accountTag }) {
@@ -89,12 +90,34 @@ export const WP2_QUEUE_ANALYTICS_QUERY = `query Wp2QueueWindow(
         filter: {
           queueId: $queueId
           datetime_geq: $start
-          datetime_leq: $endInclusive
+          datetime_leq: $terminalityEndInclusive
         }
         orderBy: [datetime_ASC]
       ) {
         avg { bytes messages }
         dimensions { datetime queueId }
+      }
+    }
+  }
+}`;
+
+export const WP2_QUEUE_ACCOUNT_ANALYTICS_QUERY = `query Wp2QueueAccountWindow(
+  $accountTag: string!
+  $start: Time!
+  $endInclusive: Time!
+) {
+  viewer {
+    accounts(filter: { accountTag: $accountTag }) {
+      queueMessageOperationsAdaptiveGroups(
+        limit: 10000
+        filter: {
+          datetime_geq: $start
+          datetime_leq: $endInclusive
+        }
+        orderBy: [datetime_ASC]
+      ) {
+        dimensions { datetime queueId }
+        sum { billableOperations }
       }
     }
   }
