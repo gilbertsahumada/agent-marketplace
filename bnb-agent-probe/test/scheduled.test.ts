@@ -18,6 +18,7 @@ class LeaseDatabase implements D1DatabaseLike {
   failRelease = false;
   failLedger = false;
   queries = 0;
+  leaseRowsWritten = 1;
 
   prepare(query: string): D1PreparedStatementLike {
     let values: readonly unknown[] = [];
@@ -41,7 +42,7 @@ class LeaseDatabase implements D1DatabaseLike {
           thisDb.lease = { runId, expiresAt };
           return {
             success: true,
-            meta: { rows_read: 1, rows_written: 1 },
+            meta: { rows_read: 1, rows_written: thisDb.leaseRowsWritten },
             results: [{ key: "scheduler_lease" } as Row],
           };
         }
@@ -191,7 +192,31 @@ describe("WP2 scheduled runner", () => {
 
     expect(executed).toBe(false);
     expect(db.summaries).toHaveLength(1);
+    expect(JSON.parse(db.summaries[0] ?? "{}")).toMatchObject({
+      errorCode: "D1_ROW_BUDGET",
+    });
     expect(db.releases).toBe(1);
+  });
+
+  it("owner-check releases a lease whose own row metadata crosses the budget", async () => {
+    const db = new LeaseDatabase();
+    db.leaseRowsWritten = 2;
+    const runner = createWp2ScheduledRunner({
+      now: () => 1_000,
+      randomUUID: () => "run-acquire-row-budget",
+      executePhase: async () => { throw new Error("must not execute"); },
+    });
+
+    await expect(runner(
+      controller,
+      { DB: db } as unknown as Env,
+      context,
+      loadConfig({ D1_ROWS_WRITTEN_PER_RUN: "1" }),
+    )).rejects.toBeInstanceOf(D1RowBudgetExceededError);
+
+    expect(db.acquisitions).toBe(1);
+    expect(db.releases).toBe(1);
+    expect(db.lease).toEqual({ runId: null, expiresAt: 1_000 });
   });
 
   it("does not retry completed phase work when only the daily ledger fails", async () => {
