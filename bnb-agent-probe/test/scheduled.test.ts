@@ -71,6 +71,9 @@ class LeaseDatabase implements D1DatabaseLike {
       },
       async run<Meta>(): Promise<D1ResultLike<Meta>> {
         thisDb.queries += 1;
+        if (query.includes("INSERT INTO scheduler_attempts")) {
+          return { success: true, meta: { rows_read: 1, rows_written: 1 } as Meta };
+        }
         if (!query.includes("INSERT INTO runtime_state")) {
           throw new Error("unexpected run query");
         }
