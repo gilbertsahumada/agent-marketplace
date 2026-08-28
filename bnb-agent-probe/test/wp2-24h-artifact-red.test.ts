@@ -5,6 +5,7 @@ import { validateWp224hArtifact } from "../src/evidence/wp2-24h-artifact";
 
 const WINDOW_START = Date.parse("2026-08-29T00:00:00.000Z");
 const DEPLOYMENT_VERSION = "00000000-0000-4000-8000-000000000001";
+const DRAIN_VERSION = "00000000-0000-4000-8000-000000000099";
 const D1_ID = "6fbeea3e-4516-4c4e-a5c4-392cb067198a";
 const RAW_PAYLOADS = {
   "evidence/raw/d1-database.json": {
@@ -123,11 +124,18 @@ const RAW_PAYLOADS = {
     ] }] } }, errors: null },
   },
   "evidence/raw/deployment.json": {
-    request: { scriptName: "bnb-agent-probe-staging", versionId: DEPLOYMENT_VERSION },
-    response: { id: DEPLOYMENT_VERSION, annotations: {
-      "workers/message": "git_commit=0123456789abcdef0123456789abcdef01234567",
-      "workers/tag": "git-0123456789ab",
-    } },
+    request: { scriptName: "bnb-agent-probe-staging", measuredVersionId: DEPLOYMENT_VERSION,
+      drainVersionIds: [DRAIN_VERSION] },
+    response: {
+      measured: { id: DEPLOYMENT_VERSION, annotations: {
+        "workers/message": "git_commit=0123456789abcdef0123456789abcdef01234567",
+        "workers/tag": "git-0123456789ab",
+      }, resources: { script: { etag: "a".repeat(64) } } },
+      drainVersions: [{ id: DRAIN_VERSION, annotations: {
+        "workers/message": "git_commit=0123456789abcdef0123456789abcdef01234567",
+        "workers/tag": "git-0123456789ab-drain",
+      }, resources: { script: { etag: "a".repeat(64) } } }],
+    },
   },
   "evidence/raw/preflight.json": {
     response: { capturedAt: "2026-08-28T21:50:00.000Z", schedules: [], backlogCount: 0 },
@@ -295,12 +303,28 @@ describe("WP2 24-hour evidence artifact validator", () => {
   it("rejects deployment evidence without a Cloudflare commit annotation", async () => {
     const artifact = validArtifact() as any;
     const deployment = structuredClone(RAW_PAYLOADS["evidence/raw/deployment.json"]) as any;
-    deployment.response.annotations["workers/message"] = "manual upload";
+    deployment.response.measured.annotations["workers/message"] = "manual upload";
     const contents = JSON.stringify(deployment);
     artifact.rawAnalytics["evidence/raw/deployment.json"].sha256 = sha256(contents);
     await expect(validateWp224hArtifact(artifact, {
       readRawEvidence: async (path) => path === "evidence/raw/deployment.json" ? contents : readRawEvidence(path),
     })).rejects.toThrow("RAW_DEPLOYMENT");
+  });
+
+  it("rejects a drain version from another commit or bundle", async () => {
+    for (const mutate of [
+      (deployment: any) => { deployment.response.drainVersions[0].annotations["workers/message"] = "git_commit=bad"; },
+      (deployment: any) => { deployment.response.drainVersions[0].resources.script.etag = "b".repeat(64); },
+    ]) {
+      const artifact = validArtifact() as any;
+      const deployment = structuredClone(RAW_PAYLOADS["evidence/raw/deployment.json"]) as any;
+      mutate(deployment);
+      const contents = JSON.stringify(deployment);
+      artifact.rawAnalytics["evidence/raw/deployment.json"].sha256 = sha256(contents);
+      await expect(validateWp224hArtifact(artifact, {
+        readRawEvidence: async (path) => path === "evidence/raw/deployment.json" ? contents : readRawEvidence(path),
+      })).rejects.toThrow("RAW_DEPLOYMENT");
+    }
   });
 
   it("accepts an explained retry that spills into the quota day", async () => {
@@ -494,19 +518,36 @@ describe("WP2 24-hour evidence artifact validator", () => {
     })).rejects.toThrow("RAW_WORKERS");
   });
 
-  it("ignores a post-window-control deployment in the same UTC Workers response", async () => {
+  it("includes an authenticated drain-version consumer in resource metrics", async () => {
     const artifact = validArtifact() as any;
     const workers = structuredClone(RAW_PAYLOADS["evidence/raw/workers.json"]) as any;
-    const controlRequest = structuredClone(workers.response.data.viewer.accounts[0].workersInvocationsAdaptive[0]);
-    controlRequest.dimensions.datetime = "2026-08-29T23:56:00Z";
-    controlRequest.dimensions.scriptVersion = "00000000-0000-4000-8000-000000000099";
-    controlRequest.sum.requests = 1;
-    workers.response.data.viewer.accounts[0].workersInvocationsAdaptive.push(controlRequest);
+    const drainConsumer = structuredClone(workers.response.data.viewer.accounts[0].workersInvocationsAdaptive[1]);
+    drainConsumer.dimensions.datetime = "2026-08-29T23:56:00Z";
+    drainConsumer.dimensions.scriptVersion = DRAIN_VERSION;
+    drainConsumer.quantiles.cpuTimeP99 = 300_000;
+    drainConsumer.quantiles.memoryUsageBytesP999 = 13_000_000;
+    drainConsumer.sum.requests = 1;
+    drainConsumer.sum.subrequests = 1;
+    workers.response.data.viewer.accounts[0].workersInvocationsAdaptive.push(drainConsumer);
+    const contents = JSON.stringify(workers);
+    artifact.rawAnalytics["evidence/raw/workers.json"].sha256 = sha256(contents);
+    artifact.totals.maxConsumerCpuMs = 300;
+    artifact.totals.memoryUsageBytesP999 = 13_000_000;
+    await expect(validateWp224hArtifact(artifact, {
+      readRawEvidence: async (path) => path === "evidence/raw/workers.json" ? contents : readRawEvidence(path),
+    })).resolves.toMatchObject({ passed: true });
+  });
+
+  it("rejects Workers samples from an unauthenticated version", async () => {
+    const artifact = validArtifact() as any;
+    const workers = structuredClone(RAW_PAYLOADS["evidence/raw/workers.json"]) as any;
+    workers.response.data.viewer.accounts[0].workersInvocationsAdaptive[1].dimensions.scriptVersion =
+      "00000000-0000-4000-8000-000000000098";
     const contents = JSON.stringify(workers);
     artifact.rawAnalytics["evidence/raw/workers.json"].sha256 = sha256(contents);
     await expect(validateWp224hArtifact(artifact, {
       readRawEvidence: async (path) => path === "evidence/raw/workers.json" ? contents : readRawEvidence(path),
-    })).resolves.toMatchObject({ passed: true });
+    })).rejects.toThrow("RAW_DEPLOYMENT");
   });
 
   it("rejects cleanup captured before the final tick attempt finishes", async () => {
