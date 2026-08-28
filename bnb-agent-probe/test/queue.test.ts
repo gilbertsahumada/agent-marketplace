@@ -108,7 +108,7 @@ describe("WP2 Free queue dispatch", () => {
     expect(tick.ack).toHaveBeenCalledOnce();
   });
 
-  it("acknowledges a duplicate or stale tick without advancing another phase", async () => {
+  it("acknowledges a duplicate or stale tick resolved by the phase runner", async () => {
     const db = new TickDatabase();
     db.lastScheduledTime = 1_800_000_000_000;
     const runScheduled = vi.fn();
@@ -118,7 +118,7 @@ describe("WP2 Free queue dispatch", () => {
 
     await worker.queue({ messages: [tick] }, activeEnv, context);
 
-    expect(runScheduled).not.toHaveBeenCalled();
+    expect(runScheduled).toHaveBeenCalledOnce();
     expect(tick.ack).toHaveBeenCalledOnce();
   });
 
