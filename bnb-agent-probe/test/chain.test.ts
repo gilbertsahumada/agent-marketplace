@@ -118,4 +118,26 @@ describe("counted BSC RPC transport", () => {
       method: "eth_chainId",
     });
   });
+
+  it("sanitizes an aborted RPC response stream", async () => {
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode("{"));
+        controller.error(new DOMException("secret upstream detail", "AbortError"));
+      },
+    });
+    const client = createCountedBscClient({
+      rpcUrl: "https://rpc.example.com/bsc",
+      fetch: vi.fn<typeof fetch>().mockResolvedValue(new Response(body, {
+        headers: { "content-type": "application/json" },
+      })),
+      deadlineMs: Date.now() + 5_000,
+      now: Date.now,
+    });
+
+    await expect(readProbeChainContext(client as never, {
+      agentId: "303779",
+      nowSeconds: NOW,
+    })).rejects.toMatchObject({ code: "BSC_CHAIN_RPC", message: "BSC_CHAIN_RPC" });
+  });
 });
