@@ -143,6 +143,19 @@ and zero-backlog checks may `KILL_SWITCH` return to `1`. The final control-plane
 evidence must show both switches at `1`; removing the Cron alone is not a
 producer barrier because trigger propagation is eventual.
 
+```bash
+npx wrangler deploy --env staging --keep-vars \
+  --var PRODUCER_KILL_SWITCH:1 --var KILL_SWITCH:0 \
+  --message "git_commit=${FULL_SHA}" --tag "git-${SHORT_SHA}-drain"
+# Record DRAIN_VERSION_ID, then remove Cron and verify schedules=[].
+
+# Only after the terminality gate:
+npx wrangler deploy --env staging --keep-vars \
+  --var PRODUCER_KILL_SWITCH:1 --var KILL_SWITCH:1 \
+  --message "git_commit=${FULL_SHA}" --tag "git-${SHORT_SHA}-cleanup"
+# Record CLEANUP_VERSION_ID, remove Cron again, and verify schedules=[].
+```
+
 Destructive retry tests use the dedicated `validation` environment, never the
 staging D1 or Queue. Its checked-in defaults are Free-sized, contain no Cron
 Trigger or secret, and keep `KILL_SWITCH=1` outside a controlled window:
