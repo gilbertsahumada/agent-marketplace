@@ -231,7 +231,7 @@ function parseEndpointAllowlist(
       "contains too many entries for the plan",
     );
   }
-  return values.map((value) => {
+  const normalized = values.map((value) => {
     let url: URL;
     try {
       url = new URL(value);
@@ -259,6 +259,13 @@ function parseEndpointAllowlist(
     }
     return url.toString();
   });
+  if (plan === "free" && (normalized.length !== 1 || normalized[0] !== WP3_ENDPOINT)) {
+    throw new ObservationWorkerConfigError(
+      "PROBE_ENDPOINT_ALLOWLIST",
+      `Free must contain only ${WP3_ENDPOINT}`,
+    );
+  }
+  return normalized;
 }
 
 function parseInteger(
