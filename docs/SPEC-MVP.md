@@ -378,23 +378,24 @@ daily_budget_YYYYMMDD textValue=JSON con invocations/requests/D1 rows observadas
 
 `*/5 * * * *` invoca `scheduled()` en el perfil Free. Esa invocación solo envía
 `{schemaVersion: 1, scheduledTime}` a `WP2_QUEUE`. Un consumer con batch máximo
-uno reclama el timestamp de forma monotónica; un duplicado o tick anterior se
-confirma sin ejecutar trabajo. Cada entrega aceptada ejecuta exactamente una
+uno serializa mediante lease y comprueba el último timestamp completado; un
+duplicado o tick anterior se confirma sin ejecutar trabajo. Cada entrega
+aceptada ejecuta exactamente una
 fase (`HEADER`, `SWEEP` o `PROBE`) y persiste la siguiente en
 `next_scheduler_phase`; nunca carga el funnel completo en memoria. La expresión
 Cron se despliega desde la configuración y debe coincidir con
 `CRON_INTERVAL_MINUTES`.
 
 1. Rechaza un batch distinto de uno y valida versión/timestamp del mensaje.
-2. Después de adquirir el lease, lee `last_queue_scheduled_time` junto al estado
-   de fase. Un timestamp completado o anterior termina sin otra fase.
-3. Genera `runId` aleatorio.
-4. Adquiere `scheduler_lease` mediante `INSERT ... ON CONFLICT DO UPDATE ...
+2. Genera `runId` aleatorio.
+3. Adquiere `scheduler_lease` mediante `INSERT ... ON CONFLICT DO UPDATE ...
    WHERE integerValue <= now RETURNING key`.
-5. El lease Free expira antes de la siguiente ventana útil y siempre bajo el
+4. Si no obtiene la fila, registra `skipped_locked`; el consumer no confirma el
+   mensaje y solicita retry con 240 s de demora, compatible con el lease Free.
+5. Ya como dueño, lee `last_queue_scheduled_time` junto al estado de fase. Un
+   timestamp completado o anterior termina sin otra fase.
+6. El lease Free expira antes de la siguiente ventana útil y siempre bajo el
    límite de 15 min de wall time.
-6. Si no obtiene la fila, registra `skipped_locked` y termina sin red ni writes
-   de datos.
 7. Persiste `last_queue_scheduled_time` en el mismo `db.batch()` que el resumen,
    cursor y próxima fase; un fallo deja el tick reintentable y un éxito no puede
    avanzar dos fases al reentregarse.
