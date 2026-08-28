@@ -45,6 +45,7 @@ describe("WP1 Wrangler scaffold", () => {
         max_batch_timeout: 1,
         max_retries: 3,
         max_concurrency: 1,
+        retry_delay: 60,
       }],
     });
   });
@@ -95,6 +96,7 @@ describe("WP1 Wrangler scaffold", () => {
         max_batch_timeout: 1,
         max_retries: 3,
         max_concurrency: 1,
+        retry_delay: 60,
       }],
     });
   });
@@ -132,6 +134,7 @@ describe("WP1 Wrangler scaffold", () => {
           max_batch_timeout: 1,
           max_retries: 3,
           max_concurrency: 1,
+          retry_delay: 60,
         }],
       },
     });
