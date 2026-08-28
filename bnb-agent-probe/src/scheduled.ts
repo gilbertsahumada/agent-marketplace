@@ -1,5 +1,5 @@
 import type { WorkerConfig } from "./config";
-import { executeBatch, prepareStatement, type D1DatabaseLike } from "./db/client";
+import type { D1DatabaseLike } from "./db/client";
 import {
   createBudgetedD1Database,
   D1QueryBudgetExceededError,
@@ -303,39 +303,107 @@ async function executeWp2Phase(input: PhaseExecution, fetchImpl: typeof fetch): 
     return;
   }
 
-  // WP2 keeps the state machine moving but never contacts a seller. WP3
-  // replaces this explicit pending phase with the allowlisted probe.
-  const finishedAt = input.now();
-  const completionStatements = input.completedQueueScheduledTime === undefined
-    ? []
-    : [prepareStatement(input.db,
-        `INSERT INTO runtime_state (key, textValue, integerValue, updatedAt)
-         VALUES ('last_queue_scheduled_time', NULL, ?, ?)
-         ON CONFLICT(key) DO UPDATE SET textValue=NULL,
-           integerValue=excluded.integerValue, updatedAt=excluded.updatedAt`,
-        [input.completedQueueScheduledTime, finishedAt])];
-  const probeBatchQueries = 2 + completionStatements.length;
-  await executeBatch(input.db, [
-    prepareStatement(input.db,
-      `INSERT INTO runtime_state (key, textValue, integerValue, updatedAt)
-       VALUES ('last_probe_summary', ?, NULL, ?)
-       ON CONFLICT(key) DO UPDATE SET textValue=excluded.textValue,
-         integerValue=NULL, updatedAt=excluded.updatedAt`,
-      [JSON.stringify({
-        phase: "probe",
-        status: "pending_wp3",
-        requests: 0,
-        d1Queries: input.queryBudget.used + probeBatchQueries + 2,
-        wallTimeMs: Math.max(0, finishedAt - input.startedAtMs),
-      }), finishedAt]),
-    prepareStatement(input.db,
-      `INSERT INTO runtime_state (key, textValue, integerValue, updatedAt)
-       VALUES ('next_scheduler_phase', 'header', NULL, ?)
-       ON CONFLICT(key) DO UPDATE SET textValue='header',
-         integerValue=NULL, updatedAt=excluded.updatedAt`,
-      [finishedAt]),
-    ...completionStatements,
+  const [
+    { createCountedBscClient, readProbeChainContext },
+    { validateProbeQuote },
+    { probeA2aSeller },
+    { buildGridProbeRequest },
+    { createD1ProbePersistence },
+    { runProbePhase },
+  ] = await Promise.all([
+    import("./lib/chain"),
+    import("./lib/quote"),
+    import("./lib/seller-client"),
+    import("./lib/terms"),
+    import("./phases/probe-d1"),
+    import("./phases/probe"),
   ]);
+  let phaseRequests = 0;
+  const probeFetch: typeof fetch = (...args) => {
+    if (phaseRequests >= input.config.externalSubrequestsPerRun) {
+      throw new Error("PROBE_EXTERNAL_SUBREQUEST_BUDGET");
+    }
+    phaseRequests += 1;
+    return fetchImpl(...args);
+  };
+  const probeCatalog = new Trust8004CatalogClient({
+    baseUrl: input.env.TRUST8004_BASE_URL ?? "https://trust8004.xyz/api/app",
+    timeoutMs: input.config.probeTimeoutMs,
+    maxResponseBytes: input.config.maxCatalogResponseBytes,
+    fetch: probeFetch,
+  });
+  const deadlineMs = input.nowMs + input.config.probeTimeoutMs;
+  let currentChain: Awaited<ReturnType<typeof readProbeChainContext>> | null = null;
+  let publicClient: ReturnType<typeof createCountedBscClient> | null = null;
+  const persistence = createD1ProbePersistence(input.db, {
+    queryBudget: input.queryBudget,
+    nowMs: input.nowMs,
+    ...(input.completedQueueScheduledTime === undefined
+      ? {}
+      : { completedQueueScheduledTime: input.completedQueueScheduledTime }),
+  });
+  await runProbePhase({
+    agentAllowlist: input.config.probeAgentAllowlist,
+    endpointAllowlist: input.config.probeEndpointAllowlist,
+    limit: input.config.probeBatchSize,
+    nowMs: input.nowMs,
+    startedAtMs: input.startedAtMs,
+    now: input.now,
+    requestCount: () => phaseRequests,
+  }, {
+    ...persistence,
+    refreshTarget: async (target) => {
+      let agent: CatalogAgent;
+      try {
+        agent = await probeCatalog.getAgent(target.agentId);
+      } catch {
+        return { status: "metadata_unavailable" };
+      }
+      if (!agent.metadataAvailable) return { status: "metadata_unavailable" };
+      const current = selectLiveTargets(agent, { curatedAgentIds: CURATED_ID_SET })
+        .some((candidate) => (
+          candidate.transport === target.transport && candidate.endpoint === target.endpoint
+        ));
+      return current
+        ? { status: "current", metadataUpdatedAt: agent.metadataUpdatedAt }
+        : { status: "removed" };
+    },
+    readChainContext: async () => {
+      if (!input.env.BSC_RPC_URL) throw new Error("BSC_RPC_URL_REQUIRED");
+      publicClient = createCountedBscClient({
+        rpcUrl: input.env.BSC_RPC_URL,
+        fetch: probeFetch,
+        deadlineMs,
+        now: input.now,
+      });
+      currentChain = await readProbeChainContext(publicClient, {
+        agentId: input.config.probeAgentAllowlist[0]!,
+        nowSeconds: Math.floor(input.now() / 1_000),
+      });
+      return currentChain;
+    },
+    probeSeller: async (target) => {
+      if (target.transport !== "a2a") throw new Error("WP3_A2A_TARGET_REQUIRED");
+      const remainingMs = Math.floor(deadlineMs - input.now());
+      if (remainingMs <= 0) throw new Error("PROBE_DEADLINE_EXCEEDED");
+      return probeA2aSeller({
+        endpoint: target.endpoint,
+        request: buildGridProbeRequest().toDict(),
+        timeoutMs: remainingMs,
+        maxResponseBytes: input.config.maxSellerResponseBytes,
+        fetch: probeFetch,
+        now: input.now,
+      });
+    },
+    validateQuote: async (quote) => {
+      if (!currentChain || !publicClient) throw new Error("BSC_CONTEXT_REQUIRED");
+      return validateProbeQuote(quote, {
+        ...currentChain,
+        publicClient,
+        nowSeconds: Math.floor(input.now() / 1_000),
+      });
+    },
+  });
 }
 
 function toHeaderAgent(agent: CatalogAgent, curatedIds: ReadonlySet<string>): HeaderAgent {
