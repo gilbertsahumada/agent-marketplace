@@ -245,6 +245,7 @@ describe("WP2 24-hour evidence artifact validator", () => {
     ["partial day", (artifact: any) => { artifact.window.end = "2026-08-29T23:59:59.999Z"; }, "WINDOW_DURATION"],
     ["missing tick", (artifact: any) => { artifact.ledger.pop(); }, "TICK_COUNT"],
     ["unaligned tick", (artifact: any) => { artifact.ledger[7].scheduledTime += 1; }, "TICK_ALIGNMENT"],
+    ["negative attempt duration", (artifact: any) => { artifact.ledger[0].finishedAt = artifact.ledger[0].startedAt - 1; }, "LEDGER"],
     ["wrong phase distribution", (artifact: any) => { artifact.ledger[0].phase = "sweep"; }, "PHASE_SEQUENCE"],
     ["D1 query overflow", (artifact: any) => { artifact.ledger[0].d1Queries = 41; }, "D1_QUERY_LIMIT"],
     ["D1 read ceiling", (artifact: any) => { artifact.totals.d1RowsRead = 4_000_000; }, "D1_READ_LIMIT"],
@@ -381,6 +382,18 @@ describe("WP2 24-hour evidence artifact validator", () => {
       mutate(artifact);
       await expect(validateWp224hArtifact(artifact, { readRawEvidence })).rejects.toThrow();
     }
+  });
+
+  it("rejects producer CPU derived from Workers Analytics at the Free ceiling", async () => {
+    const artifact = validArtifact() as any;
+    const workers = structuredClone(RAW_PAYLOADS["evidence/raw/workers.json"]) as any;
+    workers.response.data.viewer.accounts[0].workersInvocationsAdaptive[0].quantiles.cpuTimeP99 = 10_000;
+    const contents = JSON.stringify(workers);
+    artifact.rawAnalytics["evidence/raw/workers.json"].sha256 = sha256(contents);
+    artifact.totals.maxProducerCpuMs = 10;
+    await expect(validateWp224hArtifact(artifact, {
+      readRawEvidence: async (path) => path === "evidence/raw/workers.json" ? contents : readRawEvidence(path),
+    })).rejects.toThrow("CPU_LIMIT");
   });
 
   it("rejects quota, HTTP 429, CPU, memory and unattributable account usage", async () => {
