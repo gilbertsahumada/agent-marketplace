@@ -82,6 +82,16 @@ describe("WP3 fixed-block chain context", () => {
       nowSeconds: NOW,
     })).rejects.toMatchObject({ code: expect.stringMatching(/^BSC_/) });
   });
+
+  it.each([
+    ["chain RPC", { getChainId: vi.fn(async () => { throw new Error("secret rpc detail"); }) }, "BSC_CHAIN_RPC"],
+    ["block RPC", { getBlock: vi.fn(async () => { throw new Error("secret rpc detail"); }) }, "BSC_BLOCK_RPC"],
+  ])("sanitizes an unavailable %s", async (_name, override, code) => {
+    await expect(readProbeChainContext(reader(override) as never, {
+      agentId: "303779",
+      nowSeconds: NOW,
+    })).rejects.toMatchObject({ code, message: code });
+  });
 });
 
 describe("counted BSC RPC transport", () => {
