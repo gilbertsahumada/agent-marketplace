@@ -1,5 +1,8 @@
 import type { D1DatabaseLike } from "../db/client";
 
+// Deliberately raw SQL, exempt from the Drizzle runtime layer in db/orm.ts:
+// the lease's INSERT ... ON CONFLICT ... WHERE ... RETURNING is the one query
+// whose exact contention semantics must be auditable at a glance.
 const SCHEDULER_LEASE_KEY = "scheduler_lease";
 
 export interface SchedulerLeaseRequest {
