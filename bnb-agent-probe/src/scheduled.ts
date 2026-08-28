@@ -328,12 +328,6 @@ async function executeWp2Phase(input: PhaseExecution, fetchImpl: typeof fetch): 
     phaseRequests += 1;
     return fetchImpl(...args);
   };
-  const probeCatalog = new Trust8004CatalogClient({
-    baseUrl: input.env.TRUST8004_BASE_URL ?? "https://trust8004.xyz/api/app",
-    timeoutMs: input.config.probeTimeoutMs,
-    maxResponseBytes: input.config.maxCatalogResponseBytes,
-    fetch: probeFetch,
-  });
   const deadlineMs = input.nowMs + input.config.probeTimeoutMs;
   let currentChain: Awaited<ReturnType<typeof readProbeChainContext>> | null = null;
   let publicClient: ReturnType<typeof createCountedBscClient> | null = null;
@@ -355,6 +349,14 @@ async function executeWp2Phase(input: PhaseExecution, fetchImpl: typeof fetch): 
   }, {
     ...persistence,
     refreshTarget: async (target) => {
+      const remainingMs = Math.floor(deadlineMs - input.now());
+      if (remainingMs <= 0) return { status: "metadata_unavailable" };
+      const probeCatalog = new Trust8004CatalogClient({
+        baseUrl: input.env.TRUST8004_BASE_URL ?? "https://trust8004.xyz/api/app",
+        timeoutMs: remainingMs,
+        maxResponseBytes: input.config.maxCatalogResponseBytes,
+        fetch: probeFetch,
+      });
       let agent: CatalogAgent;
       try {
         agent = await probeCatalog.getAgent(target.agentId);
