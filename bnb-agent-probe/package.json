@@ -9,10 +9,11 @@
     "test:unit": "vitest run --config vitest.config.ts",
     "test:worker": "vitest run --config vitest.worker.config.ts",
     "typecheck": "tsc --noEmit",
-    "check": "npm run typecheck && npm run manifest:check && npm test && npm run dry-run && npm run dry-run:validation",
+    "check": "npm run typecheck && npm run manifest:check && npm test && npm run dry-run && npm run dry-run:staging && npm run dry-run:validation",
     "migrate:local": "wrangler d1 migrations apply bnb-agent-probe --local",
     "migrations:list:local": "wrangler d1 migrations list bnb-agent-probe --local",
     "dry-run": "wrangler deploy --dry-run --env=\"\" --outdir dist/worker",
+    "dry-run:staging": "wrangler deploy --dry-run --env staging --outdir dist/worker-staging",
     "dry-run:validation": "wrangler deploy --dry-run --env validation --outdir dist/worker-validation",
     "cf-typegen": "wrangler types src/worker-configuration.d.ts",
     "manifest:check": "tsx scripts/generate-curated-inventory.ts"
