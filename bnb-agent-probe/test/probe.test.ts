@@ -124,6 +124,35 @@ describe("WP3 PROBE phase", () => {
     }));
   });
 
+  it("persists an expected seller transport failure and rotates the target", async () => {
+    const deps = dependencies({
+      probeSeller: vi.fn(async () => { throw new SellerProbeError("SELLER_TIMEOUT"); }),
+    });
+
+    const summary = await runProbePhase(input, deps as never);
+
+    expect(deps.commit).toHaveBeenCalledOnce();
+    expect(deps.commit).toHaveBeenCalledWith(expect.objectContaining({
+      target: TARGET,
+      observation: expect.objectContaining({
+        outcome: "unreachable",
+        errorCode: "SELLER_TIMEOUT",
+      }),
+      nextPriority: 0,
+    }));
+    expect(summary).toMatchObject({ outcome: "unreachable", processedTargets: 1 });
+  });
+
+  it("does not commit or rotate after an unexpected infrastructure failure", async () => {
+    const failure = new Error("unexpected D1 or runtime failure");
+    const deps = dependencies({
+      probeSeller: vi.fn(async () => { throw failure; }),
+    });
+
+    await expect(runProbePhase(input, deps as never)).rejects.toBe(failure);
+    expect(deps.commit).not.toHaveBeenCalled();
+  });
+
   it("rotates without network when no allowlisted target exists", async () => {
     const deps = dependencies({ selectTarget: vi.fn(async () => null) });
     const summary = await runProbePhase(input, deps as never);
