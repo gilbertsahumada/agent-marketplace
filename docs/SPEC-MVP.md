@@ -1273,6 +1273,10 @@ outcomes y retries,
 hashes y rutas de las respuestas Analytics crudas por base y por cuenta, uso
 ajeno D1 y Queue observado, conteos totales, CPU separada del producer y
 consumer, wall time p95, memoria y un veredicto por gate.
+Una lectura D1 cruda y hasheada de `next_scheduler_phase`, capturada dentro de
+los cinco minutos anteriores al primer tick, fija la fase inicial; inferirla del
+propio ledger no es evidencia independiente. Un spill-in solo cierra si termina
+en `completed`/`duplicate`, no por agotar retries en `failed`.
 No se resume ni descarta la respuesta cruda usada para calcular esos campos.
 Las consultas versionadas están en `bnb-agent-probe/src/evidence/wp2-24h-queries.ts`.
 Workers y las operaciones Queue usan inicio inclusivo `00:00:00.000Z` y fin inclusivo
@@ -1296,12 +1300,16 @@ operaciones pendientes; backlog REST cero solo corrobora y nunca cierra el gate.
 Los raw de preflight, activación y cleanup incluyen `capturedAt`; el validador
 rechaza un cleanup anterior a la gracia. Workers Analytics separa el CPU P99
 del producer `<10 ms` correlacionando sus timestamps con `WriteMessage`, y deja
-las demás muestras para el consumer `<30 s`; el ledger deriva wall time p95
+un margen máximo de un segundo, `subrequests=0` y un total de requests igual a
+las 288 escrituras. Las muestras inequívocas restantes, con subrequests, forman
+el consumer `<30 s`; el ledger deriva wall time p95
 `<30 s` y Workers conserva también memoria P999. Como Queue Analytics no emite
 necesariamente puntos durante la inactividad, se exigen una escritura y un
 delete exitoso por mensaje terminal, el último backlog emitido en cero después
 del último tick y el backlog REST timestamped en cero tras `00:15Z`; la consulta
 se solicita completa hasta ese cutoff.
+El cleanup debe ser posterior no solo a `00:15Z`, sino también al último
+`finishedAt` y al último `DeleteMessage` terminal observado.
 Recién entonces `KILL_SWITCH` vuelve a `1`.
 La Queue, su consumer y D1 de staging se conservan: la eliminación aplica solo a
 recursos efímeros del entorno `validation`. Como el backlog REST es best-effort y puede omitir
