@@ -54,12 +54,26 @@ const RAW_PAYLOADS = {
       terminalityEndInclusive: "2026-08-30T00:15:00.000Z",
     },
     response: { data: { viewer: { accounts: [{
-      queueMessageOperationsAdaptiveGroups: [{
-        count: 864,
-        dimensions: { datetime: "2026-08-29T00:00:00Z", queueId: "721ba809967d425a91dbc34eb1ac3baa", actionType: "DeleteMessage", consumerType: "worker", outcome: "success" },
-        avg: { lagTime: 1_000, retryCount: 0 }, max: { messageSize: 64 },
-        sum: { billableOperations: 864, bytes: 55_296 },
-      }],
+      queueMessageOperationsAdaptiveGroups: [
+        {
+          count: 288,
+          dimensions: { datetime: "2026-08-29T00:00:14Z", queueId: "721ba809967d425a91dbc34eb1ac3baa", actionType: "WriteMessage", consumerType: "", outcome: "" },
+          avg: { lagTime: 0, retryCount: 0 }, max: { messageSize: 64 },
+          sum: { billableOperations: 288, bytes: 18_432 },
+        },
+        {
+          count: 288,
+          dimensions: { datetime: "2026-08-29T23:55:18Z", queueId: "721ba809967d425a91dbc34eb1ac3baa", actionType: "ReadMessage", consumerType: "worker", outcome: "" },
+          avg: { lagTime: 1_000, retryCount: 0 }, max: { messageSize: 64 },
+          sum: { billableOperations: 288, bytes: 18_432 },
+        },
+        {
+          count: 288,
+          dimensions: { datetime: "2026-08-29T23:55:18Z", queueId: "721ba809967d425a91dbc34eb1ac3baa", actionType: "DeleteMessage", consumerType: "", outcome: "success" },
+          avg: { lagTime: 1_000, retryCount: 0 }, max: { messageSize: 64 },
+          sum: { billableOperations: 288, bytes: 18_432 },
+        },
+      ],
       queueBacklogAdaptiveGroups: [{
         dimensions: { datetime: "2026-08-30T00:15:00Z", queueId: "721ba809967d425a91dbc34eb1ac3baa" },
         avg: { messages: 0, bytes: 0 },
