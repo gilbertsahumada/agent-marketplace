@@ -47,6 +47,81 @@ describe("trust8004 catalog parser", () => {
     ]);
   });
 
+  it("parses the live Grid declaration when trust8004 returns null endpoints", () => {
+    const page = parseCatalogPage({
+      items: [{
+        chainId: 56,
+        agentId: "303779",
+        metadataReasonCode: "ok",
+        services: [{
+          name: "A2A",
+          endpoint: "https://bnb-agent-marketplace-ruby.vercel.app/grid",
+        }],
+        endpoints: null,
+      }],
+      total: 1,
+      limit: 1,
+      offset: 0,
+    });
+
+    expect(page.invalidItems).toEqual([]);
+    expect(page.items[0]).toMatchObject({
+      agentId: "303779",
+      metadataAvailable: true,
+      declarations: { a2a: true, erc8183: false },
+      declaredEndpoints: [{
+        transport: "a2a",
+        endpoint: "https://bnb-agent-marketplace-ruby.vercel.app/grid",
+        source: "services",
+        sourceIndex: 0,
+      }],
+    });
+  });
+
+  it("treats null metadata collections as empty when metadata is available", () => {
+    const page = parseCatalogPage({
+      items: [{
+        chainId: 56,
+        agentId: "303779",
+        metadataReasonCode: "available",
+        services: null,
+        endpoints: null,
+      }],
+      total: 1,
+      limit: 1,
+      offset: 0,
+    });
+
+    expect(page.invalidItems).toEqual([]);
+    expect(page.items[0]).toMatchObject({
+      metadataAvailable: true,
+      declarations: { a2a: false, erc8183: false },
+      declaredEndpoints: [],
+    });
+  });
+
+  it("does not make malformed non-null metadata available", () => {
+    const page = parseCatalogPage({
+      items: [{
+        chainId: 56,
+        agentId: "303779",
+        metadataReasonCode: "ok",
+        services: { name: "A2A", endpoint: "https://seller.example/a2a" },
+        endpoints: null,
+      }],
+      total: 1,
+      limit: 1,
+      offset: 0,
+    });
+
+    expect(page.invalidItems).toEqual([]);
+    expect(page.items[0]).toMatchObject({
+      metadataAvailable: false,
+      declarations: { a2a: false, erc8183: false },
+      declaredEndpoints: [],
+    });
+  });
+
   it("keeps valid items and reports malformed elements by index", () => {
     const page = parseCatalogPage({
       items: [
