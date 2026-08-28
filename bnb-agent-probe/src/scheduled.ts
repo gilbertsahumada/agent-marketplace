@@ -36,6 +36,7 @@ export type SchedulerPhase = "header" | "sweep" | "probe";
 interface PhaseStateRow {
   readonly key: string;
   readonly textValue: string | null;
+  readonly integerValue: number | null;
 }
 
 interface PhaseExecution {
@@ -48,6 +49,7 @@ interface PhaseExecution {
   readonly startedAtMs: number;
   readonly now: () => number;
   readonly headerHighWater: string | null;
+  readonly completedQueueScheduledTime?: number;
 }
 
 export interface ScheduledRuntimeDependencies {
@@ -65,11 +67,10 @@ export function createWp2ScheduledRunner(dependencies: ScheduledRuntimeDependenc
     ?? ((input: PhaseExecution) => executeWp2Phase(input, fetchImpl));
 
   return async function runWp2Scheduled(
-    _controller: ScheduledController,
+    controller: ScheduledController,
     env: Env,
     _context: ExecutionContext,
     config: WorkerConfig,
-    queriesBeforeRun = 0,
   ): Promise<void> {
     const startedAt = now();
     const runId = randomUUID();
@@ -78,7 +79,6 @@ export function createWp2ScheduledRunner(dependencies: ScheduledRuntimeDependenc
     // Reserve raw queries for a sanitized error summary and an owner-checked
     // lease release before the platform hard limit.
     const { db, budget } = createBudgetedD1Database(rawDb, config.d1QueriesPerRun - 2);
-    if (queriesBeforeRun !== 0) budget.reserve(queriesBeforeRun);
     const acquired = await acquireSchedulerLease(db, {
       runId,
       nowMs: startedAt,
@@ -105,13 +105,18 @@ export function createWp2ScheduledRunner(dependencies: ScheduledRuntimeDependenc
     let phase: SchedulerPhase = "header";
     try {
       const stateResult = await db.prepare(
-        `SELECT key, textValue
+        `SELECT key, textValue, integerValue
          FROM runtime_state
-         WHERE key IN ('next_scheduler_phase', 'header_high_water')`,
+         WHERE key IN ('next_scheduler_phase', 'header_high_water', 'last_queue_scheduled_time')`,
       ).all<PhaseStateRow>();
       if (!stateResult.success) throw new Error("Could not read scheduler phase state");
-      const state = new Map((stateResult.results ?? []).map((row) => [row.key, row.textValue]));
-      phase = parsePhase(state.get("next_scheduler_phase"));
+      const state = new Map((stateResult.results ?? []).map((row) => [row.key, row]));
+      const completedQueueScheduledTime = state.get("last_queue_scheduled_time")?.integerValue;
+      if (controller.cron === "queue"
+        && completedQueueScheduledTime !== undefined
+        && completedQueueScheduledTime !== null
+        && completedQueueScheduledTime >= controller.scheduledTime) return;
+      phase = parsePhase(state.get("next_scheduler_phase")?.textValue);
       await executePhase({
         phase,
         db,
@@ -121,7 +126,10 @@ export function createWp2ScheduledRunner(dependencies: ScheduledRuntimeDependenc
         nowMs: now(),
         startedAtMs: startedAt,
         now,
-        headerHighWater: state.get("header_high_water") ?? null,
+        headerHighWater: state.get("header_high_water")?.textValue ?? null,
+        ...(controller.cron === "queue"
+          ? { completedQueueScheduledTime: controller.scheduledTime }
+          : {}),
       });
     } catch (error) {
       const finishedAt = now();
@@ -174,6 +182,9 @@ async function executeWp2Phase(input: PhaseExecution, fetchImpl: typeof fetch): 
       reserveQueriesAfterCommit: 0,
       invocationQueriesAfterCommit: 1,
       startedAtMs: input.startedAtMs,
+      ...(input.completedQueueScheduledTime === undefined
+        ? {}
+        : { completedQueueScheduledTime: input.completedQueueScheduledTime }),
     });
     return;
   }
@@ -188,6 +199,9 @@ async function executeWp2Phase(input: PhaseExecution, fetchImpl: typeof fetch): 
       requestBudget: { remaining: input.config.trust8004RequestsPerRun },
       invocationQueriesAfterCommit: 1,
       startedAtMs: input.startedAtMs,
+      ...(input.completedQueueScheduledTime === undefined
+        ? {}
+        : { completedQueueScheduledTime: input.completedQueueScheduledTime }),
       now: input.now,
     }, {
       listLiveAgentPage: createD1LiveAgentPageReader(input.db, CURATED_IDS),
@@ -205,6 +219,15 @@ async function executeWp2Phase(input: PhaseExecution, fetchImpl: typeof fetch): 
   // WP2 keeps the state machine moving but never contacts a seller. WP3
   // replaces this explicit pending phase with the allowlisted probe.
   const finishedAt = input.now();
+  const completionStatements = input.completedQueueScheduledTime === undefined
+    ? []
+    : [prepareStatement(input.db,
+        `INSERT INTO runtime_state (key, textValue, integerValue, updatedAt)
+         VALUES ('last_queue_scheduled_time', NULL, ?, ?)
+         ON CONFLICT(key) DO UPDATE SET textValue=NULL,
+           integerValue=excluded.integerValue, updatedAt=excluded.updatedAt`,
+        [input.completedQueueScheduledTime, finishedAt])];
+  const probeBatchQueries = 2 + completionStatements.length;
   await executeBatch(input.db, [
     prepareStatement(input.db,
       `INSERT INTO runtime_state (key, textValue, integerValue, updatedAt)
@@ -215,7 +238,7 @@ async function executeWp2Phase(input: PhaseExecution, fetchImpl: typeof fetch): 
         phase: "probe",
         status: "pending_wp3",
         requests: 0,
-        d1Queries: input.queryBudget.used + 3,
+        d1Queries: input.queryBudget.used + probeBatchQueries + 1,
         wallTimeMs: Math.max(0, finishedAt - input.startedAtMs),
       }), finishedAt]),
     prepareStatement(input.db,
@@ -224,6 +247,7 @@ async function executeWp2Phase(input: PhaseExecution, fetchImpl: typeof fetch): 
        ON CONFLICT(key) DO UPDATE SET textValue='header',
          integerValue=NULL, updatedAt=excluded.updatedAt`,
       [finishedAt]),
+    ...completionStatements,
   ]);
 }
 
