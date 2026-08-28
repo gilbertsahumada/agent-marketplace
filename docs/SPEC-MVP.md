@@ -1256,7 +1256,9 @@ Sigue pendiente únicamente la ventana D1 final de 24 h de WP2. El gate final us
 staging con el código candidato completo y una
 ventana completa de cuota `00:00:00Z–24:00:00Z`: 288 ticks esperados, 96 éxitos
 por fase en el camino nominal y cada retry/outcome reconciliado por
-`scheduledTime` y número de entrega. Se capturan sin resumir el ledger D1, los resultados por query
+`scheduledTime`, `messageId` y número de entrega. Cada tick admite un único
+mensaje de Queue, debe terminar y debe respetar la secuencia exacta
+HEADER → SWEEP → PROBE. Se capturan sin resumir el ledger D1, los resultados por query
 o base de D1 Analytics y el total de uso de la cuenta, porque las cuotas Free
 son account-wide. Debe demostrar `<4.000.000` filas leídas, `<80.000` escritas,
 `<=40` queries por intento, cero errores de cuota y explicar cualquier tick o
@@ -1269,11 +1271,14 @@ ventana UTC, límites aplicados, `ledger` de los 288 ticks y `quotaLedger` de lo
 intentos cuyo `startedAt` cae en el día (con spill-in/spill-out explícitos),
 outcomes y retries,
 hashes y rutas de las respuestas Analytics crudas por base y por cuenta, uso
-ajeno observado, conteos totales, máximos CPU/memoria y un veredicto por gate.
+ajeno D1 y Queue observado, conteos totales, CPU separada del producer y
+consumer, wall time p95, memoria y un veredicto por gate.
 No se resume ni descarta la respuesta cruda usada para calcular esos campos.
 Las consultas versionadas están en `bnb-agent-probe/src/evidence/wp2-24h-queries.ts`.
-Workers y Queue usan inicio inclusivo `00:00:00.000Z` y fin inclusivo
-`23:59:59.999Z`; el artefacto conserva como ventana lógica el final exclusivo
+Workers y las operaciones Queue usan inicio inclusivo `00:00:00.000Z` y fin inclusivo
+`23:59:59.999Z`; Queue se consulta además sin filtro de ID para demostrar la
+cuota Free account-wide, y su serie de backlog se extiende como mínimo hasta
+`00:15:00.000Z`. El artefacto conserva como ventana lógica el final exclusivo
 del siguiente `00:00:00.000Z`. D1 Analytics se consulta por la fecha UTC exacta,
 tanto para la base de staging como para el total de cuenta, y cada respuesta raw
 se conserva con SHA-256 antes de derivar totales.
@@ -1288,6 +1293,10 @@ retries pertenecientes al día. La gracia dura como mínimo hasta `00:15Z`
 (tres delays de lease de 240 s más margen) y no termina hasta que los 288 ticks
 tengan un outcome terminal en `scheduler_attempts` y Queue Analytics no muestre
 operaciones pendientes; backlog REST cero solo corrobora y nunca cierra el gate.
+Los raw de preflight, activación y cleanup incluyen `capturedAt`; el validador
+rechaza un cleanup anterior a la gracia. El CPU P99 del producer `<10 ms` se
+conserva en la activación y el ledger deriva wall time p95 `<30 s`; Workers
+Analytics mantiene el gate del consumer `<30 s` y memoria P999.
 Recién entonces `KILL_SWITCH` vuelve a `1`.
 La Queue, su consumer y D1 de staging se conservan: la eliminación aplica solo a
 recursos efímeros del entorno `validation`. Como el backlog REST es best-effort y puede omitir
