@@ -604,12 +604,22 @@ describe("WP2 24-hour evidence artifact validator", () => {
   it("rejects cleanup captured before the final tick attempt finishes", async () => {
     const artifact = validArtifact() as any;
     const last = artifact.ledger.at(-1);
-    last.startedAt = Date.parse("2026-08-30T00:15:20.000Z");
-    last.finishedAt = Date.parse("2026-08-30T00:15:30.000Z");
+    last.startedAt = Date.parse("2026-08-30T00:14:58.000Z");
+    last.finishedAt = Date.parse("2026-08-30T00:15:05.000Z");
     artifact.quotaLedger.pop();
     artifact.totals.quotaAttempts = 287;
     artifact.totals.spillOut = 1;
-    await expect(validateWp224hArtifact(artifact, { readRawEvidence })).rejects.toThrow("CLEANUP_GRACE");
+    const workers = structuredClone(RAW_PAYLOADS["evidence/raw/workers.json"]) as any;
+    const drainConsumer = structuredClone(workers.response.data.viewer.accounts[0].workersInvocationsAdaptive[1]);
+    drainConsumer.dimensions.datetime = "2026-08-30T00:14:58Z";
+    drainConsumer.dimensions.scriptVersion = DRAIN_VERSION;
+    drainConsumer.sum.requests = 1;
+    workers.response.data.viewer.accounts[0].workersInvocationsAdaptive.push(drainConsumer);
+    const contents = JSON.stringify(workers);
+    artifact.rawAnalytics["evidence/raw/workers.json"].sha256 = sha256(contents);
+    await expect(validateWp224hArtifact(artifact, {
+      readRawEvidence: async (path) => path === "evidence/raw/workers.json" ? contents : readRawEvidence(path),
+    })).rejects.toThrow("CLEANUP_GRACE");
   });
 
   it("rejects quota, HTTP 429, CPU, memory and unattributable account usage", async () => {
