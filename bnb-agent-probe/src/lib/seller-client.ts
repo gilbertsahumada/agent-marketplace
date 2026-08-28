@@ -50,6 +50,7 @@ export async function probeA2aSeller(input: A2aProbeInput): Promise<A2aProbeResu
     throw new SellerProbeError("A2A_REQUIRED_SKILLS");
   }
 
+  const requestId = crypto.randomUUID();
   const reply = await fetchJson(messageUrl, {
     method: "POST",
     headers: {
@@ -58,7 +59,7 @@ export async function probeA2aSeller(input: A2aProbeInput): Promise<A2aProbeResu
     },
     body: JSON.stringify({
       jsonrpc: "2.0",
-      id: crypto.randomUUID(),
+      id: requestId,
       method: "message/send",
       params: {
         message: {
@@ -70,7 +71,9 @@ export async function probeA2aSeller(input: A2aProbeInput): Promise<A2aProbeResu
       },
     }),
   }, input, deadline, usage);
-  if (reply.error !== undefined) throw new SellerProbeError("A2A_PROTOCOL_ERROR");
+  if (reply.jsonrpc !== "2.0" || reply.id !== requestId || reply.error !== undefined) {
+    throw new SellerProbeError("A2A_PROTOCOL_ERROR");
+  }
   const result = record(reply.result, "A2A_RESULT");
   if (!Array.isArray(result.parts)) throw new SellerProbeError("A2A_RESULT");
   const part = result.parts.find((candidate) => (
