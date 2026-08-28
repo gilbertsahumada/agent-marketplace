@@ -31,6 +31,11 @@ export interface D1RowBudget {
   readonly rowsWritten: number;
 }
 
+export interface D1RowUsage {
+  rowsRead: number;
+  rowsWritten: number;
+}
+
 export class D1QueryBudget {
   private consumed = 0;
 
@@ -62,23 +67,23 @@ export class D1QueryBudget {
 export interface BudgetedD1Database {
   db: D1DatabaseLike;
   budget: D1QueryBudget;
-  usage: {
-    readonly rowsRead: number;
-    readonly rowsWritten: number;
-  };
+  usage: D1RowUsage;
 }
 
 export function createBudgetedD1Database(
   database: D1DatabaseLike,
   queryLimit: number,
   rowBudget?: D1RowBudget,
+  sharedUsage?: D1RowUsage,
 ): BudgetedD1Database {
   if (rowBudget !== undefined) {
     validateRowLimit(rowBudget.rowsRead, "rowsRead");
     validateRowLimit(rowBudget.rowsWritten, "rowsWritten");
   }
   const budget = new D1QueryBudget(queryLimit);
-  const usage = { rowsRead: 0, rowsWritten: 0 };
+  const usage = sharedUsage ?? { rowsRead: 0, rowsWritten: 0 };
+  validateRowLimit(usage.rowsRead, "initial rowsRead usage");
+  validateRowLimit(usage.rowsWritten, "initial rowsWritten usage");
   const rawStatements = new WeakMap<object, D1PreparedStatementLike>();
 
   const recordUsage = (meta: unknown): void => {
