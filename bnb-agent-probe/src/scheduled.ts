@@ -64,8 +64,6 @@ export function createWp2ScheduledRunner(dependencies: ScheduledRuntimeDependenc
   const now = dependencies.now ?? Date.now;
   const randomUUID = dependencies.randomUUID ?? crypto.randomUUID.bind(crypto);
   const fetchImpl = dependencies.fetch ?? globalThis.fetch.bind(globalThis);
-  const executePhase = dependencies.executePhase
-    ?? ((input: PhaseExecution) => executeWp2Phase(input, fetchImpl));
 
   return async function runWp2Scheduled(
     controller: ScheduledController,
@@ -77,6 +75,13 @@ export function createWp2ScheduledRunner(dependencies: ScheduledRuntimeDependenc
     const runId = randomUUID();
     const leaseMs = config.plan === "free" ? FREE_LEASE_MS : PAID_LEASE_MS;
     const rawDb = env.DB as unknown as D1DatabaseLike;
+    let upstreamRequests = 0;
+    const countedFetch: typeof fetch = (...args) => {
+      upstreamRequests += 1;
+      return fetchImpl(...args);
+    };
+    const executePhase = dependencies.executePhase
+      ?? ((input: PhaseExecution) => executeWp2Phase(input, countedFetch));
     // Reserve raw queries for a sanitized error summary and an owner-checked
     // lease release before the platform hard limit.
     const { db, budget } = createBudgetedD1Database(rawDb, config.d1QueriesPerRun - 2);
@@ -139,6 +144,7 @@ export function createWp2ScheduledRunner(dependencies: ScheduledRuntimeDependenc
         await persistPhaseFailure(rawDb, {
           phase,
           errorCode: phaseErrorCode(error),
+          requests: upstreamRequests,
           d1Queries: budget.used + 2,
           wallTimeMs: Math.max(0, finishedAt - startedAt),
           finishedAt,
@@ -301,6 +307,7 @@ function parsePhase(value: string | null | undefined): SchedulerPhase {
 async function persistPhaseFailure(db: D1DatabaseLike, input: {
   readonly phase: SchedulerPhase;
   readonly errorCode: string;
+  readonly requests: number;
   readonly d1Queries: number;
   readonly wallTimeMs: number;
   readonly finishedAt: number;
@@ -317,7 +324,7 @@ async function persistPhaseFailure(db: D1DatabaseLike, input: {
     JSON.stringify({
       phase: input.phase,
       status: "error",
-      requests: 0,
+      requests: input.requests,
       d1Queries: input.d1Queries,
       wallTimeMs: input.wallTimeMs,
       errorCode: input.errorCode,
