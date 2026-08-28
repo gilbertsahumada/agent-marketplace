@@ -1,5 +1,5 @@
 {
-  "capturedAt": "2026-08-28T14:33:23Z",
+  "capturedAt": "2026-08-28T16:15:00Z",
   "runtime": "wrangler 4.127.0 --test-scheduled",
   "storage": "isolated local D1 with migrations 0001 and 0002",
   "profile": "free",
@@ -7,7 +7,11 @@
     "cpuMsPerInvocation": 10,
     "d1QueriesPerInvocation": 50,
     "configuredD1QueriesPerRun": 40,
-    "externalSubrequestsPerInvocation": 50
+    "externalSubrequestsPerInvocation": 50,
+    "queueConsumerCpuMs": 30000,
+    "queueOperationsPerDay": 10000,
+    "configuredQueueOperationsSafetyCeiling": 8000,
+    "projectedQueueOperationsPerDay": 864
   },
   "killSwitchGate": {
     "enabled": true,
@@ -16,7 +20,7 @@
     "nextPhaseAfterRun": "header",
     "lastPhaseAfterRun": null
   },
-  "rotation": [
+  "manualDirectRotationBeforeQueue": [
     {
       "phase": "header",
       "status": "ok",
@@ -43,6 +47,16 @@
       "nextPhase": "header"
     }
   ],
+  "queueFlow": {
+    "scheduledHttpStatus": 200,
+    "deliveryLog": "QUEUE bnb-agent-probe-staging 1/1",
+    "deliveryWallTimeMs": 2441,
+    "phase": "header",
+    "status": "ok",
+    "phaseD1Queries": 4,
+    "totalD1QueriesIncludingClaim": 5,
+    "nextPhase": "sweep"
+  },
   "regression": {
     "observed": "The first live HEADER attempt failed with Cloudflare Illegal invocation because global fetch was detached from globalThis.",
     "containment": "The lease was released, the phase and cursors did not advance, and health exposed only PHASE_FAILED with four D1 queries.",
