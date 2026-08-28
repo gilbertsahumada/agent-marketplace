@@ -33,15 +33,55 @@ function isPublicIpv4(hostname: string): boolean {
   );
 }
 
+const NON_PUBLIC_IPV6 = [
+  ["::", 128], ["::1", 128], ["::ffff:0:0", 96], ["::ffff:0:0:0", 96],
+  ["64:ff9b::", 96], ["64:ff9b:1::", 48], ["100::", 64], ["2001::", 32],
+  ["2001:2::", 48], ["2001:10::", 28], ["2001:20::", 28], ["2001:db8::", 32],
+  ["2002::", 16], ["fc00::", 7], ["fe80::", 10], ["fec0::", 10], ["ff00::", 8],
+] as const;
+
 function isPublicIpv6(hostname: string): boolean {
-  const address = hostname.replace(/^\[|\]$/g, "").toLowerCase();
-  if (!address.includes(":")) return false;
-  if (address === "::" || address === "::1") return false;
-  if (address.startsWith("fc") || address.startsWith("fd")) return false;
-  if (/^fe[89abcdef]/.test(address)) return false;
-  if (address.startsWith("ff") || address.startsWith("2001:db8:")) return false;
-  if (address.includes("::ffff:")) return false;
-  return /^[0-9a-f:]+$/.test(address);
+  const address = parseIpv6(hostname.replace(/^\[|\]$/g, "").toLowerCase());
+  if (address === null) return false;
+  return NON_PUBLIC_IPV6.every(([network, prefix]) => (
+    !inIpv6Subnet(address, parseIpv6(network)!, prefix)
+  ));
+}
+
+function parseIpv6(value: string): bigint | null {
+  if (!/^[0-9a-f:.]+$/.test(value) || value.split("::").length > 2) return null;
+  const halves = value.split("::");
+  const parseHalf = (half: string): number[] | null => {
+    if (half === "") return [];
+    const result: number[] = [];
+    for (const part of half.split(":")) {
+      if (/^[0-9a-f]{1,4}$/.test(part)) {
+        result.push(Number.parseInt(part, 16));
+        continue;
+      }
+      const ipv4 = part.split(".");
+      if (ipv4.length !== 4 || ipv4.some((octet) => !/^\d{1,3}$/.test(octet) || Number(octet) > 255)) {
+        return null;
+      }
+      const bytes = ipv4.map(Number);
+      result.push((bytes[0]! << 8) | bytes[1]!, (bytes[2]! << 8) | bytes[3]!);
+    }
+    return result;
+  };
+  const left = parseHalf(halves[0] ?? "");
+  const right = parseHalf(halves[1] ?? "");
+  if (left === null || right === null) return null;
+  const omitted = 8 - left.length - right.length;
+  if ((halves.length === 1 && omitted !== 0) || (halves.length === 2 && omitted < 1)) return null;
+  const groups = [...left, ...Array.from({ length: omitted }, () => 0), ...right];
+  if (groups.length !== 8) return null;
+  return groups.reduce((result, group) => (result << 16n) | BigInt(group), 0n);
+}
+
+function inIpv6Subnet(address: bigint, network: bigint, prefix: number): boolean {
+  if (prefix === 0) return true;
+  const shift = BigInt(128 - prefix);
+  return address >> shift === network >> shift;
 }
 
 function isDnsHostname(hostname: string): boolean {
