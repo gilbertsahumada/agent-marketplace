@@ -11,6 +11,7 @@ const REQUIRED_RAW_ANALYTICS = [
   "evidence/raw/queue.json",
   "evidence/raw/deployment.json",
   "evidence/raw/preflight.json",
+  "evidence/raw/activation.json",
   "evidence/raw/cleanup.json",
 ] as const;
 const PHASES = ["header", "sweep", "probe"] as const;
@@ -52,6 +53,7 @@ interface RawMetrics {
   readonly preflightBacklogCount: number;
   readonly finalBacklogCount: number;
   readonly preflightSchedules: readonly string[];
+  readonly installedSchedules: readonly string[];
   readonly finalSchedules: readonly string[];
   readonly finalKillSwitch: boolean;
   readonly finalStagingManualRun: boolean;
@@ -459,7 +461,8 @@ async function validateRawAnalytics(
   }
 
   const preflight = controlRaw(parsed.get(REQUIRED_RAW_ANALYTICS[5]), "preflight");
-  const cleanup = controlRaw(parsed.get(REQUIRED_RAW_ANALYTICS[6]), "cleanup");
+  const activation = controlRaw(parsed.get(REQUIRED_RAW_ANALYTICS[6]), "activation");
+  const cleanup = controlRaw(parsed.get(REQUIRED_RAW_ANALYTICS[7]), "cleanup");
   const http429 = context.ledger.entries.filter(({ errorCode }) => errorCode?.includes("429") === true).length;
   const quotaErrors = context.ledger.entries.filter(({ errorCode }) =>
     errorCode !== null && /quota|limit|exceeded/i.test(errorCode)).length;
@@ -481,6 +484,7 @@ async function validateRawAnalytics(
     preflightBacklogCount: preflight.backlogCount,
     finalBacklogCount: cleanup.backlogCount,
     preflightSchedules: preflight.schedules,
+    installedSchedules: activation.schedules,
     finalSchedules: cleanup.schedules,
     finalKillSwitch: cleanup.killSwitch,
     finalStagingManualRun: cleanup.stagingManualRun,
@@ -558,7 +562,7 @@ function validateWindowRequest(
   }
 }
 
-function controlRaw(value: unknown, label: "preflight" | "cleanup"): {
+function controlRaw(value: unknown, label: "preflight" | "activation" | "cleanup"): {
   readonly schedules: readonly string[];
   readonly backlogCount: number;
   readonly killSwitch: boolean;
@@ -571,7 +575,7 @@ function controlRaw(value: unknown, label: "preflight" | "cleanup"): {
     || response.schedules.some((schedule) => typeof schedule !== "string")) {
     fail("RAW_CLEANUP", `${label} schedules are invalid`);
   }
-  const defaults = label === "preflight"
+  const defaults = label !== "cleanup"
     ? { killSwitch: true, stagingManualRun: false, sharedSecretPresent: false }
     : {
         killSwitch: response.killSwitch,
@@ -632,9 +636,9 @@ function validateCleanup(value: unknown, raw: RawMetrics): void {
     || !emptyArray(cleanup.preflightSchedules)
     || cleanup.preflightBacklogCount !== raw.preflightBacklogCount
     || raw.preflightBacklogCount !== 0
-    || !Array.isArray(cleanup.installedSchedules)
-    || cleanup.installedSchedules.length !== 1
-    || cleanup.installedSchedules[0] !== "*/5 * * * *"
+    || !sameStringArray(cleanup.installedSchedules, raw.installedSchedules)
+    || raw.installedSchedules.length !== 1
+    || raw.installedSchedules[0] !== "*/5 * * * *"
     || !sameStringArray(cleanup.finalSchedules, raw.finalSchedules)
     || !emptyArray(cleanup.finalSchedules)
     || cleanup.finalBacklogCount !== raw.finalBacklogCount
