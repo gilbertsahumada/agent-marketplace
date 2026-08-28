@@ -246,6 +246,28 @@ describe("WP2 scheduled runner", () => {
       .rejects.toThrow("phase-primary");
   });
 
+  it.each([
+    ["ProbeQueryBudgetExceededError", "D1_QUERY_BUDGET"],
+    ["ProbeExternalSubrequestBudgetError", "EXTERNAL_SUBREQUEST_BUDGET"],
+  ])("surfaces sanitized PROBE budget diagnostics for %s", async (name, errorCode) => {
+    const db = new LeaseDatabase();
+    db.nextPhase = "probe";
+    const runner = createWp2ScheduledRunner({
+      now: () => 1_000,
+      randomUUID: () => "run-probe-budget",
+      executePhase: async () => {
+        const error = new Error("raw detail must not persist");
+        error.name = name;
+        throw error;
+      },
+    });
+
+    await expect(runner(controller, { DB: db } as unknown as Env, context, loadConfig({})))
+      .rejects.toBeDefined();
+    expect(JSON.parse(db.summaries[0] ?? "{}")).toMatchObject({ errorCode });
+    expect(db.summaries[0]).not.toContain("raw detail");
+  });
+
   it("keeps the explicit locked result when its ledger write fails", async () => {
     const db = new LeaseDatabase();
     db.lease = { runId: "existing", expiresAt: 10_000 };
