@@ -109,6 +109,25 @@ describe("WP2 Free queue dispatch", () => {
     expect(tick.ack).toHaveBeenCalledOnce();
   });
 
+  it("consumes a manual-route tick with the same Queue semantics as a Cron tick", async () => {
+    const now = 1_800_000_000_000;
+    const runScheduled = vi.fn().mockResolvedValue("completed");
+    const worker = createWorker({ now: () => now, runScheduled }) as unknown as QueueWorker;
+    const activeEnv = queueEnv();
+    const tick = message({ schemaVersion: 1, scheduledTime: now });
+
+    await worker.queue({ messages: [tick] }, activeEnv, context);
+
+    expect(runScheduled).toHaveBeenCalledWith(
+      { scheduledTime: now, cron: "queue" },
+      activeEnv,
+      context,
+      expect.objectContaining({ plan: "free", killSwitch: false }),
+    );
+    expect(tick.ack).toHaveBeenCalledOnce();
+    expect(tick.retry).not.toHaveBeenCalled();
+  });
+
   it("acknowledges a duplicate or stale tick resolved by the phase runner", async () => {
     const db = new TickDatabase();
     db.lastScheduledTime = 1_800_000_000_000;
