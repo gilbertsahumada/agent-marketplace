@@ -58,7 +58,8 @@ const FREE_D1_READS_PER_DAY = 5_000_000;
 const FREE_D1_WRITES_PER_DAY = 100_000;
 const FREE_QUEUE_OPERATIONS_PER_DAY = 10_000;
 const FREE_D1_RESERVE_RATIO = 0.2;
-const QUEUE_OPERATIONS_PER_MESSAGE = 3;
+const QUEUE_MAX_RETRIES = 3;
+const QUEUE_OPERATIONS_PER_MESSAGE = 3 + QUEUE_MAX_RETRIES;
 
 const FREE_PROFILE: PlanProfile = {
   schedulerMode: "single_phase",
@@ -191,10 +192,10 @@ function parseInteger(
   ].includes(field) && value === 0) {
     throw new ObservationWorkerConfigError(field, "must be at least 1");
   }
-  if (field === "D1_QUERIES_PER_RUN" && value < 7) {
+  if (field === "D1_QUERIES_PER_RUN" && value < 12) {
     throw new ObservationWorkerConfigError(
       field,
-      "must cover an empty phase plus error and lease cleanup reserves",
+      "must cover the minimum Queue SWEEP plus error and lease cleanup reserves",
     );
   }
   if (field === "MAX_CATALOG_RESPONSE_BYTES" && value === 0) {
