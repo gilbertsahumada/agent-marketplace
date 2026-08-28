@@ -29,3 +29,8 @@ kill switch enabled. Apply its migrations and deploy explicitly:
 npx wrangler d1 migrations apply bnb-agent-probe-staging --remote --env staging
 npx wrangler deploy --env staging
 ```
+
+Controlled nominal measurements may call `POST /__admin/run-scheduled` only
+while `KILL_SWITCH=0` and `SHARED_SECRET` is installed. The route requires the
+matching Bearer credential, has no CORS, and is hidden while disabled. Restore
+the kill switch and remove the temporary secret immediately after measurement.
