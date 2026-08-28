@@ -89,6 +89,19 @@ function sha256(value: string): string {
 }
 
 function validArtifact(): Record<string, unknown> {
+  const ledger = Array.from({ length: 288 }, (_, index) => ({
+    scheduledTime: WINDOW_START + 14_000 + index * 5 * 60_000,
+    attempt: 1,
+    phase: (["header", "sweep", "probe"] as const)[index % 3],
+    outcome: "completed",
+    upstreamRequests: index % 3 === 1 ? 4 : index % 3 === 2 ? 8 : 1,
+    d1Queries: 13,
+    rowsReadObservedBeforeLedger: 20,
+    rowsWrittenObservedBeforeLedger: 8,
+    startedAt: WINDOW_START + 14_000 + index * 5 * 60_000,
+    finishedAt: WINDOW_START + 15_000 + index * 5 * 60_000,
+    errorCode: null,
+  }));
   return {
     schemaVersion: 1,
     commit: "0123456789abcdef0123456789abcdef01234567",
@@ -109,19 +122,8 @@ function validArtifact(): Record<string, unknown> {
       consumerCpuMs: 30_000,
       memoryBytesP999: 100_663_296,
     },
-    ledger: Array.from({ length: 288 }, (_, index) => ({
-      scheduledTime: WINDOW_START + 14_000 + index * 5 * 60_000,
-      attempt: 1,
-      phase: (["header", "sweep", "probe"] as const)[index % 3],
-      outcome: "completed",
-      upstreamRequests: index % 3 === 1 ? 4 : index % 3 === 2 ? 8 : 1,
-      d1Queries: 13,
-      rowsReadObservedBeforeLedger: 20,
-      rowsWrittenObservedBeforeLedger: 8,
-      startedAt: WINDOW_START + 14_000 + index * 5 * 60_000,
-      finishedAt: WINDOW_START + 15_000 + index * 5 * 60_000,
-      errorCode: null,
-    })),
+    ledger,
+    quotaLedger: ledger.map((entry) => ({ ...entry })),
     totals: {
       ticks: 288,
       headerCompleted: 96,
@@ -138,6 +140,9 @@ function validArtifact(): Record<string, unknown> {
       maxConsumerCpuMs: 200,
       memoryUsageBytesP999: 12_000_000,
       queueOperations: 864,
+      quotaAttempts: 288,
+      spillIn: 0,
+      spillOut: 0,
     },
     rawAnalytics: Object.fromEntries(
       Object.entries(RAW_FILES).map(([name, contents]) => [name, {
@@ -202,6 +207,22 @@ describe("WP2 24-hour evidence artifact validator", () => {
     await expect(validateWp224hArtifact(artifact, {
       readRawEvidence: async (path) => path === "evidence/raw/workers.json" ? "workers" : readRawEvidence(path),
     })).rejects.toThrow("RAW_JSON");
+  });
+
+  it("accepts an explained retry that spills into the quota day", async () => {
+    const artifact = validArtifact() as any;
+    artifact.quotaLedger.unshift({
+      ...artifact.ledger[0],
+      scheduledTime: WINDOW_START - 5 * 60_000 + 14_000,
+      startedAt: WINDOW_START + 1_000,
+      finishedAt: WINDOW_START + 2_000,
+      outcome: "failed",
+      phase: null,
+      errorCode: "UPSTREAM_TIMEOUT",
+    });
+    artifact.totals.quotaAttempts = 289;
+    artifact.totals.spillIn = 1;
+    await expect(validateWp224hArtifact(artifact, { readRawEvidence })).resolves.toMatchObject({ passed: true });
   });
 
   it("rejects quota, HTTP 429, CPU, memory and unattributable account usage", async () => {
