@@ -83,10 +83,10 @@ export const WP2_QUEUE_ANALYTICS_QUERY = `query Wp2QueueWindow(
 }`;
 
 export const WP2_ATTEMPT_COHORT_SQL = `SELECT
-  scheduledTime, attempt, phase, outcome, startedAt, finishedAt,
+  messageId, scheduledTime, attempt, phase, outcome, startedAt, finishedAt,
   upstreamRequests, d1Queries, rowsReadObservedBeforeLedger,
   rowsWrittenObservedBeforeLedger, errorCode
 FROM scheduler_attempts
 WHERE (scheduledTime >= ? AND scheduledTime < ?)
    OR (startedAt >= ? AND startedAt < ?)
-ORDER BY scheduledTime ASC, attempt ASC`;
+ORDER BY scheduledTime ASC, messageId ASC, attempt ASC`;
