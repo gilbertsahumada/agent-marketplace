@@ -129,4 +129,15 @@ describe("Workers A2A seller probe", () => {
       code: "SELLER_RESPONSE_TOO_LARGE",
     } satisfies Partial<SellerProbeError>));
   });
+
+  it("classifies an aborted fetch as the shared seller timeout", async () => {
+    const timeout = new DOMException("The operation timed out", "TimeoutError");
+    await expect(probeA2aSeller({
+      endpoint: ENDPOINT,
+      request: REQUEST,
+      timeoutMs: 5_000,
+      maxResponseBytes: 32_768,
+      fetch: vi.fn<typeof fetch>().mockRejectedValue(timeout),
+    })).rejects.toMatchObject({ code: "SELLER_TIMEOUT" });
+  });
 });
