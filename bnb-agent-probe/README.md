@@ -102,6 +102,13 @@ eligible again. Backlog zero is corroborating cleanup evidence, never proof that
 a reusable Queue contains no deferred delivery. Every destructive retry trial
 therefore creates a fresh Queue ID and deletes it after evidence capture.
 
+For a controlled-window shutdown, set `PRODUCER_KILL_SWITCH=1` immediately after
+the final scheduled tick and remove the Cron. Keep `KILL_SWITCH=0` while the
+consumer drains retries. Only after the terminality grace, ledger reconciliation
+and zero-backlog checks may `KILL_SWITCH` return to `1`. The final control-plane
+evidence must show both switches at `1`; removing the Cron alone is not a
+producer barrier because trigger propagation is eventual.
+
 Destructive retry tests use the dedicated `validation` environment, never the
 staging D1 or Queue. Its checked-in defaults are Free-sized, contain no Cron
 Trigger or secret, and keep `KILL_SWITCH=1` outside a controlled window:
