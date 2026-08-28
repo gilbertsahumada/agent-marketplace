@@ -7,6 +7,7 @@ describe("loadConfig", () => {
     expect(loadConfig({})).toMatchObject({
       plan: "free",
       killSwitch: true,
+      producerKillSwitch: true,
       schedulerMode: "single_phase",
       cronIntervalMinutes: 5,
       headerLimit: 25,
@@ -47,6 +48,7 @@ describe("loadConfig", () => {
     expect(loadConfig({ CLOUDFLARE_WORKERS_PLAN: "paid" })).toMatchObject({
       plan: "paid",
       killSwitch: true,
+      producerKillSwitch: true,
       schedulerMode: "pipeline",
       cronIntervalMinutes: 1,
       headerLimit: 200,
@@ -60,6 +62,7 @@ describe("loadConfig", () => {
   it.each([
     [{ CLOUDFLARE_WORKERS_PLAN: "enterprise" }, "CLOUDFLARE_WORKERS_PLAN"],
     [{ KILL_SWITCH: "false" }, "KILL_SWITCH"],
+    [{ PRODUCER_KILL_SWITCH: "false" }, "PRODUCER_KILL_SWITCH"],
     [{ HEADER_LIMIT: "51" }, "HEADER_LIMIT"],
     [{ SWEEP_LIMIT: "41", TRUST8004_REQUESTS_PER_RUN: "41", EXTERNAL_SUBREQUESTS_PER_RUN: "41" }, "SWEEP_LIMIT"],
     [{ SWEEP_PAGES_PER_RUN: "2" }, "SWEEP_PAGES_PER_RUN"],
