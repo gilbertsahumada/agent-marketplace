@@ -115,6 +115,9 @@ function validArtifact(): Record<string, unknown> {
       d1Queries: 13,
       rowsReadObservedBeforeLedger: 20,
       rowsWrittenObservedBeforeLedger: 8,
+      startedAt: WINDOW_START + 14_000 + index * 5 * 60_000,
+      finishedAt: WINDOW_START + 15_000 + index * 5 * 60_000,
+      errorCode: null,
     })),
     totals: {
       ticks: 288,
@@ -139,7 +142,7 @@ function validArtifact(): Record<string, unknown> {
         sha256: sha256(contents),
       }]),
     ),
-    accountUsage: { attributable: true, unrelatedRowsRead: 0, unrelatedRowsWritten: 0 },
+    accountUsage: { attributable: true, unrelatedRowsRead: 50_000, unrelatedRowsWritten: 5_000 },
     cleanup: {
       preflightSchedules: [],
       preflightBacklogCount: 0,
