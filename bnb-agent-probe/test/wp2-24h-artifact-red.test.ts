@@ -123,8 +123,11 @@ const RAW_PAYLOADS = {
     ] }] } }, errors: null },
   },
   "evidence/raw/deployment.json": {
-    response: { result: { scriptName: "bnb-agent-probe-staging", versionId: DEPLOYMENT_VERSION,
-      commit: "0123456789abcdef0123456789abcdef01234567" } },
+    request: { scriptName: "bnb-agent-probe-staging", versionId: DEPLOYMENT_VERSION },
+    response: { id: DEPLOYMENT_VERSION, annotations: {
+      "workers/message": "git_commit=0123456789abcdef0123456789abcdef01234567",
+      "workers/tag": "git-0123456789ab",
+    } },
   },
   "evidence/raw/preflight.json": {
     response: { capturedAt: "2026-08-28T21:50:00.000Z", schedules: [], backlogCount: 0 },
@@ -287,6 +290,17 @@ describe("WP2 24-hour evidence artifact validator", () => {
     await expect(validateWp224hArtifact(artifact, {
       readRawEvidence: async (path) => path === "evidence/raw/workers.json" ? "workers" : readRawEvidence(path),
     })).rejects.toThrow("RAW_JSON");
+  });
+
+  it("rejects deployment evidence without a Cloudflare commit annotation", async () => {
+    const artifact = validArtifact() as any;
+    const deployment = structuredClone(RAW_PAYLOADS["evidence/raw/deployment.json"]) as any;
+    deployment.response.annotations["workers/message"] = "manual upload";
+    const contents = JSON.stringify(deployment);
+    artifact.rawAnalytics["evidence/raw/deployment.json"].sha256 = sha256(contents);
+    await expect(validateWp224hArtifact(artifact, {
+      readRawEvidence: async (path) => path === "evidence/raw/deployment.json" ? contents : readRawEvidence(path),
+    })).rejects.toThrow("RAW_DEPLOYMENT");
   });
 
   it("accepts an explained retry that spills into the quota day", async () => {
