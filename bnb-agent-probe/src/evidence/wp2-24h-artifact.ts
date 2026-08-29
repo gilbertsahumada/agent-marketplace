@@ -902,10 +902,6 @@ async function validateRawAnalytics(
       producerSamples += 1;
       producerRequests += sample.requests;
       maxProducerCpuMs = Math.max(maxProducerCpuMs, sample.cpuMs);
-    } else if (!nearWrite
-      && sample.subrequests === 0
-      && sample.scriptVersion !== context.deploymentVersion) {
-      maxProducerCpuMs = Math.max(maxProducerCpuMs, sample.cpuMs);
     } else if (!nearWrite && sample.subrequests > 0) {
       consumerSamples += 1;
       consumerRequests += sample.requests;
