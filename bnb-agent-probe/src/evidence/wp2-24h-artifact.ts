@@ -1536,7 +1536,6 @@ function validateCleanup(
     || !sameStringArray(cleanup.drainSchedules, raw.drainSchedules)
     || !emptyArray(cleanup.drainSchedules)
     || cleanup.drainBacklogCount !== raw.drainBacklogCount
-    || raw.drainBacklogCount !== 0
     || cleanup.drainKillSwitch !== raw.drainKillSwitch
     || raw.drainKillSwitch !== false
     || cleanup.drainProducerKillSwitch !== raw.drainProducerKillSwitch
