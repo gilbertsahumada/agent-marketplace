@@ -215,7 +215,9 @@ literal backlog and may be nonzero while the consumer finishes pending retries.
 Drain is deliberately control-plane-only: it captures schedules, deployed
 bindings, Queue backlog and secret names, but neither calls `/health` nor
 serializes `healthUrl`/`health`. The final validator rejects a drain snapshot
-that contains either field.
+that contains either field. `WP2_HEALTH_URL` is therefore not required for the
+drain command; the other three control modes still require its exact HTTPS
+`/health` value.
 
 Do not poll D1, call `/health`, invoke the staging admin route or run any other
 Worker/D1 diagnostic during the measured UTC day. Those reads and invocations
