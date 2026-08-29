@@ -1299,6 +1299,11 @@ retrospectivamente. El builder resuelve los raw desde la raíz del repositorio,
 calcula sus SHA-256, deriva ambos ledgers, totales, atribución y cleanup, valida
 el resultado completo y solo entonces publica el artefacto.
 No se resume ni descarta la respuesta cruda usada para calcular esos campos.
+Las cinco respuestas Analytics se publican juntas bajo
+`evidence/raw/analytics/` mediante rename atómico de directorio, solo después de
+observar exactamente 288 `DeleteMessage` exitosos. Un manifest final comparte
+`captureId` con cada respuesta y fija sus cinco SHA-256; el builder rechaza un
+directorio parcial, mezclado o modificado.
 Las consultas versionadas están en `bnb-agent-probe/src/evidence/wp2-24h-queries.ts`.
 Workers y las operaciones Queue usan inicio inclusivo `00:00:00.000Z` y fin inclusivo
 `23:59:59.999Z`; Queue se consulta además sin filtro de ID para demostrar la
