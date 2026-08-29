@@ -1,6 +1,13 @@
 import { createHash } from "node:crypto";
 
-import { WP2_ATTEMPT_COHORT_SQL } from "./wp2-24h-queries";
+import {
+  WP2_ATTEMPT_COHORT_SQL,
+  WP2_D1_ACCOUNT_ANALYTICS_QUERY,
+  WP2_D1_DATABASE_ANALYTICS_QUERY,
+  WP2_QUEUE_ACCOUNT_ANALYTICS_QUERY,
+  WP2_QUEUE_ANALYTICS_QUERY,
+  WP2_WORKERS_ANALYTICS_QUERY,
+} from "./wp2-24h-queries";
 
 const DAY_MS = 24 * 60 * 60 * 1_000;
 const TICK_MS = 5 * 60 * 1_000;
@@ -676,6 +683,13 @@ async function validateRawAnalytics(
   const date = new Date(context.start).toISOString().slice(0, 10);
   const startIso = new Date(context.start).toISOString();
   const endInclusiveIso = new Date(context.end - 1).toISOString();
+  const earliestCapture = context.end + 15 * 60_000;
+  graphqlProvenance(parsed.get(REQUIRED_RAW_ANALYTICS[0]), {
+    accountTag: context.accountId, date, databaseId: context.d1Id,
+  }, WP2_D1_DATABASE_ANALYTICS_QUERY, context.accountId, earliestCapture, "RAW_D1");
+  graphqlProvenance(parsed.get(REQUIRED_RAW_ANALYTICS[1]), {
+    accountTag: context.accountId, date,
+  }, WP2_D1_ACCOUNT_ANALYTICS_QUERY, context.accountId, earliestCapture, "RAW_D1");
   const database = d1Raw(parsed.get(REQUIRED_RAW_ANALYTICS[0]), "database", date, context.d1Id);
   const account = d1Raw(parsed.get(REQUIRED_RAW_ANALYTICS[1]), "account", date);
   validateRawLedger(parsed.get(REQUIRED_RAW_ANALYTICS[10]), context);
@@ -693,6 +707,13 @@ async function validateRawAnalytics(
   });
 
   const workersRaw = record(parsed.get(REQUIRED_RAW_ANALYTICS[2]), "RAW_WORKERS", "workers raw");
+  graphqlProvenance(workersRaw, {
+    accountTag: context.accountId,
+    scriptName: context.workerName,
+    start: startIso,
+    terminalityEndInclusive: record(workersRaw.request, "RAW_WORKERS", "Workers request")
+      .terminalityEndInclusive,
+  }, WP2_WORKERS_ANALYTICS_QUERY, context.accountId, earliestCapture, "RAW_WORKERS");
   const workersRequest = record(workersRaw.request, "RAW_WORKERS", "Workers request");
   validateWindowRequest(workersRaw.request, {
     scriptName: context.workerName,
@@ -760,6 +781,14 @@ async function validateRawAnalytics(
   }
 
   const queueRaw = record(parsed.get(REQUIRED_RAW_ANALYTICS[3]), "RAW_QUEUE", "queue raw");
+  graphqlProvenance(queueRaw, {
+    accountTag: context.accountId,
+    queueId: context.queueId,
+    start: startIso,
+    endInclusive: endInclusiveIso,
+    terminalityEndInclusive: record(queueRaw.request, "RAW_QUEUE", "Queue request")
+      .terminalityEndInclusive,
+  }, WP2_QUEUE_ANALYTICS_QUERY, context.accountId, earliestCapture, "RAW_QUEUE");
   const terminalityEnd = isoTimestamp(
     record(queueRaw.request, "RAW_QUEUE", "Queue request").terminalityEndInclusive,
     "RAW_QUEUE",
@@ -899,6 +928,9 @@ async function validateRawAnalytics(
   }
 
   const queueAccountRaw = record(parsed.get(REQUIRED_RAW_ANALYTICS[4]), "RAW_QUEUE", "account Queue raw");
+  graphqlProvenance(queueAccountRaw, {
+    accountTag: context.accountId, start: startIso, endInclusive: endInclusiveIso,
+  }, WP2_QUEUE_ACCOUNT_ANALYTICS_QUERY, context.accountId, earliestCapture, "RAW_QUEUE");
   validateWindowRequest(queueAccountRaw.request, { start: startIso, endInclusive: endInclusiveIso }, "RAW_QUEUE");
   const queueAccountGroups = nestedGroups(
     queueAccountRaw,
@@ -1210,6 +1242,28 @@ function validateWindowRequest(
   const request = record(value, code, `${code} request`);
   for (const [key, expectedValue] of Object.entries(expected)) {
     if (request[key] !== expectedValue) fail(code, `${key} does not match the artifact`);
+  }
+}
+
+function graphqlProvenance(
+  value: unknown,
+  expectedVariables: Readonly<Record<string, unknown>>,
+  expectedQuery: string,
+  expectedAccountId: string,
+  earliestCapture: number,
+  code: string,
+): void {
+  const raw = record(value, code, `${code} raw`);
+  const request = record(raw.request, code, `${code} request`);
+  const variables = record(request.variables, code, `${code} variables`);
+  const capturedAt = isoTimestamp(request.capturedAt, code, `${code} capturedAt`);
+  if (request.accountId !== expectedAccountId
+    || request.endpoint !== "https://api.cloudflare.com/client/v4/graphql"
+    || request.query !== expectedQuery
+    || capturedAt < earliestCapture
+    || Object.keys(variables).length !== Object.keys(expectedVariables).length
+    || Object.entries(expectedVariables).some(([key, expected]) => variables[key] !== expected)) {
+    fail(code, "GraphQL query provenance does not match the measured window");
   }
 }
 
