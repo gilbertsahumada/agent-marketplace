@@ -618,9 +618,13 @@ describe("WP2 24-hour evidence artifact validator", () => {
     queue.response.data.viewer.accounts[0].queueTerminalOperations[2].sum.billableOperations = 289;
     const account = structuredClone(RAW_PAYLOADS["evidence/raw/analytics/queue-account.json"]) as any;
     account.response.data.viewer.accounts[0].queueMessageOperationsAdaptiveGroups[0].sum.billableOperations = 865;
+    const workers = structuredClone(RAW_PAYLOADS["evidence/raw/analytics/workers.json"]) as any;
+    workers.response.data.viewer.accounts[0].workersInvocationsAdaptive[1].sum.requests = 289;
+    workers.response.data.viewer.accounts[0].workersInvocationsAdaptive[1].sum.subrequests = 289;
     const overrides: Record<string, string> = {
       "evidence/raw/analytics/queue.json": JSON.stringify(queue),
       "evidence/raw/analytics/queue-account.json": JSON.stringify(account),
+      "evidence/raw/analytics/workers.json": JSON.stringify(workers),
     };
     for (const [path, contents] of Object.entries(overrides)) artifact.rawAnalytics[path].sha256 = sha256(contents);
     await expect(validateWp224hArtifact(artifact, {
@@ -848,6 +852,8 @@ describe("WP2 24-hour evidence artifact validator", () => {
     artifact.totals.quotaAttempts = 287;
     artifact.totals.spillOut = 1;
     const workers = structuredClone(RAW_PAYLOADS["evidence/raw/analytics/workers.json"]) as any;
+    workers.response.data.viewer.accounts[0].workersInvocationsAdaptive[1].sum.requests = 287;
+    workers.response.data.viewer.accounts[0].workersInvocationsAdaptive[1].sum.subrequests = 287;
     const drainConsumer = structuredClone(workers.response.data.viewer.accounts[0].workersInvocationsAdaptive[1]);
     drainConsumer.dimensions.datetime = "2026-08-30T00:05:00Z";
     drainConsumer.dimensions.scriptVersion = DRAIN_VERSION;
@@ -899,6 +905,8 @@ describe("WP2 24-hour evidence artifact validator", () => {
     artifact.totals.quotaAttempts = 286;
     artifact.totals.spillOut = 2;
     const workers = structuredClone(RAW_PAYLOADS["evidence/raw/analytics/workers.json"]) as any;
+    workers.response.data.viewer.accounts[0].workersInvocationsAdaptive[1].sum.requests = 287;
+    workers.response.data.viewer.accounts[0].workersInvocationsAdaptive[1].sum.subrequests = 287;
     const drainConsumer = structuredClone(workers.response.data.viewer.accounts[0].workersInvocationsAdaptive[1]);
     drainConsumer.dimensions.datetime = "2026-08-30T00:05:00Z";
     drainConsumer.dimensions.scriptVersion = DRAIN_VERSION;
@@ -931,6 +939,8 @@ describe("WP2 24-hour evidence artifact validator", () => {
     artifact.totals.quotaAttempts = 287;
     artifact.totals.spillOut = 2;
     const workers = structuredClone(RAW_PAYLOADS["evidence/raw/analytics/workers.json"]) as any;
+    workers.response.data.viewer.accounts[0].workersInvocationsAdaptive[1].sum.requests = 287;
+    workers.response.data.viewer.accounts[0].workersInvocationsAdaptive[1].sum.subrequests = 287;
     const template = workers.response.data.viewer.accounts[0].workersInvocationsAdaptive[1];
     for (const datetime of ["2026-08-30T00:05:00Z", "2026-08-30T00:05:02Z"]) {
       const drainConsumer = structuredClone(template);
@@ -1018,6 +1028,8 @@ describe("WP2 24-hour evidence artifact validator", () => {
     artifact.totals.quotaAttempts = 287;
     artifact.totals.spillOut = 1;
     const workers = structuredClone(RAW_PAYLOADS["evidence/raw/analytics/workers.json"]) as any;
+    workers.response.data.viewer.accounts[0].workersInvocationsAdaptive[1].sum.requests = 287;
+    workers.response.data.viewer.accounts[0].workersInvocationsAdaptive[1].sum.subrequests = 287;
     const drainConsumer = structuredClone(workers.response.data.viewer.accounts[0].workersInvocationsAdaptive[1]);
     drainConsumer.dimensions.datetime = "2026-08-30T00:14:58Z";
     drainConsumer.dimensions.scriptVersion = DRAIN_VERSION;
