@@ -1304,6 +1304,11 @@ Las cinco respuestas Analytics se publican juntas bajo
 observar exactamente 288 `DeleteMessage` exitosos. Un manifest final comparte
 `captureId` con cada respuesta y fija sus cinco SHA-256; el builder rechaza un
 directorio parcial, mezclado o modificado.
+Desde la promoción de la versión medida hasta publicar `window-start`, el
+runbook mantiene un trap de rollback: cualquier error o interrupción despliega
+ambos kill switches en `1`, elimina el Cron y verifica por API `schedules=[]`
+antes de abortar. El trap solo se retira cuando las dos capturas de inicio ya
+existen y el primer tick medido todavía no ocurrió.
 Las consultas versionadas están en `bnb-agent-probe/src/evidence/wp2-24h-queries.ts`.
 Workers y las operaciones Queue usan inicio inclusivo `00:00:00.000Z` y fin inclusivo
 `23:59:59.999Z`; Queue se consulta además sin filtro de ID para demostrar la
