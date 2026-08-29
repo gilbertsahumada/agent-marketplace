@@ -191,16 +191,20 @@ export async function buildWp224hArtifact(
     .map(({ startedAt, finishedAt }) => finishedAt - startedAt)
     .sort((left, right) => left - right);
   const preflight = controlRaw(parsed.get(REQUIRED_RAW_ANALYTICS[6]), "preflight", {
-    accountId: options.accountId, queueId: options.queueId, workerName: options.workerName,
+    accountId: options.accountId, d1Id: options.databaseId,
+    queueId: options.queueId, workerName: options.workerName,
   });
   const activation = controlRaw(parsed.get(REQUIRED_RAW_ANALYTICS[7]), "activation", {
-    accountId: options.accountId, queueId: options.queueId, workerName: options.workerName,
+    accountId: options.accountId, d1Id: options.databaseId,
+    queueId: options.queueId, workerName: options.workerName,
   });
   const cleanup = controlRaw(parsed.get(REQUIRED_RAW_ANALYTICS[9]), "cleanup", {
-    accountId: options.accountId, queueId: options.queueId, workerName: options.workerName,
+    accountId: options.accountId, d1Id: options.databaseId,
+    queueId: options.queueId, workerName: options.workerName,
   });
   const drain = controlRaw(parsed.get(REQUIRED_RAW_ANALYTICS[11]), "drain", {
-    accountId: options.accountId, queueId: options.queueId, workerName: options.workerName,
+    accountId: options.accountId, d1Id: options.databaseId,
+    queueId: options.queueId, workerName: options.workerName,
   });
   const artifact = {
     schemaVersion: 1,
@@ -970,7 +974,8 @@ async function validateRawAnalytics(
     fail("RAW_QUEUE", "staging and account-wide Queue Analytics disagree");
   }
 
-  const controlContext = { accountId: context.accountId, queueId: context.queueId, workerName: context.workerName };
+  const controlContext = { accountId: context.accountId, d1Id: context.d1Id,
+    queueId: context.queueId, workerName: context.workerName };
   const preflight = controlRaw(parsed.get(REQUIRED_RAW_ANALYTICS[6]), "preflight", controlContext);
   const activation = controlRaw(parsed.get(REQUIRED_RAW_ANALYTICS[7]), "activation", controlContext);
   const windowStart = windowStartRaw(
@@ -1293,7 +1298,8 @@ function graphqlProvenance(
 function controlRaw(
   value: unknown,
   label: "preflight" | "activation" | "drain" | "cleanup",
-  context: { readonly accountId: string; readonly queueId: string; readonly workerName: string },
+  context: { readonly accountId: string; readonly d1Id: string;
+    readonly queueId: string; readonly workerName: string },
 ): {
   readonly schedules: readonly string[];
   readonly backlogCount: number;
@@ -1354,6 +1360,21 @@ function controlRaw(
   const producing = label === "activation";
   const consuming = label === "activation" || label === "drain";
   const expectedBindings = new Map<string, string>([
+    ["DEPLOYMENT_ENV", "staging"],
+    ["CLOUDFLARE_WORKERS_PLAN", "free"],
+    ["CRON_INTERVAL_MINUTES", "5"],
+    ["HEADER_LIMIT", "25"],
+    ["SWEEP_LIMIT", "4"],
+    ["SWEEP_PAGES_PER_RUN", "1"],
+    ["PROBE_BATCH_SIZE", "1"],
+    ["TRUST8004_REQUESTS_PER_RUN", "4"],
+    ["EXTERNAL_SUBREQUESTS_PER_RUN", "12"],
+    ["D1_QUERIES_PER_RUN", "40"],
+    ["D1_ROWS_READ_PER_RUN", "3000"],
+    ["D1_ROWS_WRITTEN_PER_RUN", "60"],
+    ["PROBE_TIMEOUT_MS", "5000"],
+    ["MAX_CATALOG_RESPONSE_BYTES", "16777216"],
+    ["MAX_SELLER_RESPONSE_BYTES", "32768"],
     ["KILL_SWITCH", consuming ? "0" : "1"],
     ["PRODUCER_KILL_SWITCH", producing ? "0" : "1"],
     ["STAGING_MANUAL_RUN", "0"],
@@ -1363,6 +1384,12 @@ function controlRaw(
     if (binding?.type !== "plain_text" || binding.text !== expected) {
       fail("RAW_CLEANUP", `${label} deployed ${name} binding is unsafe`);
     }
+  }
+  const d1Binding = settingBindings.get("DB");
+  const queueBinding = settingBindings.get("WP2_QUEUE");
+  if (d1Binding?.type !== "d1" || d1Binding.id !== context.d1Id
+    || queueBinding?.type !== "queue" || queueBinding.queue_name !== context.workerName) {
+    fail("RAW_CLEANUP", `${label} resource bindings do not match the artifact`);
   }
   const backlogResponse = record(response.backlog, "RAW_CLEANUP", `${label} backlog response`);
   const backlogResult = record(backlogResponse.result, "RAW_CLEANUP", `${label} backlog result`);
@@ -1376,6 +1403,17 @@ function controlRaw(
   );
   nonNegativeInteger(backlogResult.backlog_bytes, "RAW_CLEANUP", `${label} backlog_bytes`);
   const health = record(response.health, "RAW_CLEANUP", `${label} health response`);
+  const budgets = record(health.budgets, "RAW_CLEANUP", `${label} health budgets`);
+  const expectedBudgets: Readonly<Record<string, number>> = {
+    cronIntervalMinutes: 5, headerLimit: 25, sweepLimit: 4, sweepPagesPerRun: 1,
+    probeBatchSize: 1, trust8004RequestsPerRun: 4, externalSubrequestsPerRun: 12,
+    d1QueriesPerRun: 40, d1RowsReadPerRun: 3000, d1RowsWrittenPerRun: 60,
+    probeTimeoutMs: 5000, maxCatalogResponseBytes: 16777216, maxSellerResponseBytes: 32768,
+  };
+  if (health.plan !== "free" || health.schedulerMode !== "single_phase"
+    || Object.entries(expectedBudgets).some(([name, expected]) => budgets[name] !== expected)) {
+    fail("RAW_CLEANUP", `${label} health does not match the Free profile`);
+  }
   if (health.status !== "ok" || health.killSwitch !== !consuming
     || health.producerKillSwitch !== !producing
     || (health.stagingManualRun !== undefined && health.stagingManualRun !== false)) {
