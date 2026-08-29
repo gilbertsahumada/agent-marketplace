@@ -1381,15 +1381,21 @@ function controlRaw(
     || completedAt < startedAt || completedAt - startedAt > 10_000) {
     fail("RAW_CLEANUP", `${label} request provenance is invalid`);
   }
-  try {
-    const healthUrl = new URL(nonEmptyString(request.healthUrl, "RAW_CLEANUP", `${label} healthUrl`));
-    if (healthUrl.protocol !== "https:" || healthUrl.pathname !== "/health"
-      || healthUrl.search !== "" || healthUrl.hash !== "") {
+  if (label === "drain") {
+    if (request.healthUrl !== undefined) {
+      fail("RAW_CLEANUP", "drain must not contact Worker health");
+    }
+  } else {
+    try {
+      const healthUrl = new URL(nonEmptyString(request.healthUrl, "RAW_CLEANUP", `${label} healthUrl`));
+      if (healthUrl.protocol !== "https:" || healthUrl.pathname !== "/health"
+        || healthUrl.search !== "" || healthUrl.hash !== "") {
+        fail("RAW_CLEANUP", `${label} health URL is invalid`);
+      }
+    } catch (error) {
+      if (error instanceof Wp224hArtifactValidationError) throw error;
       fail("RAW_CLEANUP", `${label} health URL is invalid`);
     }
-  } catch (error) {
-    if (error instanceof Wp224hArtifactValidationError) throw error;
-    fail("RAW_CLEANUP", `${label} health URL is invalid`);
   }
   const response = record(raw.response, "RAW_CLEANUP", `${label} response`);
   const schedulesResponse = record(response.schedules, "RAW_CLEANUP", `${label} schedules response`);
@@ -1460,22 +1466,28 @@ function controlRaw(
     `${label} backlog_count`,
   );
   nonNegativeInteger(backlogResult.backlog_bytes, "RAW_CLEANUP", `${label} backlog_bytes`);
-  const health = record(response.health, "RAW_CLEANUP", `${label} health response`);
-  const budgets = record(health.budgets, "RAW_CLEANUP", `${label} health budgets`);
-  const expectedBudgets: Readonly<Record<string, number>> = {
-    cronIntervalMinutes: 5, headerLimit: 25, sweepLimit: 4, sweepPagesPerRun: 1,
-    probeBatchSize: 1, trust8004RequestsPerRun: 4, externalSubrequestsPerRun: 12,
-    d1QueriesPerRun: 40, d1RowsReadPerRun: 3000, d1RowsWrittenPerRun: 60,
-    probeTimeoutMs: 5000, maxCatalogResponseBytes: 16777216, maxSellerResponseBytes: 32768,
-  };
-  if (health.plan !== "free" || health.schedulerMode !== "single_phase"
-    || Object.entries(expectedBudgets).some(([name, expected]) => budgets[name] !== expected)) {
-    fail("RAW_CLEANUP", `${label} health does not match the Free profile`);
-  }
-  if (health.status !== "ok" || health.killSwitch !== !consuming
-    || health.producerKillSwitch !== !producing
-    || (health.stagingManualRun !== undefined && health.stagingManualRun !== false)) {
-    fail("RAW_CLEANUP", `${label} safety state is invalid`);
+  if (label === "drain") {
+    if (response.health !== undefined) {
+      fail("RAW_CLEANUP", "drain must not serialize Worker health");
+    }
+  } else {
+    const health = record(response.health, "RAW_CLEANUP", `${label} health response`);
+    const budgets = record(health.budgets, "RAW_CLEANUP", `${label} health budgets`);
+    const expectedBudgets: Readonly<Record<string, number>> = {
+      cronIntervalMinutes: 5, headerLimit: 25, sweepLimit: 4, sweepPagesPerRun: 1,
+      probeBatchSize: 1, trust8004RequestsPerRun: 4, externalSubrequestsPerRun: 12,
+      d1QueriesPerRun: 40, d1RowsReadPerRun: 3000, d1RowsWrittenPerRun: 60,
+      probeTimeoutMs: 5000, maxCatalogResponseBytes: 16777216, maxSellerResponseBytes: 32768,
+    };
+    if (health.plan !== "free" || health.schedulerMode !== "single_phase"
+      || Object.entries(expectedBudgets).some(([name, expected]) => budgets[name] !== expected)) {
+      fail("RAW_CLEANUP", `${label} health does not match the Free profile`);
+    }
+    if (health.status !== "ok" || health.killSwitch !== !consuming
+      || health.producerKillSwitch !== !producing
+      || (health.stagingManualRun !== undefined && health.stagingManualRun !== false)) {
+      fail("RAW_CLEANUP", `${label} safety state is invalid`);
+    }
   }
   if (!Array.isArray(response.secrets)) fail("RAW_CLEANUP", `${label} secret list is invalid`);
   const secretNames = response.secrets.map((entry, index) =>
