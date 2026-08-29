@@ -62,7 +62,9 @@ function controlFixture(
       accountId: "bc8d4adf4860284fda426b24e7377bc2",
       backlogUrl: "https://api.cloudflare.com/client/v4/accounts/bc8d4adf4860284fda426b24e7377bc2/queues/721ba809967d425a91dbc34eb1ac3baa/metrics",
       completedAt,
-      healthUrl: "https://bnb-agent-probe-staging.gilbertsahumada.workers.dev/health",
+      ...(mode === "drain" ? {} : {
+        healthUrl: "https://bnb-agent-probe-staging.gilbertsahumada.workers.dev/health",
+      }),
       mode,
       queueId: "721ba809967d425a91dbc34eb1ac3baa",
       schedulesUrl: "https://api.cloudflare.com/client/v4/accounts/bc8d4adf4860284fda426b24e7377bc2/workers/scripts/bnb-agent-probe-staging/schedules",
@@ -76,13 +78,15 @@ function controlFixture(
         backlog_count: backlogCount, backlog_bytes: backlogCount * 64, oldest_message_timestamp_ms: 0,
       } },
       settings: { success: true, errors: [], result: { bindings } },
-      health: { status: "ok", plan: "free", schedulerMode: "single_phase",
+      ...(mode === "drain" ? {} : { health: {
+        status: "ok", plan: "free", schedulerMode: "single_phase",
         killSwitch: !consuming, producerKillSwitch: !producing,
         budgets: { cronIntervalMinutes: 5, headerLimit: 25, sweepLimit: 4,
           sweepPagesPerRun: 1, probeBatchSize: 1, trust8004RequestsPerRun: 4,
           externalSubrequestsPerRun: 12, d1QueriesPerRun: 40, d1RowsReadPerRun: 3000,
           d1RowsWrittenPerRun: 60, probeTimeoutMs: 5000,
-          maxCatalogResponseBytes: 16777216, maxSellerResponseBytes: 32768 } },
+          maxCatalogResponseBytes: 16777216, maxSellerResponseBytes: 32768 },
+      } }),
       secrets: [{ name: "BSC_RPC_URL", type: "secret_text" }],
     },
   };
@@ -448,6 +452,20 @@ describe("WP2 24-hour evidence artifact validator", () => {
   it("queries Workers through the post-midnight terminality cutoff", () => {
     expect(WP2_WORKERS_ANALYTICS_QUERY).toContain("$terminalityEndInclusive: Time!");
     expect(WP2_WORKERS_ANALYTICS_QUERY).toContain("datetime_leq: $terminalityEndInclusive");
+  });
+
+  it("rejects a drain capture that contacted Worker health", async () => {
+    const artifact = validArtifact() as any;
+    const drain = structuredClone(RAW_PAYLOADS["evidence/raw/drain.json"]) as any;
+    drain.request.healthUrl = "https://bnb-agent-probe-staging.gilbertsahumada.workers.dev/health";
+    drain.response.health = structuredClone(
+      (RAW_PAYLOADS["evidence/raw/preflight.json"] as any).response.health,
+    );
+    const contents = JSON.stringify(drain);
+    artifact.rawAnalytics["evidence/raw/drain.json"].sha256 = sha256(contents);
+    await expect(validateWp224hArtifact(artifact, {
+      readRawEvidence: async (path) => path === "evidence/raw/drain.json" ? contents : readRawEvidence(path),
+    })).rejects.toThrow("RAW_CLEANUP");
   });
   it("accepts one exact UTC day with 288 aligned ticks and 96 completed phases each", async () => {
     await expect(validateWp224hArtifact(validArtifact(), { readRawEvidence })).resolves.toMatchObject({
