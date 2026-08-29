@@ -1342,7 +1342,10 @@ Los raw de preflight, activación, drain y cleanup incluyen inicio y fin de una
 captura acotada a diez segundos. El validador exige activación anterior al
 primer tick; drain posterior al último tick pero anterior a `24:00Z`, con
 `PRODUCER_KILL_SWITCH=1`, `KILL_SWITCH=0` y Cron vacío; su backlog literal puede
-ser mayor que cero mientras termina el drenaje. Cleanup exige backlog cero y es
+ser mayor que cero mientras termina el drenaje. El snapshot drain consulta solo
+el control plane (schedules, bindings, backlog y nombres de secrets): no llama
+`/health`, no serializa `healthUrl`/`health`, y el validador rechaza esos campos
+si aparecen. Cleanup exige backlog cero y es
 posterior a la gracia y a la conciliación. Cada snapshot autentica además el perfil Free, la
 cadencia, presupuestos D1/subrequests, timeout, caps y bindings D1/Queue
 desplegados, no valores hardcodeados por el artefacto. Workers Analytics separa el CPU P99
@@ -1360,6 +1363,11 @@ Workers Analytics usa el mismo cutoff de terminalidad, no el fin del día: así
 incluye CPU, memoria, errores y versión de cualquier retry spill-out entre
 `00:00Z` y el cutoff real. Su cohorte de errores une los intentos del día con esos
 spill-out sin cambiar el presupuesto de cuota UTC.
+La suma de requests de todas las muestras consumer autenticadas debe coincidir
+exactamente con la unión única del cohort durable de intentos cuyo `startedAt`
+cae entre el inicio y el cutoff de terminalidad, incluyendo spill-ins,
+spill-outs y retries. Una request Worker no explicada por ese ledger invalida el
+gate aunque su versión sea auténtica.
 Cada intento spill-out debe correlacionar con una muestra consumer autenticada a
 no más de un segundo de su `startedAt`; ampliar el rango sin observar ese bucket
 no demuestra completitud y falla cerrado. Cada match consume capacidad de
