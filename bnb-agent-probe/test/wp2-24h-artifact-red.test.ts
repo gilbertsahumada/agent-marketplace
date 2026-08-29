@@ -351,6 +351,16 @@ function validArtifact(): Record<string, unknown> {
       stagingManualRun: false,
       sharedSecretPresent: false,
     },
+    verdicts: {
+      attribution: "pass",
+      cleanup: "pass",
+      d1Daily: "pass",
+      d1PerAttempt: "pass",
+      phaseRotation: "pass",
+      queueTerminality: "pass",
+      tickCompleteness: "pass",
+      workerResources: "pass",
+    },
   };
 }
 
@@ -433,6 +443,13 @@ describe("WP2 24-hour evidence artifact validator", () => {
       readRawEvidence: async (path) => path === "evidence/raw/scheduler-attempts.json"
         ? contents : readRawEvidence(path),
     })).rejects.toThrow("RAW_LEDGER");
+  });
+
+  it("rejects an incomplete persisted gate verdict set", async () => {
+    const artifact = validArtifact() as any;
+    delete artifact.verdicts.queueTerminality;
+    await expect(validateWp224hArtifact(artifact, { readRawEvidence }))
+      .rejects.toThrow("VERDICTS");
   });
 
   it("rejects analytics captured with a different GraphQL query", async () => {
