@@ -1,8 +1,7 @@
 import { MarketplaceLanding } from "@/components/marketplace/landing-page";
-import type { CategoryCardViewModel, EvidenceStepViewModel, FunnelSectionViewModel } from "@/components/marketplace/presentation-types";
+import type { CategoryCardViewModel, EvidenceStepViewModel } from "@/components/marketplace/presentation-types";
 import { snapshotAgentCardViewModel } from "@/components/marketplace/view-models";
-import { getFunnelEvidence, getMainnetJobProof, getMarketplaceLandingCatalog, getPublicJobProof } from "@/src/business/composition";
-import type { FunnelEvidence } from "@/src/business/entities/funnel-evidence";
+import { getMainnetJobProof, getMarketplaceLandingCatalog, getPublicJobProof } from "@/src/business/composition";
 
 export const dynamic = "force-dynamic";
 
@@ -12,71 +11,6 @@ const categoryCopy = {
   yield_optimisation: ["Yield optimisation", "Evaluate and manage yield opportunities without turning projections into guarantees."],
   health_factor_monitoring: ["Health factor monitoring", "Track lending risk and surface conditions that may require user action."],
 } as const;
-
-function funnelSectionViewModel(evidence: FunnelEvidence | null): FunnelSectionViewModel | null {
-  if (!evidence) return null;
-  const integer = new Intl.NumberFormat("en-US");
-  const share = (value: number) => `${((value / evidence.registeredTotal) * 100).toFixed(1)}%`;
-  return {
-    stages: [
-      {
-        label: "Registered on BSC",
-        detail: "ERC-8004 registrations counted by a full catalogue sweep, cross-checked against the API total.",
-        count: integer.format(evidence.registeredTotal),
-        share: null,
-        provenance: "observed",
-      },
-      {
-        label: "Metadata resolves",
-        detail: "Registrations whose metadata URI answered with parseable content.",
-        count: integer.format(evidence.metadataOk),
-        share: share(evidence.metadataOk),
-        provenance: "observed",
-      },
-      {
-        label: "Declares a hireable transport",
-        detail: "Self-declared A2A or ERC-8183 endpoint in metadata. Declaration is not capability.",
-        count: integer.format(evidence.transportDeclarants),
-        share: share(evidence.transportDeclarants),
-        provenance: "declared",
-      },
-      {
-        label: "Public HTTPS endpoint",
-        detail: "Declared endpoints outside loopback and private ranges. Syntactic check only; not yet contacted.",
-        count: integer.format(evidence.publicHttpsEndpoints),
-        share: null,
-        provenance: "derived",
-      },
-      {
-        label: "Declares ERC-8183 hiring",
-        detail: "The only transport this marketplace can escrow through.",
-        count: integer.format(evidence.erc8183Declarants),
-        share: null,
-        provenance: "declared",
-      },
-      {
-        label: "Answers with a verified quote",
-        detail: "Measured live by the observation layer now in build; never persisted as a boolean.",
-        count: null,
-        share: null,
-        provenance: null,
-      },
-      {
-        label: "Job settled onchain",
-        detail: "Published once the canonical list of marketplace jobs is reconciled against BSC.",
-        count: null,
-        share: null,
-        provenance: null,
-      },
-    ],
-    citation: {
-      artifact: evidence.sourcePath,
-      sha256: evidence.sourceSha256,
-      blockNumber: evidence.blockNumber,
-      generatedAt: evidence.generatedAt,
-    },
-  };
-}
 
 export default async function HomePage() {
   const [catalogResult, proof] = await Promise.all([
@@ -117,7 +51,6 @@ export default async function HomePage() {
       categories={categories}
       demoEnabled={Reflect.get(process.env, "ERC8183_BROWSER_SPIKE_ENABLED") === "true"}
       featuredAgents={featuredAgents}
-      funnel={funnelSectionViewModel(getFunnelEvidence.execute())}
       publicProof={publicProof}
       {...(mainnetProof ? { proofSummary: {
         href: "/proof/mainnet",

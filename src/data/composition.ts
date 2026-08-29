@@ -10,7 +10,6 @@ import { Trust8004AgentValidationRepository } from "./repositories/trust8004-age
 import { RateLimitedAgentValidationRepository } from "./repositories/rate-limited-agent-validation-repository.ts";
 import { Trust8004Provider } from "../trust8004/provider.ts";
 import { createNeonSellerObservationStore } from "./observations/seller-observation-store.ts";
-import { funnelEvidenceRepository as staticFunnelEvidenceRepository } from "./observation/funnel-evidence-repository.ts";
 
 const trust8004Provider = new Trust8004Provider();
 export const marketplaceAgentRepository = new Trust8004MarketplaceAgentRepository({ provider: trust8004Provider });
@@ -33,4 +32,3 @@ export const agentValidationRepository = new RateLimitedAgentValidationRepositor
   }),
 );
 export const sellerObservationStoreFactory = () => createNeonSellerObservationStore();
-export const funnelEvidenceRepository = staticFunnelEvidenceRepository;
