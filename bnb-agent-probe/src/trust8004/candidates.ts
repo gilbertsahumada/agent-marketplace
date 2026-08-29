@@ -12,7 +12,7 @@ export function a2aBaseEndpoint(endpoint: string): string {
   const url = new URL(endpoint);
   if (!url.pathname.endsWith(A2A_AGENT_CARD_SUFFIX)) return endpoint;
   const basePath = url.pathname.slice(0, -A2A_AGENT_CARD_SUFFIX.length).replace(/\/+$/, "");
-  return `${url.origin}${basePath}`;
+  return new URL(`${url.origin}${basePath || "/"}`).toString();
 }
 
 export function selectLiveTargets(
@@ -29,9 +29,10 @@ export function selectLiveTargets(
   const targets: LiveTargetCandidate[] = [];
   for (const declaration of agent.declaredEndpoints) {
     if (!isSyntacticallyPublicHttpsUrl(declaration.endpoint)) continue;
+    const canonicalEndpoint = new URL(declaration.endpoint).toString();
     const endpoint = declaration.transport === "a2a"
-      ? a2aBaseEndpoint(declaration.endpoint)
-      : declaration.endpoint;
+      ? a2aBaseEndpoint(canonicalEndpoint)
+      : canonicalEndpoint;
     const key = `${declaration.transport}\u0000${endpoint}`;
     if (seen.has(key)) continue;
     seen.add(key);

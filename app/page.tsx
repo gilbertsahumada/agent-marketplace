@@ -1,8 +1,9 @@
 import { MarketplaceLanding } from "@/components/marketplace/landing-page";
 import type { CategoryCardViewModel, EvidenceStepViewModel, FunnelSectionViewModel } from "@/components/marketplace/presentation-types";
-import { agentCardWithObservation } from "@/components/marketplace/view-models";
+import { agentCardWithObservations } from "@/components/marketplace/view-models";
 import { getFunnelEvidence, getMainnetJobProof, getPublicJobProof, getWorkerObservations, listMarketplaceAgents } from "@/src/business/composition";
 import type { FunnelEvidence } from "@/src/business/entities/funnel-evidence";
+import { observationTargetsByAgentId } from "@/src/business/entities/worker-observations";
 
 export const dynamic = "force-dynamic";
 
@@ -107,10 +108,10 @@ export default async function HomePage() {
     { kind: "job", label: "Job proven", status: "verified", provenance: "onchain", detail: `Job #${proof.snapshot.jobId} reached SUBMITTED on BSC Testnet, browser-signed.`, timestamp: proof.snapshot.transactions.submit.timestamp, ...txLink(proof.snapshot.transactions.submit) },
   ];
   const now = Date.now();
-  const targets = new Map(observations.feed?.targets.map((target) => [target.agentId, target]) ?? []);
-  const featuredAgents = catalog.items.map((agent) => agentCardWithObservation(
+  const targets = observationTargetsByAgentId(observations.feed);
+  const featuredAgents = catalog.items.map((agent) => agentCardWithObservations(
     agent,
-    targets.get(agent.agentId) ?? null,
+    targets.get(agent.agentId) ?? [],
     observations.status === "available",
     now,
     mainnetProof?.agentId,

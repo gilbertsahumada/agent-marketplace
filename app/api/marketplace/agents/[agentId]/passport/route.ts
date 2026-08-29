@@ -10,7 +10,7 @@ export async function GET(
     const { agentId } = await context.params;
     const passport = await getAgentEvidencePassport.execute({ agentId });
     return NextResponse.json(passport, {
-      headers: { "Cache-Control": "public, max-age=60, stale-while-revalidate=300" },
+      headers: { "Cache-Control": "public, max-age=60, must-revalidate" },
     });
   } catch (error) {
     return marketplaceErrorResponse(error);

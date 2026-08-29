@@ -19,10 +19,10 @@ export default async function AgentPage({ params }: { params: Promise<{ agentId:
       getAgentEvidencePassport.executeWithAgent({ agentId }),
       getWorkerObservations(),
     ]);
-    const target = observations.feed?.targets.find((candidate) => candidate.agentId === agentId) ?? null;
+    const targets = observations.feed?.targets.filter((candidate) => candidate.agentId === agentId) ?? [];
     return <AgentProfile
       agent={agent}
-      observationTarget={target}
+      observationTargets={targets}
       observationsAvailable={observations.status === "available"}
       passport={passport}
     />;

@@ -132,12 +132,12 @@ class StatefulSweepDatabase implements D1DatabaseLike {
   }
 
   private setDeclarationState(statement: MemoryStatement, state: DeclarationState): void {
-    const [agentId, transport, endpoint] = statement.values.slice(-3).map(String);
-    const target = this.targets.find((candidate) => candidate.agentId === agentId
-      && candidate.transport === transport
-      && candidate.endpoint === endpoint);
-    if (target === undefined) throw new Error("The batch updated an unknown target");
-    target.declarationState = state;
+    const agentId = String(statement.values[4]);
+    const targets = this.targets.filter((candidate) => candidate.agentId === agentId
+      && (state !== "metadata_unavailable" || candidate.declarationState === "current")
+      && (state !== "removed" || candidate.declarationState !== "removed"));
+    if (targets.length === 0) throw new Error("The batch updated an unknown target");
+    for (const target of targets) target.declarationState = state;
   }
 }
 

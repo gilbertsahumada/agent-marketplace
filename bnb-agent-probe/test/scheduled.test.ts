@@ -112,6 +112,29 @@ const context = {
 };
 
 describe("WP2 scheduled runner", () => {
+  it("fails closed before upstream egress when the unvalidated Paid pipeline is selected", async () => {
+    const db = new LeaseDatabase();
+    let upstreamRequests = 0;
+    const runner = createWp2ScheduledRunner({
+      now: () => 1_000,
+      randomUUID: () => "run-paid-guard",
+      fetch: async () => {
+        upstreamRequests += 1;
+        throw new Error("must not fetch");
+      },
+    });
+
+    await expect(runner(
+      controller,
+      { DB: db } as unknown as Env,
+      context,
+      loadConfig({ CLOUDFLARE_WORKERS_PLAN: "paid" }),
+    )).rejects.toThrow("WP2_PAID_PIPELINE_NOT_VALIDATED");
+
+    expect(upstreamRequests).toBe(0);
+    expect(db.releases).toBe(1);
+  });
+
   it("acquires and releases a bounded Free lease around exactly one phase", async () => {
     const db = new LeaseDatabase();
     let now = 1_000;
@@ -163,7 +186,7 @@ describe("WP2 scheduled runner", () => {
       { ...controller, cron: "queue", attempt: 1, messageId: "minimum-budget" },
       { DB: db } as unknown as Env,
       context,
-      loadConfig({ D1_QUERIES_PER_RUN: "22" }),
+      loadConfig({ D1_QUERIES_PER_RUN: "38" }),
     );
 
     expect(db.acquisitions).toBe(1);

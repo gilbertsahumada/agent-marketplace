@@ -472,13 +472,14 @@ CRON_INTERVAL_MINUTES=5
 SCHEDULER_MODE=single_phase (derivado, no sobreescribible en Free)
 HEADER_LIMIT=25                  máximo Free 50
 PROBE_BATCH_SIZE=1              máximo Free 1
-PROBE_AGENT_ALLOWLIST=*         WP4 general; CSV restringe temporalmente por agentId
-PROBE_ENDPOINT_ALLOWLIST=*      WP4 general; CSV restringe por URL exacta
-SWEEP_LIMIT=4                   máximo Free 13 y siempre <= TRUST8004_REQUESTS_PER_RUN
+PROBE_AGENT_ALLOWLIST=303779    default seguro hasta cerrar gate egress general
+PROBE_ENDPOINT_ALLOWLIST=https://bnb-agent-marketplace-ruby.vercel.app/grid
+PROBE_GENERAL_EGRESS_APPROVED=0 wildcard falla cerrado sin gate explícito
+SWEEP_LIMIT=4                   máximo Free 4 y siempre <= TRUST8004_REQUESTS_PER_RUN
 SWEEP_PAGES_PER_RUN=1           máximo Free 1
 TRUST8004_REQUESTS_PER_RUN=4
 EXTERNAL_SUBREQUESTS_PER_RUN=12 máximo Free 40, plataforma 50
-D1_QUERIES_PER_RUN=40           mínimo Free 22, máximo Free 40, plataforma D1 50
+D1_QUERIES_PER_RUN=40           mínimo Free 38, máximo Free 40, plataforma D1 50
 D1_ROWS_READ_PER_RUN=3000
 D1_ROWS_WRITTEN_PER_RUN=60
 PROBE_TIMEOUT_MS=5000
@@ -618,9 +619,16 @@ no intenta materializar los 309.897 registros globales. El cursor pagina esa
 unión de IDs en D1 y resuelve un detalle trust8004 por agente. Por eso
 `SWEEP_LIMIT` no puede superar `TRUST8004_REQUESTS_PER_RUN` en Free. Por página:
 
-Como cada agente puede producir dos writes de target, Free limita
-`SWEEP_LIMIT<=13`; junto con estado de fase, lease y cuatro reservas de
-cleanup/ledger, su peor caso cabe exactamente en 40 queries.
+SWEEP agrupa por agente los retiros y la transición `metadata_unavailable`, de
+modo que un historial acumulado no genera una sentencia por endpoint. Cada
+agente usa como máximo dos upserts/refreshes y un UPDATE agrupado. Config conserva
+un envelope deliberadamente más conservador equivalente a seis slots por agente;
+por eso Free limita `SWEEP_LIMIT<=4` y exige `D1_QUERIES_PER_RUN>=38`, quedando
+el default 4/40 bajo el límite duro de 50.
+Antes del batch calcula también las filas que afectarán los updates agrupados y
+aborta si target writes más estados de fase superarían el presupuesto restante;
+así una acumulación histórica anómala no avanza cursor/completion antes de que el
+wrapper pueda observar las filas escritas.
 
 La unión usa todos los IDs que ya tienen un target elegible persistido,
 independientemente de transporte o `declarationState`, más los IDs curados. Esa
@@ -1014,10 +1022,25 @@ observación histórica en un hecho actual. `latest` y `latestByCategory` siempr
 conservan su `probedAt`; las etiquetas de lectura derivan frescura y expiración
 contra ese timestamp y los timestamps de metadata/quote.
 
-El marketplace puede reutilizar una respuesta HTTP solamente mientras siga
-dentro de sus 60 segundos de frescura. No usa `stale-if-error`, no promueve el
+La última observación por target/categoría se elige por mayor `probedAt` y usa
+el mayor `id` solo para desempatar timestamps iguales; un backfill insertado más
+tarde no puede reemplazar una observación cronológicamente nueva.
+
+El Worker rechaza query strings en `/observations` y guarda la respuesta 200
+canónica en Cache API con una clave interna ligada al SHA-256 del allowlist de
+agentes; cambiar el scope nunca puede reutilizar el feed anterior. Un 503 nunca
+se cachea. El marketplace puede reutilizar una
+respuesta HTTP solamente mientras siga dentro de los 60 segundos contados desde
+`generatedAt`, no desde el instante de recepción. No usa `stale-if-error`, no promueve el
 snapshot de release a fallback de observaciones y no conserva una respuesta
 expirada como si fuera estado actual. Si Worker/D1 no responde:
+
+Mientras rige el allowlist exacto, las cuatro lecturas del feed se filtran por
+esos agent IDs antes de leer filas; el crecimiento de targets descubiertos por
+HEADER no agranda la respuesta pública. El wildcard general requiere antes un
+contrato paginado/materializado y su gate de egress, no un scan público sin
+techo. Aunque el egress general se apruebe, `/observations` responde 503 cuando
+la lista de agentes queda wildcard/vacía hasta que exista ese contrato acotado.
 
 - el catálogo puede seguir mostrando identidad, metadata y endpoints declarados
   obtenidos en vivo de trust8004;
@@ -1091,8 +1114,9 @@ HEADER_LIMIT=25
 SWEEP_LIMIT=4
 SWEEP_PAGES_PER_RUN=1
 PROBE_BATCH_SIZE=1
-PROBE_AGENT_ALLOWLIST=*
-PROBE_ENDPOINT_ALLOWLIST=*
+PROBE_AGENT_ALLOWLIST=303779
+PROBE_ENDPOINT_ALLOWLIST=https://bnb-agent-marketplace-ruby.vercel.app/grid
+PROBE_GENERAL_EGRESS_APPROVED=0
 TRUST8004_REQUESTS_PER_RUN=4
 EXTERNAL_SUBREQUESTS_PER_RUN=12
 D1_QUERIES_PER_RUN=40
@@ -1490,15 +1514,17 @@ decisión operativa registrada. No existe detección automática del plan.
 
 Checklist:
 
-1. conservar export/backup de D1 y métricas base Free;
-2. desplegar staging con `CLOUDFLARE_WORKERS_PLAN=paid`, `KILL_SWITCH=1` y cron
+1. implementar y revisar el pipeline Paid en un bundle nuevo, retirar el guard
+   `WP2_PAID_PIPELINE_NOT_VALIDATED` y demostrar sus presupuestos localmente;
+2. conservar export/backup de D1 y métricas base Free;
+3. desplegar staging con `CLOUDFLARE_WORKERS_PLAN=paid`, `KILL_SWITCH=1` y cron
    todavía desactivado;
-3. ejecutar tests, typecheck, dry-run, migraciones y smoke de `/health`;
-4. probar manualmente defaults Paid: HEADER 200, SWEEP 2000×2 y PROBE 10;
-5. demostrar dos pipelines completos bajo los gates de CPU, memoria, wall time,
+4. ejecutar tests, typecheck, dry-run, migraciones y smoke de `/health`;
+5. probar manualmente defaults Paid: HEADER 200, SWEEP 2000×2 y PROBE 10;
+6. demostrar dos pipelines completos bajo los gates de CPU, memoria, wall time,
    upstream y D1;
-6. configurar el cron producer de un minuto manteniendo el kill switch;
-7. habilitar con `KILL_SWITCH=0` y observar al menos dos vueltas antes de dar la
+7. configurar el cron producer de un minuto manteniendo el kill switch;
+8. habilitar con `KILL_SWITCH=0` y observar al menos dos vueltas antes de dar la
    promoción por terminada.
 
 Rollback:
@@ -1669,11 +1695,18 @@ vacíos y se eliminaron el secreto administrativo efímero y su archivo temporal
 
 ### WP4 — Probe general y `/observations`
 
-Entrega: lote 1 en Free (10 por defecto Paid), contrato sección 10.1, integración
-cacheada por un máximo de 60 segundos y degradación fail-closed. El snapshot de
+Entrega actual: lote 1 en Free sobre el target Grid exacto, contrato sección
+10.1, integración cacheada por un máximo de 60 segundos y degradación
+fail-closed. El snapshot de
 release deja de representar estado actual de agentes: una caída de Worker/D1
 conserva solo declaraciones live de trust8004, sin `Hireable now` ni claims
 observados. El funnel WP0 permanece como medición histórica fechada.
+
+El wildcard general sigue implementado como capacidad, pero no es un default ni
+un gate cerrado: promoverlo exige evidencia staging del egress Cloudflare y una
+decisión explícita; config exige además `PROBE_GENERAL_EGRESS_APPROVED=1`. El
+lote 10 de Paid es configuración futura; el pipeline Paid
+aborta deliberadamente hasta su promoción y medición separadas.
 
 Gate:
 

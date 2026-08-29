@@ -143,14 +143,22 @@ export function agentCardWithObservation(
     );
   }
   const latest = category ? target.latestByCategory[category] ?? null : target.latest;
+  const metadataCurrent = latest !== null
+    && target.currentMetadataUpdatedAt === latest.observedMetadataUpdatedAt;
+  const observationCurrent = latest !== null
+    && latest.probedAt <= now
+    && now - latest.probedAt <= 60_000
+    && metadataCurrent;
   const quoteCurrent = target.declarationState === "current"
     && latest?.outcome === "quote_verified"
-    && now - latest.probedAt <= 60_000
-    && latest.probedAt <= now
+    && observationCurrent
+    && latest.quoteNegotiatedAt !== null
+    && latest.quoteNegotiatedAt <= now
+    && now - latest.quoteNegotiatedAt <= 60_000
     && latest.quoteExpiresAt !== null
     && latest.quoteExpiresAt > now;
   const reachable = target.declarationState === "current"
-    && latest !== null
+    && observationCurrent
     && ["quote_verified", "quote_rejected", "protocol_valid"].includes(latest.outcome);
   const observedAt = latest ? new Date(latest.probedAt).toISOString() : undefined;
   return {
@@ -190,6 +198,64 @@ export function agentCardWithObservation(
       return step;
     }),
   };
+}
+
+export function agentCardWithObservations(
+  agent: MarketplaceAgent,
+  targets: readonly WorkerObservationTarget[],
+  observationsAvailable: boolean,
+  now = Date.now(),
+  provenAgentId?: string,
+  category?: MarketplaceAgent["categories"][number]["category"],
+): AgentCardViewModel {
+  const selected = [...targets].sort((left, right) => (
+    targetRank(right, category, now) - targetRank(left, category, now)
+    || relevantProbedAt(right, category) - relevantProbedAt(left, category)
+    || left.transport.localeCompare(right.transport)
+    || left.endpoint.localeCompare(right.endpoint)
+  ))[0] ?? null;
+  return agentCardWithObservation(
+    agent, selected, observationsAvailable, now, provenAgentId, category,
+  );
+}
+
+function relevantObservation(
+  target: WorkerObservationTarget,
+  category?: MarketplaceAgent["categories"][number]["category"],
+) {
+  return category ? target.latestByCategory[category] ?? null : target.latest;
+}
+
+function relevantProbedAt(
+  target: WorkerObservationTarget,
+  category?: MarketplaceAgent["categories"][number]["category"],
+): number {
+  return relevantObservation(target, category)?.probedAt ?? -1;
+}
+
+function targetRank(
+  target: WorkerObservationTarget,
+  category: MarketplaceAgent["categories"][number]["category"] | undefined,
+  now: number,
+): number {
+  const latest = relevantObservation(target, category);
+  const declaration = target.declarationState === "current" ? 100 : target.declarationState === "metadata_unavailable" ? 10 : 0;
+  if (!latest) return declaration;
+  const fresh = latest.probedAt <= now && now - latest.probedAt <= 60_000
+    && target.currentMetadataUpdatedAt === latest.observedMetadataUpdatedAt;
+  const quoteCurrent = fresh
+    && latest.outcome === "quote_verified"
+    && latest.quoteNegotiatedAt !== null
+    && latest.quoteNegotiatedAt <= now
+    && now - latest.quoteNegotiatedAt <= 60_000
+    && latest.quoteExpiresAt !== null
+    && latest.quoteExpiresAt > now;
+  const outcome = latest.outcome === "quote_verified" ? 6
+    : ["protocol_valid", "quote_rejected"].includes(latest.outcome) ? 5
+      : latest.outcome === "reachable" ? 4
+        : latest.outcome === "quote_invalid" ? 3
+          : latest.outcome === "unreachable" ? 2 : 1;
+  return declaration + (quoteCurrent ? 50 : fresh ? 20 : 0) + outcome;
 }
 
 function withoutCurrentObservation(

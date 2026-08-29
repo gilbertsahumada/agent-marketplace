@@ -25,6 +25,7 @@ export async function getWorkerObservationFeed(): Promise<ObservationFeedResult>
       if (!response.ok) throw new Error("OBSERVATIONS_UNAVAILABLE");
       return parseFeed(await response.json(), Date.now());
     });
+    assertFresh(feed.generatedAt, Date.now());
     return { status: "available", feed };
   } catch {
     return { status: "unavailable", feed: null };
@@ -34,10 +35,7 @@ export async function getWorkerObservationFeed(): Promise<ObservationFeedResult>
 function parseFeed(value: unknown, now: number): WorkerObservationFeed {
   if (!record(value) || value.schemaVersion !== 1 || !safeInteger(value.generatedAt)
     || !Array.isArray(value.targets)) throw new Error("OBSERVATIONS_INVALID");
-  if (value.generatedAt > now + MAX_FUTURE_CLOCK_SKEW_MS
-    || now - value.generatedAt > CACHE_TTL_MS) {
-    throw new Error("OBSERVATIONS_STALE");
-  }
+  assertFresh(value.generatedAt, now);
   return {
     schemaVersion: 1,
     generatedAt: value.generatedAt,
@@ -46,7 +44,11 @@ function parseFeed(value: unknown, now: number): WorkerObservationFeed {
 }
 
 function parseTarget(value: unknown): WorkerObservationTarget {
-  if (!record(value) || typeof value.agentId !== "string" || !Array.isArray(value.categories)
+  if (!record(value) || typeof value.agentId !== "string" || value.chainId !== 56
+    || !["a2a", "erc8183_http"].includes(String(value.transport))
+    || typeof value.endpoint !== "string" || !validEndpoint(value.endpoint) || !Array.isArray(value.categories)
+    || (value.currentMetadataUpdatedAt !== null && !safeInteger(value.currentMetadataUpdatedAt))
+    || !safeInteger(value.lastMetadataCheckedAt)
     || !["current", "removed", "metadata_unavailable"].includes(String(value.declarationState))) {
     throw new Error("OBSERVATIONS_INVALID_TARGET");
   }
@@ -62,13 +64,20 @@ function parseTarget(value: unknown): WorkerObservationTarget {
     if (!OBSERVATION_CATEGORIES.includes(key as ObservationCategory)) {
       throw new Error("OBSERVATIONS_INVALID_CATEGORY");
     }
-    latestByCategory[key as ObservationCategory] = parseObservation(observation);
+    const parsed = parseObservation(observation);
+    if (parsed.probeCategory !== key) throw new Error("OBSERVATIONS_INVALID_CATEGORY");
+    latestByCategory[key as ObservationCategory] = parsed;
   }
   return {
     agentId: value.agentId,
+    chainId: 56,
+    transport: value.transport as WorkerObservationTarget["transport"],
+    endpoint: value.endpoint,
     name: typeof value.name === "string" ? value.name : null,
     categories,
     declarationState: value.declarationState as WorkerObservationTarget["declarationState"],
+    currentMetadataUpdatedAt: value.currentMetadataUpdatedAt as number | null,
+    lastMetadataCheckedAt: value.lastMetadataCheckedAt,
     latest: value.latest === null ? null : parseObservation(value.latest),
     latestByCategory,
   };
@@ -88,8 +97,17 @@ function parseObservation(value: unknown): WorkerObservation {
     probeCategory: category as ObservationCategory | null,
     outcome: value.outcome as WorkerObservation["outcome"],
     quoteExpiresAt: safeInteger(value.quoteExpiresAt) ? value.quoteExpiresAt : null,
+    observedMetadataUpdatedAt: safeInteger(value.observedMetadataUpdatedAt)
+      ? value.observedMetadataUpdatedAt : null,
+    quoteNegotiatedAt: safeInteger(value.quoteNegotiatedAt) ? value.quoteNegotiatedAt : null,
     errorCode: typeof value.errorCode === "string" ? value.errorCode : null,
   };
+}
+
+function assertFresh(generatedAt: number, now: number): void {
+  if (generatedAt > now + MAX_FUTURE_CLOCK_SKEW_MS || now - generatedAt > CACHE_TTL_MS) {
+    throw new Error("OBSERVATIONS_STALE");
+  }
 }
 
 function record(value: unknown): value is Record<string, unknown> {
@@ -98,4 +116,14 @@ function record(value: unknown): value is Record<string, unknown> {
 
 function safeInteger(value: unknown): value is number {
   return Number.isSafeInteger(value) && Number(value) >= 0;
+}
+
+function validEndpoint(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" && url.username === "" && url.password === ""
+      && url.search === "" && url.hash === "";
+  } catch {
+    return false;
+  }
 }

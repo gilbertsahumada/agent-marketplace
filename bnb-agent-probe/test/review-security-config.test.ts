@@ -71,15 +71,15 @@ describe("review: non-zero executable phase budgets", () => {
   });
 
   it("rejects a D1 budget that cannot cover the minimum Queue SWEEP and cleanup", () => {
-    expect(() => loadConfig({ D1_QUERIES_PER_RUN: "21" }))
+    expect(() => loadConfig({ D1_QUERIES_PER_RUN: "37" }))
       .toThrow(/^D1_QUERIES_PER_RUN:/);
-    expect(loadConfig({ D1_QUERIES_PER_RUN: "22" }).d1QueriesPerRun).toBe(22);
+    expect(loadConfig({ D1_QUERIES_PER_RUN: "38" }).d1QueriesPerRun).toBe(38);
   });
 
-  it("rejects a SWEEP size whose two-target worst case would cross 40 queries", () => {
-    expect(() => loadConfig({ SWEEP_LIMIT: "14", TRUST8004_REQUESTS_PER_RUN: "14", EXTERNAL_SUBREQUESTS_PER_RUN: "14" }))
+  it("budgets a SWEEP metadata rotation with up to six target writes per agent", () => {
+    expect(() => loadConfig({ SWEEP_LIMIT: "5", TRUST8004_REQUESTS_PER_RUN: "5" }))
       .toThrow(/^SWEEP_LIMIT:/);
-    expect(loadConfig({ SWEEP_LIMIT: "13", TRUST8004_REQUESTS_PER_RUN: "13", EXTERNAL_SUBREQUESTS_PER_RUN: "13" }).sweepLimit).toBe(13);
+    expect(loadConfig({ SWEEP_LIMIT: "4" }).sweepLimit).toBe(4);
   });
 });
 

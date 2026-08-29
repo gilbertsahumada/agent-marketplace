@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getMainnetHiringExposure, getMarketplaceAgent, getWorkerObservations, listMarketplaceAgents } from "@/src/business/composition";
-import { agentCardWithObservation } from "@/components/marketplace/view-models";
+import { agentCardWithObservations } from "@/components/marketplace/view-models";
+import { observationTargetsByAgentId } from "@/src/business/entities/worker-observations";
 import { MarketplaceAgentNotFoundError, MarketplaceDataUnavailableError } from "@/src/business/errors/marketplace-errors";
 import { CatalogUnavailable } from "@/components/marketplace/catalog-unavailable";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -18,14 +19,14 @@ export default async function HirePage({ params }: { params: Promise<{ agentId: 
       listMarketplaceAgents.execute({ view: "marketplace", page: 1, limit: 12 }),
       getWorkerObservations(),
     ]);
-    const targets = new Map(observations.feed?.targets.map((target) => [target.agentId, target]) ?? []);
-    const current = agentCardWithObservation(
-      agent, targets.get(agent.agentId) ?? null, observations.status === "available",
+    const targets = observationTargetsByAgentId(observations.feed);
+    const current = agentCardWithObservations(
+      agent, targets.get(agent.agentId) ?? [], observations.status === "available",
     );
     const alternative = catalog.items
       .filter((candidate) => candidate.agentId !== agent.agentId)
-      .map((candidate) => agentCardWithObservation(
-        candidate, targets.get(candidate.agentId) ?? null, observations.status === "available",
+      .map((candidate) => agentCardWithObservations(
+        candidate, targets.get(candidate.agentId) ?? [], observations.status === "available",
       ))
       .find((candidate) => candidate.hireability === "hireable") ?? null;
     const mainnetExposure = await getMainnetHiringExposure.execute();

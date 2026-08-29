@@ -93,9 +93,10 @@ function latestObservation(row: ProbeObservationRow): LatestObservation {
 export async function observationsResponse(
   binding: unknown,
   generatedAt = Date.now(),
+  agentIds: readonly string[] = [],
 ): Promise<Response> {
   try {
-    const rows = await readObservationFeed(createDatabase(binding as D1DatabaseLike));
+    const rows = await readObservationFeed(createDatabase(binding as D1DatabaseLike), agentIds);
     const observations = new Map<string, ProbeObservationRow[]>();
     for (const row of rows.latestByTargetCategory) {
       const key = targetKey(row);

@@ -65,6 +65,16 @@ describe("WP2 live target filter", () => {
     ]);
   });
 
+  it("canonicalizes equivalent declared endpoints before persistence", () => {
+    expect(selectLiveTargets(agent({
+      declaredEndpoints: [
+        { transport: "erc8183_http", endpoint: "https://seller.example.com", source: "services", sourceIndex: 0 },
+      ],
+    }), { curatedAgentIds: new Set() })).toEqual([
+      { chainId: 56, agentId: "42", transport: "erc8183_http", endpoint: "https://seller.example.com/" },
+    ]);
+  });
+
   it.each([
     [
       "https://bnb-agent-marketplace-ruby.vercel.app/grid/.well-known/agent-card.json",
@@ -72,7 +82,7 @@ describe("WP2 live target filter", () => {
     ],
     [
       "https://seller.example.com/.well-known/agent-card.json",
-      "https://seller.example.com",
+      "https://seller.example.com/",
     ],
   ])("normalizes an A2A Agent Card declaration %s to logical base %s", (endpoint, expected) => {
     expect(selectLiveTargets(agent({

@@ -1,13 +1,13 @@
 import Link from "next/link";
 import { Fingerprint } from "lucide-react";
 import type { MarketplaceAgentComparison } from "@/src/business/entities/marketplace-agent";
-import type { ObservationFeedResult } from "@/src/business/entities/worker-observations";
+import { observationTargetsByAgentId, type ObservationFeedResult } from "@/src/business/entities/worker-observations";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { EvidenceRail } from "./evidence-rail";
 import { PageIntro } from "./page-primitives";
-import { agentCardWithObservation, verificationViewModel } from "./view-models";
+import { agentCardWithObservations, verificationViewModel } from "./view-models";
 import { VerificationDrift } from "./verification-drift";
 
 const choices = [
@@ -26,7 +26,8 @@ const passportLabels = {
 } as const;
 
 export function ComparePage({ comparison, observations = { status: "unavailable", feed: null }, selected, provenAgentId }: { comparison: MarketplaceAgentComparison | undefined; observations?: ObservationFeedResult; selected: string[]; provenAgentId?: string }) {
-  const targets = new Map(observations.feed?.targets.map((target) => [target.agentId, target]) ?? []);
+  const targets = observationTargetsByAgentId(observations.feed);
+  const now = Date.now();
   return (
     <main id="main-content" className="mx-auto w-full max-w-7xl flex-1 px-4 py-12 sm:px-6 lg:px-8">
       <PageIntro eyebrow="Evidence side by side" title="Compare agents without a universal winner">
@@ -54,11 +55,11 @@ export function ComparePage({ comparison, observations = { status: "unavailable"
           <p className="mt-8 text-sm text-zinc-400">{comparison.note}</p>
           <div className="mt-5 grid gap-4 lg:grid-cols-3">
             {comparison.agents.map((agent) => {
-              const passport = agentCardWithObservation(
+              const passport = agentCardWithObservations(
                 agent,
-                targets.get(agent.agentId) ?? null,
+                targets.get(agent.agentId) ?? [],
                 observations.status === "available",
-                Date.now(),
+                now,
                 provenAgentId,
               );
               return (
@@ -81,7 +82,7 @@ export function ComparePage({ comparison, observations = { status: "unavailable"
                   {verificationViewModel(agent) && <VerificationDrift compact verification={verificationViewModel(agent)!} />}
                   <dl className="space-y-3 text-sm">
                     <div className="flex justify-between gap-3"><dt className="text-zinc-500">Categories</dt><dd className="text-right">{agent.categories.map(({ category }) => category.replaceAll("_", " ")).join(", ") || "Not evaluated"}</dd></div>
-                    <div className="flex justify-between gap-3"><dt className="text-zinc-500">Endpoint</dt><dd>{agent.endpointObservation.status.replaceAll("_", " ")}</dd></div>
+                    <div className="flex justify-between gap-3"><dt className="text-zinc-500">Endpoint</dt><dd>{passport.evidence.find((step) => step.kind === "reachable")?.status ?? "unavailable"}</dd></div>
                     <div className="flex justify-between gap-3"><dt className="text-zinc-500">Trust</dt><dd>{agent.trustScore.total ?? "—"} <span className="text-zinc-500">· derived</span></dd></div>
                     <div className="flex justify-between gap-3"><dt className="text-zinc-500">Feedback</dt><dd>{agent.reputation.totalFeedbacks}</dd></div>
                     <div className="flex justify-between gap-3"><dt className="text-zinc-500">Hireability</dt><dd>{passport.hireability.replaceAll("_", " ")}</dd></div>

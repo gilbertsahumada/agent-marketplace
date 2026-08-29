@@ -1,4 +1,4 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, ne, not, or, sql } from "drizzle-orm";
 import type { D1DatabaseLike } from "../db/client";
 import { createDatabase, readProbeTargetsByAgentIds, readRuntimeStates } from "../db/orm";
 import { probeTargets, runtimeState } from "../db/schema";
@@ -58,12 +58,17 @@ export interface SweepRequestBudget {
   readonly remaining: number;
 }
 
+export interface SweepRowWriteBudget {
+  readonly remaining: number;
+}
+
 export interface SweepPhaseInput {
   readonly db: D1DatabaseLike;
   readonly limit: number;
   readonly nowMs: number;
   readonly queryBudget: SweepQueryBudget;
   readonly requestBudget: SweepRequestBudget;
+  readonly rowWriteBudget?: SweepRowWriteBudget;
   readonly startedAtMs?: number;
   readonly invocationQueriesAfterCommit?: number;
   readonly completedQueueScheduledTime?: number;
@@ -105,6 +110,16 @@ export class SweepRequestBudgetExceededError extends Error {
   ) {
     super(`SWEEP requires ${required} trust8004 requests but only ${remaining} remain`);
     this.name = "SweepRequestBudgetExceededError";
+  }
+}
+
+export class SweepRowWriteBudgetExceededError extends Error {
+  constructor(
+    readonly remaining: number,
+    readonly required: number,
+  ) {
+    super(`SWEEP may write ${required} D1 rows but only ${remaining} remain`);
+    this.name = "SweepRowWriteBudgetExceededError";
   }
 }
 
@@ -202,14 +217,16 @@ export async function runSweepPhase(
   let changedTargets = 0;
   let removedTargets = 0;
   let metadataUnavailableTargets = 0;
+  let targetRowsWritten = 0;
 
   for (const result of results) {
     const previousTargets = existingByAgent.get(result.agentId) ?? [];
     if (result.status === "metadata_unavailable") {
-      for (const target of previousTargets) {
-        if (target.declarationState !== "current") continue;
-        statements.push(prepareUnavailable(orm, target, input.nowMs));
-        metadataUnavailableTargets += 1;
+      const currentTargets = previousTargets.filter((target) => target.declarationState === "current");
+      if (currentTargets.length > 0) {
+        statements.push(prepareUnavailableForAgent(orm, result.agentId, input.nowMs));
+        metadataUnavailableTargets += currentTargets.length;
+        targetRowsWritten += currentTargets.length;
       }
       continue;
     }
@@ -221,15 +238,20 @@ export async function runSweepPhase(
       if (previous === undefined || targetChanged(previous, result, candidate)) {
         statements.push(prepareUpsert(orm, result, candidate, previous, input.nowMs));
         changedTargets += 1;
+        targetRowsWritten += 1;
       } else if (input.nowMs - previous.lastSeenAt >= LAST_SEEN_REFRESH_MS) {
         statements.push(prepareSeenRefresh(orm, previous, input.nowMs));
+        targetRowsWritten += 1;
       }
     }
 
-    for (const previous of previousTargets) {
-      if (previous.declarationState === "removed" || declaredKeys.has(targetKey(previous))) continue;
-      statements.push(prepareRemoved(orm, previous, input.nowMs));
-      removedTargets += 1;
+    const absentTargets = previousTargets.filter((previous) => (
+      previous.declarationState !== "removed" && !declaredKeys.has(targetKey(previous))
+    ));
+    if (absentTargets.length > 0) {
+      statements.push(prepareRemovedForAgent(orm, result.agentId, candidates, input.nowMs));
+      removedTargets += absentTargets.length;
+      targetRowsWritten += absentTargets.length;
     }
   }
 
@@ -241,6 +263,10 @@ export async function runSweepPhase(
   const batchQueries = statements.length + stateStatementCount;
   if (batchQueries > input.queryBudget.remaining) {
     throw new SweepQueryBudgetExceededError(input.queryBudget.remaining, batchQueries);
+  }
+  const batchRowsWritten = targetRowsWritten + stateStatementCount;
+  if (input.rowWriteBudget && batchRowsWritten > input.rowWriteBudget.remaining) {
+    throw new SweepRowWriteBudgetExceededError(input.rowWriteBudget.remaining, batchRowsWritten);
   }
 
   const summary: SweepPhaseSummary = {
@@ -333,24 +359,38 @@ function prepareSeenRefresh(
     .where(targetPredicate(target));
 }
 
-function prepareRemoved(
+function prepareRemovedForAgent(
   db: ReturnType<typeof createDatabase>,
-  target: ExistingTarget,
+  agentId: string,
+  candidates: readonly SweepTargetCandidate[],
   nowMs: number,
  ) {
+  const declaredPredicate = candidates.length === 0 ? undefined : or(...candidates.map((candidate) => and(
+    eq(probeTargets.transport, candidate.transport),
+    eq(probeTargets.endpoint, candidate.endpoint),
+  )));
   return db.update(probeTargets).set({
     declarationState: "removed", lastMetadataCheckedAt: nowMs, lastChangedAt: nowMs,
-  }).where(targetPredicate(target));
+  }).where(and(
+    eq(probeTargets.chainId, 56),
+    eq(probeTargets.agentId, agentId),
+    ne(probeTargets.declarationState, "removed"),
+    declaredPredicate === undefined ? undefined : not(declaredPredicate),
+  ));
 }
 
-function prepareUnavailable(
+function prepareUnavailableForAgent(
   db: ReturnType<typeof createDatabase>,
-  target: ExistingTarget,
+  agentId: string,
   nowMs: number,
  ) {
   return db.update(probeTargets).set({
     declarationState: "metadata_unavailable", lastMetadataCheckedAt: nowMs, lastChangedAt: nowMs,
-  }).where(targetPredicate(target));
+  }).where(and(
+    eq(probeTargets.chainId, 56),
+    eq(probeTargets.agentId, agentId),
+    eq(probeTargets.declarationState, "current"),
+  ));
 }
 
 function prepareRuntimeInteger(

@@ -11,7 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { EvidenceRail } from "./evidence-rail";
 import { CoverageBadge } from "./page-primitives";
 import { ProvenanceBadge } from "./provenance-badge";
-import { agentCardWithObservation, verificationViewModel } from "./view-models";
+import { agentCardWithObservations, verificationViewModel } from "./view-models";
 import { VerificationDrift } from "./verification-drift";
 import { EvidencePassportCard } from "./evidence-passport-card";
 
@@ -24,15 +24,16 @@ function MonoValue({ label, value }: { label: string; value: string | null }) {
   );
 }
 
-export function AgentProfile({ agent, observationTarget = null, observationsAvailable = false, passport }: {
+export function AgentProfile({ agent, observationTargets = [], observationsAvailable = false, passport }: {
   agent: MarketplaceAgent;
-  observationTarget?: WorkerObservationTarget | null;
+  observationTargets?: WorkerObservationTarget[];
   observationsAvailable?: boolean;
   passport: AgentEvidencePassport;
 }) {
   const evaluated = agent.categoryEvaluation === "evaluated";
   const verification = verificationViewModel(agent);
-  const current = agentCardWithObservation(agent, observationTarget, observationsAvailable);
+  const current = agentCardWithObservations(agent, observationTargets, observationsAvailable);
+  const reachability = current.evidence.find((step) => step.kind === "reachable")!;
   return (
     <main id="main-content" className="mx-auto w-full max-w-7xl flex-1 px-4 py-12 sm:px-6 lg:px-8">
       <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
@@ -115,7 +116,7 @@ export function AgentProfile({ agent, observationTarget = null, observationsAvai
           <Card className="marketplace-surface">
             <CardHeader><CardTitle>Services and endpoints</CardTitle></CardHeader>
             <CardContent className="space-y-3">
-              <div className="flex items-center gap-2 text-sm">{agent.endpointObservation.status === "observed_ok" ? <CheckCircle2 className="size-4 text-emerald-400" /> : <CircleAlert className="size-4 text-zinc-500" />}<span>{agent.endpointObservation.status.replaceAll("_", " ")}</span><ProvenanceBadge provenance="observed" /></div>
+              <div className="flex items-center gap-2 text-sm">{reachability.status === "verified" ? <CheckCircle2 className="size-4 text-emerald-400" /> : <CircleAlert className="size-4 text-zinc-500" />}<span>{reachability.status}</span><ProvenanceBadge provenance={reachability.provenance} /></div>
               {agent.endpoints.map((endpoint) => <MonoValue key={endpoint.endpoint} label={endpoint.name ?? "Endpoint"} value={endpoint.endpoint} />)}
               {!agent.endpoints.length && <p className="text-sm text-zinc-500">No normalized endpoint is available.</p>}
             </CardContent>

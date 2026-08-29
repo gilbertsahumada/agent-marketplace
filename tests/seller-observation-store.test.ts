@@ -80,6 +80,7 @@ describe("seller observation store", () => {
       maximumBudgetRaw: "1",
       rpcUrl: "https://rpc.example",
       explorerUrl: "https://explorer.example",
+      sellerOrigin: "https://seller.example",
     };
     const quote = {
       endpoint: "https://seller.example",

@@ -7,6 +7,7 @@ import type {
 import {
   createD1LiveAgentPageReader,
   runSweepPhase,
+  SweepRowWriteBudgetExceededError,
   type SweepAgentResult,
 } from "../src/phases/sweep";
 
@@ -177,6 +178,27 @@ function dependencies(results: readonly SweepAgentResult[], complete = false) {
 }
 
 describe("WP2 SWEEP", () => {
+  it("rejects an unbounded historical retirement before the atomic batch", async () => {
+    const db = recordingDatabase(new SweepDatabase());
+    db.targets = Array.from({ length: 61 }, (_, index) => target({
+      endpoint: `https://seller.example/history/${index}`,
+      declarationState: "metadata_unavailable",
+    }));
+
+    await expect(runSweepPhase(
+      {
+        db,
+        limit: 4,
+        nowMs: 2_000,
+        queryBudget: { remaining: 38 },
+        requestBudget: { remaining: 4 },
+        rowWriteBudget: { remaining: 60 },
+      },
+      dependencies([okResult({ targets: [] })]),
+    )).rejects.toBeInstanceOf(SweepRowWriteBudgetExceededError);
+    expect(db.batches).toHaveLength(0);
+  });
+
   it("builds a numerically ordered live page from current ERC-8183 and curated IDs", async () => {
     const db = new SweepDatabase();
     db.liveRows = ["100", "2", "30"];
@@ -229,6 +251,29 @@ describe("WP2 SWEEP", () => {
     expect(db.batches[0]?.[0]?.query).toContain('update "probe_targets"');
     expect(db.batches[0]?.[0]?.values[0]).toBe("removed");
     expect(db.batches[0]?.[0]?.query.toLowerCase()).not.toContain("delete");
+  });
+
+  it("retires an accumulated historical target set with one bounded statement", async () => {
+    const db = recordingDatabase(new SweepDatabase());
+    db.targets = Array.from({ length: 8 }, (_, index) => target({
+      endpoint: `https://old-${index}.example.com/erc8183`,
+      declarationState: "metadata_unavailable",
+    }));
+    const targets = [0, 1].map((index) => ({
+      transport: "erc8183_http" as const,
+      endpoint: `https://new-${index}.example.com/erc8183`,
+      categoriesJson: "[]",
+      categoryProvenance: null,
+    }));
+
+    const summary = await runSweepPhase(
+      { db, limit: 4, nowMs: 2_000, queryBudget: { remaining: 6 }, requestBudget: { remaining: 4 } },
+      dependencies([okResult({ targets })]),
+    );
+
+    expect(summary).toMatchObject({ changedTargets: 2, removedTargets: 8, batchQueries: 6 });
+    expect(db.batches[0]?.filter((statement) => statement.query.includes('update "probe_targets"')))
+      .toHaveLength(1);
   });
 
   it("does not perform a material target write on an identical rerun", async () => {

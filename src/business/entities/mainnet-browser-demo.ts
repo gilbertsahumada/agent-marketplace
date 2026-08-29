@@ -8,4 +8,5 @@ export interface MainnetDemoPublicConfig {
   maximumBudgetRaw: string;
   rpcUrl: string;
   explorerUrl: string;
+  sellerOrigin: string;
 }

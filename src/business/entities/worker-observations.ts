@@ -7,13 +7,20 @@ export interface WorkerObservation {
   probeCategory: ObservationCategory | null;
   outcome: "quote_verified" | "protocol_valid" | "quote_rejected" | "quote_invalid" | "reachable" | "unreachable" | "unsafe_url" | "error";
   quoteExpiresAt: number | null;
+  observedMetadataUpdatedAt: number | null;
+  quoteNegotiatedAt: number | null;
   errorCode: string | null;
 }
 export interface WorkerObservationTarget {
   agentId: string;
+  chainId: 56;
+  transport: "a2a" | "erc8183_http";
+  endpoint: string;
   name: string | null;
   categories: ObservationCategory[];
   declarationState: "current" | "removed" | "metadata_unavailable";
+  currentMetadataUpdatedAt: number | null;
+  lastMetadataCheckedAt: number;
   latest: WorkerObservation | null;
   latestByCategory: Partial<Record<ObservationCategory, WorkerObservation>>;
 }
@@ -25,3 +32,13 @@ export interface WorkerObservationFeed {
 export type ObservationFeedResult =
   | { status: "available"; feed: WorkerObservationFeed }
   | { status: "unavailable"; feed: null };
+
+export function observationTargetsByAgentId(
+  feed: WorkerObservationFeed | null,
+): Map<string, WorkerObservationTarget[]> {
+  const grouped = new Map<string, WorkerObservationTarget[]>();
+  for (const target of feed?.targets ?? []) {
+    grouped.set(target.agentId, [...(grouped.get(target.agentId) ?? []), target]);
+  }
+  return grouped;
+}

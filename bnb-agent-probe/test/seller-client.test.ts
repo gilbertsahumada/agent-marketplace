@@ -12,6 +12,27 @@ const REQUEST = {
   task_description: "GRID_PLAN_V1:{}",
   terms: { deliverables: "plan", quality_standards: "safe" },
 };
+const HTTP_STATUS_EXPECTATION = {
+  provider: "0x1111111111111111111111111111111111111111",
+  commerce: "0x2222222222222222222222222222222222222222",
+  router: "0x3333333333333333333333333333333333333333",
+  policy: "0x4444444444444444444444444444444444444444",
+  currency: "0x5555555555555555555555555555555555555555",
+  decimals: 18,
+} as const;
+
+function validHttpStatus() {
+  return {
+    status: "ok",
+    agent_address: HTTP_STATUS_EXPECTATION.provider,
+    commerce_address: HTTP_STATUS_EXPECTATION.commerce,
+    router_address: HTTP_STATUS_EXPECTATION.router,
+    policy_address: HTTP_STATUS_EXPECTATION.policy,
+    currency: HTTP_STATUS_EXPECTATION.currency,
+    decimals: HTTP_STATUS_EXPECTATION.decimals,
+    service_price: "1",
+  };
+}
 
 function json(value: unknown, init?: ResponseInit): Response {
   return new Response(JSON.stringify(value), {
@@ -113,6 +134,23 @@ describe("Workers A2A seller probe", () => {
 
     expect(fetchImpl.mock.calls[0]?.[0].toString()).toBe(expectedCardUrl);
     expect(fetchImpl.mock.calls[1]?.[0].toString()).toBe(expectedMessageUrl);
+  });
+
+  it("requires the exact Grid message URL when the target policy supplies it", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(json({
+      ...card(),
+      url: "https://bnb-agent-marketplace-ruby.vercel.app/api/sellers/other/a2a",
+    }));
+
+    await expect(probeA2aSeller({
+      endpoint: "https://bnb-agent-marketplace-ruby.vercel.app/grid",
+      request: REQUEST,
+      timeoutMs: 5_000,
+      maxResponseBytes: 32_768,
+      fetch: fetchImpl,
+      expectedA2aMessageUrl: "https://bnb-agent-marketplace-ruby.vercel.app/api/sellers/grid/a2a",
+    })).rejects.toMatchObject({ code: "A2A_CARD_URL" });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 
   it.each([
@@ -240,7 +278,7 @@ describe("Workers ERC-8183 HTTP seller probe", () => {
     const quote = { request_hash: "0x01" };
     const fetchImpl = vi.fn<typeof fetch>()
       .mockResolvedValueOnce(json({ status: "ok", service: "ERC-8183 Agent" }))
-      .mockResolvedValueOnce(json({ status: "ok" }))
+      .mockResolvedValueOnce(json(validHttpStatus()))
       .mockResolvedValueOnce(json(quote));
 
     await expect(probeErc8183HttpSeller({
@@ -249,6 +287,7 @@ describe("Workers ERC-8183 HTTP seller probe", () => {
       timeoutMs: 5_000,
       maxResponseBytes: 32_768,
       fetch: fetchImpl,
+      expectedHttpStatus: HTTP_STATUS_EXPECTATION,
     })).resolves.toMatchObject({ quote });
 
     expect(fetchImpl.mock.calls.map(([url]) => url.toString())).toEqual([
@@ -256,5 +295,50 @@ describe("Workers ERC-8183 HTTP seller probe", () => {
       "https://seller.example.com/erc8183/status",
       "https://seller.example.com/erc8183/negotiate",
     ]);
+  });
+
+  it.each([
+    ["agent_address", "0x9999999999999999999999999999999999999999"],
+    ["commerce_address", "0x9999999999999999999999999999999999999999"],
+    ["router_address", "0x9999999999999999999999999999999999999999"],
+    ["policy_address", "0x9999999999999999999999999999999999999999"],
+    ["currency", "0x9999999999999999999999999999999999999999"],
+    ["decimals", 6],
+  ])("rejects status identity/config mismatch in %s before negotiation", async (field, value) => {
+    const fetchImpl = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(json({ status: "ok", service: "ERC-8183 Agent" }))
+      .mockResolvedValueOnce(json({ ...validHttpStatus(), [field]: value }))
+      .mockResolvedValueOnce(json({ request_hash: "must-not-be-returned" }));
+
+    await expect(probeErc8183HttpSeller({
+      endpoint: "https://seller.example.com/erc8183",
+      request: REQUEST,
+      timeoutMs: 5_000,
+      maxResponseBytes: 32_768,
+      fetch: fetchImpl,
+      expectedHttpStatus: HTTP_STATUS_EXPECTATION,
+    })).rejects.toMatchObject({ code: "ERC8183_STATUS_INVALID" });
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
+  it("rejects a quote response that finishes at the shared deadline", async () => {
+    let clock = 0;
+    const fetchImpl = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(json({ status: "ok", service: "ERC-8183 Agent" }))
+      .mockResolvedValueOnce(json(validHttpStatus()))
+      .mockImplementationOnce(async () => {
+        clock = 5_000;
+        return json({ request_hash: "too-late" });
+      });
+
+    await expect(probeErc8183HttpSeller({
+      endpoint: "https://seller.example.com/erc8183",
+      request: REQUEST,
+      timeoutMs: 5_000,
+      maxResponseBytes: 32_768,
+      fetch: fetchImpl,
+      now: () => clock,
+      expectedHttpStatus: HTTP_STATUS_EXPECTATION,
+    })).rejects.toMatchObject({ code: "SELLER_TIMEOUT" });
   });
 });

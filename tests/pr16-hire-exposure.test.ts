@@ -17,28 +17,38 @@ const demoConfig: MainnetDemoPublicConfig = {
   maximumBudgetRaw: "1",
   rpcUrl: "https://bsc-dataseed.bnbchain.org",
   explorerUrl: "https://bscscan.com",
+  sellerOrigin: "https://seller.example.com",
 };
 
 function observations(overrides: Record<string, unknown> = {}) {
+  const now = Date.parse("2026-08-24T12:01:00.000Z");
+  const quote = {
+    probedAt: Date.parse("2026-08-24T12:00:30.000Z"),
+    probeCategory: "grid_trading" as const,
+    outcome: "quote_verified" as const,
+    observedMetadataUpdatedAt: now - 60_000,
+    quoteNegotiatedAt: Date.parse("2026-08-24T12:00:30.000Z"),
+    quoteExpiresAt: Date.parse("2026-08-24T12:02:00.000Z"),
+    errorCode: null,
+  };
   return {
     getObservations: async () => ({
       status: "available" as const,
       feed: {
         schemaVersion: 1 as const,
-        generatedAt: Date.parse("2026-08-24T12:01:00.000Z"),
+        generatedAt: now,
         targets: [{
           agentId: "9001",
+          chainId: 56 as const,
+          transport: "a2a" as const,
+          endpoint: "https://seller.example.com/grid",
           name: "Marketplace Grid planner",
           categories: ["grid_trading" as const],
           declarationState: "current" as const,
-          latest: {
-            probedAt: Date.parse("2026-08-24T12:00:30.000Z"),
-            probeCategory: "grid_trading" as const,
-            outcome: "quote_verified" as const,
-            quoteExpiresAt: Date.parse("2026-08-24T12:02:00.000Z"),
-            errorCode: null,
-          },
-          latestByCategory: {},
+          currentMetadataUpdatedAt: now - 60_000,
+          lastMetadataCheckedAt: now,
+          latest: quote,
+          latestByCategory: { grid_trading: quote },
           ...overrides,
         }],
       },
@@ -58,10 +68,12 @@ describe("PR 16 Mainnet exposure", () => {
     expect(getPublicConfig).not.toHaveBeenCalled();
 
     const stale = new GetMainnetHiringExposure(
-      observations({ latest: {
+      observations({ latestByCategory: { grid_trading: {
         probedAt: Date.parse("2026-08-24T11:59:00.000Z"), probeCategory: "grid_trading",
-        outcome: "quote_verified", quoteExpiresAt: Date.parse("2026-08-24T12:02:00.000Z"), errorCode: null,
-      } }),
+        outcome: "quote_verified", observedMetadataUpdatedAt: Date.parse("2026-08-24T12:00:00.000Z"),
+        quoteNegotiatedAt: Date.parse("2026-08-24T11:59:00.000Z"),
+        quoteExpiresAt: Date.parse("2026-08-24T12:02:00.000Z"), errorCode: null,
+      } } }),
       { getPublicConfig },
       () => Date.parse("2026-08-24T12:01:00.000Z"),
     );
@@ -83,6 +95,73 @@ describe("PR 16 Mainnet exposure", () => {
       () => Date.parse("2026-08-24T12:01:00.000Z"),
     );
     await expect(explicitOnly.execute()).resolves.toEqual({ qualifiedSeller: null, demoConfig: null });
+  });
+
+  it("requires a current Grid quote bound to current metadata and the configured seller origin", async () => {
+    const now = Date.parse("2026-08-24T12:01:00.000Z");
+    const base = {
+      agentId: "9001",
+      chainId: 56 as const,
+      name: "Marketplace Grid planner",
+      transport: "a2a",
+      endpoint: "https://seller.example.com/grid",
+      categories: ["grid_trading" as const, "rebalancing" as const],
+      declarationState: "current" as const,
+      currentMetadataUpdatedAt: now - 30_000,
+      lastMetadataCheckedAt: now,
+      latest: null,
+      latestByCategory: {
+        grid_trading: {
+          probedAt: now,
+          probeCategory: "grid_trading" as const,
+          outcome: "quote_verified" as const,
+          observedMetadataUpdatedAt: now - 30_000,
+          quoteNegotiatedAt: now,
+          quoteExpiresAt: now + 60_000,
+          errorCode: null,
+        },
+      },
+    };
+    const execute = (target: Record<string, unknown>) => new GetMainnetHiringExposure(
+      { getObservations: async () => ({
+        status: "available" as const,
+        feed: { schemaVersion: 1 as const, generatedAt: now, targets: [target as never] },
+      }) },
+      { getPublicConfig: () => demoConfig },
+      () => now,
+    ).execute();
+
+    await expect(execute({ ...base, latestByCategory: {
+      rebalancing: { ...base.latestByCategory.grid_trading, probeCategory: "rebalancing" },
+    } })).resolves.toMatchObject({ demoConfig: null });
+    await expect(execute({ ...base, endpoint: "https://other.example.com/grid" }))
+      .resolves.toMatchObject({ demoConfig: null });
+    await expect(execute({ ...base, latestByCategory: { grid_trading: {
+      ...base.latestByCategory.grid_trading,
+      observedMetadataUpdatedAt: now - 31_000,
+    } } })).resolves.toMatchObject({ demoConfig: null });
+    await expect(execute({ ...base, latestByCategory: { grid_trading: {
+      ...base.latestByCategory.grid_trading,
+      quoteNegotiatedAt: now - 60_001,
+    } } })).resolves.toMatchObject({ demoConfig: null });
+    await expect(execute({ ...base, lastMetadataCheckedAt: now - 1 }))
+      .resolves.toMatchObject({ demoConfig });
+    await expect(execute(base)).resolves.toMatchObject({ demoConfig });
+  });
+
+  it("is independent of target order", async () => {
+    const now = Date.parse("2026-08-24T12:01:00.000Z");
+    const valid = (await observations().getObservations()).feed.targets[0]!;
+    const removed = { ...valid, endpoint: "https://old.example.com/grid", declarationState: "removed" as const };
+    const run = (targets: Array<typeof valid | typeof removed>) => new GetMainnetHiringExposure(
+      { getObservations: async () => ({ status: "available" as const, feed: {
+        schemaVersion: 1 as const, generatedAt: now, targets,
+      } }) },
+      { getPublicConfig: () => demoConfig },
+      () => now,
+    ).execute();
+
+    expect(await run([valid, removed])).toEqual(await run([removed, valid]));
   });
 
   it("blocks quote and prepare before current qualification reaches business composition", async () => {
@@ -179,7 +258,7 @@ describe("PR 16 Mainnet exposure", () => {
     const workflow = readFileSync(".github/workflows/submission-uptime.yml", "utf8");
     expect(workflow).not.toContain("MAINNET_GRID_SELLER_ENABLED");
     expect(workflow).toContain('if [ "$quote_status" = "404" ]');
-    expect(workflow).toContain('if [ "$proof_status" = "200" ]');
+    expect(workflow).not.toContain('if [ "$proof_status" = "200" ]');
     expect(workflow).toContain("/api/marketplace/demo/erc8183-mainnet/quote");
     expect(workflow).toContain("/api/marketplace/demo/erc8183-mainnet/prepare");
   });

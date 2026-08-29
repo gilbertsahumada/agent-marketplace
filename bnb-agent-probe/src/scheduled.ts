@@ -34,6 +34,9 @@ const FREE_LEASE_MS = 4 * 60_000;
 const PAID_LEASE_MS = 14 * 60_000;
 const CURATED_IDS = CURATED_INVENTORY.entries.map(({ agentId }) => agentId);
 const CURATED_ID_SET = new Set(CURATED_IDS);
+const GRID_AGENT_ID = "303779";
+const GRID_ENDPOINT = "https://bnb-agent-marketplace-ruby.vercel.app/grid";
+const GRID_MESSAGE_URL = "https://bnb-agent-marketplace-ruby.vercel.app/api/sellers/grid/a2a";
 
 export type SchedulerPhase = "header" | "sweep" | "probe";
 export type ScheduledRunResult = "completed" | "duplicate" | "locked";
@@ -325,6 +328,7 @@ async function executeWp2Phase(input: PhaseExecution, fetchImpl: typeof fetch): 
       nowMs: input.nowMs,
       queryBudget: input.queryBudget,
       requestBudget: { remaining: input.config.trust8004RequestsPerRun },
+      rowWriteBudget: { remaining: input.config.d1RowsWrittenPerRun - 1 },
       invocationQueriesAfterCommit: 2,
       startedAtMs: input.startedAtMs,
       ...(input.completedQueueScheduledTime === undefined
@@ -427,7 +431,7 @@ async function executeWp2Phase(input: PhaseExecution, fetchImpl: typeof fetch): 
       });
       return currentChain;
     },
-    probeSeller: async (target, _chain, category) => {
+    probeSeller: async (target, chain, category) => {
       const remainingMs = Math.floor(deadlineMs - input.now());
       if (remainingMs <= 0) throw new SellerProbeError("SELLER_TIMEOUT");
       const probe = target.transport === "a2a" ? probeA2aSeller : probeErc8183HttpSeller;
@@ -438,16 +442,32 @@ async function executeWp2Phase(input: PhaseExecution, fetchImpl: typeof fetch): 
         maxResponseBytes: input.config.maxSellerResponseBytes,
         fetch: probeFetch,
         now: input.now,
+        ...(target.transport === "a2a"
+          && target.agentId === GRID_AGENT_ID
+          && target.endpoint === GRID_ENDPOINT
+          ? { expectedA2aMessageUrl: GRID_MESSAGE_URL }
+          : {}),
+        ...(target.transport === "erc8183_http" ? { expectedHttpStatus: {
+          provider: chain.provider,
+          commerce: chain.commerce!,
+          router: chain.router!,
+          policy: chain.policy!,
+          currency: currentChain!.paymentToken,
+          decimals: currentChain!.tokenDecimals,
+        } } : {}),
       });
     },
     validateQuote: async (quote, _chain, category) => {
       if (!currentChain || !publicClient) throw new Error("BSC_CONTEXT_REQUIRED");
-      return validateProbeQuote(quote, {
+      if (input.now() >= deadlineMs) throw new SellerProbeError("SELLER_TIMEOUT");
+      const verdict = await validateProbeQuote(quote, {
         ...currentChain,
         publicClient,
         nowSeconds: Math.floor(input.now() / 1_000),
         probeCategory: category,
       });
+      if (input.now() >= deadlineMs) throw new SellerProbeError("SELLER_TIMEOUT");
+      return verdict;
     },
   });
 }

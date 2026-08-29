@@ -18,6 +18,17 @@ export interface A2aProbeInput {
   readonly maxResponseBytes: number;
   readonly fetch: typeof fetch;
   readonly now?: () => number;
+  readonly expectedHttpStatus?: Erc8183HttpStatusExpectation;
+  readonly expectedA2aMessageUrl?: string;
+}
+
+export interface Erc8183HttpStatusExpectation {
+  readonly provider: string;
+  readonly commerce: string;
+  readonly router: string;
+  readonly policy: string;
+  readonly currency: string;
+  readonly decimals: number;
 }
 
 export interface A2aProbeResult {
@@ -39,7 +50,7 @@ export async function probeA2aSeller(input: A2aProbeInput): Promise<A2aProbeResu
   const card = await fetchJson(endpoint, {
     headers: { accept: "application/json" },
   }, input, deadline, usage);
-  const messageUrl = parseMessageUrl(card.url, new URL(baseEndpoint));
+  const messageUrl = parseMessageUrl(card.url, new URL(baseEndpoint), input.expectedA2aMessageUrl);
   const skills = parseSkills(card.skills);
   const negotiationSkill = NEGOTIATION_SKILLS.find((skill) => skills.includes(skill));
   if (!negotiationSkill || skills.filter((skill) => skill === "notify_funded").length !== 1) {
@@ -100,13 +111,35 @@ export async function probeErc8183HttpSeller(input: A2aProbeInput): Promise<A2aP
     throw new SellerProbeError("ERC8183_HEALTH_INVALID");
   }
   const status = await fetchJson(route("status"), { headers: { accept: "application/json" } }, input, deadline, usage);
-  if (status.status !== "ok") throw new SellerProbeError("ERC8183_STATUS_INVALID");
+  if (!input.expectedHttpStatus || !validHttpStatus(status, input.expectedHttpStatus)) {
+    throw new SellerProbeError("ERC8183_STATUS_INVALID");
+  }
   const quote = await fetchJson(route("negotiate"), {
     method: "POST",
     headers: { accept: "application/json", "content-type": "application/json" },
     body: JSON.stringify(input.request),
   }, input, deadline, usage);
   return { quote, negotiationSkill: "negotiate-erc8183-job" };
+}
+
+function validHttpStatus(
+  status: Record<string, unknown>,
+  expected: Erc8183HttpStatusExpectation,
+): boolean {
+  const sameAddress = (actual: unknown, wanted: string) => (
+    typeof actual === "string"
+    && /^0x[0-9a-fA-F]{40}$/.test(actual)
+    && actual.toLowerCase() === wanted.toLowerCase()
+  );
+  return status.status === "ok"
+    && sameAddress(status.agent_address, expected.provider)
+    && sameAddress(status.commerce_address, expected.commerce)
+    && sameAddress(status.router_address, expected.router)
+    && sameAddress(status.policy_address, expected.policy)
+    && sameAddress(status.currency, expected.currency)
+    && status.decimals === expected.decimals
+    && typeof status.service_price === "string"
+    && /^\d+$/.test(status.service_price);
 }
 
 async function fetchJson(
@@ -155,7 +188,11 @@ async function fetchJson(
     throw new SellerProbeError("SELLER_UNREACHABLE");
   }
   try {
-    return record(JSON.parse(text), "SELLER_INVALID_JSON");
+    const parsed = record(JSON.parse(text), "SELLER_INVALID_JSON");
+    if ((input.now ?? performance.now.bind(performance))() >= deadline) {
+      throw new SellerProbeError("SELLER_TIMEOUT");
+    }
+    return parsed;
   } catch (error) {
     if (error instanceof SellerProbeError) throw error;
     throw new SellerProbeError("SELLER_INVALID_JSON");
@@ -190,12 +227,15 @@ async function readBoundedText(
   }
 }
 
-function parseMessageUrl(value: unknown, registeredEndpoint: URL): URL {
+function parseMessageUrl(value: unknown, registeredEndpoint: URL, expected?: string): URL {
   if (typeof value !== "string" || !isSyntacticallyPublicHttpsUrl(value)) {
     throw new SellerProbeError("A2A_CARD_URL");
   }
   const url = new URL(value);
   if (url.origin !== registeredEndpoint.origin || url.search !== "" || url.hash !== "") {
+    throw new SellerProbeError("A2A_CARD_URL");
+  }
+  if (expected !== undefined && url.toString() !== new URL(expected).toString()) {
     throw new SellerProbeError("A2A_CARD_URL");
   }
   return url;

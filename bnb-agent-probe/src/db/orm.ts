@@ -1,4 +1,4 @@
-import { and, count, desc, eq, inArray, max } from "drizzle-orm";
+import { and, count, desc, eq, getTableColumns, inArray, isNull, max, or } from "drizzle-orm";
 import { drizzle, type DrizzleD1Database } from "drizzle-orm/d1";
 
 import type { D1DatabaseLike } from "./client";
@@ -108,27 +108,52 @@ export async function readProbeTargetsByAgentIds(
   ));
 }
 
-export async function readObservationFeed(db: Database): Promise<ObservationFeedRows> {
-  const latestObservationIds = db
-    .select({ id: max(probeObservations.id) })
+export async function readObservationFeed(
+  db: Database,
+  agentIds: readonly string[] = [],
+): Promise<ObservationFeedRows> {
+  const scopedAgents = agentIds.length === 0
+    ? undefined
+    : inArray(probeObservations.agentId, [...agentIds]);
+  const latestObservationTimes = db
+    .select({
+      chainId: probeObservations.chainId,
+      agentId: probeObservations.agentId,
+      transport: probeObservations.transport,
+      endpoint: probeObservations.endpoint,
+      probeCategory: probeObservations.probeCategory,
+      probedAt: max(probeObservations.probedAt).as("probed_at"),
+    })
     .from(probeObservations)
+    .where(scopedAgents)
     .groupBy(
       probeObservations.chainId,
       probeObservations.agentId,
       probeObservations.transport,
       probeObservations.endpoint,
       probeObservations.probeCategory,
-    );
+    ).as("latest_observation_times");
 
   const [funnelRows, targets, latestByTargetCategory, quoteVerifiedAtByTargetCategory] = await Promise.all([
     db.select().from(funnelSnapshots)
       .orderBy(desc(funnelSnapshots.measuredAt), desc(funnelSnapshots.id))
       .limit(1),
     db.select().from(probeTargets)
+      .where(agentIds.length === 0 ? undefined : inArray(probeTargets.agentId, [...agentIds]))
       .orderBy(probeTargets.agentId, probeTargets.transport, probeTargets.endpoint),
-    db.select().from(probeObservations)
-      .where(inArray(probeObservations.id, latestObservationIds))
-      .orderBy(desc(probeObservations.probedAt), desc(probeObservations.id)),
+    db.select({ ...getTableColumns(probeObservations) }).from(probeObservations)
+      .innerJoin(latestObservationTimes, and(
+        eq(probeObservations.chainId, latestObservationTimes.chainId),
+        eq(probeObservations.agentId, latestObservationTimes.agentId),
+        eq(probeObservations.transport, latestObservationTimes.transport),
+        eq(probeObservations.endpoint, latestObservationTimes.endpoint),
+        or(
+          eq(probeObservations.probeCategory, latestObservationTimes.probeCategory),
+          and(isNull(probeObservations.probeCategory), isNull(latestObservationTimes.probeCategory)),
+        ),
+        eq(probeObservations.probedAt, latestObservationTimes.probedAt),
+      ))
+      .orderBy(desc(probeObservations.probedAt), probeObservations.id),
     db.select({
       agentId: probeObservations.agentId,
       chainId: probeObservations.chainId,
@@ -137,7 +162,7 @@ export async function readObservationFeed(db: Database): Promise<ObservationFeed
       probeCategory: probeObservations.probeCategory,
       probedAt: max(probeObservations.probedAt),
     }).from(probeObservations)
-      .where(eq(probeObservations.outcome, "quote_verified"))
+      .where(and(eq(probeObservations.outcome, "quote_verified"), scopedAgents))
       .groupBy(
         probeObservations.chainId,
         probeObservations.agentId,

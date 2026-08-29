@@ -1,7 +1,7 @@
 import { getAddress, type Hex, type PublicClient } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { inspect } from "node:util";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 import { buildGridPlan, gridTaskDescription, parseGridTaskDescription } from "../src/business/policies/grid-plan-policy.ts";
 import { assertBrowserSpikeChain, parseBrowserJournal, type Erc8183BrowserDeployment } from "../src/data/erc8183/browser-wallet-adapter.ts";
@@ -127,23 +127,11 @@ describe("published verification evidence", () => {
     )).toThrow(/expired/);
   });
 
-  it("rebuilds more often than the snapshot freshness window", () => {
-    // Hireability requires verification.freshness === "current", so an expired
-    // snapshot removes every Hire action from the live site with no code change.
-    // Vercel regenerates the snapshot on each build, so the invariant is that a
-    // scheduled rebuild runs strictly inside the publish window.
-    const publishCli = readFileSync("src/verification/publish-cli.ts", "utf8");
-    const declaredWindow = publishCli.match(/--max-age-hours"\)\s*\?\?\s*"(\d+)"/);
-    expect(declaredWindow).not.toBeNull();
-    const windowHours = Number(declaredWindow![1]);
-
-    const workflow = readFileSync(".github/workflows/refresh-release-snapshot.yml", "utf8");
-    const schedule = workflow.match(/cron:\s*"0 \*\/(\d+) \* \* \*"/);
-    expect(schedule).not.toBeNull();
-    const rebuildEveryHours = Number(schedule![1]);
-
-    // A missed run must still leave room to recover before the snapshot expires.
-    expect(rebuildEveryHours * 2).toBeLessThan(windowHours);
+  it("does not redeploy merely to refresh historical release evidence", () => {
+    expect(existsSync(".github/workflows/refresh-release-snapshot.yml")).toBe(false);
+    const uptime = readFileSync(".github/workflows/submission-uptime.yml", "utf8");
+    expect(uptime).not.toContain("release verification snapshot expired");
+    expect(uptime).not.toContain("still exposes a hireable seller");
   });
 
   it("regenerates sanitized verification evidence before every Vercel build", () => {

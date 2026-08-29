@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { agentCardWithObservation, evidenceForAgent, snapshotAgentCardViewModel } from "../components/marketplace/view-models.ts";
+import { agentCardWithObservation, agentCardWithObservations, evidenceForAgent, snapshotAgentCardViewModel } from "../components/marketplace/view-models.ts";
 import { determineHireability, toMarketplaceAgent } from "../src/business/policies/marketplace-agent-policy.ts";
 import { assertPublicVerificationSnapshotFresh, parsePublicVerificationSnapshot } from "../src/data/verification/public-verification-snapshot.ts";
 import type { MarketplaceAgentData } from "../src/data/repositories/marketplace-agent-repository.ts";
@@ -179,13 +179,20 @@ describe("PR 16 marketplace evidence boundaries", () => {
     const agent = toMarketplaceAgent(marketplaceData("qualified", "current"), { evaluateMarketplace: false });
     const card = agentCardWithObservation(agent, {
       agentId: agent.agentId,
+      chainId: 56,
+      transport: "a2a",
+      endpoint: "https://seller.example/grid",
       name: agent.name,
       categories: ["grid_trading"],
       declarationState: "removed",
+      currentMetadataUpdatedAt: now,
+      lastMetadataCheckedAt: now,
       latest: {
         probedAt: now,
         probeCategory: "grid_trading",
         outcome: "quote_verified",
+        observedMetadataUpdatedAt: now,
+        quoteNegotiatedAt: now,
         quoteExpiresAt: now + 60_000,
         errorCode: null,
       },
@@ -203,14 +210,21 @@ describe("PR 16 marketplace evidence boundaries", () => {
       probedAt: now,
       probeCategory: "grid_trading" as const,
       outcome: "quote_verified" as const,
+      observedMetadataUpdatedAt: now,
+      quoteNegotiatedAt: now,
       quoteExpiresAt: now + 60_000,
       errorCode: null,
     };
     const target = {
       agentId: agent.agentId,
+      chainId: 56,
+      transport: "a2a",
+      endpoint: "https://seller.example/grid",
       name: agent.name,
       categories: ["grid_trading", "yield_optimisation"],
       declarationState: "current" as const,
+      currentMetadataUpdatedAt: now,
+      lastMetadataCheckedAt: now,
       latest: quote,
       latestByCategory: {
         grid_trading: quote,
@@ -218,6 +232,8 @@ describe("PR 16 marketplace evidence boundaries", () => {
           probedAt: now,
           probeCategory: "yield_optimisation" as const,
           outcome: "unreachable" as const,
+          observedMetadataUpdatedAt: now,
+          quoteNegotiatedAt: null,
           quoteExpiresAt: null,
           errorCode: "SELLER_TIMEOUT",
         },
@@ -228,6 +244,152 @@ describe("PR 16 marketplace evidence boundaries", () => {
       .toBe("hireable");
     expect(agentCardWithObservation(agent, target, true, now, undefined, "yield_optimisation").hireability)
       .toBe("listed_only");
+  });
+
+  it("does not present an old protocol response as current reachability", () => {
+    const now = Date.parse(GENERATED_AT);
+    const agent = toMarketplaceAgent(marketplaceData("qualified", "current"), { evaluateMarketplace: false });
+    const card = agentCardWithObservation(agent, {
+      agentId: agent.agentId,
+      chainId: 56,
+      transport: "a2a",
+      endpoint: "https://seller.example/grid",
+      name: agent.name,
+      categories: ["grid_trading"],
+      declarationState: "current",
+      currentMetadataUpdatedAt: now - 24 * 60 * 60 * 1_000,
+      lastMetadataCheckedAt: now,
+      latest: {
+        probedAt: now - 24 * 60 * 60 * 1_000,
+        probeCategory: "grid_trading",
+        outcome: "protocol_valid",
+        observedMetadataUpdatedAt: now - 24 * 60 * 60 * 1_000,
+        quoteNegotiatedAt: null,
+        quoteExpiresAt: null,
+        errorCode: null,
+      },
+      latestByCategory: {},
+    }, true, now);
+
+    expect(card.evidence.find(({ kind }) => kind === "reachable")).toMatchObject({
+      status: "unknown",
+      provenance: "observed",
+    });
+  });
+
+  it("invalidates a quote negotiated before current metadata", () => {
+    const now = Date.parse(GENERATED_AT);
+    const agent = toMarketplaceAgent(marketplaceData("qualified", "current"), { evaluateMarketplace: false });
+    const target = {
+      agentId: agent.agentId,
+      name: agent.name,
+      categories: ["grid_trading"],
+      declarationState: "current",
+      currentMetadataUpdatedAt: now - 10_000,
+      lastMetadataCheckedAt: now,
+      latest: {
+        probedAt: now,
+        probeCategory: "grid_trading",
+        outcome: "quote_verified",
+        observedMetadataUpdatedAt: now - 20_000,
+        quoteNegotiatedAt: now,
+        quoteExpiresAt: now + 60_000,
+        errorCode: null,
+      },
+      latestByCategory: {},
+    } as unknown as WorkerObservationTarget;
+
+    expect(agentCardWithObservation(agent, target, true, now).hireability).toBe("quote_stale");
+  });
+
+  it("uses quoteNegotiatedAt, not a recent probe timestamp, for the 60-second window", () => {
+    const now = Date.parse(GENERATED_AT);
+    const agent = toMarketplaceAgent(marketplaceData("qualified", "current"), { evaluateMarketplace: false });
+    const target = {
+      agentId: agent.agentId,
+      name: agent.name,
+      categories: ["grid_trading"],
+      declarationState: "current",
+      currentMetadataUpdatedAt: now - 120_000,
+      lastMetadataCheckedAt: now,
+      latest: {
+        probedAt: now,
+        probeCategory: "grid_trading",
+        outcome: "quote_verified",
+        observedMetadataUpdatedAt: now - 120_000,
+        quoteNegotiatedAt: now - 60_001,
+        quoteExpiresAt: now + 60_000,
+        errorCode: null,
+      },
+      latestByCategory: {},
+    } as unknown as WorkerObservationTarget;
+
+    expect(agentCardWithObservation(agent, target, true, now).hireability).toBe("quote_stale");
+  });
+
+  it("selects multiple endpoint observations deterministically", () => {
+    const now = Date.parse(GENERATED_AT);
+    const agent = toMarketplaceAgent(marketplaceData("qualified", "current"), { evaluateMarketplace: false });
+    const verified = {
+      agentId: agent.agentId,
+      name: agent.name,
+      categories: ["grid_trading"],
+      declarationState: "current",
+      currentMetadataUpdatedAt: now,
+      lastMetadataCheckedAt: now,
+      latest: {
+        probedAt: now,
+        probeCategory: "grid_trading",
+        outcome: "protocol_valid",
+        observedMetadataUpdatedAt: now,
+        quoteNegotiatedAt: null,
+        quoteExpiresAt: null,
+        errorCode: null,
+      },
+      latestByCategory: {},
+    } as unknown as WorkerObservationTarget;
+    const removed = {
+      ...verified,
+      endpoint: "https://old.example.com/grid",
+      declarationState: "removed",
+      latest: { ...verified.latest, probedAt: now + 1 },
+    } as unknown as WorkerObservationTarget;
+
+    expect(agentCardWithObservations(agent, [verified, removed], true, now))
+      .toEqual(agentCardWithObservations(agent, [removed, verified], true, now));
+    expect(agentCardWithObservations(agent, [verified, removed], true, now)
+      .evidence.find(({ kind }) => kind === "reachable")?.status).toBe("verified");
+  });
+
+  it("prefers a current quote over an expired quote across endpoints", () => {
+    const now = Date.parse(GENERATED_AT);
+    const agent = toMarketplaceAgent(marketplaceData("qualified", "current"), { evaluateMarketplace: false });
+    const target = (endpoint: string, quoteExpiresAt: number) => ({
+      agentId: agent.agentId,
+      chainId: 56 as const,
+      transport: "a2a" as const,
+      endpoint,
+      name: agent.name,
+      categories: ["grid_trading" as const],
+      declarationState: "current" as const,
+      currentMetadataUpdatedAt: now - 1_000,
+      lastMetadataCheckedAt: now - 1,
+      latest: {
+        probedAt: now,
+        probeCategory: "grid_trading" as const,
+        outcome: "quote_verified" as const,
+        observedMetadataUpdatedAt: now - 1_000,
+        quoteNegotiatedAt: now,
+        quoteExpiresAt,
+        errorCode: null,
+      },
+      latestByCategory: {},
+    });
+    const expired = target("https://a.example.com/grid", now - 1);
+    const current = target("https://z.example.com/grid", now + 60_000);
+
+    expect(agentCardWithObservations(agent, [expired, current], true, now).hireability).toBe("hireable");
+    expect(agentCardWithObservations(agent, [current, expired], true, now).hireability).toBe("hireable");
   });
 
   it("cannot enable Hire from an environment flag without current qualification", () => {

@@ -64,8 +64,8 @@ export function EvidencePassportCard({
       <CardHeader className="relative z-10 gap-4 border-b border-white/[0.08] pb-5 sm:grid-cols-[1fr_auto]">
         <div>
           <p className="font-eyebrow text-zinc-400">BSC · Agent #{passport.agentId}</p>
-          <h2 className="mt-2 text-xl font-medium tracking-tight text-white">Agent Evidence Passport</h2>
-          <p className="mt-2 text-sm text-zinc-400">Live marketplace evidence snapshot — not a financial guarantee.</p>
+          <h2 className="mt-2 text-xl font-medium tracking-tight text-white">Indexed Evidence Passport</h2>
+          <p className="mt-2 text-sm text-zinc-400">Indexed identity and declaration snapshot — current Worker observations are shown separately.</p>
         </div>
         <div className="flex flex-col items-start gap-2 sm:items-end">
           <Badge className="passport-state-badge" variant="outline">{stateLabels[passport.state]}</Badge>

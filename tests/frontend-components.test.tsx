@@ -234,10 +234,10 @@ afterEach(() => {
 describe("marketplace presentation rules", () => {
   it("renders the Evidence Passport as evidence, not as an NFT or guarantee", async () => {
     const { rerender } = render(createElement("main", {}, createElement(EvidencePassportCard, { passport: evidencePassport("registered") })));
-    expect(screen.getByRole("heading", { name: "Agent Evidence Passport" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Indexed Evidence Passport" })).toBeInTheDocument();
     expect(screen.getByText("Registered")).toBeInTheDocument();
     expect(screen.getByText("Not probed")).toBeInTheDocument();
-    expect(screen.getByText(/live marketplace evidence snapshot/i)).toBeInTheDocument();
+    expect(screen.getByText(/indexed identity and declaration snapshot/i)).toBeInTheDocument();
     expect(screen.queryByText(/NFT/i)).not.toBeInTheDocument();
 
     rerender(createElement("main", {}, createElement(EvidencePassportCard, { passport: evidencePassport("job_proven"), apiHref: "/api/marketplace/agents/303779/passport" })));
@@ -258,7 +258,7 @@ describe("marketplace presentation rules", () => {
     await user.type(screen.getByRole("textbox", { name: "BSC Agent ID" }), "303779");
     await user.click(screen.getByRole("button", { name: "Validate agent" }));
 
-    expect(await screen.findByRole("heading", { name: "Agent Evidence Passport" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Indexed Evidence Passport" })).toBeInTheDocument();
     expect(screen.getByText("Manual review required")).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /hire/i })).not.toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledWith("/api/marketplace/validate", expect.objectContaining({
@@ -284,6 +284,7 @@ describe("marketplace presentation rules", () => {
 
   it("links each comparison column to its evidence Passport without extra claims", () => {
     const first = marketplaceAgent();
+    first.endpointObservation.status = "observed_ok";
     const second = { ...marketplaceAgent(), agentId: "45381", name: "Aave powered by HeyAnon" };
     render(createElement(ComparePage, {
       comparison: {
@@ -298,6 +299,7 @@ describe("marketplace presentation rules", () => {
 
     expect(screen.getByRole("link", { name: "Passport · Registered for V3 Pools powered by HeyAnon" })).toHaveAttribute("href", "/agents/45650/passport");
     expect(screen.getByRole("link", { name: "Passport · Registered for Aave powered by HeyAnon" })).toHaveAttribute("href", "/agents/45381/passport");
+    expect(screen.queryByText("observed ok")).not.toBeInTheDocument();
   });
 
   it("explains the builder path from registration to proven work", async () => {
@@ -416,12 +418,45 @@ describe("marketplace presentation rules", () => {
     expect(screen.getByRole("combobox", { name: "Sort agents" })).toHaveValue("newest");
   });
 
+  it("does not promote indexed reachability in the all-agents view when Worker observations are unavailable", () => {
+    const agent = marketplaceAgent();
+    agent.endpointObservation = {
+      status: "observed_ok",
+      protocol: "mcp",
+      endpoint: "https://seller.example/mcp",
+      lastTestedAt: "2026-08-17T00:00:00.000Z",
+      httpStatus: 200,
+      capabilitiesCount: 1,
+      requiresAuth: false,
+      error: null,
+    };
+    const page: MarketplaceAgentPage = {
+      view: "all",
+      items: [agent],
+      pagination: { page: 1, pageSize: 24, total: 1, totalPages: 1 },
+      categories: [],
+      catalogCoverage: "partial",
+      fetchedAt: "2026-08-17T00:00:00.000Z",
+    };
+
+    render(createElement(CatalogPage, { data: page, query: { view: "all", sort: "newest" } }));
+    const rail = screen.getByRole("list", { name: `Evidence for ${agent.name}` });
+    const reachable = within(rail).getAllByRole("listitem")[1]!;
+    expect(reachable).toHaveAttribute("data-status", "unavailable");
+    expect(within(reachable).queryByText("verified")).not.toBeInTheDocument();
+  });
+
   it("renders curated categories as derived evidence with their rationale", async () => {
     const user = userEvent.setup();
-    render(createElement(AgentProfile, { agent: marketplaceAgent(), passport: evidencePassport("registered") }));
-    expect(screen.getByRole("heading", { name: "Agent Evidence Passport" })).toBeInTheDocument();
+    const agent = marketplaceAgent();
+    agent.endpointObservation.status = "observed_ok";
+    render(createElement(AgentProfile, { agent, passport: evidencePassport("registered") }));
+    expect(screen.getByRole("heading", { name: "Indexed Evidence Passport" })).toBeInTheDocument();
+    expect(screen.queryByText("Live marketplace evidence snapshot — not a financial guarantee.")).not.toBeInTheDocument();
     expect(screen.getAllByText("derived")).not.toHaveLength(0);
     expect(screen.getByText(/Curated liquidity-management signal/)).toBeInTheDocument();
+    await user.click(screen.getByRole("tab", { name: "Services" }));
+    expect(screen.queryByText("observed ok")).not.toBeInTheDocument();
     await user.click(screen.getByRole("tab", { name: "Reputation" }));
     expect(screen.getByText(/Indexed reputation; not re-read directly from BSC/)).toBeInTheDocument();
   });
