@@ -4,6 +4,22 @@ import type { ReactNode } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 
+export function Breadcrumb({ trail, current }: { trail: { href: string; label: string }[]; current: string }) {
+  return (
+    <nav aria-label="Breadcrumb" className="mb-6">
+      <ol className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-sm text-zinc-400">
+        {trail.map(({ href, label }) => (
+          <li className="flex min-w-0 items-center gap-x-1.5" key={href}>
+            <Link className="truncate transition-colors hover:text-white" href={href}>{label}</Link>
+            <ChevronRight aria-hidden="true" className="size-3.5 shrink-0 text-zinc-600" />
+          </li>
+        ))}
+        <li aria-current="page" className="min-w-0 truncate text-zinc-200">{current}</li>
+      </ol>
+    </nav>
+  );
+}
+
 export function PageIntro({ eyebrow, title, children }: { eyebrow: string; title: string; children: ReactNode }) {
   return (
     <header className="max-w-3xl">
@@ -14,13 +30,11 @@ export function PageIntro({ eyebrow, title, children }: { eyebrow: string; title
   );
 }
 
-export function CoverageBadge({ total, fetchedAt }: { total?: number; fetchedAt?: string }) {
-  const count = typeof total === "number"
-    ? ` · ${total.toLocaleString()} BSC (chainId=56) records reported by trust8004 for active=true (response.total${fetchedAt ? `; fetched ${new Date(fetchedAt).toISOString()}` : ""})`
-    : "";
+export function CoverageBadge({ total }: { total?: number }) {
+  const count = typeof total === "number" ? ` · ${total.toLocaleString()} agents` : "";
   return (
     <Badge className="border-amber-400/30 bg-amber-400/10 text-amber-200" variant="outline">
-      Catalog coverage: partial{count}
+      Partial coverage{count}
     </Badge>
   );
 }
@@ -29,13 +43,13 @@ export function PaginationLinks({ page, totalPages, hrefFor }: { page: number; t
   if (totalPages <= 1) return null;
   return (
     <nav aria-label="Catalog pagination" className="mt-8 flex items-center justify-between gap-4 border-t border-white/10 pt-6">
-      <Button asChild={page > 1} disabled={page <= 1} variant="outline">
-        {page > 1 ? <Link href={hrefFor(page - 1)}><ChevronLeft aria-hidden="true" />Previous</Link> : <span><ChevronLeft aria-hidden="true" />Previous</span>}
-      </Button>
+      {page > 1
+        ? <Button asChild variant="outline"><Link href={hrefFor(page - 1)}><ChevronLeft aria-hidden="true" />Previous</Link></Button>
+        : <Button disabled variant="outline"><ChevronLeft aria-hidden="true" />Previous</Button>}
       <span className="font-stat text-xs text-zinc-400">Page {page} of {totalPages}</span>
-      <Button asChild={page < totalPages} disabled={page >= totalPages} variant="outline">
-        {page < totalPages ? <Link href={hrefFor(page + 1)}>Next<ChevronRight aria-hidden="true" /></Link> : <span>Next<ChevronRight aria-hidden="true" /></span>}
-      </Button>
+      {page < totalPages
+        ? <Button asChild variant="outline"><Link href={hrefFor(page + 1)}>Next<ChevronRight aria-hidden="true" /></Link></Button>
+        : <Button disabled variant="outline">Next<ChevronRight aria-hidden="true" /></Button>}
     </nav>
   );
 }

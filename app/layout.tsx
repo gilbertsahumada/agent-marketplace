@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Space_Grotesk, Space_Mono } from "next/font/google";
+import NextTopLoader from "nextjs-toploader";
 import type { ReactNode } from "react";
 import { MarketplaceShell } from "@/components/marketplace/site-shell";
 import { Providers } from "./providers";
@@ -30,6 +31,7 @@ export default function RootLayout({ children }: Readonly<{ children: ReactNode 
   return (
     <html lang="en" className={`dark ${spaceGrotesk.variable} ${spaceMono.variable}`}>
       <body>
+        <NextTopLoader color="#f0b90b" height={2} showSpinner={false} shadow="0 0 10px #f0b90b" />
         <Providers>
           <MarketplaceShell>{children}</MarketplaceShell>
         </Providers>

@@ -2,9 +2,7 @@ import Link from "next/link";
 import {
   ArrowRight,
   CircleAlert,
-  Search,
   ShieldCheck,
-  Split,
 } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -21,7 +19,14 @@ import type {
   FunnelSectionViewModel,
 } from "./presentation-types";
 
-const journey = ["Discover", "Understand", "Compare", "Hire", "Track", "Result"];
+const journey = [
+  ["Discover", "Browse BSC candidates by outcome, without learning protocol vocabulary first."],
+  ["Understand", "Declared, observed, onchain and derived facts stay visibly separate."],
+  ["Compare", "Evidence is aligned side by side. The marketplace names no universal winner."],
+  ["Hire", "A yellow Hire action appears only after ERC-8183 quote verification."],
+  ["Track", "The job is followed against direct chain state, never a stored boolean."],
+  ["Result", "A deliverable counts once its hash matches what was committed onchain."],
+] as const;
 
 export function MarketplaceLanding({
   categories,
@@ -149,13 +154,12 @@ export function MarketplaceLanding({
           </div>
 
           {catalogSnapshot && (
-            <Alert className="mt-8 border-indigo-400/30 bg-indigo-400/[0.06] text-indigo-100">
-              <CircleAlert aria-hidden="true" />
-              <AlertTitle>Release verification snapshot</AlertTitle>
-              <AlertDescription>
-                Observed {new Date(catalogSnapshot.generatedAt).toLocaleString("en-US", { timeZone: "UTC", timeZoneName: "short" })} and valid through {new Date(catalogSnapshot.staleAfter).toLocaleString("en-US", { timeZone: "UTC", timeZoneName: "short" })}. Live trust8004 profile details load only when requested; qualification is preserved from release readiness evidence and never inferred from catalogue metadata.
-              </AlertDescription>
-            </Alert>
+            <p className="mt-6 text-xs leading-relaxed text-zinc-500">
+              Release verification snapshot observed {new Date(catalogSnapshot.generatedAt).toLocaleString("en-US", { timeZone: "UTC", timeZoneName: "short" })} · valid through {new Date(catalogSnapshot.staleAfter).toLocaleString("en-US", { timeZone: "UTC", timeZoneName: "short" })}.{" "}
+              <Link className="underline decoration-zinc-700 underline-offset-2 hover:text-zinc-300" href="/evidence/verification">
+                How qualification is verified
+              </Link>
+            </p>
           )}
 
           {featuredAgents.length > 0 ? (
@@ -175,55 +179,24 @@ export function MarketplaceLanding({
       </section>
 
       <section aria-labelledby="journey-heading" className="mx-auto max-w-7xl px-4 py-14 sm:px-6 sm:py-16 lg:px-8">
-        <div className="grid gap-8 lg:grid-cols-[0.72fr_1.28fr] lg:items-start">
-          <div>
-            <p className="font-eyebrow font-eyebrow-dot text-zinc-400">The marketplace journey</p>
-            <h2 id="journey-heading" className="mt-2 text-3xl font-light tracking-tight text-white">
-              Technical proof, progressively disclosed.
-            </h2>
-            <p className="mt-3 text-sm leading-relaxed text-zinc-400 sm:text-base">
-              Start with the outcome you need. Identity, endpoint checks, quote signatures, and transaction details remain available when you want to inspect them.
-            </p>
-          </div>
-          <ol className="grid gap-px overflow-hidden rounded-2xl border border-white/10 bg-white/10 sm:grid-cols-2 lg:grid-cols-3">
-            {journey.map((step, index) => (
-              <li className="bg-background p-5" key={step}>
-                <span className="font-stat text-[10px] text-zinc-400">{String(index + 1).padStart(2, "0")}</span>
-                <p className="mt-2 text-sm font-semibold text-zinc-100">{step}</p>
-              </li>
-            ))}
-          </ol>
+        <div className="max-w-2xl">
+          <p className="font-eyebrow font-eyebrow-dot text-zinc-400">The marketplace journey</p>
+          <h2 id="journey-heading" className="mt-2 text-3xl font-light tracking-tight text-white">
+            Technical proof, progressively disclosed.
+          </h2>
+          <p className="mt-3 text-sm leading-relaxed text-zinc-400 sm:text-base">
+            Start with the outcome you need. Identity, endpoint checks, quote signatures, and transaction details remain available when you want to inspect them.
+          </p>
         </div>
-
-        <div className="mt-10 grid gap-4 md:grid-cols-3">
-          {[
-            {
-              icon: Search,
-              title: "Discover by outcome",
-              text: "Browse BSC candidates without learning protocol vocabulary first.",
-            },
-            {
-              icon: Split,
-              title: "Compare the evidence",
-              text: "Keep declared, observed, onchain, and derived facts visibly separate.",
-            },
-            {
-              icon: ShieldCheck,
-              title: "Hire only when verified",
-              text: "A yellow Hire action appears only after ERC-8183 quote verification.",
-            },
-          ].map(({ icon: Icon, title, text }) => (
-            <Card className="marketplace-surface py-5" key={title}>
-              <CardHeader className="px-5">
-                <span className="mb-2 flex size-9 items-center justify-center rounded-lg border border-white/10 bg-white/[0.03] text-zinc-300">
-                  <Icon aria-hidden="true" className="size-4" />
-                </span>
-                <CardTitle>{title}</CardTitle>
-              </CardHeader>
-              <CardContent className="px-5 text-sm leading-relaxed text-muted-foreground">{text}</CardContent>
-            </Card>
+        <ol className="mt-8 grid gap-px overflow-hidden rounded-2xl border border-white/10 bg-white/10 sm:grid-cols-2 lg:grid-cols-3">
+          {journey.map(([step, detail], index) => (
+            <li className="bg-background p-5" key={step}>
+              <span className="font-stat text-[10px] text-zinc-400">{String(index + 1).padStart(2, "0")}</span>
+              <p className="mt-2 text-sm font-semibold text-zinc-100">{step}</p>
+              <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{detail}</p>
+            </li>
           ))}
-        </div>
+        </ol>
       </section>
     </main>
   );

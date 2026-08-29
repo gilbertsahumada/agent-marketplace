@@ -1,8 +1,7 @@
 "use client";
 
-import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, ArrowUpRight, CheckCircle2, CircleAlert, RefreshCw } from "lucide-react";
+import { ArrowUpRight, CheckCircle2, CircleAlert, RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { Erc8183TestnetJobTracking } from "@/src/business/entities/erc8183-testnet-job-tracking";
 import type { Erc8183BrowserJournal } from "@/src/business/entities/erc8183-browser-spike";
@@ -12,7 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { EvidenceRail } from "./evidence-rail";
-import { PageIntro } from "./page-primitives";
+import { Breadcrumb, PageIntro } from "./page-primitives";
 
 const TRANSACTION_LABELS = {
   createJob: "Create job",
@@ -77,6 +76,7 @@ export function TestnetJobTracker({ tracking }: { tracking: Erc8183TestnetJobTra
 
   return (
     <main id="main-content" className="mx-auto w-full max-w-6xl flex-1 px-4 py-12 sm:px-6 lg:px-8">
+      <Breadcrumb current={`ERC-8183 Job #${jobId}`} trail={[{ href: "/", label: "Home" }]} />
       <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
         <PageIntro eyebrow="BSC Testnet job tracker" title={`ERC-8183 Job #${jobId}`}>
           Direct contract state is authoritative. Versioned evidence and this browser&apos;s journal remain separate supporting records.
@@ -161,7 +161,6 @@ export function TestnetJobTracker({ tracking }: { tracking: Erc8183TestnetJobTra
       )}
 
       <div className="mt-7 flex flex-wrap gap-3">
-        <Button asChild variant="outline"><Link href="/demo/erc8183"><ArrowLeft aria-hidden="true" data-icon="inline-start" />Return to demo</Link></Button>
         <Button onClick={() => router.refresh()} variant="outline"><RefreshCw aria-hidden="true" data-icon="inline-start" />Refresh chain state</Button>
       </div>
     </main>

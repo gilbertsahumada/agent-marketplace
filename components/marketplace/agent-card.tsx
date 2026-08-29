@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowUpRight, Bot, Fingerprint, ShieldCheck } from "lucide-react";
+import { ArrowUpRight, Bot, Fingerprint, ShieldCheck, Split } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -15,6 +15,7 @@ import type {
   MarketplaceCategory,
 } from "./presentation-types";
 import { VerificationDrift } from "./verification-drift";
+import { hireabilityLabels } from "./view-models";
 
 const categoryLabels: Record<MarketplaceCategory, string> = {
   rebalancing: "Rebalancing",
@@ -22,14 +23,6 @@ const categoryLabels: Record<MarketplaceCategory, string> = {
   yield_optimisation: "Yield optimisation",
   health_factor_monitoring: "Health factor",
 };
-
-const hireabilityLabels = {
-  hireable: "Hireable now",
-  mcp_only: "MCP only",
-  quote_stale: "Quote refresh required",
-  wallet_ambiguous: "Wallet attribution ambiguous",
-  listed_only: "Not evaluated",
-} satisfies Record<AgentCardViewModel["hireability"], string>;
 
 const passportLabels: Record<AgentCardViewModel["passportState"], string> = {
   registered: "Registered",
@@ -67,14 +60,25 @@ export function AgentCard({ agent }: { agent: AgentCardViewModel }) {
             <p className="font-stat mt-1 text-[11px] text-zinc-400">
               BSC · Agent #{agent.agentId}
             </p>
-            <Link
-              className="mt-2 inline-flex items-center gap-1.5 text-xs text-zinc-400 underline decoration-zinc-700 underline-offset-4 hover:text-white"
-              href={agent.passportHref}
-              prefetch={false}
-            >
-              <Fingerprint aria-hidden="true" className="size-3" />
-              Passport · {passportLabels[agent.passportState]}
-            </Link>
+            <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
+              <Link
+                className="inline-flex items-center gap-1.5 text-xs text-zinc-400 underline decoration-zinc-700 underline-offset-4 hover:text-white"
+                href={agent.passportHref}
+                prefetch={false}
+              >
+                <Fingerprint aria-hidden="true" className="size-3" />
+                Passport · {passportLabels[agent.passportState]}
+              </Link>
+              <Link
+                aria-label={`Compare ${agent.name}`}
+                className="inline-flex items-center gap-1.5 text-xs text-zinc-400 underline decoration-zinc-700 underline-offset-4 hover:text-white"
+                href={`/compare?agentId=${agent.agentId}`}
+                prefetch={false}
+              >
+                <Split aria-hidden="true" className="size-3" />
+                Compare
+              </Link>
+            </div>
             {agent.operator === "marketplace" && <Badge className="mt-2 border-cyan-400/30 bg-cyan-400/10 text-cyan-200" variant="outline">Marketplace-operated · not official BNB reference</Badge>}
           </div>
         </div>
