@@ -1,9 +1,15 @@
 import { randomUUID } from "node:crypto";
 import { link, readFile, unlink, writeFile } from "node:fs/promises";
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { buildWp224hArtifact } from "../src/evidence/wp2-24h-artifact";
+
+const REPOSITORY_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
+
+export function resolveRawEvidencePath(path: string): string {
+  return resolve(REPOSITORY_ROOT, path);
+}
 
 export async function writeWp224hArtifact(
   outputPath: string,
@@ -19,7 +25,7 @@ export async function writeWp224hArtifact(
     windowStart,
     workerName: environment.WP2_SCRIPT_NAME ?? "bnb-agent-probe-staging",
   }, {
-    readRawEvidence: (path) => readFile(resolve(path), "utf8"),
+    readRawEvidence: (path) => readFile(resolveRawEvidencePath(path), "utf8"),
   });
   try {
     await writeFile(temporary, `${JSON.stringify(artifact, null, 2)}\n`, { encoding: "utf8", flag: "wx" });
