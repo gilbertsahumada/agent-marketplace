@@ -1,6 +1,6 @@
-import { randomUUID } from "node:crypto";
-import { link, mkdir, unlink, writeFile } from "node:fs/promises";
-import { resolve } from "node:path";
+import { createHash, randomUUID } from "node:crypto";
+import { mkdir, rename, rm, writeFile } from "node:fs/promises";
+import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
@@ -84,6 +84,7 @@ export async function captureWp2Analytics(options: CaptureOptions): Promise<void
   ];
   const fetch = options.fetch ?? globalThis.fetch;
   const now = options.now ?? (() => new Date().toISOString());
+  const captureId = randomUUID();
   const outputs: Array<{ name: string; contents: string }> = [];
   for (const definition of definitions) {
     const response = await fetch(GRAPHQL_ENDPOINT, {
@@ -100,6 +101,7 @@ export async function captureWp2Analytics(options: CaptureOptions): Promise<void
         && (!Array.isArray(payload.errors) || payload.errors.length !== 0))) {
       throw new Error(`${definition.name} GraphQL capture failed`);
     }
+    if (definition.name === "queue") validateSuccessfulDeletes(payload.data);
     const capturedAt = now();
     canonicalTimestamp(capturedAt, "capturedAt");
     outputs.push({
@@ -107,6 +109,7 @@ export async function captureWp2Analytics(options: CaptureOptions): Promise<void
       contents: `${JSON.stringify({
         request: {
           accountId: options.accountId,
+          captureId,
           capturedAt,
           endpoint: GRAPHQL_ENDPOINT,
           query: definition.query,
@@ -142,27 +145,50 @@ async function publishCreateOnly(
   outputs: readonly { readonly name: string; readonly contents: string }[],
 ): Promise<void> {
   const directory = resolve(outputDirectory);
-  await mkdir(directory, { recursive: true });
-  const temporary: string[] = [];
-  const published: string[] = [];
+  const temporary = `${directory}.${process.pid}.${randomUUID()}.tmp`;
+  await mkdir(dirname(directory), { recursive: true });
+  await mkdir(temporary);
   try {
+    const files: Record<string, string> = {};
     for (const output of outputs) {
-      const path = resolve(directory, `${output.name}.json`);
-      const temporaryPath = `${path}.${process.pid}.${randomUUID()}.tmp`;
-      await writeFile(temporaryPath, output.contents, { encoding: "utf8", flag: "wx" });
-      temporary.push(temporaryPath);
+      const filename = `${output.name}.json`;
+      files[filename] = createHash("sha256").update(output.contents).digest("hex");
+      await writeFile(resolve(temporary, filename), output.contents, { encoding: "utf8", flag: "wx" });
     }
-    for (const [index, output] of outputs.entries()) {
-      const path = resolve(directory, `${output.name}.json`);
-      await link(temporary[index]!, path);
-      published.push(path);
-    }
-  } catch (error) {
-    await Promise.all(published.map((path) => unlink(path).catch(() => undefined)));
-    throw error;
+    const first = JSON.parse(outputs[0]!.contents) as { request: { captureId: string } };
+    await writeFile(resolve(temporary, "analytics-manifest.json"), `${JSON.stringify({
+      schemaVersion: 1,
+      captureId: first.request.captureId,
+      files,
+    }, null, 2)}\n`, { encoding: "utf8", flag: "wx" });
+    await rename(temporary, directory);
   } finally {
-    await Promise.all(temporary.map((path) => unlink(path).catch(() => undefined)));
+    await rm(temporary, { force: true, recursive: true }).catch(() => undefined);
   }
+}
+
+function validateSuccessfulDeletes(value: unknown): void {
+  const data = value as {
+    readonly viewer?: { readonly accounts?: readonly [{
+      readonly queueTerminalOperations?: ReadonlyArray<{
+        readonly count?: unknown;
+        readonly dimensions?: { readonly actionType?: unknown; readonly outcome?: unknown };
+      }>;
+    }] };
+  };
+  const groups = data.viewer?.accounts?.[0]?.queueTerminalOperations;
+  if (!Array.isArray(groups)) throw new Error("Queue Analytics is missing terminal operations");
+  let deletes = 0;
+  for (const group of groups) {
+    if (group.dimensions?.actionType !== "DeleteMessage") continue;
+    if (typeof group.dimensions.outcome !== "string"
+      || group.dimensions.outcome.toLowerCase() !== "success"
+      || !Number.isSafeInteger(group.count) || (group.count as number) < 0) {
+      throw new Error("Queue Analytics contains an invalid terminal delete");
+    }
+    deletes += group.count as number;
+  }
+  if (deletes !== 288) throw new Error("Queue Analytics must contain 288 successful deletes");
 }
 
 async function main(): Promise<void> {
