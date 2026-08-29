@@ -644,6 +644,17 @@ describe("WP2 24-hour evidence artifact validator", () => {
     })).resolves.toMatchObject({ passed: true });
   });
 
+  it("rejects a pre-midnight completion without a causal post-midnight delete", async () => {
+    const artifact = validArtifact() as any;
+    const crossingAttempt = artifact.ledger.at(-1);
+    crossingAttempt.startedAt = Date.parse("2026-08-29T23:59:59.500Z");
+    crossingAttempt.finishedAt = Date.parse("2026-08-30T00:00:00.500Z");
+    artifact.quotaLedger.at(-1).startedAt = crossingAttempt.startedAt;
+    artifact.quotaLedger.at(-1).finishedAt = crossingAttempt.finishedAt;
+    await expect(validateWp224hArtifact(artifact, { readRawEvidence }))
+      .rejects.toThrow("QUEUE_TERMINALITY");
+  });
+
   it("rejects Workers evidence that ends before terminality grace", async () => {
     const artifact = validArtifact() as any;
     const workers = structuredClone(RAW_PAYLOADS["evidence/raw/workers.json"]) as any;
