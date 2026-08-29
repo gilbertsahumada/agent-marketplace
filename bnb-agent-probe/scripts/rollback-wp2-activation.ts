@@ -68,7 +68,10 @@ export function schedulesEmpty(payload: unknown): boolean {
 }
 
 export function killSwitchesOn(payload: unknown): boolean {
-  const body = payload as { result?: { bindings?: unknown } };
+  const body = payload as { success?: unknown; errors?: unknown; result?: { bindings?: unknown } };
+  if (body?.success !== true || !Array.isArray(body.errors) || body.errors.length !== 0) {
+    return false;
+  }
   const bindings = body?.result?.bindings;
   if (!Array.isArray(bindings)) return false;
   const text = (name: string) => bindings.find((entry) =>
@@ -86,16 +89,25 @@ export async function runRollback(
   plan: readonly RollbackStep[],
   executor: RollbackExecutor,
 ): Promise<void> {
+  const errors: Error[] = [];
   for (const step of plan) {
-    if (step.kind === "wrangler") {
-      await executor.runWrangler(step.args);
-    } else if (step.kind === "http") {
-      await executor.fetchJson(step.method, step.url);
-    } else {
-      const payload = await executor.fetchJson("GET", step.url);
-      const passed = step.check === "schedules_empty" ? schedulesEmpty(payload) : killSwitchesOn(payload);
-      if (!passed) throw new Error(`Rollback verification failed: ${step.check}`);
+    try {
+      if (step.kind === "wrangler") {
+        await executor.runWrangler(step.args);
+      } else if (step.kind === "http") {
+        await executor.fetchJson(step.method, step.url);
+      } else {
+        const payload = await executor.fetchJson("GET", step.url);
+        const passed = step.check === "schedules_empty" ? schedulesEmpty(payload) : killSwitchesOn(payload);
+        if (!passed) throw new Error(`verification failed: ${step.check}`);
+      }
+    } catch (error) {
+      const label = step.kind === "verify" ? step.check : step.kind;
+      errors.push(new Error(`Rollback step failed (${label})`, { cause: error }));
     }
+  }
+  if (errors.length !== 0) {
+    throw new AggregateError(errors, `Rollback incomplete: ${errors.length} step(s) failed`);
   }
 }
 

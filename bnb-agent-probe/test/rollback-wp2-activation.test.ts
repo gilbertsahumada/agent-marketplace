@@ -61,18 +61,20 @@ describe("WP2 activation rollback plan", () => {
   });
 
   it("verifies both kill switches strictly", () => {
-    const bindings = (producer: string, consumer: string) => ({ result: { bindings: [
+    const bindings = (producer: string, consumer: string) => ({ success: true, errors: [], result: { bindings: [
       { name: "PRODUCER_KILL_SWITCH", text: producer, type: "plain_text" },
       { name: "KILL_SWITCH", text: consumer, type: "plain_text" },
     ] } });
     expect(killSwitchesOn(bindings("1", "1"))).toBe(true);
     expect(killSwitchesOn(bindings("1", "0"))).toBe(false);
     expect(killSwitchesOn(bindings("0", "1"))).toBe(false);
+    expect(killSwitchesOn({ ...bindings("1", "1"), success: false })).toBe(false);
+    expect(killSwitchesOn({ ...bindings("1", "1"), errors: [{}] })).toBe(false);
     expect(killSwitchesOn({ result: { bindings: [] } })).toBe(false);
     expect(killSwitchesOn(undefined)).toBe(false);
   });
 
-  it("stops execution when a verification fails and reports which one", async () => {
+  it("continues every containment step when a verification fails and reports failure", async () => {
     const plan = buildRollbackPlan(CONTEXT);
     const calls: string[] = [];
     await expect(runRollback(plan, {
@@ -82,11 +84,39 @@ describe("WP2 activation rollback plan", () => {
         if (url.endsWith("/schedules")) return { success: true, errors: [], result: { schedules: [{ cron: "*/5 * * * *" }] } };
         return {};
       },
-    })).rejects.toThrow("schedules_empty");
+    })).rejects.toThrow("Rollback incomplete: 2 step(s) failed");
     expect(calls).toEqual([
       "wrangler:deploy",
       "DELETE:%2A%2F5%20%2A%20%2A%20%2A%20%2A",
       "GET:schedules",
+      "GET:settings",
+    ]);
+  });
+
+  it("still removes Cron and verifies both controls when the safety deploy fails", async () => {
+    const plan = buildRollbackPlan(CONTEXT);
+    const calls: string[] = [];
+    await expect(runRollback(plan, {
+      runWrangler: async () => {
+        calls.push("wrangler");
+        throw new Error("deploy unavailable");
+      },
+      fetchJson: async (method, url) => {
+        calls.push(`${method}:${url.split("/").at(-1)}`);
+        if (url.endsWith("/settings")) {
+          return { success: true, errors: [], result: { bindings: [
+            { name: "PRODUCER_KILL_SWITCH", text: "0" },
+            { name: "KILL_SWITCH", text: "0" },
+          ] } };
+        }
+        return { success: true, errors: [], result: { schedules: [] } };
+      },
+    })).rejects.toThrow("Rollback incomplete: 2 step(s) failed");
+    expect(calls).toEqual([
+      "wrangler",
+      "DELETE:%2A%2F5%20%2A%20%2A%20%2A%20%2A",
+      "GET:schedules",
+      "GET:settings",
     ]);
   });
 
@@ -98,7 +128,7 @@ describe("WP2 activation rollback plan", () => {
       fetchJson: async (method, url) => {
         order.push(method === "DELETE" ? "http" : "verify");
         if (url.endsWith("/settings")) {
-          return { result: { bindings: [
+          return { success: true, errors: [], result: { bindings: [
             { name: "PRODUCER_KILL_SWITCH", text: "1" },
             { name: "KILL_SWITCH", text: "1" },
           ] } };

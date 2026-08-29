@@ -67,8 +67,8 @@ from the environment and are never serialized. Every output is create-only.
 ```bash
 set -euo pipefail
 
-FULL_SHA=131d0a23f18a7328754378530ea3120245d233cc
-SHORT_SHA=${FULL_SHA:0:12}
+export FULL_SHA=131d0a23f18a7328754378530ea3120245d233cc
+export SHORT_SHA=${FULL_SHA:0:12}
 MEASURED_VERSION_ID=d1ee751a-b77d-4fc6-afed-864e631383af
 EXPECTED_ETAG=80a1f8dac1e5949583dd29d7d9ee60a789007822bd646a5c8b1216f7437bcf23
 UTC_DATE=2026-08-31
@@ -84,9 +84,20 @@ npm run evidence:wp2-control -- preflight ../evidence/raw/preflight.json
 # reports schedules empty with both switches at "1". The exact sequence is
 # versioned and regression-tested in scripts/rollback-wp2-activation.ts
 # (dry-run by default; --execute performs it).
-trap 'npm run rollback:wp2-activation -- --execute; exit 1' ERR
-trap 'npm run rollback:wp2-activation -- --execute; exit 130' INT
-trap 'npm run rollback:wp2-activation -- --execute; exit 143' TERM
+rollback_activation() {
+  local status="$1"
+  trap - ERR INT TERM
+  set +e
+  npm run rollback:wp2-activation -- --execute
+  local rollback_status=$?
+  if (( rollback_status != 0 )); then
+    echo "activation rollback incomplete; inspect control-plane state immediately" >&2
+  fi
+  exit "$status"
+}
+trap 'rollback_activation $?' ERR
+trap 'rollback_activation 130' INT
+trap 'rollback_activation 143' TERM
 
 # Re-promote the exact measured version, then install only */5 * * * *.
 # Stop if its versions-view etag is not EXPECTED_ETAG.
