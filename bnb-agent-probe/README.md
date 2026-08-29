@@ -100,9 +100,10 @@ so drain-version retries cannot escape CPU, memory, version or error accounting.
 Every spill-out ledger attempt must have an authenticated consumer sample within
 one second of its `startedAt`; requesting the wider interval without that bucket
 is insufficient evidence. Matching consumes `sum.requests` capacity. Separately,
-each message whose completed terminal attempt spills out consumes one successful
-`DeleteMessage` bucket at or after that completion's `finishedAt` (allowing one
-second for Analytics timestamp rounding); retries do not invent extra deletes.
+each message whose completed terminal attempt finishes at or after the window end
+consumes one successful `DeleteMessage` bucket at or after that completion's
+`finishedAt` (allowing one second for Analytics timestamp rounding); this includes
+attempts that cross midnight, while retries do not invent extra deletes.
 
 Staging remains on the Free profile and retains one isolated Queue producer and
 serial consumer. Outside the exact 24-hour gate it declares an empty Cron list
