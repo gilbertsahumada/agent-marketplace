@@ -322,3 +322,51 @@ script etag as the measured version. Their Workers samples remain in the
 resource/error cohort because they may consume retries. Unauthenticated versions
 fail validation, and exact Queue writes prevent any version from hiding an extra
 scheduled message.
+
+## 2026-08-29 — Navigation and copy pass
+
+Detail pages were dead ends. `AgentProfile` offered no route back to the
+catalogue at all, and where a return existed it was three different labels
+(`Return to agent profile`, `Return to profile`, `Return to demo`) sitting at
+the bottom of the page. The job trackers were worse than absent: both pointed at
+a demo route, but they are reached from the header, the landing hero and the
+catalogue's Grid empty state, so most visitors were sent to a page they had
+never opened.
+
+Detail pages now carry a static server-rendered breadcrumb above the title.
+Top-level pages in the primary nav (`/agents`, `/compare`, `/validate`,
+`/evidence/verification`) deliberately have none: `aria-current="page"` on the
+nav answers "where am I" there without adding a one-item trail.
+
+Catalogue provenance existed in three places at once: inside the `CoverageBadge`
+label, in the catalogue `PageIntro`, and a third time on `AgentProfile`, where
+`CoverageBadge` was invoked with no props and rendered a catalogue-wide claim
+next to a single agent's Hire button. The provenance — chainId 56, `active=true`,
+`response.total`, fetch timestamp — is preserved in full but now stated once, in
+the catalogue intro. A tooltip was rejected as its carrier: it would hide the
+timestamps on touch devices, and this repository requires source timestamps to
+stay visible.
+
+Two hireability labels stay verbose on purpose. `MCP only` and
+`Wallet attribution ambiguous` are long for a badge, but shortening them would
+blur exactly the distinctions this marketplace exists to keep: MCP/A2A
+availability is not ERC-8183 hireability, and an ambiguous wallet attribution is
+not a generic failure. Only `Quote refresh required` was reworded, to
+`Quote expired` — the same fact, without instructing the buyer to perform an
+action the page does not offer.
+
+`/compare` no longer carries a hardcoded list of four agent ids. It reads the
+curated candidates from `listMarketplaceAgents`, so it cannot offer an agent the
+catalogue has dropped nor miss one it has added, and every catalogue card now
+links into it. An id arriving through `?agentId=` that is not curated still gets
+a checkbox, so a selection seeded from the "all registered agents" view survives
+the next submit.
+
+`/proof/job-514`, `/jobs/[jobId]` and `/spikes/erc8183-browser` are reachable
+only by typing their URL; no UI links to them. They are left in place rather
+than removed — they are pre-existing routes and deleting them is not part of a
+navigation pass.
+
+Category filters still disappear in the "all registered agents" view. Offering
+them there requires a change to `listMarketplaceAgents` in the business layer,
+which is out of scope for a presentation change.

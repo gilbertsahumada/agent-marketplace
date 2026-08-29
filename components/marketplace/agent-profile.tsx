@@ -9,7 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { EvidenceRail } from "./evidence-rail";
-import { CoverageBadge } from "./page-primitives";
+import { Breadcrumb } from "./page-primitives";
 import { ProvenanceBadge } from "./provenance-badge";
 import { agentCardWithObservations, verificationViewModel } from "./view-models";
 import { VerificationDrift } from "./verification-drift";
@@ -36,6 +36,7 @@ export function AgentProfile({ agent, observationTargets = [], observationsAvail
   const reachability = current.evidence.find((step) => step.kind === "reachable")!;
   return (
     <main id="main-content" className="mx-auto w-full max-w-7xl flex-1 px-4 py-12 sm:px-6 lg:px-8">
+      <Breadcrumb current={agent.name} trail={[{ href: "/agents", label: "Agents" }]} />
       <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
         <div className="flex min-w-0 items-start gap-4">
           <span className="flex size-14 shrink-0 items-center justify-center rounded-2xl border border-white/10 bg-zinc-900"><Bot aria-hidden="true" /></span>
@@ -52,7 +53,6 @@ export function AgentProfile({ agent, observationTargets = [], observationsAvail
           </div>
         </div>
         <div className="flex flex-col items-start gap-3 lg:items-end">
-          <CoverageBadge />
           {current.hireability === "hireable" ? (
             <Button asChild><Link href={`/hire/${agent.agentId}`}>Hire agent<ArrowUpRight aria-hidden="true" /></Link></Button>
           ) : (

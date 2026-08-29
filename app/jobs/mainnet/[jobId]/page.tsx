@@ -1,10 +1,10 @@
-import { ArrowLeft, ExternalLink, ShieldCheck } from "lucide-react";
+import { ExternalLink, ShieldCheck } from "lucide-react";
 import type { Metadata } from "next";
-import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Breadcrumb } from "@/components/marketplace/page-primitives";
 import { getMainnetErc8183JobStatus } from "@/src/business/composition";
 import { Erc8183DemoJobNotFoundError, Erc8183SpikeDisabledError } from "@/src/business/errors/erc8183-spike-errors";
 
@@ -22,6 +22,7 @@ export default async function MainnetJobPage({ params }: { params: Promise<{ job
   }
   return (
     <main id="main-content" className="mx-auto w-full max-w-5xl px-4 py-10 sm:px-6 lg:px-8 lg:py-14">
+      <Breadcrumb current={`Job #${job.jobId}`} trail={[{ href: "/", label: "Home" }]} />
       <div className="flex flex-wrap items-center gap-2">
         <Badge className="border-amber-300/30 bg-amber-300/10 text-amber-100" variant="outline">BSC Mainnet · chain 56</Badge>
         <Badge variant="outline">Onchain {job.status}</Badge>
@@ -37,7 +38,6 @@ export default async function MainnetJobPage({ params }: { params: Promise<{ job
           ].map(([label, value]) => <div className="grid gap-1 border-b border-white/[0.06] pb-3 sm:grid-cols-[10rem_1fr]" key={label}><span className="text-zinc-500">{label}</span><span className="font-hash text-xs text-zinc-200">{value}</span></div>)}
           {job.result ? <div className="rounded-xl border border-emerald-400/20 bg-emerald-400/[0.05] p-4"><p className="font-eyebrow flex items-center gap-2 text-emerald-300"><ShieldCheck className="size-4" />Hash-verified result</p><pre className="mt-3 overflow-auto whitespace-pre-wrap text-xs text-zinc-200">{job.result.content}</pre></div> : <p className="text-zinc-500">A hash-verified deliverable is not available for the current state.</p>}
           <div className="flex flex-wrap gap-3">
-            <Button asChild variant="outline"><Link href="/demo/erc8183-mainnet"><ArrowLeft />Return to Mainnet demo</Link></Button>
             <Button asChild variant="outline"><a href="https://bscscan.com/address/0xEa4DAa3100A767e86FDed867729ae7446476EBA6" rel="noreferrer" target="_blank">Commerce on BscScan<ExternalLink /></a></Button>
           </div>
         </CardContent>

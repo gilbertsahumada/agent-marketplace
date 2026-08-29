@@ -37,15 +37,15 @@ export function CatalogPage({ data, observations = { status: "unavailable", feed
       <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
         <PageIntro eyebrow="BSC catalog" title={allView ? "All registered agents" : "Marketplace candidates"}>
           {allView
-            ? `Browse active indexed records for chainId 56 returned by trust8004. The count is response.total for active=true and was fetched ${new Date(data.fetchedAt).toLocaleString("en-US", { timeZone: "UTC", timeZoneName: "short" })}. These records are registered, not automatically evaluated or hireable.`
+            ? `Registered is not evaluated, and not hireable. The count is trust8004 response.total for chainId 56 with active=true, fetched ${new Date(data.fetchedAt).toLocaleString("en-US", { timeZone: "UTC", timeZoneName: "short" })}.`
             : "A small, evidence-backed inventory selected for the four marketplace outcomes. It does not represent every BSC agent in each category."}
         </PageIntro>
-        <CoverageBadge {...(allView ? { total: data.pagination.total, fetchedAt: data.fetchedAt } : {})} />
+        <CoverageBadge {...(allView ? { total: data.pagination.total } : {})} />
       </div>
 
       <nav aria-label="Catalog view" className="mt-8 flex gap-2 border-b border-white/10 pb-3">
-        <Button asChild variant={!allView ? "default" : "ghost"}><Link href="/agents?view=marketplace">Marketplace candidates</Link></Button>
-        <Button asChild variant={allView ? "default" : "ghost"}><Link href="/agents?view=all&page=1&limit=24">All registered agents</Link></Button>
+        <Button asChild variant={!allView ? "default" : "ghost"}><Link aria-current={!allView ? "page" : undefined} href="/agents?view=marketplace">Marketplace candidates</Link></Button>
+        <Button asChild variant={allView ? "default" : "ghost"}><Link aria-current={allView ? "page" : undefined} href="/agents?view=all&page=1&limit=24">All registered agents</Link></Button>
       </nav>
 
       {!allView && (

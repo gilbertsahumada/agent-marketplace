@@ -33,6 +33,7 @@ import { ComparePage } from "../components/marketplace/compare-page.tsx";
 import ValidateAgentPage from "../app/validate/page.tsx";
 
 vi.mock("next/navigation", () => ({
+  usePathname: () => "/agents",
   useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
 }));
 
@@ -287,6 +288,10 @@ describe("marketplace presentation rules", () => {
     first.endpointObservation.status = "observed_ok";
     const second = { ...marketplaceAgent(), agentId: "45381", name: "Aave powered by HeyAnon" };
     render(createElement(ComparePage, {
+      candidates: [
+        { agentId: "45650", name: "V3 Pools powered by HeyAnon" },
+        { agentId: "45381", name: "Aave powered by HeyAnon" },
+      ],
       comparison: {
         agents: [first, second],
         winner: null,
@@ -324,6 +329,7 @@ describe("marketplace presentation rules", () => {
     expect(profileLink).toHaveAttribute("href", "/agents/45650");
     expect(profileLink).toHaveAttribute("data-prefetch", "false");
     expect(screen.getByRole("link", { name: "Passport · Evaluated" })).toHaveAttribute("href", "/agents/45650/passport");
+    expect(screen.getByRole("link", { name: "Compare V3 Pools" })).toHaveAttribute("href", "/compare?agentId=45650");
   });
 
   it("renders not-probed evidence neutrally instead of with a green verified icon", () => {
@@ -413,8 +419,8 @@ describe("marketplace presentation rules", () => {
       fetchedAt: "2026-08-17T00:00:00.000Z",
     };
     render(createElement(CatalogPage, { data: page, query: { view: "all", sort: "newest" } }));
-    expect(screen.getByText("Catalog coverage: partial · 80,058 BSC (chainId=56) records reported by trust8004 for active=true (response.total; fetched 2026-08-17T00:00:00.000Z)")).toBeInTheDocument();
-    expect(screen.getByText(/count is response\.total for active=true/)).toBeInTheDocument();
+    expect(screen.getByText("Partial coverage · 80,058 agents")).toBeInTheDocument();
+    expect(screen.getByText(/count is trust8004 response\.total for chainId 56 with active=true, fetched /)).toBeInTheDocument();
     expect(screen.getByRole("combobox", { name: "Sort agents" })).toHaveValue("newest");
   });
 
@@ -451,6 +457,10 @@ describe("marketplace presentation rules", () => {
     const agent = marketplaceAgent();
     agent.endpointObservation.status = "observed_ok";
     render(createElement(AgentProfile, { agent, passport: evidencePassport("registered") }));
+    const breadcrumb = screen.getByRole("navigation", { name: "Breadcrumb" });
+    expect(within(breadcrumb).getByRole("link", { name: "Agents" })).toHaveAttribute("href", "/agents");
+    expect(within(breadcrumb).getByText("V3 Pools powered by HeyAnon")).toHaveAttribute("aria-current", "page");
+    expect(screen.queryByText(/Catalog coverage|Partial coverage/)).not.toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Indexed Evidence Passport" })).toBeInTheDocument();
     expect(screen.queryByText("Live marketplace evidence snapshot — not a financial guarantee.")).not.toBeInTheDocument();
     expect(screen.getAllByText("derived")).not.toHaveLength(0);
@@ -481,6 +491,10 @@ describe("marketplace presentation rules", () => {
         children: createElement("main", { id: "main-content" }, "Content"),
       }),
     }));
+    const active = screen.getAllByRole("link").filter((link) => link.getAttribute("aria-current") === "page");
+    expect(active).toHaveLength(1);
+    expect(active[0]).toHaveAttribute("href", "/agents");
+
     await user.tab();
     expect(screen.getByRole("link", { name: "Skip to content" })).toHaveFocus();
     const menu = screen.getByText("Menu");

@@ -7,7 +7,7 @@ import { MarketplaceAgentNotFoundError, MarketplaceDataUnavailableError } from "
 import { CatalogUnavailable } from "@/components/marketplace/catalog-unavailable";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { PageIntro } from "@/components/marketplace/page-primitives";
+import { Breadcrumb, PageIntro } from "@/components/marketplace/page-primitives";
 
 export const dynamic = "force-dynamic";
 
@@ -36,13 +36,16 @@ export default async function HirePage({ params }: { params: Promise<{ agentId: 
     const quoteEvidence = current.evidence.find((step) => step.kind === "quote");
     return (
       <main id="main-content" className="mx-auto w-full max-w-4xl flex-1 px-4 py-12 sm:px-6 lg:px-8">
+        <Breadcrumb
+          current="Hire"
+          trail={[{ href: "/agents", label: "Agents" }, { href: `/agents/${agentId}`, label: agent.name }]}
+        />
         <PageIntro eyebrow="Hire eligibility" title={agent.name}>This screen validates whether the selected agent has enough ERC-8183 evidence. It does not simulate a quote or transaction.</PageIntro>
         <Alert className="mt-8 border-amber-400/20 bg-amber-400/5">
           <AlertTitle>{current.hireability === "hireable" ? "Seller is eligible" : "Hiring is not available for this seller"}</AlertTitle>
           <AlertDescription>{quoteEvidence?.detail ?? "Current marketplace observations are unavailable."}</AlertDescription>
         </Alert>
         <div className="mt-6 flex flex-wrap gap-3">
-          <Button asChild variant="outline"><Link href={`/agents/${agentId}`}>Return to profile</Link></Button>
           {selectedDemoAvailable ? <Button asChild><Link href="/demo/erc8183-mainnet">Continue to browser-wallet hire</Link></Button> : alternative ? <Button asChild><Link href={`/hire/${alternative.agentId}`}>Hire {alternative.name}</Link></Button> : demoEnabled ? <Button asChild><Link href="/demo/erc8183">Try the verified Testnet demo</Link></Button> : <Button asChild variant="outline"><Link href="/jobs/testnet/551">View browser-wallet proof</Link></Button>}
         </div>
       </main>

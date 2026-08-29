@@ -1,9 +1,8 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { notFound } from "next/navigation";
 import { EvidencePassportCard } from "@/components/marketplace/evidence-passport-card";
 import { CatalogUnavailable } from "@/components/marketplace/catalog-unavailable";
-import { Button } from "@/components/ui/button";
+import { Breadcrumb } from "@/components/marketplace/page-primitives";
 import { getAgentEvidencePassport } from "@/src/business/composition";
 import {
   InvalidMarketplaceInputError,
@@ -32,6 +31,10 @@ export default async function EvidencePassportPage({
     const passport = await getAgentEvidencePassport.execute({ agentId });
     return (
       <main id="main-content" className="mx-auto w-full max-w-5xl flex-1 px-4 py-12 sm:px-6 lg:px-8">
+        <Breadcrumb
+          current="Evidence Passport"
+          trail={[{ href: "/agents", label: "Agents" }, { href: `/agents/${agentId}`, label: passport.name }]}
+        />
         <div className="mb-8 max-w-3xl">
           <p className="font-eyebrow text-primary">Evidence, not endorsement</p>
           <h1 className="mt-3 text-3xl font-light tracking-tight text-white sm:text-4xl">A portable view of what this agent has actually proven.</h1>
@@ -43,9 +46,6 @@ export default async function EvidencePassportPage({
           apiHref={`/api/marketplace/agents/${agentId}/passport`}
           passport={passport}
         />
-        <div className="mt-6">
-          <Button asChild variant="outline"><Link href={`/agents/${agentId}`}>Return to agent profile</Link></Button>
-        </div>
       </main>
     );
   } catch (error) {
