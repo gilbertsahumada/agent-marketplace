@@ -25,6 +25,7 @@ const REQUIRED_RAW_ANALYTICS = [
   "evidence/raw/window-start.json",
   "evidence/raw/cleanup.json",
   "evidence/raw/scheduler-attempts.json",
+  "evidence/raw/drain.json",
 ] as const;
 const PHASES = ["header", "sweep", "probe"] as const;
 const OUTCOMES = ["completed", "failed", "duplicate", "locked"] as const;
@@ -69,6 +70,12 @@ interface RawMetrics {
   readonly finalBacklogCount: number;
   readonly preflightSchedules: readonly string[];
   readonly installedSchedules: readonly string[];
+  readonly drainSchedules: readonly string[];
+  readonly drainBacklogCount: number;
+  readonly drainKillSwitch: boolean;
+  readonly drainProducerKillSwitch: boolean;
+  readonly drainStagingManualRun: boolean;
+  readonly drainSharedSecretPresent: boolean;
   readonly finalSchedules: readonly string[];
   readonly finalKillSwitch: boolean;
   readonly finalProducerKillSwitch: boolean;
@@ -76,6 +83,7 @@ interface RawMetrics {
   readonly finalSharedSecretPresent: boolean;
   readonly preflightCapturedAt: number;
   readonly activationCapturedAt: number;
+  readonly drainCapturedAt: number;
   readonly cleanupCapturedAt: number;
   readonly lastQueueTerminalAt: number;
 }
@@ -191,6 +199,9 @@ export async function buildWp224hArtifact(
   const cleanup = controlRaw(parsed.get(REQUIRED_RAW_ANALYTICS[9]), "cleanup", {
     accountId: options.accountId, queueId: options.queueId, workerName: options.workerName,
   });
+  const drain = controlRaw(parsed.get(REQUIRED_RAW_ANALYTICS[11]), "drain", {
+    accountId: options.accountId, queueId: options.queueId, workerName: options.workerName,
+  });
   const artifact = {
     schemaVersion: 1,
     commit,
@@ -236,6 +247,10 @@ export async function buildWp224hArtifact(
       preflightSchedules: preflight.schedules,
       preflightBacklogCount: preflight.backlogCount,
       installedSchedules: activation.schedules,
+      drainSchedules: drain.schedules,
+      drainBacklogCount: drain.backlogCount,
+      drainKillSwitch: drain.killSwitch,
+      drainProducerKillSwitch: drain.producerKillSwitch,
       finalSchedules: cleanup.schedules,
       finalBacklogCount: cleanup.backlogCount,
       killSwitch: cleanup.killSwitch,
@@ -974,6 +989,7 @@ async function validateRawAnalytics(
     fail("PHASE_SEQUENCE", "persisted phase immediately before the window does not match the first tick");
   }
   const cleanup = controlRaw(parsed.get(REQUIRED_RAW_ANALYTICS[9]), "cleanup", controlContext);
+  const drain = controlRaw(parsed.get(REQUIRED_RAW_ANALYTICS[11]), "drain", controlContext);
   const http429 = context.quotaLedger.filter(({ errorCode }) => errorCode?.includes("429") === true).length;
   const quotaErrors = context.quotaLedger.filter(({ errorCode }) =>
     errorCode !== null && /quota|limit|exceeded/i.test(errorCode)).length;
@@ -1002,6 +1018,12 @@ async function validateRawAnalytics(
     finalBacklogCount: cleanup.backlogCount,
     preflightSchedules: preflight.schedules,
     installedSchedules: activation.schedules,
+    drainSchedules: drain.schedules,
+    drainBacklogCount: drain.backlogCount,
+    drainKillSwitch: drain.killSwitch,
+    drainProducerKillSwitch: drain.producerKillSwitch,
+    drainStagingManualRun: drain.stagingManualRun,
+    drainSharedSecretPresent: drain.sharedSecretPresent,
     finalSchedules: cleanup.schedules,
     finalKillSwitch: cleanup.killSwitch,
     finalProducerKillSwitch: cleanup.producerKillSwitch,
@@ -1009,6 +1031,7 @@ async function validateRawAnalytics(
     finalSharedSecretPresent: cleanup.sharedSecretPresent,
     preflightCapturedAt: preflight.capturedAt,
     activationCapturedAt: activation.capturedAt,
+    drainCapturedAt: drain.capturedAt,
     cleanupCapturedAt: cleanup.capturedAt,
     lastQueueTerminalAt,
   };
@@ -1269,7 +1292,7 @@ function graphqlProvenance(
 
 function controlRaw(
   value: unknown,
-  label: "preflight" | "activation" | "cleanup",
+  label: "preflight" | "activation" | "drain" | "cleanup",
   context: { readonly accountId: string; readonly queueId: string; readonly workerName: string },
 ): {
   readonly schedules: readonly string[];
@@ -1328,10 +1351,11 @@ function controlRaw(
     if (settingBindings.has(name)) fail("RAW_CLEANUP", `${label} setting names are duplicated`);
     settingBindings.set(name, binding);
   }
-  const active = label === "activation";
+  const producing = label === "activation";
+  const consuming = label === "activation" || label === "drain";
   const expectedBindings = new Map<string, string>([
-    ["KILL_SWITCH", active ? "0" : "1"],
-    ["PRODUCER_KILL_SWITCH", active ? "0" : "1"],
+    ["KILL_SWITCH", consuming ? "0" : "1"],
+    ["PRODUCER_KILL_SWITCH", producing ? "0" : "1"],
     ["STAGING_MANUAL_RUN", "0"],
   ]);
   for (const [name, expected] of expectedBindings) {
@@ -1352,8 +1376,8 @@ function controlRaw(
   );
   nonNegativeInteger(backlogResult.backlog_bytes, "RAW_CLEANUP", `${label} backlog_bytes`);
   const health = record(response.health, "RAW_CLEANUP", `${label} health response`);
-  if (health.status !== "ok" || health.killSwitch !== !active
-    || health.producerKillSwitch !== !active
+  if (health.status !== "ok" || health.killSwitch !== !consuming
+    || health.producerKillSwitch !== !producing
     || (health.stagingManualRun !== undefined && health.stagingManualRun !== false)) {
     fail("RAW_CLEANUP", `${label} safety state is invalid`);
   }
@@ -1425,9 +1449,14 @@ function validateCleanup(
 ): void {
   const cleanup = record(value, "CLEANUP", "cleanup");
   const firstScheduledTime = Math.min(...tickLedger.map(({ scheduledTime }) => scheduledTime));
+  const lastScheduledTime = Math.max(...tickLedger.map(({ scheduledTime }) => scheduledTime));
   if (raw.preflightCapturedAt > raw.activationCapturedAt
     || raw.activationCapturedAt >= firstScheduledTime) {
     fail("CLEANUP", "control evidence timestamps are out of order");
+  }
+  if (raw.drainCapturedAt < lastScheduledTime || raw.drainCapturedAt >= end
+    || raw.drainCapturedAt <= raw.activationCapturedAt) {
+    fail("CLEANUP", "producer drain evidence is outside the shutdown barrier");
   }
   if (raw.cleanupCapturedAt < end + 15 * 60_000) {
     fail("CLEANUP_GRACE", "cleanup was captured before the 15-minute terminality grace");
@@ -1443,6 +1472,16 @@ function validateCleanup(
     || !sameStringArray(cleanup.installedSchedules, raw.installedSchedules)
     || raw.installedSchedules.length !== 1
     || raw.installedSchedules[0] !== "*/5 * * * *"
+    || !sameStringArray(cleanup.drainSchedules, raw.drainSchedules)
+    || !emptyArray(cleanup.drainSchedules)
+    || cleanup.drainBacklogCount !== raw.drainBacklogCount
+    || raw.drainBacklogCount !== 0
+    || cleanup.drainKillSwitch !== raw.drainKillSwitch
+    || raw.drainKillSwitch !== false
+    || cleanup.drainProducerKillSwitch !== raw.drainProducerKillSwitch
+    || raw.drainProducerKillSwitch !== true
+    || raw.drainStagingManualRun !== false
+    || raw.drainSharedSecretPresent !== false
     || !sameStringArray(cleanup.finalSchedules, raw.finalSchedules)
     || !emptyArray(cleanup.finalSchedules)
     || cleanup.finalBacklogCount !== raw.finalBacklogCount
