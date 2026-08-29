@@ -18,6 +18,10 @@
     "cf-typegen": "wrangler types src/worker-configuration.d.ts",
     "manifest:check": "tsx scripts/generate-curated-inventory.ts",
     "evidence:wp2-24h": "tsx scripts/validate-wp2-24h.ts",
+    "evidence:wp2-build": "tsx scripts/build-wp2-artifact.ts",
+    "evidence:wp2-analytics": "tsx scripts/capture-wp2-analytics.ts",
+    "evidence:wp2-ledger": "tsx scripts/capture-wp2-ledger.ts",
+    "evidence:wp2-control": "tsx scripts/capture-wp2-control.ts",
     "evidence:wp2-deployment": "tsx scripts/capture-wp2-deployment.ts",
     "evidence:wp2-window-start": "tsx scripts/capture-wp2-window-start.ts"
   },
