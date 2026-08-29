@@ -22,6 +22,33 @@ const FIXTURE_LEDGER = Array.from({ length: 288 }, (_, index) => ({
   finishedAt: WINDOW_START + 15_000 + index * 5 * 60_000,
   errorCode: null,
 }));
+function controlFixture(
+  mode: "preflight" | "activation" | "cleanup",
+  completedAt: string,
+): Record<string, unknown> {
+  const active = mode === "activation";
+  return {
+    request: {
+      accountId: "bc8d4adf4860284fda426b24e7377bc2",
+      backlogUrl: "https://api.cloudflare.com/client/v4/accounts/bc8d4adf4860284fda426b24e7377bc2/queues/721ba809967d425a91dbc34eb1ac3baa/metrics",
+      completedAt,
+      healthUrl: "https://bnb-agent-probe-staging.gilbertsahumada.workers.dev/health",
+      mode,
+      queueId: "721ba809967d425a91dbc34eb1ac3baa",
+      schedulesUrl: "https://api.cloudflare.com/client/v4/accounts/bc8d4adf4860284fda426b24e7377bc2/workers/scripts/bnb-agent-probe-staging/schedules",
+      scriptName: "bnb-agent-probe-staging",
+      startedAt: new Date(Date.parse(completedAt) - 500).toISOString(),
+    },
+    response: {
+      schedules: { success: true, errors: [], result: { schedules: active ? [{ cron: "*/5 * * * *" }] : [] } },
+      backlog: { success: true, errors: [], result: {
+        backlog_count: 0, backlog_bytes: 0, oldest_message_timestamp_ms: 0,
+      } },
+      health: { status: "ok", killSwitch: !active, producerKillSwitch: !active, stagingManualRun: false },
+      secrets: [{ name: "BSC_RPC_URL", type: "secret_text" }],
+    },
+  };
+}
 const RAW_PAYLOADS = {
   "evidence/raw/d1-database.json": {
     request: { date: "2026-08-29", databaseId: D1_ID },
@@ -163,10 +190,10 @@ const RAW_PAYLOADS = {
     },
   },
   "evidence/raw/preflight.json": {
-    response: { capturedAt: "2026-08-28T21:50:00.000Z", schedules: [], backlogCount: 0 },
+    ...controlFixture("preflight", "2026-08-28T21:50:00.000Z"),
   },
   "evidence/raw/activation.json": {
-    response: { capturedAt: "2026-08-28T21:52:00.000Z", schedules: ["*/5 * * * *"], backlogCount: 0 },
+    ...controlFixture("activation", "2026-08-28T21:52:00.000Z"),
   },
   "evidence/raw/window-start.json": {
     request: {
@@ -184,9 +211,7 @@ const RAW_PAYLOADS = {
     ] }] },
   },
   "evidence/raw/cleanup.json": {
-    response: { capturedAt: "2026-08-30T00:15:00.000Z", schedules: [], backlogCount: 0, killSwitch: true,
-      producerKillSwitch: true,
-      stagingManualRun: false, sharedSecretPresent: false },
+    ...controlFixture("cleanup", "2026-08-30T00:15:00.000Z"),
   },
 } as const;
 const RAW_FILES = Object.fromEntries(
@@ -312,6 +337,17 @@ describe("WP2 24-hour evidence artifact validator", () => {
     artifact.ledger[0].d1Queries = 12;
     artifact.quotaLedger[0].d1Queries = 12;
     await expect(validateWp224hArtifact(artifact, { readRawEvidence })).rejects.toThrow("RAW_LEDGER");
+  });
+
+  it("rejects a self-asserted cleanup without literal control-plane responses", async () => {
+    const artifact = validArtifact() as any;
+    const contents = JSON.stringify({ response: { capturedAt: "2026-08-30T00:15:00.000Z",
+      schedules: [], backlogCount: 0, killSwitch: true, producerKillSwitch: true,
+      stagingManualRun: false, sharedSecretPresent: false } });
+    artifact.rawAnalytics["evidence/raw/cleanup.json"].sha256 = sha256(contents);
+    await expect(validateWp224hArtifact(artifact, {
+      readRawEvidence: async (path) => path === "evidence/raw/cleanup.json" ? contents : readRawEvidence(path),
+    })).rejects.toThrow("RAW_CLEANUP");
   });
 
   it.each([
