@@ -213,6 +213,14 @@ timeout, response caps, Queue/D1 resources and absence of `SHARED_SECRET`.
 Preflight, activation and cleanup require zero Queue backlog. Drain records the
 literal backlog and may be nonzero while the consumer finishes pending retries.
 
+Do not poll D1, call `/health`, invoke the staging admin route or run any other
+Worker/D1 diagnostic during the measured UTC day. Those reads and invocations
+would enter the same account-wide D1/Workers Analytics being measured. The only
+direct D1 evidence reads are `window-start` before `00:00Z` and the ledger after
+`24:00Z` plus terminality grace. During the day, observe only non-invasive
+Cloudflare control-plane status; investigate anomalies after the window unless
+runtime safety requires an immediate producer barrier.
+
 `evidence:wp2-window-start` requires `CLOUDFLARE_API_TOKEN`,
 `CLOUDFLARE_ACCOUNT_ID` and `WP2_D1_DATABASE_ID` in the process environment.
 Run it after the final pre-window tick and before the first UTC-day tick. It
