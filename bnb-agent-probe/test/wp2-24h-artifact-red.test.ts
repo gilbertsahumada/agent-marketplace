@@ -115,9 +115,11 @@ const RAW_PAYLOADS = {
     request: {
       accountId: "bc8d4adf4860284fda426b24e7377bc2",
       capturedAt: "2026-08-30T00:16:00.000Z",
+      completedAt: "2026-08-30T00:16:00.000Z",
       databaseId: D1_ID,
       params: [WINDOW_START, WINDOW_START + 24 * 60 * 60_000, WINDOW_START, WINDOW_START + 24 * 60 * 60_000],
       sql: WP2_ATTEMPT_COHORT_SQL,
+      startedAt: "2026-08-30T00:15:59.500Z",
       windowEnd: "2026-08-30T00:00:00.000Z",
       windowStart: "2026-08-29T00:00:00.000Z",
     },
@@ -436,7 +438,7 @@ describe("WP2 24-hour evidence artifact validator", () => {
   it("rejects a scheduler ledger captured before terminality grace", async () => {
     const artifact = validArtifact() as any;
     const ledger = structuredClone(RAW_PAYLOADS["evidence/raw/scheduler-attempts.json"]) as any;
-    ledger.request.capturedAt = "2026-08-30T00:14:59.999Z";
+    ledger.request.startedAt = "2026-08-30T00:14:59.999Z";
     const contents = JSON.stringify(ledger);
     artifact.rawAnalytics["evidence/raw/scheduler-attempts.json"].sha256 = sha256(contents);
     await expect(validateWp224hArtifact(artifact, {
