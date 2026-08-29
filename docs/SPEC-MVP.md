@@ -188,7 +188,7 @@ Si cambia un punto, se actualiza esta spec antes de WP1.
  +---------------------------+-----------------------------+
                              |
                     +--------v---------+
-                    | D1, cinco tablas |
+                    | D1, seis tablas  |
                     +------------------+
                              |
                        BSC RPC / viem
@@ -342,12 +342,37 @@ CREATE TABLE runtime_state (
   integerValue INTEGER,
   updatedAt    INTEGER NOT NULL
 );
+
+CREATE TABLE scheduler_attempts (
+  id                              INTEGER PRIMARY KEY AUTOINCREMENT,
+  messageId                       TEXT NOT NULL CHECK (length(messageId) BETWEEN 1 AND 256),
+  scheduledTime                   INTEGER NOT NULL,
+  attempt                         INTEGER NOT NULL CHECK (attempt BETWEEN 1 AND 4),
+  phase                           TEXT CHECK (phase IS NULL OR phase IN ('header', 'sweep', 'probe')),
+  outcome                         TEXT NOT NULL
+    CHECK (outcome IN ('completed', 'failed', 'duplicate', 'locked')),
+  startedAt                       INTEGER NOT NULL,
+  finishedAt                      INTEGER NOT NULL CHECK (finishedAt >= startedAt),
+  upstreamRequests                INTEGER NOT NULL CHECK (upstreamRequests >= 0),
+  d1Queries                       INTEGER NOT NULL CHECK (d1Queries BETWEEN 1 AND 40),
+  rowsReadObservedBeforeLedger    INTEGER NOT NULL CHECK (rowsReadObservedBeforeLedger >= 0),
+  rowsWrittenObservedBeforeLedger INTEGER NOT NULL CHECK (rowsWrittenObservedBeforeLedger >= 0),
+  errorCode                       TEXT,
+  UNIQUE (messageId, attempt)
+);
+CREATE INDEX idx_scheduler_attempts_window
+  ON scheduler_attempts (scheduledTime, messageId, attempt);
+-- Triggers BEFORE UPDATE / BEFORE DELETE hacen RAISE(ABORT,
+-- 'scheduler_attempts is append-only'): el append-only se aplica en la base,
+-- no solo por disciplina de aplicación.
 ```
 
 ### 3.2 Invariantes de escritura
 
-- `probe_observations`, `funnel_snapshots` y `hire_events` son append-only. La
-  aplicación no ejecuta `UPDATE` ni `DELETE` sobre ellas.
+- `probe_observations`, `funnel_snapshots`, `hire_events` y
+  `scheduler_attempts` son append-only. La aplicación no ejecuta `UPDATE` ni
+  `DELETE` sobre ellas; `scheduler_attempts` además lo garantiza con triggers
+  en la propia base.
 - `probe_targets` solo se escribe si cambia un campo material. `lastSeenAt` se
   refresca como máximo una vez por hora.
 - Un endpoint retirado pasa a `declarationState=removed`; no se borra ni se
@@ -380,6 +405,7 @@ last_probe_summary    textValue=JSON sanitizado
 last_scheduler_summary textValue=JSON sanitizado (`skipped_locked`, sin runId)
 last_funnel_snapshot  integerValue=funnel_snapshots.id
 next_scheduler_phase  textValue=header|sweep|probe
+last_queue_scheduled_time integerValue=último scheduledTime encolado (dedup de ticks)
 daily_budget_YYYYMMDD textValue=JSON sanitizado con invocaciones, outcomes,
                       requests, queries y filas D1 observadas antes del propio ledger
 ```
@@ -1014,6 +1040,9 @@ Variables:
 TRUST8004_BASE_URL=https://trust8004.xyz/api/app
 CLOUDFLARE_WORKERS_PLAN=free
 KILL_SWITCH=1
+PRODUCER_KILL_SWITCH=1
+DEPLOYMENT_ENV=production   # staging|validation en sus entornos Wrangler
+STAGING_MANUAL_RUN=0
 CRON_INTERVAL_MINUTES=5
 HEADER_LIMIT=25
 SWEEP_LIMIT=4
@@ -1112,11 +1141,16 @@ Checks bloqueantes:
 - el contador D1 admite como máximo 40 queries Free, incluye el marcador atómico
   de Queue, cuenta cada sentencia de un batch y rechaza la siguiente antes de
   acceder a D1;
-- tests prueban que las tablas append-only no reciben `UPDATE`/`DELETE` desde la
-  aplicación;
-- grep del código: ninguna llamada `.prepare(` fuera de `src/db/orm.ts`,
-  `src/lib/scheduler-lease.ts` y `src/db/query-budget.ts` en código nuevo
-  (aplicación total desde la migración de call sites en WP4);
+- tests prueban que las cuatro tablas append-only (incluida
+  `scheduler_attempts`, también protegida por triggers) no reciben
+  `UPDATE`/`DELETE` desde la aplicación;
+- gate de allowlist (`test/prepare-allowlist.test.ts` contra el fixture
+  versionado `test/fixtures/prepare-allowlist.json`): cada callsite crudo
+  `.prepare(` queda congelado por archivo + función + fingerprint normalizado
+  de la consulta + conteo; un callsite nuevo o alterado falla la suite, una
+  entrada sin callsite obliga a borrarla (la lista solo decrece), y al
+  completar WP4 solo quedan las excepciones normativas del lease y el
+  query-budget;
 - el dry-run compila el mismo entrypoint y bindings que staging.
 
 La corrida WP2 local del 2026-08-28 queda registrada en
@@ -1461,7 +1495,8 @@ original produce un perfil documentado que cabe en el plan operativo vigente.
 
 ### WP1 — Worker, schema y `/health`
 
-Entrega: repo, Wrangler, Drizzle SQLite, migraciones, cinco tablas, lease,
+Entrega: repo, Wrangler, Drizzle SQLite, migraciones, las cinco tablas
+iniciales (WP2 añade la sexta, `scheduler_attempts`), lease,
 `/health`, kill switch, sin cron y manifest versionado de categorías curadas
 exportado desde `marketplaceInventoryEntries()`.
 
@@ -1475,7 +1510,9 @@ Gate:
 - dos adquisiciones concurrentes producen un ganador;
 - el manifest conserva los cinco IDs/categorías actuales, incluido Grid 303779,
   y todo assignment sigue marcado `candidate_unverified`;
-- cero UPDATE/DELETE sobre tablas append-only.
+- cero UPDATE/DELETE de aplicación sobre las cuatro tablas append-only
+  (`probe_observations`, `funnel_snapshots`, `hire_events`,
+  `scheduler_attempts`).
 
 Resultado verificado el 2026-08-28: el subproyecto `bnb-agent-probe` pasa
 typecheck, 46 tests unitarios/schema, 5 tests dentro del runtime Workers, dos
@@ -1685,15 +1722,11 @@ Convenciones:
   (infra en `test/integration/`); los fakes de D1 se reservan para lógica pura
   sin acceso a datos; staging para egress.
 
-```ts
-type PhaseSummary = {
-  processed: number;
-  written: number;
-  requestsUsed: number;
-  durationMs: number;
-  errors: string[];
-};
-```
+Los resúmenes de fase son los tipos que exporta cada módulo de fase (p. ej.
+`SweepPhaseSummary` y `ProbePhaseSummary` en `src/phases/`); no existe un
+`PhaseSummary` único. Todo resumen incluye al menos trabajo procesado,
+requests usados, duración y errores sanitizados, y se persiste en
+`runtime_state` como JSON sin payloads crudos.
 
 ---
 
