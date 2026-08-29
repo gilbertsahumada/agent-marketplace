@@ -1724,8 +1724,8 @@ Convenciones:
 Los resúmenes de fase son los tipos que exporta cada módulo de fase (p. ej.
 `SweepPhaseSummary` y `ProbePhaseSummary` en `src/phases/`); no existe un
 `PhaseSummary` único. Todo resumen incluye al menos trabajo procesado,
-requests usados, duración y errores sanitizados, y se persiste en
-`runtime_state` como JSON sin payloads crudos.
+requests usados y duración. Los fallos se persisten separadamente con un
+`errorCode` sanitizado; ningún resumen guarda payloads crudos.
 
 ---
 

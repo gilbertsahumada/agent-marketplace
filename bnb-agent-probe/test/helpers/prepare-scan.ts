@@ -100,4 +100,3 @@ export function scanPrepareCallsites(): FoundCallsite[] {
   return [...found.values()].sort((a, b) =>
     a.file.localeCompare(b.file) || a.function.localeCompare(b.function) || a.fingerprint.localeCompare(b.fingerprint));
 }
-
