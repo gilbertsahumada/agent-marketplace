@@ -454,6 +454,19 @@ describe("WP2 24-hour evidence artifact validator", () => {
     expect(WP2_WORKERS_ANALYTICS_QUERY).toContain("datetime_leq: $terminalityEndInclusive");
   });
 
+  it("rejects an unexplained authenticated consumer request", async () => {
+    const artifact = validArtifact() as any;
+    const workers = structuredClone(RAW_PAYLOADS["evidence/raw/analytics/workers.json"]) as any;
+    workers.response.data.viewer.accounts[0].workersInvocationsAdaptive[1].sum.requests = 289;
+    const contents = JSON.stringify(workers);
+    artifact.rawAnalytics["evidence/raw/analytics/workers.json"].sha256 = sha256(contents);
+    await expect(validateWp224hArtifact(artifact, {
+      readRawEvidence: evidenceReaderFor(artifact, {
+        "evidence/raw/analytics/workers.json": contents,
+      }),
+    })).rejects.toThrow("RAW_WORKERS");
+  });
+
   it("rejects a drain capture that contacted Worker health", async () => {
     const artifact = validArtifact() as any;
     const drain = structuredClone(RAW_PAYLOADS["evidence/raw/drain.json"]) as any;
