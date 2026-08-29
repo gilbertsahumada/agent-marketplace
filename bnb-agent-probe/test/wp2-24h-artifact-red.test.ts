@@ -40,6 +40,22 @@ function controlFixture(
 ): Record<string, unknown> {
   const producing = mode === "activation";
   const consuming = mode === "activation" || mode === "drain";
+  const plain = (name: string, text: string) => ({ name, text, type: "plain_text" });
+  const bindings = [
+    plain("DEPLOYMENT_ENV", "staging"), plain("CLOUDFLARE_WORKERS_PLAN", "free"),
+    plain("CRON_INTERVAL_MINUTES", "5"), plain("HEADER_LIMIT", "25"),
+    plain("SWEEP_LIMIT", "4"), plain("SWEEP_PAGES_PER_RUN", "1"),
+    plain("PROBE_BATCH_SIZE", "1"), plain("TRUST8004_REQUESTS_PER_RUN", "4"),
+    plain("EXTERNAL_SUBREQUESTS_PER_RUN", "12"), plain("D1_QUERIES_PER_RUN", "40"),
+    plain("D1_ROWS_READ_PER_RUN", "3000"), plain("D1_ROWS_WRITTEN_PER_RUN", "60"),
+    plain("PROBE_TIMEOUT_MS", "5000"), plain("MAX_CATALOG_RESPONSE_BYTES", "16777216"),
+    plain("MAX_SELLER_RESPONSE_BYTES", "32768"),
+    plain("KILL_SWITCH", consuming ? "0" : "1"),
+    plain("PRODUCER_KILL_SWITCH", producing ? "0" : "1"),
+    plain("STAGING_MANUAL_RUN", "0"),
+    { name: "DB", type: "d1", id: D1_ID },
+    { name: "WP2_QUEUE", type: "queue", queue_name: "bnb-agent-probe-staging" },
+  ];
   return {
     request: {
       accountId: "bc8d4adf4860284fda426b24e7377bc2",
@@ -58,12 +74,14 @@ function controlFixture(
       backlog: { success: true, errors: [], result: {
         backlog_count: 0, backlog_bytes: 0, oldest_message_timestamp_ms: 0,
       } },
-      settings: { success: true, errors: [], result: { bindings: [
-        { name: "KILL_SWITCH", text: consuming ? "0" : "1", type: "plain_text" },
-        { name: "PRODUCER_KILL_SWITCH", text: producing ? "0" : "1", type: "plain_text" },
-        { name: "STAGING_MANUAL_RUN", text: "0", type: "plain_text" },
-      ] } },
-      health: { status: "ok", killSwitch: !consuming, producerKillSwitch: !producing },
+      settings: { success: true, errors: [], result: { bindings } },
+      health: { status: "ok", plan: "free", schedulerMode: "single_phase",
+        killSwitch: !consuming, producerKillSwitch: !producing,
+        budgets: { cronIntervalMinutes: 5, headerLimit: 25, sweepLimit: 4,
+          sweepPagesPerRun: 1, probeBatchSize: 1, trust8004RequestsPerRun: 4,
+          externalSubrequestsPerRun: 12, d1QueriesPerRun: 40, d1RowsReadPerRun: 3000,
+          d1RowsWrittenPerRun: 60, probeTimeoutMs: 5000,
+          maxCatalogResponseBytes: 16777216, maxSellerResponseBytes: 32768 } },
       secrets: [{ name: "BSC_RPC_URL", type: "secret_text" }],
     },
   };
@@ -640,7 +658,8 @@ describe("WP2 24-hour evidence artifact validator", () => {
   it("rejects a drain snapshot without the producer-only barrier", async () => {
     const artifact = validArtifact() as any;
     const drain = structuredClone(RAW_PAYLOADS["evidence/raw/drain.json"]) as any;
-    drain.response.settings.result.bindings[1].text = "0";
+    drain.response.settings.result.bindings
+      .find((binding: any) => binding.name === "PRODUCER_KILL_SWITCH").text = "0";
     const contents = JSON.stringify(drain);
     artifact.rawAnalytics["evidence/raw/drain.json"].sha256 = sha256(contents);
     artifact.cleanup.drainProducerKillSwitch = false;
@@ -652,12 +671,26 @@ describe("WP2 24-hour evidence artifact validator", () => {
   it("rejects cleanup with a deployed manual-run binding", async () => {
     const artifact = validArtifact() as any;
     const cleanup = structuredClone(RAW_PAYLOADS["evidence/raw/cleanup.json"]) as any;
-    cleanup.response.settings.result.bindings[2].text = "1";
+    cleanup.response.settings.result.bindings
+      .find((binding: any) => binding.name === "STAGING_MANUAL_RUN").text = "1";
     const contents = JSON.stringify(cleanup);
     artifact.rawAnalytics["evidence/raw/cleanup.json"].sha256 = sha256(contents);
     artifact.cleanup.stagingManualRun = true;
     await expect(validateWp224hArtifact(artifact, {
       readRawEvidence: async (path) => path === "evidence/raw/cleanup.json" ? contents : readRawEvidence(path),
+    })).rejects.toThrow("RAW_CLEANUP");
+  });
+
+  it("rejects a deployed D1 query budget above the reserved Free profile", async () => {
+    const artifact = validArtifact() as any;
+    const activation = structuredClone(RAW_PAYLOADS["evidence/raw/activation.json"]) as any;
+    activation.response.settings.result.bindings
+      .find((binding: any) => binding.name === "D1_QUERIES_PER_RUN").text = "50";
+    activation.response.health.budgets.d1QueriesPerRun = 50;
+    const contents = JSON.stringify(activation);
+    artifact.rawAnalytics["evidence/raw/activation.json"].sha256 = sha256(contents);
+    await expect(validateWp224hArtifact(artifact, {
+      readRawEvidence: async (path) => path === "evidence/raw/activation.json" ? contents : readRawEvidence(path),
     })).rejects.toThrow("RAW_CLEANUP");
   });
 
