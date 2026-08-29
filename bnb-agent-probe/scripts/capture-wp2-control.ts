@@ -123,6 +123,21 @@ function validateControlState(
     return [binding.name, binding] as const;
   }));
   for (const [name, expected] of [
+    ["DEPLOYMENT_ENV", "staging"],
+    ["CLOUDFLARE_WORKERS_PLAN", "free"],
+    ["CRON_INTERVAL_MINUTES", "5"],
+    ["HEADER_LIMIT", "25"],
+    ["SWEEP_LIMIT", "4"],
+    ["SWEEP_PAGES_PER_RUN", "1"],
+    ["PROBE_BATCH_SIZE", "1"],
+    ["TRUST8004_REQUESTS_PER_RUN", "4"],
+    ["EXTERNAL_SUBREQUESTS_PER_RUN", "12"],
+    ["D1_QUERIES_PER_RUN", "40"],
+    ["D1_ROWS_READ_PER_RUN", "3000"],
+    ["D1_ROWS_WRITTEN_PER_RUN", "60"],
+    ["PROBE_TIMEOUT_MS", "5000"],
+    ["MAX_CATALOG_RESPONSE_BYTES", "16777216"],
+    ["MAX_SELLER_RESPONSE_BYTES", "32768"],
     ["KILL_SWITCH", consuming ? "0" : "1"],
     ["PRODUCER_KILL_SWITCH", producing ? "0" : "1"],
     ["STAGING_MANUAL_RUN", "0"],
@@ -141,6 +156,17 @@ function validateControlState(
   }
 
   const health = object(healthValue, "health");
+  const budgets = object(health.budgets, "health budgets");
+  const expectedBudgets: Readonly<Record<string, number>> = {
+    cronIntervalMinutes: 5, headerLimit: 25, sweepLimit: 4, sweepPagesPerRun: 1,
+    probeBatchSize: 1, trust8004RequestsPerRun: 4, externalSubrequestsPerRun: 12,
+    d1QueriesPerRun: 40, d1RowsReadPerRun: 3000, d1RowsWrittenPerRun: 60,
+    probeTimeoutMs: 5000, maxCatalogResponseBytes: 16777216, maxSellerResponseBytes: 32768,
+  };
+  if (health.plan !== "free" || health.schedulerMode !== "single_phase"
+    || Object.entries(expectedBudgets).some(([name, expected]) => budgets[name] !== expected)) {
+    throw new Error(`${mode} health does not match the Free profile`);
+  }
   if (health.status !== "ok" || health.killSwitch !== !consuming
     || health.producerKillSwitch !== !producing
     || (health.stagingManualRun !== undefined && health.stagingManualRun !== false)) {
