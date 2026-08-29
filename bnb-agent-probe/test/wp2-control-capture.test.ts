@@ -133,7 +133,7 @@ describe("WP2 control-plane capture", () => {
       if (url.endsWith("/metrics")) return Response.json({ success: true, errors: [], result: {
         backlog_count: 1, backlog_bytes: 64,
       } });
-      return Response.json(healthState(false, true));
+      throw new Error(`drain must not call Worker health: ${url}`);
     });
     const timestamps = ["2026-08-29T23:56:20.000Z", "2026-08-29T23:56:20.400Z"];
 
@@ -148,7 +148,9 @@ describe("WP2 control-plane capture", () => {
     });
     const raw = JSON.parse(await readFile(outputPath, "utf8")) as any;
     expect(raw.request.mode).toBe("drain");
-    expect(raw.response.health).toMatchObject({ killSwitch: false, producerKillSwitch: true });
+    expect(raw.request.healthUrl).toBeUndefined();
+    expect(raw.response.health).toBeUndefined();
+    expect(fetch).toHaveBeenCalledTimes(3);
   });
 
   it("refuses to publish a snapshot bound to another D1", async () => {
