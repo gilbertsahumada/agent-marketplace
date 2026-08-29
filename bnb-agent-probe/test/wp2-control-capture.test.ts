@@ -153,6 +153,34 @@ describe("WP2 control-plane capture", () => {
     expect(fetch).toHaveBeenCalledTimes(3);
   });
 
+  it.each(
+    (["preflight", "activation", "cleanup"] as const).flatMap((mode) => [
+      "",
+      "http://probe.example/health",
+      "https://probe.example/not-health",
+      "https://probe.example/health?q=1",
+      "https://probe.example/health#fragment",
+    ].map((healthUrl) => ({ mode, healthUrl }))),
+  )("rejects $mode health URL $healthUrl before fetch", async ({ mode, healthUrl }) => {
+    const fetch = vi.fn();
+    const readSecrets = vi.fn(async () => []);
+
+    await expect(captureWp2Control({
+      accountId: "bc8d4adf4860284fda426b24e7377bc2",
+      apiToken: "token",
+      databaseId: "6fbeea3e-4516-4c4e-a5c4-392cb067198a",
+      fetch,
+      healthUrl,
+      mode,
+      outputPath: join(tmpdir(), `invalid-${mode}.json`),
+      queueId: "721ba809967d425a91dbc34eb1ac3baa",
+      readSecrets,
+      scriptName: "bnb-agent-probe-staging",
+    })).rejects.toThrow();
+    expect(fetch).not.toHaveBeenCalled();
+    expect(readSecrets).not.toHaveBeenCalled();
+  });
+
   it("refuses to publish a snapshot bound to another D1", async () => {
     const directory = await mkdtemp(join(tmpdir(), "wp2-control-profile-"));
     directories.push(directory);
