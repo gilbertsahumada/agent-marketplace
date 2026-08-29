@@ -9,9 +9,9 @@ const execFile = promisify(execFileCallback);
 const ACCOUNT_ID = /^[a-f0-9]{32}$/;
 const QUEUE_ID = /^[a-f0-9]{32}$/;
 const SCRIPT_NAME = /^[a-z0-9-]+$/;
-const MODES = new Set(["preflight", "activation", "cleanup"]);
+const MODES = new Set(["preflight", "activation", "drain", "cleanup"]);
 
-type ControlMode = "preflight" | "activation" | "cleanup";
+type ControlMode = "preflight" | "activation" | "drain" | "cleanup";
 
 interface CaptureOptions {
   readonly accountId: string;
@@ -108,7 +108,9 @@ function validateControlState(
   }
   const crons = scheduleResult.schedules.map((entry) => object(entry, "schedule").cron);
   if (crons.some((cron) => typeof cron !== "string")) throw new Error("schedule cron is invalid");
-  const expectedCrons = mode === "activation" ? ["*/5 * * * *"] : [];
+  const producing = mode === "activation";
+  const consuming = mode === "activation" || mode === "drain";
+  const expectedCrons = producing ? ["*/5 * * * *"] : [];
   if (JSON.stringify(crons) !== JSON.stringify(expectedCrons)) throw new Error(`${mode} schedules are unsafe`);
 
   const settings = object(settingsValue, "settings");
@@ -120,10 +122,9 @@ function validateControlState(
     const binding = object(entry, "setting binding");
     return [binding.name, binding] as const;
   }));
-  const active = mode === "activation";
   for (const [name, expected] of [
-    ["KILL_SWITCH", active ? "0" : "1"],
-    ["PRODUCER_KILL_SWITCH", active ? "0" : "1"],
+    ["KILL_SWITCH", consuming ? "0" : "1"],
+    ["PRODUCER_KILL_SWITCH", producing ? "0" : "1"],
     ["STAGING_MANUAL_RUN", "0"],
   ] as const) {
     const binding = bindings.get(name);
@@ -140,7 +141,8 @@ function validateControlState(
   }
 
   const health = object(healthValue, "health");
-  if (health.status !== "ok" || health.killSwitch !== !active || health.producerKillSwitch !== !active
+  if (health.status !== "ok" || health.killSwitch !== !consuming
+    || health.producerKillSwitch !== !producing
     || (health.stagingManualRun !== undefined && health.stagingManualRun !== false)) {
     throw new Error(`${mode} health safety state is invalid`);
   }
@@ -183,7 +185,7 @@ async function publishCreateOnly(outputPath: string, contents: string): Promise<
 async function main(): Promise<void> {
   const [mode, outputPath] = process.argv.slice(2);
   if (!MODES.has(mode ?? "") || outputPath === undefined) {
-    throw new Error("usage: tsx scripts/capture-wp2-control.ts <preflight|activation|cleanup> <output.json>");
+    throw new Error("usage: tsx scripts/capture-wp2-control.ts <preflight|activation|drain|cleanup> <output.json>");
   }
   await captureWp2Control({
     accountId: process.env.CLOUDFLARE_ACCOUNT_ID ?? "",
