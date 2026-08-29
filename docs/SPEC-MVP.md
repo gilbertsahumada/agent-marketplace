@@ -1388,8 +1388,9 @@ muestras Worker también cuentan para CPU, memoria y errores porque pueden
 procesar retries. Una versión sin esa procedencia falla. Cualquier emisión extra sigue fallando la
 reconciliación exacta de 288 operaciones `WriteMessage`.
 Una invocación autenticada de drenaje con cero subrequests y sin `WriteMessage`
-correlacionado representa un producer bloqueado: aporta al máximo de CPU pero no
-al conteo de mensajes.
+correlacionado es tráfico de observer/producer sin explicación y falla cerrado.
+Un Cron tardío bloqueado por el switch obliga por tanto a repetir el gate, porque
+Analytics no permite distinguirlo de una invocación manual al Worker.
 El raw compuesto se crea con `npm run evidence:wp2-deployment -- <salida>
 <script> <commit> <version-medida> <version-drain...>`; el comando consulta cada
 ID explícito con Wrangler, valida annotations y etag, y publica create-only.
