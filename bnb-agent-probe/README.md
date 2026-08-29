@@ -80,6 +80,8 @@ MIN_TERMINALITY_END=2026-09-01T00:15:00.000Z
 npm run evidence:wp2-control -- preflight ../evidence/raw/preflight.json
 
 rollback_activation() {
+  local status="$1"
+  trap - ERR INT TERM
   set +e
   npx wrangler deploy --env staging --keep-vars \
     --var PRODUCER_KILL_SWITCH:1 --var KILL_SWITCH:1 \
@@ -91,8 +93,18 @@ rollback_activation() {
     -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
     "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/scripts/${WP2_SCRIPT_NAME}/schedules" \
     | jq -e '.success == true and (.errors | length == 0) and .result.schedules == []'
+  curl --fail-with-body \
+    -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+    "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/scripts/${WP2_SCRIPT_NAME}/settings" \
+    | jq -e '
+        any(.result.bindings[]; .name == "PRODUCER_KILL_SWITCH" and .text == "1")
+        and any(.result.bindings[]; .name == "KILL_SWITCH" and .text == "1")
+      '
+  exit "$status"
 }
-trap rollback_activation ERR INT TERM
+trap 'rollback_activation $?' ERR
+trap 'rollback_activation 130' INT
+trap 'rollback_activation 143' TERM
 
 # Re-promote the exact measured version, then install only */5 * * * *.
 # Stop if its versions-view etag is not EXPECTED_ETAG.
