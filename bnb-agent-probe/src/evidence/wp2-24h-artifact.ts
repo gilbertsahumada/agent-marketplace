@@ -83,11 +83,162 @@ export interface Wp224hValidationSummary {
   readonly rotationStart: Phase;
 }
 
+export interface Wp224hBuildOptions {
+  readonly accountId: string;
+  readonly databaseId: string;
+  readonly queueId: string;
+  readonly windowStart: string;
+  readonly workerName: string;
+}
+
 export class Wp224hArtifactValidationError extends Error {
   constructor(readonly code: string, detail: string) {
     super(`${code}: ${detail}`);
     this.name = "Wp224hArtifactValidationError";
   }
+}
+
+export async function buildWp224hArtifact(
+  options: Wp224hBuildOptions,
+  dependencies: ValidationDependencies,
+): Promise<Readonly<Record<string, unknown>>> {
+  const start = utcMidnight(options.windowStart);
+  const end = start + DAY_MS;
+  const rawAnalytics: Record<string, { path: string; sha256: string }> = {};
+  const parsed = new Map<string, Record<string, unknown>>();
+  for (const path of REQUIRED_RAW_ANALYTICS) {
+    const contents = await dependencies.readRawEvidence(path);
+    rawAnalytics[path] = {
+      path,
+      sha256: createHash("sha256").update(contents).digest("hex"),
+    };
+    parsed.set(path, record(JSON.parse(contents), "RAW_JSON", path));
+  }
+
+  const ledgerRaw = record(parsed.get(REQUIRED_RAW_ANALYTICS[10]), "RAW_LEDGER", "scheduler attempts raw");
+  const ledgerResponse = record(ledgerRaw.response, "RAW_LEDGER", "scheduler attempts response");
+  if (!Array.isArray(ledgerResponse.result) || ledgerResponse.result.length !== 1) {
+    fail("RAW_LEDGER", "scheduler attempt D1 response must contain one result");
+  }
+  const ledgerResult = record(ledgerResponse.result[0], "RAW_LEDGER", "scheduler attempts result");
+  if (!Array.isArray(ledgerResult.results)) fail("RAW_LEDGER", "scheduler attempt rows are missing");
+  const cohort = ledgerResult.results.map((entry, index) => ledgerEntry(entry, index));
+  const ledger = cohort.filter(({ scheduledTime }) => scheduledTime >= start && scheduledTime < end);
+  const quotaLedger = cohort.filter(({ startedAt }) => startedAt >= start && startedAt < end);
+
+  const deploymentRaw = record(parsed.get(REQUIRED_RAW_ANALYTICS[5]), "RAW_DEPLOYMENT", "deployment raw");
+  const deploymentRequest = record(deploymentRaw.request, "RAW_DEPLOYMENT", "deployment request");
+  const deploymentVersion = stringPattern(
+    deploymentRequest.measuredVersionId,
+    /^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/,
+    "RAW_DEPLOYMENT",
+    "measuredVersionId",
+  );
+  const deploymentResponse = record(deploymentRaw.response, "RAW_DEPLOYMENT", "deployment response");
+  const measured = record(deploymentResponse.measured, "RAW_DEPLOYMENT", "measured deployment");
+  const annotations = record(measured.annotations, "RAW_DEPLOYMENT", "deployment annotations");
+  const message = nonEmptyString(annotations["workers/message"], "RAW_DEPLOYMENT", "deployment message");
+  const commitMatch = /^git_commit=([a-f0-9]{40})$/.exec(message);
+  if (commitMatch === null) fail("RAW_DEPLOYMENT", "deployment message does not identify one commit");
+  const commit = commitMatch[1]!;
+
+  const limits = {
+    expectedTicks: EXPECTED_TICKS,
+    expectedPerPhase: EXPECTED_PER_PHASE,
+    d1QueriesPerAttempt: 40,
+    d1RowsRead: 4_000_000,
+    d1RowsWritten: 80_000,
+    consumerCpuMs: 30_000,
+    memoryBytesP999: 100_663_296,
+  };
+  const ledgerSummary = validateLedger(ledger, start, end, limits.d1QueriesPerAttempt);
+  const validatedQuotaLedger = validateQuotaLedger(
+    quotaLedger,
+    start,
+    end,
+    limits.d1QueriesPerAttempt,
+    ledgerSummary.entries,
+  );
+  const raw = await validateRawAnalytics(rawAnalytics, dependencies, {
+    commit,
+    accountId: options.accountId,
+    deploymentVersion,
+    workerName: options.workerName,
+    queueId: options.queueId,
+    d1Id: options.databaseId,
+    start,
+    end,
+    rotationStart: ledgerSummary.rotationStart,
+    tickLedger: ledgerSummary.entries,
+    quotaLedger: validatedQuotaLedger,
+  });
+  const durations = validatedQuotaLedger
+    .map(({ startedAt, finishedAt }) => finishedAt - startedAt)
+    .sort((left, right) => left - right);
+  const preflight = controlRaw(parsed.get(REQUIRED_RAW_ANALYTICS[6]), "preflight", {
+    accountId: options.accountId, queueId: options.queueId, workerName: options.workerName,
+  });
+  const activation = controlRaw(parsed.get(REQUIRED_RAW_ANALYTICS[7]), "activation", {
+    accountId: options.accountId, queueId: options.queueId, workerName: options.workerName,
+  });
+  const cleanup = controlRaw(parsed.get(REQUIRED_RAW_ANALYTICS[9]), "cleanup", {
+    accountId: options.accountId, queueId: options.queueId, workerName: options.workerName,
+  });
+  const artifact = {
+    schemaVersion: 1,
+    commit,
+    deploymentVersion,
+    worker: { name: options.workerName },
+    cloudflare: { accountId: options.accountId },
+    queue: { id: options.queueId },
+    d1: { id: options.databaseId },
+    window: { start: options.windowStart, end: new Date(end).toISOString() },
+    limits,
+    ledger,
+    quotaLedger,
+    totals: {
+      ticks: ledgerSummary.ticks,
+      headerCompleted: ledgerSummary.phaseCompletions.header,
+      sweepCompleted: ledgerSummary.phaseCompletions.sweep,
+      probeCompleted: ledgerSummary.phaseCompletions.probe,
+      retries: ledgerSummary.retries,
+      d1RowsRead: raw.d1AccountRowsRead,
+      d1RowsWritten: raw.d1AccountRowsWritten,
+      quotaErrors: raw.quotaErrors,
+      http429: raw.http429,
+      exceededCpu: raw.exceededCpu,
+      memoryExceeded: raw.memoryExceeded,
+      maxD1QueriesPerAttempt: ledgerSummary.maxD1Queries,
+      maxConsumerCpuMs: raw.maxConsumerCpuMs,
+      maxProducerCpuMs: raw.maxProducerCpuMs,
+      wallTimeP95Ms: durations[Math.max(0, Math.ceil(durations.length * 0.95) - 1)] ?? 0,
+      memoryUsageBytesP999: raw.memoryUsageBytesP999,
+      queueOperations: raw.queueOperations,
+      quotaAttempts: validatedQuotaLedger.length,
+      spillIn: validatedQuotaLedger.filter(({ scheduledTime }) => scheduledTime < start).length,
+      spillOut: ledgerSummary.entries.filter(({ startedAt }) => startedAt >= end).length,
+    },
+    rawAnalytics,
+    accountUsage: {
+      attributable: true,
+      unrelatedRowsRead: raw.d1AccountRowsRead - raw.d1DatabaseRowsRead,
+      unrelatedRowsWritten: raw.d1AccountRowsWritten - raw.d1DatabaseRowsWritten,
+      unrelatedQueueOperations: raw.queueOperations - raw.stagingQueueOperations,
+    },
+    cleanup: {
+      preflightSchedules: preflight.schedules,
+      preflightBacklogCount: preflight.backlogCount,
+      installedSchedules: activation.schedules,
+      finalSchedules: cleanup.schedules,
+      finalBacklogCount: cleanup.backlogCount,
+      killSwitch: cleanup.killSwitch,
+      producerKillSwitch: cleanup.producerKillSwitch,
+      stagingManualRun: cleanup.stagingManualRun,
+      sharedSecretPresent: cleanup.sharedSecretPresent,
+    },
+  };
+  await validateWp224hArtifact(artifact, dependencies);
+  return artifact;
 }
 
 export async function validateWp224hArtifact(
