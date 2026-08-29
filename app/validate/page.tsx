@@ -24,7 +24,7 @@ export default function ValidateAgentPage() {
         <CardHeader>
           <h2 className="text-base font-medium text-zinc-100">From Agent Studio to marketplace evidence</h2>
           <p className="max-w-3xl text-sm leading-relaxed text-zinc-400">
-            Registration makes an agent discoverable. Each later state requires new evidence; no step is inferred from the previous one.
+            Each state requires new evidence. No step is inferred from the previous one.
           </p>
         </CardHeader>
         <CardContent>
