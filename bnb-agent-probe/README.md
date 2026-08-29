@@ -79,6 +79,21 @@ MIN_TERMINALITY_END=2026-09-01T00:15:00.000Z
 # Safe state, before installing Cron or enabling either switch:
 npm run evidence:wp2-control -- preflight ../evidence/raw/preflight.json
 
+rollback_activation() {
+  set +e
+  npx wrangler deploy --env staging --keep-vars \
+    --var PRODUCER_KILL_SWITCH:1 --var KILL_SWITCH:1 \
+    --message "git_commit=${FULL_SHA}" --tag "git-${SHORT_SHA}-activation-abort"
+  curl --fail-with-body -X DELETE \
+    -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+    "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/scripts/${WP2_SCRIPT_NAME}/schedules/%2A%2F5%20%2A%20%2A%20%2A%20%2A"
+  curl --fail-with-body \
+    -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+    "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/scripts/${WP2_SCRIPT_NAME}/schedules" \
+    | jq -e '.success == true and (.errors | length == 0) and .result.schedules == []'
+}
+trap rollback_activation ERR INT TERM
+
 # Re-promote the exact measured version, then install only */5 * * * *.
 # Stop if its versions-view etag is not EXPECTED_ETAG.
 test "$(npx wrangler versions view "$MEASURED_VERSION_ID" --env staging --json | jq -r '.resources.script.etag')" = "$EXPECTED_ETAG"
@@ -96,6 +111,7 @@ npm run evidence:wp2-control -- activation ../evidence/raw/activation.json
 # After the 23:55Z tick completes, capture the phase anchor. Both files must
 # exist before the first measured tick at 00:00Z.
 npm run evidence:wp2-window-start -- ../evidence/raw/window-start.json
+trap - ERR INT TERM
 
 # Immediately after the 23:55 tick and before 24:00Z: producer off,
 # consumer on, then Cron removed. Stop if the new version etag changes.
