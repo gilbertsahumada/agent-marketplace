@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 
 import { validateWp224hArtifact } from "../src/evidence/wp2-24h-artifact";
-import { WP2_WORKERS_ANALYTICS_QUERY } from "../src/evidence/wp2-24h-queries";
+import { WP2_ATTEMPT_COHORT_SQL, WP2_WORKERS_ANALYTICS_QUERY } from "../src/evidence/wp2-24h-queries";
 
 const WINDOW_START = Date.parse("2026-08-29T00:00:00.000Z");
 const DEPLOYMENT_VERSION = "00000000-0000-4000-8000-000000000001";
@@ -48,7 +48,7 @@ const RAW_PAYLOADS = {
       accountId: "bc8d4adf4860284fda426b24e7377bc2",
       databaseId: D1_ID,
       params: [WINDOW_START, WINDOW_START + 24 * 60 * 60_000, WINDOW_START, WINDOW_START + 24 * 60 * 60_000],
-      sql: "SELECT scheduler attempts",
+      sql: WP2_ATTEMPT_COHORT_SQL,
     },
     response: { success: true, errors: [], result: [{ results: FIXTURE_LEDGER }] },
   },
