@@ -1055,9 +1055,13 @@ function validateRawLedger(
 ): void {
   const raw = record(value, "RAW_LEDGER", "scheduler attempts raw");
   const request = record(raw.request, "RAW_LEDGER", "scheduler attempts request");
+  const capturedAt = isoTimestamp(request.capturedAt, "RAW_LEDGER", "scheduler attempts capturedAt");
   if (request.accountId !== context.accountId
     || request.databaseId !== context.d1Id
     || request.sql !== WP2_ATTEMPT_COHORT_SQL
+    || request.windowStart !== new Date(context.start).toISOString()
+    || request.windowEnd !== new Date(context.end).toISOString()
+    || capturedAt < context.end + 15 * 60_000
     || !sameNumberArray(request.params, [context.start, context.end, context.start, context.end])) {
     fail("RAW_LEDGER", "scheduler attempt query provenance does not match the artifact window");
   }
@@ -1069,6 +1073,9 @@ function validateRawLedger(
   const result = record(response.result[0], "RAW_LEDGER", "scheduler attempts result");
   if (!Array.isArray(result.results)) fail("RAW_LEDGER", "scheduler attempt rows are missing");
   const observed = result.results.map((entry, index) => ledgerEntry(entry, index));
+  if (observed.some(({ finishedAt }) => finishedAt > capturedAt)) {
+    fail("RAW_LEDGER", "scheduler attempts were captured before they finished");
+  }
   const expectedByKey = new Map<string, LedgerEntry>();
   for (const entry of [...context.tickLedger, ...context.quotaLedger]) {
     expectedByKey.set(`${entry.messageId}:${entry.attempt}`, entry);
