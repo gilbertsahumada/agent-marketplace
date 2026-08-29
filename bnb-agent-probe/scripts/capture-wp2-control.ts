@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 const execFile = promisify(execFileCallback);
 const ACCOUNT_ID = /^[a-f0-9]{32}$/;
 const QUEUE_ID = /^[a-f0-9]{32}$/;
+const DATABASE_ID = /^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/;
 const SCRIPT_NAME = /^[a-z0-9-]+$/;
 const MODES = new Set(["preflight", "activation", "drain", "cleanup"]);
 
@@ -16,6 +17,7 @@ type ControlMode = "preflight" | "activation" | "drain" | "cleanup";
 interface CaptureOptions {
   readonly accountId: string;
   readonly apiToken: string;
+  readonly databaseId: string;
   readonly fetch?: typeof globalThis.fetch;
   readonly healthUrl: string;
   readonly mode: ControlMode;
@@ -50,7 +52,8 @@ export async function captureWp2Control(options: CaptureOptions): Promise<void> 
     parseJsonResponse(backlogResponse, "Queue backlog"),
     parseJsonResponse(healthResponse, "health"),
   ]);
-  validateControlState(options.mode, schedules, settings, backlog, health, secrets);
+  validateControlState(options.mode, options.databaseId, options.scriptName,
+    schedules, settings, backlog, health, secrets);
   const completedAt = now();
   canonicalTimestamp(completedAt, "completedAt");
   if (Date.parse(completedAt) < Date.parse(startedAt)) throw new Error("control capture completed before it started");
@@ -78,6 +81,7 @@ export async function captureWp2Control(options: CaptureOptions): Promise<void> 
 function validateOptions(options: CaptureOptions): void {
   if (!ACCOUNT_ID.test(options.accountId)) throw new Error("account ID is invalid");
   if (!QUEUE_ID.test(options.queueId)) throw new Error("Queue ID is invalid");
+  if (!DATABASE_ID.test(options.databaseId)) throw new Error("D1 database ID is invalid");
   if (!SCRIPT_NAME.test(options.scriptName)) throw new Error("script name is invalid");
   if (!MODES.has(options.mode)) throw new Error("control mode is invalid");
   if (options.apiToken.length === 0) throw new Error("API token is required");
@@ -95,6 +99,8 @@ async function parseJsonResponse(response: Response, label: string): Promise<unk
 
 function validateControlState(
   mode: ControlMode,
+  databaseId: string,
+  scriptName: string,
   schedulesValue: unknown,
   settingsValue: unknown,
   backlogValue: unknown,
@@ -146,6 +152,14 @@ function validateControlState(
     if (binding?.type !== "plain_text" || binding.text !== expected) {
       throw new Error(`${mode} ${name} binding is unsafe`);
     }
+  }
+  const d1Binding = bindings.get("DB");
+  const queueBinding = bindings.get("WP2_QUEUE");
+  if (d1Binding?.type !== "d1" || d1Binding.id !== databaseId) {
+    throw new Error(`${mode} DB binding is unsafe`);
+  }
+  if (queueBinding?.type !== "queue" || queueBinding.queue_name !== scriptName) {
+    throw new Error(`${mode} WP2_QUEUE binding is unsafe`);
   }
 
   const backlog = object(backlogValue, "Queue backlog");
@@ -216,6 +230,7 @@ async function main(): Promise<void> {
   await captureWp2Control({
     accountId: process.env.CLOUDFLARE_ACCOUNT_ID ?? "",
     apiToken: process.env.CLOUDFLARE_API_TOKEN ?? "",
+    databaseId: process.env.WP2_D1_DATABASE_ID ?? "",
     healthUrl: process.env.WP2_HEALTH_URL ?? "",
     mode: mode as ControlMode,
     outputPath,
