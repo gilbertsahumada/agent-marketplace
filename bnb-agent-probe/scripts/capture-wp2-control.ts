@@ -39,18 +39,19 @@ export async function captureWp2Control(options: CaptureOptions): Promise<void> 
   canonicalTimestamp(startedAt, "startedAt");
   const headers = { Authorization: `Bearer ${options.apiToken}` };
   const signal = AbortSignal.timeout(10_000);
+  const observerFreeDrain = options.mode === "drain";
   const [schedulesResponse, settingsResponse, backlogResponse, healthResponse, secrets] = await Promise.all([
     fetch(schedulesUrl, { headers, signal }),
     fetch(settingsUrl, { headers, signal }),
     fetch(backlogUrl, { headers, signal }),
-    fetch(options.healthUrl, { signal }),
+    observerFreeDrain ? Promise.resolve(undefined) : fetch(options.healthUrl, { signal }),
     options.readSecrets(),
   ]);
   const [schedules, settings, backlog, health] = await Promise.all([
     parseJsonResponse(schedulesResponse, "schedules"),
     parseJsonResponse(settingsResponse, "settings"),
     parseJsonResponse(backlogResponse, "Queue backlog"),
-    parseJsonResponse(healthResponse, "health"),
+    healthResponse === undefined ? Promise.resolve(undefined) : parseJsonResponse(healthResponse, "health"),
   ]);
   validateControlState(options.mode, options.databaseId, options.scriptName,
     schedules, settings, backlog, health, secrets);
@@ -65,7 +66,7 @@ export async function captureWp2Control(options: CaptureOptions): Promise<void> 
       accountId: options.accountId,
       backlogUrl,
       completedAt,
-      healthUrl: options.healthUrl,
+      ...(observerFreeDrain ? {} : { healthUrl: options.healthUrl }),
       mode: options.mode,
       queueId: options.queueId,
       schedulesUrl,
@@ -73,7 +74,7 @@ export async function captureWp2Control(options: CaptureOptions): Promise<void> 
       scriptName: options.scriptName,
       startedAt,
     },
-    response: { schedules, settings, backlog, health, secrets },
+    response: { schedules, settings, backlog, ...(health === undefined ? {} : { health }), secrets },
   }, null, 2)}\n`;
   await publishCreateOnly(options.outputPath, contents);
 }
@@ -173,22 +174,24 @@ function validateControlState(
     throw new Error(`${mode} Queue backlog is invalid`);
   }
 
-  const health = object(healthValue, "health");
-  const budgets = object(health.budgets, "health budgets");
-  const expectedBudgets: Readonly<Record<string, number>> = {
-    cronIntervalMinutes: 5, headerLimit: 25, sweepLimit: 4, sweepPagesPerRun: 1,
-    probeBatchSize: 1, trust8004RequestsPerRun: 4, externalSubrequestsPerRun: 12,
-    d1QueriesPerRun: 40, d1RowsReadPerRun: 3000, d1RowsWrittenPerRun: 60,
-    probeTimeoutMs: 5000, maxCatalogResponseBytes: 16777216, maxSellerResponseBytes: 32768,
-  };
-  if (health.plan !== "free" || health.schedulerMode !== "single_phase"
-    || Object.entries(expectedBudgets).some(([name, expected]) => budgets[name] !== expected)) {
-    throw new Error(`${mode} health does not match the Free profile`);
-  }
-  if (health.status !== "ok" || health.killSwitch !== !consuming
-    || health.producerKillSwitch !== !producing
-    || (health.stagingManualRun !== undefined && health.stagingManualRun !== false)) {
-    throw new Error(`${mode} health safety state is invalid`);
+  if (mode !== "drain") {
+    const health = object(healthValue, "health");
+    const budgets = object(health.budgets, "health budgets");
+    const expectedBudgets: Readonly<Record<string, number>> = {
+      cronIntervalMinutes: 5, headerLimit: 25, sweepLimit: 4, sweepPagesPerRun: 1,
+      probeBatchSize: 1, trust8004RequestsPerRun: 4, externalSubrequestsPerRun: 12,
+      d1QueriesPerRun: 40, d1RowsReadPerRun: 3000, d1RowsWrittenPerRun: 60,
+      probeTimeoutMs: 5000, maxCatalogResponseBytes: 16777216, maxSellerResponseBytes: 32768,
+    };
+    if (health.plan !== "free" || health.schedulerMode !== "single_phase"
+      || Object.entries(expectedBudgets).some(([name, expected]) => budgets[name] !== expected)) {
+      throw new Error(`${mode} health does not match the Free profile`);
+    }
+    if (health.status !== "ok" || health.killSwitch !== !consuming
+      || health.producerKillSwitch !== !producing
+      || (health.stagingManualRun !== undefined && health.stagingManualRun !== false)) {
+      throw new Error(`${mode} health safety state is invalid`);
+    }
   }
   if (!Array.isArray(secretsValue)
     || secretsValue.some((entry) => typeof object(entry, "secret").name !== "string")) {
