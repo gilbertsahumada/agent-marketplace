@@ -1424,7 +1424,9 @@ function validateCleanup(
   tickLedger: readonly LedgerEntry[],
 ): void {
   const cleanup = record(value, "CLEANUP", "cleanup");
-  if (raw.preflightCapturedAt > raw.activationCapturedAt || raw.activationCapturedAt >= end) {
+  const firstScheduledTime = Math.min(...tickLedger.map(({ scheduledTime }) => scheduledTime));
+  if (raw.preflightCapturedAt > raw.activationCapturedAt
+    || raw.activationCapturedAt >= firstScheduledTime) {
     fail("CLEANUP", "control evidence timestamps are out of order");
   }
   if (raw.cleanupCapturedAt < end + 15 * 60_000) {
