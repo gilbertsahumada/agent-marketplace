@@ -1283,12 +1283,14 @@ function controlRaw(
   const raw = record(value, "RAW_CLEANUP", `${label} raw`);
   const request = record(raw.request, "RAW_CLEANUP", `${label} request`);
   const schedulesUrl = `https://api.cloudflare.com/client/v4/accounts/${context.accountId}/workers/scripts/${context.workerName}/schedules`;
+  const settingsUrl = `https://api.cloudflare.com/client/v4/accounts/${context.accountId}/workers/scripts/${context.workerName}/settings`;
   const backlogUrl = `https://api.cloudflare.com/client/v4/accounts/${context.accountId}/queues/${context.queueId}/metrics`;
   const startedAt = isoTimestamp(request.startedAt, "RAW_CLEANUP", `${label} startedAt`);
   const completedAt = isoTimestamp(request.completedAt, "RAW_CLEANUP", `${label} completedAt`);
   if (request.accountId !== context.accountId || request.queueId !== context.queueId
     || request.scriptName !== context.workerName || request.mode !== label
-    || request.schedulesUrl !== schedulesUrl || request.backlogUrl !== backlogUrl
+    || request.schedulesUrl !== schedulesUrl || request.settingsUrl !== settingsUrl
+    || request.backlogUrl !== backlogUrl
     || completedAt < startedAt || completedAt - startedAt > 10_000) {
     fail("RAW_CLEANUP", `${label} request provenance is invalid`);
   }
@@ -1313,6 +1315,31 @@ function controlRaw(
     const schedule = record(entry, "RAW_CLEANUP", `${label} schedule[${index}]`);
     return nonEmptyString(schedule.cron, "RAW_CLEANUP", `${label} schedule cron`);
   });
+  const settingsResponse = record(response.settings, "RAW_CLEANUP", `${label} settings response`);
+  const settingsResult = record(settingsResponse.result, "RAW_CLEANUP", `${label} settings result`);
+  if (settingsResponse.success !== true || !emptyArray(settingsResponse.errors)
+    || !Array.isArray(settingsResult.bindings)) {
+    fail("RAW_CLEANUP", `${label} settings response is invalid`);
+  }
+  const settingBindings = new Map<string, Record<string, unknown>>();
+  for (const [index, entry] of settingsResult.bindings.entries()) {
+    const binding = record(entry, "RAW_CLEANUP", `${label} setting[${index}]`);
+    const name = nonEmptyString(binding.name, "RAW_CLEANUP", `${label} setting name`);
+    if (settingBindings.has(name)) fail("RAW_CLEANUP", `${label} setting names are duplicated`);
+    settingBindings.set(name, binding);
+  }
+  const active = label === "activation";
+  const expectedBindings = new Map<string, string>([
+    ["KILL_SWITCH", active ? "0" : "1"],
+    ["PRODUCER_KILL_SWITCH", active ? "0" : "1"],
+    ["STAGING_MANUAL_RUN", "0"],
+  ]);
+  for (const [name, expected] of expectedBindings) {
+    const binding = settingBindings.get(name);
+    if (binding?.type !== "plain_text" || binding.text !== expected) {
+      fail("RAW_CLEANUP", `${label} deployed ${name} binding is unsafe`);
+    }
+  }
   const backlogResponse = record(response.backlog, "RAW_CLEANUP", `${label} backlog response`);
   const backlogResult = record(backlogResponse.result, "RAW_CLEANUP", `${label} backlog result`);
   if (backlogResponse.success !== true || !emptyArray(backlogResponse.errors)) {
@@ -1325,9 +1352,9 @@ function controlRaw(
   );
   nonNegativeInteger(backlogResult.backlog_bytes, "RAW_CLEANUP", `${label} backlog_bytes`);
   const health = record(response.health, "RAW_CLEANUP", `${label} health response`);
-  const active = label === "activation";
   if (health.status !== "ok" || health.killSwitch !== !active
-    || health.producerKillSwitch !== !active || health.stagingManualRun !== false) {
+    || health.producerKillSwitch !== !active
+    || (health.stagingManualRun !== undefined && health.stagingManualRun !== false)) {
     fail("RAW_CLEANUP", `${label} safety state is invalid`);
   }
   if (!Array.isArray(response.secrets)) fail("RAW_CLEANUP", `${label} secret list is invalid`);
@@ -1337,9 +1364,9 @@ function controlRaw(
   return {
     schedules,
     backlogCount,
-    killSwitch: health.killSwitch as boolean,
-    producerKillSwitch: health.producerKillSwitch as boolean,
-    stagingManualRun: health.stagingManualRun as boolean,
+    killSwitch: settingBindings.get("KILL_SWITCH")!.text === "1",
+    producerKillSwitch: settingBindings.get("PRODUCER_KILL_SWITCH")!.text === "1",
+    stagingManualRun: settingBindings.get("STAGING_MANUAL_RUN")!.text === "1",
     sharedSecretPresent: secretNames.includes("SHARED_SECRET"),
     capturedAt: completedAt,
   };
