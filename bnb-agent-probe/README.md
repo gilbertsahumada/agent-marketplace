@@ -212,6 +212,10 @@ the Free plan, 5-minute cadence, 40-query/D1 row budgets, 5-second seller
 timeout, response caps, Queue/D1 resources and absence of `SHARED_SECRET`.
 Preflight, activation and cleanup require zero Queue backlog. Drain records the
 literal backlog and may be nonzero while the consumer finishes pending retries.
+Drain is deliberately control-plane-only: it captures schedules, deployed
+bindings, Queue backlog and secret names, but neither calls `/health` nor
+serializes `healthUrl`/`health`. The final validator rejects a drain snapshot
+that contains either field.
 
 Do not poll D1, call `/health`, invoke the staging admin route or run any other
 Worker/D1 diagnostic during the measured UTC day. Those reads and invocations
@@ -264,6 +268,9 @@ groups matched to all 288 `WriteMessage` operations with zero subrequests;
 ambiguous or incomplete attribution fails closed.
 The Workers query ends at the same post-midnight terminality cutoff as Queue,
 so drain-version retries cannot escape CPU, memory, version or error accounting.
+The total authenticated consumer `sum.requests` must equal the unique durable
+attempt cohort in that interval, including spill-ins, spill-outs and retries;
+an unexplained Worker request invalidates the gate.
 Every spill-out ledger attempt must have an authenticated consumer sample within
 one second of its `startedAt`; requesting the wider interval without that bucket
 is insufficient evidence. Matching consumes `sum.requests` capacity. Separately,
