@@ -30,6 +30,12 @@ export async function captureWp2Ledger(options: CaptureOptions): Promise<void> {
   }
   const params = [start, end, start, end] as const;
   const fetch = options.fetch ?? globalThis.fetch;
+  const now = options.now ?? (() => new Date().toISOString());
+  const startedAt = now();
+  const startedTimestamp = canonicalTimestamp(startedAt, "startedAt");
+  if (startedTimestamp < end + 15 * 60_000) {
+    throw new Error("scheduler ledger capture must follow the terminality grace");
+  }
   const response = await fetch(
     `https://api.cloudflare.com/client/v4/accounts/${options.accountId}/d1/database/${options.databaseId}/query`,
     {
@@ -52,18 +58,20 @@ export async function captureWp2Ledger(options: CaptureOptions): Promise<void> {
   }
   const result = payload.result[0] as { readonly results?: unknown };
   if (!Array.isArray(result.results)) throw new Error("scheduler ledger rows are missing");
-  const capturedAt = (options.now ?? (() => new Date().toISOString()))();
-  const capturedTimestamp = canonicalTimestamp(capturedAt, "capturedAt");
-  if (capturedTimestamp < end + 15 * 60_000) {
-    throw new Error("scheduler ledger capture must follow the terminality grace");
+  const completedAt = now();
+  const completedTimestamp = canonicalTimestamp(completedAt, "completedAt");
+  if (completedTimestamp < startedTimestamp || completedTimestamp - startedTimestamp > 10_000) {
+    throw new Error("scheduler ledger capture exceeded its ten-second bound");
   }
   const contents = `${JSON.stringify({
     request: {
       accountId: options.accountId,
-      capturedAt,
+      capturedAt: completedAt,
+      completedAt,
       databaseId: options.databaseId,
       params,
       sql: WP2_ATTEMPT_COHORT_SQL,
+      startedAt,
       windowEnd: options.windowEnd,
       windowStart: options.windowStart,
     },
