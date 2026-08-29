@@ -408,8 +408,17 @@ function evidenceReaderFor(
   raw.response.result[0].results = rows;
   const contents = JSON.stringify(raw);
   artifact.rawAnalytics["evidence/raw/scheduler-attempts.json"].sha256 = sha256(contents);
+  const manifestPath = "evidence/raw/analytics/analytics-manifest.json";
+  const manifest = JSON.parse(RAW_FILES[manifestPath]!) as any;
+  for (const path of ANALYTICS_PATHS) {
+    const filename = path.slice(path.lastIndexOf("/") + 1);
+    manifest.files[filename] = sha256(overrides[path] ?? RAW_FILES[path]!);
+  }
+  const manifestContents = JSON.stringify(manifest);
+  artifact.rawAnalytics[manifestPath].sha256 = sha256(manifestContents);
   return async (path) => {
     if (path === "evidence/raw/scheduler-attempts.json") return contents;
+    if (path === manifestPath) return manifestContents;
     return overrides[path] ?? readRawEvidence(path);
   };
 }
@@ -663,7 +672,7 @@ describe("WP2 24-hour evidence artifact validator", () => {
     const contents = JSON.stringify(queue);
     artifact.rawAnalytics["evidence/raw/analytics/queue.json"].sha256 = sha256(contents);
     await expect(validateWp224hArtifact(artifact, {
-      readRawEvidence: async (path) => path === "evidence/raw/analytics/queue.json" ? contents : readRawEvidence(path),
+      readRawEvidence: evidenceReaderFor(artifact, { "evidence/raw/analytics/queue.json": contents }),
     })).resolves.toMatchObject({ passed: true });
   });
 
@@ -779,7 +788,7 @@ describe("WP2 24-hour evidence artifact validator", () => {
     artifact.rawAnalytics["evidence/raw/analytics/workers.json"].sha256 = sha256(contents);
     artifact.totals.maxProducerCpuMs = 10;
     await expect(validateWp224hArtifact(artifact, {
-      readRawEvidence: async (path) => path === "evidence/raw/analytics/workers.json" ? contents : readRawEvidence(path),
+      readRawEvidence: evidenceReaderFor(artifact, { "evidence/raw/analytics/workers.json": contents }),
     })).rejects.toThrow("CPU_LIMIT");
   });
 
@@ -953,7 +962,7 @@ describe("WP2 24-hour evidence artifact validator", () => {
     artifact.rawAnalytics["evidence/raw/analytics/workers.json"].sha256 = sha256(contents);
     artifact.totals.maxProducerCpuMs = 9;
     await expect(validateWp224hArtifact(artifact, {
-      readRawEvidence: async (path) => path === "evidence/raw/analytics/workers.json" ? contents : readRawEvidence(path),
+      readRawEvidence: evidenceReaderFor(artifact, { "evidence/raw/analytics/workers.json": contents }),
     })).resolves.toMatchObject({ passed: true });
   });
 
