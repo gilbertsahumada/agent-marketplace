@@ -79,32 +79,14 @@ MIN_TERMINALITY_END=2026-09-01T00:15:00.000Z
 # Safe state, before installing Cron or enabling either switch:
 npm run evidence:wp2-control -- preflight ../evidence/raw/preflight.json
 
-rollback_activation() {
-  local status="$1"
-  trap - ERR INT TERM
-  set +e
-  npx wrangler deploy --env staging --keep-vars \
-    --var PRODUCER_KILL_SWITCH:1 --var KILL_SWITCH:1 \
-    --message "git_commit=${FULL_SHA}" --tag "git-${SHORT_SHA}-activation-abort"
-  curl --fail-with-body -X DELETE \
-    -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
-    "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/scripts/${WP2_SCRIPT_NAME}/schedules/%2A%2F5%20%2A%20%2A%20%2A%20%2A"
-  curl --fail-with-body \
-    -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
-    "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/scripts/${WP2_SCRIPT_NAME}/schedules" \
-    | jq -e '.success == true and (.errors | length == 0) and .result.schedules == []'
-  curl --fail-with-body \
-    -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
-    "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/scripts/${WP2_SCRIPT_NAME}/settings" \
-    | jq -e '
-        any(.result.bindings[]; .name == "PRODUCER_KILL_SWITCH" and .text == "1")
-        and any(.result.bindings[]; .name == "KILL_SWITCH" and .text == "1")
-      '
-  exit "$status"
-}
-trap 'rollback_activation $?' ERR
-trap 'rollback_activation 130' INT
-trap 'rollback_activation 143' TERM
+# Armed rollback: from activation until window start, any failure or interrupt
+# re-arms both kill switches, removes the Cron and verifies the control plane
+# reports schedules empty with both switches at "1". The exact sequence is
+# versioned and regression-tested in scripts/rollback-wp2-activation.ts
+# (dry-run by default; --execute performs it).
+trap 'npm run rollback:wp2-activation -- --execute; exit 1' ERR
+trap 'npm run rollback:wp2-activation -- --execute; exit 130' INT
+trap 'npm run rollback:wp2-activation -- --execute; exit 143' TERM
 
 # Re-promote the exact measured version, then install only */5 * * * *.
 # Stop if its versions-view etag is not EXPECTED_ETAG.
