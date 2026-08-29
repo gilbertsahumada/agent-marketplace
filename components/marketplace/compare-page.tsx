@@ -9,13 +9,6 @@ import { PageIntro } from "./page-primitives";
 import { agentCardViewModel, evidenceForAgent, verificationViewModel } from "./view-models";
 import { VerificationDrift } from "./verification-drift";
 
-const choices = [
-  ["45650", "V3 Pools"],
-  ["45381", "Aave"],
-  ["45422", "Beefy"],
-  ["43129", "Venus"],
-] as const;
-
 const passportLabels = {
   registered: "Registered",
   evaluated: "Evaluated",
@@ -24,7 +17,10 @@ const passportLabels = {
   attention: "Attention",
 } as const;
 
-export function ComparePage({ comparison, selected, provenAgentId }: { comparison: MarketplaceAgentComparison | undefined; selected: string[]; provenAgentId?: string }) {
+export function ComparePage({ candidates, comparison, selected, provenAgentId }: { candidates: { agentId: string; name: string }[]; comparison: MarketplaceAgentComparison | undefined; selected: string[]; provenAgentId?: string }) {
+  const options = new Map(candidates.map(({ agentId, name }) => [agentId, name]));
+  for (const agent of comparison?.agents ?? []) options.set(agent.agentId, agent.name);
+  for (const agentId of selected) if (!options.has(agentId)) options.set(agentId, `Agent ${agentId}`);
   return (
     <main id="main-content" className="mx-auto w-full max-w-7xl flex-1 px-4 py-12 sm:px-6 lg:px-8">
       <PageIntro eyebrow="Evidence side by side" title="Compare agents without a universal winner">
@@ -33,14 +29,19 @@ export function ComparePage({ comparison, selected, provenAgentId }: { compariso
       <form className="mt-8 rounded-xl border border-white/10 bg-white/[0.02] p-5">
         <fieldset>
           <legend className="text-sm font-semibold text-white">Agents to compare</legend>
-          <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            {choices.map(([id, name]) => (
-              <label className="flex cursor-pointer items-center gap-3 rounded-lg border border-white/10 p-3 text-sm text-zinc-300" key={id}>
-                <input defaultChecked={selected.includes(id)} name="agentId" type="checkbox" value={id} />
-                {name} <span className="font-stat text-xs text-zinc-600">#{id}</span>
-              </label>
-            ))}
-          </div>
+          {options.size ? (
+            <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              {[...options].map(([agentId, name]) => (
+                <label className="flex cursor-pointer items-center gap-3 rounded-lg border border-white/10 p-3 text-sm text-zinc-300" key={agentId}>
+                  <input defaultChecked={selected.includes(agentId)} name="agentId" type="checkbox" value={agentId} />
+                  <span className="min-w-0 truncate">{name}</span>
+                  <span className="font-stat ml-auto shrink-0 text-xs text-zinc-600">#{agentId}</span>
+                </label>
+              ))}
+            </div>
+          ) : (
+            <p className="mt-4 text-sm text-zinc-500">No curated candidate is available to compare right now.</p>
+          )}
         </fieldset>
         <Button className="mt-4" type="submit">Compare selected</Button>
       </form>
