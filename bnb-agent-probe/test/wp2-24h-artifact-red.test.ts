@@ -2,12 +2,23 @@ import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 
 import { buildWp224hArtifact, validateWp224hArtifact } from "../src/evidence/wp2-24h-artifact";
-import { WP2_ATTEMPT_COHORT_SQL, WP2_WORKERS_ANALYTICS_QUERY } from "../src/evidence/wp2-24h-queries";
+import {
+  WP2_ATTEMPT_COHORT_SQL,
+  WP2_D1_ACCOUNT_ANALYTICS_QUERY,
+  WP2_D1_DATABASE_ANALYTICS_QUERY,
+  WP2_QUEUE_ACCOUNT_ANALYTICS_QUERY,
+  WP2_QUEUE_ANALYTICS_QUERY,
+  WP2_WORKERS_ANALYTICS_QUERY,
+} from "../src/evidence/wp2-24h-queries";
 
 const WINDOW_START = Date.parse("2026-08-29T00:00:00.000Z");
 const DEPLOYMENT_VERSION = "00000000-0000-4000-8000-000000000001";
 const DRAIN_VERSION = "00000000-0000-4000-8000-000000000099";
 const D1_ID = "6fbeea3e-4516-4c4e-a5c4-392cb067198a";
+const ACCOUNT_ID = "bc8d4adf4860284fda426b24e7377bc2";
+const QUEUE_ID = "721ba809967d425a91dbc34eb1ac3baa";
+const GRAPHQL_ENDPOINT = "https://api.cloudflare.com/client/v4/graphql";
+const CAPTURED_AT = "2026-08-30T00:16:00.000Z";
 const FIXTURE_LEDGER = Array.from({ length: 288 }, (_, index) => ({
   messageId: `message-${index}`,
   scheduledTime: WINDOW_START + 14_000 + index * 5 * 60_000,
@@ -51,14 +62,18 @@ function controlFixture(
 }
 const RAW_PAYLOADS = {
   "evidence/raw/d1-database.json": {
-    request: { date: "2026-08-29", databaseId: D1_ID },
+    request: { accountId: ACCOUNT_ID, capturedAt: CAPTURED_AT, endpoint: GRAPHQL_ENDPOINT,
+      query: WP2_D1_DATABASE_ANALYTICS_QUERY, date: "2026-08-29", databaseId: D1_ID,
+      variables: { accountTag: ACCOUNT_ID, date: "2026-08-29", databaseId: D1_ID } },
     response: { data: { viewer: { accounts: [{ d1AnalyticsAdaptiveGroups: [{
       dimensions: { date: "2026-08-29", databaseId: D1_ID },
       sum: { readQueries: 3_000, writeQueries: 1_000, rowsRead: 200_000, rowsWritten: 20_000 },
     }] }] } }, errors: null },
   },
   "evidence/raw/d1-account.json": {
-    request: { date: "2026-08-29" },
+    request: { accountId: ACCOUNT_ID, capturedAt: CAPTURED_AT, endpoint: GRAPHQL_ENDPOINT,
+      query: WP2_D1_ACCOUNT_ANALYTICS_QUERY, date: "2026-08-29",
+      variables: { accountTag: ACCOUNT_ID, date: "2026-08-29" } },
     response: { data: { viewer: { accounts: [{ d1AnalyticsAdaptiveGroups: [
       {
         dimensions: { date: "2026-08-29", databaseId: D1_ID },
@@ -81,10 +96,14 @@ const RAW_PAYLOADS = {
   },
   "evidence/raw/workers.json": {
     request: {
+      accountId: ACCOUNT_ID, capturedAt: CAPTURED_AT, endpoint: GRAPHQL_ENDPOINT,
+      query: WP2_WORKERS_ANALYTICS_QUERY,
       scriptName: "bnb-agent-probe-staging",
       start: "2026-08-29T00:00:00.000Z",
       endInclusive: "2026-08-29T23:59:59.999Z",
       terminalityEndInclusive: "2026-08-30T00:15:00.000Z",
+      variables: { accountTag: ACCOUNT_ID, scriptName: "bnb-agent-probe-staging",
+        start: "2026-08-29T00:00:00.000Z", terminalityEndInclusive: "2026-08-30T00:15:00.000Z" },
     },
     response: { data: { viewer: { accounts: [{ workersInvocationsAdaptive: [
       {
@@ -107,10 +126,14 @@ const RAW_PAYLOADS = {
   },
   "evidence/raw/queue.json": {
     request: {
-      queueId: "721ba809967d425a91dbc34eb1ac3baa",
+      accountId: ACCOUNT_ID, capturedAt: CAPTURED_AT, endpoint: GRAPHQL_ENDPOINT,
+      query: WP2_QUEUE_ANALYTICS_QUERY, queueId: QUEUE_ID,
       start: "2026-08-29T00:00:00.000Z",
       endInclusive: "2026-08-29T23:59:59.999Z",
       terminalityEndInclusive: "2026-08-30T00:15:00.000Z",
+      variables: { accountTag: ACCOUNT_ID, queueId: QUEUE_ID, start: "2026-08-29T00:00:00.000Z",
+        endInclusive: "2026-08-29T23:59:59.999Z",
+        terminalityEndInclusive: "2026-08-30T00:15:00.000Z" },
     },
     response: { data: { viewer: { accounts: [{
       queueDayOperations: [
@@ -161,8 +184,12 @@ const RAW_PAYLOADS = {
   },
   "evidence/raw/queue-account.json": {
     request: {
+      accountId: ACCOUNT_ID, capturedAt: CAPTURED_AT, endpoint: GRAPHQL_ENDPOINT,
+      query: WP2_QUEUE_ACCOUNT_ANALYTICS_QUERY,
       start: "2026-08-29T00:00:00.000Z",
       endInclusive: "2026-08-29T23:59:59.999Z",
+      variables: { accountTag: ACCOUNT_ID, start: "2026-08-29T00:00:00.000Z",
+        endInclusive: "2026-08-29T23:59:59.999Z" },
     },
     response: { data: { viewer: { accounts: [{ queueMessageOperationsAdaptiveGroups: [
       {
@@ -353,6 +380,17 @@ describe("WP2 24-hour evidence artifact validator", () => {
     artifact.ledger[0].d1Queries = 12;
     artifact.quotaLedger[0].d1Queries = 12;
     await expect(validateWp224hArtifact(artifact, { readRawEvidence })).rejects.toThrow("RAW_LEDGER");
+  });
+
+  it("rejects analytics captured with a different GraphQL query", async () => {
+    const artifact = validArtifact() as any;
+    const workers = structuredClone(RAW_PAYLOADS["evidence/raw/workers.json"]) as any;
+    workers.request.query += "\n# changed";
+    const contents = JSON.stringify(workers);
+    artifact.rawAnalytics["evidence/raw/workers.json"].sha256 = sha256(contents);
+    await expect(validateWp224hArtifact(artifact, {
+      readRawEvidence: async (path) => path === "evidence/raw/workers.json" ? contents : readRawEvidence(path),
+    })).rejects.toThrow("RAW_WORKERS");
   });
 
   it("rejects a self-asserted cleanup without literal control-plane responses", async () => {
