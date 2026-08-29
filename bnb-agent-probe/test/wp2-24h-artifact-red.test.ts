@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 
-import { validateWp224hArtifact } from "../src/evidence/wp2-24h-artifact";
+import { buildWp224hArtifact, validateWp224hArtifact } from "../src/evidence/wp2-24h-artifact";
 import { WP2_ATTEMPT_COHORT_SQL, WP2_WORKERS_ANALYTICS_QUERY } from "../src/evidence/wp2-24h-queries";
 
 const WINDOW_START = Date.parse("2026-08-29T00:00:00.000Z");
@@ -320,6 +320,22 @@ function evidenceReaderFor(
 }
 
 describe("WP2 24-hour evidence artifact validator", () => {
+  it("builds the complete artifact from the required literal raw captures", async () => {
+    const artifact = await buildWp224hArtifact({
+      accountId: "bc8d4adf4860284fda426b24e7377bc2",
+      databaseId: D1_ID,
+      queueId: "721ba809967d425a91dbc34eb1ac3baa",
+      windowStart: "2026-08-29T00:00:00.000Z",
+      workerName: "bnb-agent-probe-staging",
+    }, { readRawEvidence });
+
+    expect(artifact).toEqual(validArtifact());
+    await expect(validateWp224hArtifact(artifact, { readRawEvidence })).resolves.toMatchObject({
+      passed: true,
+      ticks: 288,
+    });
+  });
+
   it("queries Workers through the post-midnight terminality cutoff", () => {
     expect(WP2_WORKERS_ANALYTICS_QUERY).toContain("$terminalityEndInclusive: Time!");
     expect(WP2_WORKERS_ANALYTICS_QUERY).toContain("datetime_leq: $terminalityEndInclusive");
