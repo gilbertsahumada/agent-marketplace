@@ -596,6 +596,54 @@ describe("WP2 24-hour evidence artifact validator", () => {
     })).rejects.toThrow("RAW_WORKERS");
   });
 
+  it("accepts one causal delete for a retried spill-out message", async () => {
+    const artifact = validArtifact() as any;
+    const terminalAttempt = artifact.ledger.at(-1);
+    terminalAttempt.startedAt = Date.parse("2026-08-30T00:05:02.000Z");
+    terminalAttempt.finishedAt = terminalAttempt.startedAt + 1_000;
+    terminalAttempt.attempt = 2;
+    const failedAttempt = {
+      ...terminalAttempt,
+      attempt: 1,
+      outcome: "failed",
+      startedAt: Date.parse("2026-08-30T00:05:00.000Z"),
+      finishedAt: Date.parse("2026-08-30T00:05:01.000Z"),
+      errorCode: "UPSTREAM_TIMEOUT",
+    };
+    artifact.ledger.splice(-1, 0, failedAttempt);
+    artifact.quotaLedger.pop();
+    artifact.totals.retries = 1;
+    artifact.totals.quotaAttempts = 287;
+    artifact.totals.spillOut = 2;
+    const workers = structuredClone(RAW_PAYLOADS["evidence/raw/workers.json"]) as any;
+    const template = workers.response.data.viewer.accounts[0].workersInvocationsAdaptive[1];
+    for (const datetime of ["2026-08-30T00:05:00Z", "2026-08-30T00:05:02Z"]) {
+      const drainConsumer = structuredClone(template);
+      drainConsumer.dimensions.datetime = datetime;
+      drainConsumer.dimensions.scriptVersion = DRAIN_VERSION;
+      drainConsumer.sum.requests = 1;
+      workers.response.data.viewer.accounts[0].workersInvocationsAdaptive.push(drainConsumer);
+    }
+    const workerContents = JSON.stringify(workers);
+    artifact.rawAnalytics["evidence/raw/workers.json"].sha256 = sha256(workerContents);
+    const queue = structuredClone(RAW_PAYLOADS["evidence/raw/queue.json"]) as any;
+    const deletes = queue.response.data.viewer.accounts[0].queueTerminalOperations;
+    deletes[2].count = 287;
+    const spillOutDelete = structuredClone(deletes[2]);
+    spillOutDelete.count = 1;
+    spillOutDelete.dimensions.datetime = "2026-08-30T00:05:04Z";
+    deletes.push(spillOutDelete);
+    const queueContents = JSON.stringify(queue);
+    artifact.rawAnalytics["evidence/raw/queue.json"].sha256 = sha256(queueContents);
+    await expect(validateWp224hArtifact(artifact, {
+      readRawEvidence: async (path) => {
+        if (path === "evidence/raw/workers.json") return workerContents;
+        if (path === "evidence/raw/queue.json") return queueContents;
+        return readRawEvidence(path);
+      },
+    })).resolves.toMatchObject({ passed: true });
+  });
+
   it("rejects Workers evidence that ends before terminality grace", async () => {
     const artifact = validArtifact() as any;
     const workers = structuredClone(RAW_PAYLOADS["evidence/raw/workers.json"]) as any;
