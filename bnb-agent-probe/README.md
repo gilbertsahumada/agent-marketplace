@@ -252,8 +252,9 @@ with a suffixed tag such as `git-<SHA12>-drain`; their literal version responses
 are recorded too. Workers metrics include every authenticated measured or drain
 version, while Queue reconciliation still rejects any extra producer message.
 An authenticated drain-version invocation with zero subrequests and no matching
-write is treated as a blocked producer: its CPU still counts, but it does not
-invent a 289th message.
+write is unexplained observer/producer traffic and invalidates the gate. A late
+Cron blocked by the producer switch therefore causes a repeat instead of being
+indistinguishable from a manual Worker request.
 
 Because inactive
 Queues need not emit a new Analytics bucket, the last emitted zero backlog is
