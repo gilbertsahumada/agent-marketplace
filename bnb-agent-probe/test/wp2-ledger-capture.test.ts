@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { access, mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -51,5 +51,22 @@ describe("WP2 scheduler ledger capture", () => {
     expect(raw.response.result[0].results).toEqual([
       { messageId: "message-1", scheduledTime: 1787961614000 },
     ]);
+  });
+
+  it("does not publish the final ledger before the terminality grace", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "wp2-ledger-early-"));
+    directories.push(directory);
+    const outputPath = join(directory, "scheduler-attempts.json");
+    await expect(captureWp2Ledger({
+      accountId: "bc8d4adf4860284fda426b24e7377bc2",
+      apiToken: "token",
+      databaseId: "6fbeea3e-4516-4c4e-a5c4-392cb067198a",
+      fetch: vi.fn(async () => Response.json({ success: true, errors: [], result: [{ results: [] }] })),
+      now: () => "2026-08-30T00:14:59.999Z",
+      outputPath,
+      windowEnd: "2026-08-30T00:00:00.000Z",
+      windowStart: "2026-08-29T00:00:00.000Z",
+    })).rejects.toThrow("terminality grace");
+    await expect(access(outputPath)).rejects.toThrow();
   });
 });
