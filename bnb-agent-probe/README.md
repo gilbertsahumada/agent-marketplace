@@ -9,7 +9,9 @@ registered Grid endpoint. It refreshes trust8004 metadata, fixes read-only BSC
 checks to one fresh block, validates the canonical signed quote, and persists no
 signature or raw response. It never creates, funds or executes a job. No Cron
 Trigger is active in production. Staging temporarily runs `*/5 * * * *` for the
-UTC 2026-08-29 WP2 gate.
+UTC 2026-08-29 WP2 rehearsal. Its late-format activation capture prevents it
+from being the final gate; the repeatable final window is scheduled for UTC
+2026-08-31.
 
 The Free profile caps scheduled work at 40 D1 queries per invocation, below the
 platform limit of 50. Every statement in `DB.batch()` is counted separately and
@@ -55,9 +57,51 @@ npm run migrate:local
 npm test
 npm run typecheck
 npm run dry-run
-npm run evidence:wp2-window-start -- ../evidence/raw/window-start.json
-npm run evidence:wp2-24h -- ../evidence/wp2-d1-24h-2026-08-29.json
 ```
+
+Run the final evidence flow from this package directory. Export
+`CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `WP2_D1_DATABASE_ID`,
+`WP2_QUEUE_ID`, `WP2_SCRIPT_NAME` and `WP2_HEALTH_URL`; credentials are read
+from the environment and are never serialized. Every output is create-only.
+
+```bash
+UTC_DATE=2026-08-31
+WINDOW_START="${UTC_DATE}T00:00:00.000Z"
+WINDOW_END=2026-09-01T00:00:00.000Z
+TERMINALITY_END=2026-09-01T00:15:00.000Z
+
+# Safe state, before installing Cron or enabling either switch:
+npm run evidence:wp2-control -- preflight ../evidence/raw/preflight.json
+
+# After enabling the unchanged candidate and installing only */5 * * * *;
+# both captures must finish before the first scheduled tick:
+npm run evidence:wp2-control -- activation ../evidence/raw/activation.json
+npm run evidence:wp2-window-start -- ../evidence/raw/window-start.json
+
+# After the 23:55 tick: producer off, consumer on, Cron removed, before 24:00Z:
+npm run evidence:wp2-control -- drain ../evidence/raw/drain.json
+
+# At/after 00:15Z and after the last terminal attempt/DeleteMessage:
+npm run evidence:wp2-control -- cleanup ../evidence/raw/cleanup.json
+npm run evidence:wp2-ledger -- \
+  ../evidence/raw/scheduler-attempts.json "$WINDOW_START" "$WINDOW_END"
+npm run evidence:wp2-analytics -- \
+  ../evidence/raw "$UTC_DATE" "$TERMINALITY_END"
+npm run evidence:wp2-deployment -- \
+  ../evidence/raw/deployment.json "$WP2_SCRIPT_NAME" "$FULL_SHA" \
+  "$MEASURED_VERSION_ID" "$DRAIN_VERSION_ID" "$CLEANUP_VERSION_ID"
+npm run evidence:wp2-build -- \
+  "../evidence/wp2-d1-24h-${UTC_DATE}.json" "$WINDOW_START"
+npm run evidence:wp2-24h -- "../evidence/wp2-d1-24h-${UTC_DATE}.json"
+npm run check
+```
+
+The order is part of the gate. Preflight and activation cannot be reconstructed
+after the first tick. Drain proves `PRODUCER_KILL_SWITCH=1` with
+`KILL_SWITCH=0`; cleanup proves both are `1`. Each control snapshot also binds
+the Free plan, 5-minute cadence, 40-query/D1 row budgets, 5-second seller
+timeout, response caps, Queue/D1 resources, zero backlog and absence of
+`SHARED_SECRET`.
 
 `evidence:wp2-window-start` requires `CLOUDFLARE_API_TOKEN`,
 `CLOUDFLARE_ACCOUNT_ID` and `WP2_D1_DATABASE_ID` in the process environment.
