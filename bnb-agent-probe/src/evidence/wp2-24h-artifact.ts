@@ -772,8 +772,9 @@ async function validateRawAnalytics(
     fail("RAW_QUEUE", "staging and account-wide Queue Analytics disagree");
   }
 
-  const preflight = controlRaw(parsed.get(REQUIRED_RAW_ANALYTICS[6]), "preflight");
-  const activation = controlRaw(parsed.get(REQUIRED_RAW_ANALYTICS[7]), "activation");
+  const controlContext = { accountId: context.accountId, queueId: context.queueId, workerName: context.workerName };
+  const preflight = controlRaw(parsed.get(REQUIRED_RAW_ANALYTICS[6]), "preflight", controlContext);
+  const activation = controlRaw(parsed.get(REQUIRED_RAW_ANALYTICS[7]), "activation", controlContext);
   const windowStart = windowStartRaw(
     parsed.get(REQUIRED_RAW_ANALYTICS[8]),
     context.accountId,
@@ -789,7 +790,7 @@ async function validateRawAnalytics(
   if (windowStart.nextPhase !== context.rotationStart) {
     fail("PHASE_SEQUENCE", "persisted phase immediately before the window does not match the first tick");
   }
-  const cleanup = controlRaw(parsed.get(REQUIRED_RAW_ANALYTICS[9]), "cleanup");
+  const cleanup = controlRaw(parsed.get(REQUIRED_RAW_ANALYTICS[9]), "cleanup", controlContext);
   const http429 = context.quotaLedger.filter(({ errorCode }) => errorCode?.includes("429") === true).length;
   const quotaErrors = context.quotaLedger.filter(({ errorCode }) =>
     errorCode !== null && /quota|limit|exceeded/i.test(errorCode)).length;
@@ -1061,7 +1062,11 @@ function validateWindowRequest(
   }
 }
 
-function controlRaw(value: unknown, label: "preflight" | "activation" | "cleanup"): {
+function controlRaw(
+  value: unknown,
+  label: "preflight" | "activation" | "cleanup",
+  context: { readonly accountId: string; readonly queueId: string; readonly workerName: string },
+): {
   readonly schedules: readonly string[];
   readonly backlogCount: number;
   readonly killSwitch: boolean;
@@ -1071,33 +1076,67 @@ function controlRaw(value: unknown, label: "preflight" | "activation" | "cleanup
   readonly capturedAt: number;
 } {
   const raw = record(value, "RAW_CLEANUP", `${label} raw`);
-  const response = record(raw.response, "RAW_CLEANUP", `${label} response`);
-  if (!Array.isArray(response.schedules)
-    || response.schedules.some((schedule) => typeof schedule !== "string")) {
-    fail("RAW_CLEANUP", `${label} schedules are invalid`);
+  const request = record(raw.request, "RAW_CLEANUP", `${label} request`);
+  const schedulesUrl = `https://api.cloudflare.com/client/v4/accounts/${context.accountId}/workers/scripts/${context.workerName}/schedules`;
+  const backlogUrl = `https://api.cloudflare.com/client/v4/accounts/${context.accountId}/queues/${context.queueId}/metrics`;
+  const startedAt = isoTimestamp(request.startedAt, "RAW_CLEANUP", `${label} startedAt`);
+  const completedAt = isoTimestamp(request.completedAt, "RAW_CLEANUP", `${label} completedAt`);
+  if (request.accountId !== context.accountId || request.queueId !== context.queueId
+    || request.scriptName !== context.workerName || request.mode !== label
+    || request.schedulesUrl !== schedulesUrl || request.backlogUrl !== backlogUrl
+    || completedAt < startedAt || completedAt - startedAt > 10_000) {
+    fail("RAW_CLEANUP", `${label} request provenance is invalid`);
   }
-  const defaults = label !== "cleanup"
-    ? { killSwitch: true, producerKillSwitch: true, stagingManualRun: false, sharedSecretPresent: false }
-    : {
-        killSwitch: response.killSwitch,
-        producerKillSwitch: response.producerKillSwitch,
-        stagingManualRun: response.stagingManualRun,
-        sharedSecretPresent: response.sharedSecretPresent,
-      };
-  if (typeof defaults.killSwitch !== "boolean"
-    || typeof defaults.producerKillSwitch !== "boolean"
-    || typeof defaults.stagingManualRun !== "boolean"
-    || typeof defaults.sharedSecretPresent !== "boolean") {
+  try {
+    const healthUrl = new URL(nonEmptyString(request.healthUrl, "RAW_CLEANUP", `${label} healthUrl`));
+    if (healthUrl.protocol !== "https:" || healthUrl.pathname !== "/health"
+      || healthUrl.search !== "" || healthUrl.hash !== "") {
+      fail("RAW_CLEANUP", `${label} health URL is invalid`);
+    }
+  } catch (error) {
+    if (error instanceof Wp224hArtifactValidationError) throw error;
+    fail("RAW_CLEANUP", `${label} health URL is invalid`);
+  }
+  const response = record(raw.response, "RAW_CLEANUP", `${label} response`);
+  const schedulesResponse = record(response.schedules, "RAW_CLEANUP", `${label} schedules response`);
+  const schedulesResult = record(schedulesResponse.result, "RAW_CLEANUP", `${label} schedules result`);
+  if (schedulesResponse.success !== true || !emptyArray(schedulesResponse.errors)
+    || !Array.isArray(schedulesResult.schedules)) {
+    fail("RAW_CLEANUP", `${label} schedules response is invalid`);
+  }
+  const schedules = schedulesResult.schedules.map((entry, index) => {
+    const schedule = record(entry, "RAW_CLEANUP", `${label} schedule[${index}]`);
+    return nonEmptyString(schedule.cron, "RAW_CLEANUP", `${label} schedule cron`);
+  });
+  const backlogResponse = record(response.backlog, "RAW_CLEANUP", `${label} backlog response`);
+  const backlogResult = record(backlogResponse.result, "RAW_CLEANUP", `${label} backlog result`);
+  if (backlogResponse.success !== true || !emptyArray(backlogResponse.errors)) {
+    fail("RAW_CLEANUP", `${label} backlog response is invalid`);
+  }
+  const backlogCount = nonNegativeInteger(
+    backlogResult.backlog_count,
+    "RAW_CLEANUP",
+    `${label} backlog_count`,
+  );
+  nonNegativeInteger(backlogResult.backlog_bytes, "RAW_CLEANUP", `${label} backlog_bytes`);
+  const health = record(response.health, "RAW_CLEANUP", `${label} health response`);
+  const active = label === "activation";
+  if (health.status !== "ok" || health.killSwitch !== !active
+    || health.producerKillSwitch !== !active || health.stagingManualRun !== false) {
     fail("RAW_CLEANUP", `${label} safety state is invalid`);
   }
+  if (!Array.isArray(response.secrets)) fail("RAW_CLEANUP", `${label} secret list is invalid`);
+  const secretNames = response.secrets.map((entry, index) =>
+    nonEmptyString(record(entry, "RAW_CLEANUP", `${label} secret[${index}]`).name,
+      "RAW_CLEANUP", `${label} secret name`));
   return {
-    schedules: response.schedules as string[],
-    backlogCount: nonNegativeInteger(response.backlogCount, "RAW_CLEANUP", `${label} backlogCount`),
-    killSwitch: defaults.killSwitch as boolean,
-    producerKillSwitch: defaults.producerKillSwitch as boolean,
-    stagingManualRun: defaults.stagingManualRun as boolean,
-    sharedSecretPresent: defaults.sharedSecretPresent as boolean,
-    capturedAt: isoTimestamp(response.capturedAt, "RAW_CLEANUP", `${label} capturedAt`),
+    schedules,
+    backlogCount,
+    killSwitch: health.killSwitch as boolean,
+    producerKillSwitch: health.producerKillSwitch as boolean,
+    stagingManualRun: health.stagingManualRun as boolean,
+    sharedSecretPresent: secretNames.includes("SHARED_SECRET"),
+    capturedAt: completedAt,
   };
 }
 
