@@ -4,6 +4,14 @@ import { deriveAgentPassportState, deriveSnapshotAgentPassportState } from "@/sr
 import { isReleaseAgentHireable, isReleaseQuoteCurrent, isVerificationSnapshotCurrent } from "@/src/business/policies/release-qualification-policy";
 import type { AgentCardViewModel, EvidenceStepViewModel, VerificationDriftViewModel } from "./presentation-types";
 
+export const hireabilityLabels: Record<AgentCardViewModel["hireability"], string> = {
+  hireable: "Hireable now",
+  mcp_only: "MCP only",
+  quote_stale: "Quote expired",
+  wallet_ambiguous: "Wallet attribution ambiguous",
+  listed_only: "Not evaluated",
+};
+
 function evidenceAge(observedAt: string, now = Date.now()): string {
   const elapsedSeconds = Math.max(0, Math.floor((now - Date.parse(observedAt)) / 1_000));
   if (elapsedSeconds < 60) return "just now";
