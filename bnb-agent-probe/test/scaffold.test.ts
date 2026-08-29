@@ -78,7 +78,7 @@ describe("WP1 Wrangler scaffold", () => {
     });
   });
 
-  it("keeps staging isolated and permits only off or the exact WP2 gate", () => {
+  it("keeps versioned staging isolated and safely disabled", () => {
     const staging = wrangler.env?.staging;
 
     expect(staging).toMatchObject({
@@ -100,11 +100,9 @@ describe("WP1 Wrangler scaffold", () => {
         }),
       ],
     });
-    const safeOff = staging?.vars?.KILL_SWITCH === "1"
-      && JSON.stringify(staging.triggers) === JSON.stringify({ crons: [] });
-    const exactWp2Gate = staging?.vars?.KILL_SWITCH === "0"
-      && JSON.stringify(staging.triggers) === JSON.stringify({ crons: ["*/5 * * * *"] });
-    expect(safeOff || exactWp2Gate).toBe(true);
+    expect(staging?.vars?.KILL_SWITCH).toBe("1");
+    expect(staging?.vars?.PRODUCER_KILL_SWITCH).toBe("1");
+    expect(staging?.triggers).toEqual({ crons: [] });
     expect(staging?.queues).toEqual({
       producers: [{ binding: "WP2_QUEUE", queue: "bnb-agent-probe-staging" }],
       consumers: [{
