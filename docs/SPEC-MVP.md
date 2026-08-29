@@ -8,11 +8,12 @@
 Discover → Understand → Compare → Hire → Track → Result
 ```
 
-Esta spec gobierna el futuro repositorio `bnb-agent-probe` y su integración con
-este marketplace. El contrato ejecutable de configuración se mantiene primero
-en `src/observation/worker-config.ts` para que perfiles y gates se prueben junto
-al código existente antes de extraer WP1. No autoriza cambios en producción de
-trust8004 durante su ventana de congelación.
+Esta spec gobierna el repositorio `bnb-agent-probe` y su integración con este
+marketplace. El contrato ejecutable de configuración vive en
+`bnb-agent-probe/src/config.ts`; el bootstrap previo del marketplace se eliminó
+el 2026-08-29 al completarse la mudanza de la política de rotación al Worker.
+No autoriza cambios en producción de trust8004 durante su ventana de
+congelación.
 
 ---
 
@@ -1065,9 +1066,9 @@ kill switch está abierto. Staging y producción usan nombres de Queue distintos
 El Cron falla cerrado si falta el binding y nunca ejecuta la fase directamente.
 
 `bnb-agent-probe/src/config.ts` es la fuente ejecutable WP1 de defaults, máximos
-y validación. Mientras convive con el bootstrap previo
-`src/observation/worker-config.ts`, un test de paridad impide drift entre ambos;
-WP2 elimina el bootstrap al mover la política de rotación al Worker. Free es el
+y validación, y es la única fuente ejecutable: el bootstrap previo del
+marketplace y su test de paridad se eliminaron el 2026-08-29, cumplido el
+criterio de WP2 de mover la política de rotación al Worker. Free es el
 fallback cuando falta la variable de plan. En Paid los
 defaults vuelven a 200/2000×2/10 y pipeline, pero requieren
 `CLOUDFLARE_WORKERS_PLAN=paid`; cualquier cambio de plan se despliega primero con
@@ -1676,10 +1677,8 @@ apagado, kill switch, observabilidad/rollback. Solo entonces cron en producción
 
 ## 13. Estructura del repositorio nuevo
 
-Hasta crear `bnb-agent-probe`, `src/observation/worker-config.ts`,
-`src/observation/scheduler-policy.ts` y
-`tests/observation-worker-config.test.ts` son la fuente canónica de perfiles y
-rotación. WP1 los mueve sin cambiar comportamiento ni defaults.
+`bnb-agent-probe/src/config.ts` y los módulos del Worker son la fuente
+canónica de perfiles y rotación; el bootstrap del marketplace quedó eliminado.
 
 ```text
 bnb-agent-probe/

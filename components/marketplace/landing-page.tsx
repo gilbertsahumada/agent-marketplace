@@ -13,10 +13,12 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { AgentCard } from "./agent-card";
 import { CategoryCard } from "./category-card";
 import { EvidenceRail } from "./evidence-rail";
+import { FunnelSection } from "./funnel-section";
 import type {
   AgentCardViewModel,
   CategoryCardViewModel,
   EvidenceStepViewModel,
+  FunnelSectionViewModel,
 } from "./presentation-types";
 
 const journey = ["Discover", "Understand", "Compare", "Hire", "Track", "Result"];
@@ -26,6 +28,7 @@ export function MarketplaceLanding({
   catalogSnapshot,
   demoEnabled,
   featuredAgents,
+  funnel,
   publicProof,
   proofSummary,
   qualifiedSeller,
@@ -34,6 +37,7 @@ export function MarketplaceLanding({
   catalogSnapshot: { generatedAt: string; staleAfter: string } | null;
   demoEnabled: boolean;
   featuredAgents: AgentCardViewModel[];
+  funnel: FunnelSectionViewModel | null;
   publicProof: EvidenceStepViewModel[];
   proofSummary?: { href: string; network: string; title: string; description: string };
   qualifiedSeller: { agentId: string; name: string } | null;
@@ -104,6 +108,8 @@ export function MarketplaceLanding({
           </Card>
         </div>
       </section>
+
+      <FunnelSection funnel={funnel} />
 
       <section aria-labelledby="categories-heading" className="mx-auto max-w-7xl px-4 py-14 sm:px-6 sm:py-16 lg:px-8">
         <div className="max-w-2xl">
