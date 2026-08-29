@@ -140,7 +140,7 @@ describe("WP2 control-plane capture", () => {
     await captureWp2Control({
       accountId: "bc8d4adf4860284fda426b24e7377bc2", apiToken: "token", fetch,
       databaseId: "6fbeea3e-4516-4c4e-a5c4-392cb067198a",
-      healthUrl: "https://bnb-agent-probe-staging.gilbertsahumada.workers.dev/health",
+      healthUrl: "",
       mode: "drain", now: () => timestamps.shift()!, outputPath,
       queueId: "721ba809967d425a91dbc34eb1ac3baa",
       readSecrets: async () => [{ name: "BSC_RPC_URL", type: "secret_text" }],
