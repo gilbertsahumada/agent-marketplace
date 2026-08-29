@@ -65,28 +65,82 @@ Run the final evidence flow from this package directory. Export
 from the environment and are never serialized. Every output is create-only.
 
 ```bash
+FULL_SHA=131d0a23f18a7328754378530ea3120245d233cc
+SHORT_SHA=${FULL_SHA:0:12}
+MEASURED_VERSION_ID=d1ee751a-b77d-4fc6-afed-864e631383af
+EXPECTED_ETAG=80a1f8dac1e5949583dd29d7d9ee60a789007822bd646a5c8b1216f7437bcf23
 UTC_DATE=2026-08-31
 WINDOW_START="${UTC_DATE}T00:00:00.000Z"
 WINDOW_END=2026-09-01T00:00:00.000Z
-TERMINALITY_END=2026-09-01T00:15:00.000Z
+MIN_TERMINALITY_END=2026-09-01T00:15:00.000Z
 
 # Safe state, before installing Cron or enabling either switch:
 npm run evidence:wp2-control -- preflight ../evidence/raw/preflight.json
 
-# After enabling the unchanged candidate and installing only */5 * * * *;
-# both captures must finish before the first scheduled tick:
+# Re-promote the exact measured version, then install only */5 * * * *.
+# Stop if its versions-view etag is not EXPECTED_ETAG.
+npx wrangler versions deploy "${MEASURED_VERSION_ID}@100%" --env staging --yes \
+  --message "WP2 final UTC gate activation"
+test "$(npx wrangler versions view "$MEASURED_VERSION_ID" --env staging --json | jq -r '.resources.script.etag')" = "$EXPECTED_ETAG"
+curl --fail-with-body -X PUT \
+  -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+  -H "Content-Type: application/json" \
+  --data '[{"cron":"*/5 * * * *"}]' \
+  "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/scripts/${WP2_SCRIPT_NAME}/schedules"
+
+# Both captures must finish before the first scheduled tick:
 npm run evidence:wp2-control -- activation ../evidence/raw/activation.json
 npm run evidence:wp2-window-start -- ../evidence/raw/window-start.json
 
-# After the 23:55 tick: producer off, consumer on, Cron removed, before 24:00Z:
+# Immediately after the 23:55 tick and before 24:00Z: producer off,
+# consumer on, then Cron removed. Stop if the new version etag changes.
+npx wrangler deploy --env staging --keep-vars \
+  --var PRODUCER_KILL_SWITCH:1 --var KILL_SWITCH:0 \
+  --message "git_commit=${FULL_SHA}" --tag "git-${SHORT_SHA}-drain"
+DRAIN_VERSION_ID="<Current Version ID from Wrangler>"
+test "$(npx wrangler versions view "$DRAIN_VERSION_ID" --env staging --json | jq -r '.resources.script.etag')" = "$EXPECTED_ETAG"
+curl --fail-with-body -X DELETE \
+  -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+  "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/scripts/${WP2_SCRIPT_NAME}/schedules/%2A%2F5%20%2A%20%2A%20%2A%20%2A"
 npm run evidence:wp2-control -- drain ../evidence/raw/drain.json
 
-# At/after 00:15Z and after the last terminal attempt/DeleteMessage:
-npm run evidence:wp2-control -- cleanup ../evidence/raw/cleanup.json
+# At/after MIN_TERMINALITY_END, keep the consumer enabled until the literal D1
+# ledger reconciles all 288 ticks and the Queue REST backlog is zero.
+WINDOW_START_MS=$(node -p 'Date.parse(process.argv[1])' "$WINDOW_START")
+WINDOW_END_MS=$(node -p 'Date.parse(process.argv[1])' "$WINDOW_END")
+npx wrangler d1 execute bnb-agent-probe-staging --remote --env staging --json \
+  --command "SELECT COUNT(DISTINCT scheduledTime) AS scheduled_ticks FROM scheduler_attempts WHERE scheduledTime >= ${WINDOW_START_MS} AND scheduledTime < ${WINDOW_END_MS}" \
+  | jq -e '.[0].results[0].scheduled_ticks == 288'
+npx wrangler d1 execute bnb-agent-probe-staging --remote --env staging --json \
+  --command "SELECT scheduledTime FROM scheduler_attempts WHERE scheduledTime >= ${WINDOW_START_MS} AND scheduledTime < ${WINDOW_END_MS} GROUP BY scheduledTime HAVING SUM(CASE WHEN outcome = 'completed' THEN 1 ELSE 0 END) != 1" \
+  | jq -e '.[0].results | length == 0'
+curl --fail-with-body \
+  -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+  "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/queues/${WP2_QUEUE_ID}/metrics" \
+  | jq -e '.success == true and (.errors | length == 0) and .result.backlog_count == 0 and .result.backlog_bytes == 0'
 npm run evidence:wp2-ledger -- \
   ../evidence/raw/scheduler-attempts.json "$WINDOW_START" "$WINDOW_END"
+
+# Choose a real cutoff after the minimum grace and the checks above, then capture
+# Queue/Workers Analytics while the consumer remains enabled. The validator
+# proves that the final attempt and DeleteMessage precede this cutoff.
+TERMINALITY_END=$(node -p 'new Date().toISOString()')
 npm run evidence:wp2-analytics -- \
   ../evidence/raw "$UTC_DATE" "$TERMINALITY_END"
+jq -e '
+  [.response.data.viewer.accounts[0].queueTerminalOperations[]
+    | select(.dimensions.actionType == "DeleteMessage")] as $deletes
+  | ([$deletes[].count] | add) == 288
+    and all($deletes[]; (.dimensions.outcome | ascii_downcase) == "success")
+' ../evidence/raw/queue.json
+
+# Only after the Analytics terminality check, disable the consumer too.
+npx wrangler deploy --env staging --keep-vars \
+  --var PRODUCER_KILL_SWITCH:1 --var KILL_SWITCH:1 \
+  --message "git_commit=${FULL_SHA}" --tag "git-${SHORT_SHA}-cleanup"
+CLEANUP_VERSION_ID="<Current Version ID from Wrangler>"
+test "$(npx wrangler versions view "$CLEANUP_VERSION_ID" --env staging --json | jq -r '.resources.script.etag')" = "$EXPECTED_ETAG"
+npm run evidence:wp2-control -- cleanup ../evidence/raw/cleanup.json
 npm run evidence:wp2-deployment -- \
   ../evidence/raw/deployment.json "$WP2_SCRIPT_NAME" "$FULL_SHA" \
   "$MEASURED_VERSION_ID" "$DRAIN_VERSION_ID" "$CLEANUP_VERSION_ID"
@@ -100,8 +154,9 @@ The order is part of the gate. Preflight and activation cannot be reconstructed
 after the first tick. Drain proves `PRODUCER_KILL_SWITCH=1` with
 `KILL_SWITCH=0`; cleanup proves both are `1`. Each control snapshot also binds
 the Free plan, 5-minute cadence, 40-query/D1 row budgets, 5-second seller
-timeout, response caps, Queue/D1 resources, zero backlog and absence of
-`SHARED_SECRET`.
+timeout, response caps, Queue/D1 resources and absence of `SHARED_SECRET`.
+Preflight, activation and cleanup require zero Queue backlog. Drain records the
+literal backlog and may be nonzero while the consumer finishes pending retries.
 
 `evidence:wp2-window-start` requires `CLOUDFLARE_API_TOKEN`,
 `CLOUDFLARE_ACCOUNT_ID` and `WP2_D1_DATABASE_ID` in the process environment.
@@ -120,7 +175,8 @@ deployment and timestamped control-plane responses. It keeps the 288 scheduled
 ticks separate from the UTC quota cohort so retries crossing midnight are
 explicit, requires one terminal Queue message and the exact phase rotation per
 tick from the persisted starting phase, checks account-wide Queue usage, and
-requests Queue evidence through the minimum `00:15Z` cutoff.
+requests Queue evidence through an actual terminality cutoff no earlier than
+`00:15Z` and no earlier than the final attempt or successful delete.
 The measured deploy must use `--message git_commit=<40-char SHA>` and
 `--tag git-<first 12 chars>`; `deployment.json` preserves the literal
 `wrangler versions view "$VERSION_ID" --env staging --json` response plus
@@ -156,8 +212,8 @@ explicitly:
 
 ```bash
 npx wrangler d1 migrations apply bnb-agent-probe-staging --remote --env staging
-FULL_SHA=$(git rev-parse HEAD)
-SHORT_SHA=$(git rev-parse --short=12 HEAD)
+# Use the pinned FULL_SHA and SHORT_SHA from the final-gate runbook above.
+# Do not substitute the operator checkout's current HEAD.
 npx wrangler deploy --env staging \
   --message "git_commit=${FULL_SHA}" --tag "git-${SHORT_SHA}"
 ```
