@@ -9,6 +9,7 @@ import {
   publicVerificationRepository,
   agentValidationRepository,
   sellerObservationStoreFactory,
+  funnelEvidenceRepository,
 } from "../data/composition.ts";
 import { CompareMarketplaceAgents } from "./use-cases/compare-marketplace-agents.ts";
 import { GetMarketplaceAgent } from "./use-cases/get-marketplace-agent.ts";
@@ -28,6 +29,7 @@ import { GetAgentEvidencePassport } from "./use-cases/get-agent-evidence-passpor
 import { ValidateMarketplaceAgent } from "./use-cases/validate-marketplace-agent.ts";
 import { NotifyQualifiedMainnetFundedJob, PrepareQualifiedMainnetHire, RequestQualifiedMainnetQuote } from "./use-cases/qualified-mainnet-hire.ts";
 import { RecordSellerObservation } from "./use-cases/record-seller-observation.ts";
+import { GetFunnelEvidence } from "./use-cases/get-funnel-evidence.ts";
 
 export const listMarketplaceAgents = new ListMarketplaceAgents(marketplaceAgentRepository);
 export const getMarketplaceAgent = new GetMarketplaceAgent(marketplaceAgentRepository);
@@ -83,3 +85,4 @@ export const getAgentEvidencePassport = new GetAgentEvidencePassport(
   mainnetJobProofRepository,
 );
 export const validateMarketplaceAgent = new ValidateMarketplaceAgent(agentValidationRepository);
+export const getFunnelEvidence = new GetFunnelEvidence(funnelEvidenceRepository);

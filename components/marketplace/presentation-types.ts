@@ -45,6 +45,24 @@ export interface AgentCardViewModel {
   passportHref: string;
 }
 
+export interface FunnelStageViewModel {
+  label: string;
+  detail: string;
+  count: string | null;
+  share: string | null;
+  provenance: ProvenanceKind | null;
+}
+
+export interface FunnelSectionViewModel {
+  stages: FunnelStageViewModel[];
+  citation: {
+    artifact: string;
+    sha256: string;
+    blockNumber: string;
+    generatedAt: string;
+  };
+}
+
 export interface VerificationDriftViewModel {
   freshness: "current" | "stale";
   generatedAt: string;
