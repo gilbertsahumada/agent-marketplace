@@ -81,6 +81,10 @@ export function createWorker(dependencies: WorkerDependencies = {}): WorkerEntry
         const { healthResponse } = await import("./routes/health");
         return healthResponse(env.DB, config, now());
       }
+      if (request.method === "GET" && url.pathname === "/observations") {
+        const { observationsResponse } = await import("./routes/observations");
+        return observationsResponse(env.DB, now());
+      }
       if (request.method === "POST" && url.pathname === "/__admin/run-scheduled") {
         if (config.killSwitch
           || config.producerKillSwitch

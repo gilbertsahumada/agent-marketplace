@@ -150,7 +150,7 @@ describe("published verification evidence", () => {
     const packageJson = JSON.parse(readFileSync("package.json", "utf8")) as { scripts: Record<string, string> };
     const vercel = JSON.parse(readFileSync("vercel.json", "utf8")) as { buildCommand: string };
     expect(vercel.buildCommand).toBe("npm run build:deployment");
-    expect(packageJson.scripts["build:deployment"]).toBe("npm run readiness:bsc && npm run publish:verification && npm run build");
+    expect(packageJson.scripts["build:deployment"]).toBe("npm run readiness:bsc && npm run build");
   });
 
   it("loads local readiness configuration without requiring an env file in deployment", () => {

@@ -3,10 +3,6 @@ import { Trust8004Provider } from "../../trust8004/provider.ts";
 import type { AgentListItem, MarketplaceAgent } from "../../trust8004/types.ts";
 import { createBscIdentityReader, type BscIdentityReader } from "../../verification/onchain.ts";
 import { DEFAULT_REGISTERED_AGENT_SORT } from "./marketplace-agent-repository.ts";
-import {
-  PUBLIC_VERIFICATION_SNAPSHOT,
-  publicVerificationForAgent,
-} from "../verification/public-verification-snapshot.ts";
 import type {
   MarketplaceAgentData,
   MarketplaceAgentDataPage,
@@ -69,8 +65,7 @@ function fromSummary(agent: AgentListItem, fetchedAt: string): MarketplaceAgentD
   };
 }
 
-function fromProfile(agent: MarketplaceAgent, now: number): MarketplaceAgentData {
-  const verification = publicVerificationForAgent(agent.agentId, now);
+function fromProfile(agent: MarketplaceAgent): MarketplaceAgentData {
   return {
     sourceDetail: "profile",
     chainId: agent.chainId,
@@ -87,17 +82,7 @@ function fromProfile(agent: MarketplaceAgent, now: number): MarketplaceAgentData
     reputation: agent.reputation,
     trustScore: agent.trustScore,
     freshness: agent.freshness,
-    verification: verification ? {
-      freshness: verification.freshness,
-      generatedAt: PUBLIC_VERIFICATION_SNAPSHOT.generatedAt,
-      staleAfter: PUBLIC_VERIFICATION_SNAPSHOT.staleAfter,
-      blockNumber: PUBLIC_VERIFICATION_SNAPSHOT.blockNumber,
-      selection: verification.selection,
-      operator: verification.operator,
-      qualification: verification.qualification,
-      identity: verification.identity,
-      tools: verification.tools,
-    } : null,
+    verification: null,
   };
 }
 
@@ -157,7 +142,7 @@ export class Trust8004MarketplaceAgentRepository implements MarketplaceAgentRepo
         throw error;
       }
     });
-    return agent ? fromProfile(agent, this.now()) : null;
+    return agent ? fromProfile(agent) : null;
   }
 
   getOnchainIdentity(agentId: string): Promise<OnchainIdentityData> {

@@ -42,6 +42,7 @@ file records only decisions that still govern the submission.
 | 2026-08-28 | Normalize the exact trust8004 A2A Agent Card declaration before WP3 allowlist matching | Active | The live Grid record legitimately returns `endpoints: null` and declares `https://bnb-agent-marketplace-ruby.vercel.app/grid/.well-known/agent-card.json`, while the marketplace safety boundary is the logical seller base `/grid`; treating either shape as removed prevented the nominal probe | Optional endpoint arrays accept only null/absent as empty, malformed non-null values remain fail-closed, and only the exact A2A `/.well-known/agent-card.json` suffix is stripped after safe-URL validation. ERC-8183 declarations and near-match suffixes are never normalized. The remote gate then passed `quote_verified`; its pre-fix staging row is ignored until a normalized full SWEEP retires it without manual D1 mutation |
 | 2026-08-29 | Record the atomic Analytics evidence publication contract | Accepted; implemented before this row | Partial or interleaved control captures could publish a self-inconsistent evidence directory whose provenance cannot be re-verified afterwards | Captures publish atomically into a captureId directory with a manifest and per-file SHA-256 hashes (`scripts/capture-wp2-analytics.ts`); the artifact builder re-validates the literal responses and hashes (`src/evidence/wp2-24h-artifact.ts`), and backlog count and bytes are now re-proven as zero for preflight, activation and cleanup while drain keeps its literal values |
 | 2026-08-29 | Automate and test the activation-window rollback | Active | The spec-mandated rollback trap existed only as untested copy-paste shell inside the README runbook, fragile to typos and API drift during a real abort | A versioned script (`scripts/rollback-wp2-activation.ts`) builds the exact control-plane rollback sequence armed from activation until window start, defaults to printing without executing, and is covered by regression tests; the README runbook invokes the script instead of inline commands |
+| 2026-08-29 | Fail closed when current observations are unavailable | Active for WP4 | The release agent snapshot is regenerated only at deploy, expires after 72 hours and its scheduled Vercel refresh currently lacks `VERCEL_DEPLOY_HOOK_URL`; serving it after Worker/D1 failure could make historical agent state look current | `/observations` is cacheable for at most 60 seconds with revalidation required. After that, the marketplace may show live trust8004 declarations but marks observation state unavailable and disables derived Hire/reachability claims. Only the aggregate WP0 funnel remains as an explicitly dated, block- and SHA-bound historical measurement |
 
 ## Current Mainnet proof boundary
 
@@ -238,25 +239,15 @@ requires an approved RPC/storage budget and visible coverage. “Indexed ERC-818
 means official allowlisted contracts through a stated block, never every contract
 someone claims is compatible.
 
-### Evidence snapshot release risk
+### Historical verification snapshot after WP4
 
-The marketplace public verification snapshot expires exactly 72 hours after
-generation. `build:web` runs `check:verification-snapshot` and refuses to build
-after `staleAfter`, but it does not regenerate the artifact. Only
-`build:deployment` runs readiness, publishes a new snapshot and then builds.
-
-This creates two distinct failure modes during judging:
-
-1. A redeploy using only `build:web` fails once the committed snapshot expires.
-2. Without a redeploy, the already running application continues serving a
-   snapshot whose evidence cutoff has passed.
-
-The release candidate must therefore be built with `build:deployment` on
-September 8 UTC, after all readiness checks pass and no earlier than 72 hours
-before judging begins. A single September 8 artifact cannot remain fresh through
-September 23. During the evaluation window, regenerate and redeploy the same
-frozen application commit every 48 hours, through September 22. The 48-hour
-cadence leaves a 24-hour recovery margin before the prior snapshot expires.
+The committed public verification snapshot remains reproducible historical
+evidence, but it no longer gates `build:web`, populates current agent cards or
+qualifies Hire. `build:deployment` therefore does not regenerate it. Current
+seller observations come only from the Cloudflare `/observations` contract and
+expire at read time; an unavailable Worker disables current observation claims.
+The versioned job proofs and the dated WP0 funnel keep their historical labels,
+blocks and hashes and remain renderable without pretending to be current.
 
 These are operational rebuilds, not feature implementation. Each rebuild must
 preserve the frozen code commit, record the new snapshot timestamp and block, and

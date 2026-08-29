@@ -50,7 +50,7 @@ const input = {
   now: () => 2_000_000_000_010,
 };
 
-describe("WP3 PROBE phase", () => {
+describe("WP4 PROBE phase", () => {
   it("reconciles Grid 303779 before producing one sanitized verified observation", async () => {
     const deps = dependencies();
     const summary = await runProbePhase(input, deps as never);
@@ -82,6 +82,27 @@ describe("WP3 PROBE phase", () => {
       outcome: "quote_verified",
       requests: 0,
     });
+  });
+
+  it("chooses the least recently observed declared category and keeps priority until coverage", async () => {
+    const target: ProbeTarget = {
+      ...TARGET,
+      categoriesJson: '["rebalancing","grid_trading"]',
+      lastProbedAtByCategory: { grid_trading: 1_999_999_000_000 },
+    };
+    const deps = dependencies({ selectTarget: vi.fn(async () => target) });
+
+    await runProbePhase({ ...input, agentAllowlist: [], endpointAllowlist: [] }, deps as never);
+
+    expect(deps.probeSeller).toHaveBeenCalledWith(
+      target,
+      expect.any(Object),
+      "rebalancing",
+    );
+    expect(deps.commit).toHaveBeenCalledWith(expect.objectContaining({
+      observation: expect.objectContaining({ probeCategory: "rebalancing" }),
+      nextPriority: 0,
+    }));
   });
 
   it.each(["metadata_unavailable", "removed"] as const)(

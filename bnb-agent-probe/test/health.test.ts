@@ -362,7 +362,7 @@ describe("Worker runtime", () => {
     expect(text).not.toContain("D1 secret details");
   });
 
-  it.each(["/", "/observations", "/health/extra"])("returns 404 for %s", async (path) => {
+  it.each(["/", "/health/extra"])("returns 404 for %s", async (path) => {
     const response = await createWorker().fetch(
       new Request(`https://worker.test${path}`),
       env(),

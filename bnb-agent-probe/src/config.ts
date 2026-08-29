@@ -73,8 +73,7 @@ const FREE_SAFETY_RATIO = 0.8;
 const QUEUE_MAX_RETRIES = 3;
 const QUEUE_OPERATIONS_PER_MESSAGE = 3 + QUEUE_MAX_RETRIES;
 const D1_TELEMETRY_WRITES_PER_ATTEMPT = 2;
-const WP3_AGENT_ID = "303779";
-const WP3_ENDPOINT = "https://bnb-agent-marketplace-ruby.vercel.app/grid";
+const GENERAL_PROBE_SCOPE = "*";
 
 const FREE_PROFILE: Profile = {
   schedulerMode: "single_phase",
@@ -228,10 +227,8 @@ function configEnvironment(env: Partial<Env>): Record<string, string | undefined
 }
 
 function parseAgentAllowlist(raw: string | undefined, plan: WorkersPlan): readonly string[] {
-  const values = parseCsv("PROBE_AGENT_ALLOWLIST", raw ?? WP3_AGENT_ID);
-  if (plan === "free" && (values.length !== 1 || values[0] !== WP3_AGENT_ID)) {
-    throw new ConfigError("PROBE_AGENT_ALLOWLIST", `Free must contain only ${WP3_AGENT_ID}`);
-  }
+  if ((raw ?? GENERAL_PROBE_SCOPE).trim() === GENERAL_PROBE_SCOPE) return [];
+  const values = parseCsv("PROBE_AGENT_ALLOWLIST", raw!);
   if (values.length > (plan === "free" ? 1 : 100)) {
     throw new ConfigError("PROBE_AGENT_ALLOWLIST", "contains too many entries for the plan");
   }
@@ -244,7 +241,8 @@ function parseAgentAllowlist(raw: string | undefined, plan: WorkersPlan): readon
 }
 
 function parseEndpointAllowlist(raw: string | undefined, plan: WorkersPlan): readonly string[] {
-  const values = parseCsv("PROBE_ENDPOINT_ALLOWLIST", raw ?? WP3_ENDPOINT);
+  if ((raw ?? GENERAL_PROBE_SCOPE).trim() === GENERAL_PROBE_SCOPE) return [];
+  const values = parseCsv("PROBE_ENDPOINT_ALLOWLIST", raw!);
   if (values.length > (plan === "free" ? 1 : 100)) {
     throw new ConfigError("PROBE_ENDPOINT_ALLOWLIST", "contains too many entries for the plan");
   }
@@ -273,9 +271,6 @@ function parseEndpointAllowlist(raw: string | undefined, plan: WorkersPlan): rea
     }
     return url.toString();
   });
-  if (plan === "free" && (normalized.length !== 1 || normalized[0] !== WP3_ENDPOINT)) {
-    throw new ConfigError("PROBE_ENDPOINT_ALLOWLIST", `Free must contain only ${WP3_ENDPOINT}`);
-  }
   return normalized;
 }
 

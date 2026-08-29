@@ -5,7 +5,6 @@ import { GetMainnetHiringExposure } from "../src/business/use-cases/get-mainnet-
 import { NotifyQualifiedMainnetFundedJob, PrepareQualifiedMainnetHire, RequestQualifiedMainnetQuote } from "../src/business/use-cases/qualified-mainnet-hire.ts";
 import { AsyncTtlCache } from "../src/data/cache/async-ttl-cache.ts";
 import { Trust8004MarketplaceAgentRepository } from "../src/data/repositories/trust8004-marketplace-agent-repository.ts";
-import { PUBLIC_VERIFICATION_SNAPSHOT } from "../src/data/verification/public-verification-snapshot.ts";
 import type { Trust8004Provider } from "../src/trust8004/provider.ts";
 
 const demoConfig: MainnetDemoPublicConfig = {
@@ -199,8 +198,7 @@ describe("PR 16 Mainnet exposure", () => {
     expect(workflow).toContain("/api/marketplace/demo/erc8183-mainnet/prepare");
   });
 
-  it("recomputes snapshot freshness after a cached profile read", async () => {
-    let now = Date.parse(PUBLIC_VERIFICATION_SNAPSHOT.staleAfter) - 1;
+  it("does not attach release-snapshot qualification to a live profile", async () => {
     const provider = {
       getAgent: vi.fn(async () => ({
         chainId: 56,
@@ -234,12 +232,10 @@ describe("PR 16 Mainnet exposure", () => {
     const repository = new Trust8004MarketplaceAgentRepository({
       provider,
       cache: new AsyncTtlCache(() => 0),
-      now: () => now,
     });
 
-    expect((await repository.getById("45650"))?.verification?.freshness).toBe("current");
-    now = Date.parse(PUBLIC_VERIFICATION_SNAPSHOT.staleAfter) + 1;
-    expect((await repository.getById("45650"))?.verification?.freshness).toBe("stale");
+    expect((await repository.getById("45650"))?.verification).toBeNull();
+    expect((await repository.getById("45650"))?.verification).toBeNull();
     expect(provider.getAgent).toHaveBeenCalledTimes(1);
   });
 });

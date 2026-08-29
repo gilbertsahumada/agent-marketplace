@@ -14,10 +14,8 @@ describe("loadConfig", () => {
       sweepLimit: 4,
       sweepPagesPerRun: 1,
       probeBatchSize: 1,
-      probeAgentAllowlist: ["303779"],
-      probeEndpointAllowlist: [
-        "https://bnb-agent-marketplace-ruby.vercel.app/grid",
-      ],
+      probeAgentAllowlist: [],
+      probeEndpointAllowlist: [],
       trust8004RequestsPerRun: 4,
       externalSubrequestsPerRun: 12,
       d1QueriesPerRun: 40,
@@ -118,15 +116,13 @@ describe("loadConfig", () => {
 
   it.each([
     [{ PROBE_AGENT_ALLOWLIST: "" }, "PROBE_AGENT_ALLOWLIST"],
-    [{ PROBE_AGENT_ALLOWLIST: "303779,45650" }, "PROBE_AGENT_ALLOWLIST"],
     [{ PROBE_AGENT_ALLOWLIST: "abc" }, "PROBE_AGENT_ALLOWLIST"],
     [{ PROBE_ENDPOINT_ALLOWLIST: "" }, "PROBE_ENDPOINT_ALLOWLIST"],
-    [{ PROBE_ENDPOINT_ALLOWLIST: "https://seller.example/a2a" }, "PROBE_ENDPOINT_ALLOWLIST"],
     [{ PROBE_ENDPOINT_ALLOWLIST: "http://seller.example/a2a" }, "PROBE_ENDPOINT_ALLOWLIST"],
     [{ PROBE_ENDPOINT_ALLOWLIST: "https://seller.example/a2a?token=secret" }, "PROBE_ENDPOINT_ALLOWLIST"],
     [{ PROBE_ENDPOINT_ALLOWLIST: "https://seller.example/a2a#card" }, "PROBE_ENDPOINT_ALLOWLIST"],
     [{ PROBE_ENDPOINT_ALLOWLIST: "https://user:pass@seller.example/a2a" }, "PROBE_ENDPOINT_ALLOWLIST"],
-  ])("fails closed for an unsafe WP3 allowlist", (env, field) => {
+  ])("fails closed for an unsafe probe restriction", (env, field) => {
     expect(() => loadConfig(env)).toThrow(new RegExp(`^${field}:`));
   });
 
@@ -138,6 +134,13 @@ describe("loadConfig", () => {
       probeAgentAllowlist: ["303779"],
       probeEndpointAllowlist: ["https://bnb-agent-marketplace-ruby.vercel.app/grid"],
     });
+  });
+
+  it("uses an explicit wildcard for the general WP4 target set", () => {
+    expect(loadConfig({
+      PROBE_AGENT_ALLOWLIST: "*",
+      PROBE_ENDPOINT_ALLOWLIST: "*",
+    })).toMatchObject({ probeAgentAllowlist: [], probeEndpointAllowlist: [] });
   });
 
   it("uses typed configuration errors without including environment values", () => {

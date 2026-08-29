@@ -2,11 +2,25 @@ import { describe, expect, it } from "vitest";
 
 import {
   GRID_PROBE_REQUEST_HASH,
+  PROBE_CATEGORIES,
   PROBE_REQUEST_SCHEMA_VERSION,
   buildGridProbeRequest,
+  buildProbeRequest,
 } from "../src/lib/terms";
 
 describe("Grid probe terms", () => {
+  it("pins every WP4 category template to its normative hash", () => {
+    expect(PROBE_CATEGORIES.map((category) => [
+      category,
+      buildProbeRequest(category).requestHash,
+    ])).toEqual([
+      ["rebalancing", "0x30c4d87009384d98601811722a9982fbe95d4efd65b5f891e46937832e9c0288"],
+      ["grid_trading", "0x697a15f62a1748230d3e4bdbbe24f6a619d1b82d45f1e4c82787e268ab2497d3"],
+      ["yield_optimisation", "0xf932f814bf58850fca34c32d25dc38890041079f75014d4e400bb92d607c9970"],
+      ["health_factor_monitoring", "0xb31d452e27e497cb57af53f4f0caa9ed394d1c19acdab34e18aefe4924378ef4"],
+    ]);
+  });
+
   it("matches the canonical marketplace request byte-for-byte", () => {
     const request = buildGridProbeRequest();
 

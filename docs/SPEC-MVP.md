@@ -1,6 +1,6 @@
 # Capa de observación de contratabilidad — SPEC MVP v5 Free-first
 
-**Estado:** WP0, WP1 y WP3 completos. WP2 tiene implementación y gates remotos de Queue completos. La corrida UTC 2026-08-29 se conserva como ensayo operativo: empezó correctamente, pero su preflight literal no se publicó y la captura completa de activación ocurrió después del primer tick, por lo que no puede cerrar el gate documental. La ventana final repetible está programada para UTC 2026-08-31. Producción continúa sin Cron.
+**Estado:** WP0, WP1, WP3 y WP5 completos y fusionados. WP2 tiene implementación y gates remotos de Queue completos. La corrida UTC 2026-08-29 se conserva como ensayo operativo: empezó correctamente, pero su preflight literal no se publicó y la captura completa de activación ocurrió después del primer tick, por lo que no puede cerrar el gate documental. Los cambios posteriores invalidaron los identificadores del candidato anterior; la próxima ventana final se programa únicamente después de cerrar WP4 y fijar un nuevo commit, version y etag. Producción continúa sin Cron.
 **Fecha de corte del diseño:** 2026-08-28.
 **Objetivo:** completar la capa de observación necesaria para recorrer:
 
@@ -196,7 +196,7 @@ Si cambia un punto, se actualiza esta spec antes de WP1.
 
  Marketplace en Vercel
    - lee /observations fuera de la ruta crítica de render
-   - conserva fallback estático versionado
+   - si falla, conserva solo declaraciones live de trust8004 y marca observaciones unavailable
    - pide quote fresca al pulsar Hire
    - el navegador firma directamente contra BSC
    - una ruta server-side reenvía telemetría mínima
@@ -472,8 +472,8 @@ CRON_INTERVAL_MINUTES=5
 SCHEDULER_MODE=single_phase (derivado, no sobreescribible en Free)
 HEADER_LIMIT=25                  máximo Free 50
 PROBE_BATCH_SIZE=1              máximo Free 1
-PROBE_AGENT_ALLOWLIST=303779    lista CSV obligatoria; vacío/malformado falla cerrado
-PROBE_ENDPOINT_ALLOWLIST=https://bnb-agent-marketplace-ruby.vercel.app/grid
+PROBE_AGENT_ALLOWLIST=*         WP4 general; CSV restringe temporalmente por agentId
+PROBE_ENDPOINT_ALLOWLIST=*      WP4 general; CSV restringe por URL exacta
 SWEEP_LIMIT=4                   máximo Free 40 y siempre <= TRUST8004_REQUESTS_PER_RUN
 SWEEP_PAGES_PER_RUN=1           máximo Free 1
 TRUST8004_REQUESTS_PER_RUN=4
@@ -738,11 +738,13 @@ se usa el `NegotiationRequest` neutro de `src/readiness/protocols.ts` y
 ### 5.6 RENDER
 
 ```text
-Worker disponible -> snapshot cacheado -> etiqueta calculada al leer
-Worker no disponible -> snapshot público versionado -> aviso de frescura
+Worker disponible -> respuesta cacheada hasta 60 s -> etiqueta calculada al leer
+Worker no disponible -> observación no disponible; conservar solo declaraciones live
 ```
 
-La ficha puede consultar trust8004 en vivo, pero una caída no elimina contenido.
+La ficha consulta trust8004 en vivo para identidad y declaraciones. Una caída del
+Worker no elimina ese contenido, pero tampoco autoriza reutilizar observaciones
+vencidas ni el snapshot de release como estado actual.
 
 ### 5.7 HIRE y TRACK
 
@@ -918,7 +920,7 @@ ni endorsement. Hire vuelve a pedir quote y leer wallet/allowlist antes de firma
 Público:
 
 ```text
-Cache-Control: public, s-maxage=60, stale-while-revalidate=300
+Cache-Control: public, s-maxage=60, must-revalidate
 Content-Type: application/json
 ```
 
@@ -995,6 +997,29 @@ type ObservationsResponse = {
 
 Nunca devuelve firma, payload crudo, headers o errores externos.
 
+`generatedAt` es la hora de construir esta respuesta, no transforma una
+observación histórica en un hecho actual. `latest` y `latestByCategory` siempre
+conservan su `probedAt`; las etiquetas de lectura derivan frescura y expiración
+contra ese timestamp y los timestamps de metadata/quote.
+
+El marketplace puede reutilizar una respuesta HTTP solamente mientras siga
+dentro de sus 60 segundos de frescura. No usa `stale-if-error`, no promueve el
+snapshot de release a fallback de observaciones y no conserva una respuesta
+expirada como si fuera estado actual. Si Worker/D1 no responde:
+
+- el catálogo puede seguir mostrando identidad, metadata y endpoints declarados
+  obtenidos en vivo de trust8004;
+- toda procedencia `observed` se muestra como `Temporalmente no disponible`, con
+  la última fecha solo cuando se presenta explícitamente como evidencia histórica;
+- `Hireable now`, quote vigente, reachability actual y cualquier CTA derivada de
+  observaciones quedan deshabilitados;
+- si trust8004 tampoco responde, se muestra catálogo temporalmente no disponible,
+  no una lista de agentes tomada de un snapshot vencido.
+
+El snapshot WP0 del funnel es una excepción deliberada: es una medición histórica
+agregada, visible siempre con fecha, bloque y SHA-256. Nunca se etiqueta `current`
+ni sustituye el estado actual de agentes individuales.
+
 ### 10.2 `GET /health`
 
 Público, sanitizado y de costo constante: una sola lectura acotada de
@@ -1049,8 +1074,8 @@ HEADER_LIMIT=25
 SWEEP_LIMIT=4
 SWEEP_PAGES_PER_RUN=1
 PROBE_BATCH_SIZE=1
-PROBE_AGENT_ALLOWLIST=303779
-PROBE_ENDPOINT_ALLOWLIST=https://bnb-agent-marketplace-ruby.vercel.app/grid
+PROBE_AGENT_ALLOWLIST=*
+PROBE_ENDPOINT_ALLOWLIST=*
 TRUST8004_REQUESTS_PER_RUN=4
 EXTERNAL_SUBREQUESTS_PER_RUN=12
 D1_QUERIES_PER_RUN=40
@@ -1063,6 +1088,9 @@ MAX_SELLER_RESPONSE_BYTES=32768
 
 `WP2_QUEUE` no es una variable: es un binding Wrangler obligatorio cuando el
 kill switch está abierto. Staging y producción usan nombres de Queue distintos.
+Vercel configura `OBSERVATIONS_URL` con el endpoint público `/observations` del
+entorno Cloudflare correspondiente; no es secreto y nunca se expone como
+`NEXT_PUBLIC_` porque la lectura ocurre en Server Components.
 El Cron falla cerrado si falta el binding y nunca ejecuta la fase directamente.
 
 `bnb-agent-probe/src/config.ts` es la fuente ejecutable WP1 de defaults, máximos
@@ -1624,15 +1652,23 @@ vacíos y se eliminaron el secreto administrativo efímero y su archivo temporal
 
 ### WP4 — Probe general y `/observations`
 
-Entrega: lote 1 en Free (10 por defecto Paid), contrato sección 10.1, fallback e
-integración cacheada.
+Entrega: lote 1 en Free (10 por defecto Paid), contrato sección 10.1, integración
+cacheada por un máximo de 60 segundos y degradación fail-closed. El snapshot de
+release deja de representar estado actual de agentes: una caída de Worker/D1
+conserva solo declaraciones live de trust8004, sin `Hireable now` ni claims
+observados. El funnel WP0 permanece como medición histórica fechada.
 
 Gate:
 
 - contract test Worker↔marketplace;
+- cache fresca puede reutilizarse por 60 segundos, pero una respuesta vencida no
+  se sirve como fallback ante error;
 - quote expirada degrada sin write;
 - metadata propia cambia/degrada en siguiente observación prioritaria;
 - Worker apagado no rompe páginas;
+- Worker apagado muestra datos declarados live como `verification unavailable`,
+  nunca como observación actual; si también falla trust8004, el catálogo muestra
+  indisponibilidad explícita;
 - unreachable/removed visibles;
 - Hire nunca consume quote del probe;
 - los call sites crudos heredados quedan migrados a `db/orm.ts` y el grep de

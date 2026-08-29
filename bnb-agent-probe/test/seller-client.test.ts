@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { SellerProbeError, probeA2aSeller } from "../src/lib/seller-client";
+import {
+  SellerProbeError,
+  probeA2aSeller,
+  probeErc8183HttpSeller,
+} from "../src/lib/seller-client";
 
 const ENDPOINT = "https://seller.example.com/grid";
 const MESSAGE_URL = "https://seller.example.com/api/sellers/grid/a2a";
@@ -130,7 +134,6 @@ describe("Workers A2A seller probe", () => {
       "https://attacker.example/a2a",
       "https://user:secret@seller.example.com/a2a",
       "https://seller.example.com/a2a?token=secret",
-      "https://seller.example.com/another/same-origin/path",
     ]) {
       await expect(probeA2aSeller({
         endpoint: ENDPOINT,
@@ -140,6 +143,23 @@ describe("Workers A2A seller probe", () => {
         fetch: vi.fn<typeof fetch>().mockResolvedValue(json({ ...card(), url })),
       })).rejects.toMatchObject({ code: "A2A_CARD_URL" });
     }
+  });
+
+  it("accepts a public same-origin Agent Card message path for general targets", async () => {
+    const fetchImpl = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(json({ ...card(), url: "https://seller.example.com/another/a2a" }))
+      .mockImplementationOnce(async (_input, init) => {
+        const requestId = JSON.parse(String(init?.body)).id as string;
+        return reply({ request_hash: "0x01" }, requestId);
+      });
+
+    await expect(probeA2aSeller({
+      endpoint: ENDPOINT,
+      request: REQUEST,
+      timeoutMs: 5_000,
+      maxResponseBytes: 32_768,
+      fetch: fetchImpl,
+    })).resolves.toMatchObject({ negotiationSkill: "negotiate-erc8183-job" });
   });
 
   it.each([301, 302, 307, 308])("rejects HTTP %i without following Location", async (status) => {
@@ -212,5 +232,29 @@ describe("Workers A2A seller probe", () => {
       maxResponseBytes: 32_768,
       fetch: fetchImpl,
     })).rejects.toMatchObject({ code: "A2A_PROTOCOL_ERROR" });
+  });
+});
+
+describe("Workers ERC-8183 HTTP seller probe", () => {
+  it("checks health and status before requesting a fresh quote", async () => {
+    const quote = { request_hash: "0x01" };
+    const fetchImpl = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(json({ status: "ok", service: "ERC-8183 Agent" }))
+      .mockResolvedValueOnce(json({ status: "ok" }))
+      .mockResolvedValueOnce(json(quote));
+
+    await expect(probeErc8183HttpSeller({
+      endpoint: "https://seller.example.com/erc8183",
+      request: REQUEST,
+      timeoutMs: 5_000,
+      maxResponseBytes: 32_768,
+      fetch: fetchImpl,
+    })).resolves.toMatchObject({ quote });
+
+    expect(fetchImpl.mock.calls.map(([url]) => url.toString())).toEqual([
+      "https://seller.example.com/erc8183/health",
+      "https://seller.example.com/erc8183/status",
+      "https://seller.example.com/erc8183/negotiate",
+    ]);
   });
 });

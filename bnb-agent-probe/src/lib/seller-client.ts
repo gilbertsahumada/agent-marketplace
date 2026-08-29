@@ -39,13 +39,7 @@ export async function probeA2aSeller(input: A2aProbeInput): Promise<A2aProbeResu
   const card = await fetchJson(endpoint, {
     headers: { accept: "application/json" },
   }, input, deadline, usage);
-  const registeredEndpoint = new URL(baseEndpoint);
-  const registeredPath = registeredEndpoint.pathname.replace(/\/+$/, "");
-  const expectedMessageUrl = new URL(
-    `/api/sellers${registeredPath}/a2a`,
-    registeredEndpoint.origin,
-  );
-  const messageUrl = parseMessageUrl(card.url, expectedMessageUrl);
+  const messageUrl = parseMessageUrl(card.url, new URL(baseEndpoint));
   const skills = parseSkills(card.skills);
   const negotiationSkill = NEGOTIATION_SKILLS.find((skill) => skills.includes(skill));
   if (!negotiationSkill || skills.filter((skill) => skill === "notify_funded").length !== 1) {
@@ -83,6 +77,36 @@ export async function probeA2aSeller(input: A2aProbeInput): Promise<A2aProbeResu
   ));
   if (!isRecord(part) || !isRecord(part.data)) throw new SellerProbeError("A2A_RESULT");
   return { quote: part.data, negotiationSkill };
+}
+
+export async function probeErc8183HttpSeller(input: A2aProbeInput): Promise<A2aProbeResult> {
+  if (!isSyntacticallyPublicHttpsUrl(input.endpoint)) {
+    throw new SellerProbeError("SELLER_UNSAFE_URL");
+  }
+  const declared = new URL(input.endpoint);
+  const path = declared.pathname.replace(/\/+$/, "");
+  const suffix = path.match(/\/(health|status|negotiate)$/)?.[1];
+  const base = suffix ? path.slice(0, -(suffix.length + 1)) : path;
+  const route = (name: string) => {
+    const url = new URL(declared);
+    url.pathname = `${base}/${name}`.replace(/\/{2,}/g, "/");
+    return url;
+  };
+  const now = input.now ?? performance.now.bind(performance);
+  const deadline = now() + input.timeoutMs;
+  const usage = { bytes: 0 };
+  const health = await fetchJson(route("health"), { headers: { accept: "application/json" } }, input, deadline, usage);
+  if (health.status !== "ok" || health.service !== "ERC-8183 Agent") {
+    throw new SellerProbeError("ERC8183_HEALTH_INVALID");
+  }
+  const status = await fetchJson(route("status"), { headers: { accept: "application/json" } }, input, deadline, usage);
+  if (status.status !== "ok") throw new SellerProbeError("ERC8183_STATUS_INVALID");
+  const quote = await fetchJson(route("negotiate"), {
+    method: "POST",
+    headers: { accept: "application/json", "content-type": "application/json" },
+    body: JSON.stringify(input.request),
+  }, input, deadline, usage);
+  return { quote, negotiationSkill: "negotiate-erc8183-job" };
 }
 
 async function fetchJson(
@@ -166,12 +190,14 @@ async function readBoundedText(
   }
 }
 
-function parseMessageUrl(value: unknown, expectedUrl: URL): URL {
+function parseMessageUrl(value: unknown, registeredEndpoint: URL): URL {
   if (typeof value !== "string" || !isSyntacticallyPublicHttpsUrl(value)) {
     throw new SellerProbeError("A2A_CARD_URL");
   }
   const url = new URL(value);
-  if (url.toString() !== expectedUrl.toString()) throw new SellerProbeError("A2A_CARD_URL");
+  if (url.origin !== registeredEndpoint.origin || url.search !== "" || url.hash !== "") {
+    throw new SellerProbeError("A2A_CARD_URL");
+  }
   return url;
 }
 

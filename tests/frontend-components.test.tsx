@@ -398,7 +398,7 @@ describe("marketplace presentation rules", () => {
     expect(screen.getByText("Live catalogue temporarily unavailable")).toBeInTheDocument();
     expect(screen.getByText(/No registered agent or profile data was invented/)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Try again" })).toHaveAttribute("href", "/agents?view=all&page=2");
-    expect(screen.getByRole("link", { name: "Return to the release snapshot" })).toHaveAttribute("href", "/");
+    expect(screen.getByRole("link", { name: "Return to marketplace status" })).toHaveAttribute("href", "/");
   });
 
   it("shows the upstream total only for all registered agents", () => {

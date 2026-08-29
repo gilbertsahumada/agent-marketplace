@@ -342,8 +342,8 @@ async function executeWp2Phase(input: PhaseExecution, fetchImpl: typeof fetch): 
   const [
     { createCountedBscClient, readProbeChainContext },
     { validateProbeQuote },
-    { probeA2aSeller, SellerProbeError },
-    { buildGridProbeRequest },
+    { probeA2aSeller, probeErc8183HttpSeller, SellerProbeError },
+    { buildReadinessProbeRequest },
     { createD1ProbePersistence },
     { runProbePhase },
   ] = await Promise.all([
@@ -408,7 +408,7 @@ async function executeWp2Phase(input: PhaseExecution, fetchImpl: typeof fetch): 
         ? { status: "current", metadataUpdatedAt: agent.metadataUpdatedAt }
         : { status: "removed" };
     },
-    readChainContext: async () => {
+    readChainContext: async (target) => {
       if (!input.env.BSC_RPC_URL) throw new Error("BSC_RPC_URL_REQUIRED");
       publicClient = createCountedBscClient({
         rpcUrl: input.env.BSC_RPC_URL,
@@ -417,30 +417,31 @@ async function executeWp2Phase(input: PhaseExecution, fetchImpl: typeof fetch): 
         now: input.now,
       });
       currentChain = await readProbeChainContext(publicClient, {
-        agentId: input.config.probeAgentAllowlist[0]!,
+        agentId: target.agentId,
         nowSeconds: Math.floor(input.now() / 1_000),
       });
       return currentChain;
     },
-    probeSeller: async (target) => {
-      if (target.transport !== "a2a") throw new Error("WP3_A2A_TARGET_REQUIRED");
+    probeSeller: async (target, _chain, category) => {
       const remainingMs = Math.floor(deadlineMs - input.now());
       if (remainingMs <= 0) throw new SellerProbeError("SELLER_TIMEOUT");
-      return probeA2aSeller({
+      const probe = target.transport === "a2a" ? probeA2aSeller : probeErc8183HttpSeller;
+      return probe({
         endpoint: target.endpoint,
-        request: buildGridProbeRequest().toDict(),
+        request: buildReadinessProbeRequest(category).request.toDict(),
         timeoutMs: remainingMs,
         maxResponseBytes: input.config.maxSellerResponseBytes,
         fetch: probeFetch,
         now: input.now,
       });
     },
-    validateQuote: async (quote) => {
+    validateQuote: async (quote, _chain, category) => {
       if (!currentChain || !publicClient) throw new Error("BSC_CONTEXT_REQUIRED");
       return validateProbeQuote(quote, {
         ...currentChain,
         publicClient,
         nowSeconds: Math.floor(input.now() / 1_000),
+        probeCategory: category,
       });
     },
   });

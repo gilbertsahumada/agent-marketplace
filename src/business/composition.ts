@@ -10,6 +10,7 @@ import {
   agentValidationRepository,
   sellerObservationStoreFactory,
   funnelEvidenceRepository,
+  workerObservationFeed,
 } from "../data/composition.ts";
 import { CompareMarketplaceAgents } from "./use-cases/compare-marketplace-agents.ts";
 import { GetMarketplaceAgent } from "./use-cases/get-marketplace-agent.ts";
@@ -86,3 +87,4 @@ export const getAgentEvidencePassport = new GetAgentEvidencePassport(
 );
 export const validateMarketplaceAgent = new ValidateMarketplaceAgent(agentValidationRepository);
 export const getFunnelEvidence = new GetFunnelEvidence(funnelEvidenceRepository);
+export const getWorkerObservations = workerObservationFeed;

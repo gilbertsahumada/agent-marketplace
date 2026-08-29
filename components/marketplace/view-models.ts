@@ -3,6 +3,7 @@ import type { PublicAgentVerification, PublicVerificationSnapshot } from "@/src/
 import { deriveAgentPassportState, deriveSnapshotAgentPassportState } from "@/src/business/policies/evidence-passport-policy";
 import { isReleaseAgentHireable, isReleaseQuoteCurrent, isVerificationSnapshotCurrent } from "@/src/business/policies/release-qualification-policy";
 import type { AgentCardViewModel, EvidenceStepViewModel, VerificationDriftViewModel } from "./presentation-types";
+import type { WorkerObservationTarget } from "@/src/business/entities/worker-observations";
 
 function evidenceAge(observedAt: string, now = Date.now()): string {
   const elapsedSeconds = Math.max(0, Math.floor((now - Date.parse(observedAt)) / 1_000));
@@ -117,6 +118,80 @@ export function agentCardViewModel(agent: MarketplaceAgent, provenAgentId?: stri
     passportState: deriveAgentPassportState(agent, provenAgentId),
     passportHref: `/agents/${agent.agentId}/passport`,
     ...(agent.trustScore.total !== null ? { trustScore: agent.trustScore.total } : {}),
+  };
+}
+
+export function agentCardWithObservation(
+  agent: MarketplaceAgent,
+  target: WorkerObservationTarget | null,
+  observationsAvailable: boolean,
+  now = Date.now(),
+  provenAgentId?: string,
+): AgentCardViewModel {
+  const base = agentCardViewModel(agent, provenAgentId);
+  if (!observationsAvailable) {
+    return {
+      ...base,
+      hireability: "listed_only",
+      passportState: base.passportState === "job_proven" ? "job_proven" : "registered",
+      evidence: base.evidence.map((step) => {
+        if (step.kind !== "reachable" && step.kind !== "quote") return step;
+        const { timestamp: _timestamp, ...withoutTimestamp } = step;
+        return {
+          ...withoutTimestamp,
+          status: "unavailable",
+          provenance: "unavailable",
+          detail: "Current marketplace observations are temporarily unavailable.",
+          source: "marketplace observation Worker",
+        };
+      }),
+    };
+  }
+  if (!target) return base;
+  const latest = target.latest;
+  const quoteCurrent = latest?.outcome === "quote_verified"
+    && now - latest.probedAt <= 60_000
+    && latest.probedAt <= now
+    && latest.quoteExpiresAt !== null
+    && latest.quoteExpiresAt > now;
+  const reachable = latest !== null && ["quote_verified", "quote_rejected", "protocol_valid"].includes(latest.outcome);
+  const observedAt = latest ? new Date(latest.probedAt).toISOString() : undefined;
+  return {
+    ...base,
+    categories: target.categories,
+    hireability: quoteCurrent ? "hireable" : latest?.outcome === "quote_verified" ? "quote_stale" : "listed_only",
+    passportState: base.passportState === "job_proven" ? "job_proven" : quoteCurrent ? "hireable" : latest ? "evaluated" : "registered",
+    evidence: base.evidence.map((step) => {
+      if (step.kind === "reachable") return {
+        ...step,
+        status: reachable ? "verified" : latest ? "unknown" : "unavailable",
+        provenance: latest ? "observed" : "not_probed",
+        detail: target.declarationState === "removed"
+          ? "This endpoint is no longer declared; its last observation remains historical."
+          : target.declarationState === "metadata_unavailable"
+            ? "Current metadata could not be reconciled; the seller was not classified as unreachable."
+            : reachable
+              ? "The current target returned a protocol-valid response."
+              : latest?.outcome === "unreachable"
+                ? "The current target did not answer within the bounded probe."
+                : "No protocol-valid response has been observed for this target.",
+        source: "marketplace observation Worker",
+        ...(observedAt ? { timestamp: observedAt } : {}),
+      };
+      if (step.kind === "quote") return {
+        ...step,
+        status: quoteCurrent ? "verified" : latest ? "unknown" : "unavailable",
+        provenance: latest ? "observed" : "not_probed",
+        detail: quoteCurrent
+          ? "A signed ERC-8183 quote is inside the 60-second observation window; Hire still requests a new quote."
+          : latest?.outcome === "quote_verified"
+            ? "A signed quote was verified historically but is no longer current."
+            : "No current signed ERC-8183 quote is available.",
+        source: "marketplace observation Worker",
+        ...(observedAt ? { timestamp: observedAt } : {}),
+      };
+      return step;
+    }),
   };
 }
 
