@@ -1,15 +1,8 @@
 import Link from "next/link";
-import { ChevronDown, GitFork } from "lucide-react";
+import { GitFork } from "lucide-react";
 import type { ReactNode } from "react";
-import { Button } from "@/components/ui/button";
+import { MobileNav, PrimaryNav } from "./site-nav";
 import { WalletConnectButton } from "./wallet-connect-button";
-
-const navigation = [
-  { href: "/agents", label: "Agents" },
-  { href: "/compare", label: "Compare" },
-  { href: "/validate", label: "Validate" },
-  { href: "/jobs/testnet/551", label: "Job proof" },
-] as const;
 
 function Brand() {
   return (
@@ -33,48 +26,13 @@ function Header() {
       <div className="mx-auto flex min-h-16 max-w-7xl items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
         <Brand />
 
-        <nav aria-label="Primary navigation" className="hidden items-center gap-1 md:flex">
-          {navigation.map((item) => (
-            <Link
-              className="rounded-lg px-3 py-2 text-sm text-zinc-400 transition-colors hover:bg-white/5 hover:text-white"
-              href={item.href}
-              key={item.href}
-            >
-              {item.label}
-            </Link>
-          ))}
-        </nav>
+        <PrimaryNav />
 
         <div className="hidden items-center gap-2 md:flex">
-          <Button asChild>
-            <Link href="/agents">Explore on BSC</Link>
-          </Button>
           <WalletConnectButton />
         </div>
 
-        <details className="relative md:hidden">
-          <summary className="flex min-h-11 cursor-pointer list-none items-center gap-1 rounded-lg border border-white/10 px-3 text-sm text-zinc-300 marker:hidden" tabIndex={0}>
-            Menu
-            <ChevronDown aria-hidden="true" className="size-4" />
-          </summary>
-          <nav
-            aria-label="Mobile navigation"
-            className="absolute right-0 top-[calc(100%+0.5rem)] w-52 rounded-xl border border-white/10 bg-zinc-950 p-2 shadow-2xl"
-          >
-            {navigation.map((item) => (
-              <Link
-                className="block rounded-lg px-3 py-2.5 text-sm text-zinc-300 hover:bg-white/5 hover:text-white"
-                href={item.href}
-                key={item.href}
-              >
-                {item.label}
-              </Link>
-            ))}
-            <div className="mt-2 border-t border-white/10 px-3 pt-3">
-              <WalletConnectButton />
-            </div>
-          </nav>
-        </details>
+        <MobileNav />
       </div>
     </header>
   );
@@ -84,12 +42,7 @@ function Footer() {
   return (
     <footer className="mt-auto border-t border-white/10 bg-zinc-950/50">
       <div className="mx-auto grid max-w-7xl gap-8 px-4 py-10 sm:px-6 md:grid-cols-[1fr_auto] lg:px-8">
-        <div>
-          <Brand />
-          <p className="mt-4 max-w-md text-sm leading-relaxed text-zinc-400">
-            Discover, compare, and verify BSC agents without turning declarations into promises.
-          </p>
-        </div>
+        <Brand />
         <div className="flex flex-wrap items-start gap-x-5 gap-y-3 text-sm text-zinc-400 md:justify-end">
           <Link className="hover:text-white" href="/agents">Agents</Link>
           <Link className="hover:text-white" href="/compare">Compare</Link>
