@@ -505,4 +505,9 @@ as exact SQL, and the query-budget wrapper (`src/db/query-budget.ts`), which
 counts statements at the binding level and therefore also covers everything
 Drizzle executes. New phase or route code must not add raw `prepare()` calls
 outside those two files; existing raw call sites migrate to `db/orm.ts` as
-they are next touched.
+they are next touched. The boundary is enforced by
+`test/prepare-allowlist.test.ts` against the frozen fixture
+`test/fixtures/prepare-allowlist.json` (file + function + normalized query
+fingerprint + count): any new raw callsite fails the suite, and a migrated
+callsite requires deleting its entry, so the allowlist only shrinks until the
+normative lease and budget-wrapper exemptions remain.
