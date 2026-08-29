@@ -1,6 +1,6 @@
 # Capa de observación de contratabilidad — SPEC MVP v5 Free-first
 
-**Estado:** WP0, WP1 y WP3 completos. WP2 tiene implementación y gates remotos de Queue completos; la ventana final D1/account Analytics está preparada en staging para el día UTC 2026-08-29 con Free y Cron temporal `*/5`. Producción continúa sin Cron. Convenciones endurecidas tras la revisión de ejecución del 2026-08-28.
+**Estado:** WP0, WP1 y WP3 completos. WP2 tiene implementación y gates remotos de Queue completos. La corrida UTC 2026-08-29 se conserva como ensayo operativo: empezó correctamente, pero su preflight literal no se publicó y la captura completa de activación ocurrió después del primer tick, por lo que no puede cerrar el gate documental. La ventana final repetible está programada para UTC 2026-08-31. Producción continúa sin Cron.
 **Fecha de corte del diseño:** 2026-08-28.
 **Objetivo:** completar la capa de observación necesaria para recorrer:
 
@@ -1288,6 +1288,16 @@ token, cuenta y D1 únicamente por `CLOUDFLARE_API_TOKEN`,
 `CLOUDFLARE_ACCOUNT_ID` y `WP2_D1_DATABASE_ID`, publica atómicamente y
 create-only la respuesta D1 literal junto con IDs/query/params, y nunca
 serializa la credencial.
+El runbook ejecutable completo está en `bnb-agent-probe/README.md`. Sus
+productores create-only son, en orden: `evidence:wp2-control preflight`,
+`evidence:wp2-control activation`, `evidence:wp2-window-start`,
+`evidence:wp2-control drain`, `evidence:wp2-control cleanup`,
+`evidence:wp2-ledger`, `evidence:wp2-analytics`,
+`evidence:wp2-deployment`, `evidence:wp2-build` y `evidence:wp2-24h`.
+Preflight y activación deben finalizar antes del primer tick y no se reconstruyen
+retrospectivamente. El builder resuelve los raw desde la raíz del repositorio,
+calcula sus SHA-256, deriva ambos ledgers, totales, atribución y cleanup, valida
+el resultado completo y solo entonces publica el artefacto.
 No se resume ni descarta la respuesta cruda usada para calcular esos campos.
 Las consultas versionadas están en `bnb-agent-probe/src/evidence/wp2-24h-queries.ts`.
 Workers y las operaciones Queue usan inicio inclusivo `00:00:00.000Z` y fin inclusivo
@@ -1309,8 +1319,13 @@ durante la gracia de retries pertenecientes al día. La gracia dura como mínimo
 (tres delays de lease de 240 s más margen) y no termina hasta que los 288 ticks
 tengan un outcome terminal en `scheduler_attempts` y Queue Analytics no muestre
 operaciones pendientes; backlog REST cero solo corrobora y nunca cierra el gate.
-Los raw de preflight, activación y cleanup incluyen `capturedAt`; el validador
-rechaza un cleanup anterior a la gracia. Workers Analytics separa el CPU P99
+Los raw de preflight, activación, drain y cleanup incluyen inicio y fin de una
+captura acotada a diez segundos. El validador exige activación anterior al
+primer tick; drain posterior al último tick pero anterior a `24:00Z`, con
+`PRODUCER_KILL_SWITCH=1`, `KILL_SWITCH=0`, Cron vacío y backlog cero; y cleanup
+posterior a la gracia. Cada snapshot autentica además el perfil Free, la
+cadencia, presupuestos D1/subrequests, timeout, caps y bindings D1/Queue
+desplegados, no valores hardcodeados por el artefacto. Workers Analytics separa el CPU P99
 del producer `<10 ms` correlacionando sus timestamps con `WriteMessage`, y deja
 un margen máximo de un segundo, `subrequests=0` y un total de requests igual a
 las 288 escrituras. Las muestras inequívocas restantes, con subrequests, forman
