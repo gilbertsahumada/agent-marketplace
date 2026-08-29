@@ -1332,6 +1332,12 @@ tengan exactamente un `completed` en `scheduler_attempts`, Queue Analytics
 demuestre los 288 `DeleteMessage` exitosos y el backlog REST sea cero; este
 último solo corrobora y nunca cierra el gate por sí mismo. Esas verificaciones
 se hacen con `KILL_SWITCH=0`; solo entonces se autoriza cleanup.
+Durante las 24 horas medidas no se consulta D1 directamente, no se llama
+`/health`, no se usa la ruta admin y no se ejecutan diagnósticos Worker: todos
+ellos alterarían las mismas métricas account-wide que el gate pretende medir.
+La lectura `window-start` termina antes de `00:00Z`; ledger y conciliación se
+capturan después de `24:00Z` y la gracia. Solo una amenaza de seguridad runtime
+autoriza romper la ventana anticipadamente con la barrera del producer.
 Los raw de preflight, activación, drain y cleanup incluyen inicio y fin de una
 captura acotada a diez segundos. El validador exige activación anterior al
 primer tick; drain posterior al último tick pero anterior a `24:00Z`, con
