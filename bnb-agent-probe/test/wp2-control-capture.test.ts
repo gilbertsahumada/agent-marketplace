@@ -26,6 +26,13 @@ describe("WP2 control-plane capture", () => {
           backlog_count: 0, backlog_bytes: 0, oldest_message_timestamp_ms: 0,
         } }));
       }
+      if (url.endsWith("/settings")) {
+        return new Response(JSON.stringify({ success: true, errors: [], result: { bindings: [
+          { name: "KILL_SWITCH", text: "1", type: "plain_text" },
+          { name: "PRODUCER_KILL_SWITCH", text: "1", type: "plain_text" },
+          { name: "STAGING_MANUAL_RUN", text: "0", type: "plain_text" },
+        ] } }));
+      }
       if (url.endsWith("/health")) {
         return new Response(JSON.stringify({ status: "ok", killSwitch: true,
           producerKillSwitch: true, stagingManualRun: false }));
@@ -59,6 +66,7 @@ describe("WP2 control-plane capture", () => {
     expect(raw.response.schedules).toEqual({ success: true, errors: [], result: { schedules: [] } });
     expect(raw.response.backlog.result.backlog_count).toBe(0);
     expect(raw.response.health).toMatchObject({ killSwitch: true, producerKillSwitch: true });
+    expect(raw.response.settings.result.bindings).toHaveLength(3);
     expect(raw.response.secrets).toEqual([{ name: "BSC_RPC_URL", type: "secret_text" }]);
   });
 });
