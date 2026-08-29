@@ -47,6 +47,7 @@ function controlFixture(
       mode,
       queueId: "721ba809967d425a91dbc34eb1ac3baa",
       schedulesUrl: "https://api.cloudflare.com/client/v4/accounts/bc8d4adf4860284fda426b24e7377bc2/workers/scripts/bnb-agent-probe-staging/schedules",
+      settingsUrl: "https://api.cloudflare.com/client/v4/accounts/bc8d4adf4860284fda426b24e7377bc2/workers/scripts/bnb-agent-probe-staging/settings",
       scriptName: "bnb-agent-probe-staging",
       startedAt: new Date(Date.parse(completedAt) - 500).toISOString(),
     },
@@ -55,7 +56,12 @@ function controlFixture(
       backlog: { success: true, errors: [], result: {
         backlog_count: 0, backlog_bytes: 0, oldest_message_timestamp_ms: 0,
       } },
-      health: { status: "ok", killSwitch: !active, producerKillSwitch: !active, stagingManualRun: false },
+      settings: { success: true, errors: [], result: { bindings: [
+        { name: "KILL_SWITCH", text: active ? "0" : "1", type: "plain_text" },
+        { name: "PRODUCER_KILL_SWITCH", text: active ? "0" : "1", type: "plain_text" },
+        { name: "STAGING_MANUAL_RUN", text: "0", type: "plain_text" },
+      ] } },
+      health: { status: "ok", killSwitch: !active, producerKillSwitch: !active },
       secrets: [{ name: "BSC_RPC_URL", type: "secret_text" }],
     },
   };
@@ -603,6 +609,18 @@ describe("WP2 24-hour evidence artifact validator", () => {
     await expect(validateWp224hArtifact(artifact, {
       readRawEvidence: async (path) => path === "evidence/raw/cleanup.json" ? contents : readRawEvidence(path),
     })).rejects.toThrow("CLEANUP");
+  });
+
+  it("rejects cleanup with a deployed manual-run binding", async () => {
+    const artifact = validArtifact() as any;
+    const cleanup = structuredClone(RAW_PAYLOADS["evidence/raw/cleanup.json"]) as any;
+    cleanup.response.settings.result.bindings[2].text = "1";
+    const contents = JSON.stringify(cleanup);
+    artifact.rawAnalytics["evidence/raw/cleanup.json"].sha256 = sha256(contents);
+    artifact.cleanup.stagingManualRun = true;
+    await expect(validateWp224hArtifact(artifact, {
+      readRawEvidence: async (path) => path === "evidence/raw/cleanup.json" ? contents : readRawEvidence(path),
+    })).rejects.toThrow("RAW_CLEANUP");
   });
 
   it("rejects non-zero Queue backlog at the terminality cutoff", async () => {
