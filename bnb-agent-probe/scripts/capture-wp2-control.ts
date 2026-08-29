@@ -31,22 +31,25 @@ export async function captureWp2Control(options: CaptureOptions): Promise<void> 
   const fetch = options.fetch ?? globalThis.fetch;
   const now = options.now ?? (() => new Date().toISOString());
   const schedulesUrl = `https://api.cloudflare.com/client/v4/accounts/${options.accountId}/workers/scripts/${options.scriptName}/schedules`;
+  const settingsUrl = `https://api.cloudflare.com/client/v4/accounts/${options.accountId}/workers/scripts/${options.scriptName}/settings`;
   const backlogUrl = `https://api.cloudflare.com/client/v4/accounts/${options.accountId}/queues/${options.queueId}/metrics`;
   const startedAt = now();
   canonicalTimestamp(startedAt, "startedAt");
   const headers = { Authorization: `Bearer ${options.apiToken}` };
-  const [schedulesResponse, backlogResponse, healthResponse, secrets] = await Promise.all([
+  const [schedulesResponse, settingsResponse, backlogResponse, healthResponse, secrets] = await Promise.all([
     fetch(schedulesUrl, { headers }),
+    fetch(settingsUrl, { headers }),
     fetch(backlogUrl, { headers }),
     fetch(options.healthUrl),
     options.readSecrets(),
   ]);
-  const [schedules, backlog, health] = await Promise.all([
+  const [schedules, settings, backlog, health] = await Promise.all([
     parseJsonResponse(schedulesResponse, "schedules"),
+    parseJsonResponse(settingsResponse, "settings"),
     parseJsonResponse(backlogResponse, "Queue backlog"),
     parseJsonResponse(healthResponse, "health"),
   ]);
-  validateControlState(options.mode, schedules, backlog, health, secrets);
+  validateControlState(options.mode, schedules, settings, backlog, health, secrets);
   const completedAt = now();
   canonicalTimestamp(completedAt, "completedAt");
   if (Date.parse(completedAt) < Date.parse(startedAt)) throw new Error("control capture completed before it started");
@@ -59,10 +62,11 @@ export async function captureWp2Control(options: CaptureOptions): Promise<void> 
       mode: options.mode,
       queueId: options.queueId,
       schedulesUrl,
+      settingsUrl,
       scriptName: options.scriptName,
       startedAt,
     },
-    response: { schedules, backlog, health, secrets },
+    response: { schedules, settings, backlog, health, secrets },
   }, null, 2)}\n`;
   await publishCreateOnly(options.outputPath, contents);
 }
@@ -88,6 +92,7 @@ async function parseJsonResponse(response: Response, label: string): Promise<unk
 function validateControlState(
   mode: ControlMode,
   schedulesValue: unknown,
+  settingsValue: unknown,
   backlogValue: unknown,
   healthValue: unknown,
   secretsValue: unknown,
@@ -102,6 +107,27 @@ function validateControlState(
   const expectedCrons = mode === "activation" ? ["*/5 * * * *"] : [];
   if (JSON.stringify(crons) !== JSON.stringify(expectedCrons)) throw new Error(`${mode} schedules are unsafe`);
 
+  const settings = object(settingsValue, "settings");
+  const settingsResult = object(settings.result, "settings result");
+  if (settings.success !== true || !emptyArray(settings.errors) || !Array.isArray(settingsResult.bindings)) {
+    throw new Error("settings response is invalid");
+  }
+  const bindings = new Map(settingsResult.bindings.map((entry) => {
+    const binding = object(entry, "setting binding");
+    return [binding.name, binding] as const;
+  }));
+  const active = mode === "activation";
+  for (const [name, expected] of [
+    ["KILL_SWITCH", active ? "0" : "1"],
+    ["PRODUCER_KILL_SWITCH", active ? "0" : "1"],
+    ["STAGING_MANUAL_RUN", "0"],
+  ] as const) {
+    const binding = bindings.get(name);
+    if (binding?.type !== "plain_text" || binding.text !== expected) {
+      throw new Error(`${mode} ${name} binding is unsafe`);
+    }
+  }
+
   const backlog = object(backlogValue, "Queue backlog");
   const backlogResult = object(backlog.result, "Queue backlog result");
   if (backlog.success !== true || !emptyArray(backlog.errors)
@@ -110,9 +136,8 @@ function validateControlState(
   }
 
   const health = object(healthValue, "health");
-  const active = mode === "activation";
   if (health.status !== "ok" || health.killSwitch !== !active || health.producerKillSwitch !== !active
-    || health.stagingManualRun !== false) {
+    || (health.stagingManualRun !== undefined && health.stagingManualRun !== false)) {
     throw new Error(`${mode} health safety state is invalid`);
   }
   if (!Array.isArray(secretsValue)
