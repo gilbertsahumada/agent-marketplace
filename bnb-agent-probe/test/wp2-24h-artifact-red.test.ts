@@ -605,6 +605,18 @@ describe("WP2 24-hour evidence artifact validator", () => {
     })).rejects.toThrow("CLEANUP_GRACE");
   });
 
+  it("rejects activation evidence captured after the first scheduled tick", async () => {
+    const artifact = validArtifact() as any;
+    const activation = structuredClone(RAW_PAYLOADS["evidence/raw/activation.json"]) as any;
+    activation.request.startedAt = "2026-08-29T00:00:14.001Z";
+    activation.request.completedAt = "2026-08-29T00:00:14.501Z";
+    const contents = JSON.stringify(activation);
+    artifact.rawAnalytics["evidence/raw/activation.json"].sha256 = sha256(contents);
+    await expect(validateWp224hArtifact(artifact, {
+      readRawEvidence: async (path) => path === "evidence/raw/activation.json" ? contents : readRawEvidence(path),
+    })).rejects.toThrow("CLEANUP");
+  });
+
   it("rejects cleanup without a producer shutdown barrier", async () => {
     const artifact = validArtifact() as any;
     const cleanup = structuredClone(RAW_PAYLOADS["evidence/raw/cleanup.json"]) as any;
