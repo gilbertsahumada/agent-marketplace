@@ -164,10 +164,14 @@ async function main(): Promise<void> {
     outputPath,
     queueId: process.env.WP2_QUEUE_ID ?? "",
     readSecrets: async () => {
-      const { stdout } = await execFile("wrangler", ["secret", "list", "--env", "staging", "--json"], {
+      const { stdout } = await execFile(
+        "wrangler",
+        ["secret", "list", "--env", "staging", "--format", "json"],
+        {
         cwd: process.cwd(),
         maxBuffer: 1024 * 1024,
-      });
+        },
+      );
       return JSON.parse(stdout);
     },
     scriptName: process.env.WP2_SCRIPT_NAME ?? "bnb-agent-probe-staging",
