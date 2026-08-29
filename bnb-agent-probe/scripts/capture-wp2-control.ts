@@ -36,11 +36,12 @@ export async function captureWp2Control(options: CaptureOptions): Promise<void> 
   const startedAt = now();
   canonicalTimestamp(startedAt, "startedAt");
   const headers = { Authorization: `Bearer ${options.apiToken}` };
+  const signal = AbortSignal.timeout(10_000);
   const [schedulesResponse, settingsResponse, backlogResponse, healthResponse, secrets] = await Promise.all([
-    fetch(schedulesUrl, { headers }),
-    fetch(settingsUrl, { headers }),
-    fetch(backlogUrl, { headers }),
-    fetch(options.healthUrl),
+    fetch(schedulesUrl, { headers, signal }),
+    fetch(settingsUrl, { headers, signal }),
+    fetch(backlogUrl, { headers, signal }),
+    fetch(options.healthUrl, { signal }),
     options.readSecrets(),
   ]);
   const [schedules, settings, backlog, health] = await Promise.all([
@@ -53,6 +54,9 @@ export async function captureWp2Control(options: CaptureOptions): Promise<void> 
   const completedAt = now();
   canonicalTimestamp(completedAt, "completedAt");
   if (Date.parse(completedAt) < Date.parse(startedAt)) throw new Error("control capture completed before it started");
+  if (Date.parse(completedAt) - Date.parse(startedAt) > 10_000) {
+    throw new Error("control capture exceeded its ten-second bound");
+  }
   const contents = `${JSON.stringify({
     request: {
       accountId: options.accountId,
@@ -195,6 +199,7 @@ async function main(): Promise<void> {
         {
         cwd: process.cwd(),
         maxBuffer: 1024 * 1024,
+        timeout: 10_000,
         },
       );
       return JSON.parse(stdout);
