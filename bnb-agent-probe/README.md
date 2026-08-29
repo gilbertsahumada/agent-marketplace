@@ -18,9 +18,9 @@ platform limit of 50. Every statement in `DB.batch()` is counted separately and
 four queries are reserved outside the phase budget for a sanitized failure
 summary, lease cleanup, the daily ledger and the append-only attempt ledger.
 The atomic Queue completion marker is also included in the reported and
-enforced per-invocation total. The minimum accepted budget is 13 queries, which
-covers the smallest complete SWEEP plus failure, lease-cleanup and daily-ledger
-reserves, including the attempt ledger.
+enforced per-invocation total. The minimum accepted Free budget is 22 queries,
+which covers the default four-agent, two-target-per-agent SWEEP worst case plus
+the phase state, completion marker and four cleanup/ledger reserves.
 Catalogue responses have their own
 16 MiB cap; the smaller seller-response cap is independent.
 

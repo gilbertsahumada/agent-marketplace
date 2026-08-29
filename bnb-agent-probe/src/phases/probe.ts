@@ -1,6 +1,7 @@
 import { BscProbeError } from "../lib/chain";
 import { QuoteValidationError, type ProbeQuoteVerdict } from "../lib/quote";
 import { SellerProbeError } from "../lib/seller-client";
+import { PROBE_CATEGORIES, type ProbeCategory } from "../lib/terms";
 
 export type ProbeTransport = "a2a" | "erc8183_http";
 export type ProbeOutcome =
@@ -23,6 +24,7 @@ export interface ProbeTarget {
   readonly lastSeenAt?: number;
   readonly priority?: number;
   readonly bootstrapSource?: "marketplace-inventory";
+  readonly lastProbedAtByCategory?: Partial<Record<ProbeCategory, number>>;
 }
 
 export type ProbeReconciliation =
@@ -32,7 +34,7 @@ export type ProbeReconciliation =
 
 export interface ProbeObservation {
   readonly outcome: ProbeOutcome;
-  readonly probeCategory: "grid_trading";
+  readonly probeCategory: ProbeCategory | null;
   readonly observedMetadataUpdatedAt: number | null;
   readonly errorCode: string | null;
   readonly durationMs: number;
@@ -95,10 +97,12 @@ export interface ProbePhaseDependencies {
   readonly probeSeller: (
     target: ProbeTarget,
     chain: ChainContext,
+    category: ProbeCategory | null,
   ) => Promise<{ readonly quote: Record<string, unknown> }>;
   readonly validateQuote: (
     quote: Record<string, unknown>,
     chain: ChainContext,
+    category: ProbeCategory | null,
   ) => Promise<ProbeQuoteVerdict>;
   readonly commit: (input: {
     readonly target: ProbeTarget | null;
@@ -113,7 +117,7 @@ export async function runProbePhase(
   input: ProbePhaseInput,
   dependencies: ProbePhaseDependencies,
 ): Promise<ProbePhaseSummary> {
-  if (input.limit !== 1) throw new Error("WP3_PROBE_LIMIT");
+  if (input.limit < 1) throw new Error("PROBE_LIMIT");
   const target = await dependencies.selectTarget({
     agentAllowlist: input.agentAllowlist,
     endpointAllowlist: input.endpointAllowlist,
@@ -130,7 +134,7 @@ export async function runProbePhase(
     });
     return summary;
   }
-  assertAllowlisted(target, input);
+  assertEligible(target, input);
   const reconciliation = await dependencies.refreshTarget(target);
   if (reconciliation.status !== "current") {
     const summary = phaseSummary(input, 1, reconciliation.status);
@@ -145,15 +149,17 @@ export async function runProbePhase(
   }
 
   const observedAt = input.now();
+  const category = selectProbeCategory(target);
   let observation: ProbeObservation;
   try {
     const chain = await dependencies.readChainContext(target);
-    const seller = await dependencies.probeSeller(target, chain);
-    const verdict = await dependencies.validateQuote(seller.quote, chain);
+    const seller = await dependencies.probeSeller(target, chain, category);
+    const verdict = await dependencies.validateQuote(seller.quote, chain, category);
     observation = verdictObservation(
       verdict,
       reconciliation.metadataUpdatedAt,
       chain,
+      category,
       Math.max(0, input.now() - observedAt),
     );
   } catch (error) {
@@ -161,7 +167,7 @@ export async function runProbePhase(
     if (!classified) throw error;
     observation = {
       outcome: classified.outcome,
-      probeCategory: "grid_trading",
+      probeCategory: category,
       observedMetadataUpdatedAt: reconciliation.metadataUpdatedAt,
       errorCode: classified.errorCode,
       durationMs: Math.max(0, input.now() - observedAt),
@@ -172,7 +178,7 @@ export async function runProbePhase(
     target,
     reconciliation,
     observation,
-    nextPriority: 0,
+    nextPriority: nextPriority(target, category),
     summary,
   });
   return summary;
@@ -182,6 +188,7 @@ function verdictObservation(
   verdict: ProbeQuoteVerdict,
   metadataUpdatedAt: number | null,
   chain: ChainContext,
+  category: ProbeCategory | null,
   durationMs: number,
 ): ProbeObservation {
   const onchain = {
@@ -198,7 +205,7 @@ function verdictObservation(
   if (verdict.outcome === "quote_rejected") {
     return {
       outcome: verdict.outcome,
-      probeCategory: "grid_trading",
+      probeCategory: category,
       observedMetadataUpdatedAt: metadataUpdatedAt,
       errorCode: verdict.errorCode,
       requestHash: verdict.requestHash,
@@ -208,7 +215,7 @@ function verdictObservation(
   }
   return {
     outcome: verdict.outcome,
-    probeCategory: "grid_trading",
+    probeCategory: category,
     observedMetadataUpdatedAt: metadataUpdatedAt,
     errorCode: null,
     providerSig: undefined,
@@ -248,16 +255,38 @@ function classifyExpectedFailure(error: unknown): {
   return null;
 }
 
-function assertAllowlisted(target: ProbeTarget, input: ProbePhaseInput): void {
+function assertEligible(target: ProbeTarget, input: ProbePhaseInput): void {
   if (
     target.chainId !== 56
-    || !input.agentAllowlist.includes(target.agentId)
-    || !input.endpointAllowlist.includes(target.endpoint)
-  ) throw new Error("WP3_TARGET_ALLOWLIST");
-  const categories: unknown = JSON.parse(target.categoriesJson);
-  if (!Array.isArray(categories) || categories.length !== 1 || categories[0] !== "grid_trading") {
-    throw new Error("WP3_TARGET_CATEGORY");
+    || (input.agentAllowlist.length > 0 && !input.agentAllowlist.includes(target.agentId))
+    || (input.endpointAllowlist.length > 0 && !input.endpointAllowlist.includes(target.endpoint))
+  ) throw new Error("PROBE_TARGET_ALLOWLIST");
+  parseCategories(target.categoriesJson);
+}
+
+function parseCategories(value: string): ProbeCategory[] {
+  const parsed: unknown = JSON.parse(value);
+  if (!Array.isArray(parsed) || parsed.some((item) => !PROBE_CATEGORIES.includes(item as ProbeCategory))) {
+    throw new Error("PROBE_TARGET_CATEGORY");
   }
+  return PROBE_CATEGORIES.filter((category) => parsed.includes(category));
+}
+
+function selectProbeCategory(target: ProbeTarget): ProbeCategory | null {
+  const categories = parseCategories(target.categoriesJson);
+  if (categories.length === 0) return null;
+  return [...categories].sort((left, right) => (
+    (target.lastProbedAtByCategory?.[left] ?? -1)
+    - (target.lastProbedAtByCategory?.[right] ?? -1)
+  ))[0]!;
+}
+
+function nextPriority(target: ProbeTarget, category: ProbeCategory | null): 0 | 1 {
+  const categories = parseCategories(target.categoriesJson);
+  if (category === null) return 0;
+  return categories.some((candidate) => (
+    candidate !== category && target.lastProbedAtByCategory?.[candidate] === undefined
+  )) ? 1 : 0;
 }
 
 function phaseSummary(

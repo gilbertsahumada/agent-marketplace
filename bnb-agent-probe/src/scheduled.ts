@@ -16,7 +16,7 @@ import type {
   SweepTargetCandidate,
 } from "./phases/sweep";
 import { acquireSchedulerLease, releaseSchedulerLease } from "./lib/scheduler-lease";
-import { createDatabase, writeRuntimeState } from "./db/orm";
+import { createDatabase, readRuntimeStates, writeRuntimeState } from "./db/orm";
 import { CURATED_INVENTORY, CURATED_INVENTORY_CATEGORIES } from "./manifest/curated-inventory";
 import { selectLiveTargets } from "./trust8004/candidates";
 import {
@@ -34,6 +34,9 @@ const FREE_LEASE_MS = 4 * 60_000;
 const PAID_LEASE_MS = 14 * 60_000;
 const CURATED_IDS = CURATED_INVENTORY.entries.map(({ agentId }) => agentId);
 const CURATED_ID_SET = new Set(CURATED_IDS);
+const GRID_AGENT_ID = "303779";
+const GRID_ENDPOINT = "https://bnb-agent-marketplace-ruby.vercel.app/grid";
+const GRID_MESSAGE_URL = "https://bnb-agent-marketplace-ruby.vercel.app/api/sellers/grid/a2a";
 
 export type SchedulerPhase = "header" | "sweep" | "probe";
 export type ScheduledRunResult = "completed" | "duplicate" | "locked";
@@ -204,13 +207,18 @@ export function createWp2ScheduledRunner(dependencies: ScheduledRuntimeDependenc
     let outcome: DailyBudgetOutcome = "failed";
     let attemptErrorCode: string | null = null;
     try {
-      const stateResult = await db.prepare(
-        `SELECT key, textValue, integerValue
-         FROM runtime_state
-         WHERE key IN ('next_scheduler_phase', 'header_high_water', 'last_queue_scheduled_time')`,
-      ).all<PhaseStateRow>();
-      if (!stateResult.success) throw new Error("Could not read scheduler phase state");
-      const state = new Map((stateResult.results ?? []).map((row) => [row.key, row]));
+      let stateRows: PhaseStateRow[];
+      try {
+        stateRows = await readRuntimeStates(createDatabase(db), [
+          "next_scheduler_phase", "header_high_water", "last_queue_scheduled_time",
+        ]) as PhaseStateRow[];
+      } catch (error) {
+        if (error instanceof Error
+          && (error.cause instanceof D1QueryBudgetExceededError
+            || error.cause instanceof D1RowBudgetExceededError)) throw error.cause;
+        throw error;
+      }
+      const state = new Map(stateRows.map((row) => [row.key, row]));
       const completedQueueScheduledTime = state.get("last_queue_scheduled_time")?.integerValue;
       if (controller.cron === "queue"
         && completedQueueScheduledTime !== undefined
@@ -320,6 +328,7 @@ async function executeWp2Phase(input: PhaseExecution, fetchImpl: typeof fetch): 
       nowMs: input.nowMs,
       queryBudget: input.queryBudget,
       requestBudget: { remaining: input.config.trust8004RequestsPerRun },
+      rowWriteBudget: { remaining: input.config.d1RowsWrittenPerRun - 1 },
       invocationQueriesAfterCommit: 2,
       startedAtMs: input.startedAtMs,
       ...(input.completedQueueScheduledTime === undefined
@@ -342,8 +351,8 @@ async function executeWp2Phase(input: PhaseExecution, fetchImpl: typeof fetch): 
   const [
     { createCountedBscClient, readProbeChainContext },
     { validateProbeQuote },
-    { probeA2aSeller, SellerProbeError },
-    { buildGridProbeRequest },
+    { probeA2aSeller, probeErc8183HttpSeller, SellerProbeError },
+    { buildReadinessProbeRequest },
     { createD1ProbePersistence },
     { runProbePhase },
   ] = await Promise.all([
@@ -408,7 +417,7 @@ async function executeWp2Phase(input: PhaseExecution, fetchImpl: typeof fetch): 
         ? { status: "current", metadataUpdatedAt: agent.metadataUpdatedAt }
         : { status: "removed" };
     },
-    readChainContext: async () => {
+    readChainContext: async (target) => {
       if (!input.env.BSC_RPC_URL) throw new Error("BSC_RPC_URL_REQUIRED");
       publicClient = createCountedBscClient({
         rpcUrl: input.env.BSC_RPC_URL,
@@ -417,31 +426,48 @@ async function executeWp2Phase(input: PhaseExecution, fetchImpl: typeof fetch): 
         now: input.now,
       });
       currentChain = await readProbeChainContext(publicClient, {
-        agentId: input.config.probeAgentAllowlist[0]!,
+        agentId: target.agentId,
         nowSeconds: Math.floor(input.now() / 1_000),
       });
       return currentChain;
     },
-    probeSeller: async (target) => {
-      if (target.transport !== "a2a") throw new Error("WP3_A2A_TARGET_REQUIRED");
+    probeSeller: async (target, chain, category) => {
       const remainingMs = Math.floor(deadlineMs - input.now());
       if (remainingMs <= 0) throw new SellerProbeError("SELLER_TIMEOUT");
-      return probeA2aSeller({
+      const probe = target.transport === "a2a" ? probeA2aSeller : probeErc8183HttpSeller;
+      return probe({
         endpoint: target.endpoint,
-        request: buildGridProbeRequest().toDict(),
+        request: buildReadinessProbeRequest(category).request.toDict(),
         timeoutMs: remainingMs,
         maxResponseBytes: input.config.maxSellerResponseBytes,
         fetch: probeFetch,
         now: input.now,
+        ...(target.transport === "a2a"
+          && target.agentId === GRID_AGENT_ID
+          && target.endpoint === GRID_ENDPOINT
+          ? { expectedA2aMessageUrl: GRID_MESSAGE_URL }
+          : {}),
+        ...(target.transport === "erc8183_http" ? { expectedHttpStatus: {
+          provider: chain.provider,
+          commerce: chain.commerce!,
+          router: chain.router!,
+          policy: chain.policy!,
+          currency: currentChain!.paymentToken,
+          decimals: currentChain!.tokenDecimals,
+        } } : {}),
       });
     },
-    validateQuote: async (quote) => {
+    validateQuote: async (quote, _chain, category) => {
       if (!currentChain || !publicClient) throw new Error("BSC_CONTEXT_REQUIRED");
-      return validateProbeQuote(quote, {
+      if (input.now() >= deadlineMs) throw new SellerProbeError("SELLER_TIMEOUT");
+      const verdict = await validateProbeQuote(quote, {
         ...currentChain,
         publicClient,
         nowSeconds: Math.floor(input.now() / 1_000),
+        probeCategory: category,
       });
+      if (input.now() >= deadlineMs) throw new SellerProbeError("SELLER_TIMEOUT");
+      return verdict;
     },
   });
 }
@@ -499,16 +525,9 @@ async function persistPhaseFailure(db: D1DatabaseLike, input: {
   readonly wallTimeMs: number;
   readonly finishedAt: number;
 }): Promise<void> {
-  const result = await db.prepare(
-    `INSERT INTO runtime_state (key, textValue, integerValue, updatedAt)
-     VALUES (?, ?, NULL, ?)
-     ON CONFLICT(key) DO UPDATE SET
-       textValue = excluded.textValue,
-       integerValue = NULL,
-       updatedAt = excluded.updatedAt`,
-  ).bind(
-    `last_${input.phase}_summary`,
-    JSON.stringify({
+  await writeRuntimeState(createDatabase(db), {
+    key: `last_${input.phase}_summary`,
+    textValue: JSON.stringify({
       phase: input.phase,
       status: "error",
       requests: input.requests,
@@ -516,9 +535,9 @@ async function persistPhaseFailure(db: D1DatabaseLike, input: {
       wallTimeMs: input.wallTimeMs,
       errorCode: input.errorCode,
     }),
-    input.finishedAt,
-  ).run();
-  if (!result.success) throw new Error("Could not persist phase failure summary");
+    integerValue: null,
+    updatedAt: input.finishedAt,
+  });
 }
 
 function phaseErrorCode(error: unknown): string {

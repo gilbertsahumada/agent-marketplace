@@ -14,15 +14,11 @@ import {
 } from "viem";
 
 import { BscProbeError } from "./chain";
-import { GRID_PROBE_REQUEST_HASH } from "./terms";
+import { buildReadinessProbeRequest, type ProbeCategory } from "./terms";
 
 const MAX_QUOTE_AGE_SECONDS = 60;
 const MAX_QUOTE_FUTURE_SECONDS = 60;
 const MAX_QUOTE_TTL_SECONDS = 900;
-const GRID_DELIVERABLES =
-  "Deterministic Grid plan JSON with levels, allocation, triggers and assumptions";
-const GRID_QUALITY_STANDARDS =
-  "Deterministic output, no order execution and no custody";
 const REJECTION_CODES = new Set<string>(Object.values(ReasonCode));
 
 export class QuoteValidationError extends Error {
@@ -43,6 +39,7 @@ export interface ProbeQuoteContext {
   readonly tokenDecimals: number;
   readonly policyAllowlisted: boolean;
   readonly nowSeconds: number;
+  readonly probeCategory?: ProbeCategory | null;
 }
 
 export type ProbeQuoteVerdict =
@@ -72,6 +69,9 @@ export async function validateProbeQuote(
   context: ProbeQuoteContext,
   verify: QuoteVerifier = verifyQuoteSignature,
 ): Promise<ProbeQuoteVerdict> {
+  const expected = buildReadinessProbeRequest(
+    context.probeCategory === undefined ? "grid_trading" : context.probeCategory,
+  );
   const request = record(envelope.request, "QUOTE_REQUEST");
   let computedRequestHash: string;
   try {
@@ -80,7 +80,7 @@ export async function validateProbeQuote(
     throw new QuoteValidationError("QUOTE_REQUEST");
   }
   const requestHash = hash(envelope.request_hash, "QUOTE_REQUEST_HASH");
-  if (requestHash !== GRID_PROBE_REQUEST_HASH || computedRequestHash !== GRID_PROBE_REQUEST_HASH) {
+  if (requestHash !== expected.requestHash || computedRequestHash !== expected.requestHash) {
     throw new QuoteValidationError("QUOTE_REQUEST_HASH");
   }
 
@@ -127,8 +127,8 @@ export async function validateProbeQuote(
   const terms = response.terms;
   if (
     !terms
-    || terms.deliverables !== GRID_DELIVERABLES
-    || terms.qualityStandards !== GRID_QUALITY_STANDARDS
+    || terms.deliverables !== expected.deliverables
+    || terms.qualityStandards !== expected.qualityStandards
     || terms.evaluationRequired !== true
     || terms.evaluatorType !== "uma_oov3"
   ) throw new QuoteValidationError("QUOTE_TERMS");

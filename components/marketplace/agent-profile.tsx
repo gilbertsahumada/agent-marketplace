@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ArrowUpRight, Bot, CheckCircle2, CircleAlert } from "lucide-react";
 import type { MarketplaceAgent } from "@/src/business/entities/marketplace-agent";
 import type { AgentEvidencePassport } from "@/src/business/entities/evidence-passport";
+import type { WorkerObservationTarget } from "@/src/business/entities/worker-observations";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -10,8 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { EvidenceRail } from "./evidence-rail";
 import { Breadcrumb } from "./page-primitives";
 import { ProvenanceBadge } from "./provenance-badge";
-import { agentCardViewModel, evidenceForAgent, hireabilityLabels } from "./view-models";
-import { verificationViewModel } from "./view-models";
+import { agentCardWithObservations, verificationViewModel } from "./view-models";
 import { VerificationDrift } from "./verification-drift";
 import { EvidencePassportCard } from "./evidence-passport-card";
 
@@ -24,13 +24,16 @@ function MonoValue({ label, value }: { label: string; value: string | null }) {
   );
 }
 
-export function AgentProfile({ agent, passport }: { agent: MarketplaceAgent; passport: AgentEvidencePassport }) {
+export function AgentProfile({ agent, observationTargets = [], observationsAvailable = false, passport }: {
+  agent: MarketplaceAgent;
+  observationTargets?: WorkerObservationTarget[];
+  observationsAvailable?: boolean;
+  passport: AgentEvidencePassport;
+}) {
   const evaluated = agent.categoryEvaluation === "evaluated";
   const verification = verificationViewModel(agent);
-  const { hireability } = agentCardViewModel(agent);
-  const hireabilityLabel = hireability === "listed_only" && evaluated
-    ? "Not hireable"
-    : hireabilityLabels[hireability];
+  const current = agentCardWithObservations(agent, observationTargets, observationsAvailable);
+  const reachability = current.evidence.find((step) => step.kind === "reachable")!;
   return (
     <main id="main-content" className="mx-auto w-full max-w-7xl flex-1 px-4 py-12 sm:px-6 lg:px-8">
       <Breadcrumb current={agent.name} trail={[{ href: "/agents", label: "Agents" }]} />
@@ -41,8 +44,8 @@ export function AgentProfile({ agent, passport }: { agent: MarketplaceAgent; pas
             <div className="flex flex-wrap items-center gap-2">
               <Badge variant="outline">BSC · #{agent.agentId}</Badge>
               {agent.operator === "marketplace" && <Badge className="border-cyan-400/30 bg-cyan-400/10 text-cyan-200" variant="outline">Marketplace-operated · not official BNB reference</Badge>}
-              <Badge className={agent.hireability.canHire ? "border-primary/40 bg-primary/10 text-primary" : "border-zinc-700 bg-zinc-900 text-zinc-300"} variant="outline">
-                {hireabilityLabel}
+              <Badge className={current.hireability === "hireable" ? "border-primary/40 bg-primary/10 text-primary" : "border-zinc-700 bg-zinc-900 text-zinc-300"} variant="outline">
+                {current.hireability === "hireable" ? "Hireable now" : current.hireability === "quote_stale" ? "Quote refresh required" : observationsAvailable ? evaluated ? "Not hireable" : "Not evaluated" : "Verification unavailable"}
               </Badge>
             </div>
             <h1 className="mt-3 text-3xl font-light tracking-tight text-white sm:text-4xl">{agent.name}</h1>
@@ -50,10 +53,10 @@ export function AgentProfile({ agent, passport }: { agent: MarketplaceAgent; pas
           </div>
         </div>
         <div className="flex flex-col items-start gap-3 lg:items-end">
-          {agent.hireability.canHire ? (
+          {current.hireability === "hireable" ? (
             <Button asChild><Link href={`/hire/${agent.agentId}`}>Hire agent<ArrowUpRight aria-hidden="true" /></Link></Button>
           ) : (
-            <p className="max-w-xs text-sm text-zinc-500">{agent.hireability.reason}</p>
+            <p className="max-w-xs text-sm text-zinc-500">{current.evidence.find((step) => step.kind === "quote")?.detail}</p>
           )}
         </div>
       </div>
@@ -67,7 +70,7 @@ export function AgentProfile({ agent, passport }: { agent: MarketplaceAgent; pas
 
       <Card className="marketplace-surface mt-8">
         <CardHeader><CardTitle>Evidence line</CardTitle></CardHeader>
-        <CardContent><EvidenceRail ariaLabel={`Evidence for ${agent.name}`} steps={evidenceForAgent(agent)} /></CardContent>
+        <CardContent><EvidenceRail ariaLabel={`Evidence for ${agent.name}`} steps={current.evidence} /></CardContent>
       </Card>
 
       {verification && <div className="mt-5"><VerificationDrift verification={verification} /></div>}
@@ -113,7 +116,7 @@ export function AgentProfile({ agent, passport }: { agent: MarketplaceAgent; pas
           <Card className="marketplace-surface">
             <CardHeader><CardTitle>Services and endpoints</CardTitle></CardHeader>
             <CardContent className="space-y-3">
-              <div className="flex items-center gap-2 text-sm">{agent.endpointObservation.status === "observed_ok" ? <CheckCircle2 className="size-4 text-emerald-400" /> : <CircleAlert className="size-4 text-zinc-500" />}<span>{agent.endpointObservation.status.replaceAll("_", " ")}</span><ProvenanceBadge provenance="observed" /></div>
+              <div className="flex items-center gap-2 text-sm">{reachability.status === "verified" ? <CheckCircle2 className="size-4 text-emerald-400" /> : <CircleAlert className="size-4 text-zinc-500" />}<span>{reachability.status}</span><ProvenanceBadge provenance={reachability.provenance} /></div>
               {agent.endpoints.map((endpoint) => <MonoValue key={endpoint.endpoint} label={endpoint.name ?? "Endpoint"} value={endpoint.endpoint} />)}
               {!agent.endpoints.length && <p className="text-sm text-zinc-500">No normalized endpoint is available.</p>}
             </CardContent>

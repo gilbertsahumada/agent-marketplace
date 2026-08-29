@@ -191,10 +191,11 @@ npm run publish:verification -- --input .marketplace/readiness/bsc-marketplace.j
 ```
 
 Vercel uses `npm run build:deployment`: it regenerates the bounded readiness
-report, publishes the sanitized snapshot, verifies its 72-hour freshness limit,
-and only then runs the application build. Local `npm run build` remains a
-deterministic check of the already published artifact. An expired snapshot or a
-failed live regeneration blocks the deployment.
+report and then runs the application build. It does not publish or refresh the
+historical release snapshot; `publish:verification` above remains an explicit
+manual evidence step. Neither artifact authorizes current reachability or Hire,
+which come only from the observation Worker. Local `npm run build` checks the
+already published historical artifact deterministically.
 
 The verifier compares trust8004 identity fields with `ownerOf` and `tokenURI`
 at one pinned BSC Mainnet block, then performs MCP `initialize` and `tools/list`
@@ -263,19 +264,27 @@ payment-token/policy observations have separate provenance. A quote that
 expires before report finalization remains historical evidence but no longer
 counts toward qualification or category coverage.
 
-The release snapshot retains the last qualification evidence timestamp. A quote
-older than the 60-second `hireable_now` window is rendered as `Quote refresh
-required` while the separately observed endpoint remains visible; it is never
-silently converted to `MCP only` or removed from the catalogue. If
+The observation Worker is the only source of current reachability and quote
+labels. A quote older than the 60-second `hireable_now` window is rendered as
+`Quote refresh required`; an observation older than 60 seconds cannot remain
+`Reachable · verified`. The release snapshot remains only as explicitly dated
+historical evidence. If
 `ownerOf(agentId) == agentWallet` for more than one evaluated ID, the report emits
 `wallet_ambiguous` with the candidate IDs and does not attribute a payment to a
 single agent. This is bounded to the evaluated set; it is not a claim about
 unindexed IDs.
 
-The readiness and verification probes run while the release snapshot is built,
-not during ordinary catalogue or profile rendering. The explicit `/validate`
-flow and an intentional hiring attempt may refresh one requested agent; normal
-navigation never starts an unbounded outbound probe.
+The readiness and verification probes can still build the historical evidence
+route, but ordinary catalogue and profile rendering consume the bounded
+`/observations` contract. The explicit `/validate` flow and an intentional
+hiring attempt may refresh one requested agent; normal navigation never starts
+an outbound probe.
+
+Workers Free currently probes only Agent `303779` at the exact Grid endpoint;
+`PROBE_GENERAL_EGRESS_APPROVED=0` keeps wildcard egress fail-closed. Setting it
+to `1` is not enough to publish a global feed: `/observations` deliberately
+returns 503 for wildcard scope until a separately reviewed bounded or paginated
+contract exists.
 
 The report is written to
 `.marketplace/readiness/bsc-marketplace.json`. `frontendReady=true` means the
@@ -300,19 +309,20 @@ npm run dev
 ```
 
 `/agents` defaults to the curated marketplace candidates. Switch to
-`/agents?view=all&page=1&limit=24` to browse the trust8004 BSC snapshot through
+`/agents?view=all&page=1&limit=24` to browse the live trust8004 BSC catalogue through
 server-side pagination. This mode performs one list request per uncached page;
 it does not download the full catalogue or fetch a profile for every card.
 
 ## Evidence Passport and agent validation
 
-Every opened BSC profile now has a live Evidence Passport at
+Every opened BSC profile now has an indexed Evidence Passport at
 `/agents/{agentId}/passport` and a read-only JSON representation at
 `/api/marketplace/agents/{agentId}/passport`. The Passport is not an NFT,
 financial endorsement, or new reputation protocol. It separates direct
 identity, endpoint observations, signed-quote qualification, and hash-verified
 Mainnet job history, with an explicit sample size and deterministic evidence
-fingerprint.
+fingerprint. It is not the current Worker reachability/quote view; those
+time-bounded claims are presented separately and fail closed when unavailable.
 
 Builders can run a bounded read-only check at `/validate`. The browser sends
 only one numeric BSC Agent ID to `POST /api/marketplace/validate`; trust8004 is
@@ -320,7 +330,8 @@ the sole catalogue source and declared endpoints are resolved server-side. One
 run checks at most one MCP endpoint and two seller endpoints using the existing
 safe transport. It never assigns a marketplace category, promotes an agent, or
 enables Hire automatically. A verified ad-hoc quote remains a candidate for
-manual review until it appears in a current reviewed release snapshot.
+manual review until it appears in a current Worker observation and passes the
+marketplace's separate review boundary.
 Validation admits at most ten distinct Agent IDs per minute and two concurrent
 runs per server process; duplicate IDs share in-flight work, and catalogue plus
 validation share one trust8004 request scheduler. This is deliberately a local
@@ -363,7 +374,7 @@ step:
 3. **Compare:** compare [V3 Pools, Aave, and Venus](https://bnb-agent-marketplace-ruby.vercel.app/compare?agentId=45650&agentId=45381&agentId=43129)
    without an invented universal winner.
 4. **Browse:** switch between [curated candidates](https://bnb-agent-marketplace-ruby.vercel.app/agents?view=marketplace)
-   and the [paginated registered snapshot](https://bnb-agent-marketplace-ruby.vercel.app/agents?view=all&page=1&limit=24).
+   and the [paginated registered catalogue](https://bnb-agent-marketplace-ruby.vercel.app/agents?view=all&page=1&limit=24).
    Registered records remain `Not evaluated`; Grid contains the explicitly
    labelled marketplace-operated seller rather than an inferred third party.
 5. **Hire:** open the [controlled Mainnet Grid demo](https://bnb-agent-marketplace-ruby.vercel.app/demo/erc8183-mainnet)
@@ -387,10 +398,11 @@ MCP-only. Grid Agent `303779` is a qualified marketplace-operated seller, not an
 official BNB reference agent, and catalogue coverage remains partial.
 Those limitations are part of the evidence model rather than hidden demo data.
 If a live catalogue or RPC dependency is unavailable, the application shows a
-retryable diagnostic state instead of inventing records. The landing remains
-usable from the sanitized, timestamped release snapshot without treating it as
-a live profile or commercial qualification source; the versioned Job `551`
-snapshot and transaction links remain the durable hiring proof.
+retryable diagnostic state instead of inventing records. If the observation
+Worker or D1 is unavailable, the landing keeps live trust8004 declarations but
+marks reachability and quote evidence unavailable; it never falls back to the
+expired release snapshot. The versioned Job `551` snapshot and transaction
+links remain durable historical hiring proof.
 
 Before presenting a new deployment, run:
 

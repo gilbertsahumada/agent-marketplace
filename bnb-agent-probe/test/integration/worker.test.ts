@@ -15,6 +15,7 @@ import type { Env } from "../../src/types";
 
 beforeEach(async () => {
   await env.DB.prepare("DELETE FROM runtime_state").run();
+  await env.DB.prepare("DELETE FROM probe_observations").run();
   await env.DB.prepare("DELETE FROM probe_targets").run();
 });
 
@@ -31,6 +32,137 @@ function queueMessage(body: unknown, attempts = 1) {
 }
 
 describe("WP1 in the Workers runtime", () => {
+  it("serves the WP4 observations contract without leaking signatures", async () => {
+    const now = 1_788_000_000_000;
+    await env.DB.batch!([
+      env.DB.prepare(
+        `INSERT INTO probe_targets (
+          agentId, chainId, transport, endpoint, name, categoriesJson,
+          categoryProvenance, declarationState, currentMetadataUpdatedAt,
+          lastMetadataCheckedAt, firstSeenAt, lastChangedAt, lastSeenAt, priority
+        ) VALUES (?, 56, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ).bind(
+        "303779", "a2a", "https://agent.example/grid", "Grid",
+        '["grid_trading","rebalancing"]', "derived:marketplace-inventory",
+        "current", now - 1_000, now - 900, now - 10_000, now - 1_000, now - 900, 1,
+      ),
+      env.DB.prepare(
+        `INSERT INTO probe_targets (
+          agentId, chainId, transport, endpoint, name, categoriesJson,
+          declarationState, lastMetadataCheckedAt, firstSeenAt,
+          lastChangedAt, lastSeenAt, priority
+        ) VALUES ('42', 56, 'erc8183_http', 'https://agent.example/removed',
+          'Removed', '[]', 'removed', ?, ?, ?, ?, 0)`,
+      ).bind(now - 800, now - 20_000, now - 800, now - 800),
+      env.DB.prepare(
+        `INSERT INTO probe_observations (
+          agentId, chainId, transport, endpoint, probedAt, probeCategory,
+          outcome, observedMetadataUpdatedAt, observedWallet,
+          observedWalletSource, observedBlockNumber, onchainObservedAt,
+          commerce, router, policy, priceRaw, currency, decimals,
+          signatureMethod, signer, requestHash, negotiationHash,
+          quoteNegotiatedAt, quoteExpiresAt, durationMs
+        ) VALUES ('303779', 56, 'a2a', 'https://agent.example/grid', ?,
+          'grid_trading', 'quote_verified', ?, ?, 'agentWallet', '100', ?,
+          '0x0000000000000000000000000000000000000001',
+          '0x0000000000000000000000000000000000000002',
+          '0x0000000000000000000000000000000000000003',
+          '1000', '0x0000000000000000000000000000000000000004', 18,
+          'eip191', '0x0000000000000000000000000000000000000005',
+          '0xrequest', '0xnegotiation', ?, ?, 25)`,
+      ).bind(now - 4_000, now - 5_000, "0x0000000000000000000000000000000000000006", now - 4_000, now - 5_000, now + 56_000),
+      env.DB.prepare(
+        `INSERT INTO probe_observations (
+          agentId, chainId, transport, endpoint, probedAt, probeCategory,
+          outcome, observedMetadataUpdatedAt, errorCode, durationMs
+        ) VALUES ('303779', 56, 'a2a', 'https://agent.example/grid', ?,
+          'rebalancing', 'unreachable', ?, 'SELLER_TIMEOUT', 5000)`,
+      ).bind(now - 2_000, now - 3_000),
+      env.DB.prepare(
+        `INSERT INTO probe_observations (
+          agentId, chainId, transport, endpoint, probedAt, probeCategory,
+          outcome, observedMetadataUpdatedAt, errorCode, durationMs
+        ) VALUES ('303779', 56, 'a2a', 'https://agent.example/grid', ?,
+          'grid_trading', 'unreachable', ?, 'LATE_BACKFILL', 10)`,
+      ).bind(now - 8_000, now - 9_000),
+    ]);
+
+    const response = await createWorker({ now: () => now }).fetch(
+      new Request("https://worker.test/observations"),
+      env,
+      createExecutionContext(),
+    );
+    const body = await response.json() as Record<string, any>;
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("cache-control")).toBe("public, s-maxage=60, must-revalidate");
+    expect(body).toMatchObject({
+      schemaVersion: 1,
+      generatedAt: now,
+      funnel: { registeredTotal: 309897, blockNumber: "118441354" },
+    });
+    expect(body.targets).toHaveLength(1);
+    expect(body.targets.find((target: any) => target.agentId === "303779")).toMatchObject({
+      agentId: "303779",
+      declarationState: "current",
+      latest: { probeCategory: "rebalancing", outcome: "unreachable" },
+      latestByCategory: {
+        grid_trading: { outcome: "quote_verified" },
+        rebalancing: { outcome: "unreachable" },
+      },
+      lastQuoteVerifiedAt: now - 4_000,
+      lastQuoteVerifiedAtByCategory: { grid_trading: now - 4_000 },
+    });
+    expect(JSON.stringify(body)).not.toContain("0x0000000000000000000000000000000000000005");
+    expect(JSON.stringify(body)).not.toContain("signer");
+
+    const cached = await createWorker({ now: () => now + 1_000 }).fetch(
+      new Request("https://worker.test/observations"),
+      env,
+      createExecutionContext(),
+    );
+    expect((await cached.json() as { generatedAt: number }).generatedAt).toBe(now);
+
+    const otherScope = await createWorker({ now: () => now + 2_000 }).fetch(
+      new Request("https://worker.test/observations"),
+      {
+        ...env,
+        PROBE_AGENT_ALLOWLIST: "42",
+        PROBE_ENDPOINT_ALLOWLIST: "https://agent.example.com/removed",
+      } as unknown as Env,
+      createExecutionContext(),
+    );
+    const otherBody = await otherScope.json() as { targets: Array<{ agentId: string }> };
+    expect(otherBody.targets.map(({ agentId }) => agentId)).toEqual(["42"]);
+  });
+
+  it("rejects cache-busting query parameters on the public observations route", async () => {
+    const response = await createWorker({ now: () => 1_788_000_000_000 }).fetch(
+      new Request("https://worker.test/observations?nonce=1"),
+      env,
+      createExecutionContext(),
+    );
+
+    expect(response.status).toBe(404);
+    expect(response.headers.get("cache-control")).toBe("no-store");
+  });
+
+  it("fails closed instead of scanning the global feed when wildcard egress is approved", async () => {
+    const response = await createWorker({ now: () => 1_788_000_000_000 }).fetch(
+      new Request("https://wildcard-worker.test/observations"),
+      {
+        ...env,
+        PROBE_AGENT_ALLOWLIST: "*",
+        PROBE_ENDPOINT_ALLOWLIST: "*",
+        PROBE_GENERAL_EGRESS_APPROVED: "1",
+      } as unknown as Env,
+      createExecutionContext(),
+    );
+
+    expect(response.status).toBe(503);
+    expect(response.headers.get("cache-control")).toBe("no-store");
+  });
+
   it("serves sanitized health from a migrated local D1", async () => {
     const response = await worker.fetch(
       new Request("https://worker.test/health"),
@@ -496,7 +628,10 @@ describe("WP1 in the Workers runtime", () => {
       randomUUID: () => `run-${clock}`,
       fetch: fetchCatalog as typeof fetch,
     });
-    const config = loadConfig({});
+    const config = loadConfig({
+      PROBE_AGENT_ALLOWLIST: "303779",
+      PROBE_ENDPOINT_ALLOWLIST: "https://bnb-agent-marketplace-ruby.vercel.app/grid",
+    });
     const controller = { scheduledTime: 10_000, cron: "*/5 * * * *" };
     const context = createExecutionContext();
 

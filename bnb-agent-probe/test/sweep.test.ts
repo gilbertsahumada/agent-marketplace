@@ -7,6 +7,7 @@ import type {
 import {
   createD1LiveAgentPageReader,
   runSweepPhase,
+  SweepRowWriteBudgetExceededError,
   type SweepAgentResult,
 } from "../src/phases/sweep";
 
@@ -26,6 +27,7 @@ class SweepDatabase implements D1DatabaseLike {
   prepare(query: string): D1PreparedStatementLike {
     let values: readonly unknown[] = [];
     const database = this;
+    const normalized = query.replaceAll('"', "").toLowerCase();
     return {
       bind(...nextValues) {
         values = nextValues;
@@ -35,17 +37,19 @@ class SweepDatabase implements D1DatabaseLike {
         return null as Row | null;
       },
       async all<Row>(): Promise<D1ResultLike<unknown, Row>> {
-        if (query.includes("FROM runtime_state")) {
+        if (normalized.includes("from runtime_state")) {
           return {
             success: true,
             meta: {},
             results: [...database.state].map(([key, integerValue]) => ({
               key,
+              textValue: null,
               integerValue,
+              updatedAt: 0,
             })) as Row[],
           };
         }
-        if (query.includes("WITH live_agent_ids")) {
+        if (normalized.includes("with live_agent_ids")) {
           const offset = Number(values.at(-1));
           const limit = Number(values.at(-2));
           const curated = values.slice(0, -2).map(String);
@@ -57,9 +61,9 @@ class SweepDatabase implements D1DatabaseLike {
             results: ids.slice(offset, offset + limit).map((agentId) => ({ agentId })) as Row[],
           };
         }
-        if (query.includes("FROM probe_targets")) {
+        if (normalized.includes("from probe_targets")) {
           database.candidateReadSizes.push(values.length);
-          const ids = new Set(values.map(String));
+          const ids = new Set(values.slice(1).map(String));
           return {
             success: true,
             meta: {},
@@ -70,6 +74,20 @@ class SweepDatabase implements D1DatabaseLike {
       },
       async run<Meta>(): Promise<D1ResultLike<Meta>> {
         throw new Error("SWEEP writes must use batch");
+      },
+      async raw<Row extends unknown[]>(options?: { columnNames?: boolean }): Promise<Row[]> {
+        const result = await this.all<Record<string, unknown>>();
+        const rows = result.results ?? [];
+        const output = rows.map((row) => normalized.includes("from probe_targets")
+          ? [
+              row.agentId, row.chainId ?? 56, row.transport, row.endpoint, row.name,
+              row.categoriesJson, row.categoryProvenance, row.declarationState,
+              row.currentMetadataUpdatedAt, row.lastMetadataCheckedAt, row.firstSeenAt,
+              row.lastChangedAt, row.lastSeenAt, row.priority,
+            ]
+          : Object.values(row)) as Row[];
+        if (options?.columnNames && rows[0]) output.unshift(Object.keys(rows[0]) as Row);
+        return output;
       },
     };
   }
@@ -103,6 +121,7 @@ function recordingDatabase(database: SweepDatabase): SweepDatabase {
       first: statement.first.bind(statement),
       all: statement.all.bind(statement),
       run: statement.run.bind(statement),
+      raw: statement.raw!.bind(statement),
     };
     return wrapped;
   };
@@ -117,6 +136,7 @@ function recordingDatabase(database: SweepDatabase): SweepDatabase {
 
 const target = (overrides: Record<string, unknown> = {}) => ({
   agentId: "16",
+  chainId: 56,
   transport: "erc8183_http",
   endpoint: "https://seller.example/erc8183",
   name: "Seller",
@@ -158,6 +178,27 @@ function dependencies(results: readonly SweepAgentResult[], complete = false) {
 }
 
 describe("WP2 SWEEP", () => {
+  it("rejects an unbounded historical retirement before the atomic batch", async () => {
+    const db = recordingDatabase(new SweepDatabase());
+    db.targets = Array.from({ length: 61 }, (_, index) => target({
+      endpoint: `https://seller.example/history/${index}`,
+      declarationState: "metadata_unavailable",
+    }));
+
+    await expect(runSweepPhase(
+      {
+        db,
+        limit: 4,
+        nowMs: 2_000,
+        queryBudget: { remaining: 38 },
+        requestBudget: { remaining: 4 },
+        rowWriteBudget: { remaining: 60 },
+      },
+      dependencies([okResult({ targets: [] })]),
+    )).rejects.toBeInstanceOf(SweepRowWriteBudgetExceededError);
+    expect(db.batches).toHaveLength(0);
+  });
+
   it("builds a numerically ordered live page from current ERC-8183 and curated IDs", async () => {
     const db = new SweepDatabase();
     db.liveRows = ["100", "2", "30"];
@@ -189,10 +230,10 @@ describe("WP2 SWEEP", () => {
     expect(db.batches).toHaveLength(1);
     expect(db.batches[0]).toHaveLength(4);
     expect(db.batches[0]?.map((statement) => statement.query)).toEqual([
-      expect.stringContaining("INSERT INTO probe_targets"),
-      expect.stringContaining("INSERT INTO runtime_state"),
-      expect.stringContaining("INSERT INTO runtime_state"),
-      expect.stringContaining("INSERT INTO runtime_state"),
+      expect.stringContaining('insert into "probe_targets"'),
+      expect.stringContaining('insert into "runtime_state"'),
+      expect.stringContaining('insert into "runtime_state"'),
+      expect.stringContaining('insert into "runtime_state"'),
     ]);
     expect(db.batches[0]?.at(-1)?.values).toContain("probe");
   });
@@ -207,8 +248,32 @@ describe("WP2 SWEEP", () => {
     );
 
     expect(summary.removedTargets).toBe(1);
-    expect(db.batches[0]?.[0]?.query).toContain("declarationState = 'removed'");
-    expect(db.batches[0]?.[0]?.query).not.toContain("DELETE");
+    expect(db.batches[0]?.[0]?.query).toContain('update "probe_targets"');
+    expect(db.batches[0]?.[0]?.values[0]).toBe("removed");
+    expect(db.batches[0]?.[0]?.query.toLowerCase()).not.toContain("delete");
+  });
+
+  it("retires an accumulated historical target set with one bounded statement", async () => {
+    const db = recordingDatabase(new SweepDatabase());
+    db.targets = Array.from({ length: 8 }, (_, index) => target({
+      endpoint: `https://old-${index}.example.com/erc8183`,
+      declarationState: "metadata_unavailable",
+    }));
+    const targets = [0, 1].map((index) => ({
+      transport: "erc8183_http" as const,
+      endpoint: `https://new-${index}.example.com/erc8183`,
+      categoriesJson: "[]",
+      categoryProvenance: null,
+    }));
+
+    const summary = await runSweepPhase(
+      { db, limit: 4, nowMs: 2_000, queryBudget: { remaining: 6 }, requestBudget: { remaining: 4 } },
+      dependencies([okResult({ targets })]),
+    );
+
+    expect(summary).toMatchObject({ changedTargets: 2, removedTargets: 8, batchQueries: 6 });
+    expect(db.batches[0]?.filter((statement) => statement.query.includes('update "probe_targets"')))
+      .toHaveLength(1);
   });
 
   it("does not perform a material target write on an identical rerun", async () => {
@@ -273,7 +338,7 @@ describe("WP2 SWEEP", () => {
       },
     );
 
-    expect(db.candidateReadSizes).toEqual([100, 100, 5]);
+    expect(db.candidateReadSizes).toEqual([100, 100, 8]);
   });
 
   it("does not advance the cursor when fetch coverage is incomplete or batch fails", async () => {
@@ -319,6 +384,7 @@ describe("WP2 SWEEP", () => {
     );
 
     expect(summary).toMatchObject({ metadataUnavailableTargets: 1, removedTargets: 0 });
-    expect(db.batches[0]?.[0]?.query).toContain("declarationState = 'metadata_unavailable'");
+    expect(db.batches[0]?.[0]?.query).toContain('update "probe_targets"');
+    expect(db.batches[0]?.[0]?.values[0]).toBe("metadata_unavailable");
   });
 });

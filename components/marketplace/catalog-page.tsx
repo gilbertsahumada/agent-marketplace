@@ -10,7 +10,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { AgentCard } from "./agent-card";
 import { CoverageBadge, PageIntro, PaginationLinks } from "./page-primitives";
-import { agentCardViewModel } from "./view-models";
+import { agentCardWithObservations } from "./view-models";
+import { observationTargetsByAgentId, type ObservationFeedResult } from "@/src/business/entities/worker-observations";
 
 const categoryLabels: Record<MarketplaceCategory, string> = {
   rebalancing: "Rebalancing",
@@ -19,8 +20,10 @@ const categoryLabels: Record<MarketplaceCategory, string> = {
   health_factor_monitoring: "Health Factor Monitoring",
 };
 
-export function CatalogPage({ data, query, provenAgentId }: { data: MarketplaceAgentPage; query: { view: "all" | "marketplace"; category?: MarketplaceCategory; q?: string; sort?: MarketplaceSort }; provenAgentId?: string }) {
+export function CatalogPage({ data, observations = { status: "unavailable", feed: null }, query, provenAgentId }: { data: MarketplaceAgentPage; observations?: ObservationFeedResult; query: { view: "all" | "marketplace"; category?: MarketplaceCategory; q?: string; sort?: MarketplaceSort }; provenAgentId?: string }) {
   const allView = query.view === "all";
+  const targets = observationTargetsByAgentId(observations.feed);
+  const now = Date.now();
   const hrefForPage = (page: number) => {
     const params = new URLSearchParams({ view: query.view, page: String(page), limit: allView ? "24" : "12" });
     if (query.category) params.set("category", query.category);
@@ -82,7 +85,14 @@ export function CatalogPage({ data, query, provenAgentId }: { data: MarketplaceA
 
       {data.items.length > 0 ? (
         <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {data.items.map((agent) => <AgentCard agent={agentCardViewModel(agent, provenAgentId)} key={agent.agentId} />)}
+          {data.items.map((agent) => <AgentCard agent={agentCardWithObservations(
+            agent,
+            targets.get(agent.agentId) ?? [],
+            observations.status === "available",
+            now,
+            provenAgentId,
+            query.category,
+          )} key={agent.agentId} />)}
         </div>
       ) : query.category === "grid_trading" ? (
         <Alert className="mt-6 border-zinc-800 bg-zinc-950">

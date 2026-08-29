@@ -69,7 +69,7 @@ describe("marketplace API controllers", () => {
     expect(executeGet).toHaveBeenCalledOnce();
     expect(executePassport).toHaveBeenCalledOnce();
     expect(executePassport).toHaveBeenCalledWith({ agentId: "45650" });
-    expect(passportResponse.headers.get("cache-control")).toBe("public, max-age=60, stale-while-revalidate=300");
+    expect(passportResponse.headers.get("cache-control")).toBe("public, max-age=60, must-revalidate");
     expect(executeCompare).toHaveBeenCalledOnce();
     expect(executeProof).toHaveBeenCalledOnce();
   });

@@ -5,20 +5,20 @@ import { PageIntro } from "@/components/marketplace/page-primitives";
 import { ProvenanceBadge } from "@/components/marketplace/provenance-badge";
 import { getPublicVerificationSnapshot } from "@/src/business/composition";
 
-export const metadata: Metadata = { title: "Verification methodology" };
+export const metadata: Metadata = { title: "Historical verification methodology" };
 
 export default function VerificationMethodologyPage() {
   const snapshot = getPublicVerificationSnapshot.execute();
   return (
     <main id="main-content" className="mx-auto w-full max-w-5xl flex-1 px-4 py-12 sm:px-6 lg:px-8">
-      <PageIntro eyebrow="Reproducible evidence" title="How declared-versus-observed drift is produced">
-        The marketplace preserves what an agent declared, what a bounded probe observed, and what BSC returned at one pinned block. A difference is an observation, not a verdict about quality.
+      <PageIntro eyebrow="Historical reproducible evidence" title="How the retired release snapshot was produced">
+        This dated artifact preserves what an agent declared, what a bounded probe observed, and what BSC returned at one pinned block. It is not current agent state and does not qualify Hire.
       </PageIntro>
       <div className="mt-8 flex flex-wrap gap-2">
         <Badge variant="outline">Schema {snapshot.schemaVersion}</Badge>
         <Badge variant="outline">BSC block {snapshot.blockNumber}</Badge>
         <Badge variant="outline">Generated {snapshot.generatedAt}</Badge>
-        <Badge variant="outline">Stale after {snapshot.staleAfter}</Badge>
+        <Badge variant="outline">Expired {snapshot.staleAfter}</Badge>
       </div>
       <div className="mt-8 grid gap-4 md:grid-cols-2">
         <Card className="marketplace-surface">
@@ -39,8 +39,8 @@ export default function VerificationMethodologyPage() {
       <Card className="marketplace-surface mt-4">
         <CardHeader><CardTitle>Publication boundary</CardTitle></CardHeader>
         <CardContent className="space-y-3 text-sm leading-relaxed text-zinc-400">
-          <p>A release command validates the operator report, removes endpoint URLs, probe payloads and errors, and writes this versioned snapshot. The web build reads only the sanitized artifact and performs no live verification.</p>
-          <p>Evidence older than the recorded threshold is labelled stale. Historical evidence remains visible with its timestamp instead of being silently refreshed or invented.</p>
+          <p>The former release command validated the operator report, removed endpoint URLs, probe payloads and errors, and wrote this versioned snapshot. Current cards, reachability, Hire qualification and the Mainnet demo no longer read it.</p>
+          <p>The artifact expired at the timestamp above. It remains visible only as historical methodology and is never substituted when Worker/D1 is unavailable.</p>
         </CardContent>
       </Card>
       <Card className="marketplace-surface mt-4">
@@ -50,7 +50,7 @@ export default function VerificationMethodologyPage() {
           <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
             <div><dt className="font-medium text-zinc-100">Registered</dt><dd>Present in the trust8004 BSC snapshot.</dd></div>
             <div><dt className="font-medium text-zinc-100">Evaluated</dt><dd>Direct identity and a current bounded endpoint observation are available.</dd></div>
-            <div><dt className="font-medium text-zinc-100">Hireable</dt><dd>A reviewed release snapshot contains a current verified ERC-8183 quote.</dd></div>
+            <div><dt className="font-medium text-zinc-100">Hireable</dt><dd>Historically, the release contained a then-current quote. Current Hire uses Worker observations and requests a fresh quote.</dd></div>
             <div><dt className="font-medium text-zinc-100">Job proven</dt><dd>A matching Mainnet job has a hash-verified result.</dd></div>
             <div><dt className="font-medium text-zinc-100">Attention</dt><dd>Direct identity conflicts, failed reads, or stale evidence override positive states.</dd></div>
           </dl>

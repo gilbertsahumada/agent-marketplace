@@ -31,7 +31,7 @@ export function createD1ProbePersistence(
   const db = createDatabase(d1);
   return {
     selectTarget: async ({ agentAllowlist, endpointAllowlist, limit }) => {
-      if (limit !== 1 || agentAllowlist.length === 0 || endpointAllowlist.length === 0) return null;
+      if (limit < 1) return null;
       const latestProbe = sql<number | null>`(
         SELECT MAX(observed.probedAt)
         FROM probe_observations AS observed
@@ -49,18 +49,30 @@ export function createD1ProbePersistence(
         currentMetadataUpdatedAt: probeTargets.currentMetadataUpdatedAt,
         lastSeenAt: probeTargets.lastSeenAt,
         priority: probeTargets.priority,
+        lastRebalancing: categoryLastProbed("rebalancing"),
+        lastGridTrading: categoryLastProbed("grid_trading"),
+        lastYieldOptimisation: categoryLastProbed("yield_optimisation"),
+        lastHealthFactorMonitoring: categoryLastProbed("health_factor_monitoring"),
       }).from(probeTargets).where(and(
         eq(probeTargets.chainId, 56),
         eq(probeTargets.declarationState, "current"),
-        inArray(probeTargets.agentId, [...agentAllowlist]),
-        inArray(probeTargets.endpoint, [...endpointAllowlist]),
+        ...(agentAllowlist.length === 0 ? [] : [inArray(probeTargets.agentId, [...agentAllowlist])]),
+        ...(endpointAllowlist.length === 0 ? [] : [inArray(probeTargets.endpoint, [...endpointAllowlist])]),
       )).orderBy(desc(probeTargets.priority), latestProbe).limit(1);
       const row = rows[0];
       if (!row) return bootstrapGridTarget(agentAllowlist, endpointAllowlist);
       if (row.chainId !== 56 || (row.transport !== "a2a" && row.transport !== "erc8183_http")) {
         throw new Error("Invalid PROBE target row");
       }
-      return row as ProbeTarget;
+      return {
+        ...row,
+        lastProbedAtByCategory: {
+          ...(row.lastRebalancing === null ? {} : { rebalancing: row.lastRebalancing }),
+          ...(row.lastGridTrading === null ? {} : { grid_trading: row.lastGridTrading }),
+          ...(row.lastYieldOptimisation === null ? {} : { yield_optimisation: row.lastYieldOptimisation }),
+          ...(row.lastHealthFactorMonitoring === null ? {} : { health_factor_monitoring: row.lastHealthFactorMonitoring }),
+        },
+      } as ProbeTarget;
     },
     commit: async (commit) => {
       const statements: unknown[] = [];
@@ -163,7 +175,10 @@ function bootstrapGridTarget(
   agentAllowlist: readonly string[],
   endpointAllowlist: readonly string[],
 ): ProbeTarget | null {
-  if (!agentAllowlist.includes(GRID_AGENT_ID) || !endpointAllowlist.includes(GRID_ENDPOINT)) return null;
+  if (
+    (agentAllowlist.length > 0 && !agentAllowlist.includes(GRID_AGENT_ID))
+    || (endpointAllowlist.length > 0 && !endpointAllowlist.includes(GRID_ENDPOINT))
+  ) return null;
   return {
     agentId: GRID_AGENT_ID,
     chainId: 56,
@@ -174,6 +189,18 @@ function bootstrapGridTarget(
     priority: 0,
     bootstrapSource: "marketplace-inventory",
   };
+}
+
+function categoryLastProbed(category: string) {
+  return sql<number | null>`(
+    SELECT MAX(observed.probedAt)
+    FROM probe_observations AS observed
+    WHERE observed.chainId = ${probeTargets.chainId}
+      AND observed.agentId = ${probeTargets.agentId}
+      AND observed.transport = ${probeTargets.transport}
+      AND observed.endpoint = ${probeTargets.endpoint}
+      AND observed.probeCategory = ${category}
+  )`;
 }
 
 function targetPredicate(target: ProbeTarget) {

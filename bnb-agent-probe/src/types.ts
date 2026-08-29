@@ -8,6 +8,7 @@ export interface D1PreparedStatement {
   first<T = Record<string, unknown>>(): Promise<T | null>;
   all<T = Record<string, unknown>>(): Promise<D1Result<T>>;
   run(): Promise<D1Result>;
+  raw?<T extends unknown[]>(options?: { columnNames?: boolean }): Promise<T[]>;
 }
 
 export interface D1Database {
@@ -28,6 +29,7 @@ export interface Env {
   PROBE_BATCH_SIZE?: string;
   PROBE_AGENT_ALLOWLIST?: string;
   PROBE_ENDPOINT_ALLOWLIST?: string;
+  PROBE_GENERAL_EGRESS_APPROVED?: string;
   TRUST8004_REQUESTS_PER_RUN?: string;
   EXTERNAL_SUBREQUESTS_PER_RUN?: string;
   D1_QUERIES_PER_RUN?: string;

@@ -15,9 +15,7 @@ describe("loadConfig", () => {
       sweepPagesPerRun: 1,
       probeBatchSize: 1,
       probeAgentAllowlist: ["303779"],
-      probeEndpointAllowlist: [
-        "https://bnb-agent-marketplace-ruby.vercel.app/grid",
-      ],
+      probeEndpointAllowlist: ["https://bnb-agent-marketplace-ruby.vercel.app/grid"],
       trust8004RequestsPerRun: 4,
       externalSubrequestsPerRun: 12,
       d1QueriesPerRun: 40,
@@ -113,20 +111,21 @@ describe("loadConfig", () => {
 
   it("requires the Free SWEEP detail count to fit the upstream request budget", () => {
     expect(() => loadConfig({ SWEEP_LIMIT: "5" })).toThrow(/^SWEEP_LIMIT:/);
-    expect(loadConfig({ SWEEP_LIMIT: "5", TRUST8004_REQUESTS_PER_RUN: "5" }).sweepLimit).toBe(5);
+    expect(loadConfig({ SWEEP_LIMIT: "4", TRUST8004_REQUESTS_PER_RUN: "4" }).sweepLimit).toBe(4);
   });
 
   it.each([
     [{ PROBE_AGENT_ALLOWLIST: "" }, "PROBE_AGENT_ALLOWLIST"],
-    [{ PROBE_AGENT_ALLOWLIST: "303779,45650" }, "PROBE_AGENT_ALLOWLIST"],
     [{ PROBE_AGENT_ALLOWLIST: "abc" }, "PROBE_AGENT_ALLOWLIST"],
     [{ PROBE_ENDPOINT_ALLOWLIST: "" }, "PROBE_ENDPOINT_ALLOWLIST"],
-    [{ PROBE_ENDPOINT_ALLOWLIST: "https://seller.example/a2a" }, "PROBE_ENDPOINT_ALLOWLIST"],
     [{ PROBE_ENDPOINT_ALLOWLIST: "http://seller.example/a2a" }, "PROBE_ENDPOINT_ALLOWLIST"],
     [{ PROBE_ENDPOINT_ALLOWLIST: "https://seller.example/a2a?token=secret" }, "PROBE_ENDPOINT_ALLOWLIST"],
     [{ PROBE_ENDPOINT_ALLOWLIST: "https://seller.example/a2a#card" }, "PROBE_ENDPOINT_ALLOWLIST"],
     [{ PROBE_ENDPOINT_ALLOWLIST: "https://user:pass@seller.example/a2a" }, "PROBE_ENDPOINT_ALLOWLIST"],
-  ])("fails closed for an unsafe WP3 allowlist", (env, field) => {
+    [{ PROBE_ENDPOINT_ALLOWLIST: "https://127.0.0.1/a2a" }, "PROBE_ENDPOINT_ALLOWLIST"],
+    [{ PROBE_ENDPOINT_ALLOWLIST: "https://10.0.0.1/a2a" }, "PROBE_ENDPOINT_ALLOWLIST"],
+    [{ PROBE_ENDPOINT_ALLOWLIST: "https://[::1]/a2a" }, "PROBE_ENDPOINT_ALLOWLIST"],
+  ])("fails closed for an unsafe probe restriction", (env, field) => {
     expect(() => loadConfig(env)).toThrow(new RegExp(`^${field}:`));
   });
 
@@ -138,6 +137,18 @@ describe("loadConfig", () => {
       probeAgentAllowlist: ["303779"],
       probeEndpointAllowlist: ["https://bnb-agent-marketplace-ruby.vercel.app/grid"],
     });
+  });
+
+  it("requires an explicit architecture-gate flag for the general WP4 target set", () => {
+    expect(() => loadConfig({
+      PROBE_AGENT_ALLOWLIST: "*",
+      PROBE_ENDPOINT_ALLOWLIST: "*",
+    })).toThrow(/^PROBE_AGENT_ALLOWLIST:/);
+    expect(loadConfig({
+      PROBE_AGENT_ALLOWLIST: "*",
+      PROBE_ENDPOINT_ALLOWLIST: "*",
+      PROBE_GENERAL_EGRESS_APPROVED: "1",
+    })).toMatchObject({ probeAgentAllowlist: [], probeEndpointAllowlist: [] });
   });
 
   it("uses typed configuration errors without including environment values", () => {

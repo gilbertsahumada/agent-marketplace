@@ -4,7 +4,7 @@ import { loadMainnetBrowserDemoConfig } from "./browser-demo-config.ts";
 
 export class MainnetBrowserDemoConfigRepository implements MainnetBrowserDemoConfigReader {
   getPublicConfig(): MainnetDemoPublicConfig {
-    const { deployment } = loadMainnetBrowserDemoConfig();
+    const { deployment, sellerOrigin } = loadMainnetBrowserDemoConfig();
     return {
       agentId: deployment.agentId,
       seller: deployment.seller,
@@ -15,6 +15,7 @@ export class MainnetBrowserDemoConfigRepository implements MainnetBrowserDemoCon
       maximumBudgetRaw: deployment.maximumBudgetRaw.toString(),
       rpcUrl: deployment.rpcUrl,
       explorerUrl: deployment.explorerUrl,
+      sellerOrigin,
     };
   }
 }

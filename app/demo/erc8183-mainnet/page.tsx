@@ -10,8 +10,8 @@ export const metadata: Metadata = {
 
 export const dynamic = "force-dynamic";
 
-export default function Erc8183MainnetDemoPage() {
-  const exposure = getMainnetHiringExposure.execute();
+export default async function Erc8183MainnetDemoPage() {
+  const exposure = await getMainnetHiringExposure.execute();
   if (!exposure.demoConfig) notFound();
   return <Erc8183MainnetDemo config={exposure.demoConfig} />;
 }

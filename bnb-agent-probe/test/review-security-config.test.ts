@@ -71,9 +71,15 @@ describe("review: non-zero executable phase budgets", () => {
   });
 
   it("rejects a D1 budget that cannot cover the minimum Queue SWEEP and cleanup", () => {
-    expect(() => loadConfig({ D1_QUERIES_PER_RUN: "12" }))
+    expect(() => loadConfig({ D1_QUERIES_PER_RUN: "37" }))
       .toThrow(/^D1_QUERIES_PER_RUN:/);
-    expect(loadConfig({ D1_QUERIES_PER_RUN: "13" }).d1QueriesPerRun).toBe(13);
+    expect(loadConfig({ D1_QUERIES_PER_RUN: "38" }).d1QueriesPerRun).toBe(38);
+  });
+
+  it("budgets a SWEEP metadata rotation with up to six target writes per agent", () => {
+    expect(() => loadConfig({ SWEEP_LIMIT: "5", TRUST8004_REQUESTS_PER_RUN: "5" }))
+      .toThrow(/^SWEEP_LIMIT:/);
+    expect(loadConfig({ SWEEP_LIMIT: "4" }).sweepLimit).toBe(4);
   });
 });
 
@@ -96,6 +102,10 @@ class RecordingStatement implements D1PreparedStatementLike {
 
   async all<Row>(): Promise<D1ResultLike<unknown, Row>> {
     return { success: true, meta: {}, results: [] };
+  }
+
+  async raw<Row extends unknown[]>(): Promise<Row[]> {
+    return [];
   }
 
   async run<Meta>(): Promise<D1ResultLike<Meta>> {

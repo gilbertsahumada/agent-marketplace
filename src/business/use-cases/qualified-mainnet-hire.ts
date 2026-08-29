@@ -6,8 +6,8 @@ import type { RequestErc8183Quote } from "./request-erc8183-quote.ts";
 import type { GetMainnetHiringExposure } from "./get-mainnet-hiring-exposure.ts";
 import type { GetErc8183JobStatus } from "./get-erc8183-job-status.ts";
 
-function requireCurrentQualification(exposure: GetMainnetHiringExposure): void {
-  if (!exposure.execute().demoConfig) throw new Erc8183SpikeDisabledError();
+async function requireCurrentQualification(exposure: GetMainnetHiringExposure): Promise<void> {
+  if (!(await exposure.execute()).demoConfig) throw new Erc8183SpikeDisabledError();
 }
 
 export class RequestQualifiedMainnetQuote {
@@ -16,8 +16,8 @@ export class RequestQualifiedMainnetQuote {
     private readonly requestQuote: RequestErc8183Quote,
   ) {}
 
-  execute(): Promise<NormalizedErc8183Quote> {
-    requireCurrentQualification(this.exposure);
+  async execute(): Promise<NormalizedErc8183Quote> {
+    await requireCurrentQualification(this.exposure);
     return this.requestQuote.execute();
   }
 }
@@ -29,8 +29,8 @@ export class PrepareQualifiedMainnetHire {
     private readonly prepareHire: PrepareErc8183Hire,
   ) {}
 
-  execute(input: PrepareErc8183HireInput): Promise<Erc8183HirePlan> {
-    requireCurrentQualification(this.exposure);
+  async execute(input: PrepareErc8183HireInput): Promise<Erc8183HirePlan> {
+    await requireCurrentQualification(this.exposure);
     if (!this.writesEnabled()) throw new Erc8183SpikeDisabledError();
     return this.prepareHire.execute(input);
   }
@@ -49,7 +49,7 @@ export class NotifyQualifiedMainnetFundedJob {
     if (job.status === "SUBMITTED" || job.status === "COMPLETED") {
       return this.notifyFunded.execute(input);
     }
-    requireCurrentQualification(this.exposure);
+    await requireCurrentQualification(this.exposure);
     if (!this.writesEnabled()) throw new Erc8183SpikeDisabledError();
     return this.notifyFunded.execute(input);
   }

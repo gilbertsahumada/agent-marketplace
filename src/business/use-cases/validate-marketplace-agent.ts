@@ -97,7 +97,7 @@ export class ValidateMarketplaceAgent {
         status: quoteVerifiedCandidate ? "quote_verified_candidate" : "not_qualified",
         canHire: false,
         note: quoteVerifiedCandidate
-          ? "The ad-hoc quote passed validation, but Hire remains disabled until a reviewed release snapshot promotes the seller."
+          ? "The ad-hoc quote passed validation, but Hire remains disabled until the observation Worker records current evidence; Hire will still request a fresh quote."
           : "No matching direct identity plus current verified ERC-8183 quote was established.",
       },
       evidence: {

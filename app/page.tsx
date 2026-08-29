@@ -1,8 +1,9 @@
 import { MarketplaceLanding } from "@/components/marketplace/landing-page";
 import type { CategoryCardViewModel, EvidenceStepViewModel, FunnelSectionViewModel } from "@/components/marketplace/presentation-types";
-import { snapshotAgentCardViewModel } from "@/components/marketplace/view-models";
-import { getFunnelEvidence, getMainnetJobProof, getMarketplaceLandingCatalog, getPublicJobProof } from "@/src/business/composition";
+import { agentCardWithObservations } from "@/components/marketplace/view-models";
+import { getFunnelEvidence, getMainnetJobProof, getPublicJobProof, getWorkerObservations, listMarketplaceAgents } from "@/src/business/composition";
 import type { FunnelEvidence } from "@/src/business/entities/funnel-evidence";
+import { observationTargetsByAgentId } from "@/src/business/entities/worker-observations";
 
 export const dynamic = "force-dynamic";
 
@@ -79,11 +80,11 @@ function funnelSectionViewModel(evidence: FunnelEvidence | null): FunnelSectionV
 }
 
 export default async function HomePage() {
-  const [catalogResult, proof] = await Promise.all([
-    getMarketplaceLandingCatalog.execute(),
+  const [catalog, observations, proof] = await Promise.all([
+    listMarketplaceAgents.execute({ view: "marketplace", page: 1, limit: 12 }),
+    getWorkerObservations(),
     getPublicJobProof.execute({ jobId: "551" }),
   ]);
-  const catalog = catalogResult;
   const mainnetProof = getMainnetJobProof.execute();
   const categories: CategoryCardViewModel[] = catalog.categories.map(({ category, count, status }) => ({
     category,
@@ -106,14 +107,22 @@ export default async function HomePage() {
     { kind: "quote", label: "Quote verified", status: "verified", provenance: "observed", detail: "The buyer accepted the signed quote.", timestamp: proof.snapshot.transactions.createJob.timestamp, ...txLink(proof.snapshot.transactions.createJob) },
     { kind: "job", label: "Job proven", status: "verified", provenance: "onchain", detail: `Job #${proof.snapshot.jobId} reached SUBMITTED on BSC Testnet, browser-signed.`, timestamp: proof.snapshot.transactions.submit.timestamp, ...txLink(proof.snapshot.transactions.submit) },
   ];
-  const featuredAgents = catalogResult.snapshot.agents.map((agent) =>
-    snapshotAgentCardViewModel(agent, catalogResult.snapshot, Date.now(), mainnetProof?.agentId));
+  const now = Date.now();
+  const targets = observationTargetsByAgentId(observations.feed);
+  const featuredAgents = catalog.items.map((agent) => agentCardWithObservations(
+    agent,
+    targets.get(agent.agentId) ?? [],
+    observations.status === "available",
+    now,
+    mainnetProof?.agentId,
+  ));
+  const qualified = featuredAgents.find((agent) => agent.hireability === "hireable") ?? null;
   return (
     <MarketplaceLanding
-      catalogSnapshot={{
-        generatedAt: catalogResult.snapshot.generatedAt,
-        staleAfter: catalogResult.snapshot.staleAfter,
-      }}
+      observationSnapshot={observations.feed ? {
+        generatedAt: new Date(observations.feed.generatedAt).toISOString(),
+        staleAfter: new Date(observations.feed.generatedAt + 60_000).toISOString(),
+      } : null}
       categories={categories}
       demoEnabled={Reflect.get(process.env, "ERC8183_BROWSER_SPIKE_ENABLED") === "true"}
       featuredAgents={featuredAgents}
@@ -125,7 +134,7 @@ export default async function HomePage() {
         title: "One browser-signed Mainnet hiring lifecycle",
         description: "An injected wallet funded a real Grid planning job; its result, transactions, gas and duration are publicly reproducible.",
       } } : {})}
-      qualifiedSeller={catalogResult.qualifiedSeller}
+      qualifiedSeller={qualified ? { agentId: qualified.agentId, name: qualified.name } : null}
     />
   );
 }

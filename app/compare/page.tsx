@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { CatalogUnavailable } from "@/components/marketplace/catalog-unavailable";
 import { ComparePage } from "@/components/marketplace/compare-page";
-import { compareMarketplaceAgents, getMainnetJobProof, listMarketplaceAgents } from "@/src/business/composition";
+import { compareMarketplaceAgents, getMainnetJobProof, getWorkerObservations, listMarketplaceAgents } from "@/src/business/composition";
 import { MarketplaceDataUnavailableError } from "@/src/business/errors/marketplace-errors";
 
 export const dynamic = "force-dynamic";
@@ -11,17 +11,19 @@ export default async function CompareRoute({ searchParams }: { searchParams: Pro
   const params = await searchParams;
   const selected = Array.isArray(params.agentId) ? params.agentId : params.agentId ? [params.agentId] : [];
   try {
-    const [catalog, comparison] = await Promise.all([
+    const [catalog, comparison, observations] = await Promise.all([
       listMarketplaceAgents.execute({ view: "marketplace", page: 1, limit: 12 }),
       selected.length >= 2 && selected.length <= 3
         ? compareMarketplaceAgents.execute({ agentIds: selected })
         : Promise.resolve(undefined),
+      getWorkerObservations(),
     ]);
     const mainnetProof = getMainnetJobProof.execute();
     return (
       <ComparePage
         candidates={catalog.items.map(({ agentId, name }) => ({ agentId, name }))}
         comparison={comparison}
+        observations={observations}
         selected={selected}
         {...(mainnetProof ? { provenAgentId: mainnetProof.agentId } : {})}
       />

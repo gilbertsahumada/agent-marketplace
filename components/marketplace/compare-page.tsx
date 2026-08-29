@@ -1,12 +1,13 @@
 import Link from "next/link";
 import { Fingerprint } from "lucide-react";
 import type { MarketplaceAgentComparison } from "@/src/business/entities/marketplace-agent";
+import { observationTargetsByAgentId, type ObservationFeedResult } from "@/src/business/entities/worker-observations";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { EvidenceRail } from "./evidence-rail";
 import { PageIntro } from "./page-primitives";
-import { agentCardViewModel, evidenceForAgent, verificationViewModel } from "./view-models";
+import { agentCardWithObservations, verificationViewModel } from "./view-models";
 import { VerificationDrift } from "./verification-drift";
 
 const passportLabels = {
@@ -17,7 +18,9 @@ const passportLabels = {
   attention: "Attention",
 } as const;
 
-export function ComparePage({ candidates, comparison, selected, provenAgentId }: { candidates: { agentId: string; name: string }[]; comparison: MarketplaceAgentComparison | undefined; selected: string[]; provenAgentId?: string }) {
+export function ComparePage({ candidates, comparison, observations = { status: "unavailable", feed: null }, selected, provenAgentId }: { candidates: { agentId: string; name: string }[]; comparison: MarketplaceAgentComparison | undefined; observations?: ObservationFeedResult; selected: string[]; provenAgentId?: string }) {
+  const targets = observationTargetsByAgentId(observations.feed);
+  const now = Date.now();
   const options = new Map(candidates.map(({ agentId, name }) => [agentId, name]));
   for (const agent of comparison?.agents ?? []) options.set(agent.agentId, agent.name);
   for (const agentId of selected) if (!options.has(agentId)) options.set(agentId, `Agent ${agentId}`);
@@ -53,7 +56,13 @@ export function ComparePage({ candidates, comparison, selected, provenAgentId }:
           <p className="mt-8 text-sm text-zinc-400">{comparison.note}</p>
           <div className="mt-5 grid gap-4 lg:grid-cols-3">
             {comparison.agents.map((agent) => {
-              const passport = agentCardViewModel(agent, provenAgentId);
+              const passport = agentCardWithObservations(
+                agent,
+                targets.get(agent.agentId) ?? [],
+                observations.status === "available",
+                now,
+                provenAgentId,
+              );
               return (
               <Card className="marketplace-surface marketplace-agent-evidence-card" data-passport-state={passport.passportState} key={agent.agentId}>
                 <CardHeader>
@@ -70,14 +79,14 @@ export function ComparePage({ candidates, comparison, selected, provenAgentId }:
                   </Link>
                 </CardHeader>
                 <CardContent className="space-y-5">
-                  <EvidenceRail compact steps={evidenceForAgent(agent)} />
+                  <EvidenceRail compact steps={passport.evidence} />
                   {verificationViewModel(agent) && <VerificationDrift compact verification={verificationViewModel(agent)!} />}
                   <dl className="space-y-3 text-sm">
                     <div className="flex justify-between gap-3"><dt className="text-zinc-500">Categories</dt><dd className="text-right">{agent.categories.map(({ category }) => category.replaceAll("_", " ")).join(", ") || "Not evaluated"}</dd></div>
-                    <div className="flex justify-between gap-3"><dt className="text-zinc-500">Endpoint</dt><dd>{agent.endpointObservation.status.replaceAll("_", " ")}</dd></div>
+                    <div className="flex justify-between gap-3"><dt className="text-zinc-500">Endpoint</dt><dd>{passport.evidence.find((step) => step.kind === "reachable")?.status ?? "unavailable"}</dd></div>
                     <div className="flex justify-between gap-3"><dt className="text-zinc-500">Trust</dt><dd>{agent.trustScore.total ?? "—"} <span className="text-zinc-500">· derived</span></dd></div>
                     <div className="flex justify-between gap-3"><dt className="text-zinc-500">Feedback</dt><dd>{agent.reputation.totalFeedbacks}</dd></div>
-                    <div className="flex justify-between gap-3"><dt className="text-zinc-500">Hireability</dt><dd>{agent.hireability.canHire ? "Hireable" : agent.hireability.status.replaceAll("_", " ")}</dd></div>
+                    <div className="flex justify-between gap-3"><dt className="text-zinc-500">Hireability</dt><dd>{passport.hireability.replaceAll("_", " ")}</dd></div>
                     <div><dt className="text-zinc-500">Declared capabilities</dt><dd className="mt-1">{agent.capabilities.join(", ") || "None declared"}</dd></div>
                   </dl>
                 </CardContent>

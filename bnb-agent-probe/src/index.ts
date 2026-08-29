@@ -81,6 +81,29 @@ export function createWorker(dependencies: WorkerDependencies = {}): WorkerEntry
         const { healthResponse } = await import("./routes/health");
         return healthResponse(env.DB, config, now());
       }
+      if (request.method === "GET" && url.pathname === "/observations" && url.search === "") {
+        if (config.probeAgentAllowlist.length === 0) {
+          return new Response(JSON.stringify({ error: "observations_unavailable" }), {
+            status: 503,
+            headers: {
+              "cache-control": "no-store",
+              "content-type": "application/json; charset=utf-8",
+              "x-content-type-options": "nosniff",
+            },
+          });
+        }
+        const publicCache = (caches as unknown as { default: Cache }).default;
+        const scope = [...config.probeAgentAllowlist].sort().join(",");
+        const scopeDigest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(scope));
+        const scopeHash = Array.from(new Uint8Array(scopeDigest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+        const cacheKey = new Request(`${url.origin}/observations/__scope/${scopeHash}`, { method: "GET" });
+        const cached = await publicCache.match(cacheKey);
+        if (cached) return cached;
+        const { observationsResponse } = await import("./routes/observations");
+        const response = await observationsResponse(env.DB, now(), config.probeAgentAllowlist);
+        if (response.ok) await publicCache.put(cacheKey, response.clone());
+        return response;
+      }
       if (request.method === "POST" && url.pathname === "/__admin/run-scheduled") {
         if (config.killSwitch
           || config.producerKillSwitch

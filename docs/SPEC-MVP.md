@@ -1,6 +1,6 @@
 # Capa de observación de contratabilidad — SPEC MVP v5 Free-first
 
-**Estado:** WP0, WP1 y WP3 completos. WP2 tiene implementación y gates remotos de Queue completos. La corrida UTC 2026-08-29 se conserva como ensayo operativo: empezó correctamente, pero su preflight literal no se publicó y la captura completa de activación ocurrió después del primer tick, por lo que no puede cerrar el gate documental. La ventana final repetible está programada para UTC 2026-08-31. Producción continúa sin Cron.
+**Estado:** WP0, WP1, WP3 y WP5 completos y fusionados. WP4 tiene implementación, suites, build y smoke local de Wrangler completos en `codex/wp4-observations`; falta fusionarlo y promover ese candidato exacto a staging. WP2 tiene implementación y gates remotos de Queue completos. La corrida UTC 2026-08-29 se conserva como ensayo operativo: empezó correctamente, pero su preflight literal no se publicó y la captura completa de activación ocurrió después del primer tick, por lo que no puede cerrar el gate documental. Los cambios posteriores invalidaron los identificadores del candidato anterior; la próxima ventana final se programa únicamente después de fusionar WP4 y fijar un nuevo commit, version y etag. Producción continúa sin Cron.
 **Fecha de corte del diseño:** 2026-08-28.
 **Objetivo:** completar la capa de observación necesaria para recorrer:
 
@@ -196,7 +196,7 @@ Si cambia un punto, se actualiza esta spec antes de WP1.
 
  Marketplace en Vercel
    - lee /observations fuera de la ruta crítica de render
-   - conserva fallback estático versionado
+   - si falla, conserva solo declaraciones live de trust8004 y marca observaciones unavailable
    - pide quote fresca al pulsar Hire
    - el navegador firma directamente contra BSC
    - una ruta server-side reenvía telemetría mínima
@@ -472,13 +472,14 @@ CRON_INTERVAL_MINUTES=5
 SCHEDULER_MODE=single_phase (derivado, no sobreescribible en Free)
 HEADER_LIMIT=25                  máximo Free 50
 PROBE_BATCH_SIZE=1              máximo Free 1
-PROBE_AGENT_ALLOWLIST=303779    lista CSV obligatoria; vacío/malformado falla cerrado
+PROBE_AGENT_ALLOWLIST=303779    default seguro hasta cerrar gate egress general
 PROBE_ENDPOINT_ALLOWLIST=https://bnb-agent-marketplace-ruby.vercel.app/grid
-SWEEP_LIMIT=4                   máximo Free 40 y siempre <= TRUST8004_REQUESTS_PER_RUN
+PROBE_GENERAL_EGRESS_APPROVED=0 wildcard falla cerrado sin gate explícito
+SWEEP_LIMIT=4                   máximo Free 4 y siempre <= TRUST8004_REQUESTS_PER_RUN
 SWEEP_PAGES_PER_RUN=1           máximo Free 1
 TRUST8004_REQUESTS_PER_RUN=4
 EXTERNAL_SUBREQUESTS_PER_RUN=12 máximo Free 40, plataforma 50
-D1_QUERIES_PER_RUN=40           mínimo 13, máximo Free 40, plataforma D1 50
+D1_QUERIES_PER_RUN=40           mínimo Free 38, máximo Free 40, plataforma D1 50
 D1_ROWS_READ_PER_RUN=3000
 D1_ROWS_WRITTEN_PER_RUN=60
 PROBE_TIMEOUT_MS=5000
@@ -595,8 +596,10 @@ HEADER obtiene los targets existentes con una lectura acotada y agrupa todos los
 writes de la página. No ejecuta `SELECT + INSERT/UPDATE` por elemento. El batch,
 el resumen, el avance de fase y la liberación del lease deben caber juntos en
 `D1_QUERIES_PER_RUN`; si el preflight excede el presupuesto, no se inicia ningún
-write. Los upserts se fragmentan dentro del mismo batch atómico para que ningún
-parámetro enlazado supere 1,5 MB, con margen frente al máximo D1 de 2 MB.
+write. Los upserts ORM se fragmentan en hasta siete targets por statement: 98
+parámetros enlazados como máximo, por debajo del límite operativo de 100. Los
+límites de schema mantienen cada string individual muy por debajo del máximo D1
+de 2 MB.
 
 Un elemento inválido o sin `registeredAt` se contabiliza como `invalidItems` y
 no bloquea los elementos válidos de la página. No participa del high-water; si
@@ -615,6 +618,17 @@ ERC-8183 persistidos por HEADER y el inventario curado de cuatro categorías;
 no intenta materializar los 309.897 registros globales. El cursor pagina esa
 unión de IDs en D1 y resuelve un detalle trust8004 por agente. Por eso
 `SWEEP_LIMIT` no puede superar `TRUST8004_REQUESTS_PER_RUN` en Free. Por página:
+
+SWEEP agrupa por agente los retiros y la transición `metadata_unavailable`, de
+modo que un historial acumulado no genera una sentencia por endpoint. Cada
+agente usa como máximo dos upserts/refreshes y un UPDATE agrupado. Config conserva
+un envelope deliberadamente más conservador equivalente a seis slots por agente;
+por eso Free limita `SWEEP_LIMIT<=4` y exige `D1_QUERIES_PER_RUN>=38`, quedando
+el default 4/40 bajo el límite duro de 50.
+Antes del batch calcula también las filas que afectarán los updates agrupados y
+aborta si target writes más estados de fase superarían el presupuesto restante;
+así una acumulación histórica anómala no avanza cursor/completion antes de que el
+wrapper pueda observar las filas escritas.
 
 La unión usa todos los IDs que ya tienen un target elegible persistido,
 independientemente de transporte o `declarationState`, más los IDs curados. Esa
@@ -738,11 +752,13 @@ se usa el `NegotiationRequest` neutro de `src/readiness/protocols.ts` y
 ### 5.6 RENDER
 
 ```text
-Worker disponible -> snapshot cacheado -> etiqueta calculada al leer
-Worker no disponible -> snapshot público versionado -> aviso de frescura
+Worker disponible -> respuesta cacheada hasta 60 s -> etiqueta calculada al leer
+Worker no disponible -> observación no disponible; conservar solo declaraciones live
 ```
 
-La ficha puede consultar trust8004 en vivo, pero una caída no elimina contenido.
+La ficha consulta trust8004 en vivo para identidad y declaraciones. Una caída del
+Worker no elimina ese contenido, pero tampoco autoriza reutilizar observaciones
+vencidas ni el snapshot de release como estado actual.
 
 ### 5.7 HIRE y TRACK
 
@@ -758,6 +774,12 @@ La ficha puede consultar trust8004 en vivo, pero una caída no elimina contenido
 
 `SHARED_SECRET` solo existe en Vercel server y Worker. El navegador llama una
 ruta same-origin; esta valida, elimina contexto y reenvía.
+
+La habilitación previa del recorrido usa exclusivamente una observación vigente
+de `/observations` para el mismo agentId configurado. El snapshot de release
+expirado no autoriza la pantalla, la quote, `prepare` ni `notify`; si Worker/D1
+falla, el recorrido queda deshabilitado. La observación tampoco se convierte en
+la quote de compra: el paso 3 siempre negocia una nueva.
 
 ---
 
@@ -918,7 +940,7 @@ ni endorsement. Hire vuelve a pedir quote y leer wallet/allowlist antes de firma
 Público:
 
 ```text
-Cache-Control: public, s-maxage=60, stale-while-revalidate=300
+Cache-Control: public, s-maxage=60, must-revalidate
 Content-Type: application/json
 ```
 
@@ -995,6 +1017,49 @@ type ObservationsResponse = {
 
 Nunca devuelve firma, payload crudo, headers o errores externos.
 
+`generatedAt` es la hora de construir esta respuesta, no transforma una
+observación histórica en un hecho actual. `latest` y `latestByCategory` siempre
+conservan su `probedAt`; las etiquetas de lectura derivan frescura y expiración
+contra ese timestamp y los timestamps de metadata/quote.
+
+La última observación por target/categoría se elige por mayor `probedAt` y usa
+el mayor `id` solo para desempatar timestamps iguales; un backfill insertado más
+tarde no puede reemplazar una observación cronológicamente nueva.
+
+El Worker rechaza query strings en `/observations` y guarda la respuesta 200
+canónica en Cache API con una clave interna ligada al SHA-256 del allowlist de
+agentes; cambiar el scope nunca puede reutilizar el feed anterior. Un 503 nunca
+se cachea. El marketplace puede reutilizar una
+respuesta HTTP solamente mientras siga dentro de los 60 segundos contados desde
+`generatedAt`, no desde el instante de recepción. No usa `stale-if-error`, no promueve el
+snapshot de release a fallback de observaciones y no conserva una respuesta
+expirada como si fuera estado actual. Si Worker/D1 no responde:
+
+Mientras rige el allowlist exacto, las cuatro lecturas del feed se filtran por
+esos agent IDs antes de leer filas; el crecimiento de targets descubiertos por
+HEADER no agranda la respuesta pública. El wildcard general requiere antes un
+contrato paginado/materializado y su gate de egress, no un scan público sin
+techo. Aunque el egress general se apruebe, `/observations` responde 503 cuando
+la lista de agentes queda wildcard/vacía hasta que exista ese contrato acotado.
+
+- el catálogo puede seguir mostrando identidad, metadata y endpoints declarados
+  obtenidos en vivo de trust8004;
+- toda procedencia `observed` se muestra como `Temporalmente no disponible`, con
+  la última fecha solo cuando se presenta explícitamente como evidencia histórica;
+- `Hireable now`, quote vigente, reachability actual y cualquier CTA derivada de
+  observaciones quedan deshabilitados;
+- si trust8004 tampoco responde, se muestra catálogo temporalmente no disponible,
+  no una lista de agentes tomada de un snapshot vencido.
+
+El snapshot WP0 del funnel es una excepción deliberada: es una medición histórica
+agregada, visible siempre con fecha, bloque y SHA-256. Nunca se etiqueta `current`
+ni sustituye el estado actual de agentes individuales.
+
+El snapshot de release generado el 2026-08-25 expiró el
+2026-08-28T23:39:15.884Z. Puede conservarse en una ruta de metodología
+etiquetada como histórica, pero no existe ningún adaptador activo que lo use
+como catálogo, observación o autorización de Hire.
+
 ### 10.2 `GET /health`
 
 Público, sanitizado y de costo constante: una sola lectura acotada de
@@ -1051,6 +1116,7 @@ SWEEP_PAGES_PER_RUN=1
 PROBE_BATCH_SIZE=1
 PROBE_AGENT_ALLOWLIST=303779
 PROBE_ENDPOINT_ALLOWLIST=https://bnb-agent-marketplace-ruby.vercel.app/grid
+PROBE_GENERAL_EGRESS_APPROVED=0
 TRUST8004_REQUESTS_PER_RUN=4
 EXTERNAL_SUBREQUESTS_PER_RUN=12
 D1_QUERIES_PER_RUN=40
@@ -1063,6 +1129,9 @@ MAX_SELLER_RESPONSE_BYTES=32768
 
 `WP2_QUEUE` no es una variable: es un binding Wrangler obligatorio cuando el
 kill switch está abierto. Staging y producción usan nombres de Queue distintos.
+Vercel configura `OBSERVATIONS_URL` con el endpoint público `/observations` del
+entorno Cloudflare correspondiente; no es secreto y nunca se expone como
+`NEXT_PUBLIC_` porque la lectura ocurre en Server Components.
 El Cron falla cerrado si falta el binding y nunca ejecuta la fase directamente.
 
 `bnb-agent-probe/src/config.ts` es la fuente ejecutable WP1 de defaults, máximos
@@ -1445,15 +1514,17 @@ decisión operativa registrada. No existe detección automática del plan.
 
 Checklist:
 
-1. conservar export/backup de D1 y métricas base Free;
-2. desplegar staging con `CLOUDFLARE_WORKERS_PLAN=paid`, `KILL_SWITCH=1` y cron
+1. implementar y revisar el pipeline Paid en un bundle nuevo, retirar el guard
+   `WP2_PAID_PIPELINE_NOT_VALIDATED` y demostrar sus presupuestos localmente;
+2. conservar export/backup de D1 y métricas base Free;
+3. desplegar staging con `CLOUDFLARE_WORKERS_PLAN=paid`, `KILL_SWITCH=1` y cron
    todavía desactivado;
-3. ejecutar tests, typecheck, dry-run, migraciones y smoke de `/health`;
-4. probar manualmente defaults Paid: HEADER 200, SWEEP 2000×2 y PROBE 10;
-5. demostrar dos pipelines completos bajo los gates de CPU, memoria, wall time,
+4. ejecutar tests, typecheck, dry-run, migraciones y smoke de `/health`;
+5. probar manualmente defaults Paid: HEADER 200, SWEEP 2000×2 y PROBE 10;
+6. demostrar dos pipelines completos bajo los gates de CPU, memoria, wall time,
    upstream y D1;
-6. configurar el cron producer de un minuto manteniendo el kill switch;
-7. habilitar con `KILL_SWITCH=0` y observar al menos dos vueltas antes de dar la
+7. configurar el cron producer de un minuto manteniendo el kill switch;
+8. habilitar con `KILL_SWITCH=0` y observar al menos dos vueltas antes de dar la
    promoción por terminada.
 
 Rollback:
@@ -1624,15 +1695,30 @@ vacíos y se eliminaron el secreto administrativo efímero y su archivo temporal
 
 ### WP4 — Probe general y `/observations`
 
-Entrega: lote 1 en Free (10 por defecto Paid), contrato sección 10.1, fallback e
-integración cacheada.
+Entrega actual: lote 1 en Free sobre el target Grid exacto, contrato sección
+10.1, integración cacheada por un máximo de 60 segundos y degradación
+fail-closed. El snapshot de
+release deja de representar estado actual de agentes: una caída de Worker/D1
+conserva solo declaraciones live de trust8004, sin `Hireable now` ni claims
+observados. El funnel WP0 permanece como medición histórica fechada.
+
+El wildcard general sigue implementado como capacidad, pero no es un default ni
+un gate cerrado: promoverlo exige evidencia staging del egress Cloudflare y una
+decisión explícita; config exige además `PROBE_GENERAL_EGRESS_APPROVED=1`. El
+lote 10 de Paid es configuración futura; el pipeline Paid
+aborta deliberadamente hasta su promoción y medición separadas.
 
 Gate:
 
 - contract test Worker↔marketplace;
+- cache fresca puede reutilizarse por 60 segundos, pero una respuesta vencida no
+  se sirve como fallback ante error;
 - quote expirada degrada sin write;
 - metadata propia cambia/degrada en siguiente observación prioritaria;
 - Worker apagado no rompe páginas;
+- Worker apagado muestra datos declarados live como `verification unavailable`,
+  nunca como observación actual; si también falla trust8004, el catálogo muestra
+  indisponibilidad explícita;
 - unreachable/removed visibles;
 - Hire nunca consume quote del probe;
 - los call sites crudos heredados quedan migrados a `db/orm.ts` y el grep de

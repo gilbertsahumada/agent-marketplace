@@ -63,7 +63,7 @@ class LeaseDatabase implements D1DatabaseLike {
             results: [{ key: "scheduler_lease" } as Row],
           };
         }
-        if (q.includes("next_scheduler_phase")) {
+        if (q.includes("from runtime_state")) {
           return {
             success: true,
             meta: { rows_read: 1, rows_written: 0 },
@@ -90,6 +90,13 @@ class LeaseDatabase implements D1DatabaseLike {
         }
         return { success: true, meta: { rows_read: 1, rows_written: 1 } as Meta };
       },
+      async raw<Row extends unknown[]>(rawOptions?: { columnNames?: boolean }): Promise<Row[]> {
+        const result = await this.all<Record<string, unknown>>();
+        const rows = result.results ?? [];
+        const values = rows.map((row) => Object.values(row)) as Row[];
+        if (rawOptions?.columnNames && rows[0]) values.unshift(Object.keys(rows[0]) as Row);
+        return values;
+      },
     };
   }
 
@@ -105,6 +112,29 @@ const context = {
 };
 
 describe("WP2 scheduled runner", () => {
+  it("fails closed before upstream egress when the unvalidated Paid pipeline is selected", async () => {
+    const db = new LeaseDatabase();
+    let upstreamRequests = 0;
+    const runner = createWp2ScheduledRunner({
+      now: () => 1_000,
+      randomUUID: () => "run-paid-guard",
+      fetch: async () => {
+        upstreamRequests += 1;
+        throw new Error("must not fetch");
+      },
+    });
+
+    await expect(runner(
+      controller,
+      { DB: db } as unknown as Env,
+      context,
+      loadConfig({ CLOUDFLARE_WORKERS_PLAN: "paid" }),
+    )).rejects.toThrow("WP2_PAID_PIPELINE_NOT_VALIDATED");
+
+    expect(upstreamRequests).toBe(0);
+    expect(db.releases).toBe(1);
+  });
+
   it("acquires and releases a bounded Free lease around exactly one phase", async () => {
     const db = new LeaseDatabase();
     let now = 1_000;
@@ -156,7 +186,7 @@ describe("WP2 scheduled runner", () => {
       { ...controller, cron: "queue", attempt: 1, messageId: "minimum-budget" },
       { DB: db } as unknown as Env,
       context,
-      loadConfig({ D1_QUERIES_PER_RUN: "13" }),
+      loadConfig({ D1_QUERIES_PER_RUN: "38" }),
     );
 
     expect(db.acquisitions).toBe(1);

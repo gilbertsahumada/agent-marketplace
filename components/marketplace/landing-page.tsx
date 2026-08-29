@@ -30,7 +30,7 @@ const journey = [
 
 export function MarketplaceLanding({
   categories,
-  catalogSnapshot,
+  observationSnapshot,
   demoEnabled,
   featuredAgents,
   funnel,
@@ -39,7 +39,7 @@ export function MarketplaceLanding({
   qualifiedSeller,
 }: {
   categories: CategoryCardViewModel[];
-  catalogSnapshot: { generatedAt: string; staleAfter: string } | null;
+  observationSnapshot: { generatedAt: string; staleAfter: string } | null;
   demoEnabled: boolean;
   featuredAgents: AgentCardViewModel[];
   funnel: FunnelSectionViewModel | null;
@@ -137,7 +137,7 @@ export function MarketplaceLanding({
         <div className="mx-auto max-w-7xl px-4 py-14 sm:px-6 sm:py-16 lg:px-8">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
             <div className="max-w-2xl">
-              <p className="font-eyebrow font-eyebrow-dot text-zinc-400">Current BSC snapshot</p>
+              <p className="font-eyebrow font-eyebrow-dot text-zinc-400">Current BSC observations</p>
               <h2 id="candidates-heading" className="mt-2 text-3xl font-light tracking-tight text-white">
                 Candidates with honest activation states.
               </h2>
@@ -153,13 +153,22 @@ export function MarketplaceLanding({
             </Button>
           </div>
 
-          {catalogSnapshot && (
-            <p className="mt-6 text-xs leading-relaxed text-zinc-500">
-              Release verification snapshot observed {new Date(catalogSnapshot.generatedAt).toLocaleString("en-US", { timeZone: "UTC", timeZoneName: "short" })} · valid through {new Date(catalogSnapshot.staleAfter).toLocaleString("en-US", { timeZone: "UTC", timeZoneName: "short" })}.{" "}
-              <Link className="underline decoration-zinc-700 underline-offset-2 hover:text-zinc-300" href="/evidence/verification">
-                How qualification is verified
-              </Link>
-            </p>
+          {observationSnapshot ? (
+            <Alert className="mt-8 border-indigo-400/30 bg-indigo-400/[0.06] text-indigo-100">
+              <CircleAlert aria-hidden="true" />
+              <AlertTitle>Current observation window</AlertTitle>
+              <AlertDescription>
+                Generated {new Date(observationSnapshot.generatedAt).toLocaleString("en-US", { timeZone: "UTC", timeZoneName: "short" })} and reusable only through {new Date(observationSnapshot.staleAfter).toLocaleString("en-US", { timeZone: "UTC", timeZoneName: "short" })}. Identity and declarations come from live trust8004 data; Hire always requests a new quote.
+              </AlertDescription>
+            </Alert>
+          ) : (
+            <Alert className="mt-8 border-amber-400/30 bg-amber-400/[0.06] text-amber-100">
+              <CircleAlert aria-hidden="true" />
+              <AlertTitle>Current verification temporarily unavailable</AlertTitle>
+              <AlertDescription>
+                Live trust8004 declarations remain visible, but reachability, quote freshness and Hire eligibility are disabled until the observation Worker responds.
+              </AlertDescription>
+            </Alert>
           )}
 
           {featuredAgents.length > 0 ? (

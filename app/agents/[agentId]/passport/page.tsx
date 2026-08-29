@@ -39,7 +39,7 @@ export default async function EvidencePassportPage({
           <p className="font-eyebrow text-primary">Evidence, not endorsement</p>
           <h1 className="mt-3 text-3xl font-light tracking-tight text-white sm:text-4xl">A portable view of what this agent has actually proven.</h1>
           <p className="mt-4 text-sm leading-relaxed text-zinc-400 sm:text-base">
-            The Passport separates registry identity, endpoint observations, current ERC-8183 qualification and proven job history. Its status can weaken when evidence expires.
+            This Passport records indexed identity, declarations and proven job history. It does not represent current Worker reachability or ERC-8183 quote freshness.
           </p>
         </div>
         <EvidencePassportCard

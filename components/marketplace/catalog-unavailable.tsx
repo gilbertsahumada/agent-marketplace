@@ -31,7 +31,7 @@ export function CatalogUnavailable({ retryHref }: { retryHref: string }) {
             </Link>
           </Button>
           <Button asChild variant="outline">
-            <Link href="/">Return to the release snapshot</Link>
+            <Link href="/">Return to marketplace status</Link>
           </Button>
         </EmptyContent>
       </Empty>

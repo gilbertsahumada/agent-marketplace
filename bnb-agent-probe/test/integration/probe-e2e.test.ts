@@ -170,6 +170,70 @@ describe("WP3 full Workers runtime", () => {
     expect(JSON.parse(ledger?.textValue ?? "{}").d1Queries).toBeLessThanOrEqual(40);
   });
 
+  it("rejects a wrong same-origin Grid message URL before the seller POST", async () => {
+    await env.DB.prepare(
+      `INSERT INTO probe_targets (
+         agentId, chainId, transport, endpoint, name, categoriesJson,
+         categoryProvenance, declarationState, currentMetadataUpdatedAt,
+         lastMetadataCheckedAt, firstSeenAt, lastChangedAt, lastSeenAt, priority
+       ) VALUES ('303779', 56, 'a2a', ?, 'Grid', '["grid_trading"]',
+         'derived:marketplace-inventory', 'current', ?, ?, ?, ?, ?, 1)`,
+    ).bind(ENDPOINT, NOW_MS - 1_000, NOW_MS, NOW_MS, NOW_MS, NOW_MS).run();
+    await env.DB.prepare(
+      "INSERT INTO runtime_state (key, textValue, updatedAt) VALUES ('next_scheduler_phase', 'probe', ?)",
+    ).bind(NOW_MS - 1_000).run();
+    let sellerPosts = 0;
+    const fetchImpl: typeof fetch = async (input, init) => {
+      const url = new URL(String(input));
+      if (url.hostname === "trust8004.xyz") {
+        return Response.json({
+          chainId: 56,
+          agentId: "303779",
+          name: "Grid",
+          registeredAt: NOW_MS - 10_000,
+          metadataUpdatedAt: NOW_MS,
+          metadataReasonCode: "ok",
+          services: [],
+          endpoints: [{ type: "A2A", url: ENDPOINT }],
+        });
+      }
+      if (url.hostname === "rpc.example.com") {
+        const request = JSON.parse(String(init?.body)) as { id: number; method: string; params?: unknown[] };
+        return Response.json({
+          jsonrpc: "2.0",
+          id: request.id,
+          result: rpcResult(request, account.address),
+        });
+      }
+      if (url.pathname.endsWith("/.well-known/agent-card.json")) {
+        return Response.json({
+          name: "Grid",
+          url: "https://bnb-agent-marketplace-ruby.vercel.app/api/sellers/other/a2a",
+          skills: [{ id: "negotiate-erc8183-job" }, { id: "notify_funded" }],
+        });
+      }
+      sellerPosts += 1;
+      return new Response(null, { status: 500 });
+    };
+    const runner = createWp2ScheduledRunner({
+      now: () => NOW_MS,
+      randomUUID: () => "wp3-message-url",
+      fetch: fetchImpl,
+    });
+
+    await expect(runner(
+      { scheduledTime: NOW_MS, cron: "queue" },
+      { ...env, BSC_RPC_URL: "https://rpc.example.com/bsc" } as unknown as Env,
+      createExecutionContext(),
+      loadConfig({ KILL_SWITCH: "0" }),
+    )).resolves.toBe("completed");
+
+    expect(await env.DB.prepare(
+      "SELECT outcome, errorCode FROM probe_observations",
+    ).first()).toEqual({ outcome: "reachable", errorCode: "A2A_CARD_URL" });
+    expect(sellerPosts).toBe(0);
+  });
+
   it("commits a timeout instead of retrying when the shared deadline expires after BSC", async () => {
     await env.DB.prepare(
       `INSERT INTO probe_targets (

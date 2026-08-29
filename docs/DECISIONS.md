@@ -13,7 +13,7 @@ file records only decisions that still govern the submission.
 | 2026-08-24 | Treat BSC as authoritative for financial and lifecycle facts | Active | A database or snapshot can become stale; contract state and confirmed receipts prove the job | Presentation requires reconciliation and visible freshness instead of trusting persisted status alone |
 | 2026-08-24 | Treat the seven-day OptimisticPolicy window as a submission risk | Active | A submitted job cannot become `COMPLETED` before the configured window expires without rejection | Job `56662` remains valid `SUBMITTED` evidence until settlement becomes eligible around 2026-09-03T00:40:26+02:00 |
 | 2026-08-25 | Reuse the Testnet seller signer on Mainnet under separate server-only Production variables | Active by operator decision | Simplifies operation of the single-purpose seller | Increases cross-chain blast radius; keep funding gas-only, sweep earnings and rotate after 2026-09-23 |
-| 2026-08-26 | Make Evidence Passport and bounded `Validate my agent` the visible validation layer | Deployed; visual iteration pending | Separates declared, observed, onchain and derived evidence without inventing one opaque reliability score | Validation never auto-assigns categories, promotes a seller or enables Hire |
+| 2026-08-26 | Make Evidence Passport and bounded `Validate my agent` the visible validation layer | Deployed; visual iteration pending | Separates declared, observed, onchain and derived evidence without inventing one opaque reliability score | The Passport is explicitly an indexed snapshot, not current Worker reachability or quote freshness; validation never auto-assigns categories, promotes a seller or enables Hire |
 | 2026-08-27 | Adopt a hybrid ERC-8183 evidence architecture: trust8004 indexes universal onchain facts; the marketplace stores only its own observations | Accepted with staged implementation | A portable job history belongs in the existing multichain trust8004 index, while quotes, probes, sanitized results and product telemetry are true only because the marketplace observed them | The portable ledger/indexer remains frozen until 2026-09-10; additive marketplace observations and marketplace-caused receipts are permitted immediately under the safeguards below. Point reads remain public and free; x402 applies to volume products. A first-party authenticated service tier is preferred over making the marketplace depend on Circle Gateway |
 | 2026-08-27 | Keep the marketplace catalogue monotonic across rebuilds | Active | A transient third-party outage is an observation, not proof that an agent ceased to exist | Failed probes remain visible as `unreachable` with the last good observation; removal requires an explicit source or curation decision |
 | 2026-08-27 | Freeze trust8004 production deployments through 2026-09-23 | Active | The submitted marketplace still depends on the deployed `/api/v2` compatibility surface during judging | Trust8004 changes and namespace migration wait until after the evaluation window |
@@ -23,7 +23,7 @@ file records only decisions that still govern the submission.
 | 2026-08-28 | Complete WP1 with a separate Free staging Worker and D1, disabled by default | Active baseline | The schema, lease, health contract and curated inventory pass local/runtime tests and require an isolated deployment target before WP2 traffic exists | The default is `KILL_SWITCH=1` with no Cron. WP2 may temporarily enable the exact staging gate after its preflight; production remains disabled |
 | 2026-08-28 | Reserve 20 % of the D1 per-invocation query limit before WP2 | Active | D1 Free has a hard limit of 50 queries per Worker invocation and local Miniflare allowed 60, so row budgets and local green tests cannot prevent a staging-only failure | Free rejects configurations above 40 queries; every batch statement is counted, the phase preflights before writes, and four queries remain outside the phase budget for a sanitized error summary, lease release, attempt ledger and daily ledger |
 | 2026-08-28 | Bound Free SWEEP by detail-request budget | Active | The live-set cursor contains agent IDs and trust8004 exposes the observed detail route per ID; the former default of 25 would require 25 upstream requests despite a budget of 4 | Free defaults `SWEEP_LIMIT=4`, requires it to be no greater than `TRUST8004_REQUESTS_PER_RUN`, and keeps Paid disabled until its separate promotion gate |
-| 2026-08-28 | Harden WP2 from independent review with TDD regressions | Active | Review reproduced mutable-OFFSET skips, incomplete IPv6 policy, hidden phase failures, unsafe D1 bind sizing and invalid zero budgets despite the initial green suite | SWEEP pages the monotonic set of all persisted eligible target IDs; HEADER chunks binds below 1.5 MB and skips/counts invalid items; failures and allowlisted metrics reach `/health`; executable limits are non-zero and `D1_QUERIES_PER_RUN >= 13` |
+| 2026-08-28 | Harden WP2 from independent review with TDD regressions | Active; query floor superseded by the 2026-08-29 WP4 ORM recalculation | Review reproduced mutable-OFFSET skips, incomplete IPv6 policy, hidden phase failures, unsafe D1 bind sizing and invalid zero budgets despite the initial green suite | SWEEP pages the monotonic set of all persisted eligible target IDs; HEADER chunks bounded statements and skips/counts invalid items; failures and allowlisted metrics reach `/health`; executable limits are non-zero. The original 13-query floor was raised to 22 after full ORM migration |
 | 2026-08-28 | Keep WP2 cron disabled until the Free CPU gate is demonstrated | Resolved by Queue isolation | Direct Cron HEADER=1 measured 21,364 µs initially, 16,336 µs after reducing D1 work and 16,508 µs after lazy loading; a ten-run series returned one cold sample at 14,962 µs and eight warm samples below 10,000 µs, so the required cold/P99 Free gate fails | Cron no longer executes a phase. It only publishes a versioned tick to a Free Queue; the consumer owns the 30 s CPU allowance. Staging remains `KILL_SWITCH=1` with no Cron Trigger after each trial |
 | 2026-08-28 | Isolate WP2 phases behind Cloudflare Queues on Free | Active | Queue consumers are available on Free with a 30 s default CPU limit. At five-minute cadence, 288 ticks/day project to 864 nominal Queue operations and 1,728 with three retries per tick, below the executable 8,000-operation safety ceiling; the remote HEADER=1 and SWEEP=1 trial succeeded at 16,747 µs and 15,107 µs respectively | Adds one staging Queue and at-least-once delivery handling. Batch size is exactly one; a tick is marked complete atomically with phase state, failed deliveries remain retryable, lease contention requests retry after 240 s without ack, and stale/completed ticks are rejected after the lease. D1 attempts are budgeted separately at 288 nominal/1,152 retry-worst. Production cadence remains disabled until defaults, two Queue rotations, memory/D1 daily gates and WP3 pass |
 | 2026-08-28 | Make Queue scheduling serial and validate remote state explicitly | Active | A controlled staging retry found a previously enqueued Cron tick after the config declared no schedules; a second preflight showed backlog zero before a new push exposed a delayed retry. Eventual trigger propagation, best-effort backlog metrics and at-least-once delivery make deploy output or one empty metric insufficient evidence | Root and staging declare `crons: []`, consumers use `max_concurrency=1`, and messages more than five minutes in the future are rejected. Every destructive retry trial uses a fresh validation Queue ID and deletes it after evidence capture; drain timing never authorizes reuse. Memory closes on `memoryUsageBytesP999 < 100663296`; D1 requires a controlled 24 h window and two live rounds require `sweepRound +2` |
@@ -42,6 +42,10 @@ file records only decisions that still govern the submission.
 | 2026-08-28 | Normalize the exact trust8004 A2A Agent Card declaration before WP3 allowlist matching | Active | The live Grid record legitimately returns `endpoints: null` and declares `https://bnb-agent-marketplace-ruby.vercel.app/grid/.well-known/agent-card.json`, while the marketplace safety boundary is the logical seller base `/grid`; treating either shape as removed prevented the nominal probe | Optional endpoint arrays accept only null/absent as empty, malformed non-null values remain fail-closed, and only the exact A2A `/.well-known/agent-card.json` suffix is stripped after safe-URL validation. ERC-8183 declarations and near-match suffixes are never normalized. The remote gate then passed `quote_verified`; its pre-fix staging row is ignored until a normalized full SWEEP retires it without manual D1 mutation |
 | 2026-08-29 | Record the atomic Analytics evidence publication contract | Accepted; implemented before this row | Partial or interleaved control captures could publish a self-inconsistent evidence directory whose provenance cannot be re-verified afterwards | Captures publish atomically into a captureId directory with a manifest and per-file SHA-256 hashes (`scripts/capture-wp2-analytics.ts`); the artifact builder re-validates the literal responses and hashes (`src/evidence/wp2-24h-artifact.ts`), and backlog count and bytes are now re-proven as zero for preflight, activation and cleanup while drain keeps its literal values |
 | 2026-08-29 | Automate and test the activation-window rollback | Active | The spec-mandated rollback trap existed only as untested copy-paste shell inside the README runbook, fragile to typos and API drift during a real abort | A versioned script (`scripts/rollback-wp2-activation.ts`) builds the exact control-plane rollback sequence armed from activation until window start, defaults to printing without executing, and is covered by regression tests; the README runbook invokes the script instead of inline commands |
+| 2026-08-29 | Fail closed when current observations are unavailable | Active for WP4 | The release agent snapshot generated on 2026-08-25 expired at 2026-08-28T23:39:15.884Z; serving it after Worker/D1 failure could make historical agent state look current | `/observations` is cacheable for at most 60 seconds with revalidation required, and its internal cache key includes the SHA-256 of the exact agent allowlist. After that, the marketplace may show live trust8004 declarations but marks observation state unavailable and disables derived Hire/reachability claims. The release snapshot has no active catalogue or Hire-authorization adapter and remains only on a route labelled historical. Only the aggregate WP0 funnel remains as an explicitly dated, block- and SHA-bound historical measurement |
+| 2026-08-29 | Recalculate the Free D1 query envelope after the WP4 ORM migration | Active; corrected by adversarial WP4 TDD | Metadata-unavailable targets can accumulate across rotations, so one retirement statement per historical endpoint is not a hard bound | SWEEP now groups retirement/unavailable updates per agent (at most two candidate writes plus one grouped update). Config deliberately keeps the more conservative six-slot envelope: `SWEEP_LIMIT<=4`, Free minimum 38 and default 4/40. A pre-batch row estimate also rejects anomalous grouped updates before cursor/completion can commit beyond the configured write budget |
+| 2026-08-29 | Keep general probe egress behind its architecture gate | Active | Independent WP4 review found that wildcard defaults had shipped before the spec's Cloudflare-egress trust boundary was demonstrated in staging | Root, staging and validation return to exact Agent `303779` plus its Grid endpoint. Wildcard also fails config unless `PROBE_GENERAL_EGRESS_APPROVED=1`; even with approval `/observations` returns 503 instead of scanning globally until a bounded feed contract exists. Expansion requires explicit decision, staging evidence and a newly measured bundle |
+| 2026-08-29 | Bind current UI claims to endpoint-level observation evidence | Active | Review reproduced stale protocol claims, metadata/quote drift, order-dependent multi-endpoint selection and indexed trust8004 reachability leaking into the `all` view | Current labels require a <=60 s observation, matching current/observed metadata, a <=60 s `quoteNegotiatedAt`, future expiry and category-specific evidence. All surfaces use the same deterministic target selector; unavailable Worker state cannot become `Reachable · verified` |
 
 ## Current Mainnet proof boundary
 
@@ -157,10 +161,14 @@ Adopt the hybrid architecture:
 
 The unlock conditions for 6b and 6c are mandatory:
 
-- the store is purely additive;
-- it is not on the landing-page render path;
-- an empty store falls back to the committed/public snapshot without breaking
-  the page;
+- first-hand `probe_observations` remain additive; reconciled target state is
+  mutable only through the documented `current`/`removed`/`metadata_unavailable`
+  transitions;
+- current labels may consume only the bounded, cached `/observations`
+  projection, never direct D1 access;
+- an empty or unavailable observation store leaves live trust8004 declarations
+  renderable but disables current observation claims; the committed snapshot is
+  available only on its explicitly historical route;
 - the stored value is an `OBSERVATION` with its timestamp, never a persisted
   boolean such as `hireable`; the label is calculated when read from the
   observation age and current policy.
@@ -238,25 +246,15 @@ requires an approved RPC/storage budget and visible coverage. “Indexed ERC-818
 means official allowlisted contracts through a stated block, never every contract
 someone claims is compatible.
 
-### Evidence snapshot release risk
+### Historical verification snapshot after WP4
 
-The marketplace public verification snapshot expires exactly 72 hours after
-generation. `build:web` runs `check:verification-snapshot` and refuses to build
-after `staleAfter`, but it does not regenerate the artifact. Only
-`build:deployment` runs readiness, publishes a new snapshot and then builds.
-
-This creates two distinct failure modes during judging:
-
-1. A redeploy using only `build:web` fails once the committed snapshot expires.
-2. Without a redeploy, the already running application continues serving a
-   snapshot whose evidence cutoff has passed.
-
-The release candidate must therefore be built with `build:deployment` on
-September 8 UTC, after all readiness checks pass and no earlier than 72 hours
-before judging begins. A single September 8 artifact cannot remain fresh through
-September 23. During the evaluation window, regenerate and redeploy the same
-frozen application commit every 48 hours, through September 22. The 48-hour
-cadence leaves a 24-hour recovery margin before the prior snapshot expires.
+The committed public verification snapshot remains reproducible historical
+evidence, but it no longer gates `build:web`, populates current agent cards or
+qualifies Hire. `build:deployment` therefore does not regenerate it. Current
+seller observations come only from the Cloudflare `/observations` contract and
+expire at read time; an unavailable Worker disables current observation claims.
+The versioned job proofs and the dated WP0 funnel keep their historical labels,
+blocks and hashes and remain renderable without pretending to be current.
 
 These are operational rebuilds, not feature implementation. Each rebuild must
 preserve the frozen code commit, record the new snapshot timestamp and block, and

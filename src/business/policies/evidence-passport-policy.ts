@@ -26,7 +26,7 @@ export interface EvidencePassportInput {
   hireability: {
     canHire: boolean;
     status: HireabilityStatus;
-    observedAt: string;
+    observedAt: string | null;
   };
   jobProofs: MainnetJobProof[];
   generatedAt: string;

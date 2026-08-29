@@ -286,6 +286,39 @@ describe("Evidence Passport policy", () => {
 });
 
 describe("GetAgentEvidencePassport", () => {
+  it("does not turn release-snapshot qualification into current indexed Passport claims", async () => {
+    const agent = {
+      chainId: 56,
+      agentId: "303779",
+      name: "Marketplace Grid Planner",
+      operator: "marketplace",
+      freshness: { fetchedAt: OBSERVED_AT },
+      onchainIdentity: { status: "match", observedAt: OBSERVED_AT, blockNumber: "118077255" },
+      verification: {
+        freshness: "current",
+        staleAfter: "2026-08-29T10:00:00.000Z",
+        generatedAt: OBSERVED_AT,
+        identity: { status: "match" },
+        tools: { reachability: "verified", observedAt: OBSERVED_AT },
+      },
+      hireability: {
+        canHire: true,
+        status: "quote_verified",
+        evidence: { observedAt: OBSERVED_AT },
+      },
+    } as unknown as MarketplaceAgent;
+
+    const passport = await new GetAgentEvidencePassport(
+      { execute: async () => agent },
+      { listByAgentId: () => [] },
+      () => Date.parse("2026-08-26T10:05:00.000Z"),
+    ).execute({ agentId: "303779" });
+
+    expect(passport.state).toBe("registered");
+    expect(passport.checks.endpoint.status).toBe("not_probed");
+    expect(passport.checks.quote.status).toBe("missing");
+  });
+
   it("composes the live profile and only the matching Mainnet proof", async () => {
     const agent = {
       chainId: 56,
