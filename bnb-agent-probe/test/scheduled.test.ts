@@ -21,6 +21,9 @@ class LeaseDatabase implements D1DatabaseLike {
   leaseRowsWritten = 1;
 
   prepare(query: string): D1PreparedStatementLike {
+    // Drizzle renders lowercase SQL with quoted identifiers; raw callsites use
+    // uppercase. Normalize so both shapes match the same handlers.
+    const q = query.toLowerCase().replace(/"/g, "");
     let values: readonly unknown[] = [];
     const thisDb = this;
     return {
@@ -33,7 +36,7 @@ class LeaseDatabase implements D1DatabaseLike {
       },
       async all<Row>() {
         thisDb.queries += 1;
-        if (query.includes("INSERT INTO runtime_state") && query.includes("scheduler_lease")) {
+        if (q.includes("insert into runtime_state") && q.includes("scheduler_lease")) {
           const [runId, expiresAt, , now] = values as [string, number, number, number];
           if (thisDb.lease !== null && thisDb.lease.expiresAt > now) {
             return { success: true, meta: { rows_read: 1, rows_written: 0 }, results: [] };
@@ -46,7 +49,7 @@ class LeaseDatabase implements D1DatabaseLike {
             results: [{ key: "scheduler_lease" } as Row],
           };
         }
-        if (query.includes("UPDATE runtime_state") && query.includes("scheduler_lease")) {
+        if (q.includes("update runtime_state") && q.includes("scheduler_lease")) {
           if (thisDb.failRelease) throw new Error("cleanup-release-failed");
           const [releasedAt, , runId] = values as [number, number, string];
           if (thisDb.lease?.runId !== runId) {
@@ -60,7 +63,7 @@ class LeaseDatabase implements D1DatabaseLike {
             results: [{ key: "scheduler_lease" } as Row],
           };
         }
-        if (query.includes("next_scheduler_phase")) {
+        if (q.includes("next_scheduler_phase")) {
           return {
             success: true,
             meta: { rows_read: 1, rows_written: 0 },
@@ -71,10 +74,10 @@ class LeaseDatabase implements D1DatabaseLike {
       },
       async run<Meta>(): Promise<D1ResultLike<Meta>> {
         thisDb.queries += 1;
-        if (query.includes("INSERT INTO scheduler_attempts")) {
+        if (q.includes("insert into scheduler_attempts")) {
           return { success: true, meta: { rows_read: 1, rows_written: 1 } as Meta };
         }
-        if (!query.includes("INSERT INTO runtime_state")) {
+        if (!q.includes("insert into runtime_state")) {
           throw new Error("unexpected run query");
         }
         const isDailyLedger = typeof values[0] === "string" && values[0].startsWith("daily_budget_");

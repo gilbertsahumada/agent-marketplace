@@ -16,6 +16,7 @@ import type {
   SweepTargetCandidate,
 } from "./phases/sweep";
 import { acquireSchedulerLease, releaseSchedulerLease } from "./lib/scheduler-lease";
+import { createDatabase, writeRuntimeState } from "./db/orm";
 import { CURATED_INVENTORY, CURATED_INVENTORY_CATEGORIES } from "./manifest/curated-inventory";
 import { selectLiveTargets } from "./trust8004/candidates";
 import {
@@ -161,20 +162,18 @@ export function createWp2ScheduledRunner(dependencies: ScheduledRuntimeDependenc
       });
     } catch (error) {
       const finishedAt = now();
-      await bestEffort(() => auxiliaryStore.db.prepare(
-        `INSERT INTO runtime_state (key, textValue, integerValue, updatedAt)
-         VALUES ('last_scheduler_summary', ?, NULL, ?)
-         ON CONFLICT(key) DO UPDATE SET
-           textValue = excluded.textValue,
-           integerValue = NULL,
-           updatedAt = excluded.updatedAt`,
-      ).bind(JSON.stringify({
+      await bestEffort(() => writeRuntimeState(createDatabase(auxiliaryStore.db), {
+        key: "last_scheduler_summary",
+        textValue: JSON.stringify({
         status: "error",
         errorCode: phaseErrorCode(error),
         requests: 0,
         d1Queries: budget.used + 3,
         wallTimeMs: Math.max(0, finishedAt - startedAt),
-      }), finishedAt).run());
+        }),
+        integerValue: null,
+        updatedAt: finishedAt,
+      }));
       await bestEffort(() => releaseSchedulerLease(auxiliaryStore.db, runId, finishedAt));
       await finalizeAttempt({
         finishedAt,
@@ -187,18 +186,16 @@ export function createWp2ScheduledRunner(dependencies: ScheduledRuntimeDependenc
 
     if (!acquired) {
       const finishedAt = now();
-      await bestEffort(() => auxiliaryStore.db.prepare(
-        `INSERT INTO runtime_state (key, textValue, integerValue, updatedAt)
-         VALUES ('last_scheduler_summary', ?, NULL, ?)
-         ON CONFLICT(key) DO UPDATE SET
-           textValue = excluded.textValue,
-           integerValue = NULL,
-           updatedAt = excluded.updatedAt`,
-      ).bind(JSON.stringify({
+      await bestEffort(() => writeRuntimeState(createDatabase(auxiliaryStore.db), {
+        key: "last_scheduler_summary",
+        textValue: JSON.stringify({
         status: "skipped_locked",
         requests: 0,
         wallTimeMs: Math.max(0, finishedAt - startedAt),
-      }), finishedAt).run());
+        }),
+        integerValue: null,
+        updatedAt: finishedAt,
+      }));
       await finalizeAttempt({ finishedAt, phase: null, outcome: "locked", errorCode: null });
       return "locked";
     }

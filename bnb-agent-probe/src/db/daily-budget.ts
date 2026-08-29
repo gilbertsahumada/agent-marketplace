@@ -1,4 +1,8 @@
+import { sql, type SQL } from "drizzle-orm";
+
 import type { D1DatabaseLike } from "./client";
+import { createDatabase } from "./orm";
+import { runtimeState } from "./schema";
 
 export type DailyBudgetOutcome = "completed" | "failed" | "duplicate" | "locked";
 
@@ -35,48 +39,40 @@ export async function recordDailyBudget(
     rowsWrittenObservedBeforeLedger: observation.rowsWrittenObservedBeforeLedger,
   };
 
-  const currentInteger = (field: string) =>
-    `CASE WHEN json_valid(runtime_state.textValue)
-      THEN COALESCE(CAST(json_extract(runtime_state.textValue, '$.${field}') AS INTEGER), 0)
+  const currentInteger = (field: string): SQL =>
+    sql`CASE WHEN json_valid(${runtimeState.textValue})
+      THEN COALESCE(CAST(json_extract(${runtimeState.textValue}, ${`$.${field}`}) AS INTEGER), 0)
       ELSE 0 END`;
-  const result = await db.prepare(
-    `INSERT INTO runtime_state (key, textValue, integerValue, updatedAt)
-     VALUES (?, ?, NULL, ?)
-     ON CONFLICT(key) DO UPDATE SET
-       textValue = json_object(
-         'schemaVersion', 1,
-         'utcDate', ?,
-         'measurementScope', '${MEASUREMENT_SCOPE}',
-         'updatedAt', MAX(${currentInteger("updatedAt")}, ?),
-         'invocations', ${currentInteger("invocations")} + 1,
-         'completed', ${currentInteger("completed")} + ?,
-         'failed', ${currentInteger("failed")} + ?,
-         'duplicate', ${currentInteger("duplicate")} + ?,
-         'locked', ${currentInteger("locked")} + ?,
-         'upstreamRequests', ${currentInteger("upstreamRequests")} + ?,
-         'd1Queries', ${currentInteger("d1Queries")} + ?,
-         'rowsReadObservedBeforeLedger', ${currentInteger("rowsReadObservedBeforeLedger")} + ?,
-         'rowsWrittenObservedBeforeLedger', ${currentInteger("rowsWrittenObservedBeforeLedger")} + ?
-       ),
-       integerValue = NULL,
-       updatedAt = MAX(runtime_state.updatedAt, excluded.updatedAt)`,
-  ).bind(
-    key,
-    JSON.stringify(initial),
-    observation.finishedAtMs,
-    utcDate,
-    observation.finishedAtMs,
-    increments.completed,
-    increments.failed,
-    increments.duplicate,
-    increments.locked,
-    observation.upstreamRequests,
-    observation.d1Queries,
-    observation.rowsReadObservedBeforeLedger,
-    observation.rowsWrittenObservedBeforeLedger,
-  ).run();
-
-  if (!result.success) throw new Error("Could not persist daily D1 budget observation");
+  await createDatabase(db)
+    .insert(runtimeState)
+    .values({
+      key,
+      textValue: JSON.stringify(initial),
+      integerValue: null,
+      updatedAt: observation.finishedAtMs,
+    })
+    .onConflictDoUpdate({
+      target: runtimeState.key,
+      set: {
+        textValue: sql`json_object(
+          'schemaVersion', 1,
+          'utcDate', ${utcDate},
+          'measurementScope', ${MEASUREMENT_SCOPE},
+          'updatedAt', MAX(${currentInteger("updatedAt")}, ${observation.finishedAtMs}),
+          'invocations', ${currentInteger("invocations")} + 1,
+          'completed', ${currentInteger("completed")} + ${increments.completed},
+          'failed', ${currentInteger("failed")} + ${increments.failed},
+          'duplicate', ${currentInteger("duplicate")} + ${increments.duplicate},
+          'locked', ${currentInteger("locked")} + ${increments.locked},
+          'upstreamRequests', ${currentInteger("upstreamRequests")} + ${observation.upstreamRequests},
+          'd1Queries', ${currentInteger("d1Queries")} + ${observation.d1Queries},
+          'rowsReadObservedBeforeLedger', ${currentInteger("rowsReadObservedBeforeLedger")} + ${observation.rowsReadObservedBeforeLedger},
+          'rowsWrittenObservedBeforeLedger', ${currentInteger("rowsWrittenObservedBeforeLedger")} + ${observation.rowsWrittenObservedBeforeLedger}
+        )`,
+        integerValue: null,
+        updatedAt: sql`MAX(${runtimeState.updatedAt}, excluded.updatedAt)`,
+      },
+    });
 }
 
 function outcomeIncrements(outcome: DailyBudgetOutcome): Record<DailyBudgetOutcome, number> {

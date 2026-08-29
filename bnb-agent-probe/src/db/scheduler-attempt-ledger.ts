@@ -1,4 +1,8 @@
+import { and, asc, gte, lt } from "drizzle-orm";
+
 import type { D1DatabaseLike } from "./client";
+import { createDatabase, type SchedulerAttemptRow } from "./orm";
+import { schedulerAttempts } from "./schema";
 
 export type SchedulerAttemptOutcome = "completed" | "failed" | "duplicate" | "locked";
 export type SchedulerAttemptPhase = "header" | "sweep" | "probe" | null;
@@ -21,48 +25,25 @@ export interface SchedulerAttemptInput {
 export interface SchedulerAttempt extends SchedulerAttemptInput {
 }
 
-interface SchedulerAttemptRow {
-  readonly messageId: string;
-  readonly scheduledTime: number;
-  readonly attempt: number;
-  readonly phase: string | null;
-  readonly outcome: string;
-  readonly startedAt: number;
-  readonly finishedAt: number;
-  readonly upstreamRequests: number;
-  readonly d1Queries: number;
-  readonly rowsReadObservedBeforeLedger: number;
-  readonly rowsWrittenObservedBeforeLedger: number;
-  readonly errorCode: string | null;
-}
-
 export async function recordSchedulerAttempt(
   db: D1DatabaseLike,
   input: SchedulerAttemptInput,
 ): Promise<void> {
   validateAttemptInput(input);
-  const result = await db.prepare(
-    `INSERT INTO scheduler_attempts (
-       messageId, scheduledTime, attempt, phase, outcome, startedAt, finishedAt,
-       upstreamRequests, d1Queries, rowsReadObservedBeforeLedger,
-       rowsWrittenObservedBeforeLedger, errorCode
-     )
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-  ).bind(
-    input.messageId,
-    input.scheduledTime,
-    input.attempt,
-    input.phase,
-    input.outcome,
-    input.startedAt,
-    input.finishedAt,
-    input.upstreamRequests,
-    input.d1Queries,
-    input.rowsReadObservedBeforeLedger,
-    input.rowsWrittenObservedBeforeLedger,
-    input.errorCode,
-  ).run();
-  if (!result.success) throw new Error("Could not persist scheduler attempt");
+  await createDatabase(db).insert(schedulerAttempts).values({
+    messageId: input.messageId,
+    scheduledTime: input.scheduledTime,
+    attempt: input.attempt,
+    phase: input.phase,
+    outcome: input.outcome,
+    startedAt: input.startedAt,
+    finishedAt: input.finishedAt,
+    upstreamRequests: input.upstreamRequests,
+    d1Queries: input.d1Queries,
+    rowsReadObservedBeforeLedger: input.rowsReadObservedBeforeLedger,
+    rowsWrittenObservedBeforeLedger: input.rowsWrittenObservedBeforeLedger,
+    errorCode: input.errorCode,
+  });
 }
 
 export async function listSchedulerAttempts(
@@ -73,16 +54,15 @@ export async function listSchedulerAttempts(
   nonNegativeSafeInteger(startInclusive, "startInclusive");
   nonNegativeSafeInteger(endExclusive, "endExclusive");
   if (endExclusive <= startInclusive) throw new Error("endExclusive must follow startInclusive");
-  const result = await db.prepare(
-    `SELECT messageId, scheduledTime, attempt, phase, outcome, startedAt, finishedAt,
-            upstreamRequests, d1Queries, rowsReadObservedBeforeLedger,
-            rowsWrittenObservedBeforeLedger, errorCode
-     FROM scheduler_attempts
-     WHERE scheduledTime >= ? AND scheduledTime < ?
-     ORDER BY scheduledTime ASC, attempt ASC`,
-  ).bind(startInclusive, endExclusive).all<SchedulerAttemptRow>();
-  if (!result.success) throw new Error("Could not read scheduler attempts");
-  return (result.results ?? []).map(toSchedulerAttempt);
+  const rows = await createDatabase(db)
+    .select()
+    .from(schedulerAttempts)
+    .where(and(
+      gte(schedulerAttempts.scheduledTime, startInclusive),
+      lt(schedulerAttempts.scheduledTime, endExclusive),
+    ))
+    .orderBy(asc(schedulerAttempts.scheduledTime), asc(schedulerAttempts.attempt));
+  return rows.map(toSchedulerAttempt);
 }
 
 function toSchedulerAttempt(row: SchedulerAttemptRow): SchedulerAttempt {
