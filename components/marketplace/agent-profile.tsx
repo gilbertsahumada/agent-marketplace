@@ -8,9 +8,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { EvidenceRail } from "./evidence-rail";
-import { CoverageBadge } from "./page-primitives";
+import { Breadcrumb } from "./page-primitives";
 import { ProvenanceBadge } from "./provenance-badge";
-import { evidenceForAgent } from "./view-models";
+import { agentCardViewModel, evidenceForAgent, hireabilityLabels } from "./view-models";
 import { verificationViewModel } from "./view-models";
 import { VerificationDrift } from "./verification-drift";
 import { EvidencePassportCard } from "./evidence-passport-card";
@@ -27,8 +27,13 @@ function MonoValue({ label, value }: { label: string; value: string | null }) {
 export function AgentProfile({ agent, passport }: { agent: MarketplaceAgent; passport: AgentEvidencePassport }) {
   const evaluated = agent.categoryEvaluation === "evaluated";
   const verification = verificationViewModel(agent);
+  const { hireability } = agentCardViewModel(agent);
+  const hireabilityLabel = hireability === "listed_only" && evaluated
+    ? "Not hireable"
+    : hireabilityLabels[hireability];
   return (
     <main id="main-content" className="mx-auto w-full max-w-7xl flex-1 px-4 py-12 sm:px-6 lg:px-8">
+      <Breadcrumb current={agent.name} trail={[{ href: "/agents", label: "Agents" }]} />
       <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
         <div className="flex min-w-0 items-start gap-4">
           <span className="flex size-14 shrink-0 items-center justify-center rounded-2xl border border-white/10 bg-zinc-900"><Bot aria-hidden="true" /></span>
@@ -37,7 +42,7 @@ export function AgentProfile({ agent, passport }: { agent: MarketplaceAgent; pas
               <Badge variant="outline">BSC · #{agent.agentId}</Badge>
               {agent.operator === "marketplace" && <Badge className="border-cyan-400/30 bg-cyan-400/10 text-cyan-200" variant="outline">Marketplace-operated · not official BNB reference</Badge>}
               <Badge className={agent.hireability.canHire ? "border-primary/40 bg-primary/10 text-primary" : "border-zinc-700 bg-zinc-900 text-zinc-300"} variant="outline">
-                {agent.hireability.canHire ? "Hireable now" : agent.hireability.status === "mcp_only" ? "MCP only" : agent.hireability.status === "quote_stale" ? "Quote refresh required" : agent.hireability.status === "wallet_ambiguous" ? "Wallet attribution ambiguous" : evaluated ? "Not hireable" : "Not evaluated"}
+                {hireabilityLabel}
               </Badge>
             </div>
             <h1 className="mt-3 text-3xl font-light tracking-tight text-white sm:text-4xl">{agent.name}</h1>
@@ -45,7 +50,6 @@ export function AgentProfile({ agent, passport }: { agent: MarketplaceAgent; pas
           </div>
         </div>
         <div className="flex flex-col items-start gap-3 lg:items-end">
-          <CoverageBadge />
           {agent.hireability.canHire ? (
             <Button asChild><Link href={`/hire/${agent.agentId}`}>Hire agent<ArrowUpRight aria-hidden="true" /></Link></Button>
           ) : (
