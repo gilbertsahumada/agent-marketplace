@@ -1,0 +1,289 @@
+{
+  "request": {
+    "accountId": "bc8d4adf4860284fda426b24e7377bc2",
+    "backlogUrl": "https://api.cloudflare.com/client/v4/accounts/bc8d4adf4860284fda426b24e7377bc2/queues/721ba809967d425a91dbc34eb1ac3baa/metrics",
+    "completedAt": "2026-08-29T00:34:59.922Z",
+    "healthUrl": "https://bnb-agent-probe-staging.gilbertsahumada.workers.dev/health",
+    "mode": "activation",
+    "queueId": "721ba809967d425a91dbc34eb1ac3baa",
+    "schedulesUrl": "https://api.cloudflare.com/client/v4/accounts/bc8d4adf4860284fda426b24e7377bc2/workers/scripts/bnb-agent-probe-staging/schedules",
+    "settingsUrl": "https://api.cloudflare.com/client/v4/accounts/bc8d4adf4860284fda426b24e7377bc2/workers/scripts/bnb-agent-probe-staging/settings",
+    "scriptName": "bnb-agent-probe-staging",
+    "startedAt": "2026-08-29T00:34:57.301Z"
+  },
+  "response": {
+    "schedules": {
+      "result": {
+        "schedules": [
+          {
+            "cron": "*/5 * * * *",
+            "created_on": "2026-08-28T21:51:47.767519Z",
+            "modified_on": "2026-08-28T23:22:35.084573Z"
+          }
+        ]
+      },
+      "success": true,
+      "errors": [],
+      "messages": []
+    },
+    "settings": {
+      "result": {
+        "placement": {},
+        "compatibility_date": "2026-08-28",
+        "compatibility_flags": [],
+        "usage_model": "standard",
+        "tags": [
+          "cf:service=bnb-agent-probe",
+          "cf:environment=staging"
+        ],
+        "tail_consumers": [],
+        "logpush": false,
+        "observability": {
+          "enabled": true,
+          "head_sampling_rate": 1,
+          "redact_query_string": false,
+          "logs": {
+            "enabled": true,
+            "head_sampling_rate": 1,
+            "persist": true,
+            "invocation_logs": true
+          },
+          "traces": {
+            "enabled": false,
+            "persist": true,
+            "head_sampling_rate": 1
+          }
+        },
+        "annotations": {
+          "workers/message": "git_commit=131d0a23f18a7328754378530ea3120245d233cc",
+          "workers/tag": "git-131d0a23f18a",
+          "workers/triggered_by": "version_upload"
+        },
+        "bindings": [
+          {
+            "name": "BSC_RPC_URL",
+            "type": "secret_text"
+          },
+          {
+            "name": "CLOUDFLARE_WORKERS_PLAN",
+            "text": "free",
+            "type": "plain_text"
+          },
+          {
+            "name": "CRON_INTERVAL_MINUTES",
+            "text": "5",
+            "type": "plain_text"
+          },
+          {
+            "name": "D1_QUERIES_PER_RUN",
+            "text": "40",
+            "type": "plain_text"
+          },
+          {
+            "name": "D1_ROWS_READ_PER_RUN",
+            "text": "3000",
+            "type": "plain_text"
+          },
+          {
+            "name": "D1_ROWS_WRITTEN_PER_RUN",
+            "text": "60",
+            "type": "plain_text"
+          },
+          {
+            "database_id": "6fbeea3e-4516-4c4e-a5c4-392cb067198a",
+            "id": "6fbeea3e-4516-4c4e-a5c4-392cb067198a",
+            "name": "DB",
+            "type": "d1"
+          },
+          {
+            "name": "DEPLOYMENT_ENV",
+            "text": "staging",
+            "type": "plain_text"
+          },
+          {
+            "name": "EXTERNAL_SUBREQUESTS_PER_RUN",
+            "text": "12",
+            "type": "plain_text"
+          },
+          {
+            "name": "HEADER_LIMIT",
+            "text": "25",
+            "type": "plain_text"
+          },
+          {
+            "name": "KILL_SWITCH",
+            "text": "0",
+            "type": "plain_text"
+          },
+          {
+            "name": "MAX_CATALOG_RESPONSE_BYTES",
+            "text": "16777216",
+            "type": "plain_text"
+          },
+          {
+            "name": "MAX_SELLER_RESPONSE_BYTES",
+            "text": "32768",
+            "type": "plain_text"
+          },
+          {
+            "name": "PROBE_AGENT_ALLOWLIST",
+            "text": "303779",
+            "type": "plain_text"
+          },
+          {
+            "name": "PROBE_BATCH_SIZE",
+            "text": "1",
+            "type": "plain_text"
+          },
+          {
+            "name": "PROBE_ENDPOINT_ALLOWLIST",
+            "text": "https://bnb-agent-marketplace-ruby.vercel.app/grid",
+            "type": "plain_text"
+          },
+          {
+            "name": "PROBE_TIMEOUT_MS",
+            "text": "5000",
+            "type": "plain_text"
+          },
+          {
+            "name": "PRODUCER_KILL_SWITCH",
+            "text": "0",
+            "type": "plain_text"
+          },
+          {
+            "name": "STAGING_MANUAL_RUN",
+            "text": "0",
+            "type": "plain_text"
+          },
+          {
+            "name": "SWEEP_LIMIT",
+            "text": "4",
+            "type": "plain_text"
+          },
+          {
+            "name": "SWEEP_PAGES_PER_RUN",
+            "text": "1",
+            "type": "plain_text"
+          },
+          {
+            "name": "TRUST8004_BASE_URL",
+            "text": "https://trust8004.xyz/api/app",
+            "type": "plain_text"
+          },
+          {
+            "name": "TRUST8004_REQUESTS_PER_RUN",
+            "text": "4",
+            "type": "plain_text"
+          },
+          {
+            "name": "WP2_QUEUE",
+            "queue_name": "bnb-agent-probe-staging",
+            "type": "queue"
+          }
+        ]
+      },
+      "success": true,
+      "errors": [],
+      "messages": []
+    },
+    "backlog": {
+      "success": true,
+      "errors": [],
+      "messages": [],
+      "result": {
+        "backlog_count": 0,
+        "backlog_bytes": 0,
+        "oldest_message_timestamp_ms": 0
+      }
+    },
+    "health": {
+      "status": "ok",
+      "plan": "free",
+      "schedulerMode": "single_phase",
+      "killSwitch": false,
+      "producerKillSwitch": false,
+      "budgets": {
+        "cronIntervalMinutes": 5,
+        "headerLimit": 25,
+        "sweepLimit": 4,
+        "sweepPagesPerRun": 1,
+        "probeBatchSize": 1,
+        "trust8004RequestsPerRun": 4,
+        "externalSubrequestsPerRun": 12,
+        "d1QueriesPerRun": 40,
+        "d1RowsReadPerRun": 3000,
+        "d1RowsWrittenPerRun": 60,
+        "probeTimeoutMs": 5000,
+        "maxCatalogResponseBytes": 16777216,
+        "maxSellerResponseBytes": 32768
+      },
+      "platformLimits": {
+        "cpuMsPerInvocation": 10,
+        "queueConsumerCpuMs": 30000,
+        "wallTimeMsPerInvocation": 900000,
+        "externalSubrequestsPerInvocation": 50,
+        "internalSubrequestsPerInvocation": 1000,
+        "d1QueriesPerInvocation": 50,
+        "d1RowsReadPerDay": 5000000,
+        "d1RowsWrittenPerDay": 100000
+      },
+      "d1": {
+        "available": true
+      },
+      "lease": {
+        "active": false,
+        "expiresAt": 1787963417113
+      },
+      "nextPhase": "probe",
+      "sweepOffset": 0,
+      "sweepRound": 10,
+      "headerHighWater": "1787962368000:315885",
+      "headerWindowExhausted": false,
+      "targets": {
+        "available": false
+      },
+      "dailyBudget": {
+        "schemaVersion": 1,
+        "utcDate": "2026-08-29",
+        "measurementScope": "worker_metered_before_daily_ledger",
+        "updatedAt": 1787963417113,
+        "invocations": 7,
+        "completed": 7,
+        "failed": 0,
+        "duplicate": 0,
+        "locked": 0,
+        "upstreamRequests": 24,
+        "d1Queries": 73,
+        "rowsReadObservedBeforeLedger": 176,
+        "rowsWrittenObservedBeforeLedger": 54
+      },
+      "lastPhase": {
+        "phase": "sweep",
+        "status": "ok",
+        "requests": 1,
+        "wallTimeMs": 826,
+        "d1Queries": 12,
+        "previousOffset": 4,
+        "nextOffset": 0,
+        "sweepRound": 10,
+        "processedAgents": 1,
+        "candidatesRead": 2,
+        "changedTargets": 0,
+        "removedTargets": 0,
+        "metadataUnavailableTargets": 0,
+        "complete": true
+      },
+      "lastScheduler": {
+        "status": "skipped_locked",
+        "requests": 0,
+        "wallTimeMs": 117
+      }
+    },
+    "secrets": [
+      {
+        "name": "BSC_RPC_URL",
+        "type": "secret_text"
+      }
+    ]
+  }
+}
