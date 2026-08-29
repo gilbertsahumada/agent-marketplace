@@ -8,6 +8,20 @@ const WINDOW_START = Date.parse("2026-08-29T00:00:00.000Z");
 const DEPLOYMENT_VERSION = "00000000-0000-4000-8000-000000000001";
 const DRAIN_VERSION = "00000000-0000-4000-8000-000000000099";
 const D1_ID = "6fbeea3e-4516-4c4e-a5c4-392cb067198a";
+const FIXTURE_LEDGER = Array.from({ length: 288 }, (_, index) => ({
+  messageId: `message-${index}`,
+  scheduledTime: WINDOW_START + 14_000 + index * 5 * 60_000,
+  attempt: 1,
+  phase: (["header", "sweep", "probe"] as const)[index % 3],
+  outcome: "completed",
+  upstreamRequests: index % 3 === 1 ? 4 : index % 3 === 2 ? 8 : 1,
+  d1Queries: 13,
+  rowsReadObservedBeforeLedger: 20,
+  rowsWrittenObservedBeforeLedger: 8,
+  startedAt: WINDOW_START + 14_000 + index * 5 * 60_000,
+  finishedAt: WINDOW_START + 15_000 + index * 5 * 60_000,
+  errorCode: null,
+}));
 const RAW_PAYLOADS = {
   "evidence/raw/d1-database.json": {
     request: { date: "2026-08-29", databaseId: D1_ID },
@@ -28,6 +42,15 @@ const RAW_PAYLOADS = {
         sum: { readQueries: 20, writeQueries: 10, rowsRead: 50_000, rowsWritten: 5_000 },
       },
     ] }] } }, errors: null },
+  },
+  "evidence/raw/scheduler-attempts.json": {
+    request: {
+      accountId: "bc8d4adf4860284fda426b24e7377bc2",
+      databaseId: D1_ID,
+      params: [WINDOW_START, WINDOW_START + 24 * 60 * 60_000, WINDOW_START, WINDOW_START + 24 * 60 * 60_000],
+      sql: "SELECT scheduler attempts",
+    },
+    response: { success: true, errors: [], result: [{ results: FIXTURE_LEDGER }] },
   },
   "evidence/raw/workers.json": {
     request: {
@@ -175,20 +198,7 @@ function sha256(value: string): string {
 }
 
 function validArtifact(): Record<string, unknown> {
-  const ledger = Array.from({ length: 288 }, (_, index) => ({
-    messageId: `message-${index}`,
-    scheduledTime: WINDOW_START + 14_000 + index * 5 * 60_000,
-    attempt: 1,
-    phase: (["header", "sweep", "probe"] as const)[index % 3],
-    outcome: "completed",
-    upstreamRequests: index % 3 === 1 ? 4 : index % 3 === 2 ? 8 : 1,
-    d1Queries: 13,
-    rowsReadObservedBeforeLedger: 20,
-    rowsWrittenObservedBeforeLedger: 8,
-    startedAt: WINDOW_START + 14_000 + index * 5 * 60_000,
-    finishedAt: WINDOW_START + 15_000 + index * 5 * 60_000,
-    errorCode: null,
-  }));
+  const ledger = structuredClone(FIXTURE_LEDGER);
   return {
     schemaVersion: 1,
     commit: "0123456789abcdef0123456789abcdef01234567",
@@ -273,6 +283,13 @@ describe("WP2 24-hour evidence artifact validator", () => {
       ticks: 288,
       phaseCompletions: { header: 96, sweep: 96, probe: 96 },
     });
+  });
+
+  it("rejects a ledger row that differs from the raw D1 cohort", async () => {
+    const artifact = validArtifact() as any;
+    artifact.ledger[0].d1Queries = 12;
+    artifact.quotaLedger[0].d1Queries = 12;
+    await expect(validateWp224hArtifact(artifact, { readRawEvidence })).rejects.toThrow("RAW_LEDGER");
   });
 
   it.each([
