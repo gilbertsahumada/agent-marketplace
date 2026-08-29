@@ -990,7 +990,7 @@ describe("WP2 24-hour evidence artifact validator", () => {
     })).rejects.toThrow("RAW_WORKERS");
   });
 
-  it("counts a blocked drain-version producer without inventing a Queue write", async () => {
+  it("rejects a drain-version producer without a Queue write", async () => {
     const artifact = validArtifact() as any;
     const workers = structuredClone(RAW_PAYLOADS["evidence/raw/analytics/workers.json"]) as any;
     const blockedProducer = structuredClone(workers.response.data.viewer.accounts[0].workersInvocationsAdaptive[0]);
@@ -1004,7 +1004,7 @@ describe("WP2 24-hour evidence artifact validator", () => {
     artifact.totals.maxProducerCpuMs = 9;
     await expect(validateWp224hArtifact(artifact, {
       readRawEvidence: evidenceReaderFor(artifact, { "evidence/raw/analytics/workers.json": contents }),
-    })).resolves.toMatchObject({ passed: true });
+    })).rejects.toThrow("RAW_WORKERS");
   });
 
   it("rejects Workers samples from an unauthenticated version", async () => {
