@@ -712,7 +712,9 @@ async function validateRawAnalytics(
     }
     workerMatch.remaining -= 1;
   }
-  const terminalSpillOut = orderedSpillOut.filter(({ outcome }) => outcome === "completed");
+  const terminalSpillOut = context.tickLedger
+    .filter(({ outcome, finishedAt }) => outcome === "completed" && finishedAt >= context.end)
+    .sort((left, right) => left.finishedAt - right.finishedAt);
   for (const attempt of terminalSpillOut) {
     const deleteMatch = deleteSamples.find(({ timestamp, remaining }) =>
       remaining > 0 && timestamp + 1_000 >= attempt.finishedAt);
