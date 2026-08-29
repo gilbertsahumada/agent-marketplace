@@ -65,6 +65,8 @@ Run the final evidence flow from this package directory. Export
 from the environment and are never serialized. Every output is create-only.
 
 ```bash
+set -euo pipefail
+
 FULL_SHA=131d0a23f18a7328754378530ea3120245d233cc
 SHORT_SHA=${FULL_SHA:0:12}
 MEASURED_VERSION_ID=d1ee751a-b77d-4fc6-afed-864e631383af
@@ -79,26 +81,40 @@ npm run evidence:wp2-control -- preflight ../evidence/raw/preflight.json
 
 # Re-promote the exact measured version, then install only */5 * * * *.
 # Stop if its versions-view etag is not EXPECTED_ETAG.
+test "$(npx wrangler versions view "$MEASURED_VERSION_ID" --env staging --json | jq -r '.resources.script.etag')" = "$EXPECTED_ETAG"
 npx wrangler versions deploy "${MEASURED_VERSION_ID}@100%" --env staging --yes \
   --message "WP2 final UTC gate activation"
-test "$(npx wrangler versions view "$MEASURED_VERSION_ID" --env staging --json | jq -r '.resources.script.etag')" = "$EXPECTED_ETAG"
 curl --fail-with-body -X PUT \
   -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
   -H "Content-Type: application/json" \
   --data '[{"cron":"*/5 * * * *"}]' \
   "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/scripts/${WP2_SCRIPT_NAME}/schedules"
 
-# Both captures must finish before the first scheduled tick:
+# Activate before the 23:55Z pre-window tick and capture the control state.
 npm run evidence:wp2-control -- activation ../evidence/raw/activation.json
+
+# After the 23:55Z tick completes, capture the phase anchor. Both files must
+# exist before the first measured tick at 00:00Z.
 npm run evidence:wp2-window-start -- ../evidence/raw/window-start.json
 
 # Immediately after the 23:55 tick and before 24:00Z: producer off,
 # consumer on, then Cron removed. Stop if the new version etag changes.
+DRAIN_DEPLOY_LOG=$(mktemp)
 npx wrangler deploy --env staging --keep-vars \
   --var PRODUCER_KILL_SWITCH:1 --var KILL_SWITCH:0 \
-  --message "git_commit=${FULL_SHA}" --tag "git-${SHORT_SHA}-drain"
-DRAIN_VERSION_ID="<Current Version ID from Wrangler>"
+  --message "git_commit=${FULL_SHA}" --tag "git-${SHORT_SHA}-drain" \
+  | tee "$DRAIN_DEPLOY_LOG"
+DRAIN_VERSION_ID=$(sed -n 's/.*Current Version ID: //p' "$DRAIN_DEPLOY_LOG" | tail -1)
+rm "$DRAIN_DEPLOY_LOG"
+[[ "$DRAIN_VERSION_ID" =~ ^[a-f0-9-]{36}$ ]]
 test "$(npx wrangler versions view "$DRAIN_VERSION_ID" --env staging --json | jq -r '.resources.script.etag')" = "$EXPECTED_ETAG"
+curl --fail-with-body \
+  -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+  "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/scripts/${WP2_SCRIPT_NAME}/settings" \
+  | jq -e '
+      any(.result.bindings[]; .name == "PRODUCER_KILL_SWITCH" and .text == "1")
+      and any(.result.bindings[]; .name == "KILL_SWITCH" and .text == "0")
+    '
 curl --fail-with-body -X DELETE \
   -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
   "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/scripts/${WP2_SCRIPT_NAME}/schedules/%2A%2F5%20%2A%20%2A%20%2A%20%2A"
@@ -135,11 +151,22 @@ jq -e '
 ' ../evidence/raw/queue.json
 
 # Only after the Analytics terminality check, disable the consumer too.
+CLEANUP_DEPLOY_LOG=$(mktemp)
 npx wrangler deploy --env staging --keep-vars \
   --var PRODUCER_KILL_SWITCH:1 --var KILL_SWITCH:1 \
-  --message "git_commit=${FULL_SHA}" --tag "git-${SHORT_SHA}-cleanup"
-CLEANUP_VERSION_ID="<Current Version ID from Wrangler>"
+  --message "git_commit=${FULL_SHA}" --tag "git-${SHORT_SHA}-cleanup" \
+  | tee "$CLEANUP_DEPLOY_LOG"
+CLEANUP_VERSION_ID=$(sed -n 's/.*Current Version ID: //p' "$CLEANUP_DEPLOY_LOG" | tail -1)
+rm "$CLEANUP_DEPLOY_LOG"
+[[ "$CLEANUP_VERSION_ID" =~ ^[a-f0-9-]{36}$ ]]
 test "$(npx wrangler versions view "$CLEANUP_VERSION_ID" --env staging --json | jq -r '.resources.script.etag')" = "$EXPECTED_ETAG"
+curl --fail-with-body -X DELETE \
+  -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+  "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/scripts/${WP2_SCRIPT_NAME}/schedules/%2A%2F5%20%2A%20%2A%20%2A%20%2A"
+curl --fail-with-body \
+  -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+  "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/scripts/${WP2_SCRIPT_NAME}/schedules" \
+  | jq -e '.success == true and (.errors | length == 0) and .result.schedules == []'
 npm run evidence:wp2-control -- cleanup ../evidence/raw/cleanup.json
 npm run evidence:wp2-deployment -- \
   ../evidence/raw/deployment.json "$WP2_SCRIPT_NAME" "$FULL_SHA" \
