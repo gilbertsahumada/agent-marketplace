@@ -88,7 +88,7 @@ function controlFixture(
   };
 }
 const RAW_PAYLOADS = {
-  "evidence/raw/d1-database.json": {
+  "evidence/raw/analytics/d1-database.json": {
     request: { accountId: ACCOUNT_ID, capturedAt: CAPTURED_AT, endpoint: GRAPHQL_ENDPOINT,
       query: WP2_D1_DATABASE_ANALYTICS_QUERY, date: "2026-08-29", databaseId: D1_ID,
       variables: { accountTag: ACCOUNT_ID, date: "2026-08-29", databaseId: D1_ID } },
@@ -97,7 +97,7 @@ const RAW_PAYLOADS = {
       sum: { readQueries: 3_000, writeQueries: 1_000, rowsRead: 200_000, rowsWritten: 20_000 },
     }] }] } }, errors: null },
   },
-  "evidence/raw/d1-account.json": {
+  "evidence/raw/analytics/d1-account.json": {
     request: { accountId: ACCOUNT_ID, capturedAt: CAPTURED_AT, endpoint: GRAPHQL_ENDPOINT,
       query: WP2_D1_ACCOUNT_ANALYTICS_QUERY, date: "2026-08-29",
       variables: { accountTag: ACCOUNT_ID, date: "2026-08-29" } },
@@ -126,7 +126,7 @@ const RAW_PAYLOADS = {
     },
     response: { success: true, errors: [], result: [{ results: FIXTURE_LEDGER }] },
   },
-  "evidence/raw/workers.json": {
+  "evidence/raw/analytics/workers.json": {
     request: {
       accountId: ACCOUNT_ID, capturedAt: CAPTURED_AT, endpoint: GRAPHQL_ENDPOINT,
       query: WP2_WORKERS_ANALYTICS_QUERY,
@@ -156,7 +156,7 @@ const RAW_PAYLOADS = {
       },
     ] }] } }, errors: null },
   },
-  "evidence/raw/queue.json": {
+  "evidence/raw/analytics/queue.json": {
     request: {
       accountId: ACCOUNT_ID, capturedAt: CAPTURED_AT, endpoint: GRAPHQL_ENDPOINT,
       query: WP2_QUEUE_ANALYTICS_QUERY, queueId: QUEUE_ID,
@@ -214,7 +214,7 @@ const RAW_PAYLOADS = {
       }],
     }] } }, errors: null },
   },
-  "evidence/raw/queue-account.json": {
+  "evidence/raw/analytics/queue-account.json": {
     request: {
       accountId: ACCOUNT_ID, capturedAt: CAPTURED_AT, endpoint: GRAPHQL_ENDPOINT,
       query: WP2_QUEUE_ACCOUNT_ANALYTICS_QUERY,
@@ -276,6 +276,25 @@ const RAW_PAYLOADS = {
     ...controlFixture("drain", "2026-08-29T23:56:30.000Z"),
   },
 } as const;
+const ANALYTICS_CAPTURE_ID = "123e4567-e89b-42d3-a456-426614174000";
+const ANALYTICS_PATHS = [
+  "evidence/raw/analytics/d1-database.json",
+  "evidence/raw/analytics/d1-account.json",
+  "evidence/raw/analytics/workers.json",
+  "evidence/raw/analytics/queue.json",
+  "evidence/raw/analytics/queue-account.json",
+] as const;
+for (const path of ANALYTICS_PATHS) {
+  (RAW_PAYLOADS[path].request as Record<string, unknown>).captureId = ANALYTICS_CAPTURE_ID;
+}
+(RAW_PAYLOADS as Record<string, unknown>)["evidence/raw/analytics/analytics-manifest.json"] = {
+  schemaVersion: 1,
+  captureId: ANALYTICS_CAPTURE_ID,
+  files: Object.fromEntries(ANALYTICS_PATHS.map((path) => {
+    const filename = path.slice(path.lastIndexOf("/") + 1);
+    return [filename, sha256(JSON.stringify(RAW_PAYLOADS[path]))];
+  })),
+};
 const RAW_FILES = Object.fromEntries(
   Object.entries(RAW_PAYLOADS).map(([path, payload]) => [path, JSON.stringify(payload)]),
 ) as Record<string, string>;
@@ -397,8 +416,8 @@ function evidenceReaderFor(
 
 describe("WP2 24-hour evidence artifact validator", () => {
   it("resolves repository evidence above the package working directory", () => {
-    expect(resolveRawEvidencePath("evidence/raw/d1-database.json"))
-      .toBe(new URL("../../evidence/raw/d1-database.json", import.meta.url).pathname);
+    expect(resolveRawEvidencePath("evidence/raw/analytics/d1-database.json"))
+      .toBe(new URL("../../evidence/raw/analytics/d1-database.json", import.meta.url).pathname);
   });
 
   it("builds the complete artifact from the required literal raw captures", async () => {
@@ -457,12 +476,12 @@ describe("WP2 24-hour evidence artifact validator", () => {
 
   it("rejects analytics captured with a different GraphQL query", async () => {
     const artifact = validArtifact() as any;
-    const workers = structuredClone(RAW_PAYLOADS["evidence/raw/workers.json"]) as any;
+    const workers = structuredClone(RAW_PAYLOADS["evidence/raw/analytics/workers.json"]) as any;
     workers.request.query += "\n# changed";
     const contents = JSON.stringify(workers);
-    artifact.rawAnalytics["evidence/raw/workers.json"].sha256 = sha256(contents);
+    artifact.rawAnalytics["evidence/raw/analytics/workers.json"].sha256 = sha256(contents);
     await expect(validateWp224hArtifact(artifact, {
-      readRawEvidence: async (path) => path === "evidence/raw/workers.json" ? contents : readRawEvidence(path),
+      readRawEvidence: async (path) => path === "evidence/raw/analytics/workers.json" ? contents : readRawEvidence(path),
     })).rejects.toThrow("RAW_WORKERS");
   });
 
@@ -487,8 +506,9 @@ describe("WP2 24-hour evidence artifact validator", () => {
     ["D1 query overflow", (artifact: any) => { artifact.ledger[0].d1Queries = 41; }, "D1_QUERY_LIMIT"],
     ["D1 read ceiling", (artifact: any) => { artifact.totals.d1RowsRead = 4_000_000; }, "D1_READ_LIMIT"],
     ["D1 write ceiling", (artifact: any) => { artifact.totals.d1RowsWritten = 80_000; }, "D1_WRITE_LIMIT"],
-    ["missing raw analytics", (artifact: any) => { delete artifact.rawAnalytics["evidence/raw/d1-account.json"]; }, "RAW_ANALYTICS"],
-    ["bad raw hash", (artifact: any) => { artifact.rawAnalytics["evidence/raw/queue.json"].sha256 = "0".repeat(64); }, "RAW_HASH"],
+    ["missing raw analytics", (artifact: any) => { delete artifact.rawAnalytics["evidence/raw/analytics/d1-account.json"]; }, "RAW_ANALYTICS"],
+    ["missing analytics manifest", (artifact: any) => { delete artifact.rawAnalytics["evidence/raw/analytics/analytics-manifest.json"]; }, "RAW_ANALYTICS"],
+    ["bad raw hash", (artifact: any) => { artifact.rawAnalytics["evidence/raw/analytics/queue.json"].sha256 = "0".repeat(64); }, "RAW_HASH"],
     ["fabricated D1 totals", (artifact: any) => { artifact.totals.d1RowsRead -= 1; }, "RAW_D1"],
     ["wrong deployment", (artifact: any) => { artifact.deploymentVersion = "00000000-0000-4000-8000-000000000003"; }, "RAW_DEPLOYMENT"],
     ["wrong Queue operations", (artifact: any) => { artifact.totals.queueOperations = 963; }, "RAW_QUEUE"],
@@ -502,9 +522,9 @@ describe("WP2 24-hour evidence artifact validator", () => {
 
   it("rejects malformed raw JSON even when its SHA-256 matches", async () => {
     const artifact = validArtifact() as any;
-    artifact.rawAnalytics["evidence/raw/workers.json"].sha256 = sha256("workers");
+    artifact.rawAnalytics["evidence/raw/analytics/workers.json"].sha256 = sha256("workers");
     await expect(validateWp224hArtifact(artifact, {
-      readRawEvidence: async (path) => path === "evidence/raw/workers.json" ? "workers" : readRawEvidence(path),
+      readRawEvidence: async (path) => path === "evidence/raw/analytics/workers.json" ? "workers" : readRawEvidence(path),
     })).rejects.toThrow("RAW_JSON");
   });
 
@@ -551,16 +571,16 @@ describe("WP2 24-hour evidence artifact validator", () => {
     artifact.totals.quotaAttempts = 289;
     artifact.totals.spillIn = 1;
     artifact.totals.queueOperations = 965;
-    const queue = structuredClone(RAW_PAYLOADS["evidence/raw/queue.json"]) as any;
+    const queue = structuredClone(RAW_PAYLOADS["evidence/raw/analytics/queue.json"]) as any;
     queue.response.data.viewer.accounts[0].queueDayOperations[2].count = 289;
     queue.response.data.viewer.accounts[0].queueDayOperations[2].sum.billableOperations = 289;
     queue.response.data.viewer.accounts[0].queueTerminalOperations[2].count = 289;
     queue.response.data.viewer.accounts[0].queueTerminalOperations[2].sum.billableOperations = 289;
-    const account = structuredClone(RAW_PAYLOADS["evidence/raw/queue-account.json"]) as any;
+    const account = structuredClone(RAW_PAYLOADS["evidence/raw/analytics/queue-account.json"]) as any;
     account.response.data.viewer.accounts[0].queueMessageOperationsAdaptiveGroups[0].sum.billableOperations = 865;
     const overrides: Record<string, string> = {
-      "evidence/raw/queue.json": JSON.stringify(queue),
-      "evidence/raw/queue-account.json": JSON.stringify(account),
+      "evidence/raw/analytics/queue.json": JSON.stringify(queue),
+      "evidence/raw/analytics/queue-account.json": JSON.stringify(account),
     };
     for (const [path, contents] of Object.entries(overrides)) artifact.rawAnalytics[path].sha256 = sha256(contents);
     await expect(validateWp224hArtifact(artifact, {
@@ -637,13 +657,13 @@ describe("WP2 24-hour evidence artifact validator", () => {
 
   it("accepts a final Queue delete during the post-midnight grace", async () => {
     const artifact = validArtifact() as any;
-    const queue = structuredClone(RAW_PAYLOADS["evidence/raw/queue.json"]) as any;
+    const queue = structuredClone(RAW_PAYLOADS["evidence/raw/analytics/queue.json"]) as any;
     queue.response.data.viewer.accounts[0].queueTerminalOperations[2].dimensions.datetime =
       "2026-08-30T00:00:03Z";
     const contents = JSON.stringify(queue);
-    artifact.rawAnalytics["evidence/raw/queue.json"].sha256 = sha256(contents);
+    artifact.rawAnalytics["evidence/raw/analytics/queue.json"].sha256 = sha256(contents);
     await expect(validateWp224hArtifact(artifact, {
-      readRawEvidence: async (path) => path === "evidence/raw/queue.json" ? contents : readRawEvidence(path),
+      readRawEvidence: async (path) => path === "evidence/raw/analytics/queue.json" ? contents : readRawEvidence(path),
     })).resolves.toMatchObject({ passed: true });
   });
 
@@ -731,12 +751,12 @@ describe("WP2 24-hour evidence artifact validator", () => {
 
   it("rejects non-zero Queue backlog at the terminality cutoff", async () => {
     const artifact = validArtifact() as any;
-    const queue = structuredClone(RAW_PAYLOADS["evidence/raw/queue.json"]) as any;
+    const queue = structuredClone(RAW_PAYLOADS["evidence/raw/analytics/queue.json"]) as any;
     queue.response.data.viewer.accounts[0].queueBacklogAdaptiveGroups[0].avg.messages = 1;
     const contents = JSON.stringify(queue);
-    artifact.rawAnalytics["evidence/raw/queue.json"].sha256 = sha256(contents);
+    artifact.rawAnalytics["evidence/raw/analytics/queue.json"].sha256 = sha256(contents);
     await expect(validateWp224hArtifact(artifact, {
-      readRawEvidence: async (path) => path === "evidence/raw/queue.json" ? contents : readRawEvidence(path),
+      readRawEvidence: async (path) => path === "evidence/raw/analytics/queue.json" ? contents : readRawEvidence(path),
     })).rejects.toThrow("QUEUE_TERMINALITY");
   });
 
@@ -753,19 +773,19 @@ describe("WP2 24-hour evidence artifact validator", () => {
 
   it("rejects producer CPU derived from Workers Analytics at the Free ceiling", async () => {
     const artifact = validArtifact() as any;
-    const workers = structuredClone(RAW_PAYLOADS["evidence/raw/workers.json"]) as any;
+    const workers = structuredClone(RAW_PAYLOADS["evidence/raw/analytics/workers.json"]) as any;
     workers.response.data.viewer.accounts[0].workersInvocationsAdaptive[0].quantiles.cpuTimeP99 = 10_000;
     const contents = JSON.stringify(workers);
-    artifact.rawAnalytics["evidence/raw/workers.json"].sha256 = sha256(contents);
+    artifact.rawAnalytics["evidence/raw/analytics/workers.json"].sha256 = sha256(contents);
     artifact.totals.maxProducerCpuMs = 10;
     await expect(validateWp224hArtifact(artifact, {
-      readRawEvidence: async (path) => path === "evidence/raw/workers.json" ? contents : readRawEvidence(path),
+      readRawEvidence: async (path) => path === "evidence/raw/analytics/workers.json" ? contents : readRawEvidence(path),
     })).rejects.toThrow("CPU_LIMIT");
   });
 
   it("rejects ambiguous Workers samples instead of swapping producer and consumer CPU", async () => {
     const artifact = validArtifact() as any;
-    const workers = structuredClone(RAW_PAYLOADS["evidence/raw/workers.json"]) as any;
+    const workers = structuredClone(RAW_PAYLOADS["evidence/raw/analytics/workers.json"]) as any;
     const [producer, consumer] = workers.response.data.viewer.accounts[0].workersInvocationsAdaptive;
     producer.quantiles.cpuTimeP99 = 1_000;
     producer.sum.subrequests = 288;
@@ -773,9 +793,9 @@ describe("WP2 24-hour evidence artifact validator", () => {
     consumer.quantiles.cpuTimeP99 = 20_000;
     consumer.sum.subrequests = 0;
     const contents = JSON.stringify(workers);
-    artifact.rawAnalytics["evidence/raw/workers.json"].sha256 = sha256(contents);
+    artifact.rawAnalytics["evidence/raw/analytics/workers.json"].sha256 = sha256(contents);
     await expect(validateWp224hArtifact(artifact, {
-      readRawEvidence: async (path) => path === "evidence/raw/workers.json" ? contents : readRawEvidence(path),
+      readRawEvidence: async (path) => path === "evidence/raw/analytics/workers.json" ? contents : readRawEvidence(path),
     })).rejects.toThrow("RAW_WORKERS");
   });
 
@@ -787,7 +807,7 @@ describe("WP2 24-hour evidence artifact validator", () => {
     artifact.quotaLedger.pop();
     artifact.totals.quotaAttempts = 287;
     artifact.totals.spillOut = 1;
-    const workers = structuredClone(RAW_PAYLOADS["evidence/raw/workers.json"]) as any;
+    const workers = structuredClone(RAW_PAYLOADS["evidence/raw/analytics/workers.json"]) as any;
     const drainConsumer = structuredClone(workers.response.data.viewer.accounts[0].workersInvocationsAdaptive[1]);
     drainConsumer.dimensions.datetime = "2026-08-30T00:05:00Z";
     drainConsumer.dimensions.scriptVersion = DRAIN_VERSION;
@@ -797,8 +817,8 @@ describe("WP2 24-hour evidence artifact validator", () => {
     drainConsumer.sum.subrequests = 1;
     workers.response.data.viewer.accounts[0].workersInvocationsAdaptive.push(drainConsumer);
     const workerContents = JSON.stringify(workers);
-    artifact.rawAnalytics["evidence/raw/workers.json"].sha256 = sha256(workerContents);
-    const queue = structuredClone(RAW_PAYLOADS["evidence/raw/queue.json"]) as any;
+    artifact.rawAnalytics["evidence/raw/analytics/workers.json"].sha256 = sha256(workerContents);
+    const queue = structuredClone(RAW_PAYLOADS["evidence/raw/analytics/queue.json"]) as any;
     const deletes = queue.response.data.viewer.accounts[0].queueTerminalOperations;
     deletes[2].count = 287;
     const spillOutDelete = structuredClone(deletes[2]);
@@ -806,13 +826,13 @@ describe("WP2 24-hour evidence artifact validator", () => {
     spillOutDelete.dimensions.datetime = "2026-08-30T00:05:02Z";
     deletes.push(spillOutDelete);
     const queueContents = JSON.stringify(queue);
-    artifact.rawAnalytics["evidence/raw/queue.json"].sha256 = sha256(queueContents);
+    artifact.rawAnalytics["evidence/raw/analytics/queue.json"].sha256 = sha256(queueContents);
     artifact.totals.maxConsumerCpuMs = 300;
     artifact.totals.memoryUsageBytesP999 = 13_000_000;
     await expect(validateWp224hArtifact(artifact, {
       readRawEvidence: evidenceReaderFor(artifact, {
-        "evidence/raw/workers.json": workerContents,
-        "evidence/raw/queue.json": queueContents,
+        "evidence/raw/analytics/workers.json": workerContents,
+        "evidence/raw/analytics/queue.json": queueContents,
       }),
     })).resolves.toMatchObject({ passed: true });
   });
@@ -838,16 +858,16 @@ describe("WP2 24-hour evidence artifact validator", () => {
     artifact.quotaLedger.splice(-2);
     artifact.totals.quotaAttempts = 286;
     artifact.totals.spillOut = 2;
-    const workers = structuredClone(RAW_PAYLOADS["evidence/raw/workers.json"]) as any;
+    const workers = structuredClone(RAW_PAYLOADS["evidence/raw/analytics/workers.json"]) as any;
     const drainConsumer = structuredClone(workers.response.data.viewer.accounts[0].workersInvocationsAdaptive[1]);
     drainConsumer.dimensions.datetime = "2026-08-30T00:05:00Z";
     drainConsumer.dimensions.scriptVersion = DRAIN_VERSION;
     drainConsumer.sum.requests = 1;
     workers.response.data.viewer.accounts[0].workersInvocationsAdaptive.push(drainConsumer);
     const contents = JSON.stringify(workers);
-    artifact.rawAnalytics["evidence/raw/workers.json"].sha256 = sha256(contents);
+    artifact.rawAnalytics["evidence/raw/analytics/workers.json"].sha256 = sha256(contents);
     await expect(validateWp224hArtifact(artifact, {
-      readRawEvidence: evidenceReaderFor(artifact, { "evidence/raw/workers.json": contents }),
+      readRawEvidence: evidenceReaderFor(artifact, { "evidence/raw/analytics/workers.json": contents }),
     })).rejects.toThrow("RAW_WORKERS");
   });
 
@@ -870,7 +890,7 @@ describe("WP2 24-hour evidence artifact validator", () => {
     artifact.totals.retries = 1;
     artifact.totals.quotaAttempts = 287;
     artifact.totals.spillOut = 2;
-    const workers = structuredClone(RAW_PAYLOADS["evidence/raw/workers.json"]) as any;
+    const workers = structuredClone(RAW_PAYLOADS["evidence/raw/analytics/workers.json"]) as any;
     const template = workers.response.data.viewer.accounts[0].workersInvocationsAdaptive[1];
     for (const datetime of ["2026-08-30T00:05:00Z", "2026-08-30T00:05:02Z"]) {
       const drainConsumer = structuredClone(template);
@@ -880,8 +900,8 @@ describe("WP2 24-hour evidence artifact validator", () => {
       workers.response.data.viewer.accounts[0].workersInvocationsAdaptive.push(drainConsumer);
     }
     const workerContents = JSON.stringify(workers);
-    artifact.rawAnalytics["evidence/raw/workers.json"].sha256 = sha256(workerContents);
-    const queue = structuredClone(RAW_PAYLOADS["evidence/raw/queue.json"]) as any;
+    artifact.rawAnalytics["evidence/raw/analytics/workers.json"].sha256 = sha256(workerContents);
+    const queue = structuredClone(RAW_PAYLOADS["evidence/raw/analytics/queue.json"]) as any;
     const deletes = queue.response.data.viewer.accounts[0].queueTerminalOperations;
     deletes[2].count = 287;
     const spillOutDelete = structuredClone(deletes[2]);
@@ -889,11 +909,11 @@ describe("WP2 24-hour evidence artifact validator", () => {
     spillOutDelete.dimensions.datetime = "2026-08-30T00:05:04Z";
     deletes.push(spillOutDelete);
     const queueContents = JSON.stringify(queue);
-    artifact.rawAnalytics["evidence/raw/queue.json"].sha256 = sha256(queueContents);
+    artifact.rawAnalytics["evidence/raw/analytics/queue.json"].sha256 = sha256(queueContents);
     await expect(validateWp224hArtifact(artifact, {
       readRawEvidence: evidenceReaderFor(artifact, {
-        "evidence/raw/workers.json": workerContents,
-        "evidence/raw/queue.json": queueContents,
+        "evidence/raw/analytics/workers.json": workerContents,
+        "evidence/raw/analytics/queue.json": queueContents,
       }),
     })).resolves.toMatchObject({ passed: true });
   });
@@ -911,18 +931,18 @@ describe("WP2 24-hour evidence artifact validator", () => {
 
   it("rejects Workers evidence that ends before terminality grace", async () => {
     const artifact = validArtifact() as any;
-    const workers = structuredClone(RAW_PAYLOADS["evidence/raw/workers.json"]) as any;
+    const workers = structuredClone(RAW_PAYLOADS["evidence/raw/analytics/workers.json"]) as any;
     workers.request.terminalityEndInclusive = "2026-08-29T23:59:59.999Z";
     const contents = JSON.stringify(workers);
-    artifact.rawAnalytics["evidence/raw/workers.json"].sha256 = sha256(contents);
+    artifact.rawAnalytics["evidence/raw/analytics/workers.json"].sha256 = sha256(contents);
     await expect(validateWp224hArtifact(artifact, {
-      readRawEvidence: async (path) => path === "evidence/raw/workers.json" ? contents : readRawEvidence(path),
+      readRawEvidence: async (path) => path === "evidence/raw/analytics/workers.json" ? contents : readRawEvidence(path),
     })).rejects.toThrow("RAW_WORKERS");
   });
 
   it("counts a blocked drain-version producer without inventing a Queue write", async () => {
     const artifact = validArtifact() as any;
-    const workers = structuredClone(RAW_PAYLOADS["evidence/raw/workers.json"]) as any;
+    const workers = structuredClone(RAW_PAYLOADS["evidence/raw/analytics/workers.json"]) as any;
     const blockedProducer = structuredClone(workers.response.data.viewer.accounts[0].workersInvocationsAdaptive[0]);
     blockedProducer.dimensions.datetime = "2026-08-29T23:56:00Z";
     blockedProducer.dimensions.scriptVersion = DRAIN_VERSION;
@@ -930,22 +950,22 @@ describe("WP2 24-hour evidence artifact validator", () => {
     blockedProducer.sum.requests = 1;
     workers.response.data.viewer.accounts[0].workersInvocationsAdaptive.push(blockedProducer);
     const contents = JSON.stringify(workers);
-    artifact.rawAnalytics["evidence/raw/workers.json"].sha256 = sha256(contents);
+    artifact.rawAnalytics["evidence/raw/analytics/workers.json"].sha256 = sha256(contents);
     artifact.totals.maxProducerCpuMs = 9;
     await expect(validateWp224hArtifact(artifact, {
-      readRawEvidence: async (path) => path === "evidence/raw/workers.json" ? contents : readRawEvidence(path),
+      readRawEvidence: async (path) => path === "evidence/raw/analytics/workers.json" ? contents : readRawEvidence(path),
     })).resolves.toMatchObject({ passed: true });
   });
 
   it("rejects Workers samples from an unauthenticated version", async () => {
     const artifact = validArtifact() as any;
-    const workers = structuredClone(RAW_PAYLOADS["evidence/raw/workers.json"]) as any;
+    const workers = structuredClone(RAW_PAYLOADS["evidence/raw/analytics/workers.json"]) as any;
     workers.response.data.viewer.accounts[0].workersInvocationsAdaptive[1].dimensions.scriptVersion =
       "00000000-0000-4000-8000-000000000098";
     const contents = JSON.stringify(workers);
-    artifact.rawAnalytics["evidence/raw/workers.json"].sha256 = sha256(contents);
+    artifact.rawAnalytics["evidence/raw/analytics/workers.json"].sha256 = sha256(contents);
     await expect(validateWp224hArtifact(artifact, {
-      readRawEvidence: async (path) => path === "evidence/raw/workers.json" ? contents : readRawEvidence(path),
+      readRawEvidence: async (path) => path === "evidence/raw/analytics/workers.json" ? contents : readRawEvidence(path),
     })).rejects.toThrow("RAW_DEPLOYMENT");
   });
 
@@ -957,15 +977,15 @@ describe("WP2 24-hour evidence artifact validator", () => {
     artifact.quotaLedger.pop();
     artifact.totals.quotaAttempts = 287;
     artifact.totals.spillOut = 1;
-    const workers = structuredClone(RAW_PAYLOADS["evidence/raw/workers.json"]) as any;
+    const workers = structuredClone(RAW_PAYLOADS["evidence/raw/analytics/workers.json"]) as any;
     const drainConsumer = structuredClone(workers.response.data.viewer.accounts[0].workersInvocationsAdaptive[1]);
     drainConsumer.dimensions.datetime = "2026-08-30T00:14:58Z";
     drainConsumer.dimensions.scriptVersion = DRAIN_VERSION;
     drainConsumer.sum.requests = 1;
     workers.response.data.viewer.accounts[0].workersInvocationsAdaptive.push(drainConsumer);
     const contents = JSON.stringify(workers);
-    artifact.rawAnalytics["evidence/raw/workers.json"].sha256 = sha256(contents);
-    const queue = structuredClone(RAW_PAYLOADS["evidence/raw/queue.json"]) as any;
+    artifact.rawAnalytics["evidence/raw/analytics/workers.json"].sha256 = sha256(contents);
+    const queue = structuredClone(RAW_PAYLOADS["evidence/raw/analytics/queue.json"]) as any;
     const deletes = queue.response.data.viewer.accounts[0].queueTerminalOperations;
     deletes[2].count = 287;
     const spillOutDelete = structuredClone(deletes[2]);
@@ -973,11 +993,11 @@ describe("WP2 24-hour evidence artifact validator", () => {
     spillOutDelete.dimensions.datetime = "2026-08-30T00:15:00Z";
     deletes.push(spillOutDelete);
     const queueContents = JSON.stringify(queue);
-    artifact.rawAnalytics["evidence/raw/queue.json"].sha256 = sha256(queueContents);
+    artifact.rawAnalytics["evidence/raw/analytics/queue.json"].sha256 = sha256(queueContents);
     await expect(validateWp224hArtifact(artifact, {
       readRawEvidence: evidenceReaderFor(artifact, {
-        "evidence/raw/workers.json": contents,
-        "evidence/raw/queue.json": queueContents,
+        "evidence/raw/analytics/workers.json": contents,
+        "evidence/raw/analytics/queue.json": queueContents,
       }),
     })).rejects.toThrow("CLEANUP_GRACE");
   });
