@@ -272,6 +272,28 @@ const readRawEvidence = async (path: string): Promise<string> => {
   return contents;
 };
 
+function evidenceReaderFor(
+  artifact: any,
+  overrides: Record<string, string> = {},
+): (path: string) => Promise<string> {
+  const byKey = new Map<string, any>();
+  for (const entry of [...artifact.ledger, ...artifact.quotaLedger]) {
+    byKey.set(`${entry.messageId}:${entry.attempt}`, entry);
+  }
+  const rows = [...byKey.values()].sort((left, right) =>
+    left.scheduledTime - right.scheduledTime
+      || left.messageId.localeCompare(right.messageId)
+      || left.attempt - right.attempt);
+  const raw = structuredClone(RAW_PAYLOADS["evidence/raw/scheduler-attempts.json"]) as any;
+  raw.response.result[0].results = rows;
+  const contents = JSON.stringify(raw);
+  artifact.rawAnalytics["evidence/raw/scheduler-attempts.json"].sha256 = sha256(contents);
+  return async (path) => {
+    if (path === "evidence/raw/scheduler-attempts.json") return contents;
+    return overrides[path] ?? readRawEvidence(path);
+  };
+}
+
 describe("WP2 24-hour evidence artifact validator", () => {
   it("queries Workers through the post-midnight terminality cutoff", () => {
     expect(WP2_WORKERS_ANALYTICS_QUERY).toContain("$terminalityEndInclusive: Time!");
@@ -379,7 +401,7 @@ describe("WP2 24-hour evidence artifact validator", () => {
     };
     for (const [path, contents] of Object.entries(overrides)) artifact.rawAnalytics[path].sha256 = sha256(contents);
     await expect(validateWp224hArtifact(artifact, {
-      readRawEvidence: async (path) => overrides[path] ?? readRawEvidence(path),
+      readRawEvidence: evidenceReaderFor(artifact, overrides),
     })).resolves.toMatchObject({ passed: true });
   });
 
@@ -413,7 +435,7 @@ describe("WP2 24-hour evidence artifact validator", () => {
     const contents = JSON.stringify(windowStart);
     artifact.rawAnalytics["evidence/raw/window-start.json"].sha256 = sha256(contents);
     await expect(validateWp224hArtifact(artifact, {
-      readRawEvidence: async (path) => path === "evidence/raw/window-start.json" ? contents : readRawEvidence(path),
+      readRawEvidence: evidenceReaderFor(artifact, { "evidence/raw/window-start.json": contents }),
     })).resolves.toMatchObject({ passed: true, rotationStart: "sweep" });
   });
 
@@ -424,7 +446,8 @@ describe("WP2 24-hour evidence artifact validator", () => {
         entry.phase = (["sweep", "probe", "header"] as const)[index % 3];
       });
     }
-    await expect(validateWp224hArtifact(artifact, { readRawEvidence })).rejects.toThrow("PHASE_SEQUENCE");
+    await expect(validateWp224hArtifact(artifact, { readRawEvidence: evidenceReaderFor(artifact) }))
+      .rejects.toThrow("PHASE_SEQUENCE");
   });
 
   it("rejects window-start evidence from another D1, with errors, stale timing or an incomplete final tick", async () => {
@@ -572,11 +595,10 @@ describe("WP2 24-hour evidence artifact validator", () => {
     artifact.totals.maxConsumerCpuMs = 300;
     artifact.totals.memoryUsageBytesP999 = 13_000_000;
     await expect(validateWp224hArtifact(artifact, {
-      readRawEvidence: async (path) => {
-        if (path === "evidence/raw/workers.json") return workerContents;
-        if (path === "evidence/raw/queue.json") return queueContents;
-        return readRawEvidence(path);
-      },
+      readRawEvidence: evidenceReaderFor(artifact, {
+        "evidence/raw/workers.json": workerContents,
+        "evidence/raw/queue.json": queueContents,
+      }),
     })).resolves.toMatchObject({ passed: true });
   });
 
@@ -588,7 +610,8 @@ describe("WP2 24-hour evidence artifact validator", () => {
     artifact.quotaLedger.pop();
     artifact.totals.quotaAttempts = 287;
     artifact.totals.spillOut = 1;
-    await expect(validateWp224hArtifact(artifact, { readRawEvidence })).rejects.toThrow("RAW_WORKERS");
+    await expect(validateWp224hArtifact(artifact, { readRawEvidence: evidenceReaderFor(artifact) }))
+      .rejects.toThrow("RAW_WORKERS");
   });
 
   it("does not reuse one Worker request for multiple spill-out attempts", async () => {
@@ -609,7 +632,7 @@ describe("WP2 24-hour evidence artifact validator", () => {
     const contents = JSON.stringify(workers);
     artifact.rawAnalytics["evidence/raw/workers.json"].sha256 = sha256(contents);
     await expect(validateWp224hArtifact(artifact, {
-      readRawEvidence: async (path) => path === "evidence/raw/workers.json" ? contents : readRawEvidence(path),
+      readRawEvidence: evidenceReaderFor(artifact, { "evidence/raw/workers.json": contents }),
     })).rejects.toThrow("RAW_WORKERS");
   });
 
@@ -653,11 +676,10 @@ describe("WP2 24-hour evidence artifact validator", () => {
     const queueContents = JSON.stringify(queue);
     artifact.rawAnalytics["evidence/raw/queue.json"].sha256 = sha256(queueContents);
     await expect(validateWp224hArtifact(artifact, {
-      readRawEvidence: async (path) => {
-        if (path === "evidence/raw/workers.json") return workerContents;
-        if (path === "evidence/raw/queue.json") return queueContents;
-        return readRawEvidence(path);
-      },
+      readRawEvidence: evidenceReaderFor(artifact, {
+        "evidence/raw/workers.json": workerContents,
+        "evidence/raw/queue.json": queueContents,
+      }),
     })).resolves.toMatchObject({ passed: true });
   });
 
@@ -668,7 +690,7 @@ describe("WP2 24-hour evidence artifact validator", () => {
     crossingAttempt.finishedAt = Date.parse("2026-08-30T00:00:00.500Z");
     artifact.quotaLedger.at(-1).startedAt = crossingAttempt.startedAt;
     artifact.quotaLedger.at(-1).finishedAt = crossingAttempt.finishedAt;
-    await expect(validateWp224hArtifact(artifact, { readRawEvidence }))
+    await expect(validateWp224hArtifact(artifact, { readRawEvidence: evidenceReaderFor(artifact) }))
       .rejects.toThrow("QUEUE_TERMINALITY");
   });
 
@@ -738,11 +760,10 @@ describe("WP2 24-hour evidence artifact validator", () => {
     const queueContents = JSON.stringify(queue);
     artifact.rawAnalytics["evidence/raw/queue.json"].sha256 = sha256(queueContents);
     await expect(validateWp224hArtifact(artifact, {
-      readRawEvidence: async (path) => {
-        if (path === "evidence/raw/workers.json") return contents;
-        if (path === "evidence/raw/queue.json") return queueContents;
-        return readRawEvidence(path);
-      },
+      readRawEvidence: evidenceReaderFor(artifact, {
+        "evidence/raw/workers.json": contents,
+        "evidence/raw/queue.json": queueContents,
+      }),
     })).rejects.toThrow("CLEANUP_GRACE");
   });
 
