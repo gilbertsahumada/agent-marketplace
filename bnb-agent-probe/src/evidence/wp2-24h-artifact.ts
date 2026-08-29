@@ -29,6 +29,8 @@ const REQUIRED_RAW_ANALYTICS = [
 ] as const;
 const PHASES = ["header", "sweep", "probe"] as const;
 const OUTCOMES = ["completed", "failed", "duplicate", "locked"] as const;
+const VERDICT_KEYS = ["attribution", "cleanup", "d1Daily", "d1PerAttempt",
+  "phaseRotation", "queueTerminality", "tickCompleteness", "workerResources"] as const;
 
 type Phase = typeof PHASES[number];
 type Outcome = typeof OUTCOMES[number];
@@ -262,6 +264,7 @@ export async function buildWp224hArtifact(
       stagingManualRun: cleanup.stagingManualRun,
       sharedSecretPresent: cleanup.sharedSecretPresent,
     },
+    verdicts: Object.fromEntries(VERDICT_KEYS.map((key) => [key, "pass"])),
   };
   await validateWp224hArtifact(artifact, dependencies);
   return artifact;
@@ -332,6 +335,7 @@ export async function validateWp224hArtifact(
   const totals = validateTotals(artifact.totals, limits, ledger, quotaLedger, raw, start, end);
   validateAttribution(artifact.accountUsage, totals, raw);
   validateCleanup(artifact.cleanup, raw, end, ledger.entries);
+  validateVerdicts(artifact.verdicts);
 
   return {
     passed: true,
@@ -342,6 +346,14 @@ export async function validateWp224hArtifact(
     maxD1QueriesPerAttempt: ledger.maxD1Queries,
     rotationStart: ledger.rotationStart,
   };
+}
+
+function validateVerdicts(value: unknown): void {
+  const verdicts = record(value, "VERDICTS", "verdicts");
+  if (Object.keys(verdicts).length !== VERDICT_KEYS.length
+    || VERDICT_KEYS.some((key) => verdicts[key] !== "pass")) {
+    fail("VERDICTS", "artifact must persist one passing verdict for every validated gate");
+  }
 }
 
 function utcMidnight(value: unknown): number {
