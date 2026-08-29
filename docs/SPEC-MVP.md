@@ -1291,8 +1291,8 @@ serializa la credencial.
 El runbook ejecutable completo está en `bnb-agent-probe/README.md`. Sus
 productores create-only son, en orden: `evidence:wp2-control preflight`,
 `evidence:wp2-control activation`, `evidence:wp2-window-start`,
-`evidence:wp2-control drain`, `evidence:wp2-control cleanup`,
-`evidence:wp2-ledger`, `evidence:wp2-analytics`,
+`evidence:wp2-control drain`, `evidence:wp2-ledger`,
+`evidence:wp2-analytics`, `evidence:wp2-control cleanup`,
 `evidence:wp2-deployment`, `evidence:wp2-build` y `evidence:wp2-24h`.
 Preflight y activación deben finalizar antes del primer tick y no se reconstruyen
 retrospectivamente. El builder resuelve los raw desde la raíz del repositorio,
@@ -1303,8 +1303,9 @@ Las consultas versionadas están en `bnb-agent-probe/src/evidence/wp2-24h-querie
 Workers y las operaciones Queue usan inicio inclusivo `00:00:00.000Z` y fin inclusivo
 `23:59:59.999Z`; Queue se consulta además sin filtro de ID para demostrar la
 cuota Free account-wide, y su serie de backlog se extiende como mínimo hasta
-`00:15:00.000Z`. El artefacto conserva como ventana lógica el final exclusivo
-del siguiente `00:00:00.000Z`. D1 Analytics se consulta por la fecha UTC exacta,
+`00:15:00.000Z` y hasta después del último `finishedAt`/`DeleteMessage` si son
+posteriores. El artefacto conserva como ventana lógica el final exclusivo del
+siguiente `00:00:00.000Z`. D1 Analytics se consulta por la fecha UTC exacta,
 tanto para la base de staging como para el total de cuenta, y cada respuesta raw
 se conserva con SHA-256 antes de derivar totales.
 
@@ -1317,13 +1318,16 @@ antes de `00:00Z` y se activa `PRODUCER_KILL_SWITCH=1` como barrera contra un
 trigger tardío mientras `KILL_SWITCH=0` mantiene vivo exclusivamente el consumer
 durante la gracia de retries pertenecientes al día. La gracia dura como mínimo hasta `00:15Z`
 (tres delays de lease de 240 s más margen) y no termina hasta que los 288 ticks
-tengan un outcome terminal en `scheduler_attempts` y Queue Analytics no muestre
-operaciones pendientes; backlog REST cero solo corrobora y nunca cierra el gate.
+tengan exactamente un `completed` en `scheduler_attempts`, Queue Analytics
+demuestre los 288 `DeleteMessage` exitosos y el backlog REST sea cero; este
+último solo corrobora y nunca cierra el gate por sí mismo. Esas verificaciones
+se hacen con `KILL_SWITCH=0`; solo entonces se autoriza cleanup.
 Los raw de preflight, activación, drain y cleanup incluyen inicio y fin de una
 captura acotada a diez segundos. El validador exige activación anterior al
 primer tick; drain posterior al último tick pero anterior a `24:00Z`, con
-`PRODUCER_KILL_SWITCH=1`, `KILL_SWITCH=0`, Cron vacío y backlog cero; y cleanup
-posterior a la gracia. Cada snapshot autentica además el perfil Free, la
+`PRODUCER_KILL_SWITCH=1`, `KILL_SWITCH=0` y Cron vacío; su backlog literal puede
+ser mayor que cero mientras termina el drenaje. Cleanup exige backlog cero y es
+posterior a la gracia y a la conciliación. Cada snapshot autentica además el perfil Free, la
 cadencia, presupuestos D1/subrequests, timeout, caps y bindings D1/Queue
 desplegados, no valores hardcodeados por el artefacto. Workers Analytics separa el CPU P99
 del producer `<10 ms` correlacionando sus timestamps con `WriteMessage`, y deja
@@ -1333,11 +1337,12 @@ el consumer `<30 s`; el ledger deriva wall time p95
 `<30 s` y Workers conserva también memoria P999. Como Queue Analytics no emite
 necesariamente puntos durante la inactividad, se exigen una escritura y un
 delete exitoso por mensaje terminal, el último backlog emitido en cero después
-del último tick y el backlog REST timestamped en cero tras `00:15Z`; la consulta
-se solicita completa hasta ese cutoff.
+del último tick y el backlog REST timestamped en cero tras la gracia mínima; la
+consulta se solicita completa hasta un cutoff UTC real capturado después del
+último intento y delete, nunca se fija artificialmente en `00:15Z`.
 Workers Analytics usa el mismo cutoff de terminalidad, no el fin del día: así
 incluye CPU, memoria, errores y versión de cualquier retry spill-out entre
-`00:00Z` y `00:15Z`. Su cohorte de errores une los intentos del día con esos
+`00:00Z` y el cutoff real. Su cohorte de errores une los intentos del día con esos
 spill-out sin cambiar el presupuesto de cuota UTC.
 Cada intento spill-out debe correlacionar con una muestra consumer autenticada a
 no más de un segundo de su `startedAt`; ampliar el rango sin observar ese bucket
