@@ -895,6 +895,7 @@ async function validateRawAnalytics(
   let producerSamples = 0;
   let consumerSamples = 0;
   let producerRequests = 0;
+  let consumerRequests = 0;
   for (const sample of workerSamples) {
     const nearWrite = [...producerTimestamps].some((timestamp) => Math.abs(timestamp - sample.timestamp) <= 1_000);
     if (nearWrite && sample.subrequests === 0) {
@@ -907,6 +908,7 @@ async function validateRawAnalytics(
       maxProducerCpuMs = Math.max(maxProducerCpuMs, sample.cpuMs);
     } else if (!nearWrite && sample.subrequests > 0) {
       consumerSamples += 1;
+      consumerRequests += sample.requests;
       maxConsumerCpuMs = Math.max(maxConsumerCpuMs, sample.cpuMs);
     } else {
       fail("RAW_WORKERS", "Workers sample is ambiguous between Cron producer and Queue consumer");
@@ -914,6 +916,12 @@ async function validateRawAnalytics(
   }
   if (producerSamples === 0 || consumerSamples === 0 || producerRequests !== queueWrites) {
     fail("RAW_WORKERS", "Workers Analytics cannot separate Cron producer and Queue consumer CPU");
+  }
+  const consumerAttemptKeys = new Set([...context.tickLedger, ...context.quotaLedger]
+    .filter(({ startedAt }) => startedAt >= context.start && startedAt <= workersTerminalityEnd)
+    .map(({ messageId, attempt }) => `${messageId}:${attempt}`));
+  if (consumerRequests !== consumerAttemptKeys.size) {
+    fail("RAW_WORKERS", "Workers consumer requests do not match the durable attempt cohort");
   }
   const spillOutAttempts = context.tickLedger.filter(({ startedAt }) => startedAt >= context.end);
   const consumerCapacity = workerSamples.map((sample) => ({ sample, remaining: sample.requests }));
