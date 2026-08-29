@@ -53,7 +53,10 @@ export async function captureWp2Ledger(options: CaptureOptions): Promise<void> {
   const result = payload.result[0] as { readonly results?: unknown };
   if (!Array.isArray(result.results)) throw new Error("scheduler ledger rows are missing");
   const capturedAt = (options.now ?? (() => new Date().toISOString()))();
-  canonicalTimestamp(capturedAt, "capturedAt");
+  const capturedTimestamp = canonicalTimestamp(capturedAt, "capturedAt");
+  if (capturedTimestamp < end + 15 * 60_000) {
+    throw new Error("scheduler ledger capture must follow the terminality grace");
+  }
   const contents = `${JSON.stringify({
     request: {
       accountId: options.accountId,
