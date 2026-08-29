@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 
 import { buildWp224hArtifact, validateWp224hArtifact } from "../src/evidence/wp2-24h-artifact";
+import { resolveRawEvidencePath } from "../scripts/build-wp2-artifact";
 import {
   WP2_ATTEMPT_COHORT_SQL,
   WP2_D1_ACCOUNT_ANALYTICS_QUERY,
@@ -353,6 +354,11 @@ function evidenceReaderFor(
 }
 
 describe("WP2 24-hour evidence artifact validator", () => {
+  it("resolves repository evidence above the package working directory", () => {
+    expect(resolveRawEvidencePath("evidence/raw/d1-database.json"))
+      .toBe(new URL("../../evidence/raw/d1-database.json", import.meta.url).pathname);
+  });
+
   it("builds the complete artifact from the required literal raw captures", async () => {
     const artifact = await buildWp224hArtifact({
       accountId: "bc8d4adf4860284fda426b24e7377bc2",
