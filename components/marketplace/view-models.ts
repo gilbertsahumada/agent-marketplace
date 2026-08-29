@@ -127,34 +127,31 @@ export function agentCardWithObservation(
   observationsAvailable: boolean,
   now = Date.now(),
   provenAgentId?: string,
+  category?: MarketplaceAgent["categories"][number]["category"],
 ): AgentCardViewModel {
   const base = agentCardViewModel(agent, provenAgentId);
   if (!observationsAvailable) {
-    return {
-      ...base,
-      hireability: "listed_only",
-      passportState: base.passportState === "job_proven" ? "job_proven" : "registered",
-      evidence: base.evidence.map((step) => {
-        if (step.kind !== "reachable" && step.kind !== "quote") return step;
-        const { timestamp: _timestamp, ...withoutTimestamp } = step;
-        return {
-          ...withoutTimestamp,
-          status: "unavailable",
-          provenance: "unavailable",
-          detail: "Current marketplace observations are temporarily unavailable.",
-          source: "marketplace observation Worker",
-        };
-      }),
-    };
+    return withoutCurrentObservation(
+      base, "unavailable", "unavailable",
+      "Current marketplace observations are temporarily unavailable.",
+    );
   }
-  if (!target) return base;
-  const latest = target.latest;
-  const quoteCurrent = latest?.outcome === "quote_verified"
+  if (!target) {
+    return withoutCurrentObservation(
+      base, "unavailable", "not_probed",
+      "No current marketplace observation exists for this declared agent.",
+    );
+  }
+  const latest = category ? target.latestByCategory[category] ?? null : target.latest;
+  const quoteCurrent = target.declarationState === "current"
+    && latest?.outcome === "quote_verified"
     && now - latest.probedAt <= 60_000
     && latest.probedAt <= now
     && latest.quoteExpiresAt !== null
     && latest.quoteExpiresAt > now;
-  const reachable = latest !== null && ["quote_verified", "quote_rejected", "protocol_valid"].includes(latest.outcome);
+  const reachable = target.declarationState === "current"
+    && latest !== null
+    && ["quote_verified", "quote_rejected", "protocol_valid"].includes(latest.outcome);
   const observedAt = latest ? new Date(latest.probedAt).toISOString() : undefined;
   return {
     ...base,
@@ -191,6 +188,30 @@ export function agentCardWithObservation(
         ...(observedAt ? { timestamp: observedAt } : {}),
       };
       return step;
+    }),
+  };
+}
+
+function withoutCurrentObservation(
+  base: AgentCardViewModel,
+  status: "unavailable",
+  provenance: "unavailable" | "not_probed",
+  detail: string,
+): AgentCardViewModel {
+  return {
+    ...base,
+    hireability: "listed_only",
+    passportState: base.passportState === "job_proven" ? "job_proven" : "registered",
+    evidence: base.evidence.map((step) => {
+      if (step.kind !== "reachable" && step.kind !== "quote") return step;
+      const { timestamp: _timestamp, ...withoutTimestamp } = step;
+      return {
+        ...withoutTimestamp,
+        status,
+        provenance,
+        detail,
+        source: "marketplace observation Worker",
+      };
     }),
   };
 }

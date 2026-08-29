@@ -1,6 +1,6 @@
 # Capa de observación de contratabilidad — SPEC MVP v5 Free-first
 
-**Estado:** WP0, WP1, WP3 y WP5 completos y fusionados. WP2 tiene implementación y gates remotos de Queue completos. La corrida UTC 2026-08-29 se conserva como ensayo operativo: empezó correctamente, pero su preflight literal no se publicó y la captura completa de activación ocurrió después del primer tick, por lo que no puede cerrar el gate documental. Los cambios posteriores invalidaron los identificadores del candidato anterior; la próxima ventana final se programa únicamente después de cerrar WP4 y fijar un nuevo commit, version y etag. Producción continúa sin Cron.
+**Estado:** WP0, WP1, WP3 y WP5 completos y fusionados. WP4 tiene implementación, suites, build y smoke local de Wrangler completos en `codex/wp4-observations`; falta fusionarlo y promover ese candidato exacto a staging. WP2 tiene implementación y gates remotos de Queue completos. La corrida UTC 2026-08-29 se conserva como ensayo operativo: empezó correctamente, pero su preflight literal no se publicó y la captura completa de activación ocurrió después del primer tick, por lo que no puede cerrar el gate documental. Los cambios posteriores invalidaron los identificadores del candidato anterior; la próxima ventana final se programa únicamente después de fusionar WP4 y fijar un nuevo commit, version y etag. Producción continúa sin Cron.
 **Fecha de corte del diseño:** 2026-08-28.
 **Objetivo:** completar la capa de observación necesaria para recorrer:
 
@@ -474,11 +474,11 @@ HEADER_LIMIT=25                  máximo Free 50
 PROBE_BATCH_SIZE=1              máximo Free 1
 PROBE_AGENT_ALLOWLIST=*         WP4 general; CSV restringe temporalmente por agentId
 PROBE_ENDPOINT_ALLOWLIST=*      WP4 general; CSV restringe por URL exacta
-SWEEP_LIMIT=4                   máximo Free 40 y siempre <= TRUST8004_REQUESTS_PER_RUN
+SWEEP_LIMIT=4                   máximo Free 13 y siempre <= TRUST8004_REQUESTS_PER_RUN
 SWEEP_PAGES_PER_RUN=1           máximo Free 1
 TRUST8004_REQUESTS_PER_RUN=4
 EXTERNAL_SUBREQUESTS_PER_RUN=12 máximo Free 40, plataforma 50
-D1_QUERIES_PER_RUN=40           mínimo 13, máximo Free 40, plataforma D1 50
+D1_QUERIES_PER_RUN=40           mínimo Free 22, máximo Free 40, plataforma D1 50
 D1_ROWS_READ_PER_RUN=3000
 D1_ROWS_WRITTEN_PER_RUN=60
 PROBE_TIMEOUT_MS=5000
@@ -595,8 +595,10 @@ HEADER obtiene los targets existentes con una lectura acotada y agrupa todos los
 writes de la página. No ejecuta `SELECT + INSERT/UPDATE` por elemento. El batch,
 el resumen, el avance de fase y la liberación del lease deben caber juntos en
 `D1_QUERIES_PER_RUN`; si el preflight excede el presupuesto, no se inicia ningún
-write. Los upserts se fragmentan dentro del mismo batch atómico para que ningún
-parámetro enlazado supere 1,5 MB, con margen frente al máximo D1 de 2 MB.
+write. Los upserts ORM se fragmentan en hasta siete targets por statement: 98
+parámetros enlazados como máximo, por debajo del límite operativo de 100. Los
+límites de schema mantienen cada string individual muy por debajo del máximo D1
+de 2 MB.
 
 Un elemento inválido o sin `registeredAt` se contabiliza como `invalidItems` y
 no bloquea los elementos válidos de la página. No participa del high-water; si
@@ -615,6 +617,10 @@ ERC-8183 persistidos por HEADER y el inventario curado de cuatro categorías;
 no intenta materializar los 309.897 registros globales. El cursor pagina esa
 unión de IDs en D1 y resuelve un detalle trust8004 por agente. Por eso
 `SWEEP_LIMIT` no puede superar `TRUST8004_REQUESTS_PER_RUN` en Free. Por página:
+
+Como cada agente puede producir dos writes de target, Free limita
+`SWEEP_LIMIT<=13`; junto con estado de fase, lease y cuatro reservas de
+cleanup/ledger, su peor caso cabe exactamente en 40 queries.
 
 La unión usa todos los IDs que ya tienen un target elegible persistido,
 independientemente de transporte o `declarationState`, más los IDs curados. Esa
@@ -760,6 +766,12 @@ vencidas ni el snapshot de release como estado actual.
 
 `SHARED_SECRET` solo existe en Vercel server y Worker. El navegador llama una
 ruta same-origin; esta valida, elimina contexto y reenvía.
+
+La habilitación previa del recorrido usa exclusivamente una observación vigente
+de `/observations` para el mismo agentId configurado. El snapshot de release
+expirado no autoriza la pantalla, la quote, `prepare` ni `notify`; si Worker/D1
+falla, el recorrido queda deshabilitado. La observación tampoco se convierte en
+la quote de compra: el paso 3 siempre negocia una nueva.
 
 ---
 
@@ -1019,6 +1031,11 @@ expirada como si fuera estado actual. Si Worker/D1 no responde:
 El snapshot WP0 del funnel es una excepción deliberada: es una medición histórica
 agregada, visible siempre con fecha, bloque y SHA-256. Nunca se etiqueta `current`
 ni sustituye el estado actual de agentes individuales.
+
+El snapshot de release generado el 2026-08-25 expiró el
+2026-08-28T23:39:15.884Z. Puede conservarse en una ruta de metodología
+etiquetada como histórica, pero no existe ningún adaptador activo que lo use
+como catálogo, observación o autorización de Hire.
 
 ### 10.2 `GET /health`
 

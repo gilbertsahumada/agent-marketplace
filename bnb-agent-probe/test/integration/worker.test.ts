@@ -34,7 +34,7 @@ function queueMessage(body: unknown, attempts = 1) {
 describe("WP1 in the Workers runtime", () => {
   it("serves the WP4 observations contract without leaking signatures", async () => {
     const now = 1_788_000_000_000;
-    await env.DB.batch([
+    await env.DB.batch!([
       env.DB.prepare(
         `INSERT INTO probe_targets (
           agentId, chainId, transport, endpoint, name, categoriesJson,

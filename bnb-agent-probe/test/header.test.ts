@@ -287,6 +287,15 @@ class RecordingStatement implements D1PreparedStatementLike {
   async run<Meta>(): Promise<D1ResultLike<Meta>> {
     throw new Error("adapter must use batch");
   }
+
+  async raw<Row extends unknown[]>(options?: { columnNames?: boolean }): Promise<Row[]> {
+    this.database.allCalls.push(this);
+    if (!this.database.selectSuccess) throw new Error("HEADER existing-target query failed");
+    const rows = this.database.selectRows;
+    const values = rows.map((row) => Object.values(row)) as Row[];
+    if (options?.columnNames && rows[0]) values.unshift(Object.keys(rows[0]) as Row);
+    return values;
+  }
 }
 
 class RecordingDatabase implements D1DatabaseLike {
@@ -306,10 +315,8 @@ class RecordingDatabase implements D1DatabaseLike {
   async batch<Meta>(statements: readonly D1PreparedStatementLike[]): Promise<readonly D1ResultLike<Meta>[]> {
     const recorded = statements as readonly RecordingStatement[];
     this.batches.push(recorded);
-    return recorded.map((_, index) => ({
-      success: index !== this.batchFailureIndex,
-      meta: {} as Meta,
-    }));
+    if (this.batchFailureIndex !== null) throw new Error("D1 batch did not complete successfully");
+    return recorded.map(() => ({ success: true, meta: {} as Meta }));
   }
 }
 
@@ -321,8 +328,8 @@ describe("D1 HEADER persistence adapter", () => {
     await persistence.loadExistingTargets(["10", "20", "30"]);
 
     expect(db.allCalls).toHaveLength(1);
-    expect(db.allCalls[0]?.query).toContain("agentId IN (?, ?, ?)");
-    expect(db.allCalls[0]?.values).toEqual(["10", "20", "30"]);
+    expect(db.allCalls[0]?.query.replaceAll('"', "")).toContain("agentId in (?, ?, ?)");
+    expect(db.allCalls[0]?.values).toEqual([56, "10", "20", "30"]);
   });
 
   it("rejects failed SELECT results", async () => {
@@ -330,7 +337,7 @@ describe("D1 HEADER persistence adapter", () => {
     db.selectSuccess = false;
 
     await expect(createD1HeaderPersistence(db).loadExistingTargets(["10"]))
-      .rejects.toThrow("existing-target query failed");
+      .rejects.toThrow("Failed query");
   });
 
   it("writes targets and all runtime progress in one checked batch", async () => {
@@ -342,8 +349,8 @@ describe("D1 HEADER persistence adapter", () => {
 
     expect(db.batches).toHaveLength(1);
     expect(db.batches[0]).toHaveLength(2);
-    expect(db.batches[0]?.[0]?.query).toContain("INSERT INTO probe_targets");
-    expect(db.batches[0]?.[1]?.query).toContain("VALUES (?, ?, ?, ?), (?, ?, ?, ?), (?, ?, ?, ?)");
+    expect(db.batches[0]?.[0]?.query).toContain('insert into "probe_targets"');
+    expect(db.batches[0]?.[1]?.query).toContain("values (?, ?, ?, ?), (?, ?, ?, ?), (?, ?, ?, ?)");
     expect(db.batches[0]?.[1]?.values).toEqual([
       "header_high_water",
       "1000:900",
@@ -376,13 +383,13 @@ describe("D1 HEADER persistence adapter", () => {
     const summary = await runHeader(fixture.dependencies, { limit: 25 });
 
     expect(summary.materialWrites).toBe(50);
-    expect(summary.d1Queries).toBe(3);
+    expect(summary.d1Queries).toBe(10);
     expect(db.batches).toHaveLength(1);
-    expect(db.batches[0]).toHaveLength(2);
-    const serializedTargets = db.batches[0]?.[0]?.values[0];
-    expect(typeof serializedTargets).toBe("string");
-    expect(JSON.parse(String(serializedTargets))).toHaveLength(50);
-    expect(db.batches[0]?.[0]?.query).toContain("FROM json_each(?)");
+    expect(db.batches[0]).toHaveLength(9);
+    expect(db.batches[0]?.slice(0, 8).every((statement) =>
+      statement.query.includes('insert into "probe_targets"') && statement.values.length <= 100,
+    )).toBe(true);
+    expect(db.batches[0]?.[8]?.query).toContain('insert into "runtime_state"');
   });
 
   it("rejects any unsuccessful batch statement", async () => {

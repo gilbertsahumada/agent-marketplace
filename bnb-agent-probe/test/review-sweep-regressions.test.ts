@@ -14,6 +14,7 @@ type DeclarationState = "current" | "removed" | "metadata_unavailable";
 
 interface StoredTarget {
   agentId: string;
+  chainId?: number;
   transport: "a2a" | "erc8183_http";
   endpoint: string;
   name: string | null;
@@ -46,6 +47,7 @@ class StatefulSweepDatabase implements D1DatabaseLike {
   prepare(query: string): D1PreparedStatementLike {
     const database = this;
     let values: readonly unknown[] = [];
+    const normalized = query.replaceAll('"', "").toLowerCase();
     const statement: MemoryStatement = {
       query,
       get values() {
@@ -59,11 +61,13 @@ class StatefulSweepDatabase implements D1DatabaseLike {
         return null as Row | null;
       },
       async all<Row>(): Promise<D1ResultLike<unknown, Row>> {
-        if (query.includes("FROM runtime_state")) {
-          return ok([...database.runtime].map(([key, integerValue]) => ({ key, integerValue })) as Row[]);
+        if (normalized.includes("from runtime_state")) {
+          return ok([...database.runtime].map(([key, integerValue]) => ({
+            key, textValue: null, integerValue, updatedAt: 0,
+          })) as Row[]);
         }
 
-        if (query.includes("WITH live_agent_ids")) {
+        if (normalized.includes("with live_agent_ids")) {
           const offset = Number(values.at(-1));
           const requested = Number(values.at(-2));
           const curated = values.slice(0, -2).map(String);
@@ -79,8 +83,8 @@ class StatefulSweepDatabase implements D1DatabaseLike {
           return ok(agentIds.map((agentId) => ({ agentId })) as Row[]);
         }
 
-        if (query.includes("FROM probe_targets")) {
-          const requestedIds = new Set(values.map(String));
+        if (normalized.includes("from probe_targets")) {
+          const requestedIds = new Set(values.slice(1).map(String));
           return ok(database.targets.filter((target) => requestedIds.has(target.agentId)) as Row[]);
         }
 
@@ -88,6 +92,20 @@ class StatefulSweepDatabase implements D1DatabaseLike {
       },
       async run<Meta>(): Promise<D1ResultLike<Meta>> {
         throw new Error("SWEEP writes must remain batched");
+      },
+      async raw<Row extends unknown[]>(options?: { columnNames?: boolean }): Promise<Row[]> {
+        const result = await this.all<Record<string, unknown>>();
+        const rows = result.results ?? [];
+        const output = rows.map((row) => normalized.includes("from probe_targets")
+          ? [
+              row.agentId, row.chainId ?? 56, row.transport, row.endpoint, row.name,
+              row.categoriesJson, row.categoryProvenance, row.declarationState,
+              row.currentMetadataUpdatedAt, row.lastMetadataCheckedAt, row.firstSeenAt,
+              row.lastChangedAt, row.lastSeenAt, row.priority,
+            ]
+          : Object.values(row)) as Row[];
+        if (options?.columnNames && rows[0]) output.unshift(Object.keys(rows[0]) as Row);
+        return output;
       },
     };
     return statement;
@@ -98,17 +116,16 @@ class StatefulSweepDatabase implements D1DatabaseLike {
   ): Promise<readonly D1ResultLike<Meta>[]> {
     for (const opaque of statements) {
       const statement = opaque as MemoryStatement;
-      if (statement.query.includes("SET declarationState = 'removed'")) {
+      const normalized = statement.query.replaceAll('"', "").toLowerCase();
+      if (normalized.startsWith("update probe_targets") && statement.values[0] === "removed") {
         this.setDeclarationState(statement, "removed");
-      } else if (statement.query.includes("SET declarationState = 'metadata_unavailable'")) {
+      } else if (normalized.startsWith("update probe_targets") && statement.values[0] === "metadata_unavailable") {
         this.setDeclarationState(statement, "metadata_unavailable");
       } else if (
-        statement.query.includes("INSERT INTO runtime_state")
-        && statement.query.includes("integerValue")
-        && statement.values[1] !== undefined
-        && typeof statement.values[1] === "number"
+        normalized.startsWith("insert into runtime_state")
+        && typeof statement.values[2] === "number"
       ) {
-        this.runtime.set(String(statement.values[0]), statement.values[1]);
+        this.runtime.set(String(statement.values[0]), statement.values[2]);
       }
     }
     return statements.map(() => ({ success: true, meta: {} as Meta }));

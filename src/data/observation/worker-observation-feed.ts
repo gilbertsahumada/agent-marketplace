@@ -9,6 +9,7 @@ import {
 } from "../../business/entities/worker-observations.ts";
 
 const CACHE_TTL_MS = 60_000;
+const MAX_FUTURE_CLOCK_SKEW_MS = 5_000;
 const cache = new AsyncTtlCache();
 
 export async function getWorkerObservationFeed(): Promise<ObservationFeedResult> {
@@ -22,7 +23,7 @@ export async function getWorkerObservationFeed(): Promise<ObservationFeedResult>
         signal: AbortSignal.timeout(5_000),
       });
       if (!response.ok) throw new Error("OBSERVATIONS_UNAVAILABLE");
-      return parseFeed(await response.json());
+      return parseFeed(await response.json(), Date.now());
     });
     return { status: "available", feed };
   } catch {
@@ -30,9 +31,13 @@ export async function getWorkerObservationFeed(): Promise<ObservationFeedResult>
   }
 }
 
-function parseFeed(value: unknown): WorkerObservationFeed {
+function parseFeed(value: unknown, now: number): WorkerObservationFeed {
   if (!record(value) || value.schemaVersion !== 1 || !safeInteger(value.generatedAt)
     || !Array.isArray(value.targets)) throw new Error("OBSERVATIONS_INVALID");
+  if (value.generatedAt > now + MAX_FUTURE_CLOCK_SKEW_MS
+    || now - value.generatedAt > CACHE_TTL_MS) {
+    throw new Error("OBSERVATIONS_STALE");
+  }
   return {
     schemaVersion: 1,
     generatedAt: value.generatedAt,

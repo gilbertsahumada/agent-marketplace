@@ -1,6 +1,10 @@
-import type { D1DatabaseLike, D1PreparedStatementLike } from "../db/client";
+import { and, eq, sql } from "drizzle-orm";
+import type { D1DatabaseLike } from "../db/client";
+import { createDatabase, readProbeTargetsByAgentIds, readRuntimeStates } from "../db/orm";
+import { probeTargets, runtimeState } from "../db/schema";
 
 const MAX_BOUND_PARAMETERS = 100;
+const MAX_TARGET_IDS_PER_QUERY = MAX_BOUND_PARAMETERS - 1;
 const LAST_SEEN_REFRESH_MS = 60 * 60_000;
 
 export type SweepTransport = "a2a" | "erc8183_http";
@@ -120,11 +124,6 @@ interface ExistingTarget {
   readonly priority: number;
 }
 
-interface RuntimeStateRow {
-  readonly key: string;
-  readonly integerValue: number | null;
-}
-
 export function createD1LiveAgentPageReader(
   db: D1DatabaseLike,
   curatedAgentIds: readonly string[],
@@ -140,27 +139,24 @@ export function createD1LiveAgentPageReader(
     assertPositiveSafeInteger(limit, "SWEEP limit");
 
     const curatedSelect = curated.length === 0
-      ? "SELECT NULL AS agentId WHERE 0"
-      : `SELECT column1 AS agentId FROM (VALUES ${curated.map(() => "(?)").join(", ")})`;
-    const result = await db
-      .prepare(
-        `WITH live_agent_ids AS (
-           SELECT DISTINCT agentId
-           FROM probe_targets
-           WHERE chainId = 56
-           UNION
-           ${curatedSelect}
-         )
-         SELECT agentId
-         FROM live_agent_ids
-         ORDER BY length(agentId) ASC, agentId ASC
-         LIMIT ? OFFSET ?`,
+      ? sql`SELECT NULL AS agentId WHERE 0`
+      : sql`SELECT column1 AS agentId FROM (VALUES ${sql.join(
+          curated.map((agentId) => sql`(${agentId})`), sql`, `,
+        )})`;
+    const rows = await createDatabase(db).all<{ agentId: string }>(sql`
+      WITH live_agent_ids AS (
+        SELECT DISTINCT agentId
+        FROM ${probeTargets}
+        WHERE ${probeTargets.chainId} = 56
+        UNION
+        ${curatedSelect}
       )
-      .bind(...curated, limit + 1, offset)
-      .all<{ agentId: string }>();
+      SELECT agentId
+      FROM live_agent_ids
+      ORDER BY length(agentId) ASC, agentId ASC
+      LIMIT ${limit + 1} OFFSET ${offset}
+    `);
 
-    if (!result.success) throw new Error("Could not read SWEEP live agent page");
-    const rows = result.results ?? [];
     const agentIds = rows.slice(0, limit).map((row) => normalizeAgentId(row.agentId));
     return {
       agentIds,
@@ -177,16 +173,10 @@ export async function runSweepPhase(
   assertPositiveSafeInteger(input.limit, "SWEEP limit");
   assertNonNegativeSafeInteger(input.nowMs, "SWEEP nowMs");
 
-  const stateRows = await input.db
-    .prepare(
-      `SELECT key, integerValue
-       FROM runtime_state
-       WHERE key IN ('sweep_offset', 'sweep_round')`,
-    )
-    .all<RuntimeStateRow>();
-  if (!stateRows.success) throw new Error("Could not read SWEEP runtime state");
+  const orm = createDatabase(input.db);
+  const stateRows = await readRuntimeStates(orm, ["sweep_offset", "sweep_round"]);
 
-  const state = new Map((stateRows.results ?? []).map((row) => [row.key, row.integerValue]));
+  const state = new Map(stateRows.map((row) => [row.key, row.integerValue]));
   const previousOffset = runtimeInteger(state.get("sweep_offset"), "sweep_offset");
   const previousRound = runtimeInteger(state.get("sweep_round"), "sweep_round");
   const page = await dependencies.listLiveAgentPage({
@@ -208,7 +198,7 @@ export async function runSweepPhase(
 
   const existing = await readExistingTargets(input.db, page.agentIds);
   const existingByAgent = groupExistingTargets(existing);
-  const statements: D1PreparedStatementLike[] = [];
+  const statements: unknown[] = [];
   let changedTargets = 0;
   let removedTargets = 0;
   let metadataUnavailableTargets = 0;
@@ -218,7 +208,7 @@ export async function runSweepPhase(
     if (result.status === "metadata_unavailable") {
       for (const target of previousTargets) {
         if (target.declarationState !== "current") continue;
-        statements.push(prepareUnavailable(input.db, target, input.nowMs));
+        statements.push(prepareUnavailable(orm, target, input.nowMs));
         metadataUnavailableTargets += 1;
       }
       continue;
@@ -229,16 +219,16 @@ export async function runSweepPhase(
     for (const candidate of candidates) {
       const previous = previousTargets.find((target) => targetKey(target) === targetKey(candidate));
       if (previous === undefined || targetChanged(previous, result, candidate)) {
-        statements.push(prepareUpsert(input.db, result, candidate, previous, input.nowMs));
+        statements.push(prepareUpsert(orm, result, candidate, previous, input.nowMs));
         changedTargets += 1;
       } else if (input.nowMs - previous.lastSeenAt >= LAST_SEEN_REFRESH_MS) {
-        statements.push(prepareSeenRefresh(input.db, previous, input.nowMs));
+        statements.push(prepareSeenRefresh(orm, previous, input.nowMs));
       }
     }
 
     for (const previous of previousTargets) {
       if (previous.declarationState === "removed" || declaredKeys.has(targetKey(previous))) continue;
-      statements.push(prepareRemoved(input.db, previous, input.nowMs));
+      statements.push(prepareRemoved(orm, previous, input.nowMs));
       removedTargets += 1;
     }
   }
@@ -273,30 +263,24 @@ export async function runSweepPhase(
     wallTimeMs: Math.max(0, (input.now?.() ?? input.nowMs) - (input.startedAtMs ?? input.nowMs)),
   };
 
-  statements.push(prepareRuntimeInteger(input.db, "sweep_offset", nextOffset, input.nowMs));
+  statements.push(prepareRuntimeInteger(orm, "sweep_offset", nextOffset, input.nowMs));
   if (complete) {
-    statements.push(prepareRuntimeInteger(input.db, "sweep_round", sweepRound, input.nowMs));
+    statements.push(prepareRuntimeInteger(orm, "sweep_round", sweepRound, input.nowMs));
   }
   statements.push(prepareRuntimeText(
-    input.db,
+    orm,
     "last_sweep_summary",
     JSON.stringify(summary),
     input.nowMs,
   ));
-  statements.push(prepareRuntimeText(input.db, "next_scheduler_phase", "probe", input.nowMs));
+  statements.push(prepareRuntimeText(orm, "next_scheduler_phase", "probe", input.nowMs));
   if (input.completedQueueScheduledTime !== undefined) {
-    statements.push(input.db.prepare(
-      `INSERT INTO runtime_state (key, textValue, integerValue, updatedAt)
-       VALUES ('last_queue_scheduled_time', NULL, ?, ?)
-       ON CONFLICT(key) DO UPDATE SET textValue=NULL,
-         integerValue=excluded.integerValue, updatedAt=excluded.updatedAt`,
-    ).bind(input.completedQueueScheduledTime, input.nowMs));
+    statements.push(prepareRuntimeInteger(
+      orm, "last_queue_scheduled_time", input.completedQueueScheduledTime, input.nowMs,
+    ));
   }
 
-  const batchResults = await input.db.batch(statements);
-  if (batchResults.length !== statements.length || batchResults.some((result) => !result.success)) {
-    throw new Error("SWEEP batch did not complete successfully");
-  }
+  await orm.batch(statements as unknown as Parameters<typeof orm.batch>[0]);
   return summary;
 }
 
@@ -306,125 +290,94 @@ async function readExistingTargets(
 ): Promise<readonly ExistingTarget[]> {
   if (agentIds.length === 0) return [];
   const targets: ExistingTarget[] = [];
-  for (let offset = 0; offset < agentIds.length; offset += MAX_BOUND_PARAMETERS) {
-    const chunk = agentIds.slice(offset, offset + MAX_BOUND_PARAMETERS);
-    const result = await db
-      .prepare(
-        `SELECT agentId, transport, endpoint, name, categoriesJson, categoryProvenance,
-                declarationState, currentMetadataUpdatedAt, lastMetadataCheckedAt,
-                firstSeenAt, lastChangedAt, lastSeenAt, priority
-         FROM probe_targets
-         WHERE chainId = 56
-           AND agentId IN (${chunk.map(() => "?").join(", ")})`,
-      )
-      .bind(...chunk)
-      .all<ExistingTarget>();
-    if (!result.success) throw new Error("Could not read SWEEP candidates");
-    targets.push(...(result.results ?? []));
+  for (let offset = 0; offset < agentIds.length; offset += MAX_TARGET_IDS_PER_QUERY) {
+    const chunk = agentIds.slice(offset, offset + MAX_TARGET_IDS_PER_QUERY);
+    targets.push(...await readProbeTargetsByAgentIds(
+      createDatabase(db), chunk,
+    ) as ExistingTarget[]);
   }
   return targets;
 }
 
 function prepareUpsert(
-  db: D1DatabaseLike,
+  db: ReturnType<typeof createDatabase>,
   agent: Extract<SweepAgentResult, { status: "ok" }>,
   candidate: SweepTargetCandidate,
   previous: ExistingTarget | undefined,
   nowMs: number,
-): D1PreparedStatementLike {
-  return db.prepare(
-    `INSERT INTO probe_targets (
-       agentId, chainId, transport, endpoint, name, categoriesJson,
-       categoryProvenance, declarationState, currentMetadataUpdatedAt,
-       lastMetadataCheckedAt, firstSeenAt, lastChangedAt, lastSeenAt, priority
-     ) VALUES (?, 56, ?, ?, ?, ?, ?, 'current', ?, ?, ?, ?, ?, 1)
-     ON CONFLICT(chainId, agentId, transport, endpoint) DO UPDATE SET
-       name = excluded.name,
-       categoriesJson = excluded.categoriesJson,
-       categoryProvenance = excluded.categoryProvenance,
-       declarationState = 'current',
-       currentMetadataUpdatedAt = excluded.currentMetadataUpdatedAt,
-       lastMetadataCheckedAt = excluded.lastMetadataCheckedAt,
-       lastChangedAt = excluded.lastChangedAt,
-       lastSeenAt = excluded.lastSeenAt,
-       priority = 1`,
-  ).bind(
-    agent.agentId,
-    candidate.transport,
-    candidate.endpoint,
-    agent.name,
-    candidate.categoriesJson,
-    candidate.categoryProvenance,
-    agent.metadataUpdatedAt,
-    nowMs,
-    previous?.firstSeenAt ?? nowMs,
-    nowMs,
-    nowMs,
-  );
+ ) {
+  return db.insert(probeTargets).values({
+    agentId: agent.agentId, chainId: 56, transport: candidate.transport,
+    endpoint: candidate.endpoint, name: agent.name, categoriesJson: candidate.categoriesJson,
+    categoryProvenance: candidate.categoryProvenance, declarationState: "current",
+    currentMetadataUpdatedAt: agent.metadataUpdatedAt, lastMetadataCheckedAt: nowMs,
+    firstSeenAt: previous?.firstSeenAt ?? nowMs, lastChangedAt: nowMs,
+    lastSeenAt: nowMs, priority: 1,
+  }).onConflictDoUpdate({
+    target: [probeTargets.chainId, probeTargets.agentId, probeTargets.transport, probeTargets.endpoint],
+    set: {
+      name: agent.name, categoriesJson: candidate.categoriesJson,
+      categoryProvenance: candidate.categoryProvenance, declarationState: "current",
+      currentMetadataUpdatedAt: agent.metadataUpdatedAt, lastMetadataCheckedAt: nowMs,
+      lastChangedAt: nowMs, lastSeenAt: nowMs, priority: 1,
+    },
+  });
 }
 
 function prepareSeenRefresh(
-  db: D1DatabaseLike,
+  db: ReturnType<typeof createDatabase>,
   target: ExistingTarget,
   nowMs: number,
-): D1PreparedStatementLike {
-  return db.prepare(
-    `UPDATE probe_targets
-     SET lastMetadataCheckedAt = ?, lastSeenAt = ?
-     WHERE chainId = 56 AND agentId = ? AND transport = ? AND endpoint = ?`,
-  ).bind(nowMs, nowMs, target.agentId, target.transport, target.endpoint);
+ ) {
+  return db.update(probeTargets).set({ lastMetadataCheckedAt: nowMs, lastSeenAt: nowMs })
+    .where(targetPredicate(target));
 }
 
 function prepareRemoved(
-  db: D1DatabaseLike,
+  db: ReturnType<typeof createDatabase>,
   target: ExistingTarget,
   nowMs: number,
-): D1PreparedStatementLike {
-  return db.prepare(
-    `UPDATE probe_targets
-     SET declarationState = 'removed', lastMetadataCheckedAt = ?, lastChangedAt = ?
-     WHERE chainId = 56 AND agentId = ? AND transport = ? AND endpoint = ?`,
-  ).bind(nowMs, nowMs, target.agentId, target.transport, target.endpoint);
+ ) {
+  return db.update(probeTargets).set({
+    declarationState: "removed", lastMetadataCheckedAt: nowMs, lastChangedAt: nowMs,
+  }).where(targetPredicate(target));
 }
 
 function prepareUnavailable(
-  db: D1DatabaseLike,
+  db: ReturnType<typeof createDatabase>,
   target: ExistingTarget,
   nowMs: number,
-): D1PreparedStatementLike {
-  return db.prepare(
-    `UPDATE probe_targets
-     SET declarationState = 'metadata_unavailable', lastMetadataCheckedAt = ?, lastChangedAt = ?
-     WHERE chainId = 56 AND agentId = ? AND transport = ? AND endpoint = ?`,
-  ).bind(nowMs, nowMs, target.agentId, target.transport, target.endpoint);
+ ) {
+  return db.update(probeTargets).set({
+    declarationState: "metadata_unavailable", lastMetadataCheckedAt: nowMs, lastChangedAt: nowMs,
+  }).where(targetPredicate(target));
 }
 
 function prepareRuntimeInteger(
-  db: D1DatabaseLike,
+  db: ReturnType<typeof createDatabase>,
   key: string,
   value: number,
   nowMs: number,
-): D1PreparedStatementLike {
-  return db.prepare(
-    `INSERT INTO runtime_state (key, textValue, integerValue, updatedAt)
-     VALUES (?, NULL, ?, ?)
-     ON CONFLICT(key) DO UPDATE SET
-       textValue = NULL, integerValue = excluded.integerValue, updatedAt = excluded.updatedAt`,
-  ).bind(key, value, nowMs);
+ ) {
+  return db.insert(runtimeState).values({ key, textValue: null, integerValue: value, updatedAt: nowMs })
+    .onConflictDoUpdate({ target: runtimeState.key, set: { textValue: null, integerValue: value, updatedAt: nowMs } });
 }
 
 function prepareRuntimeText(
-  db: D1DatabaseLike,
+  db: ReturnType<typeof createDatabase>,
   key: string,
   value: string,
   nowMs: number,
-): D1PreparedStatementLike {
-  return db.prepare(
-    `INSERT INTO runtime_state (key, textValue, integerValue, updatedAt)
-     VALUES (?, ?, NULL, ?)
-     ON CONFLICT(key) DO UPDATE SET
-       textValue = excluded.textValue, integerValue = NULL, updatedAt = excluded.updatedAt`,
-  ).bind(key, value, nowMs);
+ ) {
+  return db.insert(runtimeState).values({ key, textValue: value, integerValue: null, updatedAt: nowMs })
+    .onConflictDoUpdate({ target: runtimeState.key, set: { textValue: value, integerValue: null, updatedAt: nowMs } });
+}
+
+function targetPredicate(target: ExistingTarget) {
+  return and(
+    eq(probeTargets.chainId, 56), eq(probeTargets.agentId, target.agentId),
+    eq(probeTargets.transport, target.transport), eq(probeTargets.endpoint, target.endpoint),
+  );
 }
 
 function targetChanged(

@@ -63,7 +63,7 @@ class LeaseDatabase implements D1DatabaseLike {
             results: [{ key: "scheduler_lease" } as Row],
           };
         }
-        if (q.includes("next_scheduler_phase")) {
+        if (q.includes("from runtime_state")) {
           return {
             success: true,
             meta: { rows_read: 1, rows_written: 0 },
@@ -89,6 +89,13 @@ class LeaseDatabase implements D1DatabaseLike {
           if (summary !== undefined) thisDb.summaries.push(summary);
         }
         return { success: true, meta: { rows_read: 1, rows_written: 1 } as Meta };
+      },
+      async raw<Row extends unknown[]>(rawOptions?: { columnNames?: boolean }): Promise<Row[]> {
+        const result = await this.all<Record<string, unknown>>();
+        const rows = result.results ?? [];
+        const values = rows.map((row) => Object.values(row)) as Row[];
+        if (rawOptions?.columnNames && rows[0]) values.unshift(Object.keys(rows[0]) as Row);
+        return values;
       },
     };
   }
@@ -156,7 +163,7 @@ describe("WP2 scheduled runner", () => {
       { ...controller, cron: "queue", attempt: 1, messageId: "minimum-budget" },
       { DB: db } as unknown as Env,
       context,
-      loadConfig({ D1_QUERIES_PER_RUN: "13" }),
+      loadConfig({ D1_QUERIES_PER_RUN: "22" }),
     );
 
     expect(db.acquisitions).toBe(1);

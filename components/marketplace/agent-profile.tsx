@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ArrowUpRight, Bot, CheckCircle2, CircleAlert } from "lucide-react";
 import type { MarketplaceAgent } from "@/src/business/entities/marketplace-agent";
 import type { AgentEvidencePassport } from "@/src/business/entities/evidence-passport";
+import type { WorkerObservationTarget } from "@/src/business/entities/worker-observations";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -10,8 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { EvidenceRail } from "./evidence-rail";
 import { CoverageBadge } from "./page-primitives";
 import { ProvenanceBadge } from "./provenance-badge";
-import { evidenceForAgent } from "./view-models";
-import { verificationViewModel } from "./view-models";
+import { agentCardWithObservation, verificationViewModel } from "./view-models";
 import { VerificationDrift } from "./verification-drift";
 import { EvidencePassportCard } from "./evidence-passport-card";
 
@@ -24,9 +24,15 @@ function MonoValue({ label, value }: { label: string; value: string | null }) {
   );
 }
 
-export function AgentProfile({ agent, passport }: { agent: MarketplaceAgent; passport: AgentEvidencePassport }) {
+export function AgentProfile({ agent, observationTarget = null, observationsAvailable = false, passport }: {
+  agent: MarketplaceAgent;
+  observationTarget?: WorkerObservationTarget | null;
+  observationsAvailable?: boolean;
+  passport: AgentEvidencePassport;
+}) {
   const evaluated = agent.categoryEvaluation === "evaluated";
   const verification = verificationViewModel(agent);
+  const current = agentCardWithObservation(agent, observationTarget, observationsAvailable);
   return (
     <main id="main-content" className="mx-auto w-full max-w-7xl flex-1 px-4 py-12 sm:px-6 lg:px-8">
       <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
@@ -36,8 +42,8 @@ export function AgentProfile({ agent, passport }: { agent: MarketplaceAgent; pas
             <div className="flex flex-wrap items-center gap-2">
               <Badge variant="outline">BSC · #{agent.agentId}</Badge>
               {agent.operator === "marketplace" && <Badge className="border-cyan-400/30 bg-cyan-400/10 text-cyan-200" variant="outline">Marketplace-operated · not official BNB reference</Badge>}
-              <Badge className={agent.hireability.canHire ? "border-primary/40 bg-primary/10 text-primary" : "border-zinc-700 bg-zinc-900 text-zinc-300"} variant="outline">
-                {agent.hireability.canHire ? "Hireable now" : agent.hireability.status === "mcp_only" ? "MCP only" : agent.hireability.status === "quote_stale" ? "Quote refresh required" : agent.hireability.status === "wallet_ambiguous" ? "Wallet attribution ambiguous" : evaluated ? "Not hireable" : "Not evaluated"}
+              <Badge className={current.hireability === "hireable" ? "border-primary/40 bg-primary/10 text-primary" : "border-zinc-700 bg-zinc-900 text-zinc-300"} variant="outline">
+                {current.hireability === "hireable" ? "Hireable now" : current.hireability === "quote_stale" ? "Quote refresh required" : observationsAvailable ? evaluated ? "Not hireable" : "Not evaluated" : "Verification unavailable"}
               </Badge>
             </div>
             <h1 className="mt-3 text-3xl font-light tracking-tight text-white sm:text-4xl">{agent.name}</h1>
@@ -46,10 +52,10 @@ export function AgentProfile({ agent, passport }: { agent: MarketplaceAgent; pas
         </div>
         <div className="flex flex-col items-start gap-3 lg:items-end">
           <CoverageBadge />
-          {agent.hireability.canHire ? (
+          {current.hireability === "hireable" ? (
             <Button asChild><Link href={`/hire/${agent.agentId}`}>Hire agent<ArrowUpRight aria-hidden="true" /></Link></Button>
           ) : (
-            <p className="max-w-xs text-sm text-zinc-500">{agent.hireability.reason}</p>
+            <p className="max-w-xs text-sm text-zinc-500">{current.evidence.find((step) => step.kind === "quote")?.detail}</p>
           )}
         </div>
       </div>
@@ -63,7 +69,7 @@ export function AgentProfile({ agent, passport }: { agent: MarketplaceAgent; pas
 
       <Card className="marketplace-surface mt-8">
         <CardHeader><CardTitle>Evidence line</CardTitle></CardHeader>
-        <CardContent><EvidenceRail ariaLabel={`Evidence for ${agent.name}`} steps={evidenceForAgent(agent)} /></CardContent>
+        <CardContent><EvidenceRail ariaLabel={`Evidence for ${agent.name}`} steps={current.evidence} /></CardContent>
       </Card>
 
       {verification && <div className="mt-5"><VerificationDrift verification={verification} /></div>}

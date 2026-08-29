@@ -1,5 +1,7 @@
 import type { WorkerConfig } from "../config";
 import type { D1Database } from "../types";
+import type { D1DatabaseLike } from "../db/client";
+import { createDatabase, readRuntimeStates } from "../db/orm";
 
 type RuntimeRow = {
   key: string;
@@ -202,15 +204,9 @@ export async function healthResponse(
     const utcDate = new Date(now).toISOString().slice(0, 10);
     const dailyBudgetKey = `daily_budget_${utcDate.replaceAll("-", "")}`;
     const runtimeKeys = [...RUNTIME_KEYS, dailyBudgetKey];
-    const runtimeResult = await db.prepare(
-      `SELECT key, textValue, integerValue, updatedAt
-       FROM runtime_state
-       WHERE key IN (${runtimeKeys.map(() => "?").join(", ")})`,
-    ).bind(...runtimeKeys).all<RuntimeRow>();
-
-    if (!runtimeResult.success) throw new Error("D1 read failed");
-
-    const rows = runtimeResult.results ?? [];
+    const rows = await readRuntimeStates(
+      createDatabase(db as unknown as D1DatabaseLike), runtimeKeys,
+    ) as RuntimeRow[];
     const byKey = new Map(rows.map((row) => [row.key, row]));
     const summaryRows = [
       byKey.get("last_header_summary"),

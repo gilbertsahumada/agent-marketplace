@@ -16,7 +16,7 @@ import type {
   SweepTargetCandidate,
 } from "./phases/sweep";
 import { acquireSchedulerLease, releaseSchedulerLease } from "./lib/scheduler-lease";
-import { createDatabase, writeRuntimeState } from "./db/orm";
+import { createDatabase, readRuntimeStates, writeRuntimeState } from "./db/orm";
 import { CURATED_INVENTORY, CURATED_INVENTORY_CATEGORIES } from "./manifest/curated-inventory";
 import { selectLiveTargets } from "./trust8004/candidates";
 import {
@@ -204,13 +204,18 @@ export function createWp2ScheduledRunner(dependencies: ScheduledRuntimeDependenc
     let outcome: DailyBudgetOutcome = "failed";
     let attemptErrorCode: string | null = null;
     try {
-      const stateResult = await db.prepare(
-        `SELECT key, textValue, integerValue
-         FROM runtime_state
-         WHERE key IN ('next_scheduler_phase', 'header_high_water', 'last_queue_scheduled_time')`,
-      ).all<PhaseStateRow>();
-      if (!stateResult.success) throw new Error("Could not read scheduler phase state");
-      const state = new Map((stateResult.results ?? []).map((row) => [row.key, row]));
+      let stateRows: PhaseStateRow[];
+      try {
+        stateRows = await readRuntimeStates(createDatabase(db), [
+          "next_scheduler_phase", "header_high_water", "last_queue_scheduled_time",
+        ]) as PhaseStateRow[];
+      } catch (error) {
+        if (error instanceof Error
+          && (error.cause instanceof D1QueryBudgetExceededError
+            || error.cause instanceof D1RowBudgetExceededError)) throw error.cause;
+        throw error;
+      }
+      const state = new Map(stateRows.map((row) => [row.key, row]));
       const completedQueueScheduledTime = state.get("last_queue_scheduled_time")?.integerValue;
       if (controller.cron === "queue"
         && completedQueueScheduledTime !== undefined
@@ -500,16 +505,9 @@ async function persistPhaseFailure(db: D1DatabaseLike, input: {
   readonly wallTimeMs: number;
   readonly finishedAt: number;
 }): Promise<void> {
-  const result = await db.prepare(
-    `INSERT INTO runtime_state (key, textValue, integerValue, updatedAt)
-     VALUES (?, ?, NULL, ?)
-     ON CONFLICT(key) DO UPDATE SET
-       textValue = excluded.textValue,
-       integerValue = NULL,
-       updatedAt = excluded.updatedAt`,
-  ).bind(
-    `last_${input.phase}_summary`,
-    JSON.stringify({
+  await writeRuntimeState(createDatabase(db), {
+    key: `last_${input.phase}_summary`,
+    textValue: JSON.stringify({
       phase: input.phase,
       status: "error",
       requests: input.requests,
@@ -517,9 +515,9 @@ async function persistPhaseFailure(db: D1DatabaseLike, input: {
       wallTimeMs: input.wallTimeMs,
       errorCode: input.errorCode,
     }),
-    input.finishedAt,
-  ).run();
-  if (!result.success) throw new Error("Could not persist phase failure summary");
+    integerValue: null,
+    updatedAt: input.finishedAt,
+  });
 }
 
 function phaseErrorCode(error: unknown): string {

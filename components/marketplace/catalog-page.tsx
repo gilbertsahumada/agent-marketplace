@@ -87,7 +87,7 @@ export function CatalogPage({ data, observations = { status: "unavailable", feed
         <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {data.items.map((agent) => <AgentCard agent={allView
             ? agentCardViewModel(agent, provenAgentId)
-            : agentCardWithObservation(agent, targets.get(agent.agentId) ?? null, observations.status === "available", Date.now(), provenAgentId)} key={agent.agentId} />)}
+            : agentCardWithObservation(agent, targets.get(agent.agentId) ?? null, observations.status === "available", Date.now(), provenAgentId, query.category)} key={agent.agentId} />)}
         </div>
       ) : query.category === "grid_trading" ? (
         <Alert className="mt-6 border-zinc-800 bg-zinc-950">

@@ -8,6 +8,7 @@ export interface D1PreparedStatement {
   first<T = Record<string, unknown>>(): Promise<T | null>;
   all<T = Record<string, unknown>>(): Promise<D1Result<T>>;
   run(): Promise<D1Result>;
+  raw?<T extends unknown[]>(options?: { columnNames?: boolean }): Promise<T[]>;
 }
 
 export interface D1Database {

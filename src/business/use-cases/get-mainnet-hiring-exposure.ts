@@ -1,13 +1,12 @@
 import type { MainnetDemoPublicConfig } from "../entities/mainnet-browser-demo.ts";
-import type { PublicVerificationSnapshot } from "../entities/public-verification-snapshot.ts";
+import type { ObservationFeedResult, WorkerObservationTarget } from "../entities/worker-observations.ts";
 import {
   Erc8183SpikeDisabledError,
   Erc8183SpikeUnavailableError,
 } from "../errors/erc8183-spike-errors.ts";
-import { hireableReleaseAgents } from "../policies/release-qualification-policy.ts";
 
-export interface MainnetHiringSnapshotReader {
-  getSnapshot(): PublicVerificationSnapshot;
+export interface MainnetHiringObservationReader {
+  getObservations(): Promise<ObservationFeedResult>;
 }
 
 export interface MainnetHiringConfigReader {
@@ -19,40 +18,55 @@ export interface MainnetHiringExposure {
   demoConfig: MainnetDemoPublicConfig | null;
 }
 
+const OBSERVATION_MAX_AGE_MS = 60_000;
+const MAX_FUTURE_CLOCK_SKEW_MS = 5_000;
+
 export class GetMainnetHiringExposure {
   constructor(
-    private readonly snapshots: MainnetHiringSnapshotReader,
+    private readonly observations: MainnetHiringObservationReader,
     private readonly configs: MainnetHiringConfigReader,
     private readonly now: () => number = Date.now,
   ) {}
 
-  execute(): MainnetHiringExposure {
-    const qualified = hireableReleaseAgents(this.snapshots.getSnapshot(), this.now());
-    const qualifiedSeller = qualified[0] ?? null;
-    const operatedSeller = qualified.find((agent) => agent.operator === "marketplace") ?? null;
-    if (!operatedSeller) {
-      return {
-        qualifiedSeller: qualifiedSeller
-          ? { agentId: qualifiedSeller.agentId, name: qualifiedSeller.name }
-          : null,
-        demoConfig: null,
-      };
-    }
-
+  async execute(): Promise<MainnetHiringExposure> {
+    const result = await this.observations.getObservations();
+    if (result.status === "unavailable") return unavailable();
+    const now = this.now();
+    if (result.feed.generatedAt > now + MAX_FUTURE_CLOCK_SKEW_MS
+      || now - result.feed.generatedAt > OBSERVATION_MAX_AGE_MS) return unavailable();
+    let demoConfig: MainnetDemoPublicConfig;
     try {
-      const demoConfig = this.configs.getPublicConfig();
-      return {
-        qualifiedSeller: { agentId: qualifiedSeller!.agentId, name: qualifiedSeller!.name },
-        demoConfig: String(demoConfig.agentId) === operatedSeller.agentId ? demoConfig : null,
-      };
+      demoConfig = this.configs.getPublicConfig();
     } catch (error) {
       if (!(error instanceof Erc8183SpikeDisabledError) && !(error instanceof Erc8183SpikeUnavailableError)) {
         throw error;
       }
-      return {
-        qualifiedSeller: { agentId: qualifiedSeller!.agentId, name: qualifiedSeller!.name },
-        demoConfig: null,
-      };
+      return unavailable();
     }
+
+    const targets = result.feed.targets.filter((target) =>
+      target.agentId === String(demoConfig.agentId) && target.declarationState === "current",
+    );
+    const seller = targets[0] ?? null;
+    return {
+      qualifiedSeller: seller === null ? null : {
+        agentId: seller.agentId,
+        name: seller.name ?? `Agent ${seller.agentId}`,
+      },
+      demoConfig: targets.some((target) => hasCurrentQuote(target, now)) ? demoConfig : null,
+    };
   }
+}
+
+function hasCurrentQuote(target: WorkerObservationTarget, now: number): boolean {
+  const latest = target.latest;
+  return latest?.outcome === "quote_verified"
+    && latest.probedAt <= now
+    && now - latest.probedAt <= OBSERVATION_MAX_AGE_MS
+    && latest.quoteExpiresAt !== null
+    && latest.quoteExpiresAt > now;
+}
+
+function unavailable(): MainnetHiringExposure {
+  return { qualifiedSeller: null, demoConfig: null };
 }

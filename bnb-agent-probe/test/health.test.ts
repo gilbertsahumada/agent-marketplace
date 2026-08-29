@@ -13,13 +13,14 @@ type RuntimeRow = {
 function database(options: { fail?: boolean; runtime?: RuntimeRow[] } = {}): D1Database {
   return {
     prepare(sql: string): D1PreparedStatement {
+      const normalized = sql.replaceAll('"', "").toLowerCase();
       return {
         bind() {
           return this;
         },
         async all<T>() {
           if (options.fail) throw new Error("D1 secret details");
-          if (sql.includes("FROM runtime_state")) {
+          if (normalized.includes("from runtime_state")) {
             return { success: true, results: (options.runtime ?? []) as T[] };
           }
           return {
@@ -35,6 +36,15 @@ function database(options: { fail?: boolean; runtime?: RuntimeRow[] } = {}): D1D
         },
         async run() {
           return { success: true };
+        },
+        async raw<T extends unknown[]>(rawOptions?: { columnNames?: boolean }) {
+          if (options.fail) throw new Error("D1 secret details");
+          const rows = normalized.includes("from runtime_state")
+            ? options.runtime ?? []
+            : [{ declarationState: "current", count: 4 }, { declarationState: "removed", count: 1 }];
+          const values = rows.map((row) => Object.values(row)) as T[];
+          if (rawOptions?.columnNames && rows[0]) values.unshift(Object.keys(rows[0]) as T);
+          return values;
         },
       };
     },

@@ -23,7 +23,9 @@ class MemoryStatement implements D1PreparedStatementLike {
   constructor(
     readonly database: MemoryDatabase,
     readonly query: string,
-  ) {}
+  ) {
+    this.query = query.replaceAll('"', "").toUpperCase();
+  }
 
   bind(...values: readonly unknown[]): D1PreparedStatementLike {
     this.values = values;
@@ -31,7 +33,7 @@ class MemoryStatement implements D1PreparedStatementLike {
   }
 
   async first<Row>(): Promise<Row | null> {
-    if (this.query.includes("VALUES ('scheduler_lease'")) {
+    if (this.query.includes("VALUES ('SCHEDULER_LEASE'")) {
       const [runId, expiresAt, nowMs] = this.values;
       const lease = this.database.state.get("scheduler_lease");
       if (lease !== undefined && (lease.integerValue ?? 0) > Number(nowMs)) return null;
@@ -39,7 +41,7 @@ class MemoryStatement implements D1PreparedStatementLike {
       return { key: "scheduler_lease" } as Row;
     }
 
-    if (this.query.includes("WHERE key = 'scheduler_lease' AND textValue = ?")) {
+    if (this.query.includes("WHERE KEY = 'SCHEDULER_LEASE' AND TEXTVALUE = ?")) {
       const [nowMs, updatedAt, runId] = this.values;
       const lease = this.database.state.get("scheduler_lease");
       if (lease?.textValue !== runId) return null;
@@ -51,7 +53,7 @@ class MemoryStatement implements D1PreparedStatementLike {
   }
 
   async all<Row>(): Promise<D1ResultLike<unknown, Row>> {
-    if (this.query.includes("VALUES ('scheduler_lease'")) {
+    if (this.query.includes("VALUES ('SCHEDULER_LEASE'")) {
       const [runId, expiresAt, nowMs] = this.values;
       const lease = this.database.state.get("scheduler_lease");
       if (lease !== undefined && (lease.integerValue ?? 0) > Number(nowMs)) {
@@ -64,7 +66,7 @@ class MemoryStatement implements D1PreparedStatementLike {
         results: [{ key: "scheduler_lease" } as Row],
       };
     }
-    if (this.query.includes("WHERE key = 'scheduler_lease' AND textValue = ?")) {
+    if (this.query.includes("WHERE KEY = 'SCHEDULER_LEASE' AND TEXTVALUE = ?")) {
       const [nowMs, updatedAt, runId] = this.values;
       const lease = this.database.state.get("scheduler_lease");
       if (lease?.textValue !== runId) {
@@ -77,14 +79,14 @@ class MemoryStatement implements D1PreparedStatementLike {
         results: [{ key: "scheduler_lease" } as Row],
       };
     }
-    if (this.query.includes("FROM runtime_state")) {
+    if (this.query.includes("FROM RUNTIME_STATE")) {
       const requested = new Set(this.values.filter((value): value is string => typeof value === "string"));
       const rows = [...this.database.state.values()].filter((row) => (
         requested.size === 0 || requested.has(row.key)
       ));
       return { success: true, meta: {}, results: rows as Row[] };
     }
-    if (this.query.includes("FROM probe_targets")) {
+    if (this.query.includes("FROM PROBE_TARGETS")) {
       return { success: true, meta: {}, results: [] };
     }
     return { success: true, meta: {}, results: [] };
@@ -93,6 +95,14 @@ class MemoryStatement implements D1PreparedStatementLike {
   async run<Meta>(): Promise<D1ResultLike<Meta>> {
     this.database.applyRuntimeMutation(this.query, this.values);
     return { success: true, meta: {} as Meta };
+  }
+
+  async raw<Row extends unknown[]>(options?: { columnNames?: boolean }): Promise<Row[]> {
+    const result = await this.all<Record<string, unknown>>();
+    const rows = result.results ?? [];
+    const values = rows.map((row) => Object.values(row)) as Row[];
+    if (options?.columnNames && rows[0]) values.unshift(Object.keys(rows[0]) as Row);
+    return values;
   }
 }
 
@@ -114,7 +124,8 @@ class MemoryDatabase implements D1DatabaseLike {
   }
 
   applyRuntimeMutation(query: string, values: readonly unknown[]): void {
-    if (!query.includes("INSERT INTO runtime_state")) return;
+    query = query.replaceAll('"', "").toUpperCase();
+    if (!query.includes("INSERT INTO RUNTIME_STATE")) return;
     const literalKey = query.match(/VALUES \('([^']+)'/)?.[1];
     const key = literalKey ?? (typeof values[0] === "string" ? values[0] : undefined);
     if (key === undefined) return;

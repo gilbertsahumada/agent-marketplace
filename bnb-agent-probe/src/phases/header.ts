@@ -4,10 +4,11 @@ import {
   type CuratedInventoryCategory,
 } from "../manifest/curated-inventory";
 import {
-  executeBatch,
-  prepareStatement,
   type D1DatabaseLike,
 } from "../db/client";
+import { sql } from "drizzle-orm";
+import { createDatabase, readProbeTargetsByAgentIds } from "../db/orm";
+import { probeTargets, runtimeState } from "../db/schema";
 
 export type HeaderTransport = "a2a" | "erc8183_http";
 
@@ -116,7 +117,7 @@ export class HeaderQueryBudgetExceededError extends Error {
 }
 
 const MAX_BOUND_AGENT_IDS = 100;
-const MAX_D1_BOUND_STRING_BYTES = 1_500_000;
+const TARGET_WRITES_PER_QUERY = 7;
 const RUNTIME_STATE_WRITES = 1;
 
 export function createD1HeaderPersistence(db: D1DatabaseLike): HeaderPersistence {
@@ -126,93 +127,55 @@ export function createD1HeaderPersistence(db: D1DatabaseLike): HeaderPersistence
       if (agentIds.length > MAX_BOUND_AGENT_IDS) {
         throw new Error(`HEADER target lookup exceeds ${MAX_BOUND_AGENT_IDS} bound parameters`);
       }
-      const placeholders = agentIds.map(() => "?").join(", ");
-      const result = await db
-        .prepare(
-          `SELECT chainId, agentId, transport, endpoint, name, categoriesJson,
-                  categoryProvenance, declarationState, currentMetadataUpdatedAt, firstSeenAt
-           FROM probe_targets
-           WHERE chainId = 56 AND agentId IN (${placeholders})`,
-        )
-        .bind(...agentIds)
-        .all<HeaderStoredTarget>();
-      if (!result.success || result.results === undefined) {
-        throw new Error("HEADER existing-target query failed");
-      }
-      return result.results;
+      return await readProbeTargetsByAgentIds(
+        createDatabase(db), agentIds,
+      ) as HeaderStoredTarget[];
     },
     async commitHeader(input) {
-      const targetStatements = serializeTargetWriteChunks(input.targetWrites).map((serialized) =>
-        prepareStatement(
-            db,
-            `INSERT INTO probe_targets (
-               agentId, chainId, transport, endpoint, name, categoriesJson,
-               categoryProvenance, declarationState, currentMetadataUpdatedAt,
-               lastMetadataCheckedAt, firstSeenAt, lastChangedAt, lastSeenAt, priority
-             )
-             SELECT
-               json_extract(value, '$.agentId'),
-               json_extract(value, '$.chainId'),
-               json_extract(value, '$.transport'),
-               json_extract(value, '$.endpoint'),
-               json_extract(value, '$.name'),
-               json_extract(value, '$.categoriesJson'),
-               json_extract(value, '$.categoryProvenance'),
-               json_extract(value, '$.declarationState'),
-               json_extract(value, '$.currentMetadataUpdatedAt'),
-               json_extract(value, '$.lastMetadataCheckedAt'),
-               json_extract(value, '$.firstSeenAt'),
-               json_extract(value, '$.lastChangedAt'),
-               json_extract(value, '$.lastSeenAt'),
-               json_extract(value, '$.priority')
-             FROM json_each(?)
-             WHERE true
-             ON CONFLICT(chainId, agentId, transport, endpoint) DO UPDATE SET
-               name = excluded.name,
-               categoriesJson = excluded.categoriesJson,
-               categoryProvenance = excluded.categoryProvenance,
-               declarationState = excluded.declarationState,
-               currentMetadataUpdatedAt = excluded.currentMetadataUpdatedAt,
-               lastMetadataCheckedAt = excluded.lastMetadataCheckedAt,
-               lastChangedAt = excluded.lastChangedAt,
-               lastSeenAt = excluded.lastSeenAt,
-               priority = excluded.priority`,
-            [serialized],
-          ));
-      const runtimeStatement = prepareStatement(
-        db,
-        `INSERT INTO runtime_state (key, textValue, integerValue, updatedAt)
-         VALUES (?, ?, ?, ?), (?, ?, ?, ?), (?, ?, ?, ?)
-         ON CONFLICT(key) DO UPDATE SET
-           textValue = excluded.textValue,
-           integerValue = excluded.integerValue,
-           updatedAt = excluded.updatedAt`,
-        [
-          "header_high_water",
-          input.highWater,
-          null,
-          input.summary.finishedAt,
-          "last_header_summary",
-          JSON.stringify(input.summary),
-          null,
-          input.summary.finishedAt,
-          "next_scheduler_phase",
-          input.nextSchedulerPhase,
-          null,
-          input.summary.finishedAt,
-        ],
-      );
+      const orm = createDatabase(db);
+      const targetStatements = targetWriteChunks(input.targetWrites).map((targets) =>
+        orm.insert(probeTargets).values(targets).onConflictDoUpdate({
+          target: [probeTargets.chainId, probeTargets.agentId, probeTargets.transport, probeTargets.endpoint],
+          set: {
+            name: sql.raw("excluded.name"),
+            categoriesJson: sql.raw("excluded.categoriesJson"),
+            categoryProvenance: sql.raw("excluded.categoryProvenance"),
+            declarationState: sql.raw("excluded.declarationState"),
+            currentMetadataUpdatedAt: sql.raw("excluded.currentMetadataUpdatedAt"),
+            lastMetadataCheckedAt: sql.raw("excluded.lastMetadataCheckedAt"),
+            lastChangedAt: sql.raw("excluded.lastChangedAt"),
+            lastSeenAt: sql.raw("excluded.lastSeenAt"),
+            priority: sql.raw("excluded.priority"),
+          },
+        }));
+      const runtimeStatement = orm.insert(runtimeState).values([
+        { key: "header_high_water", textValue: input.highWater, integerValue: null, updatedAt: input.summary.finishedAt },
+        { key: "last_header_summary", textValue: JSON.stringify(input.summary), integerValue: null, updatedAt: input.summary.finishedAt },
+        { key: "next_scheduler_phase", textValue: input.nextSchedulerPhase, integerValue: null, updatedAt: input.summary.finishedAt },
+      ]).onConflictDoUpdate({
+        target: runtimeState.key,
+        set: {
+          textValue: sql.raw("excluded.textValue"),
+          integerValue: sql.raw("excluded.integerValue"),
+          updatedAt: sql.raw("excluded.updatedAt"),
+        },
+      });
       const completionStatement = input.completedQueueScheduledTime === undefined
         ? []
-        : [prepareStatement(
-            db,
-            `INSERT INTO runtime_state (key, textValue, integerValue, updatedAt)
-             VALUES ('last_queue_scheduled_time', NULL, ?, ?)
-             ON CONFLICT(key) DO UPDATE SET textValue=NULL,
-               integerValue=excluded.integerValue, updatedAt=excluded.updatedAt`,
-            [input.completedQueueScheduledTime, input.summary.finishedAt],
-          )];
-      await executeBatch(db, [...targetStatements, runtimeStatement, ...completionStatement]);
+        : [orm.insert(runtimeState).values({
+            key: "last_queue_scheduled_time", textValue: null,
+            integerValue: input.completedQueueScheduledTime, updatedAt: input.summary.finishedAt,
+          }).onConflictDoUpdate({
+            target: runtimeState.key,
+            set: {
+              textValue: null,
+              integerValue: sql.raw("excluded.integerValue"),
+              updatedAt: sql.raw("excluded.updatedAt"),
+            },
+          })];
+      await orm.batch(
+        [...targetStatements, runtimeStatement, ...completionStatement] as unknown as Parameters<typeof orm.batch>[0],
+      );
     },
   };
 }
@@ -306,7 +269,7 @@ export async function runHeader(
   const headerWindowExhausted = previousHighWater !== null
     && received === options.limit
     && (invalidItems > 0 || agents.every((agent) => compareHighWater(agent, previousHighWater) > 0));
-  const batchQueries = serializeTargetWriteChunks(targetWrites).length
+  const batchQueries = targetWriteChunks(targetWrites).length
     + RUNTIME_STATE_WRITES
     + (options.completedQueueScheduledTime === undefined ? 0 : 1);
   const requiredQueries = batchQueries + reserveQueriesAfterCommit;
@@ -434,44 +397,10 @@ function assertNonNegativeInteger(value: number, label: string): void {
   if (!Number.isSafeInteger(value) || value < 0) throw new Error(`HEADER_CONFIG:${label}`);
 }
 
-function serializableTarget(target: HeaderTargetWrite) {
-  return {
-    agentId: target.agentId,
-    chainId: target.chainId,
-    transport: target.transport,
-    endpoint: target.endpoint,
-    name: target.name,
-    categoriesJson: target.categoriesJson,
-    categoryProvenance: target.categoryProvenance,
-    declarationState: target.declarationState,
-    currentMetadataUpdatedAt: target.currentMetadataUpdatedAt,
-    lastMetadataCheckedAt: target.lastMetadataCheckedAt,
-    firstSeenAt: target.firstSeenAt,
-    lastChangedAt: target.lastChangedAt,
-    lastSeenAt: target.lastSeenAt,
-    priority: target.priority,
-  };
-}
-
-function serializeTargetWriteChunks(targets: readonly HeaderTargetWrite[]): string[] {
-  const encoder = new TextEncoder();
-  const chunks: string[] = [];
-  let current: HeaderTargetWrite[] = [];
-  for (const target of targets) {
-    const candidate = [...current, target];
-    const serialized = JSON.stringify(candidate.map(serializableTarget));
-    if (encoder.encode(serialized).byteLength <= MAX_D1_BOUND_STRING_BYTES) {
-      current = candidate;
-      continue;
-    }
-    if (current.length === 0) throw new Error("HEADER target exceeds the D1 bind-size budget");
-    chunks.push(JSON.stringify(current.map(serializableTarget)));
-    current = [target];
-    const single = JSON.stringify(current.map(serializableTarget));
-    if (encoder.encode(single).byteLength > MAX_D1_BOUND_STRING_BYTES) {
-      throw new Error("HEADER target exceeds the D1 bind-size budget");
-    }
+function targetWriteChunks(targets: readonly HeaderTargetWrite[]): HeaderTargetWrite[][] {
+  const chunks: HeaderTargetWrite[][] = [];
+  for (let index = 0; index < targets.length; index += TARGET_WRITES_PER_QUERY) {
+    chunks.push(targets.slice(index, index + TARGET_WRITES_PER_QUERY));
   }
-  if (current.length > 0) chunks.push(JSON.stringify(current.map(serializableTarget)));
   return chunks;
 }

@@ -19,89 +19,75 @@ const demoConfig: MainnetDemoPublicConfig = {
   explorerUrl: "https://bscscan.com",
 };
 
-function snapshot(
-  status: "qualified" | "not_qualified",
-  staleAfter = "2026-08-27T12:00:00.000Z",
-  selection: "marketplace_operated" | "operator_explicit" = "marketplace_operated",
-) {
+function observations(overrides: Record<string, unknown> = {}) {
   return {
-    schemaVersion: 2 as const,
-    generatedAt: "2026-08-24T12:00:00.000Z",
-    staleAfter,
-    chainId: 56 as const,
-    blockNumber: "123",
-    registryAddress: "0x1111111111111111111111111111111111111111",
-    source: "marketplace-verification-release-snapshot" as const,
-    agents: [{
-      agentId: "9001",
-      name: "Marketplace Grid planner",
-      categories: ["grid_trading" as const],
-      selection,
-      operator: selection === "marketplace_operated" ? "marketplace" as const : "third_party" as const,
-      qualification: {
-        status,
-        observedAt: "2026-08-24T12:00:00.000Z",
-        provenance: "derived:marketplace-seller-qualification" as const,
+    getObservations: async () => ({
+      status: "available" as const,
+      feed: {
+        schemaVersion: 1 as const,
+        generatedAt: Date.parse("2026-08-24T12:01:00.000Z"),
+        targets: [{
+          agentId: "9001",
+          name: "Marketplace Grid planner",
+          categories: ["grid_trading" as const],
+          declarationState: "current" as const,
+          latest: {
+            probedAt: Date.parse("2026-08-24T12:00:30.000Z"),
+            probeCategory: "grid_trading" as const,
+            outcome: "quote_verified" as const,
+            quoteExpiresAt: Date.parse("2026-08-24T12:02:00.000Z"),
+            errorCode: null,
+          },
+          latestByCategory: {},
+          ...overrides,
+        }],
       },
-      identity: {
-        status: "match" as const,
-        mismatchFields: [],
-        observedAt: "2026-08-24T12:00:00.000Z",
-        provenance: ["declared", "onchain"] as const,
-      },
-      tools: {
-        status: "observed" as const,
-        probeOutcomes: ["protocol_valid" as const],
-        reachability: "verified" as const,
-        declaredOnly: [],
-        observedOnly: [],
-        observedAt: "2026-08-24T12:00:00.000Z",
-        provenance: "observed" as const,
-      },
-    }],
+    }),
   };
 }
 
 describe("PR 16 Mainnet exposure", () => {
-  it("requires current qualification before reading configuration or exposing the demo", () => {
+  it("requires a current Worker observation before exposing the demo", async () => {
     const getPublicConfig = vi.fn(() => demoConfig);
     const unqualified = new GetMainnetHiringExposure(
-      { getSnapshot: () => snapshot("not_qualified") },
+      { getObservations: async () => ({ status: "unavailable", feed: null }) },
       { getPublicConfig },
       () => Date.parse("2026-08-24T12:01:00.000Z"),
     );
-    expect(unqualified.execute()).toEqual({ qualifiedSeller: null, demoConfig: null });
+    await expect(unqualified.execute()).resolves.toEqual({ qualifiedSeller: null, demoConfig: null });
     expect(getPublicConfig).not.toHaveBeenCalled();
 
     const stale = new GetMainnetHiringExposure(
-      { getSnapshot: () => snapshot("qualified") },
-      { getPublicConfig },
-      () => Date.parse("2026-08-27T12:00:00.001Z"),
-    );
-    expect(stale.execute()).toEqual({ qualifiedSeller: null, demoConfig: null });
-    expect(getPublicConfig).not.toHaveBeenCalled();
-
-    const current = new GetMainnetHiringExposure(
-      { getSnapshot: () => snapshot("qualified") },
+      observations({ latest: {
+        probedAt: Date.parse("2026-08-24T11:59:00.000Z"), probeCategory: "grid_trading",
+        outcome: "quote_verified", quoteExpiresAt: Date.parse("2026-08-24T12:02:00.000Z"), errorCode: null,
+      } }),
       { getPublicConfig },
       () => Date.parse("2026-08-24T12:01:00.000Z"),
     );
-    expect(current.execute()).toMatchObject({
+    await expect(stale.execute()).resolves.toMatchObject({ demoConfig: null });
+
+    const current = new GetMainnetHiringExposure(
+      observations(),
+      { getPublicConfig },
+      () => Date.parse("2026-08-24T12:01:00.000Z"),
+    );
+    await expect(current.execute()).resolves.toMatchObject({
       qualifiedSeller: { agentId: "9001" },
       demoConfig: { agentId: 9001 },
     });
 
     const explicitOnly = new GetMainnetHiringExposure(
-      { getSnapshot: () => snapshot("qualified", "2026-08-27T12:00:00.000Z", "operator_explicit") },
+      observations({ agentId: "9002" }),
       { getPublicConfig },
       () => Date.parse("2026-08-24T12:01:00.000Z"),
     );
-    expect(explicitOnly.execute()).toEqual({ qualifiedSeller: null, demoConfig: null });
+    await expect(explicitOnly.execute()).resolves.toEqual({ qualifiedSeller: null, demoConfig: null });
   });
 
-  it("blocks quote and prepare before current qualification reaches business composition", () => {
+  it("blocks quote and prepare before current qualification reaches business composition", async () => {
     const exposure = new GetMainnetHiringExposure(
-      { getSnapshot: () => snapshot("not_qualified") },
+      { getObservations: async () => ({ status: "unavailable", feed: null }) },
       { getPublicConfig: vi.fn(() => demoConfig) },
       () => Date.parse("2026-08-24T12:01:00.000Z"),
     );
@@ -110,28 +96,28 @@ describe("PR 16 Mainnet exposure", () => {
     const quote = new RequestQualifiedMainnetQuote(exposure, quoteDelegate as never);
     const prepare = new PrepareQualifiedMainnetHire(exposure, () => true, prepareDelegate as never);
 
-    expect(() => quote.execute()).toThrow(/disabled/);
-    expect(() => prepare.execute({} as never)).toThrow(/disabled/);
+    await expect(quote.execute()).rejects.toThrow(/disabled/);
+    await expect(prepare.execute({} as never)).rejects.toThrow(/disabled/);
     expect(quoteDelegate.execute).not.toHaveBeenCalled();
     expect(prepareDelegate.execute).not.toHaveBeenCalled();
   });
 
-  it("does not return a fundable Mainnet plan while the write gate is disabled", () => {
+  it("does not return a fundable Mainnet plan while the write gate is disabled", async () => {
     const exposure = new GetMainnetHiringExposure(
-      { getSnapshot: () => snapshot("qualified") },
+      observations(),
       { getPublicConfig: () => demoConfig },
       () => Date.parse("2026-08-24T12:01:00.000Z"),
     );
     const prepareDelegate = { execute: vi.fn() };
     const prepare = new PrepareQualifiedMainnetHire(exposure, () => false, prepareDelegate as never);
 
-    expect(() => prepare.execute({} as never)).toThrow(/disabled/);
+    await expect(prepare.execute({} as never)).rejects.toThrow(/disabled/);
     expect(prepareDelegate.execute).not.toHaveBeenCalled();
   });
 
   it("requires the independent write gate before marketplace notify", async () => {
     const exposure = new GetMainnetHiringExposure(
-      { getSnapshot: () => snapshot("qualified") },
+      observations(),
       { getPublicConfig: () => demoConfig },
       () => Date.parse("2026-08-24T12:01:00.000Z"),
     );
@@ -149,7 +135,7 @@ describe("PR 16 Mainnet exposure", () => {
 
   it("preserves terminal notify idempotency after qualification or the write gate expires", async () => {
     const staleExposure = new GetMainnetHiringExposure(
-      { getSnapshot: () => snapshot("qualified") },
+      { getObservations: async () => ({ status: "unavailable", feed: null }) },
       { getPublicConfig: () => demoConfig },
       () => Date.parse("2026-08-27T12:00:00.001Z"),
     );
@@ -165,7 +151,7 @@ describe("PR 16 Mainnet exposure", () => {
 
   it("does not bypass the notify gate from a non-terminal status read", async () => {
     const exposure = new GetMainnetHiringExposure(
-      { getSnapshot: () => snapshot("qualified") },
+      observations(),
       { getPublicConfig: () => demoConfig },
       () => Date.parse("2026-08-24T12:01:00.000Z"),
     );

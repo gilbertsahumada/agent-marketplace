@@ -1,4 +1,4 @@
-import { count, desc, eq, inArray, max } from "drizzle-orm";
+import { and, count, desc, eq, inArray, max } from "drizzle-orm";
 import { drizzle, type DrizzleD1Database } from "drizzle-orm/d1";
 
 import type { D1DatabaseLike } from "./client";
@@ -95,6 +95,17 @@ export async function countTargetsByDeclarationState(
     .from(probeTargets)
     .groupBy(probeTargets.declarationState);
   return Object.fromEntries(rows.map((row) => [row.declarationState, row.total]));
+}
+
+export async function readProbeTargetsByAgentIds(
+  db: Database,
+  agentIds: readonly string[],
+) {
+  if (agentIds.length === 0) return [];
+  return db.select().from(probeTargets).where(and(
+    eq(probeTargets.chainId, 56),
+    inArray(probeTargets.agentId, [...agentIds]),
+  ));
 }
 
 export async function readObservationFeed(db: Database): Promise<ObservationFeedRows> {

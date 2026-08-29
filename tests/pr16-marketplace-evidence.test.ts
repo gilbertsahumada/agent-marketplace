@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { evidenceForAgent, snapshotAgentCardViewModel } from "../components/marketplace/view-models.ts";
+import { agentCardWithObservation, evidenceForAgent, snapshotAgentCardViewModel } from "../components/marketplace/view-models.ts";
 import { determineHireability, toMarketplaceAgent } from "../src/business/policies/marketplace-agent-policy.ts";
 import { assertPublicVerificationSnapshotFresh, parsePublicVerificationSnapshot } from "../src/data/verification/public-verification-snapshot.ts";
 import type { MarketplaceAgentData } from "../src/data/repositories/marketplace-agent-repository.ts";
+import type { WorkerObservationTarget } from "../src/business/entities/worker-observations.ts";
 import {
   marketplaceEvidenceFromReleaseInput,
   sanitizeVerificationReport,
@@ -161,6 +162,74 @@ function marketplaceData(qualification: "qualified" | "not_qualified", freshness
 }
 
 describe("PR 16 marketplace evidence boundaries", () => {
+  it("never falls back to release qualification when the Worker has no target", () => {
+    const agent = toMarketplaceAgent(marketplaceData("qualified", "current"), { evaluateMarketplace: false });
+    const card = agentCardWithObservation(agent, null, true, Date.parse(GENERATED_AT));
+
+    expect(card.hireability).toBe("listed_only");
+    expect(card.evidence.find(({ kind }) => kind === "quote")).toMatchObject({
+      status: "unavailable",
+      provenance: "not_probed",
+    });
+    expect(card.evidence.find(({ kind }) => kind === "quote")).not.toHaveProperty("timestamp");
+  });
+
+  it("does not treat a recent quote on a removed target as current", () => {
+    const now = Date.parse(GENERATED_AT);
+    const agent = toMarketplaceAgent(marketplaceData("qualified", "current"), { evaluateMarketplace: false });
+    const card = agentCardWithObservation(agent, {
+      agentId: agent.agentId,
+      name: agent.name,
+      categories: ["grid_trading"],
+      declarationState: "removed",
+      latest: {
+        probedAt: now,
+        probeCategory: "grid_trading",
+        outcome: "quote_verified",
+        quoteExpiresAt: now + 60_000,
+        errorCode: null,
+      },
+      latestByCategory: {},
+    }, true, now);
+
+    expect(card.hireability).toBe("quote_stale");
+    expect(card.evidence.find(({ kind }) => kind === "reachable")?.detail).toContain("no longer declared");
+  });
+
+  it("uses the category-specific observation in a filtered catalogue", () => {
+    const now = Date.parse(GENERATED_AT);
+    const agent = toMarketplaceAgent(marketplaceData("qualified", "current"), { evaluateMarketplace: false });
+    const quote = {
+      probedAt: now,
+      probeCategory: "grid_trading" as const,
+      outcome: "quote_verified" as const,
+      quoteExpiresAt: now + 60_000,
+      errorCode: null,
+    };
+    const target = {
+      agentId: agent.agentId,
+      name: agent.name,
+      categories: ["grid_trading", "yield_optimisation"],
+      declarationState: "current" as const,
+      latest: quote,
+      latestByCategory: {
+        grid_trading: quote,
+        yield_optimisation: {
+          probedAt: now,
+          probeCategory: "yield_optimisation" as const,
+          outcome: "unreachable" as const,
+          quoteExpiresAt: null,
+          errorCode: "SELLER_TIMEOUT",
+        },
+      },
+    } satisfies WorkerObservationTarget;
+
+    expect(agentCardWithObservation(agent, target, true, now, undefined, "grid_trading").hireability)
+      .toBe("hireable");
+    expect(agentCardWithObservation(agent, target, true, now, undefined, "yield_optimisation").hireability)
+      .toBe("listed_only");
+  });
+
   it("cannot enable Hire from an environment flag without current qualification", () => {
     process.env.ERC8183_MAINNET_DEMO_ENABLED = "true";
     try {

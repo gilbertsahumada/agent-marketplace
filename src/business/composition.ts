@@ -24,7 +24,6 @@ import { GetErc8183TestnetJobTracking } from "./use-cases/get-erc8183-testnet-jo
 import { GetPublicVerificationSnapshot } from "./use-cases/get-public-verification-snapshot.ts";
 import { GetMainnetBrowserDemoConfig } from "./use-cases/get-mainnet-browser-demo-config.ts";
 import { GetMainnetJobProof, GetPublicMainnetJobProof } from "./use-cases/get-mainnet-job-proof.ts";
-import { GetMarketplaceLandingCatalog } from "./use-cases/get-marketplace-landing-catalog.ts";
 import { GetMainnetHiringExposure } from "./use-cases/get-mainnet-hiring-exposure.ts";
 import { GetAgentEvidencePassport } from "./use-cases/get-agent-evidence-passport.ts";
 import { ValidateMarketplaceAgent } from "./use-cases/validate-marketplace-agent.ts";
@@ -53,9 +52,8 @@ const unqualifiedMainnetPrepare = new PrepareErc8183Hire(mainnetErc8183Repositor
 const unqualifiedMainnetNotify = new NotifyFundedJob(mainnetErc8183Repository);
 export const getMainnetErc8183JobStatus = new GetErc8183JobStatus(mainnetErc8183Repository);
 export const getPublicVerificationSnapshot = new GetPublicVerificationSnapshot(publicVerificationRepository);
-export const getMarketplaceLandingCatalog = new GetMarketplaceLandingCatalog(getPublicVerificationSnapshot);
 export const getMainnetHiringExposure = new GetMainnetHiringExposure(
-  publicVerificationRepository,
+  { getObservations: workerObservationFeed },
   mainnetBrowserDemoConfigRepository,
 );
 export const requestMainnetErc8183Quote = new RequestQualifiedMainnetQuote(

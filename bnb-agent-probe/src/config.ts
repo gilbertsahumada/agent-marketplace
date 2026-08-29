@@ -73,6 +73,7 @@ const FREE_SAFETY_RATIO = 0.8;
 const QUEUE_MAX_RETRIES = 3;
 const QUEUE_OPERATIONS_PER_MESSAGE = 3 + QUEUE_MAX_RETRIES;
 const D1_TELEMETRY_WRITES_PER_ATTEMPT = 2;
+const FREE_MIN_D1_QUERIES_PER_RUN = 22;
 const GENERAL_PROBE_SCOPE = "*";
 
 const FREE_PROFILE: Profile = {
@@ -95,7 +96,7 @@ const FREE_PROFILE: Profile = {
   maximums: {
     cronIntervalMinutes: 1_440,
     headerLimit: 50,
-    sweepLimit: 40,
+    sweepLimit: 13,
     sweepPagesPerRun: 1,
     probeBatchSize: 1,
     trust8004RequestsPerRun: 40,
@@ -206,10 +207,10 @@ function parseInteger(field: keyof typeof NUMERIC_FIELDS, raw: string, maximum: 
   ].includes(field) && value === 0) {
     throw new ConfigError(field, "must be at least 1");
   }
-  if (field === "D1_QUERIES_PER_RUN" && value < 13) {
+  if (field === "D1_QUERIES_PER_RUN" && value < FREE_MIN_D1_QUERIES_PER_RUN) {
     throw new ConfigError(
       field,
-      "must cover the minimum Queue SWEEP plus error, lease cleanup, attempt and daily ledger reserves",
+      "must cover a four-agent Queue SWEEP plus error, lease cleanup, attempt and daily ledger reserves",
     );
   }
   if (field === "CRON_INTERVAL_MINUTES" && (value > 60 || 60 % value !== 0)) {
@@ -310,6 +311,16 @@ export function loadConfig(env: Partial<Env>): WorkerConfig {
       "SWEEP_LIMIT",
       "must not exceed TRUST8004_REQUESTS_PER_RUN on Free",
     );
+  }
+
+  if (plan === "free") {
+    const worstCaseSweepQueries = 2 * values.sweepLimit + 14;
+    if (worstCaseSweepQueries > values.d1QueriesPerRun) {
+      throw new ConfigError(
+        "SWEEP_LIMIT",
+        `requires up to ${worstCaseSweepQueries} D1 queries including cleanup; lower SWEEP_LIMIT or raise D1_QUERIES_PER_RUN`,
+      );
+    }
   }
 
   const invocations = Math.ceil(1_440 / values.cronIntervalMinutes);
