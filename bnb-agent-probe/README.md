@@ -163,7 +163,8 @@ npx wrangler deploy --env staging --keep-vars \
   --var PRODUCER_KILL_SWITCH:1 --var KILL_SWITCH:1 \
   --message "git_commit=${FULL_SHA}" --tag "git-${SHORT_SHA}-cleanup"
 CLEANUP_VERSION_ID="<Current Version ID from Wrangler>"
-# Repeat the DELETE and GET above; the final GET must return result=[].
+# Repeat the DELETE and GET above; the final GET must return success=true,
+# errors=[] and result.schedules=[].
 ```
 
 Destructive retry tests use the dedicated `validation` environment, never the
