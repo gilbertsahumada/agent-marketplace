@@ -1,0 +1,134 @@
+{
+  "capturedAt": "2026-08-28T16:54:15Z",
+  "deployment": {
+    "worker": "bnb-agent-probe-staging",
+    "versionId": "84eeac74-3163-4be4-901f-de4474abda11",
+    "startupTimeMs": 5,
+    "killSwitch": true,
+    "cronConfigured": false,
+    "healthStatus": 200,
+    "sweepLimit": 4,
+    "d1QueriesPerRun": 40,
+    "deploymentEnvironment": "staging",
+    "stagingManualRun": false,
+    "sharedSecrets": [],
+    "queue": "bnb-agent-probe-staging",
+    "queueProducers": 1,
+    "queueConsumers": 1
+  },
+  "manualRunner": "wrangler 4.127.0 --remote --env staging --test-scheduled",
+  "manualRuns": [
+    {
+      "headerLimit": 1,
+      "header": { "status": "ok", "requests": 1, "d1Queries": 7, "wallTimeMs": 1722, "headerWindowExhausted": false },
+      "sweep": { "status": "ok", "requests": 4, "d1Queries": 9, "wallTimeMs": 1979 },
+      "probe": { "status": "pending_wp3", "requests": 0, "d1Queries": 5, "wallTimeMs": 337 }
+    },
+    {
+      "headerLimit": 5,
+      "header": { "status": "ok", "requests": 1, "d1Queries": 7, "wallTimeMs": 1526, "headerWindowExhausted": true },
+      "sweep": { "status": "ok", "requests": 1, "d1Queries": 10, "wallTimeMs": 984 },
+      "probe": { "status": "pending_wp3", "requests": 0, "d1Queries": 5, "wallTimeMs": 339 }
+    },
+    {
+      "headerLimit": 25,
+      "header": { "status": "ok", "requests": 1, "d1Queries": 7, "wallTimeMs": 1539, "headerWindowExhausted": false },
+      "sweep": { "status": "ok", "requests": 4, "d1Queries": 9, "wallTimeMs": 1235 },
+      "probe": { "status": "pending_wp3", "requests": 0, "d1Queries": 5, "wallTimeMs": 284 }
+    }
+  ],
+  "observed": {
+    "scheduledHttpStatuses": [200],
+    "http429Responses": 0,
+    "phaseRotationReturnedToHeader": true,
+    "leaseActiveAfterRuns": false,
+    "maximumObservedD1Queries": 10
+  },
+  "workersAnalytics": {
+    "source": "Cloudflare GraphQL workersInvocationsAdaptive",
+    "rawEvidence": "evidence/wp2-workers-analytics-raw-2026-08-28.json",
+    "unit": "microseconds",
+    "allStatuses": "success",
+    "preview": {
+      "header25CpuP50": 15442,
+      "sweep4CpuP50": 11098,
+      "header1CpuP50": 17124,
+      "sweep1CpuP50": 10871
+    },
+    "nominalAuthenticatedManualRoute": {
+      "probeCpuP50": 4146,
+      "header1CpuP50": 11676,
+      "sweep1CpuP50": 8439,
+      "note": "These fetch invocations include authentication and HTTP route overhead that a Cron Trigger does not."
+    }
+  },
+  "d1AnalyticsOneHour": {
+    "source": "wrangler d1 insights",
+    "queryShapes": 9,
+    "queryExecutions": 78,
+    "rowsRead": 377,
+    "rowsWritten": 46,
+    "queryDurationMs": 24.6236,
+    "scope": "Manual phase runs plus health reads in the same staging window.",
+    "limitation": "This aggregate does not prove a per-invocation query or row count and the historical per-query response was not preserved. Runtime query-budget tests are the source for the hard per-invocation cap."
+  },
+  "cronTrial": {
+    "schedule": "* * * * *",
+    "phaseInvocations": 0,
+    "killSwitchedHandlerInvocationsAfterTrial": 9,
+    "reason": "No phase invocation was observed while KILL_SWITCH=0. The retained schedule later reached the redeployed KILL_SWITCH=1 handler at 15:00:56Z through 15:08:56Z, performed no phase work and was then removed explicitly.",
+    "schedulesAfterCleanup": []
+  },
+  "secondCronTrial": {
+    "deploymentVersion": "aed83bc5-7e5d-4122-9aae-f01533de727b",
+    "configuredAt": "2026-08-28T15:15:48Z",
+    "schedule": "* * * * *",
+    "configuration": {
+      "killSwitch": false,
+      "stagingManualRun": false,
+      "headerLimit": 1,
+      "sweepLimit": 1,
+      "trust8004RequestsPerRun": 1
+    },
+    "phaseInvocationsObservedBeforeCleanup": 0,
+    "observationEndedAt": "2026-08-28T15:21:00Z",
+    "reason": "The schedule was visible through the schedules API but did not update the HEADER summary or phase state during the controlled five-minute window.",
+    "finalNominalVersion": "470fee05-aa5b-47cb-b09c-bff85a910407",
+    "schedulesAfterCleanup": [],
+    "sharedSecretsAfterCleanup": []
+  },
+  "directCronCpu": {
+    "rawEvidence": "evidence/wp2-cron-cpu-raw-2026-08-28.json",
+    "header1BaselineCpu": 21364,
+    "header1AfterD1OptimizationCpu": 16336,
+    "header1AfterLazyLoadingCpu": 16508,
+    "tenRunSeries": {
+      "d1Executions": 10,
+      "analyticsSamples": 9,
+      "coldCpu": 14962,
+      "warmCpu": [6722, 7551, 9251, 7044, 5953, 8354, 7361, 6024]
+    },
+    "conclusion": "The warm path fits below 10000 microseconds, but the cold path does not; direct Cron execution fails the required Free cold/P99 gate."
+  },
+  "queueTrial": {
+    "deploymentVersion": "cb2e0e2b-cc88-4949-967c-d5eb78f66911",
+    "rawEvidence": "evidence/wp2-queue-analytics-raw-2026-08-28.json",
+    "configuration": {
+      "killSwitch": false,
+      "headerLimit": 1,
+      "sweepLimit": 1,
+      "queueBatchSize": 1
+    },
+    "header": { "status": "ok", "requests": 1, "d1Queries": 5, "wallTimeMs": 1335, "cpuTime": 16747 },
+    "cronProducer": { "status": "success", "cpuTime": 1140, "subrequests": 0 },
+    "sweep": { "status": "ok", "requests": 1, "d1Queries": 10, "wallTimeMs": 923, "cpuTime": 15107 },
+    "nominalQueueOperationProjectionPerDay": 864,
+    "threeRetryQueueOperationProjectionPerDay": 1728,
+    "freeQueueOperationSafetyCeilingPerDay": 8000,
+    "finalNominalVersion": "84eeac74-3163-4be4-901f-de4474abda11",
+    "schedulesAfterCleanup": [],
+    "sharedSecretsAfterCleanup": []
+  },
+  "promotionGate": "queue_architecture_demonstrated_limits1",
+  "blockingReason": "Direct Cron phase execution cannot meet the Workers Free cold/P99 CPU gate. Cron-to-Queue isolates phase work in a Free Queue consumer with a 30000 ms CPU allowance and passed real HEADER=1 and SWEEP=1 delivery, D1 accounting and phase rotation. The trial predates the atomic retry fix, whose failure-to-success redelivery is proven locally in Workers+D1. Scheduled production traffic remains disabled until remote retry validation, two Queue rotations at Free defaults, memory below 96 MiB, real daily D1 margin and the WP3 PROBE gate pass."
+}

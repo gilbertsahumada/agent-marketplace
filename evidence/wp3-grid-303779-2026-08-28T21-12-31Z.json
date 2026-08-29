@@ -1,0 +1,167 @@
+{
+  "schemaVersion": 1,
+  "capturedAt": "2026-08-28T21:17:29.565Z",
+  "sourceCommit": "d333c9e44ce1244db6122582c7b856ac8ed0e0f4",
+  "branch": "codex/wp2-header-sweep",
+  "environment": {
+    "worker": "bnb-agent-probe-staging",
+    "url": "https://bnb-agent-probe-staging.gilbertsahumada.workers.dev",
+    "cloudflareAccountId": "bc8d4adf4860284fda426b24e7377bc2",
+    "plan": "free",
+    "d1Name": "bnb-agent-probe-staging",
+    "d1Id": "6fbeea3e-4516-4c4e-a5c4-392cb067198a",
+    "queueName": "bnb-agent-probe-staging",
+    "queueId": "721ba809967d425a91dbc34eb1ac3baa",
+    "measurementDeploymentVersion": "3a26756c-a615-4b5e-930e-df2be299b088",
+    "cleanupDeploymentVersion": "b2f7ebe9-2be7-4e05-b872-b1a7a63c6cbc"
+  },
+  "safetyBoundary": {
+    "agentAllowlist": ["303779"],
+    "endpointAllowlist": ["https://bnb-agent-marketplace-ruby.vercel.app/grid"],
+    "probeBatchSize": 1,
+    "probeTimeoutMs": 5000,
+    "maximumSellerResponseBytes": 32768,
+    "maximumExternalSubrequests": 12,
+    "maximumD1Queries": 40,
+    "walletCustody": false,
+    "transactionSigning": false,
+    "jobCreateFundExecute": false
+  },
+  "controlledAttempts": [
+    {
+      "attempt": 1,
+      "result": "metadata_unavailable",
+      "diagnosis": "The live trust8004 record returned endpoints=null; the parser incorrectly rejected this optional field.",
+      "resolution": "Treat only null or absent optional endpoint arrays as empty while keeping malformed non-null values fail-closed."
+    },
+    {
+      "attempt": 2,
+      "result": "removed",
+      "diagnosis": "trust8004 declared the full A2A Agent Card URL while the exact logical allowlist contained the seller base URL.",
+      "resolution": "Normalize only the exact /.well-known/agent-card.json A2A suffix to the base URL after safe-URL validation."
+    },
+    {
+      "attempt": 3,
+      "result": "quote_verified",
+      "diagnosis": null,
+      "resolution": null
+    }
+  ],
+  "successfulRotation": {
+    "analyticsWindow": {
+      "start": "2026-08-28T21:11:40.000Z",
+      "end": "2026-08-28T21:13:20.000Z"
+    },
+    "bscBlockBefore": "0x7126285",
+    "bscBlockAfter": "0x71262eb",
+    "phases": [
+      {"phase": "header", "httpStatus": 204, "status": "ok", "requests": 1, "wallTimeMs": 1285, "d1Queries": 6, "materialWrites": 0, "nextPhase": "sweep"},
+      {"phase": "sweep", "httpStatus": 204, "status": "ok", "requests": 4, "wallTimeMs": 880, "d1Queries": 11, "nextPhase": "probe"},
+      {"phase": "probe", "httpStatus": 204, "status": "ok", "outcome": "quote_verified", "requests": 8, "wallTimeMs": 2635, "d1Queries": 10, "processedTargets": 1, "nextPhase": "header"}
+    ],
+    "queue": {
+      "writeMessages": 3,
+      "readMessages": 3,
+      "successfulDeletes": 3,
+      "retries": 0,
+      "maximumBacklogMessages": 1,
+      "finalBacklogMessages": 0,
+      "lastQueueScheduledTime": 1787951547215
+    }
+  },
+  "observationD1": {
+    "agentId": "303779",
+    "chainId": 56,
+    "transport": "a2a",
+    "endpoint": "https://bnb-agent-marketplace-ruby.vercel.app/grid",
+    "probedAt": 1787951551104,
+    "probeCategory": "grid_trading",
+    "outcome": "quote_verified",
+    "observedMetadataUpdatedAt": 1787695744000,
+    "observedWallet": "0xA2a2012e52Fd075c0F3146e37E833E7294ee52B5",
+    "observedWalletSource": "agentWallet",
+    "observedBlockNumber": "118645471",
+    "onchainObservedAt": 1787951551000,
+    "commerce": "0xEa4DAa3100A767e86FDed867729ae7446476EBA6",
+    "router": "0x51895229E12F9876011789B04f8698af06cCD6DA",
+    "policy": "0x9C01845705b3078Aa2e8cfF7520a6376FD766dE5",
+    "priceRaw": "10000000000000000",
+    "currency": "0xcE24439F2D9C6a2289F741120FE202248B666666",
+    "decimals": 18,
+    "signatureMethod": "eip191",
+    "signer": "0xA2a2012e52Fd075c0F3146e37E833E7294ee52B5",
+    "requestHash": "0x697a15f62a1748230d3e4bdbbe24f6a619d1b82d45f1e4c82787e268ab2497d3",
+    "negotiationHash": "0x97d8f2f5d20eec51506dc85227fb55930f5014a610632efbdf576fceed76a519",
+    "quoteNegotiatedAt": 1787951553000,
+    "quoteExpiresAt": 1787952453000,
+    "errorCode": null,
+    "durationMs": 2236
+  },
+  "cloudflareAnalytics": {
+    "rawEvidence": "evidence/wp3-grid-303779-analytics-raw-2026-08-28.json",
+    "workersSource": "Cloudflare GraphQL workersInvocationsAdaptive",
+    "queueSource": "Cloudflare GraphQL queueMessageOperationsAdaptiveGroups and queueBacklogAdaptiveGroups",
+    "deploymentRequests": 18,
+    "deploymentErrors": 0,
+    "deploymentSubrequests": 13,
+    "maximumCpuTimeP99MicrosecondsAcrossGroups": 170404,
+    "maximumDurationP50SecondsAcrossGroups": 0.19678925,
+    "maximumMemoryBytesP999AcrossGroups": 11297484,
+    "queueOperations": 9
+  },
+  "noJobInvariant": {
+    "commerce": "0xEa4DAa3100A767e86FDed867729ae7446476EBA6",
+    "inclusiveBlockRange": {"from": "0x7126285", "to": "0x71262eb"},
+    "topics": {
+      "JobCreated": "0xb0f0239bfdd96453e24733e18bfc24b70d8fadf123dd977473518dd577ee79b9",
+      "BudgetSet": "0x869e2577b006bf47ee981cf6fec2e25583548081c14b98deab587f77b5068038",
+      "JobFunded": "0xbdb056de345bfeadca7c9fd7df6430bdb83c677c8eefbb601dff56f34d3dac52"
+    },
+    "auditRpc": "https://bsc-rpc.publicnode.com",
+    "rawEthGetLogsResponse": {"jsonrpc": "2.0", "result": [], "id": 1},
+    "matchingEvents": 0,
+    "probeTransactions": 0,
+    "officialPublicRpcDiagnostic": {"result": "error", "code": -32005, "message": "limit exceeded"}
+  },
+  "dailyLedgerAfterAllThreeAttempts": {
+    "utcDate": "2026-08-28",
+    "measurementScope": "worker_metered_before_daily_ledger",
+    "invocations": 9,
+    "completed": 9,
+    "failed": 0,
+    "duplicate": 0,
+    "locked": 0,
+    "upstreamRequests": 22,
+    "d1Queries": 79,
+    "rowsReadObservedBeforeLedger": 186,
+    "rowsWrittenObservedBeforeLedger": 63
+  },
+  "localVerification": {
+    "workerUnit": {"files": 25, "tests": 277, "status": "passed"},
+    "workerd": {"files": 3, "tests": 30, "status": "passed", "transportGates": ["redirect", "response_too_large", "timeout"]},
+    "typecheck": "passed",
+    "wranglerDryRun": ["root", "staging", "validation"],
+    "bundleBytes": 1058919,
+    "bundleGzipBytes": 212244
+  },
+  "cleanup": {
+    "killSwitch": true,
+    "stagingManualRun": false,
+    "schedules": [],
+    "sharedSecretDeleted": true,
+    "temporarySecretFileDeleted": true,
+    "queueProducerCount": 1,
+    "queueConsumerCount": 1,
+    "queueBacklogMessages": 0,
+    "healthStatus": 200,
+    "healthNextPhase": "header",
+    "healthLastOutcome": "quote_verified"
+  },
+  "knownStagingData": {
+    "legacyPreFixTarget": "https://bnb-agent-marketplace-ruby.vercel.app/grid/.well-known/agent-card.json",
+    "effect": "Ignored by the exact WP3 endpoint allowlist.",
+    "cleanup": "A future normalized full sweep marks the obsolete declaration removed; no manual D1 mutation was performed."
+  },
+  "gate": "passed_remote_nominal_and_workerd_transport_negatives",
+  "remaining": "WP2 still requires the separate full 00:00-24:00 UTC D1 and account Analytics gate before continuous scheduling or production promotion."
+}

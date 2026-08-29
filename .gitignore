@@ -23,5 +23,7 @@ tunnel*.pid
 /*.md
 !/README.md
 /docs/*
+!/docs/SPEC-MVP.md
+!/docs/DECISIONS.md
 .vercel
 .DS_Store

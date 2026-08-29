@@ -1,0 +1,127 @@
+{
+  "entries": [
+    {
+      "file": "src/db/client.ts",
+      "function": "assertRuntimeStateKey",
+      "fingerprint": "5ca1c0fb225c",
+      "count": 1
+    },
+    {
+      "file": "src/db/client.ts",
+      "function": "prepareStatement",
+      "fingerprint": "a8b771920b83",
+      "count": 1
+    },
+    {
+      "file": "src/db/client.ts",
+      "function": "result",
+      "fingerprint": "5eebbd548f16",
+      "count": 1
+    },
+    {
+      "file": "src/db/query-budget.ts",
+      "function": "values",
+      "fingerprint": "a8b771920b83",
+      "count": 1,
+      "normative": true
+    },
+    {
+      "file": "src/lib/scheduler-lease.ts",
+      "function": "result",
+      "fingerprint": "767e67512765",
+      "count": 1,
+      "normative": true
+    },
+    {
+      "file": "src/lib/scheduler-lease.ts",
+      "function": "result",
+      "fingerprint": "df2d0d423f53",
+      "count": 1,
+      "normative": true
+    },
+    {
+      "file": "src/phases/header.ts",
+      "function": "result",
+      "fingerprint": "2589ba1c927d",
+      "count": 1
+    },
+    {
+      "file": "src/phases/sweep.ts",
+      "function": "batchQueries",
+      "fingerprint": "9e398877a2c3",
+      "count": 1
+    },
+    {
+      "file": "src/phases/sweep.ts",
+      "function": "prepareRemoved",
+      "fingerprint": "d189a1413755",
+      "count": 1
+    },
+    {
+      "file": "src/phases/sweep.ts",
+      "function": "prepareRuntimeInteger",
+      "fingerprint": "2ce94b2b1935",
+      "count": 1
+    },
+    {
+      "file": "src/phases/sweep.ts",
+      "function": "prepareRuntimeText",
+      "fingerprint": "c7e7a2b03279",
+      "count": 1
+    },
+    {
+      "file": "src/phases/sweep.ts",
+      "function": "prepareSeenRefresh",
+      "fingerprint": "2ba2ae7a7d16",
+      "count": 1
+    },
+    {
+      "file": "src/phases/sweep.ts",
+      "function": "prepareUnavailable",
+      "fingerprint": "0b6a576904e3",
+      "count": 1
+    },
+    {
+      "file": "src/phases/sweep.ts",
+      "function": "prepareUpsert",
+      "fingerprint": "ae554ec3812e",
+      "count": 1
+    },
+    {
+      "file": "src/phases/sweep.ts",
+      "function": "result",
+      "fingerprint": "2e7ee07156e8",
+      "count": 1
+    },
+    {
+      "file": "src/phases/sweep.ts",
+      "function": "result",
+      "fingerprint": "8557c7c82bc5",
+      "count": 1
+    },
+    {
+      "file": "src/phases/sweep.ts",
+      "function": "stateRows",
+      "fingerprint": "cff6cc82ab70",
+      "count": 1
+    },
+    {
+      "file": "src/routes/health.ts",
+      "function": "runtimeResult",
+      "fingerprint": "33c79cb8f4be",
+      "count": 1
+    },
+    {
+      "file": "src/scheduled.ts",
+      "function": "result",
+      "fingerprint": "c7e7a2b03279",
+      "count": 1
+    },
+    {
+      "file": "src/scheduled.ts",
+      "function": "stateResult",
+      "fingerprint": "856827a7a229",
+      "count": 1
+    }
+  ]
+}

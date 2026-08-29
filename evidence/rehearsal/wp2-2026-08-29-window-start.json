@@ -1,0 +1,53 @@
+{
+  "request": {
+    "accountId": "bc8d4adf4860284fda426b24e7377bc2",
+    "capturedAt": "2026-08-28T23:56:13.824Z",
+    "completedAt": "2026-08-28T23:56:13.824Z",
+    "databaseId": "6fbeea3e-4516-4c4e-a5c4-392cb067198a",
+    "params": [
+      "last_queue_scheduled_time",
+      "next_scheduler_phase"
+    ],
+    "sql": "SELECT key, textValue AS value, integerValue FROM runtime_state WHERE key IN (?, ?) ORDER BY key ASC",
+    "startedAt": "2026-08-28T23:56:12.861Z"
+  },
+  "response": {
+    "result": [
+      {
+        "results": [
+          {
+            "key": "last_queue_scheduled_time",
+            "value": null,
+            "integerValue": 1787961314000
+          },
+          {
+            "key": "next_scheduler_phase",
+            "value": "sweep",
+            "integerValue": null
+          }
+        ],
+        "success": true,
+        "meta": {
+          "served_by": "v3-prod",
+          "served_by_region": "ENAM",
+          "served_by_colo": "ATL",
+          "served_by_primary": true,
+          "timings": {
+            "sql_duration_ms": 0.5485
+          },
+          "duration": 0.5485,
+          "changes": 0,
+          "last_row_id": 0,
+          "changed_db": false,
+          "size_after": 106496,
+          "rows_read": 4,
+          "rows_written": 0,
+          "total_attempts": 1
+        }
+      }
+    ],
+    "errors": [],
+    "messages": [],
+    "success": true
+  }
+}

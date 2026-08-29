@@ -1,0 +1,260 @@
+{
+  "capturedAt": "2026-08-28T18:05:30Z",
+  "status": "pass",
+  "scope": "WP2 remote Queue lease retry, phase-exception retry and duplicate suppression",
+  "commit": "de3c595",
+  "accountTag": "bc8d4adf4860284fda426b24e7377bc2",
+  "worker": {
+    "name": "bnb-agent-probe-validation",
+    "url": "https://bnb-agent-probe-validation.gilbertsahumada.workers.dev",
+    "nominalVersionId": "b5e567d1-1093-4e9d-83b4-374aee967454",
+    "ephemeral": true,
+    "deletedAfterEvidenceCapture": true
+  },
+  "queue": {
+    "name": "bnb-agent-probe-validation-20260828",
+    "id": "14feedfc8e904e2d956661d028dcbec3",
+    "createdOn": "2026-08-28T17:43:41.007058Z",
+    "messageRetentionSeconds": 900,
+    "batchSize": 1,
+    "maxRetries": 3,
+    "maxConcurrency": 1,
+    "retryDelaySeconds": 60
+  },
+  "database": {
+    "name": "bnb-agent-probe-validation-20260828",
+    "id": "11253c18-cc4d-489a-8d1d-972d3a31e49f",
+    "migrations": ["0001_initial.sql", "0002_seed_funnel_snapshot.sql"]
+  },
+  "isolation": {
+    "queueCreatedAfterInvalidatedTrial": true,
+    "databaseSeparateFromStaging": true,
+    "queueSeparateFromStaging": true,
+    "schedulesBefore": [],
+    "secretsBefore": [],
+    "secretsScope": "Worker secrets only; the trial used the operator's existing Wrangler OAuth session and does not claim an ephemeral Queue publisher token was revoked.",
+    "initialBacklogCount": 0,
+    "initialRuntimeStateRows": 0,
+    "stagingBindings": {
+      "worker": "bnb-agent-probe-staging",
+      "databaseName": "bnb-agent-probe-staging",
+      "databaseId": "6fbeea3e-4516-4c4e-a5c4-392cb067198a",
+      "queueName": "bnb-agent-probe-staging"
+    },
+    "validationBindings": {
+      "worker": "bnb-agent-probe-validation",
+      "databaseName": "bnb-agent-probe-validation-20260828",
+      "databaseId": "11253c18-cc4d-489a-8d1d-972d3a31e49f",
+      "queueName": "bnb-agent-probe-validation-20260828",
+      "queueId": "14feedfc8e904e2d956661d028dcbec3"
+    },
+    "stagingObservedSnapshot": {
+      "canonicalization": "JSON.stringify with the field order preserved below",
+      "sha256": "b6654c4bc7fcb8b5d5a518290d6b64d89c7f306f821381ac2d167aad2cc2d095",
+      "before": {
+        "headerHighWater": "1787937068000:315657",
+        "lastQueueScheduledTime": 1787936870000,
+        "nextPhase": "header",
+        "sweepOffset": 0,
+        "sweepRound": 3,
+        "rowCounts": { "funnelSnapshots": 1, "hireEvents": 0, "probeObservations": 0, "probeTargets": 0 }
+      },
+      "after": {
+        "headerHighWater": "1787937068000:315657",
+        "lastQueueScheduledTime": 1787936870000,
+        "nextPhase": "header",
+        "sweepOffset": 0,
+        "sweepRound": 3,
+        "rowCounts": { "funnelSnapshots": 1, "hireEvents": 0, "probeObservations": 0, "probeTargets": 0 }
+      },
+      "afterQueries": [
+        "SELECT key, textValue, integerValue, updatedAt FROM runtime_state ORDER BY key",
+        "SELECT table row counts for funnel_snapshots, hire_events, probe_observations and probe_targets ORDER BY tableName"
+      ],
+      "afterRetrievedAt": "2026-08-28T18:19:12Z",
+      "scope": "Only these preflight-captured state fields and row counts are claimed unchanged; summary timestamps and expired lease text are excluded."
+    }
+  },
+  "configuration": {
+    "plan": "free",
+    "headerLimit": 25,
+    "sweepLimit": 4,
+    "sweepPagesPerRun": 1,
+    "trust8004RequestsPerRun": 4,
+    "externalSubrequestsPerRun": 12,
+    "d1QueriesPerRun": 40,
+    "stagingManualRun": false,
+    "cronTriggers": []
+  },
+  "leaseRetry": {
+    "status": "pass",
+    "versionId": "354e28c9-8176-4d00-b9ff-a4e42b2ac5b3",
+    "scheduledTime": 1787939189526,
+    "lease": {
+      "owner": "wp2-validation-lease",
+      "createdAt": 1787939188526,
+      "expiresAt": 1787939368526
+    },
+    "firstDelivery": {
+      "d1UpdatedAt": 1787939248193,
+      "summary": { "status": "skipped_locked", "requests": 0, "wallTimeMs": 101 },
+      "completionMarker": null,
+      "nextPhase": "header",
+      "upstreamSubrequests": 0
+    },
+    "redelivery": {
+      "queueReadAt": "2026-08-28T17:51:31Z",
+      "retryCount": 1,
+      "lagTimeMs": 255013,
+      "deleteOutcome": "success",
+      "completionMarker": 1787939189526,
+      "nextPhase": "sweep",
+      "phaseSummary": {
+        "phase": "header",
+        "status": "ok",
+        "requested": 25,
+        "received": 25,
+        "materialWrites": 0,
+        "requests": 1,
+        "d1Queries": 5,
+        "wallTimeMs": 1892
+      }
+    },
+    "duplicate": {
+      "writeAt": "2026-08-28T17:52:24Z",
+      "deleteAt": "2026-08-28T17:52:29Z",
+      "completionMarker": 1787939189526,
+      "nextPhase": "sweep",
+      "phaseSummaryUnchanged": true,
+      "upstreamSubrequests": 0
+    }
+  },
+  "phaseExceptionRetry": {
+    "status": "pass_after_backoff_fix",
+    "scheduledTime": 1787939989131,
+    "failureVersionId": "812eaa82-eb1c-4546-bc2c-eb8ae1739962",
+    "successVersionId": "34bdefdb-ce1b-40fc-8c8a-59fbd16a6aa8",
+    "controlledFailure": {
+      "trust8004BaseUrl": "https://example.com",
+      "errorCode": "TRUST8004_HTTP_ERROR",
+      "phase": "sweep",
+      "requests": 0,
+      "d1Queries": 6,
+      "wallTimeMs": 880,
+      "completionMarkerBefore": 1787939189526,
+      "completionMarkerAfter": 1787939189526,
+      "nextPhaseBefore": "sweep",
+      "nextPhaseAfter": "sweep",
+      "cursorAdvanced": false
+    },
+    "redelivery": {
+      "queueReadAt": "2026-08-28T18:01:03Z",
+      "retryCount": 1,
+      "lagTimeMs": 64652,
+      "deleteOutcome": "success",
+      "completionMarker": 1787939989131,
+      "nextPhase": "probe",
+      "phaseSummary": {
+        "phase": "sweep",
+        "status": "ok",
+        "processedAgents": 4,
+        "previousOffset": 0,
+        "nextOffset": 4,
+        "sweepRound": 0,
+        "complete": false,
+        "requests": 4,
+        "d1Queries": 10,
+        "wallTimeMs": 1335
+      }
+    },
+    "duplicate": {
+      "writeAt": "2026-08-28T18:02:07Z",
+      "deleteAt": "2026-08-28T18:02:10Z",
+      "completionMarker": 1787939989131,
+      "nextPhase": "probe",
+      "sweepOffset": 4,
+      "sweepRound": 0,
+      "phaseSummaryUnchanged": true,
+      "upstreamSubrequests": 0
+    }
+  },
+  "diagnosticNoBackoffTrial": {
+    "status": "failed_as_expected_and_not_counted",
+    "scheduledTime": 1787939589087,
+    "versionId": "983ebf69-b65d-4fcd-862f-966826ba2cde",
+    "finding": "With retry_delay=0 Cloudflare consumed retryCount 0 through 3 in approximately three seconds and deleted the message with outcome=fail.",
+    "queueReads": [
+      { "datetime": "2026-08-28T17:53:24Z", "retryCount": 0 },
+      { "datetime": "2026-08-28T17:53:25Z", "retryCount": 1 },
+      { "datetime": "2026-08-28T17:53:26Z", "retryCount": 2 },
+      { "datetime": "2026-08-28T17:53:27Z", "retryCount": 3 }
+    ],
+    "delete": { "datetime": "2026-08-28T17:53:28Z", "outcome": "fail" },
+    "correctiveCommit": "de3c595",
+    "correction": "All Queue consumers now use retry_delay=60."
+  },
+  "workerMetrics": {
+    "source": "workersInvocationsAdaptive",
+    "successfulConsumerCpuTimeMicrosecondsMaxObserved": 18066,
+    "memoryUsageBytesP999MaxObserved": 2503018,
+    "consumerCpuLimitMicroseconds": 30000000,
+    "memoryGateBytes": 100663296,
+    "exceededCpuGroups": 0,
+    "exceededMemoryGroups": 0,
+    "note": "Adaptive groups are correlated by scriptVersion, timestamp, subrequests and D1 state; they are not per-invocation logs."
+  },
+  "rawQueries": {
+    "workersGraphql": {
+      "query": "query($accountTag: string!, $start: Time!, $end: Time!) { viewer { accounts(filter: { accountTag: $accountTag }) { workersInvocationsAdaptive(limit: 1000, filter: { datetime_geq: $start, datetime_leq: $end, scriptName: \"bnb-agent-probe-validation\" }, orderBy: [datetime_ASC]) { dimensions { datetime scriptName scriptVersion status } quantiles { cpuTimeP50 cpuTimeP99 durationP50 memoryUsageBytesP50 memoryUsageBytesP99 memoryUsageBytesP999 } sum { requests errors subrequests } } } } }",
+      "variables": { "accountTag": "bc8d4adf4860284fda426b24e7377bc2", "start": "2026-08-28T17:46:00Z", "end": "2026-08-28T18:05:00Z" },
+      "sanitizedGroups": [
+        { "datetime": "2026-08-28T17:47:28Z", "scriptVersion": "354e28c9-8176-4d00-b9ff-a4e42b2ac5b3", "status": "success", "cpuTimeP99": 3691, "memoryUsageBytesP999": 1835020, "requests": 1, "errors": 0, "subrequests": 0 },
+        { "datetime": "2026-08-28T17:51:29Z", "scriptVersion": "354e28c9-8176-4d00-b9ff-a4e42b2ac5b3", "status": "success", "cpuTimeP99": 10505, "memoryUsageBytesP999": 2228341, "requests": 1, "errors": 0, "subrequests": 1 },
+        { "datetime": "2026-08-28T17:52:28Z", "scriptVersion": "354e28c9-8176-4d00-b9ff-a4e42b2ac5b3", "status": "success", "cpuTimeP99": 6393, "memoryUsageBytesP999": 1835020, "requests": 1, "errors": 0, "subrequests": 0 },
+        { "datetime": "2026-08-28T18:00:00Z", "scriptVersion": "812eaa82-eb1c-4546-bc2c-eb8ae1739962", "status": "scriptThrewException", "cpuTimeP99": 17494, "memoryUsageBytesP999": 2105356, "requests": 1, "errors": 1, "subrequests": 1 },
+        { "datetime": "2026-08-28T18:01:02Z", "scriptVersion": "34bdefdb-ce1b-40fc-8c8a-59fbd16a6aa8", "status": "success", "cpuTimeP99": 18066, "memoryUsageBytesP999": 2156075, "requests": 1, "errors": 0, "subrequests": 4 },
+        { "datetime": "2026-08-28T18:02:10Z", "scriptVersion": "34bdefdb-ce1b-40fc-8c8a-59fbd16a6aa8", "status": "success", "cpuTimeP99": 8329, "memoryUsageBytesP999": 1835020, "requests": 1, "errors": 0, "subrequests": 0 }
+      ]
+    },
+    "queueGraphql": {
+      "query": "query($accountTag: string!, $queueId: string!, $start: Time!, $end: Time!) { viewer { accounts(filter: { accountTag: $accountTag }) { queueMessageOperationsAdaptiveGroups(limit: 1000, filter: { queueId: $queueId, datetime_geq: $start, datetime_leq: $end }, orderBy: [datetime_ASC]) { count dimensions { datetime queueId actionType consumerType outcome } sum { billableOperations bytes } avg { retryCount lagTime } max { messageSize } } } } }",
+      "variables": { "accountTag": "bc8d4adf4860284fda426b24e7377bc2", "queueId": "14feedfc8e904e2d956661d028dcbec3", "start": "2026-08-28T17:46:00Z", "end": "2026-08-28T18:05:00Z" },
+      "sanitizedGroups": [
+        { "datetime": "2026-08-28T17:47:28Z", "actionType": "ReadMessage", "retryCount": 0, "lagTime": 11647, "count": 1 },
+        { "datetime": "2026-08-28T17:51:31Z", "actionType": "ReadMessage", "retryCount": 1, "lagTime": 255013, "count": 1 },
+        { "datetime": "2026-08-28T17:51:31Z", "actionType": "DeleteMessage", "outcome": "success", "count": 1 },
+        { "datetime": "2026-08-28T18:00:01Z", "actionType": "ReadMessage", "retryCount": 0, "lagTime": 2050, "count": 1 },
+        { "datetime": "2026-08-28T18:01:03Z", "actionType": "ReadMessage", "retryCount": 1, "lagTime": 64652, "count": 1 },
+        { "datetime": "2026-08-28T18:01:03Z", "actionType": "DeleteMessage", "outcome": "success", "count": 1 }
+      ]
+    }
+  },
+  "cleanup": {
+    "stateScope": "Safe nominal state observed before deleting the ephemeral Worker and Queue",
+    "nominalVersionId": "b5e567d1-1093-4e9d-83b4-374aee967454",
+    "killSwitch": true,
+    "schedules": [],
+    "secrets": [],
+    "secretsScope": "Worker secrets",
+    "deliveryPaused": false,
+    "backlogCount": 0,
+    "backlogBytes": 0,
+    "leaseActive": false,
+    "stagingKillSwitch": true,
+    "stagingObservedFieldsMatchedPreflight": true,
+    "finalResourceCleanup": {
+      "completedAt": "2026-08-28T18:20:20Z",
+      "consumerDeleted": "ae7b79a69dd74dfe9e21213aa9ff1862",
+      "workerDeleted": "bnb-agent-probe-validation",
+      "queueDeleted": "14feedfc8e904e2d956661d028dcbec3",
+      "queueListVerifiedAbsent": true,
+      "workerGetVerifiedNotFound": true,
+      "databaseRetainedForAudit": "11253c18-cc4d-489a-8d1d-972d3a31e49f"
+    }
+  },
+  "limitations": [
+    "The failed no-backoff diagnostic is excluded from the passing exception-retry scenario.",
+    "Queue and Workers GraphQL datasets are adaptive; exact correctness is established by scheduledTime markers and D1 snapshots, while adaptive groups provide corroborating metrics.",
+    "This artifact does not close WP3 or the controlled D1 24-hour gate."
+  ]
+}

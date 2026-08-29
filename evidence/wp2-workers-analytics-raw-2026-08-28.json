@@ -1,0 +1,72 @@
+{
+  "capturedAt": "2026-08-28T15:11:02Z",
+  "source": "Cloudflare GraphQL workersInvocationsAdaptive",
+  "accountTag": "bc8d4adf4860284fda426b24e7377bc2",
+  "query": "query($accountTag: string!, $start: Time!, $end: Time!) { viewer { accounts(filter: { accountTag: $accountTag }) { workersInvocationsAdaptive(limit: 1000, filter: { datetime_geq: $start, datetime_leq: $end, scriptName: \"bnb-agent-probe-staging\" }, orderBy: [datetime_ASC]) { dimensions { datetime scriptName status } quantiles { cpuTimeP50 cpuTimeP99 durationP50 } sum { requests errors subrequests } } } } }",
+  "unitNotes": {
+    "cpuTimeP50": "microseconds",
+    "cpuTimeP99": "microseconds",
+    "durationP50": "seconds"
+  },
+  "requests": [
+    {
+      "variables": {
+        "start": "2026-08-28T14:44:40Z",
+        "end": "2026-08-28T14:56:20Z",
+        "scriptName": "bnb-agent-probe-staging"
+      },
+      "response": [
+        { "datetime": "2026-08-28T14:44:49Z", "status": "success", "cpuTimeP50": 15442, "cpuTimeP99": 15442, "durationP50": 0.2325725, "requests": 1, "errors": 0, "subrequests": 1 },
+        { "datetime": "2026-08-28T14:44:52Z", "status": "success", "cpuTimeP50": 11098, "cpuTimeP99": 11098, "durationP50": 0.19360775, "requests": 1, "errors": 0, "subrequests": 4 },
+        { "datetime": "2026-08-28T14:44:54Z", "status": "success", "cpuTimeP50": 1329, "cpuTimeP99": 1329, "durationP50": 0.018102376, "requests": 1, "errors": 0, "subrequests": 0 },
+        { "datetime": "2026-08-28T14:44:55Z", "status": "success", "cpuTimeP50": 2598, "cpuTimeP99": 2598, "durationP50": 0.07404012, "requests": 1, "errors": 0, "subrequests": 0 },
+        { "datetime": "2026-08-28T14:44:56Z", "status": "success", "cpuTimeP50": 1178, "cpuTimeP99": 1178, "durationP50": 0.017520875, "requests": 1, "errors": 0, "subrequests": 0 },
+        { "datetime": "2026-08-28T14:51:35Z", "status": "success", "cpuTimeP50": 1082, "cpuTimeP99": 1082, "durationP50": 0.001082, "requests": 1, "errors": 0, "subrequests": 0 },
+        { "datetime": "2026-08-28T14:51:46Z", "status": "success", "cpuTimeP50": 17124, "cpuTimeP99": 17124, "durationP50": 0.2821325, "requests": 1, "errors": 0, "subrequests": 1 },
+        { "datetime": "2026-08-28T14:51:57Z", "status": "success", "cpuTimeP50": 10871, "cpuTimeP99": 10871, "durationP50": 0.24830163, "requests": 1, "errors": 0, "subrequests": 1 },
+        { "datetime": "2026-08-28T14:53:23Z", "status": "success", "cpuTimeP50": 817, "cpuTimeP99": 817, "durationP50": 0.000817, "requests": 1, "errors": 0, "subrequests": 0 },
+        { "datetime": "2026-08-28T14:55:52Z", "status": "success", "cpuTimeP50": 2711, "cpuTimeP99": 2711, "durationP50": 0.02245, "requests": 1, "errors": 0, "subrequests": 0 },
+        { "datetime": "2026-08-28T14:55:53Z", "status": "success", "cpuTimeP50": 4146, "cpuTimeP99": 4146, "durationP50": 0.07435162, "requests": 1, "errors": 0, "subrequests": 0 },
+        { "datetime": "2026-08-28T14:56:00Z", "status": "success", "cpuTimeP50": 11676, "cpuTimeP99": 11676, "durationP50": 0.3046151, "requests": 1, "errors": 0, "subrequests": 1 },
+        { "datetime": "2026-08-28T14:56:10Z", "status": "success", "cpuTimeP50": 8439, "cpuTimeP99": 8439, "durationP50": 0.16968863, "requests": 1, "errors": 0, "subrequests": 1 },
+        { "datetime": "2026-08-28T14:56:19Z", "status": "success", "cpuTimeP50": 1411, "cpuTimeP99": 1411, "durationP50": 0.019734625, "requests": 1, "errors": 0, "subrequests": 0 }
+      ]
+    },
+    {
+      "variables": {
+        "start": "2026-08-28T14:59:00Z",
+        "end": "2026-08-28T15:09:00Z",
+        "scriptName": "bnb-agent-probe-staging"
+      },
+      "response": [
+        { "datetime": "2026-08-28T14:59:27Z", "status": "success", "cpuTimeP50": 4257, "cpuTimeP99": 4257, "durationP50": 0.019699875, "requests": 1, "errors": 0, "subrequests": 0 },
+        { "datetime": "2026-08-28T15:00:27Z", "status": "success", "cpuTimeP50": 4116, "cpuTimeP99": 4116, "durationP50": 0.024800874, "requests": 1, "errors": 0, "subrequests": 0 },
+        { "datetime": "2026-08-28T15:00:56Z", "status": "success", "cpuTimeP50": 1331, "cpuTimeP99": 1331, "durationP50": 0.001331, "requests": 1, "errors": 0, "subrequests": 0 },
+        { "datetime": "2026-08-28T15:01:56Z", "status": "success", "cpuTimeP50": 805, "cpuTimeP99": 805, "durationP50": 0.000805, "requests": 1, "errors": 0, "subrequests": 0 },
+        { "datetime": "2026-08-28T15:02:56Z", "status": "success", "cpuTimeP50": 495, "cpuTimeP99": 495, "durationP50": 0.000495, "requests": 1, "errors": 0, "subrequests": 0 },
+        { "datetime": "2026-08-28T15:03:56Z", "status": "success", "cpuTimeP50": 445, "cpuTimeP99": 445, "durationP50": 0.000445, "requests": 1, "errors": 0, "subrequests": 0 },
+        { "datetime": "2026-08-28T15:04:56Z", "status": "success", "cpuTimeP50": 344, "cpuTimeP99": 344, "durationP50": 0.000344, "requests": 1, "errors": 0, "subrequests": 0 },
+        { "datetime": "2026-08-28T15:05:27Z", "status": "success", "cpuTimeP50": 4060, "cpuTimeP99": 4060, "durationP50": 0.0235955, "requests": 1, "errors": 0, "subrequests": 0 },
+        { "datetime": "2026-08-28T15:05:56Z", "status": "success", "cpuTimeP50": 687, "cpuTimeP99": 687, "durationP50": 0.000687, "requests": 1, "errors": 0, "subrequests": 0 },
+        { "datetime": "2026-08-28T15:06:56Z", "status": "success", "cpuTimeP50": 636, "cpuTimeP99": 636, "durationP50": 0.000636, "requests": 1, "errors": 0, "subrequests": 0 },
+        { "datetime": "2026-08-28T15:07:56Z", "status": "success", "cpuTimeP50": 471, "cpuTimeP99": 471, "durationP50": 0.000471, "requests": 1, "errors": 0, "subrequests": 0 },
+        { "datetime": "2026-08-28T15:08:56Z", "status": "success", "cpuTimeP50": 430, "cpuTimeP99": 430, "durationP50": 0.00043, "requests": 1, "errors": 0, "subrequests": 0 }
+      ]
+    }
+  ],
+  "attribution": {
+    "14:44:49Z": "remote preview HEADER limit 25; one external subrequest",
+    "14:44:52Z": "remote preview SWEEP limit 4; four external subrequests",
+    "14:51:46Z": "remote preview HEADER limit 1; one external subrequest",
+    "14:51:57Z": "remote preview SWEEP limit 1; one external subrequest",
+    "14:55:53Z": "nominal deployment probe phase through authenticated HTTP trigger; no external subrequest",
+    "14:56:00Z": "nominal deployment HEADER limit 1 through authenticated HTTP trigger; one external subrequest",
+    "14:56:10Z": "nominal deployment SWEEP limit 1 through authenticated HTTP trigger; one external subrequest",
+    "15:00:56Z..15:08:56Z": "retained one-minute Cron Trigger reached the kill-switched handler after the active phase trial had already been stopped; zero external subrequests and no phase work"
+  },
+  "limitations": [
+    "GraphQL identifies the script, timestamp, status and subrequest count, but not the application phase; phase attribution uses the sequential run log and D1 state recorded in the companion staging artifact.",
+    "HTTP-triggered samples include fetch routing and authentication CPU and are not measurements of the Cron handler.",
+    "The retained Cron Trigger samples executed only the kill-switch early return and do not measure HEADER or SWEEP."
+  ]
+}

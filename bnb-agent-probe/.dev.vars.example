@@ -1,0 +1,4 @@
+SHARED_SECRET=replace-locally
+BSC_RPC_URL=https://replace-locally.invalid
+PROBE_AGENT_ALLOWLIST=303779
+PROBE_ENDPOINT_ALLOWLIST=https://bnb-agent-marketplace-ruby.vercel.app/grid

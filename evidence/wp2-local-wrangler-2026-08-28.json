@@ -1,0 +1,74 @@
+{
+  "capturedAt": "2026-08-28T16:15:00Z",
+  "runtime": "wrangler 4.127.0 --test-scheduled",
+  "storage": "isolated local D1 with migrations 0001 and 0002",
+  "profile": "free",
+  "platformLimits": {
+    "cpuMsPerInvocation": 10,
+    "d1QueriesPerInvocation": 50,
+    "configuredD1QueriesPerRun": 40,
+    "externalSubrequestsPerInvocation": 50,
+    "queueConsumerCpuMs": 30000,
+    "queueOperationsPerDay": 10000,
+    "configuredQueueOperationsSafetyCeiling": 8000,
+    "nominalQueueOperationsPerDay": 864,
+    "projectedQueueOperationsPerDayWithThreeRetries": 1728
+  },
+  "killSwitchGate": {
+    "enabled": true,
+    "scheduledHttpStatus": 200,
+    "leaseActiveAfterRun": false,
+    "nextPhaseAfterRun": "header",
+    "lastPhaseAfterRun": null
+  },
+  "manualDirectRotationBeforeQueue": [
+    {
+      "phase": "header",
+      "status": "ok",
+      "requests": 1,
+      "d1Queries": 7,
+      "wallTimeMs": 2489,
+      "nextPhase": "sweep"
+    },
+    {
+      "phase": "sweep",
+      "status": "ok",
+      "requests": 4,
+      "d1Queries": 9,
+      "wallTimeMs": 2796,
+      "processedAgents": 4,
+      "nextPhase": "probe"
+    },
+    {
+      "phase": "probe",
+      "status": "pending_wp3",
+      "requests": 0,
+      "d1Queries": 5,
+      "wallTimeMs": 1,
+      "nextPhase": "header"
+    }
+  ],
+  "queueFlow": {
+    "scheduledHttpStatus": 200,
+    "deliveryLog": "QUEUE bnb-agent-probe-staging 1/1",
+    "deliveryWallTimeMs": 2441,
+    "phase": "header",
+    "status": "ok",
+    "phaseD1Queries": 4,
+    "totalD1QueriesIncludingCompletionMarker": 5,
+    "nextPhase": "sweep",
+    "retryE2E": {
+      "firstDelivery": "failed_without_ack",
+      "secondDelivery": "same_tick_completed_and_acked",
+      "thirdDelivery": "same_tick_deduplicated_and_acked",
+      "completionMarkerAtomicWithPhaseState": true,
+      "leaseContention": "retry_delay_240_seconds_without_ack",
+      "postExpiryDelivery": "same_tick_completed_once_then_deduplicated"
+    }
+  },
+  "regression": {
+    "observed": "The first live HEADER attempt failed with Cloudflare Illegal invocation because global fetch was detached from globalThis.",
+    "containment": "The lease was released, the phase and cursors did not advance, and health exposed only PHASE_FAILED with four D1 queries.",
+    "resolution": "Bind the default runtime fetch to globalThis and cover it through the Workers runtime with a mocked outbound service."
+  }
+}
