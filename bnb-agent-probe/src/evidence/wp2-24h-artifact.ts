@@ -14,11 +14,11 @@ const TICK_MS = 5 * 60 * 1_000;
 const EXPECTED_TICKS = DAY_MS / TICK_MS;
 const EXPECTED_PER_PHASE = EXPECTED_TICKS / 3;
 const REQUIRED_RAW_ANALYTICS = [
-  "evidence/raw/d1-database.json",
-  "evidence/raw/d1-account.json",
-  "evidence/raw/workers.json",
-  "evidence/raw/queue.json",
-  "evidence/raw/queue-account.json",
+  "evidence/raw/analytics/d1-database.json",
+  "evidence/raw/analytics/d1-account.json",
+  "evidence/raw/analytics/workers.json",
+  "evidence/raw/analytics/queue.json",
+  "evidence/raw/analytics/queue-account.json",
   "evidence/raw/deployment.json",
   "evidence/raw/preflight.json",
   "evidence/raw/activation.json",
@@ -26,6 +26,7 @@ const REQUIRED_RAW_ANALYTICS = [
   "evidence/raw/cleanup.json",
   "evidence/raw/scheduler-attempts.json",
   "evidence/raw/drain.json",
+  "evidence/raw/analytics/analytics-manifest.json",
 ] as const;
 const PHASES = ["header", "sweep", "probe"] as const;
 const OUTCOMES = ["completed", "failed", "duplicate", "locked"] as const;
@@ -710,7 +711,6 @@ async function validateRawAnalytics(
       fail("RAW_JSON", `${key} is not valid JSON`);
     }
   }
-
   const date = new Date(context.start).toISOString().slice(0, 10);
   const startIso = new Date(context.start).toISOString();
   const endInclusiveIso = new Date(context.end - 1).toISOString();
@@ -1017,6 +1017,7 @@ async function validateRawAnalytics(
   if (workerErrors !== workerHttp429 + workerQuotaErrors + exceededCpu + memoryExceeded) {
     fail("RAW_WORKERS", "Workers error total is not explained by the durable ledger");
   }
+  validateAnalyticsManifest(parsed, analytics);
   return {
     d1DatabaseRowsRead: database.rowsRead,
     d1DatabaseRowsWritten: database.rowsWritten,
@@ -1052,6 +1053,40 @@ async function validateRawAnalytics(
     cleanupCapturedAt: cleanup.capturedAt,
     lastQueueTerminalAt,
   };
+}
+
+function validateAnalyticsManifest(
+  parsed: ReadonlyMap<string, Record<string, unknown>>,
+  analytics: Readonly<Record<string, unknown>>,
+): void {
+  const manifestPath = REQUIRED_RAW_ANALYTICS[12];
+  const manifest = record(parsed.get(manifestPath), "RAW_ANALYTICS", "analytics manifest");
+  integerEqual(manifest.schemaVersion, 1, "RAW_ANALYTICS", "analytics manifest schemaVersion");
+  const captureId = stringPattern(
+    manifest.captureId,
+    /^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/,
+    "RAW_ANALYTICS",
+    "analytics manifest captureId",
+  );
+  const files = record(manifest.files, "RAW_ANALYTICS", "analytics manifest files");
+  const expectedPaths = REQUIRED_RAW_ANALYTICS.slice(0, 5);
+  const expectedNames = expectedPaths.map((path) => path.slice(path.lastIndexOf("/") + 1));
+  if (Object.keys(files).length !== expectedNames.length
+    || expectedNames.some((name) => !(name in files))) {
+    fail("RAW_ANALYTICS", "analytics manifest file set is incomplete");
+  }
+  for (const [index, path] of expectedPaths.entries()) {
+    const name = expectedNames[index]!;
+    const entry = record(analytics[path], "RAW_ANALYTICS", `rawAnalytics.${path}`);
+    if (files[name] !== entry.sha256) {
+      fail("RAW_HASH", `analytics manifest SHA-256 mismatch for ${name}`);
+    }
+    const payload = record(parsed.get(path), "RAW_ANALYTICS", path);
+    const request = record(payload.request, "RAW_ANALYTICS", `${path}.request`);
+    if (request.captureId !== captureId) {
+      fail("RAW_ANALYTICS", `analytics captureId mismatch for ${name}`);
+    }
+  }
 }
 
 function validateRawLedger(
