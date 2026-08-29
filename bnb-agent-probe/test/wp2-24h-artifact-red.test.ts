@@ -35,10 +35,11 @@ const FIXTURE_LEDGER = Array.from({ length: 288 }, (_, index) => ({
   errorCode: null,
 }));
 function controlFixture(
-  mode: "preflight" | "activation" | "cleanup",
+  mode: "preflight" | "activation" | "drain" | "cleanup",
   completedAt: string,
 ): Record<string, unknown> {
-  const active = mode === "activation";
+  const producing = mode === "activation";
+  const consuming = mode === "activation" || mode === "drain";
   return {
     request: {
       accountId: "bc8d4adf4860284fda426b24e7377bc2",
@@ -53,16 +54,16 @@ function controlFixture(
       startedAt: new Date(Date.parse(completedAt) - 500).toISOString(),
     },
     response: {
-      schedules: { success: true, errors: [], result: { schedules: active ? [{ cron: "*/5 * * * *" }] : [] } },
+      schedules: { success: true, errors: [], result: { schedules: producing ? [{ cron: "*/5 * * * *" }] : [] } },
       backlog: { success: true, errors: [], result: {
         backlog_count: 0, backlog_bytes: 0, oldest_message_timestamp_ms: 0,
       } },
       settings: { success: true, errors: [], result: { bindings: [
-        { name: "KILL_SWITCH", text: active ? "0" : "1", type: "plain_text" },
-        { name: "PRODUCER_KILL_SWITCH", text: active ? "0" : "1", type: "plain_text" },
+        { name: "KILL_SWITCH", text: consuming ? "0" : "1", type: "plain_text" },
+        { name: "PRODUCER_KILL_SWITCH", text: producing ? "0" : "1", type: "plain_text" },
         { name: "STAGING_MANUAL_RUN", text: "0", type: "plain_text" },
       ] } },
-      health: { status: "ok", killSwitch: !active, producerKillSwitch: !active },
+      health: { status: "ok", killSwitch: !consuming, producerKillSwitch: !producing },
       secrets: [{ name: "BSC_RPC_URL", type: "secret_text" }],
     },
   };
@@ -247,6 +248,9 @@ const RAW_PAYLOADS = {
   "evidence/raw/cleanup.json": {
     ...controlFixture("cleanup", "2026-08-30T00:15:00.000Z"),
   },
+  "evidence/raw/drain.json": {
+    ...controlFixture("drain", "2026-08-29T23:56:30.000Z"),
+  },
 } as const;
 const RAW_FILES = Object.fromEntries(
   Object.entries(RAW_PAYLOADS).map(([path, payload]) => [path, JSON.stringify(payload)]),
@@ -315,6 +319,10 @@ function validArtifact(): Record<string, unknown> {
       preflightSchedules: [],
       preflightBacklogCount: 0,
       installedSchedules: ["*/5 * * * *"],
+      drainSchedules: [],
+      drainBacklogCount: 0,
+      drainKillSwitch: false,
+      drainProducerKillSwitch: true,
       finalSchedules: [],
       finalBacklogCount: 0,
       killSwitch: true,
@@ -627,6 +635,18 @@ describe("WP2 24-hour evidence artifact validator", () => {
     await expect(validateWp224hArtifact(artifact, {
       readRawEvidence: async (path) => path === "evidence/raw/cleanup.json" ? contents : readRawEvidence(path),
     })).rejects.toThrow("CLEANUP");
+  });
+
+  it("rejects a drain snapshot without the producer-only barrier", async () => {
+    const artifact = validArtifact() as any;
+    const drain = structuredClone(RAW_PAYLOADS["evidence/raw/drain.json"]) as any;
+    drain.response.settings.result.bindings[1].text = "0";
+    const contents = JSON.stringify(drain);
+    artifact.rawAnalytics["evidence/raw/drain.json"].sha256 = sha256(contents);
+    artifact.cleanup.drainProducerKillSwitch = false;
+    await expect(validateWp224hArtifact(artifact, {
+      readRawEvidence: async (path) => path === "evidence/raw/drain.json" ? contents : readRawEvidence(path),
+    })).rejects.toThrow("RAW_CLEANUP");
   });
 
   it("rejects cleanup with a deployed manual-run binding", async () => {
