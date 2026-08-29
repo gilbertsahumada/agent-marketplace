@@ -164,9 +164,13 @@ function validateControlState(
 
   const backlog = object(backlogValue, "Queue backlog");
   const backlogResult = object(backlog.result, "Queue backlog result");
+  const backlogCount = backlogResult.backlog_count;
+  const backlogBytes = backlogResult.backlog_bytes;
   if (backlog.success !== true || !emptyArray(backlog.errors)
-    || backlogResult.backlog_count !== 0 || backlogResult.backlog_bytes !== 0) {
-    throw new Error(`${mode} Queue backlog is not zero`);
+    || !Number.isSafeInteger(backlogCount) || (backlogCount as number) < 0
+    || !Number.isSafeInteger(backlogBytes) || (backlogBytes as number) < 0
+    || (mode !== "drain" && (backlogCount !== 0 || backlogBytes !== 0))) {
+    throw new Error(`${mode} Queue backlog is invalid`);
   }
 
   const health = object(healthValue, "health");
