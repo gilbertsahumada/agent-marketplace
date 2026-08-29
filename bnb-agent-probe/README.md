@@ -142,13 +142,13 @@ npm run evidence:wp2-ledger -- \
 # proves that the final attempt and DeleteMessage precede this cutoff.
 TERMINALITY_END=$(node -p 'new Date().toISOString()')
 npm run evidence:wp2-analytics -- \
-  ../evidence/raw "$UTC_DATE" "$TERMINALITY_END"
+  ../evidence/raw/analytics "$UTC_DATE" "$TERMINALITY_END"
 jq -e '
   [.response.data.viewer.accounts[0].queueTerminalOperations[]
     | select(.dimensions.actionType == "DeleteMessage")] as $deletes
   | ([$deletes[].count] | add) == 288
     and all($deletes[]; (.dimensions.outcome | ascii_downcase) == "success")
-' ../evidence/raw/queue.json
+' ../evidence/raw/analytics/queue.json
 
 # Only after the Analytics terminality check, disable the consumer too.
 CLEANUP_DEPLOY_LOG=$(mktemp)
@@ -218,6 +218,10 @@ invent a 289th message.
 Because inactive
 Queues need not emit a new Analytics bucket, the last emitted zero backlog is
 paired with timestamped REST backlog zero after the cutoff.
+The five Analytics responses and `analytics-manifest.json` are first written to
+a sibling temporary directory and promoted with one atomic directory rename.
+The manifest binds one capture ID and the SHA-256 of every response; incomplete
+or mixed capture directories are rejected before artifact construction.
 The starting phase comes from a hashed raw D1 read captured within five minutes
 before the first UTC tick. Producer CPU is derived only from complete Workers
 groups matched to all 288 `WriteMessage` operations with zero subrequests;
