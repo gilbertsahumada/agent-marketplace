@@ -70,7 +70,12 @@ interface RawMetrics {
   readonly queueOperations: number;
   readonly stagingQueueOperations: number;
   readonly preflightBacklogCount: number;
+  readonly activationBacklogCount: number;
   readonly finalBacklogCount: number;
+  readonly preflightBacklogBytes: number;
+  readonly activationBacklogBytes: number;
+  readonly drainBacklogBytes: number;
+  readonly finalBacklogBytes: number;
   readonly preflightSchedules: readonly string[];
   readonly installedSchedules: readonly string[];
   readonly drainSchedules: readonly string[];
@@ -253,13 +258,18 @@ export async function buildWp224hArtifact(
     cleanup: {
       preflightSchedules: preflight.schedules,
       preflightBacklogCount: preflight.backlogCount,
+      preflightBacklogBytes: preflight.backlogBytes,
       installedSchedules: activation.schedules,
+      activationBacklogCount: activation.backlogCount,
+      activationBacklogBytes: activation.backlogBytes,
       drainSchedules: drain.schedules,
       drainBacklogCount: drain.backlogCount,
+      drainBacklogBytes: drain.backlogBytes,
       drainKillSwitch: drain.killSwitch,
       drainProducerKillSwitch: drain.producerKillSwitch,
       finalSchedules: cleanup.schedules,
       finalBacklogCount: cleanup.backlogCount,
+      finalBacklogBytes: cleanup.backlogBytes,
       killSwitch: cleanup.killSwitch,
       producerKillSwitch: cleanup.producerKillSwitch,
       stagingManualRun: cleanup.stagingManualRun,
@@ -1037,7 +1047,12 @@ async function validateRawAnalytics(
     queueOperations: accountQueueOperations,
     stagingQueueOperations: queueOperations,
     preflightBacklogCount: preflight.backlogCount,
+    activationBacklogCount: activation.backlogCount,
     finalBacklogCount: cleanup.backlogCount,
+    preflightBacklogBytes: preflight.backlogBytes,
+    activationBacklogBytes: activation.backlogBytes,
+    drainBacklogBytes: drain.backlogBytes,
+    finalBacklogBytes: cleanup.backlogBytes,
     preflightSchedules: preflight.schedules,
     installedSchedules: activation.schedules,
     drainSchedules: drain.schedules,
@@ -1365,6 +1380,7 @@ function controlRaw(
 ): {
   readonly schedules: readonly string[];
   readonly backlogCount: number;
+  readonly backlogBytes: number;
   readonly killSwitch: boolean;
   readonly producerKillSwitch: boolean;
   readonly stagingManualRun: boolean;
@@ -1469,7 +1485,11 @@ function controlRaw(
     "RAW_CLEANUP",
     `${label} backlog_count`,
   );
-  nonNegativeInteger(backlogResult.backlog_bytes, "RAW_CLEANUP", `${label} backlog_bytes`);
+  const backlogBytes = nonNegativeInteger(
+    backlogResult.backlog_bytes,
+    "RAW_CLEANUP",
+    `${label} backlog_bytes`,
+  );
   if (label === "drain") {
     if (response.health !== undefined) {
       fail("RAW_CLEANUP", "drain must not serialize Worker health");
@@ -1500,6 +1520,7 @@ function controlRaw(
   return {
     schedules,
     backlogCount,
+    backlogBytes,
     killSwitch: settingBindings.get("KILL_SWITCH")!.text === "1",
     producerKillSwitch: settingBindings.get("PRODUCER_KILL_SWITCH")!.text === "1",
     stagingManualRun: settingBindings.get("STAGING_MANUAL_RUN")!.text === "1",
@@ -1581,12 +1602,19 @@ function validateCleanup(
     || !emptyArray(cleanup.preflightSchedules)
     || cleanup.preflightBacklogCount !== raw.preflightBacklogCount
     || raw.preflightBacklogCount !== 0
+    || cleanup.preflightBacklogBytes !== raw.preflightBacklogBytes
+    || raw.preflightBacklogBytes !== 0
+    || cleanup.activationBacklogCount !== raw.activationBacklogCount
+    || raw.activationBacklogCount !== 0
+    || cleanup.activationBacklogBytes !== raw.activationBacklogBytes
+    || raw.activationBacklogBytes !== 0
     || !sameStringArray(cleanup.installedSchedules, raw.installedSchedules)
     || raw.installedSchedules.length !== 1
     || raw.installedSchedules[0] !== "*/5 * * * *"
     || !sameStringArray(cleanup.drainSchedules, raw.drainSchedules)
     || !emptyArray(cleanup.drainSchedules)
     || cleanup.drainBacklogCount !== raw.drainBacklogCount
+    || cleanup.drainBacklogBytes !== raw.drainBacklogBytes
     || cleanup.drainKillSwitch !== raw.drainKillSwitch
     || raw.drainKillSwitch !== false
     || cleanup.drainProducerKillSwitch !== raw.drainProducerKillSwitch
@@ -1597,6 +1625,8 @@ function validateCleanup(
     || !emptyArray(cleanup.finalSchedules)
     || cleanup.finalBacklogCount !== raw.finalBacklogCount
     || raw.finalBacklogCount !== 0
+    || cleanup.finalBacklogBytes !== raw.finalBacklogBytes
+    || raw.finalBacklogBytes !== 0
     || cleanup.killSwitch !== raw.finalKillSwitch
     || raw.finalKillSwitch !== true
     || cleanup.producerKillSwitch !== raw.finalProducerKillSwitch

@@ -365,13 +365,18 @@ function validArtifact(): Record<string, unknown> {
     cleanup: {
       preflightSchedules: [],
       preflightBacklogCount: 0,
+      preflightBacklogBytes: 0,
       installedSchedules: ["*/5 * * * *"],
+      activationBacklogCount: 0,
+      activationBacklogBytes: 0,
       drainSchedules: [],
       drainBacklogCount: 1,
+      drainBacklogBytes: 64,
       drainKillSwitch: false,
       drainProducerKillSwitch: true,
       finalSchedules: [],
       finalBacklogCount: 0,
+      finalBacklogBytes: 0,
       killSwitch: true,
       producerKillSwitch: true,
       stagingManualRun: false,
@@ -534,6 +539,42 @@ describe("WP2 24-hour evidence artifact validator", () => {
     await expect(validateWp224hArtifact(artifact, {
       readRawEvidence: async (path) => path === "evidence/raw/cleanup.json" ? contents : readRawEvidence(path),
     })).rejects.toThrow("RAW_CLEANUP");
+  });
+
+  it.each([
+    ["preflight backlog_count", "evidence/raw/preflight.json", "backlog_count", 1],
+    ["preflight backlog_bytes", "evidence/raw/preflight.json", "backlog_bytes", 64],
+    ["activation backlog_count", "evidence/raw/activation.json", "backlog_count", 1],
+    ["activation backlog_bytes", "evidence/raw/activation.json", "backlog_bytes", 64],
+    ["cleanup backlog_count", "evidence/raw/cleanup.json", "backlog_count", 1],
+    ["cleanup backlog_bytes", "evidence/raw/cleanup.json", "backlog_bytes", 64],
+    ["drain backlog_bytes drift", "evidence/raw/drain.json", "backlog_bytes", 128],
+  ])("rejects a raw capture with tampered %s even when its hash is recomputed", async (_label, path, field, value) => {
+    const artifact = validArtifact() as any;
+    const control = structuredClone(RAW_PAYLOADS[path as keyof typeof RAW_PAYLOADS]) as any;
+    control.response.backlog.result[field as string] = value;
+    const contents = JSON.stringify(control);
+    artifact.rawAnalytics[path as string].sha256 = sha256(contents);
+    await expect(validateWp224hArtifact(artifact, {
+      readRawEvidence: evidenceReaderFor(artifact, { [path as string]: contents }),
+    })).rejects.toThrow("CLEANUP");
+  });
+
+  it("rejects building from an activation capture whose backlog was never zero", async () => {
+    const control = structuredClone(RAW_PAYLOADS["evidence/raw/activation.json"]) as any;
+    control.response.backlog.result.backlog_count = 2;
+    control.response.backlog.result.backlog_bytes = 128;
+    const contents = JSON.stringify(control);
+    await expect(buildWp224hArtifact({
+      accountId: "bc8d4adf4860284fda426b24e7377bc2",
+      databaseId: D1_ID,
+      queueId: "721ba809967d425a91dbc34eb1ac3baa",
+      windowStart: "2026-08-29T00:00:00.000Z",
+      workerName: "bnb-agent-probe-staging",
+    }, {
+      readRawEvidence: async (path) =>
+        path === "evidence/raw/activation.json" ? contents : readRawEvidence(path),
+    })).rejects.toThrow("CLEANUP");
   });
 
   it.each([
