@@ -18,6 +18,8 @@ function settingsBindings(killSwitch: string, producerKillSwitch: string): unkno
     plain("MAX_CATALOG_RESPONSE_BYTES", "16777216"), plain("MAX_SELLER_RESPONSE_BYTES", "32768"),
     plain("KILL_SWITCH", killSwitch), plain("PRODUCER_KILL_SWITCH", producerKillSwitch),
     plain("STAGING_MANUAL_RUN", "0"),
+    { name: "DB", type: "d1", id: "6fbeea3e-4516-4c4e-a5c4-392cb067198a" },
+    { name: "WP2_QUEUE", type: "queue", queue_name: "bnb-agent-probe-staging" },
   ];
 }
 function healthState(killSwitch: boolean, producerKillSwitch: boolean): Record<string, unknown> {
@@ -60,6 +62,7 @@ describe("WP2 control-plane capture", () => {
     await captureWp2Control({
       accountId: "bc8d4adf4860284fda426b24e7377bc2",
       apiToken: "token",
+      databaseId: "6fbeea3e-4516-4c4e-a5c4-392cb067198a",
       fetch,
       healthUrl: "https://bnb-agent-probe-staging.gilbertsahumada.workers.dev/health",
       mode: "cleanup",
@@ -82,7 +85,7 @@ describe("WP2 control-plane capture", () => {
     expect(raw.response.schedules).toEqual({ success: true, errors: [], result: { schedules: [] } });
     expect(raw.response.backlog.result.backlog_count).toBe(0);
     expect(raw.response.health).toMatchObject({ killSwitch: true, producerKillSwitch: true });
-    expect(raw.response.settings.result.bindings).toHaveLength(18);
+    expect(raw.response.settings.result.bindings).toHaveLength(20);
     expect(raw.response.secrets).toEqual([{ name: "BSC_RPC_URL", type: "secret_text" }]);
   });
 
@@ -105,6 +108,7 @@ describe("WP2 control-plane capture", () => {
     await expect(captureWp2Control({
       accountId: "bc8d4adf4860284fda426b24e7377bc2",
       apiToken: "token",
+      databaseId: "6fbeea3e-4516-4c4e-a5c4-392cb067198a",
       fetch,
       healthUrl: "https://bnb-agent-probe-staging.gilbertsahumada.workers.dev/health",
       mode: "cleanup",
@@ -135,6 +139,7 @@ describe("WP2 control-plane capture", () => {
 
     await captureWp2Control({
       accountId: "bc8d4adf4860284fda426b24e7377bc2", apiToken: "token", fetch,
+      databaseId: "6fbeea3e-4516-4c4e-a5c4-392cb067198a",
       healthUrl: "https://bnb-agent-probe-staging.gilbertsahumada.workers.dev/health",
       mode: "drain", now: () => timestamps.shift()!, outputPath,
       queueId: "721ba809967d425a91dbc34eb1ac3baa",
@@ -146,12 +151,12 @@ describe("WP2 control-plane capture", () => {
     expect(raw.response.health).toMatchObject({ killSwitch: false, producerKillSwitch: true });
   });
 
-  it("refuses to publish a snapshot from a non-reserved D1 profile", async () => {
+  it("refuses to publish a snapshot bound to another D1", async () => {
     const directory = await mkdtemp(join(tmpdir(), "wp2-control-profile-"));
     directories.push(directory);
     const outputPath = join(directory, "activation.json");
     const bindings = settingsBindings("0", "0") as Array<Record<string, unknown>>;
-    bindings.find(({ name }) => name === "D1_QUERIES_PER_RUN")!.text = "50";
+    bindings.find(({ name }) => name === "DB")!.id = "00000000-0000-4000-8000-000000000002";
     const fetch = vi.fn(async (input: string | URL | Request) => {
       const url = String(input);
       if (url.endsWith("/schedules")) return Response.json({ success: true, errors: [],
@@ -160,18 +165,17 @@ describe("WP2 control-plane capture", () => {
       if (url.endsWith("/metrics")) return Response.json({ success: true, errors: [], result: {
         backlog_count: 0, backlog_bytes: 0,
       } });
-      const health = healthState(false, false) as any;
-      health.budgets.d1QueriesPerRun = 50;
-      return Response.json(health);
+      return Response.json(healthState(false, false));
     });
 
     await expect(captureWp2Control({
       accountId: "bc8d4adf4860284fda426b24e7377bc2", apiToken: "token", fetch,
+      databaseId: "6fbeea3e-4516-4c4e-a5c4-392cb067198a",
       healthUrl: "https://bnb-agent-probe-staging.gilbertsahumada.workers.dev/health",
       mode: "activation", outputPath, queueId: "721ba809967d425a91dbc34eb1ac3baa",
       readSecrets: async () => [{ name: "BSC_RPC_URL", type: "secret_text" }],
       scriptName: "bnb-agent-probe-staging",
-    })).rejects.toThrow("D1_QUERIES_PER_RUN");
+    })).rejects.toThrow("DB");
     await expect(access(outputPath)).rejects.toThrow();
   });
 });
