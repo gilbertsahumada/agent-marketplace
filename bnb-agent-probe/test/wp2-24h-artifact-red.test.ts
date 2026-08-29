@@ -40,6 +40,7 @@ function controlFixture(
 ): Record<string, unknown> {
   const producing = mode === "activation";
   const consuming = mode === "activation" || mode === "drain";
+  const backlogCount = mode === "drain" ? 1 : 0;
   const plain = (name: string, text: string) => ({ name, text, type: "plain_text" });
   const bindings = [
     plain("DEPLOYMENT_ENV", "staging"), plain("CLOUDFLARE_WORKERS_PLAN", "free"),
@@ -72,7 +73,7 @@ function controlFixture(
     response: {
       schedules: { success: true, errors: [], result: { schedules: producing ? [{ cron: "*/5 * * * *" }] : [] } },
       backlog: { success: true, errors: [], result: {
-        backlog_count: 0, backlog_bytes: 0, oldest_message_timestamp_ms: 0,
+        backlog_count: backlogCount, backlog_bytes: backlogCount * 64, oldest_message_timestamp_ms: 0,
       } },
       settings: { success: true, errors: [], result: { bindings } },
       health: { status: "ok", plan: "free", schedulerMode: "single_phase",
@@ -343,7 +344,7 @@ function validArtifact(): Record<string, unknown> {
       preflightBacklogCount: 0,
       installedSchedules: ["*/5 * * * *"],
       drainSchedules: [],
-      drainBacklogCount: 0,
+      drainBacklogCount: 1,
       drainKillSwitch: false,
       drainProducerKillSwitch: true,
       finalSchedules: [],
