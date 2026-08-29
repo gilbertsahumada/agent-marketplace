@@ -131,7 +131,7 @@ describe("WP2 control-plane capture", () => {
       if (url.endsWith("/settings")) return Response.json({ success: true, errors: [],
         result: { bindings: settingsBindings("0", "1") } });
       if (url.endsWith("/metrics")) return Response.json({ success: true, errors: [], result: {
-        backlog_count: 0, backlog_bytes: 0,
+        backlog_count: 1, backlog_bytes: 64,
       } });
       return Response.json(healthState(false, true));
     });
