@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto";
 
+import { WP2_ATTEMPT_COHORT_SQL } from "./wp2-24h-queries";
+
 const DAY_MS = 24 * 60 * 60 * 1_000;
 const TICK_MS = 5 * 60 * 1_000;
 const EXPECTED_TICKS = DAY_MS / TICK_MS;
@@ -15,6 +17,7 @@ const REQUIRED_RAW_ANALYTICS = [
   "evidence/raw/activation.json",
   "evidence/raw/window-start.json",
   "evidence/raw/cleanup.json",
+  "evidence/raw/scheduler-attempts.json",
 ] as const;
 const PHASES = ["header", "sweep", "probe"] as const;
 const OUTCOMES = ["completed", "failed", "duplicate", "locked"] as const;
@@ -524,6 +527,7 @@ async function validateRawAnalytics(
   const endInclusiveIso = new Date(context.end - 1).toISOString();
   const database = d1Raw(parsed.get(REQUIRED_RAW_ANALYTICS[0]), "database", date, context.d1Id);
   const account = d1Raw(parsed.get(REQUIRED_RAW_ANALYTICS[1]), "account", date);
+  validateRawLedger(parsed.get(REQUIRED_RAW_ANALYTICS[10]), context);
   const accountDatabase = account.groups.find(({ databaseId }) => databaseId === context.d1Id);
   if (accountDatabase === undefined
     || accountDatabase.rowsRead !== database.rowsRead
@@ -824,6 +828,46 @@ async function validateRawAnalytics(
     cleanupCapturedAt: cleanup.capturedAt,
     lastQueueTerminalAt,
   };
+}
+
+function validateRawLedger(
+  value: unknown,
+  context: {
+    readonly accountId: string;
+    readonly d1Id: string;
+    readonly start: number;
+    readonly end: number;
+    readonly tickLedger: readonly LedgerEntry[];
+    readonly quotaLedger: readonly LedgerEntry[];
+  },
+): void {
+  const raw = record(value, "RAW_LEDGER", "scheduler attempts raw");
+  const request = record(raw.request, "RAW_LEDGER", "scheduler attempts request");
+  if (request.accountId !== context.accountId
+    || request.databaseId !== context.d1Id
+    || request.sql !== WP2_ATTEMPT_COHORT_SQL
+    || !sameNumberArray(request.params, [context.start, context.end, context.start, context.end])) {
+    fail("RAW_LEDGER", "scheduler attempt query provenance does not match the artifact window");
+  }
+  const response = record(raw.response, "RAW_LEDGER", "scheduler attempts response");
+  if (response.success !== true || !emptyArray(response.errors) || !Array.isArray(response.result)
+    || response.result.length !== 1) {
+    fail("RAW_LEDGER", "scheduler attempt D1 response failed");
+  }
+  const result = record(response.result[0], "RAW_LEDGER", "scheduler attempts result");
+  if (!Array.isArray(result.results)) fail("RAW_LEDGER", "scheduler attempt rows are missing");
+  const observed = result.results.map((entry, index) => ledgerEntry(entry, index));
+  const expectedByKey = new Map<string, LedgerEntry>();
+  for (const entry of [...context.tickLedger, ...context.quotaLedger]) {
+    expectedByKey.set(`${entry.messageId}:${entry.attempt}`, entry);
+  }
+  const expected = [...expectedByKey.values()].sort((left, right) =>
+    left.scheduledTime - right.scheduledTime
+      || left.messageId.localeCompare(right.messageId)
+      || left.attempt - right.attempt);
+  if (JSON.stringify(observed) !== JSON.stringify(expected)) {
+    fail("RAW_LEDGER", "artifact ledgers differ from the literal D1 cohort");
+  }
 }
 
 function windowStartRaw(
@@ -1143,6 +1187,12 @@ function validateCleanup(
 }
 
 function sameStringArray(value: unknown, expected: readonly string[]): boolean {
+  return Array.isArray(value)
+    && value.length === expected.length
+    && value.every((item, index) => item === expected[index]);
+}
+
+function sameNumberArray(value: unknown, expected: readonly number[]): boolean {
   return Array.isArray(value)
     && value.length === expected.length
     && value.every((item, index) => item === expected[index]);
