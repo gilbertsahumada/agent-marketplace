@@ -86,9 +86,11 @@ function validateOptions(options: CaptureOptions): void {
   if (!SCRIPT_NAME.test(options.scriptName)) throw new Error("script name is invalid");
   if (!MODES.has(options.mode)) throw new Error("control mode is invalid");
   if (options.apiToken.length === 0) throw new Error("API token is required");
-  const health = new URL(options.healthUrl);
-  if (health.protocol !== "https:" || health.pathname !== "/health" || health.search !== "" || health.hash !== "") {
-    throw new Error("health URL must be an exact HTTPS /health endpoint");
+  if (options.mode !== "drain") {
+    const health = new URL(options.healthUrl);
+    if (health.protocol !== "https:" || health.pathname !== "/health" || health.search !== "" || health.hash !== "") {
+      throw new Error("health URL must be an exact HTTPS /health endpoint");
+    }
   }
 }
 
