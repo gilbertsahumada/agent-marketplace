@@ -1,0 +1,179 @@
+import { execFile as execFileCallback } from "node:child_process";
+import { randomUUID } from "node:crypto";
+import { link, mkdir, unlink, writeFile } from "node:fs/promises";
+import { dirname, resolve } from "node:path";
+import { promisify } from "node:util";
+import { fileURLToPath } from "node:url";
+
+const execFile = promisify(execFileCallback);
+const ACCOUNT_ID = /^[a-f0-9]{32}$/;
+const QUEUE_ID = /^[a-f0-9]{32}$/;
+const SCRIPT_NAME = /^[a-z0-9-]+$/;
+const MODES = new Set(["preflight", "activation", "cleanup"]);
+
+type ControlMode = "preflight" | "activation" | "cleanup";
+
+interface CaptureOptions {
+  readonly accountId: string;
+  readonly apiToken: string;
+  readonly fetch?: typeof globalThis.fetch;
+  readonly healthUrl: string;
+  readonly mode: ControlMode;
+  readonly now?: () => string;
+  readonly outputPath: string;
+  readonly queueId: string;
+  readonly readSecrets: () => Promise<unknown>;
+  readonly scriptName: string;
+}
+
+export async function captureWp2Control(options: CaptureOptions): Promise<void> {
+  validateOptions(options);
+  const fetch = options.fetch ?? globalThis.fetch;
+  const now = options.now ?? (() => new Date().toISOString());
+  const schedulesUrl = `https://api.cloudflare.com/client/v4/accounts/${options.accountId}/workers/scripts/${options.scriptName}/schedules`;
+  const backlogUrl = `https://api.cloudflare.com/client/v4/accounts/${options.accountId}/queues/${options.queueId}/metrics`;
+  const startedAt = now();
+  canonicalTimestamp(startedAt, "startedAt");
+  const headers = { Authorization: `Bearer ${options.apiToken}` };
+  const [schedulesResponse, backlogResponse, healthResponse, secrets] = await Promise.all([
+    fetch(schedulesUrl, { headers }),
+    fetch(backlogUrl, { headers }),
+    fetch(options.healthUrl),
+    options.readSecrets(),
+  ]);
+  const [schedules, backlog, health] = await Promise.all([
+    parseJsonResponse(schedulesResponse, "schedules"),
+    parseJsonResponse(backlogResponse, "Queue backlog"),
+    parseJsonResponse(healthResponse, "health"),
+  ]);
+  validateControlState(options.mode, schedules, backlog, health, secrets);
+  const completedAt = now();
+  canonicalTimestamp(completedAt, "completedAt");
+  if (Date.parse(completedAt) < Date.parse(startedAt)) throw new Error("control capture completed before it started");
+  const contents = `${JSON.stringify({
+    request: {
+      accountId: options.accountId,
+      backlogUrl,
+      completedAt,
+      healthUrl: options.healthUrl,
+      mode: options.mode,
+      queueId: options.queueId,
+      schedulesUrl,
+      scriptName: options.scriptName,
+      startedAt,
+    },
+    response: { schedules, backlog, health, secrets },
+  }, null, 2)}\n`;
+  await publishCreateOnly(options.outputPath, contents);
+}
+
+function validateOptions(options: CaptureOptions): void {
+  if (!ACCOUNT_ID.test(options.accountId)) throw new Error("account ID is invalid");
+  if (!QUEUE_ID.test(options.queueId)) throw new Error("Queue ID is invalid");
+  if (!SCRIPT_NAME.test(options.scriptName)) throw new Error("script name is invalid");
+  if (!MODES.has(options.mode)) throw new Error("control mode is invalid");
+  if (options.apiToken.length === 0) throw new Error("API token is required");
+  const health = new URL(options.healthUrl);
+  if (health.protocol !== "https:" || health.pathname !== "/health" || health.search !== "" || health.hash !== "") {
+    throw new Error("health URL must be an exact HTTPS /health endpoint");
+  }
+}
+
+async function parseJsonResponse(response: Response, label: string): Promise<unknown> {
+  const payload = await response.json();
+  if (!response.ok) throw new Error(`${label} request failed`);
+  return payload;
+}
+
+function validateControlState(
+  mode: ControlMode,
+  schedulesValue: unknown,
+  backlogValue: unknown,
+  healthValue: unknown,
+  secretsValue: unknown,
+): void {
+  const schedules = object(schedulesValue, "schedules");
+  const scheduleResult = object(schedules.result, "schedules result");
+  if (schedules.success !== true || !emptyArray(schedules.errors) || !Array.isArray(scheduleResult.schedules)) {
+    throw new Error("schedules response is invalid");
+  }
+  const crons = scheduleResult.schedules.map((entry) => object(entry, "schedule").cron);
+  if (crons.some((cron) => typeof cron !== "string")) throw new Error("schedule cron is invalid");
+  const expectedCrons = mode === "activation" ? ["*/5 * * * *"] : [];
+  if (JSON.stringify(crons) !== JSON.stringify(expectedCrons)) throw new Error(`${mode} schedules are unsafe`);
+
+  const backlog = object(backlogValue, "Queue backlog");
+  const backlogResult = object(backlog.result, "Queue backlog result");
+  if (backlog.success !== true || !emptyArray(backlog.errors)
+    || backlogResult.backlog_count !== 0 || backlogResult.backlog_bytes !== 0) {
+    throw new Error(`${mode} Queue backlog is not zero`);
+  }
+
+  const health = object(healthValue, "health");
+  const active = mode === "activation";
+  if (health.status !== "ok" || health.killSwitch !== !active || health.producerKillSwitch !== !active
+    || health.stagingManualRun !== false) {
+    throw new Error(`${mode} health safety state is invalid`);
+  }
+  if (!Array.isArray(secretsValue)
+    || secretsValue.some((entry) => typeof object(entry, "secret").name !== "string")) {
+    throw new Error("secret list is invalid");
+  }
+  if (secretsValue.some((entry) => object(entry, "secret").name === "SHARED_SECRET")) {
+    throw new Error("SHARED_SECRET must be absent");
+  }
+}
+
+function object(value: unknown, label: string): Record<string, unknown> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new Error(`${label} must be an object`);
+  }
+  return value as Record<string, unknown>;
+}
+
+function emptyArray(value: unknown): boolean {
+  return Array.isArray(value) && value.length === 0;
+}
+
+function canonicalTimestamp(value: string, label: string): void {
+  if (new Date(value).toISOString() !== value) throw new Error(`${label} must be canonical UTC`);
+}
+
+async function publishCreateOnly(outputPath: string, contents: string): Promise<void> {
+  const target = resolve(outputPath);
+  await mkdir(dirname(target), { recursive: true });
+  const temporary = `${target}.${process.pid}.${randomUUID()}.tmp`;
+  await writeFile(temporary, contents, { encoding: "utf8", flag: "wx" });
+  try {
+    await link(temporary, target);
+  } finally {
+    await unlink(temporary).catch(() => undefined);
+  }
+}
+
+async function main(): Promise<void> {
+  const [mode, outputPath] = process.argv.slice(2);
+  if (!MODES.has(mode ?? "") || outputPath === undefined) {
+    throw new Error("usage: tsx scripts/capture-wp2-control.ts <preflight|activation|cleanup> <output.json>");
+  }
+  await captureWp2Control({
+    accountId: process.env.CLOUDFLARE_ACCOUNT_ID ?? "",
+    apiToken: process.env.CLOUDFLARE_API_TOKEN ?? "",
+    healthUrl: process.env.WP2_HEALTH_URL ?? "",
+    mode: mode as ControlMode,
+    outputPath,
+    queueId: process.env.WP2_QUEUE_ID ?? "",
+    readSecrets: async () => {
+      const { stdout } = await execFile("wrangler", ["secret", "list", "--env", "staging", "--json"], {
+        cwd: process.cwd(),
+        maxBuffer: 1024 * 1024,
+      });
+      return JSON.parse(stdout);
+    },
+    scriptName: process.env.WP2_SCRIPT_NAME ?? "bnb-agent-probe-staging",
+  });
+  process.stdout.write(`${resolve(outputPath)}\n`);
+}
+
+const invokedPath = process.argv[1] === undefined ? "" : resolve(process.argv[1]);
+if (invokedPath === fileURLToPath(import.meta.url)) await main();
