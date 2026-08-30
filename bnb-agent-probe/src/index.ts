@@ -13,12 +13,20 @@ const QUEUE_MAX_FUTURE_SKEW_MS = 5 * 60 * 1_000;
 
 export interface WorkerDependencies {
   now?: () => number;
+  logger?: Pick<Console, "info" | "error">;
   runScheduled?: (
     controller: ScheduledController,
     env: Env,
     context: ExecutionContext,
     config: WorkerConfig,
   ) => Promise<ScheduledRunResult | void>;
+}
+
+function queueErrorCode(error: unknown): string {
+  if (error instanceof Error && /^[A-Z][A-Z0-9_]{2,63}$/.test(error.message)) {
+    return error.message;
+  }
+  return "WORKER_QUEUE_FAILED";
 }
 
 function errorResponse(error: "not_found" | "invalid_configuration" | "unauthorized", status: number): Response {
@@ -65,6 +73,7 @@ function queueScheduledTime(body: unknown, currentTime: number): number {
 
 export function createWorker(dependencies: WorkerDependencies = {}): WorkerEntrypoint {
   const now = dependencies.now ?? Date.now;
+  const logger = dependencies.logger ?? console;
 
   return {
     async fetch(request, env, context) {
@@ -100,7 +109,11 @@ export function createWorker(dependencies: WorkerDependencies = {}): WorkerEntry
         const cached = await publicCache.match(cacheKey);
         if (cached) return cached;
         const { observationsResponse } = await import("./routes/observations");
-        const response = await observationsResponse(env.DB, now(), config.probeAgentAllowlist);
+        const response = await observationsResponse(env.DB, now(), config.probeAgentAllowlist, {
+          producerEnabled: !config.producerKillSwitch,
+          consumerEnabled: !config.killSwitch,
+          cronIntervalMinutes: config.cronIntervalMinutes,
+        });
         if (response.ok) await publicCache.put(cacheKey, response.clone());
         return response;
       }
@@ -147,10 +160,15 @@ export function createWorker(dependencies: WorkerDependencies = {}): WorkerEntry
     async scheduled(controller, env, _context) {
       const config = loadConfig(env);
       if (config.killSwitch || config.producerKillSwitch) return;
+      logger.info("wp2.cron.received", {
+        cron: controller.cron,
+        scheduledTime: controller.scheduledTime,
+      });
       const expectedCron = `*/${config.cronIntervalMinutes} * * * *`;
       if (controller.cron !== expectedCron) throw new Error("WP2_CRON_MISMATCH");
       if (env.WP2_QUEUE === undefined) throw new Error("WP2_QUEUE_BINDING_REQUIRED");
       await env.WP2_QUEUE.send({ schemaVersion: 1, scheduledTime: controller.scheduledTime });
+      logger.info("wp2.cron.enqueued", { scheduledTime: controller.scheduledTime });
     },
 
     async queue(batch: QueueBatch, env, context) {
@@ -169,17 +187,38 @@ export function createWorker(dependencies: WorkerDependencies = {}): WorkerEntry
       if (message.id.length < 1 || message.id.length > 256) {
         throw new Error("WP2_QUEUE_MESSAGE_ID_INVALID");
       }
-      const result = await dependencies.runScheduled(
-        { scheduledTime, cron: "queue", attempt: message.attempts, messageId: message.id },
-        env,
-        context,
-        config,
-      );
+      logger.info("wp2.queue.received", { attempt: message.attempts, scheduledTime });
+      let result: ScheduledRunResult | void;
+      try {
+        result = await dependencies.runScheduled(
+          { scheduledTime, cron: "queue", attempt: message.attempts, messageId: message.id },
+          env,
+          context,
+          config,
+        );
+      } catch (error) {
+        logger.error("wp2.queue.failed", {
+          attempt: message.attempts,
+          errorCode: queueErrorCode(error),
+          scheduledTime,
+        });
+        throw error;
+      }
       if (result === "locked") {
+        logger.info("wp2.queue.retry", {
+          attempt: message.attempts,
+          outcome: result,
+          scheduledTime,
+        });
         message.retry({ delaySeconds: QUEUE_LEASE_RETRY_DELAY_SECONDS });
         return;
       }
       message.ack();
+      logger.info("wp2.queue.completed", {
+        attempt: message.attempts,
+        outcome: result ?? "completed",
+        scheduledTime,
+      });
     },
   };
 }
