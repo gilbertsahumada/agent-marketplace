@@ -13,6 +13,13 @@ export const hireabilityLabels: Record<AgentCardViewModel["hireability"], string
   listed_only: "Not evaluated",
 };
 
+// Single home of the quote-on-request rule so card, profile and compare cannot disagree.
+export function hireabilityLabelFor(view: AgentCardViewModel): string {
+  return view.hireability === "listed_only" && view.quoteRequestAvailable === true
+    ? "Quote on request"
+    : hireabilityLabels[view.hireability];
+}
+
 function evidenceAge(observedAt: string, now = Date.now()): string {
   const elapsedSeconds = Math.max(0, Math.floor((now - Date.parse(observedAt)) / 1_000));
   if (elapsedSeconds < 60) return "just now";
