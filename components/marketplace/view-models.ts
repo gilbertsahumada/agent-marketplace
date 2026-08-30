@@ -13,6 +13,8 @@ export const hireabilityLabels: Record<AgentCardViewModel["hireability"], string
   listed_only: "Not evaluated",
 };
 
+const REACHABILITY_OBSERVATION_MAX_AGE_MS = 15 * 60_000;
+
 function evidenceAge(observedAt: string, now = Date.now()): string {
   const elapsedSeconds = Math.max(0, Math.floor((now - Date.parse(observedAt)) / 1_000));
   if (elapsedSeconds < 60) return "just now";
@@ -113,6 +115,7 @@ export function agentCardViewModel(agent: MarketplaceAgent, provenAgentId?: stri
     agentId: agent.agentId,
     name: agent.name,
     description: agent.description ?? "No description declared.",
+    ...(agent.imageUrl ? { imageUrl: agent.imageUrl } : {}),
     operator: agent.operator,
     quoteRequestAvailable,
     categories: agent.categories.map(({ category }) => category),
@@ -130,6 +133,7 @@ export function agentCardViewModel(agent: MarketplaceAgent, provenAgentId?: stri
     verification: verificationViewModel(agent),
     passportState: deriveAgentPassportState(agent, provenAgentId),
     passportHref: `/agents/${agent.agentId}/passport`,
+    monitoring: { state: "never_probed", attemptCount: 0 },
     ...(agent.trustScore.total !== null ? { trustScore: agent.trustScore.total } : {}),
   };
 }
@@ -143,16 +147,33 @@ export function agentCardWithObservation(
   category?: MarketplaceAgent["categories"][number]["category"],
 ): AgentCardViewModel {
   const base = agentCardViewModel(agent, provenAgentId);
+  if (!target) {
+    const releaseObservation = currentReleaseObservation(agent);
+    if (releaseObservation) return {
+      ...base,
+      monitoring: releaseObservation,
+      evidence: base.evidence.map((step) => step.kind === "reachable" ? {
+        ...step,
+        status: agent.verification?.tools.reachability === "verified" ? "verified" : "failed",
+        detail: agent.verification?.tools.reachability === "verified"
+          ? "A protocol-valid endpoint response was observed in the dated release verification; this is historical evidence, not current Worker reachability."
+          : "The dated release verification failed to establish a protocol-valid endpoint response; this is historical evidence, not a current Worker result.",
+      } : step),
+    };
+    if (!hasDeclaredServiceEndpoint(agent)) return withoutDeclaredEndpoint(base);
+  }
   if (!observationsAvailable) {
     return withoutCurrentObservation(
       base, "unavailable", "unavailable",
-      "Current marketplace observations are temporarily unavailable.",
+      "The monitoring feed is not connected, so no reachability claim can be made.",
+      "feed_unavailable",
     );
   }
   if (!target) {
     return withoutCurrentObservation(
       base, "unavailable", "not_probed",
-      "No current marketplace observation exists for this declared agent.",
+      "This agent is not part of the Worker's current monitoring scope, so no probe result is claimed.",
+      "not_monitored",
     );
   }
   const latest = category ? target.latestByCategory[category] ?? null : target.latest;
@@ -160,7 +181,7 @@ export function agentCardWithObservation(
     && target.currentMetadataUpdatedAt === latest.observedMetadataUpdatedAt;
   const observationCurrent = latest !== null
     && latest.probedAt <= now
-    && now - latest.probedAt <= 60_000
+    && now - latest.probedAt <= REACHABILITY_OBSERVATION_MAX_AGE_MS
     && metadataCurrent;
   const quoteCurrent = target.declarationState === "current"
     && latest?.outcome === "quote_verified"
@@ -173,42 +194,115 @@ export function agentCardWithObservation(
   const reachable = target.declarationState === "current"
     && observationCurrent
     && ["quote_verified", "quote_rejected", "protocol_valid"].includes(latest.outcome);
+  const historicallyReachable = latest !== null
+    && ["quote_verified", "quote_rejected", "protocol_valid"].includes(latest.outcome);
+  const reachabilityFailed = latest !== null
+    && ["unreachable", "unsafe_url", "error"].includes(latest.outcome);
+  const quoteFailed = latest !== null
+    && ["quote_invalid", "quote_rejected"].includes(latest.outcome);
+  const quoteObserved = latest?.outcome === "quote_verified";
+  const quoteExpired = quoteObserved
+    && latest.quoteExpiresAt !== null
+    && latest.quoteExpiresAt <= now;
   const observedAt = latest ? new Date(latest.probedAt).toISOString() : undefined;
+  const attemptCount = target.attemptCount;
+  const attemptSummary = latest
+    ? attemptCount === undefined
+      ? `Last checked ${evidenceAge(observedAt!, now)}; the deployed Worker does not expose the exact attempt count.`
+      : `${attemptCount} marketplace probe ${attemptCount === 1 ? "attempt" : "attempts"}; last checked ${evidenceAge(observedAt!, now)}.`
+    : "No marketplace probe has been attempted.";
   return {
     ...base,
     categories: target.categories,
     hireability: quoteCurrent ? "hireable" : latest?.outcome === "quote_verified" ? "quote_stale" : "listed_only",
     passportState: base.passportState === "job_proven" ? "job_proven" : quoteCurrent ? "hireable" : latest ? "evaluated" : "registered",
+    monitoring: latest ? {
+      state: "probed",
+      source: "worker",
+      ...(attemptCount !== undefined ? { attemptCount } : {}),
+      lastAttemptAt: observedAt!,
+      latestOutcome: latest.outcome,
+      ...(latest.errorCode ? { latestErrorCode: latest.errorCode } : {}),
+      ...(latest.httpStatus !== null && latest.httpStatus !== undefined ? { latestHttpStatus: latest.httpStatus } : {}),
+      ...(latest.durationMs !== null && latest.durationMs !== undefined ? { latestDurationMs: latest.durationMs } : {}),
+    } : { state: "never_probed", attemptCount: 0 },
     evidence: base.evidence.map((step) => {
       if (step.kind === "reachable") return {
         ...step,
-        status: reachable ? "verified" : latest ? "unknown" : "unavailable",
+        status: reachable ? "verified" : reachabilityFailed ? "failed" : latest ? "unknown" : "unavailable",
         provenance: latest ? "observed" : "not_probed",
         detail: target.declarationState === "removed"
           ? "This endpoint is no longer declared; its last observation remains historical."
           : target.declarationState === "metadata_unavailable"
             ? "Current metadata could not be reconciled; the seller was not classified as unreachable."
             : reachable
-              ? "The current target returned a protocol-valid response."
+              ? `The target returned a protocol-valid response. ${attemptSummary}`
+              : historicallyReachable
+                ? `The last probe returned a protocol-valid response, but it is older than the 15-minute monitoring window. ${attemptSummary}`
               : latest?.outcome === "unreachable"
-                ? "The current target did not answer within the bounded probe."
-                : "No protocol-valid response has been observed for this target.",
+                ? `The last bounded probe could not reach the target${latest.errorCode ? ` (${latest.errorCode})` : ""}. ${attemptSummary}`
+                : `No protocol-valid response has been observed for this target. ${attemptSummary}`,
         source: "marketplace observation Worker",
         ...(observedAt ? { timestamp: observedAt } : {}),
       };
       if (step.kind === "quote") return {
         ...step,
-        status: quoteCurrent ? "verified" : latest ? "unknown" : "unavailable",
+        status: quoteObserved ? "verified" : quoteFailed ? "failed" : latest ? "unknown" : "unavailable",
         provenance: latest ? "observed" : "not_probed",
         detail: quoteCurrent
           ? "A signed ERC-8183 quote is inside the 60-second observation window; Hire still requests a new quote."
-          : latest?.outcome === "quote_verified"
-            ? "A signed quote was verified historically but is no longer current."
+          : quoteExpired
+            ? "A signed ERC-8183 quote was verified during the last probe and has expired; Hire requests a new quote before wallet action."
+          : quoteObserved
+            ? "A signed ERC-8183 quote was verified during the last probe but is not current for hiring; Hire requests a new quote before wallet action."
             : "No current signed ERC-8183 quote is available.",
         source: "marketplace observation Worker",
         ...(observedAt ? { timestamp: observedAt } : {}),
       };
       return step;
+    }),
+  };
+}
+
+function hasDeclaredServiceEndpoint(agent: MarketplaceAgent): boolean {
+  return agent.services.some(({ endpoint }) => endpoint !== null)
+    || agent.endpoints.some(({ endpoint }) => endpoint.trim().length > 0);
+}
+
+function currentReleaseObservation(
+  agent: MarketplaceAgent,
+): AgentCardViewModel["monitoring"] | null {
+  const tools = agent.verification?.tools;
+  if (agent.verification?.freshness !== "current"
+    || tools?.status !== "observed"
+    || tools.observedAt === null) return null;
+  return {
+    state: "probed",
+    source: "release_snapshot",
+    attemptCount: 1,
+    lastAttemptAt: tools.observedAt,
+    latestOutcome: tools.reachability === "verified" ? "protocol_valid" : "error",
+  };
+}
+
+function withoutDeclaredEndpoint(base: AgentCardViewModel): AgentCardViewModel {
+  return {
+    ...base,
+    hireability: "listed_only",
+    passportState: base.passportState === "job_proven" ? "job_proven" : "registered",
+    monitoring: { state: "no_endpoint_declared", attemptCount: 0 },
+    evidence: base.evidence.map((step) => {
+      if (step.kind !== "reachable" && step.kind !== "quote") return step;
+      const { timestamp: _timestamp, ...withoutTimestamp } = step;
+      return {
+        ...withoutTimestamp,
+        status: "unavailable",
+        provenance: "not_probed",
+        detail: step.kind === "reachable"
+          ? "No service endpoint is declared, so no reachability probe can be attempted."
+          : "No A2A or ERC-8183 seller endpoint is declared, so a hiring quote cannot be requested.",
+        source: "trust8004 public API",
+      };
     }),
   };
 }
@@ -254,7 +348,7 @@ function targetRank(
   const latest = relevantObservation(target, category);
   const declaration = target.declarationState === "current" ? 100 : target.declarationState === "metadata_unavailable" ? 10 : 0;
   if (!latest) return declaration;
-  const fresh = latest.probedAt <= now && now - latest.probedAt <= 60_000
+  const fresh = latest.probedAt <= now && now - latest.probedAt <= REACHABILITY_OBSERVATION_MAX_AGE_MS
     && target.currentMetadataUpdatedAt === latest.observedMetadataUpdatedAt;
   const quoteCurrent = fresh
     && latest.outcome === "quote_verified"
@@ -276,11 +370,13 @@ function withoutCurrentObservation(
   status: "unavailable",
   provenance: "unavailable" | "not_probed",
   detail: string,
+  monitoringState: "feed_unavailable" | "not_monitored" | "never_probed",
 ): AgentCardViewModel {
   return {
     ...base,
     hireability: "listed_only",
     passportState: base.passportState === "job_proven" ? "job_proven" : "registered",
+    monitoring: { state: monitoringState, attemptCount: 0 },
     evidence: base.evidence.map((step) => {
       if (step.kind !== "reachable" && step.kind !== "quote") return step;
       const { timestamp: _timestamp, ...withoutTimestamp } = step;
@@ -333,6 +429,7 @@ export function snapshotAgentCardViewModel(
     verification,
     passportState: deriveSnapshotAgentPassportState(agent, snapshot, now, provenAgentId),
     passportHref: `/agents/${agent.agentId}/passport`,
+    monitoring: { state: "never_probed", attemptCount: 0 },
     evidence: [
       {
         kind: "declared",
