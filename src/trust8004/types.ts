@@ -89,6 +89,7 @@ export interface MarketplaceAgent {
   agentId: string;
   name: string;
   description: string | null;
+  imageUrl?: string;
   owner: string;
   metadataUri: string | null;
   services: NormalizedService[];
@@ -121,6 +122,7 @@ export interface AgentListItem {
   agentId: string;
   name: string;
   description: string | null;
+  imageUrl?: string;
   owner: string | null;
   metadataUri: string | null;
   mcpEndpoint: string | null;
@@ -156,6 +158,7 @@ export interface Trust8004Profile {
   agentId: string;
   name: string;
   description: string | null;
+  imageUrl?: string;
   owner: string;
   metadataUri: string | null;
   services: NormalizedService[];
