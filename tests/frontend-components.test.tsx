@@ -4,7 +4,7 @@ import { createElement, type AnchorHTMLAttributes } from "react";
 import { hydrateRoot } from "react-dom/client";
 import { renderToString } from "react-dom/server";
 import axe from "axe-core";
-import { act, cleanup, render, screen, within } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AgentCard } from "../components/marketplace/agent-card.tsx";
@@ -38,6 +38,7 @@ import { MarketplaceLanding } from "../components/marketplace/landing-page.tsx";
 
 const walletState = vi.hoisted(() => ({
   address: null as `0x${string}` | null,
+  chainId: 56,
   switchChainAsync: vi.fn(),
 }));
 
@@ -50,6 +51,7 @@ vi.mock("wagmi", async (importOriginal) => {
       isConnected: walletState.address !== null,
       connector: null,
     }),
+    useChainId: () => walletState.chainId,
     useSwitchChain: () => ({ switchChainAsync: walletState.switchChainAsync }),
   };
 });
@@ -349,6 +351,7 @@ afterEach(() => {
   cleanup();
   localStorage.clear();
   walletState.address = null;
+  walletState.chainId = 56;
   walletState.switchChainAsync.mockReset();
   vi.unstubAllGlobals();
 });
@@ -444,13 +447,34 @@ describe("marketplace presentation rules", () => {
 
   it("does not render a Hire action for an MCP-only agent", () => {
     render(createElement(AgentCard, { agent: { agentId: "45650", name: "V3 Pools", description: "Agent", operator: "third_party", categories: ["rebalancing"], href: "/agents/45650", hireability: "mcp_only", evidence, passportState: "evaluated", passportHref: "/agents/45650/passport" } }));
-    expect(screen.getByText("MCP only")).toBeInTheDocument();
+    expect(screen.getByText("Never probed")).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /hire agent/i })).not.toBeInTheDocument();
-    const profileLink = screen.getByRole("link", { name: /view evidence/i });
+    const profileLink = screen.getByRole("link", { name: /view profile/i });
     expect(profileLink).toHaveAttribute("href", "/agents/45650");
     expect(profileLink).toHaveAttribute("data-prefetch", "false");
-    expect(screen.getByRole("link", { name: "Passport · Evaluated" })).toHaveAttribute("href", "/agents/45650/passport");
-    expect(screen.getByRole("link", { name: "Compare V3 Pools" })).toHaveAttribute("href", "/compare?agentId=45650");
+    const registryLink = screen.getByRole("link", { name: /View V3 Pools on trust8004/i });
+    expect(registryLink).toHaveAttribute("href", "https://trust8004.xyz/agents/56:45650");
+    expect(registryLink).toHaveTextContent("BSC Mainnet · Agent #45650");
+    expect(screen.queryByText(/^trust8004$/i)).not.toBeInTheDocument();
+  });
+
+  it("labels registrations without a probeable endpoint explicitly", () => {
+    render(createElement(AgentCard, { agent: {
+      agentId: "45650",
+      name: "V3 Pools",
+      description: "Agent",
+      operator: "third_party",
+      categories: ["rebalancing"],
+      href: "/agents/45650",
+      hireability: "listed_only",
+      evidence,
+      passportState: "registered",
+      passportHref: "/agents/45650/passport",
+      monitoring: { state: "no_endpoint_declared", attemptCount: 0 },
+    } }));
+
+    expect(screen.getByText("No endpoint declared")).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /hire agent/i })).not.toBeInTheDocument();
   });
 
   it("keeps the fresh-quote action visible for a compatible seller without a current observation", () => {
@@ -468,7 +492,8 @@ describe("marketplace presentation rules", () => {
       passportHref: "/agents/303779/passport",
     } }));
 
-    expect(screen.getByRole("link", { name: /get fresh quote/i })).toHaveAttribute("href", "/hire/303779");
+    expect(screen.getByText("Hireable on Mainnet")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /hire agent/i })).toHaveAttribute("href", "/hire/303779");
   });
 
   it("keeps the quote CTA for an admitted seller that declares only ERC-8183", () => {
@@ -505,7 +530,8 @@ describe("marketplace presentation rules", () => {
       passport: evidencePassport("registered"),
     }));
 
-    expect(screen.getByRole("link", { name: /get fresh quote/i })).toHaveAttribute("href", "/hire/303779");
+    expect(screen.getByRole("link", { name: /hire agent/i })).toHaveAttribute("href", "/hire/303779");
+    expect(screen.getByRole("link", { name: /view on trust8004/i })).toHaveAttribute("href", "https://trust8004.xyz/agents/56:303779");
     expect(screen.getByText(/automatic verification is unavailable/i)).toBeInTheDocument();
   });
 
@@ -563,6 +589,52 @@ describe("marketplace presentation rules", () => {
     expect(screen.getAllByText("not observed")).toHaveLength(3);
   });
 
+  it("keeps summary evidence concise and exposes details on focus", async () => {
+    const user = userEvent.setup();
+    render(createElement(EvidenceRail, {
+      ariaLabel: "Agent evidence summary",
+      density: "summary",
+      steps: evidence,
+    }));
+
+    expect(screen.getByRole("list", { name: "Agent evidence summary" })).toHaveClass(
+      "evidence-rail-summary",
+      "grid-cols-4",
+    );
+    expect(screen.queryByText("derived · not observed")).not.toBeInTheDocument();
+    const quote = screen.getByRole("button", { name: /Quote verified: not observed/i });
+    expect(quote).toHaveClass("cursor-pointer");
+    quote.focus();
+    await user.keyboard("{Tab}{Shift>}{Tab}{/Shift}");
+    expect(await screen.findByRole("tooltip")).toHaveTextContent("Unknown");
+  });
+
+  it("uses green for verified evidence, red borders for observed failures, and gray for unknown states", () => {
+    const { container } = render(createElement(EvidenceRail, {
+      ariaLabel: "Evidence status colors",
+      density: "summary",
+      steps: [
+        evidence[0]!,
+        { ...evidence[1]!, status: "failed" as const, detail: "The endpoint failed." },
+        evidence[2]!,
+        evidence[3]!,
+      ],
+    }));
+
+    expect(container.querySelector('[data-evidence-status="verified"]')).toHaveClass(
+      "border-emerald-400/70",
+      "text-emerald-300",
+    );
+    expect(container.querySelector('[data-evidence-status="failed"]')).toHaveClass(
+      "border-red-400/70",
+      "text-zinc-500",
+    );
+    expect(container.querySelector('[data-evidence-status="unknown"]')).toHaveClass(
+      "border-zinc-700",
+      "text-zinc-500",
+    );
+  });
+
   it("shows the required honest Grid empty state", () => {
     const page: MarketplaceAgentPage = {
       view: "marketplace",
@@ -596,9 +668,45 @@ describe("marketplace presentation rules", () => {
       fetchedAt: "2026-08-17T00:00:00.000Z",
     };
     render(createElement(CatalogPage, { data: page, query: { view: "all", sort: "newest" } }));
-    expect(screen.getByText("Partial coverage · 80,058 agents")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "All registered agents" })).toBeInTheDocument();
+    expect(screen.getByText("Public registry · 80,058 agents")).toBeInTheDocument();
+    expect(screen.getByText(/Marketplace selection is a curated subset/)).toBeInTheDocument();
     expect(screen.getByText(/count is trust8004 response\.total for chainId 56 with active=true, fetched /)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "All registered agents" })).toHaveAttribute("aria-current", "page");
     expect(screen.getByRole("combobox", { name: "Sort agents" })).toHaveValue("newest");
+  });
+
+  it("defaults the catalogue to cards and lets buyers switch to a comparison table", async () => {
+    const user = userEvent.setup();
+    const agent = marketplaceAgent();
+    const page: MarketplaceAgentPage = {
+      view: "marketplace",
+      items: [agent],
+      pagination: { page: 1, pageSize: 12, total: 1, totalPages: 1 },
+      categories: [],
+      catalogCoverage: "partial",
+      fetchedAt: "2026-08-17T00:00:00.000Z",
+    };
+
+    render(createElement(CatalogPage, { data: page, query: { view: "marketplace" } }));
+
+    expect(screen.getByText("One public registry, shown at two levels of curation.")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Marketplace selection" })).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("link", { name: "All registered agents" })).toHaveAttribute("href", "/agents?view=all&page=1&limit=24");
+    expect(screen.getByRole("tab", { name: "Cards" })).toHaveAttribute("data-state", "active");
+    expect(screen.getByRole("tab", { name: "Cards" })).toHaveClass("cursor-pointer");
+    expect(screen.queryByRole("table", { name: "Agent comparison" })).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /View .* on trust8004/i })).toHaveAttribute(
+      "href",
+      "https://trust8004.xyz/agents/56:45650",
+    );
+
+    await user.click(screen.getByRole("tab", { name: "Table" }));
+    expect(screen.getByRole("table", { name: "Agent comparison" })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Scrollable agent comparison" })).toHaveClass("overflow-x-auto");
+    expect(screen.getByRole("columnheader", { name: "Evidence" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /View V3 Pools powered by HeyAnon on trust8004/i })).toHaveTextContent("Agent #45650");
+    expect(screen.getByRole("link", { name: "View profile" })).toHaveAttribute("href", "/agents/45650");
   });
 
   it("does not promote indexed reachability in the all-agents view when Worker observations are unavailable", () => {
@@ -815,6 +923,74 @@ describe("marketplace presentation rules", () => {
 
     expect(screen.queryByText(/no Mainnet seller is admitted/i)).not.toBeInTheDocument();
     expect(screen.getByText(/Grid.*admitted.*Mainnet.*quote/i)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Explore Mainnet agents" })).toHaveAttribute("href", "/agents?view=marketplace&category=grid_trading");
+    expect(screen.queryByText(/Try a verified Testnet hire/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/BSC Testnet.*Job #551/i)).not.toBeInTheDocument();
+  });
+
+  it("shows the historical Testnet journey only for a wallet connected to chain 97", async () => {
+    walletState.address = "0x7777777777777777777777777777777777777777";
+    walletState.chainId = 97;
+    render(createElement(MarketplaceLanding, {
+      categories: [],
+      observationSnapshot: null,
+      demoEnabled: true,
+      featuredAgents: [],
+      funnel: null,
+      publicProof: [],
+      qualifiedSeller: null,
+    }));
+
+    expect(await screen.findByRole("link", { name: /Try a verified Testnet hire/i })).toHaveAttribute("href", "/demo/erc8183");
+    expect(screen.getByText(/BSC Testnet.*Job #551/i)).toBeInTheDocument();
+    expect(screen.queryByText("BSC Mainnet · chain 56")).not.toBeInTheDocument();
+  });
+
+  it("keeps Mainnet as the default on unsupported chains", () => {
+    walletState.address = "0x7777777777777777777777777777777777777777";
+    walletState.chainId = 1;
+    render(createElement(MarketplaceLanding, {
+      categories: [],
+      observationSnapshot: null,
+      demoEnabled: true,
+      featuredAgents: [],
+      funnel: null,
+      publicProof: [],
+      qualifiedSeller: null,
+    }));
+
+    expect(screen.getByText("BSC Mainnet · chain 56")).toBeInTheDocument();
+    expect(screen.queryByText(/BSC Testnet.*Job #551/i)).not.toBeInTheDocument();
+  });
+
+  it("hydrates the Mainnet default safely before revealing a restored Testnet wallet", async () => {
+    walletState.address = null;
+    walletState.chainId = 56;
+    const tree = createElement(MarketplaceLanding, {
+      categories: [],
+      observationSnapshot: null,
+      demoEnabled: true,
+      featuredAgents: [],
+      funnel: null,
+      publicProof: [],
+      qualifiedSeller: null,
+    });
+    const container = document.createElement("div");
+    container.innerHTML = renderToString(tree);
+    expect(container.textContent).toContain("BSC Mainnet · chain 56");
+    walletState.address = "0x7777777777777777777777777777777777777777";
+    walletState.chainId = 97;
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    let root: ReturnType<typeof hydrateRoot>;
+
+    await act(async () => {
+      root = hydrateRoot(container, tree);
+    });
+
+    expect(consoleError.mock.calls.flat().join(" ")).not.toMatch(/hydration failed|did not match|hydration mismatch/i);
+    await waitFor(() => expect(within(container).getByText(/BSC Testnet.*Job #551/i)).toHaveTextContent("BSC Testnet · Job #551"));
+    await act(async () => root!.unmount());
+    consoleError.mockRestore();
   });
 
   it("invalidates the previous prepared plan when a quote refresh fails", async () => {
