@@ -64,9 +64,47 @@ function publicFailure(error: unknown): never {
   throw new Erc8183SpikeUnavailableError();
 }
 
-async function withSellerTransport<T>(origin: string, operation: (fetchImpl: typeof fetch) => Promise<T>): Promise<T> {
-  const transport = await createSafeEndpointTransport(origin, { timeoutMs: 30_000, maxResponseBytes: 64 * 1024 });
-  try { return await operation(transport.fetch); } finally { await transport.close(); }
+async function withSellerTransport<T>(
+  origin: string,
+  operation: (fetchImpl: typeof fetch) => Promise<T>,
+  limits: { timeoutMs: number; maxResponseBytes: number } = { timeoutMs: 30_000, maxResponseBytes: 64 * 1024 },
+  signal?: AbortSignal,
+): Promise<T> {
+  const transport = await createSafeEndpointTransport(origin, limits);
+  const fetchImpl: typeof fetch = signal === undefined
+    ? transport.fetch
+    : (input, init) => transport.fetch(input, { ...init, signal });
+  try { return await operation(fetchImpl); } finally { await transport.close(); }
+}
+
+export async function withQuoteDeadline<T>(
+  operation: (signal: AbortSignal) => Promise<T>,
+  timeoutMs: number,
+): Promise<T> {
+  const controller = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => {
+      controller.abort();
+      reject(new Erc8183SpikeUnavailableError("The seller quote request exceeded its end-to-end deadline"));
+    }, timeoutMs);
+  });
+  try { return await Promise.race([operation(controller.signal), timeout]); }
+  finally { if (timer !== undefined) clearTimeout(timer); }
+}
+
+export function assertAcceptableQuoteWindow(input: {
+  negotiatedAt: number;
+  quoteExpiresAt: number;
+  now: number;
+  minRemainingSeconds: number;
+}): void {
+  if (
+    input.negotiatedAt > input.now + 60
+    || input.quoteExpiresAt <= input.negotiatedAt
+    || input.quoteExpiresAt - input.now < input.minRemainingSeconds
+    || input.quoteExpiresAt - input.negotiatedAt > NegotiationHandler.MAX_QUOTE_TTL_SECONDS
+  ) throw new Erc8183SpikeUnavailableError("Seller quote is stale or exceeds the SDK validity window");
 }
 
 async function verifiedResult(
@@ -126,7 +164,7 @@ export class MainnetErc8183Repository implements Erc8183SpikeRepository {
     return client;
   }
 
-  private async seller(client: ERC8183Client) {
+  private async seller(client: ERC8183Client, signal?: AbortSignal) {
     const config = loadMainnetBrowserDemoConfig();
     const identity = await resolveIdentity(client.publicClient, config.deployment.agentId, {
       chainId: 56,
@@ -138,7 +176,12 @@ export class MainnetErc8183Repository implements Erc8183SpikeRepository {
     if (new URL(identity.a2aEndpoint).origin !== config.sellerOrigin) {
       throw new Erc8183SpikeUnavailableError("The registered Mainnet Agent origin does not match the allowlist");
     }
-    const card = await withSellerTransport(config.sellerOrigin, (fetchImpl) => fetchAgentCard(identity.a2aEndpoint, null, fetchImpl));
+    const card = await withSellerTransport(
+      config.sellerOrigin,
+      (fetchImpl) => fetchAgentCard(identity.a2aEndpoint, null, fetchImpl),
+      config.onDemandQuote,
+      signal,
+    );
     if (new URL(card.url).origin !== config.sellerOrigin || !hasErc8183SellerSkills(card.skills)) {
       throw new Erc8183SpikeUnavailableError("The Mainnet Agent Card does not match the required seller protocol");
     }
@@ -147,22 +190,33 @@ export class MainnetErc8183Repository implements Erc8183SpikeRepository {
 
   async requestQuote(): Promise<NormalizedErc8183Quote> {
     try {
-      const client = await this.client();
-      const { config, card, negotiationSkill } = await this.seller(client);
-      const envelope = await withSellerTransport(config.sellerOrigin, (fetchImpl) => sendSkill(card.url, {
-        skill: negotiationSkill,
-        task_description: GRID_TASK,
-        terms: GRID_TERMS.toDict(),
-      }, null, fetchImpl)) as QuoteEnvelope;
-      return this.normalizeAndVerify(client, card.url, envelope);
+      const config = loadMainnetBrowserDemoConfig();
+      return await withQuoteDeadline(async (signal) => {
+        const client = await this.client();
+        const { card, negotiationSkill } = await this.seller(client, signal);
+        const envelope = await withSellerTransport(
+          config.sellerOrigin,
+          (fetchImpl) => sendSkill(card.url, {
+            skill: negotiationSkill,
+            task_description: GRID_TASK,
+            terms: GRID_TERMS.toDict(),
+          }, null, fetchImpl),
+          config.onDemandQuote,
+          signal,
+        ) as QuoteEnvelope;
+        return this.normalizeAndVerify(client, card.url, envelope);
+      }, config.onDemandQuote.timeoutMs);
     } catch (error) { return publicFailure(error); }
   }
 
   async validateQuote(envelope: Erc8183QuoteEnvelope): Promise<NormalizedErc8183Quote> {
     try {
-      const client = await this.client();
-      const { card } = await this.seller(client);
-      return this.normalizeAndVerify(client, card.url, envelope as QuoteEnvelope);
+      const config = loadMainnetBrowserDemoConfig();
+      return await withQuoteDeadline(async (signal) => {
+        const client = await this.client();
+        const { card } = await this.seller(client, signal);
+        return this.normalizeAndVerify(client, card.url, envelope as QuoteEnvelope);
+      }, config.onDemandQuote.timeoutMs);
     } catch (error) { return publicFailure(error); }
   }
 
@@ -192,9 +246,12 @@ export class MainnetErc8183Repository implements Erc8183SpikeRepository {
     const negotiatedAt = timestamp(envelope.negotiated_at ?? response.negotiated_at, "negotiated_at");
     const quoteExpiresAt = timestamp(envelope.quote_expires_at ?? response.quote_expires_at, "quote_expires_at");
     const now = Math.floor(Date.now() / 1_000);
-    if (negotiatedAt > now + 60 || now - negotiatedAt > 60 || quoteExpiresAt <= now || quoteExpiresAt - negotiatedAt > NegotiationHandler.MAX_QUOTE_TTL_SECONDS) {
-      throw new Erc8183SpikeUnavailableError("Seller quote is stale or exceeds the SDK validity window");
-    }
+    assertAcceptableQuoteWindow({
+      negotiatedAt,
+      quoteExpiresAt,
+      now,
+      minRemainingSeconds: config.onDemandQuote.minRemainingSeconds,
+    });
     const [paymentToken, policyAllowed, signature, tokenSymbol, tokenDecimals] = await Promise.all([
       client.paymentToken(),
       client.router.policyWhitelist(deployment.policy),

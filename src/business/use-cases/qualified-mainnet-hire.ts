@@ -11,26 +11,20 @@ async function requireCurrentQualification(exposure: GetMainnetHiringExposure): 
 }
 
 export class RequestQualifiedMainnetQuote {
-  constructor(
-    private readonly exposure: GetMainnetHiringExposure,
-    private readonly requestQuote: RequestErc8183Quote,
-  ) {}
+  constructor(private readonly requestQuote: RequestErc8183Quote) {}
 
   async execute(): Promise<NormalizedErc8183Quote> {
-    await requireCurrentQualification(this.exposure);
     return this.requestQuote.execute();
   }
 }
 
 export class PrepareQualifiedMainnetHire {
   constructor(
-    private readonly exposure: GetMainnetHiringExposure,
     private readonly writesEnabled: () => boolean,
     private readonly prepareHire: PrepareErc8183Hire,
   ) {}
 
   async execute(input: PrepareErc8183HireInput): Promise<Erc8183HirePlan> {
-    await requireCurrentQualification(this.exposure);
     if (!this.writesEnabled()) throw new Erc8183SpikeDisabledError();
     return this.prepareHire.execute(input);
   }

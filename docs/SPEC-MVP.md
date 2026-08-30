@@ -1,7 +1,7 @@
 # Capa de observación de contratabilidad — SPEC MVP v5 Free-first
 
-**Estado:** WP0, WP1, WP3 y WP5 completos y fusionados. WP4 tiene implementación, suites, build y smoke local de Wrangler completos en `codex/wp4-observations`; falta fusionarlo y promover ese candidato exacto a staging. WP2 tiene implementación y gates remotos de Queue completos. La corrida UTC 2026-08-29 se conserva como ensayo operativo: empezó correctamente, pero su preflight literal no se publicó y la captura completa de activación ocurrió después del primer tick, por lo que no puede cerrar el gate documental. Los cambios posteriores invalidaron los identificadores del candidato anterior; la próxima ventana final se programa únicamente después de fusionar WP4 y fijar un nuevo commit, version y etag. Producción continúa sin Cron.
-**Fecha de corte del diseño:** 2026-08-28.
+**Estado:** WP0, WP1, WP3, WP4 y WP5 completos y fusionados. WP2 tiene implementación y gates remotos de Queue completos. La corrida UTC 2026-08-29 se conserva como ensayo operativo: empezó correctamente, pero su preflight literal no se publicó y la captura completa de activación ocurrió después del primer tick, por lo que no puede cerrar el gate documental. La próxima ventana final requiere fijar el commit, version y etag del candidato posterior al merge de WP4. Producción continúa sin Cron.
+**Fecha de corte del diseño:** 2026-08-29.
 **Objetivo:** completar la capa de observación necesaria para recorrer:
 
 ```text
@@ -68,7 +68,7 @@ repositorio o documentación oficial fechada.
 | BSC Mainnet | `chainId = 56` | `src/trust8004/types.ts` |
 | SDK ERC-8183 | `@bnbagent/sdk@0.5.0` | `package.json` |
 | TTL máximo del SDK | `NegotiationHandler.MAX_QUOTE_TTL_SECONDS = 900` | dependencia instalada, comprobado 2026-08-27 |
-| Edad máxima aceptada | 60 s | `src/readiness/protocols.ts` |
+| Edad máxima aceptada al validar una quote recién recibida | 60 s | `src/readiness/protocols.ts` |
 | Tolerancia de reloj | 60 s | `src/readiness/protocols.ts` |
 | Respuesta máxima de seller | 64 KiB | `src/readiness/protocols.ts` y `src/verification/safe-http.ts` |
 | Timeout seguro por defecto | 10 s | `src/verification/safe-http.ts` |
@@ -197,7 +197,9 @@ Si cambia un punto, se actualiza esta spec antes de WP1.
  Marketplace en Vercel
    - lee /observations fuera de la ruta crítica de render
    - si falla, conserva solo declaraciones live de trust8004 y marca observaciones unavailable
-   - pide quote fresca al pulsar Hire
+   - ofrece pedir una quote fresca bajo demanda para cada seller ERC-8183 compatible admitido por el allowlist activo
+   - pide y valida esa quote al pulsar Hire o Refresh quote; Worker/D1 no autorizan Hire
+   - publica después solo el resultado sanitizado como nueva evidencia observada
    - el navegador firma directamente contra BSC
    - una ruta server-side reenvía telemetría mínima
 ```
@@ -427,6 +429,13 @@ fase (`HEADER`, `SWEEP` o `PROBE`) y persiste la siguiente en
 Cron se despliega desde la configuración y debe coincidir con
 `CRON_INTERVAL_MINUTES`.
 
+Por tanto, con la rotación Free `HEADER → SWEEP → PROBE`, el Cron ocurre cada
+cinco minutos y una fase PROBE ocurre nominalmente cada quince minutos. Esto no
+significa que cada agente sea sondeado cada quince minutos: con
+`PROBE_BATCH_SIZE=1`, la antigüedad por agente también depende de la rotación de
+targets. Ninguna de esas cadencias controla si el comprador puede solicitar una
+quote nueva bajo demanda.
+
 1. Rechaza un batch distinto de uno y valida versión/timestamp del mensaje.
 2. Genera `runId` aleatorio.
 3. Adquiere `scheduler_lease` mediante `INSERT ... ON CONFLICT DO UPDATE ...
@@ -490,6 +499,36 @@ binding WP2_QUEUE                  Queue del mismo entorno
 consumer max_batch_size=1, max_batch_timeout=1, max_retries=3,
          max_concurrency=1, retry_delay=60
 ```
+
+La cotización bajo demanda corre en la ruta server-side del marketplace, no en
+el Cron, y tiene un sobre separado respaldado por
+`src/mainnet/browser-demo-config.ts`:
+
+```text
+ON_DEMAND_QUOTE_TIMEOUT_MS=30000  rango 1000..30000
+MAX_SELLER_RESPONSE_BYTES=32768   rango 1024..65536
+QUOTE_MIN_REMAINING_SECONDS=120   rango 1..900
+SDK MAX_QUOTE_TTL_SECONDS=900     límite superior no sobreescribible
+```
+
+`ON_DEMAND_QUOTE_TIMEOUT_MS` es un deadline único de extremo a extremo para
+resolver RPC, identidad, Agent Card, negociación y validación criptográfica;
+no se reinicia por subrequest. La sincronización posterior de evidencia tiene
+su propio presupuesto y no invalida una quote ya verificada.
+
+El default Free es 30 s porque ahora cubre el recorrido completo y no cada
+subrequest por separado. La medición E2E local del vendedor admitido superó
+5 s; conservar aquel valor tras cambiar su semántica hacía fallar una quote
+legítima antes de completar las comprobaciones. El límite sigue siendo
+configurable y falla cerrado al vencer.
+
+Estos parámetros pueden ampliarse dentro de sus rangos sin convertir D1 o el
+probe periódico en autoridad de Hire. No se documenta cooldown configurable
+hasta que exista enforcement ejecutable. Antes de exposición pública, el
+endpoint server-side debe usar rate limiting distribuido por comprador/origen;
+un contador en memoria de la Function sería engañoso por concurrencia y cambios
+de instancia. Reintentar una quote hoy sigue sujeto a los límites del endpoint
+server-side y cada respuesta se valida de nuevo.
 
 Con cinco minutos hay 288 ticks/día. Queue consume 864 operaciones nominales
 (write+read+delete) y 1.728 si cada mensaje usa los tres retries. D1 puede recibir
@@ -752,34 +791,52 @@ se usa el `NegotiationRequest` neutro de `src/readiness/protocols.ts` y
 ### 5.6 RENDER
 
 ```text
-Worker disponible -> respuesta cacheada hasta 60 s -> etiqueta calculada al leer
+Worker disponible -> feed cacheado hasta 60 s -> evidencia informativa calculada al leer
 Worker no disponible -> observación no disponible; conservar solo declaraciones live
 ```
 
 La ficha consulta trust8004 en vivo para identidad y declaraciones. Una caída del
 Worker no elimina ese contenido, pero tampoco autoriza reutilizar observaciones
-vencidas ni el snapshot de release como estado actual.
+vencidas ni el snapshot de release como estado actual. Los 60 segundos son el
+TTL de transporte/cache del feed, no la cadencia de PROBE, la vigencia máxima de
+una quote ni una condición para mostrar la entrada al flujo de contratación.
 
 ### 5.7 HIRE y TRACK
 
-1. `Hire` registra `clicked` mediante ruta server-side.
-2. Marketplace vuelve a resolver perfil, endpoint y wallet.
-3. Pide quote fresca; nunca reutiliza la del probe.
-4. Valida con sección 8.
-5. Muestra token, allowance, budget, deadline y transacciones.
-6. Wallet inyectada firma/envía directamente a BSC.
-7. Tras cada receipt, lee receipt/estado onchain antes de emitir
+1. Todo seller ERC-8183 compatible admitido por el allowlist activo muestra una acción funcional para pedir una
+   quote; la disponibilidad o antigüedad de `/observations` no la oculta.
+2. `Hire` o `Refresh quote` registra `clicked` mediante ruta server-side.
+3. Marketplace vuelve a resolver perfil, endpoint y wallet.
+4. Pide una quote fresca bajo demanda; nunca reutiliza la del probe ni una quote
+   transaccional anterior. El comprador puede volver a pedirla antes de firmar.
+5. Valida con sección 8.
+6. Publica al Worker solamente el outcome y los campos sanitizados permitidos
+   por 10.1, con provenance de refresh solicitado por comprador. La quote
+   completa, firma, headers y payloads nunca entran al feed público.
+7. Muestra token, allowance, budget, deadline y transacciones.
+8. Wallet inyectada firma/envía directamente a BSC.
+9. Tras cada receipt, lee receipt/estado onchain antes de emitir
    `chain_verified`.
-8. Track/Result leen BSC; D1 conserva solo referencia idempotente observada.
+10. Track/Result leen BSC; D1 conserva solo referencia idempotente observada.
 
-`SHARED_SECRET` solo existe en Vercel server y Worker. El navegador llama una
-ruta same-origin; esta valida, elimina contexto y reenvía.
+`BUYER_OBSERVATION_SECRET` solo existe en Vercel server y Worker y es distinto
+del `SHARED_SECRET` administrativo. Vercel solo lo envía por HTTPS, sin userinfo,
+hacia el origen que coincide exactamente con
+`BUYER_OBSERVATION_ALLOWED_ORIGIN`. El navegador llama una ruta same-origin;
+esta valida, elimina contexto y reenvía.
 
-La habilitación previa del recorrido usa exclusivamente una observación vigente
-de `/observations` para el mismo agentId configurado. El snapshot de release
-expirado no autoriza la pantalla, la quote, `prepare` ni `notify`; si Worker/D1
-falla, el recorrido queda deshabilitado. La observación tampoco se convierte en
-la quote de compra: el paso 3 siempre negocia una nueva.
+La autoridad para continuar a `prepare` y pedir firmas es la quote transaccional
+recién solicitada y validada, junto con las relecturas onchain requeridas. Ni una
+fila D1, ni `/observations`, ni el snapshot de release autorizan Hire. Si
+Worker/D1 falla, el catálogo marca la evidencia compartida como no disponible,
+pero un seller ERC-8183 compatible y admitido todavía puede recibir una solicitud bajo
+demanda. Si la validación de esa solicitud falla, la UI muestra el motivo y
+permite reintentar; nunca sustituye silenciosamente el flujo por la demo.
+
+La escritura de evidencia sanitizada es posterior y no es autoridad
+transaccional. Si no puede confirmarse, la sesión válida puede continuar con un
+estado explícito `evidence sync pending`, mientras el feed público conserva su
+último hecho confirmado y no finge haberse actualizado.
 
 ---
 
@@ -800,7 +857,9 @@ en Free, su agente declara ERC-8183 o pertenece al inventario curado:
 6. máximo dos endpoints por agente, en orden estable.
 
 No se exige `agentWallet` de trust8004. MCP-only y A2A global no curado alimentan
-el funnel, no targets live en Free.
+el funnel, no targets live en Free ni sellers contratables. Un agente que solo
+declara MCP permanece visible con explicación literal y `View evidence`; nunca
+recibe un CTA de contratación ERC-8183.
 `categoriesJson` es un array ordenado y sin duplicados exportado desde
 `marketplaceInventoryEntries()` de
 `src/data/inventory/marketplace-inventory.ts`, con provenance
@@ -905,7 +964,7 @@ El probe no crea, financia ni ejecuta jobs.
 
 ---
 
-## 9. Etiqueta calculada al leer
+## 9. Etiqueta y acción calculadas al leer
 
 ```text
 removed              -> Declaration changed
@@ -914,11 +973,15 @@ metadata version != observed -> Reverification required
 latest unreachable   -> Unreachable at <timestamp> · last verified <timestamp|null>
 
 latest quote_verified
-AND now <= quoteExpiresAt
-AND now - quoteNegotiatedAt <= 60 s
 AND metadata version matches
 AND endpoint current
-  -> Hireable now · verified <timestamp>
+  -> Recently verified <timestamp>; evidencia informativa
+
+seller current con transporte ERC-8183 compatible y allowlist activo
+  -> Get fresh quote / Refresh quote, aunque la observación sea antigua o unavailable
+
+MCP-only o sin transporte ERC-8183 compatible
+  -> Not hireable through marketplace + View evidence
 
 otherwise -> literal outcome + timestamp
 ```
@@ -927,8 +990,11 @@ En una vista filtrada por categoría se usa la última observación de esa categ
 no la última observación global del endpoint. Para targets sin categoría se usa
 la observación neutra/global.
 
-`Hireable now` significa que pasó la política con evidencia vigente, no promesa
-ni endorsement. Hire vuelve a pedir quote y leer wallet/allowlist antes de firma.
+`Recently verified` significa que el probe pasó la política en ese timestamp;
+no es promesa, endorsement ni autorización transaccional. La acción de contratar
+siempre vuelve a pedir quote y leer wallet/allowlist antes de firma. La quote
+obtenida bajo demanda sí debe conservar al menos la vigencia exigida por la
+política al preparar las transacciones; si ya no la conserva, se solicita otra.
 `ownerOf` se muestra como `onchain default`, no wallet específica verificada.
 
 ---
@@ -1033,7 +1099,9 @@ se cachea. El marketplace puede reutilizar una
 respuesta HTTP solamente mientras siga dentro de los 60 segundos contados desde
 `generatedAt`, no desde el instante de recepción. No usa `stale-if-error`, no promueve el
 snapshot de release a fallback de observaciones y no conserva una respuesta
-expirada como si fuera estado actual. Si Worker/D1 no responde:
+expirada como si fuera estado actual. Este TTL limita la reutilización del feed;
+no impone PROBE cada minuto y no bloquea una nueva quote bajo demanda. Si
+Worker/D1 no responde:
 
 Mientras rige el allowlist exacto, las cuatro lecturas del feed se filtran por
 esos agent IDs antes de leer filas; el crecimiento de targets descubiertos por
@@ -1046,8 +1114,9 @@ la lista de agentes queda wildcard/vacía hasta que exista ese contrato acotado.
   obtenidos en vivo de trust8004;
 - toda procedencia `observed` se muestra como `Temporalmente no disponible`, con
   la última fecha solo cuando se presenta explícitamente como evidencia histórica;
-- `Hireable now`, quote vigente, reachability actual y cualquier CTA derivada de
-  observaciones quedan deshabilitados;
+- reachability actual y claims derivados de observaciones quedan
+  deshabilitados; la acción para solicitar una quote nueva sigue disponible
+  únicamente para sellers ERC-8183 compatibles admitidos por el allowlist activo;
 - si trust8004 tampoco responde, se muestra catálogo temporalmente no disponible,
   no una lista de agentes tomada de un snapshot vencido.
 
@@ -1132,6 +1201,10 @@ kill switch está abierto. Staging y producción usan nombres de Queue distintos
 Vercel configura `OBSERVATIONS_URL` con el endpoint público `/observations` del
 entorno Cloudflare correspondiente; no es secreto y nunca se expone como
 `NEXT_PUBLIC_` porque la lectura ocurre en Server Components.
+La sincronización de quotes configura además `BUYER_OBSERVATION_ALLOWED_ORIGIN`
+y `BUYER_OBSERVATION_SECRET`; Cloudflare recibe este último como secret del
+Worker. `SHARED_SECRET` permanece reservado para la ruta administrativa de
+staging y no autentica escrituras de compradores.
 El Cron falla cerrado si falta el binding y nunca ejecuta la fase directamente.
 
 `bnb-agent-probe/src/config.ts` es la fuente ejecutable WP1 de defaults, máximos
@@ -1699,8 +1772,10 @@ Entrega actual: lote 1 en Free sobre el target Grid exacto, contrato sección
 10.1, integración cacheada por un máximo de 60 segundos y degradación
 fail-closed. El snapshot de
 release deja de representar estado actual de agentes: una caída de Worker/D1
-conserva solo declaraciones live de trust8004, sin `Hireable now` ni claims
-observados. El funnel WP0 permanece como medición histórica fechada.
+conserva solo declaraciones live de trust8004, sin claims observados actuales.
+Eso no impide que un seller ERC-8183 compatible y admitido reciba una quote nueva bajo
+demanda; Worker/D1 no autorizan esa contratación. El funnel WP0 permanece como
+medición histórica fechada.
 
 El wildcard general sigue implementado como capacidad, pero no es un default ni
 un gate cerrado: promoverlo exige evidencia staging del egress Cloudflare y una
@@ -1721,6 +1796,11 @@ Gate:
   indisponibilidad explícita;
 - unreachable/removed visibles;
 - Hire nunca consume quote del probe;
+- observación antigua o Worker/D1 unavailable no ocultan `Get fresh quote` para
+  un seller ERC-8183 compatible admitido por el allowlist activo;
+- cada refresh negocia y valida una quote nueva y, cuando la sincronización se
+  confirma, actualiza la evidencia pública solo con campos sanitizados;
+- MCP-only permanece visible pero no contratable;
 - los call sites crudos heredados quedan migrados a `db/orm.ts` y el grep de
   `.prepare(` pasa en su forma total.
 

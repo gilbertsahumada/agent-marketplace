@@ -13,6 +13,14 @@ UTC 2026-08-29 WP2 rehearsal. Its late-format activation capture prevents it
 from being the final gate; the repeatable final window is scheduled for UTC
 2026-08-31.
 
+Buyer-requested quotes may publish only their sanitized validation outcome to
+`POST /__internal/on-demand-observation`. That route is authenticated with the
+dedicated `BUYER_OBSERVATION_SECRET`; it never accepts the administrative
+`SHARED_SECRET`. Vercel sends it only to the exact HTTPS origin configured as
+`BUYER_OBSERVATION_ALLOWED_ORIGIN`. Before public exposure, protect the
+server-side quote endpoint with a distributed per-buyer/origin rate limiter;
+an in-memory Worker or Function counter is not an enforcement boundary.
+
 The Free profile caps scheduled work at 40 D1 queries per invocation, below the
 platform limit of 50. Every statement in `DB.batch()` is counted separately and
 four queries are reserved outside the phase budget for a sanitized failure

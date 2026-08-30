@@ -39,6 +39,15 @@ import {
 } from "@/src/business/browser/erc8183-browser-wallet";
 
 type ApiError = { error?: { code?: string; message?: string } };
+type MainnetQuoteResponse = NormalizedErc8183Quote & {
+  observationSync?: { status: "synced" | "duplicate" | "failed" | "not_configured" };
+};
+
+export function sharedEvidenceSyncMessage(status: MainnetQuoteResponse["observationSync"]): string {
+  return status?.status === "synced" || status?.status === "duplicate"
+    ? "Shared evidence updated"
+    : "Quote verified for this session. Shared evidence sync pending.";
+}
 
 type InjectedProvider = Parameters<typeof executeBrowserHire>[0];
 
@@ -144,7 +153,7 @@ const TESTNET_DEPLOYMENT: Erc8183BrowserDeployment = {
   nativeCurrencySymbol: "tBNB",
 };
 
-export function Erc8183MainnetDemo({ config }: { config: MainnetDemoPublicConfig }) {
+export function Erc8183MainnetDemo({ config, agentName }: { config: MainnetDemoPublicConfig; agentName?: string }) {
   return <Erc8183BrowserDemo mode="mainnet" deployment={{
     chainId: 56,
     networkName: "BNB Smart Chain",
@@ -152,22 +161,24 @@ export function Erc8183MainnetDemo({ config }: { config: MainnetDemoPublicConfig
     nativeCurrencySymbol: "BNB",
     ...config,
     maximumBudgetRaw: BigInt(config.maximumBudgetRaw),
-  }} />;
+  }} {...(agentName ? { agentName } : {})} />;
 }
 
 export function Erc8183TestnetDemo() {
   return <Erc8183BrowserDemo mode="testnet" deployment={TESTNET_DEPLOYMENT} />;
 }
 
-function Erc8183BrowserDemo({ mode, deployment }: { mode: "testnet" | "mainnet"; deployment: Erc8183BrowserDeployment }) {
+function Erc8183BrowserDemo({ mode, deployment, agentName }: { mode: "testnet" | "mainnet"; deployment: Erc8183BrowserDeployment; agentName?: string }) {
   const router = useRouter();
   const apiBase = mode === "mainnet" ? "/api/marketplace/demo/erc8183-mainnet" : "/api/marketplace/demo/erc8183";
   const jobsBase = mode === "mainnet" ? "/api/marketplace/jobs/mainnet" : "/api/marketplace/jobs/testnet";
   const jobPageBase = mode === "mainnet" ? "/jobs/mainnet" : "/jobs/testnet";
-  const [quote, setQuote] = useState<NormalizedErc8183Quote | null>(null);
+  const [quote, setQuote] = useState<MainnetQuoteResponse | null>(null);
+  const [quoteClock, setQuoteClock] = useState(() => Math.floor(Date.now() / 1_000));
   const { address, isConnected, connector } = useAccount();
   const { switchChainAsync } = useSwitchChain();
-  const account = isConnected && address ? address : null;
+  const [walletHydrated, setWalletHydrated] = useState(false);
+  const account = walletHydrated && isConnected && address ? address : null;
   const [plan, setPlan] = useState<Erc8183HirePlan | null>(null);
   const [journal, setJournal] = useState<Erc8183BrowserJournal | null>(null);
   const [job, setJob] = useState<Erc8183JobFacts | null>(null);
@@ -184,6 +195,10 @@ function Erc8183BrowserDemo({ mode, deployment }: { mode: "testnet" | "mainnet";
   }, [jobsBase]);
 
   useEffect(() => {
+    setWalletHydrated(true);
+  }, []);
+
+  useEffect(() => {
     const stored = loadBrowserJournal(localStorage, deployment);
     setJournal(stored);
     if (stored?.jobId) {
@@ -193,13 +208,35 @@ function Erc8183BrowserDemo({ mode, deployment }: { mode: "testnet" | "mainnet";
     }
   }, [deployment, readJob]);
 
+  useEffect(() => {
+    if (!quote) return;
+    setQuoteClock(Math.floor(Date.now() / 1_000));
+    const delay = Math.max(0, quote.quoteExpiresAt * 1_000 - Date.now() + 25);
+    const timeout = window.setTimeout(
+      () => setQuoteClock(Math.floor(Date.now() / 1_000)),
+      Math.min(delay, 2_147_483_647),
+    );
+    return () => window.clearTimeout(timeout);
+  }, [quote]);
+
   const requestQuote = async () => {
     setBusy("Requesting a signed quote");
     setError(null);
+    setQuote(null);
+    setPlan(null);
     try {
-      const result = await apiJson<NormalizedErc8183Quote>(`${apiBase}/quote`, { method: "POST" });
+      const result = await apiJson<MainnetQuoteResponse>(`${apiBase}/quote`, { method: "POST" });
       setQuote(result);
-      setPlan(null);
+      if (
+        journal?.lastConfirmedStep === "submitted"
+        || job?.status === "SUBMITTED"
+        || job?.status === "COMPLETED"
+      ) {
+        // Detach the terminal execution so this fresh quote can start a new hire.
+        // Its persisted journal remains available until a new execution progresses.
+        setJournal(null);
+        setJob(null);
+      }
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Quote request failed.");
     } finally {
@@ -209,6 +246,11 @@ function Erc8183BrowserDemo({ mode, deployment }: { mode: "testnet" | "mainnet";
 
   const connectAndPrepare = async () => {
     if (!quote) return;
+    if (quote.quoteExpiresAt <= Math.floor(Date.now() / 1_000)) {
+      setError("Quote expired. Request a fresh quote before preparing this hire.");
+      setPlan(null);
+      return;
+    }
     if (!account) {
       setError("Connect a wallet from the header before preparing this hire.");
       return;
@@ -296,6 +338,7 @@ function Erc8183BrowserDemo({ mode, deployment }: { mode: "testnet" | "mainnet";
   };
 
   const signaturePurpose = plan?.transactions.filter(({ required }) => required) ?? [];
+  const quoteExpired = quote !== null && quote.quoteExpiresAt <= quoteClock;
   const submitted = job?.status === "SUBMITTED" || job?.status === "COMPLETED";
   const funded = job !== null && ["FUNDED", "SUBMITTED", "COMPLETED"].includes(job.status);
   const downloadEvidence = () => {
@@ -333,10 +376,10 @@ function Erc8183BrowserDemo({ mode, deployment }: { mode: "testnet" | "mainnet";
           <Badge className="border-amber-300/30 bg-amber-300/10 text-amber-100" variant="outline">{deployment.networkName} · chain {deployment.chainId}</Badge>
           <Badge variant="outline">{mode === "mainnet" ? "Mainnet value at risk" : "Controlled hiring demo"}</Badge>
         </div>
-        <p className="font-eyebrow font-eyebrow-dot mt-6 text-zinc-500">Non-custodial {mode === "mainnet" ? "Mainnet" : "Testnet"} demo</p>
+        <p className="font-eyebrow font-eyebrow-dot mt-6 text-zinc-500">Non-custodial {mode === "mainnet" ? "Mainnet hire" : "Testnet demo"}</p>
         <h1 className="mt-2 text-3xl font-light tracking-tight text-white sm:text-5xl">Hire with your wallet. Verify every step.</h1>
         <p className="mt-4 text-base leading-relaxed text-zinc-400">
-          Request a signed quote from the controlled seller, inspect every contract call, and sign the ERC-8183 lifecycle with your injected wallet.
+          Request a signed quote from {agentName ?? "the controlled seller"}, inspect every contract call, and sign the ERC-8183 lifecycle with your injected wallet.
         </p>
       </header>
 
@@ -355,19 +398,29 @@ function Erc8183BrowserDemo({ mode, deployment }: { mode: "testnet" | "mainnet";
             </CardHeader>
             <CardContent>
               {quote ? (
-                <dl>
-                  <SummaryRow label="Seller Agent" value={`${quote.agentId} · ${shortAddress(quote.provider)}`} />
-                  <SummaryRow label="Negotiated endpoint" value={quote.endpoint} mono />
-                  <SummaryRow label="Payment" value={`${quote.priceRaw} raw ${quote.tokenSymbol} · ${quote.priceDisplay} formatted`} />
-                  <SummaryRow label="Quote expires" value={new Date(quote.quoteExpiresAt * 1_000).toLocaleString()} />
-                  <SummaryRow label="Commerce" value={quote.commerce} mono />
-                </dl>
+                <>
+                  <dl>
+                    <SummaryRow label="Seller Agent" value={`${quote.agentId} · ${shortAddress(quote.provider)}`} />
+                    <SummaryRow label="Negotiated endpoint" value={quote.endpoint} mono />
+                    <SummaryRow label="Payment" value={`${quote.priceRaw} raw ${quote.tokenSymbol} · ${quote.priceDisplay} formatted`} />
+                    <SummaryRow label="Quote expires" value={new Date(quote.quoteExpiresAt * 1_000).toLocaleString()} />
+                    <SummaryRow label="Commerce" value={quote.commerce} mono />
+                  </dl>
+                  {mode === "mainnet" && (
+                    <p className="mt-4 text-xs text-zinc-400" role="status">
+                      {sharedEvidenceSyncMessage(quote.observationSync)}
+                    </p>
+                  )}
+                  {quoteExpired && (
+                    <p className="mt-4 text-sm text-amber-200" role="status">Quote expired. Request a fresh quote before preparing or signing.</p>
+                  )}
+                </>
               ) : (
                 <p className="text-sm text-zinc-400">No quote is cached in the browser. Requesting one performs no transaction and asks for no wallet access.</p>
               )}
               <Button className="mt-5" disabled={busy !== null} onClick={() => void requestQuote()}>
                 {busy === "Requesting a signed quote" ? <LoaderCircle aria-hidden="true" className="animate-spin" /> : <ShieldCheck aria-hidden="true" />}
-                {quote ? "Refresh live quote" : "Request live quote"}
+                {quote ? "Refresh live quote" : mode === "mainnet" ? "Get fresh quote" : "Request live quote"}
               </Button>
             </CardContent>
           </Card>
@@ -378,7 +431,7 @@ function Erc8183BrowserDemo({ mode, deployment }: { mode: "testnet" | "mainnet";
               <CardDescription>Your wallet reveals only its public account. The server then reads balances and allowance; no signature is requested.</CardDescription>
             </CardHeader>
             <CardContent>
-              <Button disabled={!quote || !account || busy !== null} onClick={() => void connectAndPrepare()} variant={plan ? "outline" : "default"}>
+              <Button disabled={!quote || quoteExpired || !account || busy !== null} onClick={() => void connectAndPrepare()} variant={plan ? "outline" : "default"}>
                 <Wallet aria-hidden="true" />
                 {account ? `Prepare hire as ${shortAddress(account)}` : "Connect a wallet in the header"}
               </Button>
@@ -410,7 +463,7 @@ function Erc8183BrowserDemo({ mode, deployment }: { mode: "testnet" | "mainnet";
               {plan ? (
                 <Erc8183TransactionList explorerUrl={deployment.explorerUrl} intents={plan.transactions} journal={journal} />
               ) : <p className="text-sm text-zinc-500">Connect a wallet to calculate the exact transaction set.</p>}
-              <Button className="mt-5" disabled={!plan || busy !== null || submitted} onClick={() => void signAndRun()}>
+              <Button className="mt-5" disabled={!plan || quoteExpired || busy !== null || submitted} onClick={() => void signAndRun()}>
                 {busy === "Waiting for wallet confirmations" ? <LoaderCircle aria-hidden="true" className="animate-spin" /> : <Wallet aria-hidden="true" />}
                 {submitted
                   ? "Job already submitted"
@@ -505,6 +558,7 @@ function Erc8183BrowserDemo({ mode, deployment }: { mode: "testnet" | "mainnet";
               <AlertTriangle aria-hidden="true" />
               <AlertTitle>Flow stopped safely</AlertTitle>
               <AlertDescription>{error}</AlertDescription>
+              {!quote && <Button className="mt-3" disabled={busy !== null} onClick={() => void requestQuote()} size="sm" variant="outline">Try quote again</Button>}
             </Alert>
           )}
 

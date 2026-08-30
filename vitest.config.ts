@@ -3,7 +3,7 @@ import { defineConfig } from "vitest/config";
 
 export default defineConfig({
   test: {
-    exclude: ["bnb-agent-probe/**", "**/node_modules/**", "**/.git/**"],
+    exclude: ["bnb-agent-probe/**", ".claude/**", "**/node_modules/**", "**/.git/**"],
     setupFiles: ["./tests/setup.ts"],
   },
   resolve: {

@@ -104,6 +104,22 @@ export function createWorker(dependencies: WorkerDependencies = {}): WorkerEntry
         if (response.ok) await publicCache.put(cacheKey, response.clone());
         return response;
       }
+      if (request.method === "POST" && url.pathname === "/__internal/on-demand-observation" && url.search === "") {
+        if (env.BUYER_OBSERVATION_SECRET === undefined) return errorResponse("not_found", 404);
+        if (!await bearerMatches(request.headers.get("authorization"), env.BUYER_OBSERVATION_SECRET)) {
+          return errorResponse("unauthorized", 401);
+        }
+        const { onDemandObservationResponse } = await import("./routes/on-demand-observation");
+        const response = await onDemandObservationResponse(request, env.DB, config, now());
+        if (response.status === 201 || response.status === 200) {
+          const publicCache = (caches as unknown as { default: Cache }).default;
+          const scope = [...config.probeAgentAllowlist].sort().join(",");
+          const scopeDigest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(scope));
+          const scopeHash = Array.from(new Uint8Array(scopeDigest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+          await publicCache.delete(new Request(`${url.origin}/observations/__scope/${scopeHash}`, { method: "GET" }));
+        }
+        return response;
+      }
       if (request.method === "POST" && url.pathname === "/__admin/run-scheduled") {
         if (config.killSwitch
           || config.producerKillSwitch

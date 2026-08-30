@@ -495,6 +495,27 @@ describe("Worker runtime", () => {
     expect(text).not.toContain("wrong-secret");
   });
 
+  it("does not accept the buyer-observation credential on the administrative route", async () => {
+    const runScheduled = vi.fn();
+    const response = await createWorker({ runScheduled }).fetch(
+      new Request("https://worker.test/__admin/run-scheduled", {
+        method: "POST",
+        headers: { authorization: "Bearer buyer-only-secret" },
+      }),
+      {
+        ...env(),
+        BUYER_OBSERVATION_SECRET: "buyer-only-secret",
+        DEPLOYMENT_ENV: "staging",
+        STAGING_MANUAL_RUN: "1",
+        KILL_SWITCH: "0",
+      },
+      { waitUntil: vi.fn(), passThroughOnException: vi.fn() },
+    );
+
+    expect(response.status).toBe(401);
+    expect(runScheduled).not.toHaveBeenCalled();
+  });
+
   it("enqueues exactly one versioned tick through the authenticated manual scheduler route", async () => {
     const now = 1_800_000_000_000;
     const runScheduled = vi.fn();

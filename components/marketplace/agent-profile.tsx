@@ -53,8 +53,11 @@ export function AgentProfile({ agent, observationTargets = [], observationsAvail
           </div>
         </div>
         <div className="flex flex-col items-start gap-3 lg:items-end">
-          {current.hireability === "hireable" ? (
-            <Button asChild><Link href={`/hire/${agent.agentId}`}>Hire agent<ArrowUpRight aria-hidden="true" /></Link></Button>
+          {current.quoteRequestAvailable ? (
+            <>
+              <Button asChild><Link href={`/hire/${agent.agentId}`}>Get fresh quote<ArrowUpRight aria-hidden="true" /></Link></Button>
+              {!observationsAvailable && <p className="max-w-xs text-sm text-zinc-500">Automatic verification is unavailable. You can still request a new transactional quote.</p>}
+            </>
           ) : (
             <p className="max-w-xs text-sm text-zinc-500">{current.evidence.find((step) => step.kind === "quote")?.detail}</p>
           )}

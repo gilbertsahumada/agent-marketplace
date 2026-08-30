@@ -31,7 +31,215 @@ function queueMessage(body: unknown, attempts = 1) {
   };
 }
 
+function buyerRefreshBody(overrides: Record<string, unknown> = {}) {
+  const now = 1_788_000_000_000;
+  return {
+    schemaVersion: 1,
+    source: "buyer_refresh",
+    agentId: "303779",
+    chainId: 56,
+    transport: "a2a",
+    endpoint: "https://bnb-agent-marketplace-ruby.vercel.app/grid",
+    probeCategory: "grid_trading",
+    probedAt: now,
+    durationMs: 125,
+    observedWallet: "0x1111111111111111111111111111111111111111",
+    commerce: "0xEa4DAa3100A767e86FDed867729ae7446476EBA6",
+    router: "0x51895229E12F9876011789B04f8698af06cCD6DA",
+    policy: "0x9C01845705b3078Aa2e8cfF7520a6376FD766dE5",
+    priceRaw: "1000",
+    currency: "0xcE24439F2D9C6a2289F741120FE202248B666666",
+    decimals: 18,
+    signer: "0x1111111111111111111111111111111111111111",
+    requestHash: `0x${"a".repeat(64)}`,
+    negotiationHash: `0x${"b".repeat(64)}`,
+    quoteNegotiatedAt: now - 1_000,
+    quoteExpiresAt: now + 899_000,
+    ...overrides,
+  };
+}
+
 describe("WP1 in the Workers runtime", () => {
+  it("accepts an authenticated sanitized buyer refresh and persists it idempotently", async () => {
+    const now = 1_788_000_000_000;
+    const privateEnv = { ...env, BUYER_OBSERVATION_SECRET: "buyer-observation-test-secret" } as unknown as Env;
+    await env.DB.prepare(
+      `INSERT INTO probe_targets (
+        agentId, chainId, transport, endpoint, name, categoriesJson,
+        categoryProvenance, declarationState, currentMetadataUpdatedAt,
+        lastMetadataCheckedAt, firstSeenAt, lastChangedAt, lastSeenAt, priority
+      ) VALUES (?, 56, 'a2a', ?, 'Grid', '["grid_trading"]',
+        'derived:marketplace-inventory', 'current', ?, ?, ?, ?, ?, 1)`,
+    ).bind(
+      "303779", "https://bnb-agent-marketplace-ruby.vercel.app/grid",
+      now - 10_000, now - 5_000, now - 20_000, now - 10_000, now - 5_000,
+    ).run();
+    const request = () => new Request("https://buyer-refresh-worker.test/__internal/on-demand-observation", {
+      method: "POST",
+      headers: {
+        authorization: "Bearer buyer-observation-test-secret",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(buyerRefreshBody()),
+    });
+
+    const cachedBefore = await createWorker({ now: () => now - 100 }).fetch(
+      new Request("https://buyer-refresh-worker.test/observations"), privateEnv, createExecutionContext(),
+    );
+    expect((await cachedBefore.json() as { generatedAt: number }).generatedAt).toBe(now - 100);
+
+    const first = await createWorker({ now: () => now }).fetch(request(), privateEnv, createExecutionContext());
+    expect(first.status).toBe(201);
+    expect(await first.json()).toEqual({ status: "synced" });
+
+    const recached = await createWorker({ now: () => now + 1 }).fetch(
+      new Request("https://buyer-refresh-worker.test/observations"), privateEnv, createExecutionContext(),
+    );
+    expect((await recached.json() as { generatedAt: number }).generatedAt).toBe(now + 1);
+
+    const second = await createWorker({ now: () => now + 2 }).fetch(request(), privateEnv, createExecutionContext());
+    expect(second.status).toBe(200);
+    expect(await second.json()).toEqual({ status: "duplicate" });
+    const rows = await env.DB.prepare(
+      "SELECT * FROM probe_observations WHERE negotiationHash = ?",
+    ).bind(`0x${"b".repeat(64)}`).all<Record<string, unknown>>();
+    expect(rows.results).toHaveLength(1);
+    expect(rows.results?.[0]).toMatchObject({
+      agentId: "303779",
+      chainId: 56,
+      endpoint: "https://bnb-agent-marketplace-ruby.vercel.app/grid",
+      probeCategory: "grid_trading",
+      outcome: "quote_verified",
+      observedMetadataUpdatedAt: now - 10_000,
+      observedWalletSource: "agentWallet",
+      signatureMethod: null,
+      source: "buyer_refresh",
+    });
+    expect(JSON.stringify(rows.results)).not.toContain("provider_sig");
+    expect(JSON.stringify(rows.results)).not.toContain("envelope");
+    const refreshed = await createWorker({ now: () => now + 3 }).fetch(
+      new Request("https://buyer-refresh-worker.test/observations"), privateEnv, createExecutionContext(),
+    );
+    expect((await refreshed.json() as { generatedAt: number }).generatedAt).toBe(now + 3);
+  });
+
+  it("deduplicates concurrent buyer refreshes atomically", async () => {
+    const now = 1_788_000_000_000;
+    const privateEnv = { ...env, BUYER_OBSERVATION_SECRET: "buyer-observation-test-secret" } as unknown as Env;
+    await env.DB.prepare(
+      `INSERT INTO probe_targets (
+        agentId, chainId, transport, endpoint, categoriesJson, declarationState,
+        currentMetadataUpdatedAt, lastMetadataCheckedAt, firstSeenAt,
+        lastChangedAt, lastSeenAt, priority
+      ) VALUES ('303779', 56, 'a2a', ?, '[]', 'current', ?, ?, ?, ?, ?, 1)`,
+    ).bind(
+      "https://bnb-agent-marketplace-ruby.vercel.app/grid",
+      now - 10_000, now, now - 20_000, now - 10_000, now,
+    ).run();
+    const post = () => createWorker({ now: () => now }).fetch(
+      new Request("https://concurrent-refresh-worker.test/__internal/on-demand-observation", {
+        method: "POST",
+        headers: { authorization: "Bearer buyer-observation-test-secret", "content-type": "application/json" },
+        body: JSON.stringify(buyerRefreshBody()),
+      }),
+      privateEnv,
+      createExecutionContext(),
+    );
+
+    const responses = await Promise.all([post(), post()]);
+
+    expect(responses.map(({ status }) => status).sort()).toEqual([200, 201]);
+    expect(await Promise.all(responses.map((response) => response.json()))).toEqual(
+      expect.arrayContaining([{ status: "synced" }, { status: "duplicate" }]),
+    );
+    expect(await env.DB.prepare(
+      "SELECT COUNT(*) AS count FROM probe_observations WHERE negotiationHash = ?",
+    ).bind(`0x${"b".repeat(64)}`).first()).toMatchObject({ count: 1 });
+  });
+
+  it("fails buyer refresh safely when the exact target is absent or no longer current", async () => {
+    const now = 1_788_000_000_000;
+    const privateEnv = { ...env, BUYER_OBSERVATION_SECRET: "buyer-observation-test-secret" } as unknown as Env;
+    const post = () => createWorker({ now: () => now }).fetch(
+      new Request("https://missing-target-worker.test/__internal/on-demand-observation", {
+        method: "POST",
+        headers: { authorization: "Bearer buyer-observation-test-secret", "content-type": "application/json" },
+        body: JSON.stringify(buyerRefreshBody()),
+      }),
+      privateEnv,
+      createExecutionContext(),
+    );
+
+    expect((await post()).status).toBe(409);
+    await env.DB.prepare(
+      `INSERT INTO probe_targets (
+        agentId, chainId, transport, endpoint, categoriesJson, declarationState,
+        lastMetadataCheckedAt, firstSeenAt, lastChangedAt, lastSeenAt, priority
+      ) VALUES ('303779', 56, 'a2a', ?, '[]', 'removed', ?, ?, ?, ?, 0)`,
+    ).bind("https://bnb-agent-marketplace-ruby.vercel.app/grid", now, now, now, now).run();
+    expect((await post()).status).toBe(409);
+    expect(await env.DB.prepare("SELECT COUNT(*) AS count FROM probe_observations").first()).toMatchObject({ count: 0 });
+  });
+
+  it("rejects unauthorized, non-allowlisted and non-closed buyer refresh payloads", async () => {
+    const now = 1_788_000_000_000;
+    const privateEnv = {
+      ...env,
+      BUYER_OBSERVATION_SECRET: "buyer-observation-test-secret",
+      SHARED_SECRET: "different-admin-secret",
+    } as unknown as Env;
+    const post = (body: unknown, authorization = "Bearer buyer-observation-test-secret") => createWorker({ now: () => now }).fetch(
+      new Request("https://worker.test/__internal/on-demand-observation", {
+        method: "POST",
+        headers: { authorization, "content-type": "application/json" },
+        body: JSON.stringify(body),
+      }),
+      privateEnv,
+      createExecutionContext(),
+    );
+
+    expect((await post(buyerRefreshBody(), "Bearer wrong")).status).toBe(401);
+    expect((await post(buyerRefreshBody(), "Bearer different-admin-secret")).status).toBe(401);
+    expect((await post(buyerRefreshBody({ chainId: 97 }))).status).toBe(400);
+    expect((await post(buyerRefreshBody({ agentId: "42" }))).status).toBe(403);
+    expect((await post(buyerRefreshBody({ endpoint: "https://attacker.example/grid" }))).status).toBe(403);
+    expect((await post({ ...buyerRefreshBody(), provider_sig: "secret" })).status).toBe(400);
+    expect((await post({ ...buyerRefreshBody(), padding: "x".repeat(8_192) })).status).toBe(400);
+    expect(await env.DB.prepare("SELECT COUNT(*) AS count FROM probe_observations").first()).toMatchObject({ count: 0 });
+  });
+
+  it.each([
+    ["non-HTTPS endpoint", { endpoint: "http://bnb-agent-marketplace-ruby.vercel.app/grid" }],
+    ["zero price", { priceRaw: "0" }],
+    ["stale negotiation", { quoteNegotiatedAt: 1_788_000_000_000 - 300_001 }],
+    ["future negotiation", { quoteNegotiatedAt: 1_788_000_000_000 + 300_001 }],
+    ["expired quote", { quoteExpiresAt: 1_788_000_000_000 }],
+    ["excessive TTL", {
+      quoteNegotiatedAt: 1_788_000_000_000 - 1_000,
+      quoteExpiresAt: 1_788_000_000_000 + 899_001,
+    }],
+    ["contradictory signer", { signer: "0x9999999999999999999999999999999999999999" }],
+    ["unapproved commerce", { commerce: "0x2222222222222222222222222222222222222222" }],
+    ["unapproved router", { router: "0x3333333333333333333333333333333333333333" }],
+    ["unapproved policy", { policy: "0x4444444444444444444444444444444444444444" }],
+    ["unapproved currency", { currency: "0x5555555555555555555555555555555555555555" }],
+    ["wrong token decimals", { decimals: 6 }],
+  ])("rejects a buyer refresh with %s before querying its target", async (_name, overrides) => {
+    const now = 1_788_000_000_000;
+    const response = await createWorker({ now: () => now }).fetch(
+      new Request("https://invalid-refresh-worker.test/__internal/on-demand-observation", {
+        method: "POST",
+        headers: { authorization: "Bearer buyer-observation-test-secret", "content-type": "application/json" },
+        body: JSON.stringify(buyerRefreshBody(overrides)),
+      }),
+      { ...env, BUYER_OBSERVATION_SECRET: "buyer-observation-test-secret" } as unknown as Env,
+      createExecutionContext(),
+    );
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: "invalid_request" });
+  });
+
   it("serves the WP4 observations contract without leaking signatures", async () => {
     const now = 1_788_000_000_000;
     await env.DB.batch!([

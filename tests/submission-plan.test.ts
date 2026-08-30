@@ -99,6 +99,30 @@ describe("Mainnet browser allowlist", () => {
       ERC8183_MAINNET_SELLER_ADDRESS: SELLER,
     });
     expect(config.deployment).toMatchObject({ chainId: 56, commerce: ERC8183_MAINNET.commerce, token: ERC8183_MAINNET.token });
+    expect(config.onDemandQuote).toEqual({
+      timeoutMs: 30_000,
+      maxResponseBytes: 32 * 1024,
+      minRemainingSeconds: 120,
+    });
+
+    expect(() => loadMainnetBrowserDemoConfig({
+      ERC8183_MAINNET_DEMO_ENABLED: "true",
+      ERC8183_MAINNET_SELLER_ORIGIN: "https://bnb-agent-marketplace-ruby.vercel.app",
+      ERC8183_MAINNET_SELLER_AGENT_ID: "9",
+      ERC8183_MAINNET_SELLER_ADDRESS: SELLER,
+      ON_DEMAND_QUOTE_TIMEOUT_MS: "0",
+    })).toThrow(/ON_DEMAND_QUOTE_TIMEOUT_MS/);
+
+    const tuned = loadMainnetBrowserDemoConfig({
+      ERC8183_MAINNET_DEMO_ENABLED: "true",
+      ERC8183_MAINNET_SELLER_ORIGIN: "https://bnb-agent-marketplace-ruby.vercel.app",
+      ERC8183_MAINNET_SELLER_AGENT_ID: "9",
+      ERC8183_MAINNET_SELLER_ADDRESS: SELLER,
+      ON_DEMAND_QUOTE_TIMEOUT_MS: "7000",
+      MAX_SELLER_RESPONSE_BYTES: "40960",
+      QUOTE_MIN_REMAINING_SECONDS: "180",
+    });
+    expect(tuned.onDemandQuote).toEqual({ timeoutMs: 7_000, maxResponseBytes: 40_960, minRemainingSeconds: 180 });
   });
 });
 

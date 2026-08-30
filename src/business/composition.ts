@@ -30,6 +30,7 @@ import { ValidateMarketplaceAgent } from "./use-cases/validate-marketplace-agent
 import { NotifyQualifiedMainnetFundedJob, PrepareQualifiedMainnetHire, RequestQualifiedMainnetQuote } from "./use-cases/qualified-mainnet-hire.ts";
 import { RecordSellerObservation } from "./use-cases/record-seller-observation.ts";
 import { GetFunnelEvidence } from "./use-cases/get-funnel-evidence.ts";
+import { requestQuoteWithObservationSync } from "../data/observation/on-demand-observation-sync.ts";
 
 export const listMarketplaceAgents = new ListMarketplaceAgents(marketplaceAgentRepository);
 export const getMarketplaceAgent = new GetMarketplaceAgent(marketplaceAgentRepository);
@@ -43,13 +44,13 @@ export const getErc8183TestnetJobTracking = new GetErc8183TestnetJobTracking(
   erc8183SpikeRepository,
   publicJobProofRepository,
 );
-// Exported for the seller-observation cron only: it must be able to observe
-// liveness *before* a qualification exists, so it deliberately skips the
-// release-qualification gate that guards every buyer-facing route.
+// Exported for the seller-observation cron and reused by the buyer-triggered
+// refresh. Both paths validate the live identity, endpoint and signed quote;
+// the observation feed is evidence, not an authorization dependency.
 export const probeMainnetErc8183Quote = new RequestErc8183Quote(mainnetErc8183Repository);
-const unqualifiedMainnetQuote = probeMainnetErc8183Quote;
-const unqualifiedMainnetPrepare = new PrepareErc8183Hire(mainnetErc8183Repository);
-const unqualifiedMainnetNotify = new NotifyFundedJob(mainnetErc8183Repository);
+const liveMainnetQuote = probeMainnetErc8183Quote;
+const liveMainnetPrepare = new PrepareErc8183Hire(mainnetErc8183Repository);
+const liveMainnetNotify = new NotifyFundedJob(mainnetErc8183Repository);
 export const getMainnetErc8183JobStatus = new GetErc8183JobStatus(mainnetErc8183Repository);
 export const getPublicVerificationSnapshot = new GetPublicVerificationSnapshot(publicVerificationRepository);
 export const getMainnetHiringExposure = new GetMainnetHiringExposure(
@@ -57,19 +58,20 @@ export const getMainnetHiringExposure = new GetMainnetHiringExposure(
   mainnetBrowserDemoConfigRepository,
 );
 export const requestMainnetErc8183Quote = new RequestQualifiedMainnetQuote(
-  getMainnetHiringExposure,
-  unqualifiedMainnetQuote,
+  liveMainnetQuote,
 );
+export const requestMainnetErc8183QuoteWithObservationSync = {
+  execute: () => requestQuoteWithObservationSync(requestMainnetErc8183Quote),
+};
 export const prepareMainnetErc8183Hire = new PrepareQualifiedMainnetHire(
-  getMainnetHiringExposure,
   mainnetWritesEnabled,
-  unqualifiedMainnetPrepare,
+  liveMainnetPrepare,
 );
 export const notifyMainnetFundedJob = new NotifyQualifiedMainnetFundedJob(
   getMainnetHiringExposure,
   mainnetWritesEnabled,
   getMainnetErc8183JobStatus,
-  unqualifiedMainnetNotify,
+  liveMainnetNotify,
 );
 export const getMainnetBrowserDemoConfig = new GetMainnetBrowserDemoConfig(mainnetBrowserDemoConfigRepository);
 export const recordMainnetSellerObservation = new RecordSellerObservation(

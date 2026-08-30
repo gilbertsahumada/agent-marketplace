@@ -15,6 +15,11 @@ const migrationPath = fileURLToPath(
   new URL("../migrations/0001_initial.sql", import.meta.url),
 );
 const migration = readFileSync(migrationPath, "utf8");
+const migrationChain = readdirSync(resolve(fileURLToPath(new URL("../migrations", import.meta.url))))
+  .filter((entry) => entry.endsWith(".sql"))
+  .sort()
+  .map((entry) => readFileSync(resolve(fileURLToPath(new URL("../migrations", import.meta.url)), entry), "utf8"))
+  .join("\n");
 
 describe("D1 schema", () => {
   it("creates exactly the five normative tables", () => {
@@ -59,9 +64,15 @@ describe("D1 schema", () => {
 
       const drizzleColumns = Object.values(getTableColumns(table)).map((column) => column.name);
       for (const column of drizzleColumns) {
-        expect(migrationTable, `${tableName}.${column} is absent from migration`).toMatch(
-          new RegExp(`(^|\\n)\\s*${column}\\s`, "m"),
-        );
+        const isInInitialTable = new RegExp(`(^|\\n)\\s*${column}\\s`, "m").test(migrationTable!);
+        const isAddedLater = new RegExp(
+          `ALTER TABLE\\s+${tableName}[\\s\\S]*?ADD COLUMN\\s+${column}\\s`,
+          "i",
+        ).test(migrationChain);
+        expect(
+          isInInitialTable || isAddedLater,
+          `${tableName}.${column} is absent from migration chain`,
+        ).toBe(true);
       }
     }
   });

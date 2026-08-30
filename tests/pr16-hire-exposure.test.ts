@@ -164,31 +164,28 @@ describe("PR 16 Mainnet exposure", () => {
     expect(await run([valid, removed])).toEqual(await run([removed, valid]));
   });
 
-  it("blocks quote and prepare before current qualification reaches business composition", async () => {
-    const exposure = new GetMainnetHiringExposure(
-      { getObservations: async () => ({ status: "unavailable", feed: null }) },
-      { getPublicConfig: vi.fn(() => demoConfig) },
-      () => Date.parse("2026-08-24T12:01:00.000Z"),
-    );
-    const quoteDelegate = { execute: vi.fn() };
-    const prepareDelegate = { execute: vi.fn() };
-    const quote = new RequestQualifiedMainnetQuote(exposure, quoteDelegate as never);
-    const prepare = new PrepareQualifiedMainnetHire(exposure, () => true, prepareDelegate as never);
+  it("lets a buyer request and prepare with a freshly validated quote when observations are unavailable", async () => {
+    const firstQuote = { agentId: 9001, quoteExpiresAt: 1_900_000_900, envelope: { negotiation_hash: "first" } };
+    const refreshedQuote = { agentId: 9001, quoteExpiresAt: 1_900_001_800, envelope: { negotiation_hash: "refreshed" } };
+    const plan = { maximumSignatures: 5, quote: refreshedQuote };
+    const quoteDelegate = { execute: vi.fn()
+      .mockResolvedValueOnce(firstQuote)
+      .mockResolvedValueOnce(refreshedQuote) };
+    const prepareDelegate = { execute: vi.fn(async () => plan) };
+    const quote = new RequestQualifiedMainnetQuote(quoteDelegate as never);
+    const prepare = new PrepareQualifiedMainnetHire(() => true, prepareDelegate as never);
+    const input = { buyer: "0x1111111111111111111111111111111111111111", quote: {} } as never;
 
-    await expect(quote.execute()).rejects.toThrow(/disabled/);
-    await expect(prepare.execute({} as never)).rejects.toThrow(/disabled/);
-    expect(quoteDelegate.execute).not.toHaveBeenCalled();
-    expect(prepareDelegate.execute).not.toHaveBeenCalled();
+    await expect(quote.execute()).resolves.toBe(firstQuote);
+    await expect(quote.execute()).resolves.toBe(refreshedQuote);
+    await expect(prepare.execute(input)).resolves.toBe(plan);
+    expect(quoteDelegate.execute).toHaveBeenCalledTimes(2);
+    expect(prepareDelegate.execute).toHaveBeenCalledWith(input);
   });
 
   it("does not return a fundable Mainnet plan while the write gate is disabled", async () => {
-    const exposure = new GetMainnetHiringExposure(
-      observations(),
-      { getPublicConfig: () => demoConfig },
-      () => Date.parse("2026-08-24T12:01:00.000Z"),
-    );
     const prepareDelegate = { execute: vi.fn() };
-    const prepare = new PrepareQualifiedMainnetHire(exposure, () => false, prepareDelegate as never);
+    const prepare = new PrepareQualifiedMainnetHire(() => false, prepareDelegate as never);
 
     await expect(prepare.execute({} as never)).rejects.toThrow(/disabled/);
     expect(prepareDelegate.execute).not.toHaveBeenCalled();
@@ -252,6 +249,19 @@ describe("PR 16 Mainnet exposure", () => {
     ]) {
       expect(readFileSync(file, "utf8"), file).not.toContain("ERC8183_MAINNET_DEMO_ENABLED");
     }
+  });
+
+  it("does not describe Worker observations as authority to request or prepare a hire", () => {
+    const visibleCopy = [
+      "app/validate/page.tsx",
+      "components/marketplace/landing-page.tsx",
+    ].map((file) => readFileSync(file, "utf8")).join("\n");
+
+    expect(visibleCopy).not.toContain("Expose Hire only from a current Worker observation");
+    expect(visibleCopy).not.toContain("current ERC-8183 evidence qualifies");
+    expect(visibleCopy).not.toContain("Hire eligibility are disabled until the observation Worker responds");
+    expect(visibleCopy).toContain("fresh ERC-8183 quote");
+    expect(visibleCopy).toContain("compatible seller admitted by the marketplace");
   });
 
   it("monitors Mainnet quote and read-only prepare only after public exposure", () => {
