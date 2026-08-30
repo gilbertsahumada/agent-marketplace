@@ -18,7 +18,9 @@ const SUPPORTED_SORTS = new Set<MarketplaceSort>(MARKETPLACE_DATA_SORTS);
 export default async function AgentsPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const params = await searchParams;
   const view = params.view === "all" ? "all" : "marketplace";
-  const rawCategory = typeof params.category === "string" ? params.category : undefined;
+  // Categories only exist for curated marketplace candidates; in the registered
+  // view the parameter is dropped so URLs never claim a filter that is not applied.
+  const rawCategory = view === "marketplace" && typeof params.category === "string" ? params.category : undefined;
   const category = rawCategory && MARKETPLACE_CATEGORIES.includes(rawCategory as MarketplaceCategory)
     ? rawCategory as MarketplaceCategory
     : undefined;
