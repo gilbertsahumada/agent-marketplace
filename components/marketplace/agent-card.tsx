@@ -35,6 +35,9 @@ const passportLabels: Record<AgentCardViewModel["passportState"], string> = {
 export function AgentCard({ agent }: { agent: AgentCardViewModel }) {
   const isHireable = agent.hireability === "hireable";
   const canRequestQuote = agent.quoteRequestAvailable === true;
+  const hireabilityLabel = agent.hireability === "listed_only" && canRequestQuote
+    ? "Quote on request"
+    : hireabilityLabels[agent.hireability];
 
   return (
     <Card className="marketplace-surface marketplace-agent-evidence-card h-full gap-4 py-5" data-passport-state={agent.passportState}>
@@ -55,7 +58,7 @@ export function AgentCard({ agent }: { agent: AgentCardViewModel }) {
                 }
               >
                 {isHireable && <ShieldCheck aria-hidden="true" />}
-                {hireabilityLabels[agent.hireability]}
+                {hireabilityLabel}
               </Badge>
             </div>
             <p className="font-stat mt-1 text-[11px] text-zinc-400">
