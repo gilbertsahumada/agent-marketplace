@@ -16,6 +16,7 @@ export interface MarketplaceAgentData {
   agentId: string;
   name: string;
   description: string | null;
+  imageUrl?: string;
   owner: string | null;
   metadataUri: string | null;
   services: NormalizedService[];
