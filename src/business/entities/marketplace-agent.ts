@@ -44,6 +44,7 @@ export interface MarketplaceAgent {
   agentId: string;
   name: string;
   description: string | null;
+  imageUrl?: string;
   owner: string | null;
   metadataUri: string | null;
   operator: "third_party" | "marketplace";
