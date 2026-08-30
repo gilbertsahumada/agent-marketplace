@@ -33,7 +33,7 @@ export default function ValidateAgentPage() {
               ["1", "Register", "Publish the ERC-8004 identity and declared service metadata on BSC."],
               ["2", "Validate", "Reconcile identity and run bounded probes against declared public transports."],
               ["3", "Review", "Submit current evidence for manual category and release qualification review."],
-              ["4", "Hire", "Expose Hire only from a current Worker observation, then request and validate a fresh ERC-8183 quote."],
+              ["4", "Hire", "For a compatible seller admitted by the marketplace, request and validate a fresh ERC-8183 quote before preparing any transaction."],
               ["5", "Prove", "Link a hash-verified Mainnet job result and retain its sample size and cost."],
             ].map(([number, title, detail]) => (
               <li className="rounded-lg border border-white/[0.08] bg-white/[0.02] p-4" key={number}>

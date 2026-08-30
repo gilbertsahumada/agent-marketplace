@@ -167,6 +167,7 @@ describe("PR 16 marketplace evidence boundaries", () => {
     const card = agentCardWithObservation(agent, null, true, Date.parse(GENERATED_AT));
 
     expect(card.hireability).toBe("listed_only");
+    expect(card.quoteRequestAvailable).toBe(true);
     expect(card.evidence.find(({ kind }) => kind === "quote")).toMatchObject({
       status: "unavailable",
       provenance: "not_probed",
@@ -200,6 +201,7 @@ describe("PR 16 marketplace evidence boundaries", () => {
     }, true, now);
 
     expect(card.hireability).toBe("quote_stale");
+    expect(card.quoteRequestAvailable).toBe(true);
     expect(card.evidence.find(({ kind }) => kind === "reachable")?.detail).toContain("no longer declared");
   });
 

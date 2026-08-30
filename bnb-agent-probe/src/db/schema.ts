@@ -79,6 +79,7 @@ export const probeObservations = sqliteTable(
     signer: text(),
     requestHash: text(),
     negotiationHash: text(),
+    source: text(),
     quoteNegotiatedAt: integer(),
     quoteExpiresAt: integer(),
     httpStatus: integer(),
@@ -102,6 +103,9 @@ export const probeObservations = sqliteTable(
       table.probeCategory,
       desc(table.probedAt),
     ),
+    uniqueIndex("idx_obs_buyer_refresh_negotiation")
+      .on(table.chainId, table.agentId, table.negotiationHash)
+      .where(sql`${table.source} = 'buyer_refresh' AND ${table.negotiationHash} IS NOT NULL`),
     check("probe_observations_chain_bsc", sql`${table.chainId} = 56`),
     check(
       "probe_observations_transport",
@@ -127,6 +131,10 @@ export const probeObservations = sqliteTable(
     check(
       "probe_observations_signature_method",
       sql`${table.signatureMethod} IS NULL OR ${table.signatureMethod} IN ('eip191', 'erc1271')`,
+    ),
+    check(
+      "probe_observations_source",
+      sql`${table.source} IS NULL OR ${table.source} = 'buyer_refresh'`,
     ),
   ],
 );

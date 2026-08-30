@@ -1,8 +1,10 @@
 // @vitest-environment happy-dom
 import "@testing-library/jest-dom/vitest";
 import { createElement, type AnchorHTMLAttributes } from "react";
+import { hydrateRoot } from "react-dom/client";
+import { renderToString } from "react-dom/server";
 import axe from "axe-core";
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { act, cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AgentCard } from "../components/marketplace/agent-card.tsx";
@@ -22,7 +24,7 @@ import type {
 import type { PublicJobProof } from "../src/business/entities/public-job-proof.ts";
 import { GATE1_JOB_514_MANIFEST } from "../src/data/proofs/gate1-job-514.ts";
 import { GATE6A_JOB_551_MANIFEST } from "../src/data/proofs/gate6a-job-551.ts";
-import { Erc8183TestnetDemo, Erc8183TransactionList } from "../components/spikes/erc8183-browser-spike.tsx";
+import { Erc8183MainnetDemo, Erc8183TestnetDemo, Erc8183TransactionList, sharedEvidenceSyncMessage } from "../components/spikes/erc8183-browser-spike.tsx";
 import { Providers } from "../app/providers.tsx";
 import { VerificationDrift } from "../components/marketplace/verification-drift.tsx";
 import { EvidencePassportCard } from "../components/marketplace/evidence-passport-card.tsx";
@@ -31,6 +33,26 @@ import { ValidateAgentPanel } from "../components/marketplace/validate-agent-pan
 import type { AgentValidationReport } from "../src/business/entities/agent-validation.ts";
 import { ComparePage } from "../components/marketplace/compare-page.tsx";
 import ValidateAgentPage from "../app/validate/page.tsx";
+import { agentCardViewModel } from "../components/marketplace/view-models.ts";
+import { MarketplaceLanding } from "../components/marketplace/landing-page.tsx";
+
+const walletState = vi.hoisted(() => ({
+  address: null as `0x${string}` | null,
+  switchChainAsync: vi.fn(),
+}));
+
+vi.mock("wagmi", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("wagmi")>();
+  return {
+    ...actual,
+    useAccount: () => ({
+      address: walletState.address,
+      isConnected: walletState.address !== null,
+      connector: null,
+    }),
+    useSwitchChain: () => ({ switchChainAsync: walletState.switchChainAsync }),
+  };
+});
 
 vi.mock("next/navigation", () => ({
   usePathname: () => "/agents",
@@ -226,9 +248,108 @@ function validationReport(): AgentValidationReport {
   };
 }
 
+const MAINNET_DEMO_CONFIG = {
+  agentId: 303779,
+  seller: "0x2222222222222222222222222222222222222222" as const,
+  commerce: "0x3333333333333333333333333333333333333333" as const,
+  router: "0x5555555555555555555555555555555555555555" as const,
+  policy: "0x6666666666666666666666666666666666666666" as const,
+  token: "0x4444444444444444444444444444444444444444" as const,
+  maximumBudgetRaw: "10",
+  rpcUrl: "https://bsc-rpc.publicnode.com",
+  explorerUrl: "https://bscscan.com",
+  sellerOrigin: "https://seller.example",
+};
+
+function mainnetQuote(overrides: Record<string, unknown> = {}) {
+  const now = Math.floor(Date.now() / 1_000);
+  return {
+    schemaVersion: 1,
+    agentId: 303779,
+    chainId: 56,
+    endpoint: "https://seller.example/a2a",
+    provider: MAINNET_DEMO_CONFIG.seller,
+    commerce: MAINNET_DEMO_CONFIG.commerce,
+    router: MAINNET_DEMO_CONFIG.router,
+    policy: MAINNET_DEMO_CONFIG.policy,
+    token: MAINNET_DEMO_CONFIG.token,
+    tokenSymbol: "USDT",
+    tokenDecimals: 18,
+    priceRaw: "1",
+    priceDisplay: "0.000000000000000001",
+    negotiatedAt: now,
+    quoteExpiresAt: now + 600,
+    description: "Test hire",
+    envelope: {},
+    observationSync: { status: "synced" },
+    ...overrides,
+  };
+}
+
+function mainnetPlan(quote: ReturnType<typeof mainnetQuote>) {
+  return {
+    quote,
+    buyer: "0x7777777777777777777777777777777777777777",
+    seller: MAINNET_DEMO_CONFIG.seller,
+    nativeBalanceRaw: "1",
+    tokenBalanceRaw: "10",
+    allowanceRaw: "0",
+    approvalRequired: true,
+    approvalAmountRaw: "1",
+    deadline: String(Math.floor(Date.now() / 1_000) + 1200),
+    disputeWindowSeconds: "600",
+    executeBefore: quote.quoteExpiresAt,
+    maximumSignatures: 5,
+    guardrails: {
+      custody: "injected_wallet",
+      buyerPrivateKeyReceivedByServer: false,
+      spendCeilingRaw: "10",
+      approvalMode: "exact_if_required",
+      approvalSpender: MAINNET_DEMO_CONFIG.commerce,
+      cancellationAvailableAfterFunding: false,
+    },
+    transactions: [{ kind: "createJob", contract: MAINNET_DEMO_CONFIG.commerce, purpose: "Create job", required: true }],
+  };
+}
+
+function mainnetJob(status: "SUBMITTED" | "COMPLETED") {
+  return {
+    chainId: 56,
+    jobId: "42",
+    buyer: "0x7777777777777777777777777777777777777777",
+    provider: MAINNET_DEMO_CONFIG.seller,
+    evaluator: MAINNET_DEMO_CONFIG.seller,
+    policy: MAINNET_DEMO_CONFIG.policy,
+    description: "Prior job",
+    budgetRaw: "1",
+    deadline: String(Math.floor(Date.now() / 1_000) + 600),
+    status,
+    submittedAt: "1",
+    deliverableHash: `0x${"34".repeat(32)}`,
+    deliverableUrl: null,
+    result: null,
+    quotedToken: MAINNET_DEMO_CONFIG.token,
+    quotedPriceRaw: "1",
+    quoteExpiresAt: Math.floor(Date.now() / 1_000) + 60,
+  };
+}
+
+function jsonResponse(body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
+}
+
+function renderMainnetDemo() {
+  return render(createElement(Providers, { children: createElement(Erc8183MainnetDemo, {
+    config: MAINNET_DEMO_CONFIG,
+    agentName: "Marketplace Grid Planner",
+  }) }));
+}
+
 afterEach(() => {
   cleanup();
   localStorage.clear();
+  walletState.address = null;
+  walletState.switchChainAsync.mockReset();
   vi.unstubAllGlobals();
 });
 
@@ -330,6 +451,62 @@ describe("marketplace presentation rules", () => {
     expect(profileLink).toHaveAttribute("data-prefetch", "false");
     expect(screen.getByRole("link", { name: "Passport · Evaluated" })).toHaveAttribute("href", "/agents/45650/passport");
     expect(screen.getByRole("link", { name: "Compare V3 Pools" })).toHaveAttribute("href", "/compare?agentId=45650");
+  });
+
+  it("keeps the fresh-quote action visible for a compatible seller without a current observation", () => {
+    render(createElement(AgentCard, { agent: {
+      agentId: "303779",
+      name: "Marketplace Grid Planner",
+      description: "Agent",
+      operator: "marketplace",
+      categories: ["grid_trading"],
+      href: "/agents/303779",
+      hireability: "listed_only",
+      quoteRequestAvailable: true,
+      evidence,
+      passportState: "registered",
+      passportHref: "/agents/303779/passport",
+    } }));
+
+    expect(screen.getByRole("link", { name: /get fresh quote/i })).toHaveAttribute("href", "/hire/303779");
+  });
+
+  it("keeps the quote CTA for an admitted seller that declares only ERC-8183", () => {
+    const agent = marketplaceAgent();
+    agent.operator = "marketplace";
+    agent.services = [{
+      name: "ERC-8183",
+      endpoint: "https://seller.example/grid",
+      version: null,
+      tools: [],
+      capabilities: [],
+    }];
+
+    expect(agentCardViewModel(agent).quoteRequestAvailable).toBe(true);
+  });
+
+  it("keeps the profile fresh-quote action visible when Worker observations are unavailable", () => {
+    const agent = marketplaceAgent();
+    agent.agentId = "303779";
+    agent.name = "Marketplace Grid Planner";
+    agent.operator = "marketplace";
+    agent.services = [{ name: "A2A", endpoint: "https://seller.example", version: null, tools: [], capabilities: [] }];
+    agent.endpoints = [{ name: "A2A", endpoint: "https://seller.example" }];
+    agent.hireability = {
+      status: "protocol_discovered",
+      canHire: false,
+      reason: "A compatible seller transport is declared.",
+      evidence: evidenceRecord("derived", "A compatible seller transport is declared."),
+    };
+
+    render(createElement(AgentProfile, {
+      agent,
+      observationsAvailable: false,
+      passport: evidencePassport("registered"),
+    }));
+
+    expect(screen.getByRole("link", { name: /get fresh quote/i })).toHaveAttribute("href", "/hire/303779");
+    expect(screen.getByText(/automatic verification is unavailable/i)).toBeInTheDocument();
   });
 
   it("renders not-probed evidence neutrally instead of with a green verified icon", () => {
@@ -538,6 +715,179 @@ describe("marketplace presentation rules", () => {
     expect(screen.queryByText(/mainnet/i)).not.toBeInTheDocument();
     const result = await axe.run(document.body);
     expect(result.violations).toEqual([]);
+  });
+
+  it("requests Mainnet quotes only after the buyer asks and supports refreshing them", async () => {
+    const user = userEvent.setup();
+    const quote = {
+      schemaVersion: 1,
+      agentId: "303779",
+      endpoint: "https://seller.example/a2a",
+      provider: "0x2222222222222222222222222222222222222222",
+      commerce: "0x3333333333333333333333333333333333333333",
+      token: "0x4444444444444444444444444444444444444444",
+      tokenSymbol: "USDT",
+      tokenDecimals: 18,
+      priceRaw: "1",
+      priceDisplay: "0.000000000000000001",
+      quoteExpiresAt: 1_950_000_600,
+      envelope: {},
+    };
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ error: { message: "Seller timed out safely." } }), {
+        status: 504,
+        headers: { "content-type": "application/json" },
+      }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ ...quote, observationSync: { status: "failed" } }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }))
+      .mockResolvedValue(new Response(JSON.stringify({ ...quote, observationSync: { status: "synced" } }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }));
+    vi.stubGlobal("fetch", fetchMock);
+    render(createElement(Providers, { children: createElement(Erc8183MainnetDemo, { config: {
+      agentId: 303779,
+      seller: "0x2222222222222222222222222222222222222222",
+      commerce: "0x3333333333333333333333333333333333333333",
+      router: "0x5555555555555555555555555555555555555555",
+      policy: "0x6666666666666666666666666666666666666666",
+      token: "0x4444444444444444444444444444444444444444",
+      maximumBudgetRaw: "10",
+      rpcUrl: "https://bsc-rpc.publicnode.com",
+      explorerUrl: "https://bscscan.com",
+      sellerOrigin: "https://seller.example",
+    }, agentName: "Marketplace Grid Planner" }) }));
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: /get fresh quote/i }));
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenLastCalledWith("/api/marketplace/demo/erc8183-mainnet/quote", expect.objectContaining({ method: "POST" }));
+    expect(await screen.findByText("Seller timed out safely.")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /try quote again/i }));
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const refresh = await screen.findByRole("button", { name: /refresh live quote/i });
+    expect(screen.getByText("Quote verified for this session. Shared evidence sync pending.")).toBeInTheDocument();
+    expect(screen.getByText("Quote verified", { selector: "span" })).toBeInTheDocument();
+    await user.click(refresh);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(await screen.findByText("Shared evidence updated")).toBeInTheDocument();
+  });
+
+  it("hydrates safely when an authorized wallet is restored before the first client render", async () => {
+    walletState.address = null;
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const tree = createElement(Providers, { children: createElement(Erc8183MainnetDemo, {
+      config: MAINNET_DEMO_CONFIG,
+      agentName: "Marketplace Grid Planner",
+    }) });
+    const container = document.createElement("div");
+    container.innerHTML = renderToString(tree);
+    expect(container.textContent).toContain("Connect a wallet in the header");
+    walletState.address = "0x7777777777777777777777777777777777777777";
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    let root: ReturnType<typeof hydrateRoot>;
+
+    await act(async () => {
+      root = hydrateRoot(container, tree);
+    });
+
+    const hydrationErrors = consoleError.mock.calls.flat().join(" ");
+    expect(hydrationErrors).not.toMatch(/hydration failed|did not match|hydration mismatch/i);
+    expect(within(container).getByRole("button", { name: /prepare hire as/i })).toBeDisabled();
+    expect(fetchMock).not.toHaveBeenCalled();
+    await act(async () => root!.unmount());
+    consoleError.mockRestore();
+  });
+
+  it("does not claim Mainnet has no seller while Grid remains admitted for fresh quotes", () => {
+    render(createElement(MarketplaceLanding, {
+      categories: [],
+      observationSnapshot: null,
+      demoEnabled: true,
+      featuredAgents: [],
+      funnel: null,
+      publicProof: [],
+      qualifiedSeller: null,
+    }));
+
+    expect(screen.queryByText(/no Mainnet seller is admitted/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/Grid.*admitted.*Mainnet.*quote/i)).toBeInTheDocument();
+  });
+
+  it("invalidates the previous prepared plan when a quote refresh fails", async () => {
+    const user = userEvent.setup();
+    walletState.address = "0x7777777777777777777777777777777777777777";
+    const quote = mainnetQuote({ quoteExpiresAt: Math.floor(Date.now() / 1_000) + 600 });
+    const plan = mainnetPlan(quote);
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse(quote))
+      .mockResolvedValueOnce(jsonResponse(plan))
+      .mockResolvedValueOnce(jsonResponse({ error: { message: "Seller timed out safely." } }, 504));
+    vi.stubGlobal("fetch", fetchMock);
+    renderMainnetDemo();
+
+    await user.click(screen.getByRole("button", { name: /get fresh quote/i }));
+    await user.click(await screen.findByRole("button", { name: /prepare hire as/i }));
+    expect(await screen.findByText(/maximum signatures/i)).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /refresh live quote/i }));
+    expect(await screen.findByText("Seller timed out safely.")).toBeInTheDocument();
+    expect(screen.queryByText(/maximum signatures/i)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /connect a wallet in the header|prepare hire as/i })).toBeDisabled();
+  });
+
+  it("marks an expired quote and blocks preparing or signing it", async () => {
+    const user = userEvent.setup();
+    walletState.address = "0x7777777777777777777777777777777777777777";
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse(mainnetQuote({
+      quoteExpiresAt: Math.floor(Date.now() / 1_000) - 1,
+    }))));
+    renderMainnetDemo();
+
+    await user.click(screen.getByRole("button", { name: /get fresh quote/i }));
+    expect(await screen.findByText(/quote expired/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /prepare hire as/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /wallet signatures/i })).toBeDisabled();
+  });
+
+  it.each(["SUBMITTED", "COMPLETED"] as const)("allows a new hire after a fresh quote when the saved job is %s", async (status) => {
+    const user = userEvent.setup();
+    const buyer = "0x7777777777777777777777777777777777777777" as const;
+    walletState.address = buyer;
+    localStorage.setItem("bnb-agent-marketplace:erc8183-browser:56:303779:v1", JSON.stringify({
+      schemaVersion: 1,
+      chainId: 56,
+      buyer,
+      seller: "0x2222222222222222222222222222222222222222",
+      jobId: "42",
+      transactions: { createJob: `0x${"12".repeat(32)}` },
+      lastConfirmedStep: "submitted",
+    }));
+    const quote = mainnetQuote({ quoteExpiresAt: Math.floor(Date.now() / 1_000) + 600 });
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({ job: mainnetJob(status) }))
+      .mockResolvedValueOnce(jsonResponse(quote))
+      .mockResolvedValueOnce(jsonResponse(mainnetPlan(quote)));
+    vi.stubGlobal("fetch", fetchMock);
+    renderMainnetDemo();
+
+    expect(await screen.findByText(`Current state: ${status}`)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /get fresh quote/i }));
+    expect(localStorage.getItem("bnb-agent-marketplace:erc8183-browser:56:303779:v1")).not.toBeNull();
+    await user.click(await screen.findByRole("button", { name: /prepare hire as/i }));
+    expect(await screen.findByRole("button", { name: /begin \d+ wallet signatures/i })).toBeEnabled();
+  });
+
+  it.each([
+    ["synced", "Shared evidence updated"],
+    ["duplicate", "Shared evidence updated"],
+    ["failed", "Quote verified for this session. Shared evidence sync pending."],
+    ["not_configured", "Quote verified for this session. Shared evidence sync pending."],
+  ] as const)("maps %s evidence sync to buyer-safe copy", (status, expected) => {
+    expect(sharedEvidenceSyncMessage({ status })).toBe(expected);
   });
 
   it("shows confirmed wallet transactions with explorer links", () => {

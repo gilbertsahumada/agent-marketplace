@@ -46,6 +46,7 @@ file records only decisions that still govern the submission.
 | 2026-08-29 | Recalculate the Free D1 query envelope after the WP4 ORM migration | Active; corrected by adversarial WP4 TDD | Metadata-unavailable targets can accumulate across rotations, so one retirement statement per historical endpoint is not a hard bound | SWEEP now groups retirement/unavailable updates per agent (at most two candidate writes plus one grouped update). Config deliberately keeps the more conservative six-slot envelope: `SWEEP_LIMIT<=4`, Free minimum 38 and default 4/40. A pre-batch row estimate also rejects anomalous grouped updates before cursor/completion can commit beyond the configured write budget |
 | 2026-08-29 | Keep general probe egress behind its architecture gate | Active | Independent WP4 review found that wildcard defaults had shipped before the spec's Cloudflare-egress trust boundary was demonstrated in staging | Root, staging and validation return to exact Agent `303779` plus its Grid endpoint. Wildcard also fails config unless `PROBE_GENERAL_EGRESS_APPROVED=1`; even with approval `/observations` returns 503 instead of scanning globally until a bounded feed contract exists. Expansion requires explicit decision, staging evidence and a newly measured bundle |
 | 2026-08-29 | Bind current UI claims to endpoint-level observation evidence | Active | Review reproduced stale protocol claims, metadata/quote drift, order-dependent multi-endpoint selection and indexed trust8004 reachability leaking into the `all` view | Current labels require a <=60 s observation, matching current/observed metadata, a <=60 s `quoteNegotiatedAt`, future expiry and category-specific evidence. All surfaces use the same deterministic target selector; unavailable Worker state cannot become `Reachable · verified` |
+| 2026-08-29 | Separate informative observations from buyer-requested transaction quotes | Active; supersedes observation-gated Hire in `Fail closed when current observations are unavailable` and `Bind current UI claims to endpoint-level observation evidence` | The five-minute Cron rotates `HEADER → SWEEP → PROBE`, so Free executes PROBE nominally every fifteen minutes and, with batch one plus target rotation, cannot support a sixty-second Hire gate. More importantly, a background observation is not the buyer's transaction quote | `/observations` keeps a 60-second HTTP/cache TTL and remains the source of timestamped informative claims only. Every ERC-8183-compatible seller admitted by the active marketplace allowlist exposes `Get fresh quote` even when evidence is old or Worker/D1 is unavailable; every click negotiates and validates a new quote, and the buyer may refresh again before signing. That fresh validated quote plus current onchain checks authorizes `prepare`; Worker, D1 and snapshots never do. A confirmed refresh publishes only sanitized evidence, while sync failure is explicit and does not fabricate public freshness. MCP-only agents remain discoverable but not hireable through the marketplace |
 
 ## Current Mainnet proof boundary
 
@@ -68,6 +69,9 @@ store permitted by clauses 6b and 6c below:
   rejects an already-completed or stale timestamp and then runs one phase;
 - exactly one of HEADER, SWEEP or PROBE per Free invocation; the next phase and
   cursor are persisted in D1;
+- with the five-minute Cron and three-phase rotation, PROBE runs nominally every
+  fifteen minutes; this is background evidence cadence, not Hire authorization
+  and not a promise that every target is probed every fifteen minutes;
 - fixed trust8004 request budget per run; no process-memory token bucket;
 - HEADER processes its full recent page and SWEEP advances page data plus cursor
   atomically with `D1.batch()`;
@@ -167,11 +171,16 @@ The unlock conditions for 6b and 6c are mandatory:
 - current labels may consume only the bounded, cached `/observations`
   projection, never direct D1 access;
 - an empty or unavailable observation store leaves live trust8004 declarations
-  renderable but disables current observation claims; the committed snapshot is
-  available only on its explicitly historical route;
+  renderable but disables current observation claims; it does not prevent an
+  ERC-8183-compatible seller from receiving a buyer-requested fresh quote. The
+  committed snapshot is available only on its explicitly historical route;
 - the stored value is an `OBSERVATION` with its timestamp, never a persisted
   boolean such as `hireable`; the label is calculated when read from the
   observation age and current policy.
+- Worker/D1 observations are never authority for `prepare` or wallet signatures.
+  A new buyer-requested quote is validated independently and may publish only a
+  sanitized observation after confirmation; MCP-only declarations remain
+  discovery evidence, not a hiring transport.
 
 For the presentation funnel, no persistence is implemented. A one-shot harvest
 script may use `eth_getLogs` and emit a dated JSON file with a pinned block, using
@@ -370,3 +379,29 @@ navigation pass.
 Category filters still disappear in the "all registered agents" view. Offering
 them there requires a change to `listMarketplaceAgents` in the business layer,
 which is out of scope for a presentation change.
+
+## 2026-08-30 — Bound and isolate buyer-requested quote refreshes
+
+`ON_DEMAND_QUOTE_TIMEOUT_MS` is a single end-to-end deadline over Mainnet RPC,
+identity, Agent Card, negotiation and quote verification. HTTP work receives an
+abort signal; SDK/RPC calls that do not expose cancellation are raced against
+the same deadline and fail closed. The subsequent D1 evidence sync has an
+independent budget and cannot invalidate a verified session quote.
+
+The Free default is 30 seconds, still bounded by the configured 1–30 second
+range. The earlier 5-second value applied to each dependency separately; after
+turning it into one global deadline, independent local E2E reproduced three
+safe failures against the admitted live seller. Keeping 5 seconds would have
+made the hardened flow unusable rather than safer.
+
+A quote is no longer rejected merely because negotiation began more than 60
+seconds ago. It remains acceptable only while it has the configured minimum
+remaining validity, stays within the SDK's 900-second maximum TTL and is not
+more than 60 seconds in the future.
+
+Buyer evidence writes use `BUYER_OBSERVATION_SECRET`, separate from the staging
+administrative `SHARED_SECRET`. The marketplace sends it only to an HTTPS URL
+without userinfo whose origin exactly matches
+`BUYER_OBSERVATION_ALLOWED_ORIGIN`. A future public rollout must add a
+distributed per-buyer/origin rate limiter; process-local counters are rejected
+because they cannot enforce a limit across concurrent instances.

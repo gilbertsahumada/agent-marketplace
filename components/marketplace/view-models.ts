@@ -105,11 +105,16 @@ export function evidenceForAgent(agent: MarketplaceAgent, now = Date.now()): Evi
 }
 
 export function agentCardViewModel(agent: MarketplaceAgent, provenAgentId?: string): AgentCardViewModel {
+  const quoteRequestAvailable = agent.operator === "marketplace" && agent.services.some(({ name, endpoint }) => {
+    const protocol = name.trim().toLowerCase().replace(/[^a-z0-9]/g, "");
+    return endpoint !== null && (protocol === "a2a" || protocol === "erc8183" || protocol === "erc8183http");
+  });
   return {
     agentId: agent.agentId,
     name: agent.name,
     description: agent.description ?? "No description declared.",
     operator: agent.operator,
+    quoteRequestAvailable,
     categories: agent.categories.map(({ category }) => category),
     href: `/agents/${agent.agentId}`,
     hireability: agent.hireability.canHire

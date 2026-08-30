@@ -42,6 +42,7 @@ export interface Env {
   DEPLOYMENT_ENV?: string;
   STAGING_MANUAL_RUN?: string;
   SHARED_SECRET?: string;
+  BUYER_OBSERVATION_SECRET?: string;
   BSC_RPC_URL?: string;
 }
 

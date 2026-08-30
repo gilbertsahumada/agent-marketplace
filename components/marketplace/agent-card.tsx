@@ -34,6 +34,7 @@ const passportLabels: Record<AgentCardViewModel["passportState"], string> = {
 
 export function AgentCard({ agent }: { agent: AgentCardViewModel }) {
   const isHireable = agent.hireability === "hireable";
+  const canRequestQuote = agent.quoteRequestAvailable === true;
 
   return (
     <Card className="marketplace-surface marketplace-agent-evidence-card h-full gap-4 py-5" data-passport-state={agent.passportState}>
@@ -114,9 +115,9 @@ export function AgentCard({ agent }: { agent: AgentCardViewModel }) {
         ) : (
           <p className="text-xs text-zinc-400">Trust score unavailable</p>
         )}
-        <Button asChild size="sm" variant={isHireable ? "default" : "outline"}>
-          <Link href={isHireable ? `/hire/${agent.agentId}` : agent.href} prefetch={false}>
-            {isHireable ? "Hire agent" : agent.hireability === "quote_stale" ? "Refresh quote" : "View evidence"}
+        <Button asChild size="sm" variant={canRequestQuote ? "default" : "outline"}>
+          <Link href={canRequestQuote ? `/hire/${agent.agentId}` : agent.href} prefetch={false}>
+            {canRequestQuote ? "Get fresh quote" : "View evidence"}
             <ArrowUpRight aria-hidden="true" data-icon="inline-end" />
           </Link>
         </Button>

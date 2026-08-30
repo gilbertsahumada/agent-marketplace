@@ -23,7 +23,7 @@ const journey = [
   ["Discover", "Browse BSC candidates by outcome, without learning protocol vocabulary first."],
   ["Understand", "Declared, observed, onchain and derived facts stay visibly separate."],
   ["Compare", "Evidence is aligned side by side. The marketplace names no universal winner."],
-  ["Hire", "A yellow Hire action appears only after ERC-8183 quote verification."],
+  ["Hire", "A compatible seller admitted by the marketplace can issue a fresh ERC-8183 quote on request."],
   ["Track", "The job is followed against direct chain state, never a stored boolean."],
   ["Result", "A deliverable counts once its hash matches what was committed onchain."],
 ] as const;
@@ -51,7 +51,7 @@ export function MarketplaceLanding({
       ? `/hire/${qualifiedSeller.agentId}`
       : demoEnabled ? "/demo/erc8183" : "/jobs/testnet/551";
   const primaryLabel = qualifiedSeller
-      ? `Hire ${qualifiedSeller.name}`
+      ? `Get fresh quote from ${qualifiedSeller.name}`
       : demoEnabled ? "Try a verified Testnet hire" : "View a proven hiring result";
   return (
     <main id="main-content">
@@ -142,7 +142,7 @@ export function MarketplaceLanding({
                 Candidates with honest activation states.
               </h2>
               <p className="mt-3 text-sm leading-relaxed text-zinc-400 sm:text-base">
-                MCP availability can support discovery, but it does not prove ERC-8183 hireability. {qualifiedSeller ? "A yellow Hire action identifies the seller whose current ERC-8183 evidence qualifies." : "The verified Testnet journey remains available while no Mainnet seller qualifies."}
+                MCP availability can support discovery, but it does not prove ERC-8183 hireability. {qualifiedSeller ? "A compatible seller admitted by the marketplace can always be asked for a fresh transactional quote." : "Marketplace Grid remains admitted for on-demand Mainnet quotes; the verified Testnet journey remains available as historical proof."}
               </p>
             </div>
             <Button asChild variant="outline">
@@ -166,7 +166,7 @@ export function MarketplaceLanding({
               <CircleAlert aria-hidden="true" />
               <AlertTitle>Current verification temporarily unavailable</AlertTitle>
               <AlertDescription>
-                Live trust8004 declarations remain visible, but reachability, quote freshness and Hire eligibility are disabled until the observation Worker responds.
+                Live trust8004 declarations remain visible, but current reachability and shared quote evidence are unavailable until the observation Worker responds. Compatible sellers admitted by the marketplace can still issue a fresh quote for this session.
               </AlertDescription>
             </Alert>
           )}

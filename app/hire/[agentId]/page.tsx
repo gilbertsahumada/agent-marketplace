@@ -1,52 +1,50 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getMainnetHiringExposure, getMarketplaceAgent, getWorkerObservations, listMarketplaceAgents } from "@/src/business/composition";
-import { agentCardWithObservations } from "@/components/marketplace/view-models";
-import { observationTargetsByAgentId } from "@/src/business/entities/worker-observations";
+import Link from "next/link";
+import { getMainnetBrowserDemoConfig, getMarketplaceAgent } from "@/src/business/composition";
+import { agentCardViewModel } from "@/components/marketplace/view-models";
 import { MarketplaceAgentNotFoundError, MarketplaceDataUnavailableError } from "@/src/business/errors/marketplace-errors";
+import { Erc8183SpikeDisabledError, Erc8183SpikeUnavailableError } from "@/src/business/errors/erc8183-spike-errors";
 import { CatalogUnavailable } from "@/components/marketplace/catalog-unavailable";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Breadcrumb, PageIntro } from "@/components/marketplace/page-primitives";
+import { Erc8183MainnetDemo } from "@/components/spikes/erc8183-browser-spike";
 
 export const dynamic = "force-dynamic";
 
 export default async function HirePage({ params }: { params: Promise<{ agentId: string }> }) {
   const { agentId } = await params;
   try {
-    const [agent, catalog, observations] = await Promise.all([
-      getMarketplaceAgent.execute({ agentId }),
-      listMarketplaceAgents.execute({ view: "marketplace", page: 1, limit: 12 }),
-      getWorkerObservations(),
-    ]);
-    const targets = observationTargetsByAgentId(observations.feed);
-    const current = agentCardWithObservations(
-      agent, targets.get(agent.agentId) ?? [], observations.status === "available",
-    );
-    const alternative = catalog.items
-      .filter((candidate) => candidate.agentId !== agent.agentId)
-      .map((candidate) => agentCardWithObservations(
-        candidate, targets.get(candidate.agentId) ?? [], observations.status === "available",
-      ))
-      .find((candidate) => candidate.hireability === "hireable") ?? null;
-    const mainnetExposure = await getMainnetHiringExposure.execute();
-    const demoEnabled = Reflect.get(process.env, "ERC8183_BROWSER_SPIKE_ENABLED") === "true";
-    const selectedDemoAvailable = current.hireability === "hireable"
-      && String(mainnetExposure.demoConfig?.agentId) === agent.agentId;
-    const quoteEvidence = current.evidence.find((step) => step.kind === "quote");
+    const agent = await getMarketplaceAgent.execute({ agentId });
+    const current = agentCardViewModel(agent);
+    let selectedConfig = null;
+    if (current.quoteRequestAvailable) {
+      try {
+        const config = getMainnetBrowserDemoConfig.execute();
+        if (String(config.agentId) === agent.agentId) selectedConfig = config;
+      } catch (error) {
+        if (!(error instanceof Erc8183SpikeDisabledError) && !(error instanceof Erc8183SpikeUnavailableError)) throw error;
+      }
+    }
+    if (current.quoteRequestAvailable && selectedConfig) {
+      return <Erc8183MainnetDemo config={selectedConfig} agentName={agent.name} />;
+    }
     return (
       <main id="main-content" className="mx-auto w-full max-w-4xl flex-1 px-4 py-12 sm:px-6 lg:px-8">
         <Breadcrumb
           current="Hire"
           trail={[{ href: "/agents", label: "Agents" }, { href: `/agents/${agentId}`, label: agent.name }]}
         />
-        <PageIntro eyebrow="Hire eligibility" title={agent.name}>This screen validates whether the selected agent has enough ERC-8183 evidence. It does not simulate a quote or transaction.</PageIntro>
+        <PageIntro eyebrow="Fresh quote" title={agent.name}>A periodic observation is informative. Only a quote requested by you can start a hire.</PageIntro>
         <Alert className="mt-8 border-amber-400/20 bg-amber-400/5">
-          <AlertTitle>{current.hireability === "hireable" ? "Seller is eligible" : "Hiring is not available for this seller"}</AlertTitle>
-          <AlertDescription>{quoteEvidence?.detail ?? "Current marketplace observations are unavailable."}</AlertDescription>
+          <AlertTitle>{current.quoteRequestAvailable ? "Fresh quotes are temporarily unavailable" : "This agent cannot be hired through the marketplace"}</AlertTitle>
+          <AlertDescription>{current.quoteRequestAvailable
+            ? "The seller supports the hiring transport, but the on-demand quote service is not configured right now. No Testnet substitute was selected."
+            : agent.hireability.reason}</AlertDescription>
         </Alert>
         <div className="mt-6 flex flex-wrap gap-3">
-          {selectedDemoAvailable ? <Button asChild><Link href="/demo/erc8183-mainnet">Continue to browser-wallet hire</Link></Button> : alternative ? <Button asChild><Link href={`/hire/${alternative.agentId}`}>Hire {alternative.name}</Link></Button> : demoEnabled ? <Button asChild><Link href="/demo/erc8183">Try the verified Testnet demo</Link></Button> : <Button asChild variant="outline"><Link href="/jobs/testnet/551">View browser-wallet proof</Link></Button>}
+          {current.quoteRequestAvailable && <Button asChild><Link href={`/hire/${agent.agentId}`}>Try again</Link></Button>}
+          <Button asChild variant="outline"><Link href={`/agents/${agent.agentId}`}>View agent evidence</Link></Button>
         </div>
       </main>
     );
