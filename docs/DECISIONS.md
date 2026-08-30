@@ -405,3 +405,24 @@ without userinfo whose origin exactly matches
 `BUYER_OBSERVATION_ALLOWED_ORIGIN`. A future public rollout must add a
 distributed per-buyer/origin rate limiter; process-local counters are rejected
 because they cannot enforce a limit across concurrent instances.
+
+## 2026-08-30 — Reconcile WP4 presentation with the hireability evidence model
+
+WP4's observation layer overrides card hireability to hireable, quote_stale or
+listed_only, while `quoteRequestAvailable` is computed on the base view model.
+A card could therefore say "Not evaluated" beside a "Get fresh quote" CTA. The
+card now labels that combination "Quote on request": a statement about the
+declared request path of a marketplace-operated seller, not a claim of
+verification, so it does not conflate availability with ERC-8183 hireability.
+
+WP4 also stopped rendering `hireability.reason` on the agent profile, which
+erased the prose distinction between "MCP declared but not hireable" and
+payment-safety blocks. The profile renders the policy-authored reason again
+when no quote request is available, and reuses the shared label map for the
+states it shares with cards.
+
+`/agents?view=all&category=…` used to accept and propagate a category that the
+registered view never applies — pagination links and the search form carried a
+filter that did not exist. The parameter is now dropped outside the marketplace
+view, and the registered-view intro states that category filters apply only to
+curated candidates.
