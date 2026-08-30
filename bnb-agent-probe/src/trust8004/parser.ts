@@ -2,6 +2,8 @@ import {
   BSC_CHAIN_ID,
   type CatalogAgent,
   type CatalogDeclaredEndpoint,
+  type CatalogEndpointProtocol,
+  type CatalogIndexEndpoint,
   type CatalogPage,
   type CatalogTransport,
 } from "./types.ts";
@@ -76,6 +78,44 @@ function normalizedTransport(value: unknown): CatalogTransport | null {
   return null;
 }
 
+function normalizedProtocol(value: unknown): CatalogEndpointProtocol | null {
+  const transport = normalizedTransport(value);
+  if (transport) return transport;
+  if (typeof value !== "string") return null;
+  const normalized = value.toLowerCase().replace(/[^a-z0-9]/g, "");
+  if (normalized === "mcp") return "mcp";
+  if (["http", "https", "web", "rest", "api"].includes(normalized)) return "web";
+  return null;
+}
+
+function parseIndexDeclarations(values: unknown[], path: string): CatalogIndexEndpoint[] {
+  const declarations: CatalogIndexEndpoint[] = [];
+  for (const [index, value] of values.entries()) {
+    const item = record(value, `${path}[${index}]`);
+    const protocol = normalizedProtocol(item.name ?? item.type ?? item.protocol);
+    const endpoint = item.endpoint ?? item.url;
+    if (!protocol) continue;
+    if (typeof endpoint !== "string" || endpoint.length === 0 || endpoint.length > MAX_STRING_LENGTH) {
+      throw new CatalogSchemaError(`${path}[${index}].endpoint`, "non-empty string", endpoint);
+    }
+    declarations.push({ protocol, endpoint });
+  }
+  return declarations;
+}
+
+function normalizedImage(value: unknown): string | null {
+  const candidate = nullableString(value, "item.imageUrl");
+  if (!candidate) return null;
+  if (candidate.startsWith("ipfs://")) {
+    const path = candidate.slice("ipfs://".length).replace(/^ipfs\//, "");
+    return path ? `https://ipfs.io/ipfs/${path}` : null;
+  }
+  try {
+    const url = new URL(candidate);
+    return url.protocol === "https:" && !url.username && !url.password ? url.toString() : null;
+  } catch { return null; }
+}
+
 function parseDeclarations(
   values: unknown[],
   source: CatalogDeclaredEndpoint["source"],
@@ -121,6 +161,7 @@ export function parseCatalogAgent(value: unknown, path = "item"): CatalogAgent {
     throw new CatalogSchemaError(`${path}.chainId`, `chainId ${BSC_CHAIN_ID}`, item.chainId);
   }
   let declaredEndpoints: CatalogDeclaredEndpoint[] = [];
+  let indexEndpoints: CatalogIndexEndpoint[] = [];
   let metadataParsed = false;
   try {
     const services = metadataArray(item.services, `${path}.services`);
@@ -128,6 +169,12 @@ export function parseCatalogAgent(value: unknown, path = "item"): CatalogAgent {
     declaredEndpoints = [
       ...parseDeclarations(services, "services", `${path}.services`),
       ...parseDeclarations(endpoints, "endpoints", `${path}.endpoints`),
+    ];
+    indexEndpoints = [
+      ...parseIndexDeclarations(services, `${path}.services`),
+      ...parseIndexDeclarations(endpoints, `${path}.endpoints`),
+      ...(typeof item.a2aEndpoint === "string" ? [{ protocol: "a2a" as const, endpoint: item.a2aEndpoint }] : []),
+      ...(typeof item.mcpEndpoint === "string" ? [{ protocol: "mcp" as const, endpoint: item.mcpEndpoint }] : []),
     ];
     metadataParsed = true;
   } catch (error) {
@@ -137,6 +184,8 @@ export function parseCatalogAgent(value: unknown, path = "item"): CatalogAgent {
     chainId: BSC_CHAIN_ID,
     agentId: numericAgentId(item.agentId, `${path}.agentId`),
     name: nullableString(item.name, `${path}.name`),
+    description: nullableString(item.description, `${path}.description`)?.slice(0, 2_048) ?? null,
+    imageUrl: normalizedImage(item.imageUrl ?? item.image ?? item.avatar ?? item.logo),
     registeredAt: registeredAt(item.registeredAt, `${path}.registeredAt`),
     metadataUpdatedAt: registeredAt(item.metadataUpdatedAt, `${path}.metadataUpdatedAt`),
     metadataAvailable: metadataAvailable(item) && metadataParsed,
@@ -145,6 +194,7 @@ export function parseCatalogAgent(value: unknown, path = "item"): CatalogAgent {
       erc8183: declaredEndpoints.some((entry) => entry.transport === "erc8183_http"),
     },
     declaredEndpoints,
+    indexEndpoints,
   };
 }
 

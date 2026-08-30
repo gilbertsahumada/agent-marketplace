@@ -70,6 +70,18 @@ describe("Trust8004Provider", () => {
     expect(parseProfileResponse(unsafe, "45422")).not.toHaveProperty("imageUrl");
   });
 
+  it("preserves direct A2A and MCP profile declarations for validation", async () => {
+    const profiles = await fixture("profiles.json") as Record<string, { agent: Record<string, unknown> }>;
+    const profile = structuredClone(profiles["45422"]!);
+    profile.agent.a2aEndpoint = "https://seller.example/a2a";
+    profile.agent.mcpEndpoint = "https://seller.example/mcp";
+
+    expect(parseProfileResponse(profile, "45422")).toMatchObject({
+      a2aEndpoint: "https://seller.example/a2a",
+      mcpEndpoint: "https://seller.example/mcp",
+    });
+  });
+
   it("lists only BSC agents with explicit pagination and partial coverage", async () => {
     const data = await allFixtures();
     let requestedUrl: URL | undefined;

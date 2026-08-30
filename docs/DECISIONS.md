@@ -467,8 +467,8 @@ The catalogue explicitly reports whether the monitoring feed is disconnected
 or when the Worker last ran. An unavailable feed is never rendered as a failed
 endpoint. Agent profiles show the attempt count and last result, while compact
 cards keep the detail in the existing evidence tooltip. The vague `Partial
-coverage` badge is replaced with the actual scope and count: `Marketplace
-selection` or `Public registry`.
+coverage` badge is replaced with the actual scope and count: `Operational
+candidates` or `All registered agents`.
 
 This change does not turn the WP2 staging Worker into a continuously scheduled
 production monitor. The checked-in Worker configuration remains safe-off until
@@ -489,3 +489,15 @@ activated. The UI must therefore remain honest when no scheduler run exists.
 - Staging uses the Free-profile maximum `PROBE_TIMEOUT_MS=10000`. This leaves enough wall-clock time for public-RPC reads and the seller exchange without changing the CPU, D1-query or subrequest budgets.
 - The complete local rotation passed as HEADER, SWEEP and PROBE with 7, 13 and 10 D1 queries. Its PROBE recorded `quote_verified` for agent `303779` with no error in 4,933 ms.
 - Version `0c219da0-09f3-45d7-93aa-8391dd40315a` was promoted to 100% of staging without modifying the existing Cron. The remote PROBE scheduled at 2026-08-30T20:45:16Z completed on its first Queue delivery, used 10 D1 queries and 8 upstream requests, and recorded `quote_verified` with no error in 1,837 ms at block `119025746`.
+
+## 2026-08-31 — Normalize the registry before expanding hireability
+
+- A catalog size is never a product target. Snapshot v2 measured 319,851 BSC registrations and derived 29,801 candidates from their declarations; future runs may produce any count dictated by the same criteria.
+- Identity, endpoint and declaration are separate records. The 30,721 declarations collapse to 1,330 unique endpoints and 218 representative origin/protocol probes, so shared services are fetched once rather than once per Agent ID.
+- The complete snapshot is the discovery baseline. Free HEADER writes only a bounded prioritized increment and reports candidates it deferred; those identities are reconciled by the next snapshot instead of being silently claimed as live-indexed.
+- Browser A2A, MCP, web and ERC-8183 HTTP checks are read-only user evidence. CORS failures are reported honestly, results are persisted as `browser_reported`, and they never satisfy platform reachability or hireability filters.
+- Worker and marketplace checks use distinct provenance. Public candidate filters can select declared, pending, A2A, MCP, ERC-8183-declared, quote-capable, hireable or failed agents; only platform evidence participates in those operational states.
+- A fresh valid quote is necessary but not sufficient for the existing Grid hiring UI. `Hire agent` additionally requires a marketplace-admitted configuration whose identity, contracts, policy, token, budget and post-funding delivery path are executable end to end. Dynamic third-party admission is not inferred from MCP/A2A.
+- Staging D1 was seeded with the snapshot and measured 29,801 agents, 1,330 endpoints, 30,721 relations and 218 representatives. The bulk import produced 61,854 logical changes but D1 counted 247,408 writes including indexes; future Free bootstrap imports must be split across UTC quota windows.
+- Worker staging version `7b6836c5-bd57-473a-a755-8e9d7d669d71` runs the public BSC RPC and `*/5 * * * *`. Its first post-deploy HEADER tick completed without retry and reported 74 candidates seen, six indexed, 68 deferred, one endpoint and six declarations. Production and validation remain safe-off.
+- The first generic PROBE tick at 2026-08-30T22:30:00Z completed on delivery one and persisted one `network_error`, proving queue-to-D1 operation. It also selected Beefy's generic `web` declaration before its MCP declaration. The following candidate fixes that information-value bug by ordering due targets `erc8183_http → mcp → a2a → web`; the measured staging version remains unchanged until that candidate is explicitly promoted.

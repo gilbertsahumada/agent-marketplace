@@ -14,6 +14,8 @@ export interface WorkerConfig {
   sweepLimit: number;
   sweepPagesPerRun: number;
   probeBatchSize: number;
+  catalogProbeEnabled: boolean;
+  catalogProbeBatchSize: number;
   probeAgentAllowlist: readonly string[];
   probeEndpointAllowlist: readonly string[];
   trust8004RequestsPerRun: number;
@@ -57,6 +59,7 @@ type NumericConfig = Omit<
   | "schedulerMode"
   | "probeAgentAllowlist"
   | "probeEndpointAllowlist"
+  | "catalogProbeEnabled"
   | "platformLimits"
   | "projectedDailyBudget"
 >;
@@ -87,6 +90,7 @@ const FREE_PROFILE: Profile = {
     sweepLimit: 4,
     sweepPagesPerRun: 1,
     probeBatchSize: 1,
+    catalogProbeBatchSize: 1,
     trust8004RequestsPerRun: 4,
     externalSubrequestsPerRun: 12,
     d1QueriesPerRun: 40,
@@ -98,10 +102,11 @@ const FREE_PROFILE: Profile = {
   },
   maximums: {
     cronIntervalMinutes: 1_440,
-    headerLimit: 50,
+    headerLimit: 100,
     sweepLimit: 4,
     sweepPagesPerRun: 1,
     probeBatchSize: 1,
+    catalogProbeBatchSize: 1,
     trust8004RequestsPerRun: 40,
     externalSubrequestsPerRun: 40,
     d1QueriesPerRun: 40,
@@ -121,6 +126,7 @@ const PAID_PROFILE: Profile = {
     sweepLimit: 2_000,
     sweepPagesPerRun: 2,
     probeBatchSize: 10,
+    catalogProbeBatchSize: 10,
     trust8004RequestsPerRun: 20,
     externalSubrequestsPerRun: 55,
     d1QueriesPerRun: 800,
@@ -136,6 +142,7 @@ const PAID_PROFILE: Profile = {
     sweepLimit: 2_000,
     sweepPagesPerRun: 20,
     probeBatchSize: 100,
+    catalogProbeBatchSize: 100,
     trust8004RequestsPerRun: 55,
     externalSubrequestsPerRun: 1_000,
     d1QueriesPerRun: 800,
@@ -153,6 +160,7 @@ const NUMERIC_FIELDS = {
   SWEEP_LIMIT: "sweepLimit",
   SWEEP_PAGES_PER_RUN: "sweepPagesPerRun",
   PROBE_BATCH_SIZE: "probeBatchSize",
+  CATALOG_PROBE_BATCH_SIZE: "catalogProbeBatchSize",
   TRUST8004_REQUESTS_PER_RUN: "trust8004RequestsPerRun",
   EXTERNAL_SUBREQUESTS_PER_RUN: "externalSubrequestsPerRun",
   D1_QUERIES_PER_RUN: "d1QueriesPerRun",
@@ -201,6 +209,7 @@ function parseInteger(field: keyof typeof NUMERIC_FIELDS, raw: string, maximum: 
     "SWEEP_LIMIT",
     "SWEEP_PAGES_PER_RUN",
     "PROBE_BATCH_SIZE",
+    "CATALOG_PROBE_BATCH_SIZE",
     "TRUST8004_REQUESTS_PER_RUN",
     "EXTERNAL_SUBREQUESTS_PER_RUN",
     "D1_ROWS_READ_PER_RUN",
@@ -300,6 +309,15 @@ export function loadConfig(env: Partial<Env>): WorkerConfig {
     && source.PROBE_GENERAL_EGRESS_APPROVED !== "1") {
     throw new ConfigError("PROBE_GENERAL_EGRESS_APPROVED", "must be 0 or 1");
   }
+  const catalogProbeEnabled = source.CATALOG_PROBE_ENABLED === "1";
+  if (source.CATALOG_PROBE_ENABLED !== undefined
+    && source.CATALOG_PROBE_ENABLED !== "0"
+    && source.CATALOG_PROBE_ENABLED !== "1") {
+    throw new ConfigError("CATALOG_PROBE_ENABLED", "must be 0 or 1");
+  }
+  if (catalogProbeEnabled && !generalEgressApproved) {
+    throw new ConfigError("CATALOG_PROBE_ENABLED", "requires the WP4 general-egress gate");
+  }
 
   for (const [field, property] of Object.entries(NUMERIC_FIELDS) as Array<
     [keyof typeof NUMERIC_FIELDS, keyof NumericConfig]
@@ -380,6 +398,7 @@ export function loadConfig(env: Partial<Env>): WorkerConfig {
     killSwitch,
     producerKillSwitch: parseProducerKillSwitch(source.PRODUCER_KILL_SWITCH, killSwitch),
     schedulerMode: profile.schedulerMode,
+    catalogProbeEnabled,
     probeAgentAllowlist: parseAgentAllowlist(source.PROBE_AGENT_ALLOWLIST, plan, generalEgressApproved),
     probeEndpointAllowlist: parseEndpointAllowlist(source.PROBE_ENDPOINT_ALLOWLIST, plan, generalEgressApproved),
     ...values,

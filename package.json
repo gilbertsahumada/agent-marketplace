@@ -22,6 +22,8 @@
     "hosted-seller:register": "node --env-file=.env.local --import tsx src/hosted-seller-cli.ts register",
     "inventory:bsc": "tsx src/trust8004/inventory-cli.ts",
     "snapshot:funnel:bsc": "tsx src/trust8004/funnel-snapshot-cli.ts",
+    "snapshot:catalog:bsc": "tsx src/trust8004/catalog-snapshot-cli.ts",
+    "seed:catalog:d1": "sh -c 'if [ -f .env.local ]; then node --env-file=.env.local --import tsx src/trust8004/catalog-d1-seed-cli.ts \"$@\"; else tsx src/trust8004/catalog-d1-seed-cli.ts \"$@\"; fi' --",
     "marketplace": "tsx src/marketplace-cli-bin.ts",
     "verify:bsc": "tsx src/verification/cli.ts",
     "publish:verification": "tsx src/verification/publish-cli.ts",

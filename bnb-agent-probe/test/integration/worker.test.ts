@@ -14,10 +14,33 @@ import { createWp2ScheduledRunner, runWp2Scheduled } from "../../src/scheduled";
 import type { Env } from "../../src/types";
 
 beforeEach(async () => {
+  await env.DB.prepare("DELETE FROM catalog_observations").run();
+  await env.DB.prepare("DELETE FROM catalog_agent_endpoints").run();
+  await env.DB.prepare("DELETE FROM catalog_endpoints").run();
+  await env.DB.prepare("DELETE FROM catalog_agents").run();
   await env.DB.prepare("DELETE FROM runtime_state").run();
   await env.DB.prepare("DELETE FROM probe_observations").run();
   await env.DB.prepare("DELETE FROM probe_targets").run();
 });
+
+function catalogObservationBody(overrides: Record<string, unknown> = {}) {
+  const now = 1_788_000_000_000;
+  return {
+    schemaVersion: 1,
+    source: "browser_reported",
+    agentId: "45422",
+    endpointKey: "a".repeat(64),
+    protocol: "mcp",
+    outcome: "protocol_valid",
+    observedAt: now,
+    expiresAt: now + 15 * 60_000,
+    httpStatus: 200,
+    errorCode: null,
+    durationMs: 125,
+    details: { capabilityCount: 4, method: "POST", cors: true },
+    ...overrides,
+  };
+}
 
 function queueMessage(body: unknown, attempts = 1) {
   const scheduledTime = (body as { scheduledTime?: unknown }).scheduledTime;
@@ -60,6 +83,108 @@ function buyerRefreshBody(overrides: Record<string, unknown> = {}) {
 }
 
 describe("WP1 in the Workers runtime", () => {
+  it("filters normalized catalog candidates using platform evidence, never browser claims", async () => {
+    const now = 1_788_000_000_000;
+    await env.DB.prepare(`INSERT INTO catalog_agents (
+      agentKey, agentId, chainId, name, metadataState, indexState, firstSeenAt, lastSeenAt, priority
+    ) VALUES
+      ('eip155:56:1', '1', 56, 'Agent one', 'ok', 'current', ?, ?, 60),
+      ('eip155:56:2', '2', 56, 'Agent two', 'ok', 'current', ?, ?, 40)`).bind(now, now, now, now).run();
+    await env.DB.prepare(`INSERT INTO catalog_endpoints (
+      endpointKey, protocol, endpoint, originKey, safety, representativeAgentKey, nextProbeAt, consecutiveFailures
+    ) VALUES
+      (?, 'a2a', 'https://one.example/a2a', 'origin-one', 'safe', 'eip155:56:1', 0, 0),
+      (?, 'mcp', 'https://two.example/mcp', 'origin-two', 'safe', 'eip155:56:2', 0, 0)`).bind(
+      "a".repeat(64), "b".repeat(64),
+    ).run();
+    await env.DB.prepare(`INSERT INTO catalog_agent_endpoints (
+      agentKey, endpointKey, declarationState, firstSeenAt, lastSeenAt, priority
+    ) VALUES
+      ('eip155:56:1', ?, 'current', ?, ?, 60),
+      ('eip155:56:2', ?, 'current', ?, ?, 40)`).bind(
+      "a".repeat(64), now, now, "b".repeat(64), now, now,
+    ).run();
+    await env.DB.prepare(`INSERT INTO catalog_observations (
+      agentKey, endpointKey, protocol, source, outcome, observedAt, expiresAt, durationMs, detailsJson
+    ) VALUES
+      ('eip155:56:1', ?, 'a2a', 'worker_probe', 'protocol_valid', ?, ?, 20, '{}'),
+      ('eip155:56:2', ?, 'mcp', 'browser_reported', 'protocol_valid', ?, ?, 30, '{}')`).bind(
+      "a".repeat(64), now, now + 900_000,
+      "b".repeat(64), now, now + 900_000,
+    ).run();
+    const app = createWorker({ now: () => now });
+    const context = createExecutionContext();
+
+    const a2a = await app.fetch(new Request("https://worker.test/catalog-agents?status=a2a"), env, context);
+    expect(a2a.status).toBe(200);
+    expect(await a2a.json()).toMatchObject({ total: 1, items: [{ agentId: "1" }] });
+
+    const pending = await app.fetch(new Request("https://worker.test/catalog-agents?status=pending"), env, context);
+    expect(await pending.json()).toMatchObject({
+      total: 1,
+      items: [{ agentId: "2", observations: [{ source: "browser_reported" }] }],
+    });
+  });
+
+  it("persists authenticated catalog evidence and exposes its provenance per agent", async () => {
+    const now = 1_788_000_000_000;
+    const privateEnv = { ...env, BUYER_OBSERVATION_SECRET: "catalog-secret" } as unknown as Env;
+    const response = await createWorker({ now: () => now }).fetch(
+      new Request("https://worker.test/__internal/catalog-observation", {
+        method: "POST",
+        headers: { authorization: "Bearer catalog-secret", "content-type": "application/json" },
+        body: JSON.stringify(catalogObservationBody()),
+      }),
+      privateEnv,
+      createExecutionContext(),
+    );
+
+    expect(response.status).toBe(201);
+    expect(await response.json()).toMatchObject({ status: "recorded", id: expect.any(Number) });
+
+    const publicResponse = await createWorker({ now: () => now }).fetch(
+      new Request("https://worker.test/catalog-agent?agentId=45422"),
+      privateEnv,
+      createExecutionContext(),
+    );
+    expect(publicResponse.status).toBe(200);
+    expect(publicResponse.headers.get("cache-control")).toBe("public, max-age=30, stale-while-revalidate=60");
+    expect(await publicResponse.json()).toMatchObject({
+      schemaVersion: 1,
+      chainId: 56,
+      agentId: "45422",
+      platformAttemptCount: 0,
+      declarations: [],
+      observations: [{
+        source: "browser_reported",
+        outcome: "protocol_valid",
+        protocol: "mcp",
+        details: { capabilityCount: 4, method: "POST", cors: true },
+      }],
+    });
+  });
+
+  it("rejects untrusted or non-closed catalog observation payloads before D1", async () => {
+    const now = 1_788_000_000_000;
+    const privateEnv = { ...env, BUYER_OBSERVATION_SECRET: "catalog-secret" } as unknown as Env;
+    const post = (body: unknown, authorization = "Bearer catalog-secret") => createWorker({ now: () => now }).fetch(
+      new Request("https://worker.test/__internal/catalog-observation", {
+        method: "POST",
+        headers: { authorization, "content-type": "application/json" },
+        body: JSON.stringify(body),
+      }),
+      privateEnv,
+      createExecutionContext(),
+    );
+
+    expect((await post(catalogObservationBody(), "Bearer wrong")).status).toBe(401);
+    expect((await post(catalogObservationBody({ source: "worker_probe" }))).status).toBe(400);
+    expect((await post(catalogObservationBody({ endpointKey: "raw-url" }))).status).toBe(400);
+    expect((await post({ ...catalogObservationBody(), authorization: "secret" })).status).toBe(400);
+    expect(await env.DB.prepare("SELECT COUNT(*) AS count FROM catalog_observations").first())
+      .toMatchObject({ count: 0 });
+  });
+
   it("accepts an authenticated sanitized buyer refresh and persists it idempotently", async () => {
     const now = 1_788_000_000_000;
     const privateEnv = { ...env, BUYER_OBSERVATION_SECRET: "buyer-observation-test-secret" } as unknown as Env;

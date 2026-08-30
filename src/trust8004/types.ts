@@ -161,6 +161,8 @@ export interface Trust8004Profile {
   imageUrl?: string;
   owner: string;
   metadataUri: string | null;
+  mcpEndpoint: string | null;
+  a2aEndpoint: string | null;
   services: NormalizedService[];
   endpoints: NormalizedEndpoint[];
   declaredCapabilities: string[];

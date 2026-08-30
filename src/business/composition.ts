@@ -31,6 +31,11 @@ import { NotifyQualifiedMainnetFundedJob, PrepareQualifiedMainnetHire, RequestQu
 import { RecordSellerObservation } from "./use-cases/record-seller-observation.ts";
 import { GetFunnelEvidence } from "./use-cases/get-funnel-evidence.ts";
 import { requestQuoteWithObservationSync } from "../data/observation/on-demand-observation-sync.ts";
+import {
+  getCatalogCandidate as loadCatalogCandidate,
+  getCatalogCandidatePage as loadCatalogCandidatePage,
+} from "../data/observation/catalog-candidate-feed.ts";
+import { syncCatalogObservation } from "../data/observation/catalog-observation-sync.ts";
 
 export const listMarketplaceAgents = new ListMarketplaceAgents(marketplaceAgentRepository);
 export const getMarketplaceAgent = new GetMarketplaceAgent(marketplaceAgentRepository);
@@ -88,3 +93,6 @@ export const getAgentEvidencePassport = new GetAgentEvidencePassport(
 export const validateMarketplaceAgent = new ValidateMarketplaceAgent(agentValidationRepository);
 export const getFunnelEvidence = new GetFunnelEvidence(funnelEvidenceRepository);
 export const getWorkerObservations = workerObservationFeed;
+export const getCatalogCandidate = loadCatalogCandidate;
+export const getCatalogCandidatePage = loadCatalogCandidatePage;
+export const recordCatalogObservation = syncCatalogObservation;

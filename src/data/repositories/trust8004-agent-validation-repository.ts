@@ -10,6 +10,7 @@ import { createBscIdentityReader, type BscIdentityReader } from "../../verificat
 import { createProbeBudget } from "../../verification/probe-budget.ts";
 import type { BscVerificationReport, IdentityVerification } from "../../verification/types.ts";
 import { AsyncTtlCache } from "../cache/async-ttl-cache.ts";
+import { syncCatalogObservation, type CatalogObservationSyncInput } from "../observation/catalog-observation-sync.ts";
 
 const VALIDATION_TTL_MS = 60 * 1_000;
 const VALIDATION_TIMEOUT_MS = 30 * 1_000;
@@ -26,6 +27,7 @@ export interface Trust8004AgentValidationRepositoryOptions {
   assessHireability?: (agent: MarketplaceAgent, identity: IdentityVerification) => Promise<HireabilityAssessment>;
   marketplaceOperatedGridSellerAgentId?: string;
   now?: () => number;
+  syncObservation?: (input: CatalogObservationSyncInput) => Promise<{ status: string }>;
 }
 
 function validationInventory(agent: MarketplaceAgent, generatedAt: string, baseUrl: string): BscCandidateInventory {
@@ -142,6 +144,7 @@ export class Trust8004AgentValidationRepository implements AgentValidationReposi
   private readonly assessHireabilityOverride: ((agent: MarketplaceAgent, identity: IdentityVerification) => Promise<HireabilityAssessment>) | undefined;
   private readonly marketplaceOperatedGridSellerAgentId: string | undefined;
   private readonly now: () => number;
+  private readonly syncObservation: (input: CatalogObservationSyncInput) => Promise<{ status: string }>;
 
   constructor(options: Trust8004AgentValidationRepositoryOptions = {}) {
     this.provider = options.provider ?? new Trust8004Provider();
@@ -151,6 +154,7 @@ export class Trust8004AgentValidationRepository implements AgentValidationReposi
     this.assessHireabilityOverride = options.assessHireability;
     this.marketplaceOperatedGridSellerAgentId = options.marketplaceOperatedGridSellerAgentId;
     this.now = options.now ?? Date.now;
+    this.syncObservation = options.syncObservation ?? syncCatalogObservation;
   }
 
   validate(agentId: string): Promise<AgentValidationEvidence | null> {
@@ -193,6 +197,77 @@ export class Trust8004AgentValidationRepository implements AgentValidationReposi
           : {}),
       });
       const activation = await assessHireability(agent, verifiedAgent.identity);
+      const syncs: Array<Promise<{ status: string }>> = [];
+      for (const endpoint of verifiedAgent.mcpEndpoints) {
+        if (endpoint.status === "not_probed") continue;
+        syncs.push(this.syncObservation({
+          source: "marketplace_probe",
+          agentId: agent.agentId,
+          protocol: "mcp",
+          endpoint: endpoint.endpoint,
+          outcome: endpoint.status === "protocol_valid"
+            ? "protocol_valid"
+            : endpoint.status === "timeout"
+              ? "timeout"
+              : endpoint.status === "unsafe_url"
+                ? "unsafe_url"
+                : endpoint.status === "http_error" || endpoint.status === "unauthorized"
+                  ? "http_error"
+                  : "invalid_response",
+          observedAt: endpoint.observedAt ?? generatedAt,
+          expiresAt: endpoint.status === "protocol_valid"
+            ? new Date(Date.parse(endpoint.observedAt ?? generatedAt) + 15 * 60_000).toISOString()
+            : null,
+          httpStatus: null,
+          errorCode: endpoint.error?.code ?? null,
+          durationMs: endpoint.latencyMs ?? 0,
+          details: { capabilityCount: endpoint.observedTools.length, method: "POST" },
+        }));
+      }
+      for (const protocol of activation.protocols) {
+        if (protocol.status === "not_probed") continue;
+        const verified = protocol.status === "protocol_valid" || protocol.status === "quote_verified";
+        syncs.push(this.syncObservation({
+          source: "marketplace_probe",
+          agentId: agent.agentId,
+          protocol: protocol.transport,
+          endpoint: protocol.endpoint,
+          outcome: verified
+            ? "protocol_valid"
+            : protocol.status === "unreachable"
+              ? "unreachable"
+              : protocol.status === "unsafe_url"
+                ? "unsafe_url"
+                : "invalid_response",
+          observedAt: protocol.observedAt,
+          expiresAt: verified
+            ? new Date(Date.parse(protocol.observedAt) + 15 * 60_000).toISOString()
+            : null,
+          httpStatus: null,
+          errorCode: protocol.error?.code ?? null,
+          durationMs: 0,
+          details: {
+            capabilityCount: protocol.agentCardSkills?.length ?? 0,
+            method: protocol.transport === "a2a" ? "POST" : "GET",
+          },
+        }));
+        if (protocol.status === "quote_verified" && protocol.quote) {
+          syncs.push(this.syncObservation({
+            source: "marketplace_probe",
+            agentId: agent.agentId,
+            protocol: "erc8183",
+            endpoint: protocol.endpoint,
+            outcome: "quote_verified",
+            observedAt: protocol.quote.observedAt,
+            expiresAt: new Date(protocol.quote.quoteExpiresAt * 1_000).toISOString(),
+            httpStatus: null,
+            errorCode: null,
+            durationMs: 0,
+            details: { method: "POST" },
+          }));
+        }
+      }
+      await Promise.allSettled(syncs);
       const identity = verifiedAgent.identity;
       const declaredServices = new Map<string, { name: string; hasEndpoint: boolean; tools: string[] }>();
       for (const service of agent.services) {

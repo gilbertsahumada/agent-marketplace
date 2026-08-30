@@ -117,6 +117,22 @@ export function createWorker(dependencies: WorkerDependencies = {}): WorkerEntry
         if (response.ok) await publicCache.put(cacheKey, response.clone());
         return response;
       }
+      if (request.method === "GET" && url.pathname === "/catalog-agent") {
+        const { catalogAgentResponse } = await import("./routes/catalog-agent");
+        return catalogAgentResponse(request, env.DB);
+      }
+      if (request.method === "GET" && url.pathname === "/catalog-agents") {
+        const { catalogAgentsResponse } = await import("./routes/catalog-agents");
+        return catalogAgentsResponse(request, env.DB, now());
+      }
+      if (request.method === "POST" && url.pathname === "/__internal/catalog-observation" && url.search === "") {
+        if (env.BUYER_OBSERVATION_SECRET === undefined) return errorResponse("not_found", 404);
+        if (!await bearerMatches(request.headers.get("authorization"), env.BUYER_OBSERVATION_SECRET)) {
+          return errorResponse("unauthorized", 401);
+        }
+        const { catalogObservationResponse } = await import("./routes/catalog-observation");
+        return catalogObservationResponse(request, env.DB, now());
+      }
       if (request.method === "POST" && url.pathname === "/__internal/on-demand-observation" && url.search === "") {
         if (env.BUYER_OBSERVATION_SECRET === undefined) return errorResponse("not_found", 404);
         if (!await bearerMatches(request.headers.get("authorization"), env.BUYER_OBSERVATION_SECRET)) {

@@ -293,10 +293,12 @@ async function executeWp2Phase(input: PhaseExecution, fetchImpl: typeof fetch): 
   });
   if (input.phase === "header") {
     const { createD1HeaderPersistence, runHeader } = await import("./phases/header");
+    let headerCatalogAgents: CatalogAgent[] = [];
     await runHeader({
       fetchNewestPage: async (limit) => {
         const page = await catalog.listHeader(limit);
         const items = page.items.filter((agent) => agent.registeredAt !== null);
+        headerCatalogAgents = items;
         return {
           items,
           received: page.items.length + page.invalidItems.length,
@@ -317,6 +319,13 @@ async function executeWp2Phase(input: PhaseExecution, fetchImpl: typeof fetch): 
         ? {}
         : { completedQueueScheduledTime: input.completedQueueScheduledTime }),
     });
+    try {
+      const { syncCatalogHeaderCandidates } = await import("./phases/catalog-header-index");
+      const catalogSummary = await syncCatalogHeaderCandidates(input.db, headerCatalogAgents, input.nowMs);
+      console.info("catalog.header.completed", catalogSummary);
+    } catch (error) {
+      console.error("catalog.header.failed", { errorCode: catalogProbeErrorCode(error) });
+    }
     return;
   }
 
@@ -470,6 +479,47 @@ async function executeWp2Phase(input: PhaseExecution, fetchImpl: typeof fetch): 
       return verdict;
     },
   });
+  if (input.config.catalogProbeEnabled) {
+    try {
+      const [
+        { probeCatalogEndpoint, runCatalogProbePhase },
+        { createD1CatalogProbePersistence },
+      ] = await Promise.all([
+        import("./phases/catalog-probe"),
+        import("./phases/catalog-probe-d1"),
+      ]);
+      const catalogPersistence = createD1CatalogProbePersistence(input.db);
+      const catalogSummary = await runCatalogProbePhase({
+        limit: input.config.catalogProbeBatchSize,
+        nowMs: input.nowMs,
+        timeoutMs: Math.min(5_000, input.config.probeTimeoutMs),
+      }, {
+        ...catalogPersistence,
+        probe: (target) => probeCatalogEndpoint(target, {
+          fetchImpl: probeFetch,
+          timeoutMs: Math.min(5_000, input.config.probeTimeoutMs),
+          now: input.now,
+        }),
+      });
+      console.info("catalog.probe.completed", {
+        processedTargets: catalogSummary.processedTargets,
+        outcomes: catalogSummary.outcomes,
+      });
+    } catch (error) {
+      // The legacy seller probe remains the completion gate. Generic catalog
+      // validation is best-effort and records its own attempt only on commit.
+      console.error("catalog.probe.failed", {
+        errorCode: catalogProbeErrorCode(error),
+      });
+    }
+  }
+}
+
+function catalogProbeErrorCode(error: unknown): string {
+  if (error instanceof D1QueryBudgetExceededError) return "CATALOG_D1_QUERY_BUDGET";
+  if (error instanceof D1RowBudgetExceededError) return "CATALOG_D1_ROW_BUDGET";
+  if (error instanceof Error && /^[A-Z][A-Z0-9_]{2,63}$/.test(error.message)) return error.message;
+  return "CATALOG_PROBE_FAILED";
 }
 
 function toHeaderAgent(agent: CatalogAgent, curatedIds: ReadonlySet<string>): HeaderAgent {

@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { AgentProfile } from "@/components/marketplace/agent-profile";
 import { CatalogUnavailable } from "@/components/marketplace/catalog-unavailable";
-import { getAgentEvidencePassport, getWorkerObservations } from "@/src/business/composition";
+import { getAgentEvidencePassport, getCatalogCandidate, getWorkerObservations } from "@/src/business/composition";
 import { MarketplaceAgentNotFoundError, MarketplaceDataUnavailableError } from "@/src/business/errors/marketplace-errors";
 
 export const dynamic = "force-dynamic";
@@ -15,9 +15,10 @@ export async function generateMetadata({ params }: { params: Promise<{ agentId: 
 export default async function AgentPage({ params }: { params: Promise<{ agentId: string }> }) {
   const { agentId } = await params;
   try {
-    const [{ agent, passport }, observations] = await Promise.all([
+    const [{ agent, passport }, observations, catalogCandidate] = await Promise.all([
       getAgentEvidencePassport.executeWithAgent({ agentId }),
       getWorkerObservations(),
+      getCatalogCandidate({ agentId }),
     ]);
     const targets = observations.feed?.targets.filter((candidate) => candidate.agentId === agentId) ?? [];
     return <AgentProfile
@@ -25,6 +26,7 @@ export default async function AgentPage({ params }: { params: Promise<{ agentId:
       observationTargets={targets}
       observationsAvailable={observations.status === "available"}
       passport={passport}
+      catalogCandidate={catalogCandidate}
     />;
   } catch (error) {
     if (error instanceof MarketplaceAgentNotFoundError) notFound();
