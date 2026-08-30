@@ -469,6 +469,8 @@ describe("marketplace presentation rules", () => {
     } }));
 
     expect(screen.getByRole("link", { name: /get fresh quote/i })).toHaveAttribute("href", "/hire/303779");
+    expect(screen.getByText("Quote on request")).toBeInTheDocument();
+    expect(screen.queryByText("Not evaluated")).not.toBeInTheDocument();
   });
 
   it("keeps the quote CTA for an admitted seller that declares only ERC-8183", () => {
@@ -598,6 +600,7 @@ describe("marketplace presentation rules", () => {
     render(createElement(CatalogPage, { data: page, query: { view: "all", sort: "newest" } }));
     expect(screen.getByText("Partial coverage · 80,058 agents")).toBeInTheDocument();
     expect(screen.getByText(/count is trust8004 response\.total for chainId 56 with active=true, fetched /)).toBeInTheDocument();
+    expect(screen.getByText(/Category filters apply only to curated marketplace candidates/)).toBeInTheDocument();
     expect(screen.getByRole("combobox", { name: "Sort agents" })).toHaveValue("newest");
   });
 
@@ -638,6 +641,7 @@ describe("marketplace presentation rules", () => {
     expect(within(breadcrumb).getByRole("link", { name: "Agents" })).toHaveAttribute("href", "/agents");
     expect(within(breadcrumb).getByText("V3 Pools powered by HeyAnon")).toHaveAttribute("aria-current", "page");
     expect(screen.queryByText(/Catalog coverage|Partial coverage/)).not.toBeInTheDocument();
+    expect(screen.getByText("No verified seller.")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Indexed Evidence Passport" })).toBeInTheDocument();
     expect(screen.queryByText("Live marketplace evidence snapshot — not a financial guarantee.")).not.toBeInTheDocument();
     expect(screen.getAllByText("derived")).not.toHaveLength(0);
