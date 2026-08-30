@@ -11,7 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { EvidenceRail } from "./evidence-rail";
 import { Breadcrumb } from "./page-primitives";
 import { ProvenanceBadge } from "./provenance-badge";
-import { agentCardWithObservations, hireabilityLabels, verificationViewModel } from "./view-models";
+import { agentCardWithObservations, hireabilityLabelFor, verificationViewModel } from "./view-models";
 import { VerificationDrift } from "./verification-drift";
 import { EvidencePassportCard } from "./evidence-passport-card";
 
@@ -45,8 +45,8 @@ export function AgentProfile({ agent, observationTargets = [], observationsAvail
               <Badge variant="outline">BSC · #{agent.agentId}</Badge>
               {agent.operator === "marketplace" && <Badge className="border-cyan-400/30 bg-cyan-400/10 text-cyan-200" variant="outline">Marketplace-operated · not official BNB reference</Badge>}
               <Badge className={current.hireability === "hireable" ? "border-primary/40 bg-primary/10 text-primary" : "border-zinc-700 bg-zinc-900 text-zinc-300"} variant="outline">
-                {current.hireability === "hireable" || current.hireability === "quote_stale"
-                  ? hireabilityLabels[current.hireability]
+                {current.hireability !== "listed_only" || current.quoteRequestAvailable
+                  ? hireabilityLabelFor(current)
                   : observationsAvailable ? evaluated ? "Not hireable" : "Not evaluated" : "Verification unavailable"}
               </Badge>
             </div>
@@ -59,9 +59,14 @@ export function AgentProfile({ agent, observationTargets = [], observationsAvail
             <>
               <Button asChild><Link href={`/hire/${agent.agentId}`}>Get fresh quote<ArrowUpRight aria-hidden="true" /></Link></Button>
               {!observationsAvailable && <p className="max-w-xs text-sm text-zinc-500">Automatic verification is unavailable. You can still request a new transactional quote.</p>}
+              {observationsAvailable && current.hireability === "listed_only" && <p className="max-w-xs text-sm text-zinc-500">No current verified quote is held. Continuing requests a fresh ERC-8183 quote that is verified before any wallet interaction.</p>}
             </>
           ) : (
-            <p className="max-w-xs text-sm text-zinc-500">{agent.hireability.reason}</p>
+            <p className="max-w-xs text-sm text-zinc-500">
+              {current.hireability === "listed_only"
+                ? agent.hireability.reason
+                : current.evidence.find((step) => step.kind === "quote")?.detail}
+            </p>
           )}
         </div>
       </div>
