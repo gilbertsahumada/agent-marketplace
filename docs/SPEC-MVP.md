@@ -801,6 +801,14 @@ vencidas ni el snapshot de release como estado actual. Los 60 segundos son el
 TTL de transporte/cache del feed, no la cadencia de PROBE, la vigencia máxima de
 una quote ni una condición para mostrar la entrada al flujo de contratación.
 
+La portada es Mainnet-first. Sin wallet conectada, durante SSR/hidratación, en
+`chainId=56` y en cualquier red no soportada, CTA, copy y tarjeta principal
+apuntan a BSC Mainnet. Solo una wallet conectada que reporte `chainId=97` cambia
+esa isla de UI a la demo y prueba histórica de BSC Testnet. El cambio de red se
+refleja sin recargar. Job Testnet `551` nunca es fallback ni prueba Mainnet; si
+el artefacto canónico Mainnet todavía no contiene un job completado, la tarjeta
+se presenta como flujo de contratación/cotización y no como `Onchain proof`.
+
 ### 5.7 HIRE y TRACK
 
 1. Todo seller ERC-8183 compatible admitido por el allowlist activo muestra una acción funcional para pedir una
@@ -1040,11 +1048,21 @@ type LatestObservation = {
   quoteExpiresAt: number | null;
   signatureMethod: "eip191" | "erc1271" | null;
   errorCode: string | null;
+  httpStatus: number | null;
+  durationMs: number;
 };
 
 type ObservationsResponse = {
   schemaVersion: 1;
   generatedAt: number;
+  monitoring: {
+    lastSchedulerAttemptAt: number | null;
+    lastSchedulerPhase: "header" | "sweep" | "probe" | null;
+    lastSchedulerOutcome: "completed" | "failed" | "duplicate" | "locked" | null;
+    producerEnabled: boolean;
+    consumerEnabled: boolean;
+    cronIntervalMinutes: number;
+  };
   funnel: {
     measuredAt: number;
     blockNumber: string;
@@ -1073,6 +1091,9 @@ type ObservationsResponse = {
     declarationState: "current" | "removed" | "metadata_unavailable";
     currentMetadataUpdatedAt: number | null;
     lastMetadataCheckedAt: number;
+    attemptCount: number;
+    firstProbedAt: number | null;
+    lastProbedAt: number | null;
     latest: LatestObservation | null;
     latestByCategory: Partial<Record<MarketplaceCategory, LatestObservation>>;
     lastQuoteVerifiedAt: number | null;
@@ -1096,11 +1117,14 @@ El Worker rechaza query strings en `/observations` y guarda la respuesta 200
 canónica en Cache API con una clave interna ligada al SHA-256 del allowlist de
 agentes; cambiar el scope nunca puede reutilizar el feed anterior. Un 503 nunca
 se cachea. El marketplace puede reutilizar una
-respuesta HTTP solamente mientras siga dentro de los 60 segundos contados desde
-`generatedAt`, no desde el instante de recepción. No usa `stale-if-error`, no promueve el
-snapshot de release a fallback de observaciones y no conserva una respuesta
-expirada como si fuera estado actual. Este TTL limita la reutilización del feed;
-no impone PROBE cada minuto y no bloquea una nueva quote bajo demanda. Si
+respuesta HTTP en su cache local solamente durante 60 segundos. Después vuelve
+a consultar al Worker. No usa `stale-if-error` ni promueve el snapshot de release
+a fallback de observaciones. Una observación antigua que el Worker devuelve con
+su `probedAt` real sí se conserva como evidencia histórica; nunca se presenta
+como estado actual. Este TTL limita la reutilización del feed; no impone PROBE
+cada minuto y no bloquea una nueva quote bajo demanda. Reachability actual usa
+la ventana operativa de 15 minutos; la quote transaccional sigue requiriendo una
+negociación nueva y su propia ventana de 60 segundos. Si
 Worker/D1 no responde:
 
 Mientras rige el allowlist exacto, las cuatro lecturas del feed se filtran por
@@ -1201,6 +1225,10 @@ kill switch está abierto. Staging y producción usan nombres de Queue distintos
 Vercel configura `OBSERVATIONS_URL` con el endpoint público `/observations` del
 entorno Cloudflare correspondiente; no es secreto y nunca se expone como
 `NEXT_PUBLIC_` porque la lectura ocurre en Server Components.
+Estado medido 2026-08-30: el entorno Production de Vercel todavía no contiene
+`OBSERVATIONS_URL`; la conexión existe solo en el entorno local hasta completar
+el deploy coordinado Worker → Vercel. No se declara WP4 productivo antes de ese
+paso.
 La sincronización de quotes configura además `BUYER_OBSERVATION_ALLOWED_ORIGIN`
 y `BUYER_OBSERVATION_SECRET`; Cloudflare recibe este último como secret del
 Worker. `SHARED_SECRET` permanece reservado para la ruta administrativa de
@@ -1770,7 +1798,10 @@ vacíos y se eliminaron el secreto administrativo efímero y su archivo temporal
 
 Entrega actual: lote 1 en Free sobre el target Grid exacto, contrato sección
 10.1, integración cacheada por un máximo de 60 segundos y degradación
-fail-closed. El snapshot de
+fail-closed. El contrato nuevo expone historial del scheduler, conteo y rango de
+intentos por target, resultado, error, HTTP y duración; su despliegue coordinado
+permanece pendiente y el frontend Production aún no configura
+`OBSERVATIONS_URL`. El snapshot de
 release deja de representar estado actual de agentes: una caída de Worker/D1
 conserva solo declaraciones live de trust8004, sin claims observados actuales.
 Eso no impide que un seller ERC-8183 compatible y admitido reciba una quote nueva bajo
@@ -1786,8 +1817,9 @@ aborta deliberadamente hasta su promoción y medición separadas.
 Gate:
 
 - contract test Worker↔marketplace;
-- cache fresca puede reutilizarse por 60 segundos, pero una respuesta vencida no
-  se sirve como fallback ante error;
+- cache fresca puede reutilizarse por 60 segundos; después se vuelve a consultar.
+  Las observaciones antiguas devueltas por el Worker conservan fecha y se muestran
+  solo como historial, nunca como reachability actual ni fallback inventado;
 - quote expirada degrada sin write;
 - metadata propia cambia/degrada en siguiente observación prioritaria;
 - Worker apagado no rompe páginas;
