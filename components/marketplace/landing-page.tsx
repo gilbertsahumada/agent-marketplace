@@ -1,17 +1,11 @@
 import Link from "next/link";
-import {
-  ArrowRight,
-  CircleAlert,
-  ShieldCheck,
-} from "lucide-react";
+import { ArrowRight, CircleAlert } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { AgentCard } from "./agent-card";
 import { CategoryCard } from "./category-card";
-import { EvidenceRail } from "./evidence-rail";
 import { FunnelSection } from "./funnel-section";
+import { NetworkAwareLandingHero } from "./network-aware-landing-hero";
 import type {
   AgentCardViewModel,
   CategoryCardViewModel,
@@ -44,75 +38,50 @@ export function MarketplaceLanding({
   featuredAgents: AgentCardViewModel[];
   funnel: FunnelSectionViewModel | null;
   publicProof: EvidenceStepViewModel[];
-  proofSummary?: { href: string; network: string; title: string; description: string };
+  proofSummary?: { href: string; network: string; title: string; description: string; evidence: EvidenceStepViewModel[] };
   qualifiedSeller: { agentId: string; name: string } | null;
 }) {
-  const primaryHref = qualifiedSeller
-      ? `/hire/${qualifiedSeller.agentId}`
-      : demoEnabled ? "/demo/erc8183" : "/jobs/testnet/551";
-  const primaryLabel = qualifiedSeller
-      ? `Get fresh quote from ${qualifiedSeller.name}`
-      : demoEnabled ? "Try a verified Testnet hire" : "View a proven hiring result";
+  const admittedCard = featuredAgents.find((agent) =>
+    agent.agentId === qualifiedSeller?.agentId || agent.quoteRequestAvailable === true,
+  ) ?? null;
+  const admittedSeller = qualifiedSeller ?? (admittedCard ? { agentId: admittedCard.agentId, name: admittedCard.name } : null);
+  const mainnetEvidence = proofSummary?.evidence ?? admittedCard?.evidence ?? [
+    { kind: "declared", label: "Declared", status: "unknown", provenance: "declared", detail: "Choose a Mainnet seller to inspect its current declaration." },
+    { kind: "reachable", label: "Reachable", status: "unknown", provenance: "observed", detail: "Reachability is checked for the selected seller." },
+    { kind: "quote", label: "Fresh quote", status: "unknown", provenance: "observed", detail: "A transactional quote is requested only when the buyer asks." },
+    { kind: "job", label: "Job", status: "unknown", provenance: "onchain", detail: "No completed Mainnet job is claimed by this card." },
+  ] satisfies EvidenceStepViewModel[];
+  const mainnetHref = admittedSeller
+    ? `/hire/${admittedSeller.agentId}`
+    : "/agents?view=marketplace&category=grid_trading";
   return (
     <main id="main-content">
-      <section className="border-b border-white/10">
-        <div className="mx-auto grid max-w-7xl gap-10 px-4 py-16 sm:px-6 sm:py-20 lg:grid-cols-[1.08fr_0.92fr] lg:items-center lg:px-8 lg:py-24">
-          <div>
-            <Badge className="border-primary/30 bg-primary/10 text-primary" variant="outline">
-              <img alt="" className="size-3.5" src="/logo/SVG/BNB Chain_Symbol_Yellow.svg" />
-              BNB Smart Chain · Catalogue coverage is partial
-            </Badge>
-            <h1 className="mt-6 max-w-3xl text-4xl font-light leading-[1.05] tracking-[-0.04em] text-white sm:text-5xl lg:text-6xl">
-              Hire an AI agent with evidence, not promises.
-            </h1>
-            <p className="mt-6 max-w-2xl text-base leading-relaxed text-zinc-400 sm:text-lg">
-              Find BSC agents by outcome, compare what is declared with what was observed, and only hire when an ERC-8183 quote can be verified.
-            </p>
-            <div className="mt-8 flex flex-col gap-3 min-[420px]:flex-row">
-              <Button asChild className="h-11 px-5 text-sm" size="lg">
-                <Link href={primaryHref}>
-                  {primaryLabel}
-                  <ArrowRight aria-hidden="true" data-icon="inline-end" />
-                </Link>
-              </Button>
-              <Button asChild className="h-11 px-5 text-sm" size="lg" variant="outline">
-                <Link href="/agents">Explore agents</Link>
-              </Button>
-            </div>
-            {demoEnabled && primaryHref !== "/demo/erc8183" && (
-              <Link className="mt-4 inline-flex items-center gap-2 text-sm text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" href="/demo/erc8183">
-                Try the controlled Testnet hiring demo
-                <ArrowRight aria-hidden="true" className="size-4" />
-              </Link>
-            )}
-          </div>
-
-          <Card className="marketplace-surface gap-5 py-6">
-            <CardHeader className="gap-3 px-6">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <Badge className="border-emerald-400/30 bg-emerald-400/10 text-emerald-300" variant="outline">
-                  <ShieldCheck aria-hidden="true" />
-                  Onchain proof
-                </Badge>
-                <span className="inline-flex items-center gap-1.5 font-stat text-xs text-zinc-400">
-                  <img alt="" className="size-3.5 opacity-80" src="/logo/SVG/BNB Chain_Symbol_White.svg" />
-                  {proofSummary?.network ?? "BSC Testnet · Job #551"}
-                </span>
-              </div>
-              <div>
-                <CardTitle className="text-xl">{proofSummary?.title ?? "One browser-signed hiring lifecycle"}</CardTitle>
-                <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-                  {proofSummary?.description ?? "Every buyer transaction was signed in the browser and the seller reached SUBMITTED. This proves the hiring path works — not the quality of every listed agent."}
-                </p>
-              </div>
-            </CardHeader>
-            <CardContent className="px-6">
-              <EvidenceRail ariaLabel="Evidence for public browser-wallet job 551" steps={publicProof} />
-              <Button asChild className="mt-5" variant="outline"><Link href={proofSummary?.href ?? "/jobs/testnet/551"}>Inspect public proof<ArrowRight aria-hidden="true" /></Link></Button>
-            </CardContent>
-          </Card>
-        </div>
-      </section>
+      <NetworkAwareLandingHero
+        mainnet={{
+          badge: proofSummary ? "Onchain proof" : "Mainnet hiring",
+          network: proofSummary?.network ?? "BSC Mainnet · chain 56",
+          title: proofSummary?.title ?? "Request a fresh Mainnet quote",
+          description: proofSummary?.description ?? "Choose the marketplace-operated Grid seller to negotiate a new ERC-8183 quote. Wallet, token, budget and transaction intent are checked again before any signature.",
+          primaryHref: mainnetHref,
+          primaryLabel: admittedSeller ? `Get fresh Mainnet quote from ${admittedSeller.name}` : "Explore Mainnet agents",
+          detailHref: proofSummary?.href ?? (admittedCard?.href ?? mainnetHref),
+          detailLabel: proofSummary ? "Inspect public proof" : "Inspect Mainnet seller",
+          evidence: mainnetEvidence,
+          evidenceAriaLabel: "Evidence for the Mainnet hiring path",
+        }}
+        testnet={{
+          badge: "Onchain proof",
+          network: "BSC Testnet · Job #551",
+          title: "One browser-signed Testnet hiring lifecycle",
+          description: "Every buyer transaction was signed in the browser and the seller reached SUBMITTED. This proves the Testnet hiring path works — not the quality of every listed agent.",
+          primaryHref: demoEnabled ? "/demo/erc8183" : "/jobs/testnet/551",
+          primaryLabel: demoEnabled ? "Try a verified Testnet hire" : "View Testnet Job #551",
+          detailHref: "/jobs/testnet/551",
+          detailLabel: "Inspect Testnet proof",
+          evidence: publicProof,
+          evidenceAriaLabel: "Evidence for public Testnet browser-wallet job 551",
+        }}
+      />
 
       <FunnelSection funnel={funnel} />
 
