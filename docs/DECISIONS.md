@@ -426,3 +426,25 @@ registered view never applies — pagination links and the search form carried a
 filter that did not exist. The parameter is now dropped outside the marketplace
 view, and the registered-view intro states that category filters apply only to
 curated candidates.
+
+### Review addendum (same day)
+
+A three-agent review of the change found that the quote-on-request rule had
+been applied to the card only: the profile still rendered "Not hireable"
+beside the "Get fresh quote" button, /compare still printed raw enum values,
+and the restored entity-level `hireability.reason` could contradict a
+positive observation badge ("Hireable now" next to prose denying a verified
+quote). Every finding was reproduced by a failing test before being fixed
+(tests/pr40-review-*.test.tsx).
+
+The rule now lives in one exported helper, `hireabilityLabelFor`, consumed by
+card, profile and compare, so the label cannot fork per surface again. The
+profile shows the entity reason only when observations resolve the agent to
+listed_only — structural facts observations cannot contradict — and shows the
+observation-aware quote detail otherwise. The quote-on-request state gained
+its user-facing definition on the profile: continuing requests a fresh
+ERC-8183 quote verified before any wallet interaction.
+
+Also recorded: `/agents?view=all&category=<invalid>` now renders instead of
+returning 404, matching the API route, which already ignored category in the
+registered view; the behavior is pinned by tests.
