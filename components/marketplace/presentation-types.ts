@@ -8,7 +8,7 @@ export type ProvenanceKind = "declared" | "observed" | "onchain" | "derived" | "
 
 export type EvidenceKind = "declared" | "reachable" | "quote" | "job";
 
-export type EvidenceStatus = "verified" | "current" | "unavailable" | "unknown";
+export type EvidenceStatus = "verified" | "failed" | "current" | "unavailable" | "unknown";
 
 export interface EvidenceStepViewModel {
   kind: EvidenceKind;
@@ -34,6 +34,7 @@ export interface AgentCardViewModel {
   agentId: string;
   name: string;
   description: string;
+  imageUrl?: string;
   operator: "third_party" | "marketplace";
   quoteRequestAvailable?: boolean;
   categories: MarketplaceCategory[];
@@ -44,7 +45,27 @@ export interface AgentCardViewModel {
   verification?: VerificationDriftViewModel | null;
   passportState: "registered" | "evaluated" | "hireable" | "job_proven" | "attention";
   passportHref: string;
+  monitoring?: {
+    state: "feed_unavailable" | "no_endpoint_declared" | "not_monitored" | "never_probed" | "probed";
+    source?: "worker" | "release_snapshot";
+    attemptCount?: number;
+    lastAttemptAt?: string;
+    latestOutcome?: WorkerProbeOutcome;
+    latestErrorCode?: string;
+    latestHttpStatus?: number;
+    latestDurationMs?: number;
+  };
 }
+
+export type WorkerProbeOutcome =
+  | "quote_verified"
+  | "protocol_valid"
+  | "quote_rejected"
+  | "quote_invalid"
+  | "reachable"
+  | "unreachable"
+  | "unsafe_url"
+  | "error";
 
 export interface FunnelStageViewModel {
   label: string;
