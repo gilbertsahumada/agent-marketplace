@@ -10,6 +10,8 @@ export interface WorkerObservation {
   observedMetadataUpdatedAt: number | null;
   quoteNegotiatedAt: number | null;
   errorCode: string | null;
+  httpStatus?: number | null;
+  durationMs?: number | null;
 }
 export interface WorkerObservationTarget {
   agentId: string;
@@ -21,12 +23,23 @@ export interface WorkerObservationTarget {
   declarationState: "current" | "removed" | "metadata_unavailable";
   currentMetadataUpdatedAt: number | null;
   lastMetadataCheckedAt: number;
+  attemptCount?: number;
+  firstProbedAt?: number | null;
+  lastProbedAt?: number | null;
   latest: WorkerObservation | null;
   latestByCategory: Partial<Record<ObservationCategory, WorkerObservation>>;
 }
 export interface WorkerObservationFeed {
   schemaVersion: 1;
   generatedAt: number;
+  monitoring?: {
+    lastSchedulerAttemptAt: number | null;
+    lastSchedulerPhase: "header" | "sweep" | "probe" | null;
+    lastSchedulerOutcome: "completed" | "failed" | "duplicate" | "locked" | null;
+    producerEnabled?: boolean;
+    consumerEnabled?: boolean;
+    cronIntervalMinutes?: number;
+  };
   targets: WorkerObservationTarget[];
 }
 export type ObservationFeedResult =

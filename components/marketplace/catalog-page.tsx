@@ -8,7 +8,7 @@ import {
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { AgentCard } from "./agent-card";
+import { CatalogResults } from "./catalog-results";
 import { CoverageBadge, PageIntro, PaginationLinks } from "./page-primitives";
 import { agentCardWithObservations } from "./view-models";
 import { observationTargetsByAgentId, type ObservationFeedResult } from "@/src/business/entities/worker-observations";
@@ -24,6 +24,14 @@ export function CatalogPage({ data, observations = { status: "unavailable", feed
   const allView = query.view === "all";
   const targets = observationTargetsByAgentId(observations.feed);
   const now = Date.now();
+  const cards = data.items.map((agent) => agentCardWithObservations(
+    agent,
+    targets.get(agent.agentId) ?? [],
+    observations.status === "available",
+    now,
+    provenAgentId,
+    query.category,
+  ));
   const hrefForPage = (page: number) => {
     const params = new URLSearchParams({ view: query.view, page: String(page), limit: allView ? "24" : "12" });
     if (query.category) params.set("category", query.category);
@@ -35,22 +43,51 @@ export function CatalogPage({ data, observations = { status: "unavailable", feed
   return (
     <main id="main-content" className="mx-auto w-full max-w-7xl flex-1 px-4 py-12 sm:px-6 lg:px-8">
       <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
-        <PageIntro eyebrow="BSC catalog" title={allView ? "All registered agents" : "Marketplace candidates"}>
+        <PageIntro eyebrow="BSC agent catalog" title={allView ? "All registered agents" : "Hire an agent"}>
           {allView
-            ? `Registered is not evaluated, and not hireable. The count is trust8004 response.total for chainId 56 with active=true, fetched ${new Date(data.fetchedAt).toLocaleString("en-US", { timeZone: "UTC", timeZoneName: "short" })}.`
-            : "A small, evidence-backed inventory selected for the four marketplace outcomes. It does not represent every BSC agent in each category."}
+            ? `Every agent here is an active BSC registration. Marketplace selection is a curated subset; registration alone is not evaluation or hireability. The count is trust8004 response.total for chainId 56 with active=true, fetched ${new Date(data.fetchedAt).toLocaleString("en-US", { timeZone: "UTC", timeZoneName: "short" })}.`
+            : "Marketplace selection is a curated subset of all registered BSC agents, classified by outcome. Hiring status shows which agents can be quoted now."}
         </PageIntro>
-        <CoverageBadge {...(allView ? { total: data.pagination.total } : {})} />
+        <CoverageBadge scope={allView ? "registry" : "marketplace"} total={data.pagination.total} />
       </div>
 
-      <nav aria-label="Catalog view" className="mt-8 flex gap-2 border-b border-white/10 pb-3">
-        <Button asChild variant={!allView ? "default" : "ghost"}><Link aria-current={!allView ? "page" : undefined} href="/agents?view=marketplace">Marketplace candidates</Link></Button>
-        <Button asChild variant={allView ? "default" : "ghost"}><Link aria-current={allView ? "page" : undefined} href="/agents?view=all&page=1&limit=24">All registered agents</Link></Button>
-      </nav>
+      {!allView && observations.status === "unavailable" && (
+        <Alert className="mt-6 border-amber-400/25 bg-amber-400/[0.06]">
+          <AlertTitle>Marketplace monitoring is not connected</AlertTitle>
+          <AlertDescription>
+            Reachability is unknown—not failed. No probe count or last-attempt time can be shown until the observation feed is configured.
+          </AlertDescription>
+        </Alert>
+      )}
+      {!allView && observations.status === "available" && (
+        <Alert className="mt-6 border-cyan-400/20 bg-cyan-400/[0.04]">
+          <AlertTitle>Marketplace monitoring</AlertTitle>
+          <AlertDescription>
+            {observations.feed.monitoring?.producerEnabled === false
+              ? `Automatic monitoring is paused.${observations.feed.monitoring.lastSchedulerAttemptAt ? ` Last Worker run ${new Date(observations.feed.monitoring.lastSchedulerAttemptAt).toLocaleString("en-US", { timeZone: "UTC", timeZoneName: "short" })}.` : ""}`
+              : observations.feed.monitoring?.lastSchedulerAttemptAt
+              ? `Last Worker run ${new Date(observations.feed.monitoring.lastSchedulerAttemptAt).toLocaleString("en-US", { timeZone: "UTC", timeZoneName: "short" })} · ${observations.feed.monitoring.lastSchedulerPhase ?? "unknown phase"} · ${observations.feed.monitoring.lastSchedulerOutcome ?? "unknown outcome"}.`
+              : observations.feed.monitoring
+                ? "The feed is connected, but no scheduler execution has been recorded."
+                : "The feed is connected, but the deployed Worker does not yet expose scheduler history."}
+          </AlertDescription>
+        </Alert>
+      )}
+
+      <section aria-labelledby="agent-scope-heading" className="mt-8 flex flex-col gap-3 border-b border-white/10 pb-4 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <p className="font-eyebrow text-zinc-500" id="agent-scope-heading">Agent scope</p>
+          <p className="mt-1 text-xs text-zinc-400">One public registry, shown at two levels of curation.</p>
+        </div>
+        <nav aria-label="Agent scope" className="flex flex-wrap gap-2">
+          <Button asChild variant={!allView ? "default" : "ghost"}><Link aria-current={!allView ? "page" : undefined} href="/agents?view=marketplace">Marketplace selection</Link></Button>
+          <Button asChild variant={allView ? "default" : "ghost"}><Link aria-current={allView ? "page" : undefined} href="/agents?view=all&page=1&limit=24">All registered agents</Link></Button>
+        </nav>
+      </section>
 
       {!allView && (
         <nav aria-label="Marketplace categories" className="mt-5 flex flex-wrap gap-2">
-          <Button asChild size="sm" variant={!query.category ? "secondary" : "outline"}><Link href="/agents?view=marketplace">All candidates</Link></Button>
+          <Button asChild size="sm" variant={!query.category ? "secondary" : "outline"}><Link href="/agents?view=marketplace">All outcomes</Link></Button>
           {Object.entries(categoryLabels).map(([category, label]) => (
             <Button asChild key={category} size="sm" variant={query.category === category ? "secondary" : "outline"}>
               <Link href={`/agents?view=marketplace&category=${category}`}>{label}</Link>
@@ -65,7 +102,7 @@ export function CatalogPage({ data, observations = { status: "unavailable", feed
         <label className="relative">
           <span className="sr-only">Search agents</span>
           <Search aria-hidden="true" className="absolute left-3 top-3 size-4 text-zinc-500" />
-          <Input className="pl-9" defaultValue={query.q} maxLength={120} name="q" placeholder={allView ? "Search the trust8004 snapshot" : "Search curated candidates"} />
+          <Input className="pl-9" defaultValue={query.q} maxLength={120} name="q" placeholder={allView ? "Search all registered agents" : "Search marketplace selection"} />
         </label>
         {allView && (
           <label>
@@ -81,19 +118,8 @@ export function CatalogPage({ data, observations = { status: "unavailable", feed
         <Button type="submit">Search</Button>
       </form>
 
-      {!allView && <p className="mt-6 text-sm font-medium text-zinc-300">Curated marketplace candidates</p>}
-
       {data.items.length > 0 ? (
-        <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {data.items.map((agent) => <AgentCard agent={agentCardWithObservations(
-            agent,
-            targets.get(agent.agentId) ?? [],
-            observations.status === "available",
-            now,
-            provenAgentId,
-            query.category,
-          )} key={agent.agentId} />)}
-        </div>
+        <CatalogResults agents={cards} registry={allView} />
       ) : query.category === "grid_trading" ? (
         <Alert className="mt-6 border-zinc-800 bg-zinc-950">
           <AlertTitle>No verified Grid Trading agent yet</AlertTitle>

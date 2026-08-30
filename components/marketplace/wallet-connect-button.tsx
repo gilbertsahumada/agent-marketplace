@@ -161,7 +161,7 @@ export function WalletConnectButton({ variant = "full" }: { variant?: "compact" 
             {SUPPORTED_CHAINS.map((chain) => (
               <button
                 className={cn(
-                  "flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm transition-colors",
+                  "flex w-full cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm transition-colors disabled:cursor-not-allowed",
                   chain.id === chainId
                     ? "text-zinc-400"
                     : "text-zinc-200 hover:bg-white/5 hover:text-white",
@@ -183,7 +183,7 @@ export function WalletConnectButton({ variant = "full" }: { variant?: "compact" 
             <div className="my-1 border-t border-white/10" />
 
             <button
-              className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-zinc-400 transition-colors hover:bg-white/5 hover:text-red-400"
+              className="flex w-full cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-zinc-400 transition-colors hover:bg-white/5 hover:text-red-400"
               onClick={() => {
                 disconnect();
                 setIsOpen(false);
@@ -222,7 +222,7 @@ export function WalletConnectButton({ variant = "full" }: { variant?: "compact" 
           {wallet.available ? (
             walletOptions.map(({ connector, name }) => (
               <button
-                className="flex w-full items-center rounded-lg px-2 py-1.5 text-left text-sm text-zinc-200 transition-colors hover:bg-white/5 hover:text-white"
+                className="flex w-full cursor-pointer items-center rounded-lg px-2 py-1.5 text-left text-sm text-zinc-200 transition-colors hover:bg-white/5 hover:text-white"
                 key={connector.uid}
                 onClick={() => {
                   connect({ connector });

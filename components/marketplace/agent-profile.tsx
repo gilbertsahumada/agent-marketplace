@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowUpRight, Bot, CheckCircle2, CircleAlert } from "lucide-react";
+import { ArrowUpRight, CheckCircle2, CircleAlert, ExternalLink } from "lucide-react";
 import type { MarketplaceAgent } from "@/src/business/entities/marketplace-agent";
 import type { AgentEvidencePassport } from "@/src/business/entities/evidence-passport";
 import type { WorkerObservationTarget } from "@/src/business/entities/worker-observations";
@@ -14,6 +14,8 @@ import { ProvenanceBadge } from "./provenance-badge";
 import { agentCardWithObservations, verificationViewModel } from "./view-models";
 import { VerificationDrift } from "./verification-drift";
 import { EvidencePassportCard } from "./evidence-passport-card";
+import { AgentAvatar } from "./agent-avatar";
+import { trust8004AgentHref } from "./agent-card";
 
 function MonoValue({ label, value }: { label: string; value: string | null }) {
   return (
@@ -39,7 +41,7 @@ export function AgentProfile({ agent, observationTargets = [], observationsAvail
       <Breadcrumb current={agent.name} trail={[{ href: "/agents", label: "Agents" }]} />
       <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
         <div className="flex min-w-0 items-start gap-4">
-          <span className="flex size-14 shrink-0 items-center justify-center rounded-2xl border border-white/10 bg-zinc-900"><Bot aria-hidden="true" /></span>
+          <AgentAvatar {...(agent.imageUrl ? { imageUrl: agent.imageUrl } : {})} className="size-14" name={agent.name} />
           <div>
             <div className="flex flex-wrap items-center gap-2">
               <Badge variant="outline">BSC · #{agent.agentId}</Badge>
@@ -53,9 +55,14 @@ export function AgentProfile({ agent, observationTargets = [], observationsAvail
           </div>
         </div>
         <div className="flex flex-col items-start gap-3 lg:items-end">
+          <Button asChild variant="outline">
+            <a href={trust8004AgentHref(agent.agentId)} rel="noopener noreferrer" target="_blank">
+              View on trust8004<ExternalLink aria-hidden="true" />
+            </a>
+          </Button>
           {current.quoteRequestAvailable ? (
             <>
-              <Button asChild><Link href={`/hire/${agent.agentId}`}>Get fresh quote<ArrowUpRight aria-hidden="true" /></Link></Button>
+              <Button asChild><Link href={`/hire/${agent.agentId}`}>Hire agent<ArrowUpRight aria-hidden="true" /></Link></Button>
               {!observationsAvailable && <p className="max-w-xs text-sm text-zinc-500">Automatic verification is unavailable. You can still request a new transactional quote.</p>}
             </>
           ) : (
@@ -74,6 +81,39 @@ export function AgentProfile({ agent, observationTargets = [], observationsAvail
       <Card className="marketplace-surface mt-8">
         <CardHeader><CardTitle>Evidence line</CardTitle></CardHeader>
         <CardContent><EvidenceRail ariaLabel={`Evidence for ${agent.name}`} steps={current.evidence} /></CardContent>
+      </Card>
+
+      <Card className="marketplace-surface mt-5">
+        <CardHeader><CardTitle>Marketplace monitoring</CardTitle></CardHeader>
+        <CardContent>
+          {current.monitoring?.state === "feed_unavailable" ? (
+            <p className="text-sm leading-relaxed text-amber-200">The observation feed is not connected. Reachability is unknown; this does not mean the endpoint failed.</p>
+          ) : current.monitoring?.state === "no_endpoint_declared" ? (
+            <p className="text-sm leading-relaxed text-amber-200">This registration does not declare a service endpoint, so the marketplace has nothing it can probe.</p>
+          ) : current.monitoring?.state === "not_monitored" ? (
+            <p className="text-sm leading-relaxed text-zinc-400">This agent is not included in the Worker's current monitoring scope.</p>
+          ) : current.monitoring?.state === "never_probed" || !current.monitoring ? (
+            <p className="text-sm leading-relaxed text-zinc-400">This agent has never been probed by the marketplace Worker.</p>
+          ) : (
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <MonoValue
+                label={current.monitoring.source === "release_snapshot" ? "Attempts in this release" : "Probe attempts"}
+                value={current.monitoring.attemptCount === undefined ? "Not exposed by deployed Worker" : String(current.monitoring.attemptCount)}
+              />
+              <MonoValue label="Last attempt · UTC" value={current.monitoring.lastAttemptAt ?? null} />
+              <MonoValue label="Latest outcome" value={current.monitoring.latestOutcome?.replaceAll("_", " ") ?? null} />
+              <MonoValue
+                label="Last response"
+                value={[
+                  current.monitoring.latestHttpStatus ? `HTTP ${current.monitoring.latestHttpStatus}` : null,
+                  current.monitoring.latestDurationMs !== undefined ? `${current.monitoring.latestDurationMs} ms` : null,
+                  current.monitoring.latestErrorCode ?? null,
+                  current.monitoring.source === "release_snapshot" ? "Release verification snapshot" : null,
+                ].filter(Boolean).join(" · ") || null}
+              />
+            </div>
+          )}
+        </CardContent>
       </Card>
 
       {verification && <div className="mt-5"><VerificationDrift verification={verification} /></div>}

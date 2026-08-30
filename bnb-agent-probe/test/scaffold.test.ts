@@ -78,7 +78,7 @@ describe("WP1 Wrangler scaffold", () => {
     });
   });
 
-  it("keeps versioned staging isolated and safely disabled", () => {
+  it("keeps product monitoring active only in the isolated staging environment", () => {
     const staging = wrangler.env?.staging;
 
     expect(staging).toMatchObject({
@@ -90,6 +90,7 @@ describe("WP1 Wrangler scaffold", () => {
         D1_QUERIES_PER_RUN: "40",
         D1_ROWS_READ_PER_RUN: "3000",
         D1_ROWS_WRITTEN_PER_RUN: "60",
+        PROBE_TIMEOUT_MS: "10000",
         MAX_CATALOG_RESPONSE_BYTES: "16777216",
       },
       d1_databases: [
@@ -100,9 +101,9 @@ describe("WP1 Wrangler scaffold", () => {
         }),
       ],
     });
-    expect(staging?.vars?.KILL_SWITCH).toBe("1");
-    expect(staging?.vars?.PRODUCER_KILL_SWITCH).toBe("1");
-    expect(staging?.triggers).toEqual({ crons: [] });
+    expect(staging?.vars?.KILL_SWITCH).toBe("0");
+    expect(staging?.vars?.PRODUCER_KILL_SWITCH).toBe("0");
+    expect(staging?.triggers).toEqual({ crons: ["*/5 * * * *"] });
     expect(staging?.queues).toEqual({
       producers: [{ binding: "WP2_QUEUE", queue: "bnb-agent-probe-staging" }],
       consumers: [{

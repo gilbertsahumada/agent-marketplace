@@ -47,6 +47,7 @@ file records only decisions that still govern the submission.
 | 2026-08-29 | Keep general probe egress behind its architecture gate | Active | Independent WP4 review found that wildcard defaults had shipped before the spec's Cloudflare-egress trust boundary was demonstrated in staging | Root, staging and validation return to exact Agent `303779` plus its Grid endpoint. Wildcard also fails config unless `PROBE_GENERAL_EGRESS_APPROVED=1`; even with approval `/observations` returns 503 instead of scanning globally until a bounded feed contract exists. Expansion requires explicit decision, staging evidence and a newly measured bundle |
 | 2026-08-29 | Bind current UI claims to endpoint-level observation evidence | Active | Review reproduced stale protocol claims, metadata/quote drift, order-dependent multi-endpoint selection and indexed trust8004 reachability leaking into the `all` view | Current labels require a <=60 s observation, matching current/observed metadata, a <=60 s `quoteNegotiatedAt`, future expiry and category-specific evidence. All surfaces use the same deterministic target selector; unavailable Worker state cannot become `Reachable · verified` |
 | 2026-08-29 | Separate informative observations from buyer-requested transaction quotes | Active; supersedes observation-gated Hire in `Fail closed when current observations are unavailable` and `Bind current UI claims to endpoint-level observation evidence` | The five-minute Cron rotates `HEADER → SWEEP → PROBE`, so Free executes PROBE nominally every fifteen minutes and, with batch one plus target rotation, cannot support a sixty-second Hire gate. More importantly, a background observation is not the buyer's transaction quote | `/observations` keeps a 60-second HTTP/cache TTL and remains the source of timestamped informative claims only. Every ERC-8183-compatible seller admitted by the active marketplace allowlist exposes `Get fresh quote` even when evidence is old or Worker/D1 is unavailable; every click negotiates and validates a new quote, and the buyer may refresh again before signing. That fresh validated quote plus current onchain checks authorizes `prepare`; Worker, D1 and snapshots never do. A confirmed refresh publishes only sanitized evidence, while sync failure is explicit and does not fabricate public freshness. MCP-only agents remain discoverable but not hireable through the marketplace |
+| 2026-08-30 | Make the landing journey follow the connected BSC chain, with Mainnet as the safe default | Active | The previous absence of a completed canonical Mainnet proof made the hero fall back to Testnet Job 551, so a disconnected Mainnet product appeared to be a Testnet demo | SSR, disconnected wallets, chain 56 and unsupported chains render the Mainnet hiring path; only a connected chain-97 wallet renders the Testnet demo/proof. A pending Mainnet proof is labelled as hiring availability, never as completed onchain proof |
 
 ## Current Mainnet proof boundary
 
@@ -405,3 +406,86 @@ without userinfo whose origin exactly matches
 `BUYER_OBSERVATION_ALLOWED_ORIGIN`. A future public rollout must add a
 distributed per-buyer/origin rate limiter; process-local counters are rejected
 because they cannot enforce a limit across concurrent instances.
+
+## 2026-08-30 — Make hiring the catalogue's primary presentation
+
+The catalogue now presents one dataset through two layouts. Cards remain the
+default because they preserve the marketplace's four-stage evidence story;
+Table is an optional denser comparison of the same page of agents. Switching
+layout never changes the source, pagination or evidence semantics.
+
+`Marketplace selection` and `All registered agents` are two scopes over the
+same public BSC registry, not separate inventories. Marketplace selection is
+the curated outcome subset and sorts a currently hireable agent first. All
+registered agents is the live, paginated set of active registrations returned
+by trust8004; registration never implies evaluation or ERC-8183 hireability.
+The presentation uses explicit labels and
+icons as well as colour. The original `Research only` label was removed after
+it proved to collapse materially different states. Cards now say
+`Monitoring unavailable`, `No endpoint declared`, `Not monitored`, `Never probed`,
+`Verified in release`, `Observed reachable`, or `Last probe failed`; `Hireable on
+Mainnet` and `Registered only` remain distinct. A dated release verification is
+attached to the live catalogue record and may preserve its attempt timestamp,
+but it is labelled historical and never promoted to current Worker reachability.
+
+Compact cards and table rows keep `Declared → Reachable → Quote verified → Job
+proven`, but move provenance, state, detail and timestamps into keyboard-focusable
+tooltips. Full evidence remains visible on the agent profile. Each catalogue
+entry and profile links to `https://trust8004.xyz/agents/56:{agentId}`. Safe
+HTTPS and IPFS image declarations are normalized when trust8004 exposes them;
+the robot avatar remains the honest fallback. No new MVP feature or delayed
+gate is introduced by this presentation change.
+
+The global network context is explicit independently of the catalogue data.
+Before wallet hydration, and whenever no wallet is connected, the UI defaults
+to `BSC Mainnet`. A connected wallet on chain 56 or 97 changes that context to
+`BSC Mainnet` or `BSC Testnet`; every other chain is labelled unsupported rather
+than being presented as Mainnet. This does not relabel Mainnet registry records
+as Testnet records.
+
+## 2026-08-30 — Expose probe history instead of inferring failure
+
+The public observation feed now carries the latest scheduler attempt and, per
+target, total probe attempts, first/last attempt times, HTTP status, duration
+and the normalized error code. It still does not expose signatures, private
+keys or seller payloads. These are historical operational facts; they do not
+extend the 60-second transactional quote window.
+
+Feed availability and quote freshness are deliberately separate. A historical
+observation remains visible with its real timestamp even after the 60-second
+quote window or the 15-minute monitoring cadence; only a fresh buyer-requested
+quote can authorize hiring. Erasing older observations made “not connected”
+indistinguishable from “last checked earlier”, which is the ambiguity this
+decision removes.
+
+Reachability uses the intended 15-minute monitoring window; transactional
+quote validity remains independently bounded to 60 seconds and is refreshed on
+buyer request. A protocol-valid result older than 15 minutes is shown as
+historical evidence, never rewritten as “no valid response observed”.
+
+The catalogue explicitly reports whether the monitoring feed is disconnected
+or when the Worker last ran. An unavailable feed is never rendered as a failed
+endpoint. Agent profiles show the attempt count and last result, while compact
+cards keep the detail in the existing evidence tooltip. The vague `Partial
+coverage` badge is replaced with the actual scope and count: `Marketplace
+selection` or `Public registry`.
+
+This change does not turn the WP2 staging Worker into a continuously scheduled
+production monitor. The checked-in Worker configuration remains safe-off until
+a measured production candidate, cadence and allowlist are deliberately
+activated. The UI must therefore remain honest when no scheduler run exists.
+# 2026-08-30 — Staging marketplace monitoring is an active product feed
+
+- The staging Worker is configured for `HEADER → SWEEP → PROBE` on a five-minute Cron, so the allowlisted marketplace seller is probed approximately every 15 minutes after Cloudflare begins delivering the trigger.
+- Both staging kill switches are off. Production and validation remain safe-off.
+- The Free-plan scope remains explicit: agent `303779`, one endpoint, `PROBE_BATCH_SIZE=1`, and the existing per-invocation budgets.
+- The default marketplace view admits only marketplace-operated sellers or third-party sellers that have independently passed the hireability gate. Research candidates remain discoverable in **All registered agents**.
+- This activation supports current product monitoring; it is not the canonical WP2 24-hour evidence run and must not be presented as one.
+- Deployment `e5377bdf-fa2c-4dd4-995c-2aec747bd927` and schedule `*/5 * * * *` were verified in the control plane at 2026-08-30T19:31Z. Cloudflare delivered the first post-activation tick at 2026-08-30T20:20:16Z, after a longer delay than its documented propagation window.
+- Version `bcf1de57-ff9f-4d34-b4f7-50e8f66c47d2` added sanitized lifecycle logs without changing the existing Cron trigger. The first measured rotation completed HEADER, SWEEP and PROBE on the first Queue delivery with 7, 14 and 10 D1 queries respectively.
+- The PROBE tick scheduled at 2026-08-30T20:30:16Z recorded `quote_verified` for agent `303779` at 2026-08-30T20:30:18.787Z with no error and a 1,692 ms probe duration.
+- Local development and the remote staging Worker use BNB Chain's official public Mainnet RPC, `https://bsc-dataseed.bnbchain.org`. Production and validation remain safe-off and are not activated by this choice.
+- Public-RPC latency can make a freshly returned block appear slightly newer than the timestamp captured before the request. Chain validation therefore permits at most 10 seconds of future clock skew while retaining the 120-second stale-block ceiling; larger future timestamps still fail closed.
+- Staging uses the Free-profile maximum `PROBE_TIMEOUT_MS=10000`. This leaves enough wall-clock time for public-RPC reads and the seller exchange without changing the CPU, D1-query or subrequest budgets.
+- The complete local rotation passed as HEADER, SWEEP and PROBE with 7, 13 and 10 D1 queries. Its PROBE recorded `quote_verified` for agent `303779` with no error in 4,933 ms.
+- Version `0c219da0-09f3-45d7-93aa-8391dd40315a` was promoted to 100% of staging without modifying the existing Cron. The remote PROBE scheduled at 2026-08-30T20:45:16Z completed on its first Queue delivery, used 10 D1 queries and 8 upstream requests, and recorded `quote_verified` with no error in 1,837 ms at block `119025746`.

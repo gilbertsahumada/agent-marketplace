@@ -254,7 +254,15 @@ body {
 }
 
 .evidence-step[data-status="verified"]:not(:last-child)::after {
-  background: #52525b;
+  background: rgb(52 211 153 / 0.8);
+}
+
+.evidence-step[data-status="failed"]:not(:last-child)::after {
+  background: rgb(248 113 113 / 0.8);
+}
+
+.evidence-step[data-status="current"]:not(:last-child)::after {
+  background: rgb(34 211 238 / 0.7);
 }
 
 @media (min-width: 768px) {
@@ -266,6 +274,15 @@ body {
     width: auto;
     height: 1px;
   }
+}
+
+.evidence-rail-summary .evidence-step:not(:last-child)::after {
+  top: 1.25rem;
+  right: calc(-50% + 1.5rem);
+  bottom: auto;
+  left: calc(50% + 1.5rem);
+  width: auto;
+  height: 1px;
 }
 
 :focus-visible {

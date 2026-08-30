@@ -16,6 +16,14 @@ describe("Worker observations contract", () => {
     vi.stubGlobal("fetch", vi.fn(async () => Response.json({
       schemaVersion: 1,
       generatedAt: 1_788_000_000_000,
+      monitoring: {
+        lastSchedulerAttemptAt: 1_787_999_990_000,
+        lastSchedulerPhase: "probe",
+        lastSchedulerOutcome: "completed",
+        producerEnabled: false,
+        consumerEnabled: false,
+        cronIntervalMinutes: 5,
+      },
       funnel: null,
       targets: [{
         agentId: "303779",
@@ -27,6 +35,9 @@ describe("Worker observations contract", () => {
         declarationState: "current",
         currentMetadataUpdatedAt: 1_788_000_000_000,
         lastMetadataCheckedAt: 1_788_000_000_000,
+        attemptCount: 7,
+        firstProbedAt: 1_787_999_000_000,
+        lastProbedAt: 1_788_000_000_000,
         latest: {
           probedAt: 1_788_000_000_000,
           probeCategory: "grid_trading",
@@ -34,6 +45,8 @@ describe("Worker observations contract", () => {
           observedMetadataUpdatedAt: 1_788_000_000_000,
           quoteNegotiatedAt: 1_788_000_000_000,
           quoteExpiresAt: 1_788_000_060_000,
+          httpStatus: 200,
+          durationMs: 184,
           errorCode: null,
         },
         latestByCategory: {},
@@ -42,11 +55,25 @@ describe("Worker observations contract", () => {
 
     await expect(getWorkerObservationFeed()).resolves.toMatchObject({
       status: "available",
-      feed: { targets: [{ agentId: "303779", latest: { outcome: "quote_verified" } }] },
+      feed: {
+        monitoring: {
+          lastSchedulerPhase: "probe",
+          producerEnabled: false,
+          consumerEnabled: false,
+          cronIntervalMinutes: 5,
+        },
+        targets: [{
+          agentId: "303779",
+          attemptCount: 7,
+          firstProbedAt: 1_787_999_000_000,
+          lastProbedAt: 1_788_000_000_000,
+          latest: { outcome: "quote_verified", httpStatus: 200, durationMs: 184 },
+        }],
+      },
     });
   });
 
-  it("rejects a successfully returned but expired observation response", async () => {
+  it("keeps historical observations available when the response is older than the quote window", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(1_788_000_061_000);
     vi.stubEnv("OBSERVATIONS_URL", "https://worker.example/observations?fixture=stale");
@@ -57,10 +84,10 @@ describe("Worker observations contract", () => {
       targets: [],
     })));
 
-    await expect(getWorkerObservationFeed()).resolves.toEqual({ status: "unavailable", feed: null });
+    await expect(getWorkerObservationFeed()).resolves.toMatchObject({ status: "available", feed: { targets: [] } });
   });
 
-  it("does not serve a cached feed past generatedAt plus 60 seconds", async () => {
+  it("does not erase historical monitoring when the local response cache crosses 60 seconds", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(1_788_000_059_000);
     vi.stubEnv("OBSERVATIONS_URL", "https://worker.example/observations?fixture=cache-boundary");
@@ -74,7 +101,7 @@ describe("Worker observations contract", () => {
 
     await expect(getWorkerObservationFeed()).resolves.toMatchObject({ status: "available" });
     vi.setSystemTime(1_788_000_061_000);
-    await expect(getWorkerObservationFeed()).resolves.toEqual({ status: "unavailable", feed: null });
+    await expect(getWorkerObservationFeed()).resolves.toMatchObject({ status: "available", feed: { targets: [] } });
     expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 

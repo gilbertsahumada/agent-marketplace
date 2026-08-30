@@ -162,17 +162,88 @@ function marketplaceData(qualification: "qualified" | "not_qualified", freshness
 }
 
 describe("PR 16 marketplace evidence boundaries", () => {
-  it("never falls back to release qualification when the Worker has no target", () => {
+  it("keeps a current release reachability observation when the Worker has no target", () => {
     const agent = toMarketplaceAgent(marketplaceData("qualified", "current"), { evaluateMarketplace: false });
     const card = agentCardWithObservation(agent, null, true, Date.parse(GENERATED_AT));
 
     expect(card.hireability).toBe("listed_only");
     expect(card.quoteRequestAvailable).toBe(true);
-    expect(card.evidence.find(({ kind }) => kind === "quote")).toMatchObject({
-      status: "unavailable",
-      provenance: "not_probed",
+    expect(card.monitoring).toEqual({
+      state: "probed",
+      source: "release_snapshot",
+      attemptCount: 1,
+      lastAttemptAt: GENERATED_AT,
+      latestOutcome: "protocol_valid",
     });
-    expect(card.evidence.find(({ kind }) => kind === "quote")).not.toHaveProperty("timestamp");
+    expect(card.evidence.find(({ kind }) => kind === "reachable")).toMatchObject({
+      status: "verified",
+      provenance: "observed",
+      timestamp: GENERATED_AT,
+    });
+    expect(card.evidence.find(({ kind }) => kind === "reachable")?.detail)
+      .toContain("historical evidence, not current Worker reachability");
+    expect(card.evidence.find(({ kind }) => kind === "quote")).toMatchObject({
+      status: "unknown",
+      provenance: "derived",
+    });
+  });
+
+  it("distinguishes a missing declaration from an untested endpoint", () => {
+    const data = marketplaceData("not_qualified", "current");
+    data.services = [];
+    data.endpoints = [];
+    data.verification!.tools = {
+      status: "not_probed",
+      probeOutcomes: [],
+      reachability: "not_probed",
+      declaredOnly: [],
+      observedOnly: [],
+      observedAt: null,
+    };
+    const agent = toMarketplaceAgent(data, { evaluateMarketplace: false });
+    const card = agentCardWithObservation(agent, null, true, Date.parse(GENERATED_AT));
+
+    expect(card.monitoring).toEqual({ state: "no_endpoint_declared", attemptCount: 0 });
+    expect(card.evidence.find(({ kind }) => kind === "reachable")?.detail)
+      .toContain("No service endpoint is declared");
+    expect(card.evidence.find(({ kind }) => kind === "quote")?.detail)
+      .toContain("No A2A or ERC-8183 seller endpoint is declared");
+  });
+
+  it("preserves a historical protocol-valid observation without calling it current", () => {
+    const now = Date.parse(GENERATED_AT);
+    const agent = toMarketplaceAgent(marketplaceData("qualified", "current"), { evaluateMarketplace: false });
+    const card = agentCardWithObservation(agent, {
+      agentId: agent.agentId,
+      chainId: 56,
+      transport: "a2a",
+      endpoint: "https://seller.example/grid",
+      name: agent.name,
+      categories: ["grid_trading"],
+      declarationState: "current",
+      currentMetadataUpdatedAt: now - 60_000,
+      lastMetadataCheckedAt: now,
+      attemptCount: 3,
+      firstProbedAt: now - 60 * 60_000,
+      lastProbedAt: now - 16 * 60_000,
+      latest: {
+        probedAt: now - 16 * 60_000,
+        probeCategory: "grid_trading",
+        outcome: "protocol_valid",
+        observedMetadataUpdatedAt: now - 60_000,
+        quoteNegotiatedAt: null,
+        quoteExpiresAt: null,
+        errorCode: null,
+      },
+      latestByCategory: {},
+    }, true, now);
+
+    expect(card.evidence.find(({ kind }) => kind === "reachable")).toMatchObject({
+      status: "unknown",
+      provenance: "observed",
+    });
+    expect(card.evidence.find(({ kind }) => kind === "reachable")?.detail)
+      .toContain("returned a protocol-valid response, but it is older than the 15-minute monitoring window");
   });
 
   it("does not treat a recent quote on a removed target as current", () => {
@@ -188,6 +259,9 @@ describe("PR 16 marketplace evidence boundaries", () => {
       declarationState: "removed",
       currentMetadataUpdatedAt: now,
       lastMetadataCheckedAt: now,
+      attemptCount: 4,
+      firstProbedAt: now - 30_000,
+      lastProbedAt: now,
       latest: {
         probedAt: now,
         probeCategory: "grid_trading",
@@ -202,6 +276,7 @@ describe("PR 16 marketplace evidence boundaries", () => {
 
     expect(card.hireability).toBe("quote_stale");
     expect(card.quoteRequestAvailable).toBe(true);
+    expect(card.monitoring).toMatchObject({ state: "probed", attemptCount: 4 });
     expect(card.evidence.find(({ kind }) => kind === "reachable")?.detail).toContain("no longer declared");
   });
 
@@ -246,6 +321,8 @@ describe("PR 16 marketplace evidence boundaries", () => {
       .toBe("hireable");
     expect(agentCardWithObservation(agent, target, true, now, undefined, "yield_optimisation").hireability)
       .toBe("listed_only");
+    expect(agentCardWithObservation(agent, target, true, now, undefined, "yield_optimisation")
+      .evidence.find(({ kind }) => kind === "reachable")?.status).toBe("failed");
   });
 
   it("does not present an old protocol response as current reachability", () => {
@@ -327,6 +404,37 @@ describe("PR 16 marketplace evidence boundaries", () => {
     } as unknown as WorkerObservationTarget;
 
     expect(agentCardWithObservation(agent, target, true, now).hireability).toBe("quote_stale");
+  });
+
+  it("keeps an observed quote verification green after expiry while requiring a fresh quote to hire", () => {
+    const now = Date.parse(GENERATED_AT);
+    const agent = toMarketplaceAgent(marketplaceData("qualified", "current"), { evaluateMarketplace: false });
+    const target = {
+      agentId: agent.agentId,
+      name: agent.name,
+      categories: ["grid_trading"],
+      declarationState: "current",
+      currentMetadataUpdatedAt: now - 120_000,
+      lastMetadataCheckedAt: now,
+      latest: {
+        probedAt: now - 120_000,
+        probeCategory: "grid_trading",
+        outcome: "quote_verified",
+        observedMetadataUpdatedAt: now - 120_000,
+        quoteNegotiatedAt: now - 120_000,
+        quoteExpiresAt: now - 60_000,
+        errorCode: null,
+      },
+      latestByCategory: {},
+    } as unknown as WorkerObservationTarget;
+
+    const card = agentCardWithObservation(agent, target, true, now);
+    expect(card.hireability).toBe("quote_stale");
+    expect(card.evidence.find(({ kind }) => kind === "quote")).toMatchObject({
+      status: "verified",
+      provenance: "observed",
+      detail: expect.stringContaining("expired"),
+    });
   });
 
   it("selects multiple endpoint observations deterministically", () => {

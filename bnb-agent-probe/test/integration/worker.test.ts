@@ -293,6 +293,13 @@ describe("WP1 in the Workers runtime", () => {
         ) VALUES ('303779', 56, 'a2a', 'https://agent.example/grid', ?,
           'grid_trading', 'unreachable', ?, 'LATE_BACKFILL', 10)`,
       ).bind(now - 8_000, now - 9_000),
+      env.DB.prepare(
+        `INSERT INTO scheduler_attempts (
+          messageId, scheduledTime, attempt, phase, outcome, startedAt,
+          finishedAt, upstreamRequests, d1Queries,
+          rowsReadObservedBeforeLedger, rowsWrittenObservedBeforeLedger
+        ) VALUES ('tick-1', ?, 1, 'probe', 'completed', ?, ?, 1, 12, 4, 1)`,
+      ).bind(now - 1_500, now - 1_400, now - 1_000),
     ]);
 
     const response = await createWorker({ now: () => now }).fetch(
@@ -308,12 +315,28 @@ describe("WP1 in the Workers runtime", () => {
       schemaVersion: 1,
       generatedAt: now,
       funnel: { registeredTotal: 309897, blockNumber: "118441354" },
+      monitoring: {
+        lastSchedulerAttemptAt: now - 1_000,
+        lastSchedulerPhase: "probe",
+        lastSchedulerOutcome: "completed",
+        producerEnabled: false,
+        consumerEnabled: false,
+        cronIntervalMinutes: 5,
+      },
     });
     expect(body.targets).toHaveLength(1);
     expect(body.targets.find((target: any) => target.agentId === "303779")).toMatchObject({
       agentId: "303779",
       declarationState: "current",
-      latest: { probeCategory: "rebalancing", outcome: "unreachable" },
+      attemptCount: 3,
+      firstProbedAt: now - 8_000,
+      lastProbedAt: now - 2_000,
+      latest: {
+        probeCategory: "rebalancing",
+        outcome: "unreachable",
+        durationMs: 5000,
+        errorCode: "SELLER_TIMEOUT",
+      },
       latestByCategory: {
         grid_trading: { outcome: "quote_verified" },
         rebalancing: { outcome: "unreachable" },
