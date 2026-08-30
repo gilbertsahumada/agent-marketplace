@@ -25,7 +25,7 @@ export async function getWorkerObservationFeed(): Promise<ObservationFeedResult>
       if (!response.ok) throw new Error("OBSERVATIONS_UNAVAILABLE");
       return parseFeed(await response.json(), Date.now());
     });
-    assertFresh(feed.generatedAt, Date.now());
+    assertNotFuture(feed.generatedAt, Date.now());
     return { status: "available", feed };
   } catch {
     return { status: "unavailable", feed: null };
@@ -35,10 +35,11 @@ export async function getWorkerObservationFeed(): Promise<ObservationFeedResult>
 function parseFeed(value: unknown, now: number): WorkerObservationFeed {
   if (!record(value) || value.schemaVersion !== 1 || !safeInteger(value.generatedAt)
     || !Array.isArray(value.targets)) throw new Error("OBSERVATIONS_INVALID");
-  assertFresh(value.generatedAt, now);
+  assertNotFuture(value.generatedAt, now);
   return {
     schemaVersion: 1,
     generatedAt: value.generatedAt,
+    ...(record(value.monitoring) ? { monitoring: parseMonitoring(value.monitoring) } : {}),
     targets: value.targets.map(parseTarget),
   };
 }
@@ -78,6 +79,9 @@ function parseTarget(value: unknown): WorkerObservationTarget {
     declarationState: value.declarationState as WorkerObservationTarget["declarationState"],
     currentMetadataUpdatedAt: value.currentMetadataUpdatedAt as number | null,
     lastMetadataCheckedAt: value.lastMetadataCheckedAt,
+    ...(safeInteger(value.attemptCount) ? { attemptCount: value.attemptCount } : {}),
+    firstProbedAt: safeInteger(value.firstProbedAt) ? value.firstProbedAt : null,
+    lastProbedAt: safeInteger(value.lastProbedAt) ? value.lastProbedAt : null,
     latest: value.latest === null ? null : parseObservation(value.latest),
     latestByCategory,
   };
@@ -101,13 +105,36 @@ function parseObservation(value: unknown): WorkerObservation {
       ? value.observedMetadataUpdatedAt : null,
     quoteNegotiatedAt: safeInteger(value.quoteNegotiatedAt) ? value.quoteNegotiatedAt : null,
     errorCode: typeof value.errorCode === "string" ? value.errorCode : null,
+    httpStatus: safeInteger(value.httpStatus) ? value.httpStatus : null,
+    durationMs: safeInteger(value.durationMs) ? value.durationMs : null,
   };
 }
 
-function assertFresh(generatedAt: number, now: number): void {
-  if (generatedAt > now + MAX_FUTURE_CLOCK_SKEW_MS || now - generatedAt > CACHE_TTL_MS) {
-    throw new Error("OBSERVATIONS_STALE");
+function parseMonitoring(value: Record<string, unknown>): NonNullable<WorkerObservationFeed["monitoring"]> {
+  const phases = ["header", "sweep", "probe"];
+  const outcomes = ["completed", "failed", "duplicate", "locked"];
+  const phase = value.lastSchedulerPhase;
+  const outcome = value.lastSchedulerOutcome;
+  if ((value.lastSchedulerAttemptAt !== null && !safeInteger(value.lastSchedulerAttemptAt))
+    || (phase !== null && !phases.includes(String(phase)))
+    || (outcome !== null && !outcomes.includes(String(outcome)))
+    || (value.producerEnabled !== undefined && typeof value.producerEnabled !== "boolean")
+    || (value.consumerEnabled !== undefined && typeof value.consumerEnabled !== "boolean")
+    || (value.cronIntervalMinutes !== undefined && !safeInteger(value.cronIntervalMinutes))) {
+    throw new Error("OBSERVATIONS_INVALID_MONITORING");
   }
+  return {
+    lastSchedulerAttemptAt: value.lastSchedulerAttemptAt as number | null,
+    lastSchedulerPhase: phase as NonNullable<WorkerObservationFeed["monitoring"]>["lastSchedulerPhase"],
+    lastSchedulerOutcome: outcome as NonNullable<WorkerObservationFeed["monitoring"]>["lastSchedulerOutcome"],
+    ...(typeof value.producerEnabled === "boolean" ? { producerEnabled: value.producerEnabled } : {}),
+    ...(typeof value.consumerEnabled === "boolean" ? { consumerEnabled: value.consumerEnabled } : {}),
+    ...(safeInteger(value.cronIntervalMinutes) ? { cronIntervalMinutes: value.cronIntervalMinutes } : {}),
+  };
+}
+
+function assertNotFuture(generatedAt: number, now: number): void {
+  if (generatedAt > now + MAX_FUTURE_CLOCK_SKEW_MS) throw new Error("OBSERVATIONS_FUTURE");
 }
 
 function record(value: unknown): value is Record<string, unknown> {
