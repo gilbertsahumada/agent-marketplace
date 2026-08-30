@@ -801,6 +801,14 @@ vencidas ni el snapshot de release como estado actual. Los 60 segundos son el
 TTL de transporte/cache del feed, no la cadencia de PROBE, la vigencia máxima de
 una quote ni una condición para mostrar la entrada al flujo de contratación.
 
+La portada es Mainnet-first. Sin wallet conectada, durante SSR/hidratación, en
+`chainId=56` y en cualquier red no soportada, CTA, copy y tarjeta principal
+apuntan a BSC Mainnet. Solo una wallet conectada que reporte `chainId=97` cambia
+esa isla de UI a la demo y prueba histórica de BSC Testnet. El cambio de red se
+refleja sin recargar. Job Testnet `551` nunca es fallback ni prueba Mainnet; si
+el artefacto canónico Mainnet todavía no contiene un job completado, la tarjeta
+se presenta como flujo de contratación/cotización y no como `Onchain proof`.
+
 ### 5.7 HIRE y TRACK
 
 1. Todo seller ERC-8183 compatible admitido por el allowlist activo muestra una acción funcional para pedir una

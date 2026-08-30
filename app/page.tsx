@@ -96,17 +96,18 @@ export default async function HomePage() {
   }));
   const txLink = (tx: { hash: string; explorerUrl: string } | undefined) =>
     tx ? { link: { href: tx.explorerUrl, label: `${tx.hash.slice(0, 6)}…${tx.hash.slice(-4)}` } } : {};
-  const publicProof: EvidenceStepViewModel[] = mainnetProof ? [
-    { kind: "declared", label: "Declared", status: "verified", provenance: "declared", detail: "The marketplace Grid seller published deterministic no-custody terms.", timestamp: mainnetProof.capturedAt },
-    { kind: "reachable", label: "Reachable", status: "verified", provenance: "observed", detail: "The seller negotiated and submitted the Grid result.", timestamp: mainnetProof.transactions.submit?.timestamp ?? mainnetProof.capturedAt, ...txLink(mainnetProof.transactions.submit) },
-    { kind: "quote", label: "Quote verified", status: "verified", provenance: "observed", detail: "The job carries the seller-signed canonical quote.", timestamp: mainnetProof.transactions.createJob?.timestamp ?? mainnetProof.capturedAt, ...txLink(mainnetProof.transactions.createJob) },
-    { kind: "job", label: "Job proven", status: "verified", provenance: "onchain", detail: `Job #${mainnetProof.jobId} reached ${mainnetProof.finalState} on BSC Mainnet.`, timestamp: (mainnetProof.transactions.settle ?? mainnetProof.transactions.submit)?.timestamp ?? mainnetProof.capturedAt, ...txLink(mainnetProof.transactions.settle ?? mainnetProof.transactions.submit) },
-  ] : [
+  const publicProof: EvidenceStepViewModel[] = [
     { kind: "declared", label: "Declared", status: "verified", provenance: "declared", detail: "Seller identity and terms were recorded.", timestamp: proof.snapshot.recordedAt },
     { kind: "reachable", label: "Reachable", status: "verified", provenance: "observed", detail: "The seller negotiated and confirmed funding.", timestamp: proof.snapshot.transactions.fund.timestamp, ...txLink(proof.snapshot.transactions.fund) },
     { kind: "quote", label: "Quote verified", status: "verified", provenance: "observed", detail: "The buyer accepted the signed quote.", timestamp: proof.snapshot.transactions.createJob.timestamp, ...txLink(proof.snapshot.transactions.createJob) },
     { kind: "job", label: "Job proven", status: "verified", provenance: "onchain", detail: `Job #${proof.snapshot.jobId} reached SUBMITTED on BSC Testnet, browser-signed.`, timestamp: proof.snapshot.transactions.submit.timestamp, ...txLink(proof.snapshot.transactions.submit) },
   ];
+  const mainnetProofEvidence: EvidenceStepViewModel[] | null = mainnetProof ? [
+    { kind: "declared", label: "Declared", status: "verified", provenance: "declared", detail: "The marketplace Grid seller published deterministic no-custody terms.", timestamp: mainnetProof.capturedAt },
+    { kind: "reachable", label: "Reachable", status: "verified", provenance: "observed", detail: "The seller negotiated and submitted the Grid result.", timestamp: mainnetProof.transactions.submit?.timestamp ?? mainnetProof.capturedAt, ...txLink(mainnetProof.transactions.submit) },
+    { kind: "quote", label: "Quote verified", status: "verified", provenance: "observed", detail: "The job carries the seller-signed canonical quote.", timestamp: mainnetProof.transactions.createJob?.timestamp ?? mainnetProof.capturedAt, ...txLink(mainnetProof.transactions.createJob) },
+    { kind: "job", label: "Job proven", status: "verified", provenance: "onchain", detail: `Job #${mainnetProof.jobId} reached ${mainnetProof.finalState} on BSC Mainnet.`, timestamp: (mainnetProof.transactions.settle ?? mainnetProof.transactions.submit)?.timestamp ?? mainnetProof.capturedAt, ...txLink(mainnetProof.transactions.settle ?? mainnetProof.transactions.submit) },
+  ] : null;
   const now = Date.now();
   const targets = observationTargetsByAgentId(observations.feed);
   const featuredAgents = catalog.items.map((agent) => agentCardWithObservations(
@@ -133,6 +134,7 @@ export default async function HomePage() {
         network: `BSC Mainnet · Job #${mainnetProof.jobId}`,
         title: "One browser-signed Mainnet hiring lifecycle",
         description: "An injected wallet funded a real Grid planning job; its result, transactions, gas and duration are publicly reproducible.",
+        evidence: mainnetProofEvidence!,
       } } : {})}
       qualifiedSeller={qualified ? { agentId: qualified.agentId, name: qualified.name } : null}
     />
