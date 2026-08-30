@@ -15,7 +15,7 @@ import type {
   MarketplaceCategory,
 } from "./presentation-types";
 import { VerificationDrift } from "./verification-drift";
-import { hireabilityLabels } from "./view-models";
+import { hireabilityLabelFor } from "./view-models";
 
 const categoryLabels: Record<MarketplaceCategory, string> = {
   rebalancing: "Rebalancing",
@@ -35,9 +35,7 @@ const passportLabels: Record<AgentCardViewModel["passportState"], string> = {
 export function AgentCard({ agent }: { agent: AgentCardViewModel }) {
   const isHireable = agent.hireability === "hireable";
   const canRequestQuote = agent.quoteRequestAvailable === true;
-  const hireabilityLabel = agent.hireability === "listed_only" && canRequestQuote
-    ? "Quote on request"
-    : hireabilityLabels[agent.hireability];
+  const hireabilityLabel = hireabilityLabelFor(agent);
 
   return (
     <Card className="marketplace-surface marketplace-agent-evidence-card h-full gap-4 py-5" data-passport-state={agent.passportState}>
