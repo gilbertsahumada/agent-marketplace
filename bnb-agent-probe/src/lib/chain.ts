@@ -12,6 +12,7 @@ import { bsc } from "viem/chains";
 
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 const MAX_BLOCK_AGE_SECONDS = 120;
+const MAX_FUTURE_BLOCK_SKEW_SECONDS = 10;
 const MAX_RPC_RESPONSE_BYTES = 64 * 1_024;
 const READ_ONLY_RPC_METHODS = new Set([
   "eth_chainId",
@@ -130,7 +131,9 @@ export async function readProbeChainContext(
   }
   if (block.number === null) throw new BscProbeError("BSC_BLOCK");
   const age = BigInt(input.nowSeconds) - block.timestamp;
-  if (age < 0n || age > BigInt(MAX_BLOCK_AGE_SECONDS)) throw new BscProbeError("BSC_BLOCK_FRESHNESS");
+  if (age < -BigInt(MAX_FUTURE_BLOCK_SKEW_SECONDS) || age > BigInt(MAX_BLOCK_AGE_SECONDS)) {
+    throw new BscProbeError("BSC_BLOCK_FRESHNESS");
+  }
   const agentId = BigInt(input.agentId);
   const contracts = [
     { address: BSC_REGISTRY, abi: registryAbi, functionName: "getAgentWallet", args: [agentId] },
