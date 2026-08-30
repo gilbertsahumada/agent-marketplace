@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { EvidenceRail } from "./evidence-rail";
 import { PageIntro } from "./page-primitives";
-import { agentCardWithObservations, verificationViewModel } from "./view-models";
+import { agentCardWithObservations, hireabilityLabelFor, verificationViewModel } from "./view-models";
 import { VerificationDrift } from "./verification-drift";
 
 const passportLabels = {
@@ -86,7 +86,7 @@ export function ComparePage({ candidates, comparison, observations = { status: "
                     <div className="flex justify-between gap-3"><dt className="text-zinc-500">Endpoint</dt><dd>{passport.evidence.find((step) => step.kind === "reachable")?.status ?? "unavailable"}</dd></div>
                     <div className="flex justify-between gap-3"><dt className="text-zinc-500">Trust</dt><dd>{agent.trustScore.total ?? "—"} <span className="text-zinc-500">· derived</span></dd></div>
                     <div className="flex justify-between gap-3"><dt className="text-zinc-500">Feedback</dt><dd>{agent.reputation.totalFeedbacks}</dd></div>
-                    <div className="flex justify-between gap-3"><dt className="text-zinc-500">Hireability</dt><dd>{passport.hireability.replaceAll("_", " ")}</dd></div>
+                    <div className="flex justify-between gap-3"><dt className="text-zinc-500">Hireability</dt><dd>{hireabilityLabelFor(passport)}</dd></div>
                     <div><dt className="text-zinc-500">Declared capabilities</dt><dd className="mt-1">{agent.capabilities.join(", ") || "None declared"}</dd></div>
                   </dl>
                 </CardContent>
