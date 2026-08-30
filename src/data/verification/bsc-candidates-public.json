@@ -1,9 +1,9 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-08-25T23:39:15.884Z",
-  "staleAfter": "2026-08-28T23:39:15.884Z",
+  "generatedAt": "2026-08-30T19:04:05.250Z",
+  "staleAfter": "2026-09-02T19:04:05.250Z",
   "chainId": 56,
-  "blockNumber": "118089289",
+  "blockNumber": "119012247",
   "registryAddress": "0x8004A169FB4a3325136EB29fA0ceB6D2e539a432",
   "source": "marketplace-verification-release-snapshot",
   "agents": [
@@ -17,17 +17,28 @@
       "operator": "third_party",
       "qualification": {
         "status": "not_qualified",
-        "observedAt": "2026-08-25T23:39:15.884Z",
+        "observedAt": "2026-08-30T19:04:05.250Z",
         "provenance": "derived:marketplace-seller-qualification"
       },
       "identity": {
         "status": "match",
         "mismatchFields": [],
-        "observedAt": "2026-08-25T23:39:15.884Z",
+        "observedAt": "2026-08-30T19:04:05.250Z",
         "provenance": [
           "declared",
           "onchain"
-        ]
+        ],
+        "walletAttribution": {
+          "status": "ambiguous",
+          "candidateCount": 4,
+          "candidateAgentIds": [
+            "45650",
+            "45381",
+            "45422",
+            "43129"
+          ],
+          "provenance": "derived:marketplace-readiness"
+        }
       },
       "tools": {
         "status": "not_probed",
@@ -49,17 +60,28 @@
       "operator": "third_party",
       "qualification": {
         "status": "not_qualified",
-        "observedAt": "2026-08-25T23:39:15.884Z",
+        "observedAt": "2026-08-30T19:04:05.250Z",
         "provenance": "derived:marketplace-seller-qualification"
       },
       "identity": {
         "status": "match",
         "mismatchFields": [],
-        "observedAt": "2026-08-25T23:39:15.884Z",
+        "observedAt": "2026-08-30T19:04:05.250Z",
         "provenance": [
           "declared",
           "onchain"
-        ]
+        ],
+        "walletAttribution": {
+          "status": "ambiguous",
+          "candidateCount": 4,
+          "candidateAgentIds": [
+            "45650",
+            "45381",
+            "45422",
+            "43129"
+          ],
+          "provenance": "derived:marketplace-readiness"
+        }
       },
       "tools": {
         "status": "not_probed",
@@ -81,17 +103,28 @@
       "operator": "third_party",
       "qualification": {
         "status": "not_qualified",
-        "observedAt": "2026-08-25T23:39:15.884Z",
+        "observedAt": "2026-08-30T19:04:05.250Z",
         "provenance": "derived:marketplace-seller-qualification"
       },
       "identity": {
         "status": "match",
         "mismatchFields": [],
-        "observedAt": "2026-08-25T23:39:15.884Z",
+        "observedAt": "2026-08-30T19:04:05.250Z",
         "provenance": [
           "declared",
           "onchain"
-        ]
+        ],
+        "walletAttribution": {
+          "status": "ambiguous",
+          "candidateCount": 4,
+          "candidateAgentIds": [
+            "45650",
+            "45381",
+            "45422",
+            "43129"
+          ],
+          "provenance": "derived:marketplace-readiness"
+        }
       },
       "tools": {
         "status": "observed",
@@ -101,7 +134,7 @@
         "reachability": "verified",
         "declaredOnly": [],
         "observedOnly": [],
-        "observedAt": "2026-08-25T23:39:18.566Z",
+        "observedAt": "2026-08-30T19:04:07.736Z",
         "provenance": "observed"
       }
     },
@@ -116,17 +149,28 @@
       "operator": "third_party",
       "qualification": {
         "status": "not_qualified",
-        "observedAt": "2026-08-25T23:39:15.884Z",
+        "observedAt": "2026-08-30T19:04:05.250Z",
         "provenance": "derived:marketplace-seller-qualification"
       },
       "identity": {
         "status": "match",
         "mismatchFields": [],
-        "observedAt": "2026-08-25T23:39:15.884Z",
+        "observedAt": "2026-08-30T19:04:05.250Z",
         "provenance": [
           "declared",
           "onchain"
-        ]
+        ],
+        "walletAttribution": {
+          "status": "ambiguous",
+          "candidateCount": 4,
+          "candidateAgentIds": [
+            "45650",
+            "45381",
+            "45422",
+            "43129"
+          ],
+          "provenance": "derived:marketplace-readiness"
+        }
       },
       "tools": {
         "status": "not_probed",
@@ -148,17 +192,25 @@
       "operator": "marketplace",
       "qualification": {
         "status": "qualified",
-        "observedAt": "2026-08-25T23:39:15.884Z",
+        "observedAt": "2026-08-30T19:04:12.008Z",
         "provenance": "derived:marketplace-seller-qualification"
       },
       "identity": {
         "status": "match",
         "mismatchFields": [],
-        "observedAt": "2026-08-25T23:39:15.884Z",
+        "observedAt": "2026-08-30T19:04:05.250Z",
         "provenance": [
           "declared",
           "onchain"
-        ]
+        ],
+        "walletAttribution": {
+          "status": "unique",
+          "candidateCount": 1,
+          "candidateAgentIds": [
+            "303779"
+          ],
+          "provenance": "derived:marketplace-readiness"
+        }
       },
       "tools": {
         "status": "not_probed",
