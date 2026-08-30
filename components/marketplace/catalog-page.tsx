@@ -37,7 +37,7 @@ export function CatalogPage({ data, observations = { status: "unavailable", feed
       <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
         <PageIntro eyebrow="BSC catalog" title={allView ? "All registered agents" : "Marketplace candidates"}>
           {allView
-            ? `Registered is not evaluated, and not hireable. The count is trust8004 response.total for chainId 56 with active=true, fetched ${new Date(data.fetchedAt).toLocaleString("en-US", { timeZone: "UTC", timeZoneName: "short" })}.`
+            ? `Registered is not evaluated, and not hireable. Category filters apply only to curated marketplace candidates. The count is trust8004 response.total for chainId 56 with active=true, fetched ${new Date(data.fetchedAt).toLocaleString("en-US", { timeZone: "UTC", timeZoneName: "short" })}.`
             : "A small, evidence-backed inventory selected for the four marketplace outcomes. It does not represent every BSC agent in each category."}
         </PageIntro>
         <CoverageBadge {...(allView ? { total: data.pagination.total } : {})} />
@@ -70,7 +70,7 @@ export function CatalogPage({ data, observations = { status: "unavailable", feed
         {allView && (
           <label>
             <span className="sr-only">Sort agents</span>
-            <select className="h-9 rounded-md border border-input bg-background px-3 text-sm" defaultValue={query.sort ?? DEFAULT_REGISTERED_AGENT_SORT} name="sort">
+            <select className="h-8 rounded-lg border border-input bg-transparent px-2.5 py-1 text-base transition-colors outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 md:text-sm dark:bg-input/30" defaultValue={query.sort ?? DEFAULT_REGISTERED_AGENT_SORT} name="sort">
               <option value="newest">Newest</option>
               <option value="trust_score">Trust score</option>
               <option value="reputation">Reputation</option>
