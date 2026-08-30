@@ -69,10 +69,18 @@ describe("WP3 fixed-block chain context", () => {
     });
   });
 
+  it("allows bounded future block skew caused by public RPC latency", async () => {
+    await expect(readProbeChainContext(reader({
+      getBlock: vi.fn(async () => ({ number: 123n, timestamp: BigInt(NOW + 5) })),
+    }) as never, { agentId: "303779", nowSeconds: NOW })).resolves.toMatchObject({
+      blockTimestamp: BigInt(NOW + 5),
+    });
+  });
+
   it.each([
     ["chain", { getChainId: vi.fn(async () => 97) }],
     ["stale block", { getBlock: vi.fn(async () => ({ number: 123n, timestamp: BigInt(NOW - 121) })) }],
-    ["future block", { getBlock: vi.fn(async () => ({ number: 123n, timestamp: BigInt(NOW + 1) })) }],
+    ["future block", { getBlock: vi.fn(async () => ({ number: 123n, timestamp: BigInt(NOW + 11) })) }],
     ["token", { multicall: vi.fn(async () => [WALLET, OWNER, OWNER, true, 18]) }],
     ["policy", { multicall: vi.fn(async () => [WALLET, OWNER, BSC_PAYMENT_TOKEN, false, 18]) }],
     ["decimals", { multicall: vi.fn(async () => [WALLET, OWNER, BSC_PAYMENT_TOKEN, true, 6]) }],
