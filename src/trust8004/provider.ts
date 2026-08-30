@@ -172,6 +172,7 @@ export class Trust8004Provider {
       agentId: profile.agentId,
       name: profile.name,
       description: profile.description,
+      ...(profile.imageUrl ? { imageUrl: profile.imageUrl } : {}),
       owner: profile.owner,
       metadataUri: profile.metadataUri,
       services,
