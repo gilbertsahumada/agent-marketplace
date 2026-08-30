@@ -468,11 +468,19 @@ La migración `0006_catalog_index.sql` añade:
 - `catalog_observations`: evidencia append-only con `source`, `outcome`, TTL,
   status HTTP, duración, error normalizado y detalles sanitizados.
 
+La migración `0007_bridge_probe_observations.sql` proyecta el historial legacy
+de `probe_observations` hacia `catalog_observations` y crea un trigger
+append-only para observaciones futuras. Así WP3 y el índice v2 cuentan el mismo
+hecho una sola vez en sus respectivas vistas, sin hacer que una observación
+genérica autorice una contratación.
+
 Las rutas públicas son `GET /catalog-agents` y `GET /catalog-agent?agentId=`.
 La lista acepta estado, búsqueda, categoría, página y límite. Los estados
-`a2a`, `mcp`, `quote_capable`, `hireable` y `failed` consideran únicamente
-evidencia de plataforma. `hireable` exige además una configuración de compra
-admitida: observar MCP/A2A o incluso una quote de investigación no basta para
+`a2a`, `mcp`, `quote_capable` y `failed` consideran únicamente evidencia de
+plataforma. `hireable` se deriva de una configuración de compra explícitamente
+admitida y una declaración current; no depende de que la quote informativa del
+Cron siga dentro de su ventana de 60 segundos, porque Hire solicita y valida una
+quote nueva. Observar MCP/A2A o incluso una quote de investigación no basta para
 exponer un CTA que pueda firmar y ejecutar el flujo completo.
 
 La ficha devuelve el total exacto de intentos de plataforma y las últimas 50

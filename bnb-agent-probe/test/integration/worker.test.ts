@@ -124,6 +124,12 @@ describe("WP1 in the Workers runtime", () => {
       total: 1,
       items: [{ agentId: "2", observations: [{ source: "browser_reported" }] }],
     });
+
+    await env.DB.prepare(
+      "UPDATE catalog_agents SET marketplaceConfigured = 1 WHERE agentId = '1'",
+    ).run();
+    const hireable = await app.fetch(new Request("https://worker.test/catalog-agents?status=hireable"), env, context);
+    expect(await hireable.json()).toMatchObject({ total: 1, items: [{ agentId: "1" }] });
   });
 
   it("persists authenticated catalog evidence and exposes its provenance per agent", async () => {

@@ -8,6 +8,7 @@ const NOW = 2_000_000_000_000;
 const ENDPOINT = "https://bnb-agent-marketplace-ruby.vercel.app/grid";
 
 beforeEach(async () => {
+  await env.DB.prepare("DELETE FROM catalog_observations").run();
   await env.DB.prepare("DELETE FROM probe_observations").run();
   await env.DB.prepare("DELETE FROM probe_targets").run();
   await env.DB.prepare("DELETE FROM runtime_state").run();
@@ -286,6 +287,15 @@ describe("WP3 typed D1 persistence", () => {
       probeCategory: "grid_trading",
       signer: "0x1111111111111111111111111111111111111111",
       requestHash: `0x${"a".repeat(64)}`,
+    });
+    expect(await env.DB.prepare(
+      "SELECT agentKey, protocol, source, outcome, expiresAt FROM catalog_observations",
+    ).first()).toEqual({
+      agentKey: "eip155:56:303779",
+      protocol: "a2a",
+      source: "marketplace_probe",
+      outcome: "quote_verified",
+      expiresAt: NOW + 900_000,
     });
     const targetState = await env.DB.prepare(
       "SELECT priority, declarationState, currentMetadataUpdatedAt FROM probe_targets WHERE agentId='303779'",

@@ -176,8 +176,9 @@ The unlock conditions for 6b and 6c are mandatory:
   ERC-8183-compatible seller from receiving a buyer-requested fresh quote. The
   committed snapshot is available only on its explicitly historical route;
 - the stored value is an `OBSERVATION` with its timestamp, never a persisted
-  boolean such as `hireable`; the label is calculated when read from the
-  observation age and current policy.
+  boolean such as `hireable`; `Quote verified` is calculated from observation
+  age, while `Hireable` is calculated from an admitted executable marketplace
+  configuration plus a current declaration and always requests a new quote.
 - Worker/D1 observations are never authority for `prepare` or wallet signatures.
   A new buyer-requested quote is validated independently and may publish only a
   sanitized observation after confirmation; MCP-only declarations remain
@@ -501,3 +502,4 @@ activated. The UI must therefore remain honest when no scheduler run exists.
 - Staging D1 was seeded with the snapshot and measured 29,801 agents, 1,330 endpoints, 30,721 relations and 218 representatives. The bulk import produced 61,854 logical changes but D1 counted 247,408 writes including indexes; future Free bootstrap imports must be split across UTC quota windows.
 - Worker staging version `7b6836c5-bd57-473a-a755-8e9d7d669d71` runs the public BSC RPC and `*/5 * * * *`. Its first post-deploy HEADER tick completed without retry and reported 74 candidates seen, six indexed, 68 deferred, one endpoint and six declarations. Production and validation remain safe-off.
 - The first generic PROBE tick at 2026-08-30T22:30:00Z completed on delivery one and persisted one `network_error`, proving queue-to-D1 operation. It also selected Beefy's generic `web` declaration before its MCP declaration. The following candidate fixes that information-value bug by ordering due targets `erc8183_http → mcp → a2a → web`; the measured staging version remains unchanged until that candidate is explicitly promoted.
+- Preview smoke testing found that Grid's verified WP3 observations remained only in the legacy table, so the v2 profile reported zero platform attempts and the `hireable` filter returned zero. Migration `0007_bridge_probe_observations.sql` now backfills and continuously mirrors those append-only facts into the normalized catalogue. `Hireable` remains stable for an admitted executable seller even after an informational quote expires; clicking it obtains and validates a new transaction quote. MCP-only agents remain non-hireable.

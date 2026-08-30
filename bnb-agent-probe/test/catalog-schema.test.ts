@@ -12,6 +12,10 @@ const migration = readFileSync(
   new URL("../migrations/0006_catalog_index.sql", import.meta.url),
   "utf8",
 );
+const observationBridgeMigration = readFileSync(
+  new URL("../migrations/0007_bridge_probe_observations.sql", import.meta.url),
+  "utf8",
+);
 
 describe("catalog index schema", () => {
   it("models identity, declaration and append-only observation facts separately", () => {
@@ -41,5 +45,11 @@ describe("catalog index schema", () => {
 
   it("exposes no update or delete path for catalog observations", () => {
     expect(migration).not.toMatch(/UPDATE\s+catalog_observations|DELETE\s+FROM\s+catalog_observations/i);
+  });
+
+  it("backfills and continuously mirrors marketplace probe evidence append-only", () => {
+    expect(observationBridgeMigration).toMatch(/INSERT INTO catalog_observations/i);
+    expect(observationBridgeMigration).toMatch(/AFTER INSERT ON probe_observations/i);
+    expect(observationBridgeMigration).not.toMatch(/UPDATE\s+catalog_observations|DELETE\s+FROM\s+catalog_observations/i);
   });
 });

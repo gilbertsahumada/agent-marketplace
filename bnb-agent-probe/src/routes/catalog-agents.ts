@@ -128,7 +128,10 @@ export async function catalogAgentsResponse(
         : status === "mcp" ? freshProtocol("mcp")
           : status === "erc8183" ? erc8183Declaration
             : status === "quote_capable" ? freshQuote
-              : status === "hireable" ? and(freshQuote, eq(catalogAgents.marketplaceConfigured, 1))!
+              : status === "hireable" ? and(
+                eq(catalogAgents.marketplaceConfigured, 1),
+                declarationExists,
+              )!
               : and(failureExists, not(freshValid))!;
   const escapedQuery = q.replaceAll("\\", "\\\\").replaceAll("%", "\\%").replaceAll("_", "\\_");
   const searchCondition = q.length === 0 ? undefined : or(
