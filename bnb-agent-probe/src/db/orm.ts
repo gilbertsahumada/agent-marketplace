@@ -1,8 +1,8 @@
-import { and, count, desc, eq, getTableColumns, inArray, isNull, max, or } from "drizzle-orm";
+import { and, count, desc, eq, getTableColumns, inArray, isNull, max, min, or } from "drizzle-orm";
 import { drizzle, type DrizzleD1Database } from "drizzle-orm/d1";
 
 import type { D1DatabaseLike } from "./client";
-import { funnelSnapshots, probeObservations, probeTargets, runtimeState, schema } from "./schema";
+import { funnelSnapshots, probeObservations, probeTargets, runtimeState, schedulerAttempts, schema } from "./schema";
 
 /**
  * Runtime Drizzle boundary. Schema-derived row types make schema drift fail at
@@ -31,6 +31,16 @@ export interface ObservationFeedRows {
     probeCategory: string | null;
     probedAt: number | null;
   }>;
+  readonly attemptStatsByTarget: Array<{
+    agentId: string;
+    chainId: number;
+    transport: string;
+    endpoint: string;
+    attemptCount: number;
+    firstProbedAt: number | null;
+    lastProbedAt: number | null;
+  }>;
+  readonly lastSchedulerAttempt: SchedulerAttemptRow | null;
 }
 
 export function createDatabase(d1: D1DatabaseLike): Database {
@@ -134,7 +144,14 @@ export async function readObservationFeed(
       probeObservations.probeCategory,
     ).as("latest_observation_times");
 
-  const [funnelRows, targets, latestByTargetCategory, quoteVerifiedAtByTargetCategory] = await Promise.all([
+  const [
+    funnelRows,
+    targets,
+    latestByTargetCategory,
+    quoteVerifiedAtByTargetCategory,
+    attemptStatsByTarget,
+    lastSchedulerAttempts,
+  ] = await Promise.all([
     db.select().from(funnelSnapshots)
       .orderBy(desc(funnelSnapshots.measuredAt), desc(funnelSnapshots.id))
       .limit(1),
@@ -170,6 +187,25 @@ export async function readObservationFeed(
         probeObservations.endpoint,
         probeObservations.probeCategory,
       ),
+    db.select({
+      agentId: probeObservations.agentId,
+      chainId: probeObservations.chainId,
+      transport: probeObservations.transport,
+      endpoint: probeObservations.endpoint,
+      attemptCount: count(),
+      firstProbedAt: min(probeObservations.probedAt),
+      lastProbedAt: max(probeObservations.probedAt),
+    }).from(probeObservations)
+      .where(scopedAgents)
+      .groupBy(
+        probeObservations.chainId,
+        probeObservations.agentId,
+        probeObservations.transport,
+        probeObservations.endpoint,
+      ),
+    db.select().from(schedulerAttempts)
+      .orderBy(desc(schedulerAttempts.finishedAt), desc(schedulerAttempts.id))
+      .limit(1),
   ]);
 
   return {
@@ -177,6 +213,8 @@ export async function readObservationFeed(
     targets,
     latestByTargetCategory,
     quoteVerifiedAtByTargetCategory,
+    attemptStatsByTarget,
+    lastSchedulerAttempt: lastSchedulerAttempts[0] ?? null,
   };
 }
 
