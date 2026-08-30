@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { GitFork } from "lucide-react";
 import type { ReactNode } from "react";
+import { NetworkContextBar } from "./network-context-bar";
 import { MobileNav, PrimaryNav } from "./site-nav";
 import { WalletConnectButton } from "./wallet-connect-button";
 
@@ -93,6 +94,7 @@ export function MarketplaceShell({ children }: { children: ReactNode }) {
         Skip to content
       </a>
       <Header />
+      <NetworkContextBar />
       {children}
       <Footer />
     </div>
