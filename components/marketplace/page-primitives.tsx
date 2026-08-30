@@ -30,11 +30,11 @@ export function PageIntro({ eyebrow, title, children }: { eyebrow: string; title
   );
 }
 
-export function CoverageBadge({ total }: { total?: number }) {
+export function CoverageBadge({ total, scope = "marketplace" }: { total?: number; scope?: "marketplace" | "registry" }) {
   const count = typeof total === "number" ? ` · ${total.toLocaleString()} agents` : "";
   return (
-    <Badge className="border-amber-400/30 bg-amber-400/10 text-amber-200" variant="outline">
-      Partial coverage{count}
+    <Badge className="border-zinc-700 bg-zinc-900 text-zinc-300" variant="outline">
+      {scope === "registry" ? "Public registry" : "Marketplace selection"}{count}
     </Badge>
   );
 }
