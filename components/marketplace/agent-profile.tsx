@@ -11,7 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { EvidenceRail } from "./evidence-rail";
 import { Breadcrumb } from "./page-primitives";
 import { ProvenanceBadge } from "./provenance-badge";
-import { agentCardWithObservations, verificationViewModel } from "./view-models";
+import { agentCardWithObservations, hireabilityLabels, verificationViewModel } from "./view-models";
 import { VerificationDrift } from "./verification-drift";
 import { EvidencePassportCard } from "./evidence-passport-card";
 
@@ -45,7 +45,9 @@ export function AgentProfile({ agent, observationTargets = [], observationsAvail
               <Badge variant="outline">BSC · #{agent.agentId}</Badge>
               {agent.operator === "marketplace" && <Badge className="border-cyan-400/30 bg-cyan-400/10 text-cyan-200" variant="outline">Marketplace-operated · not official BNB reference</Badge>}
               <Badge className={current.hireability === "hireable" ? "border-primary/40 bg-primary/10 text-primary" : "border-zinc-700 bg-zinc-900 text-zinc-300"} variant="outline">
-                {current.hireability === "hireable" ? "Hireable now" : current.hireability === "quote_stale" ? "Quote refresh required" : observationsAvailable ? evaluated ? "Not hireable" : "Not evaluated" : "Verification unavailable"}
+                {current.hireability === "hireable" || current.hireability === "quote_stale"
+                  ? hireabilityLabels[current.hireability]
+                  : observationsAvailable ? evaluated ? "Not hireable" : "Not evaluated" : "Verification unavailable"}
               </Badge>
             </div>
             <h1 className="mt-3 text-3xl font-light tracking-tight text-white sm:text-4xl">{agent.name}</h1>
@@ -59,7 +61,7 @@ export function AgentProfile({ agent, observationTargets = [], observationsAvail
               {!observationsAvailable && <p className="max-w-xs text-sm text-zinc-500">Automatic verification is unavailable. You can still request a new transactional quote.</p>}
             </>
           ) : (
-            <p className="max-w-xs text-sm text-zinc-500">{current.evidence.find((step) => step.kind === "quote")?.detail}</p>
+            <p className="max-w-xs text-sm text-zinc-500">{agent.hireability.reason}</p>
           )}
         </div>
       </div>
