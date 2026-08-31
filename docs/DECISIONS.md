@@ -417,6 +417,12 @@ observation was `recorded`, only some were recorded, publishing failed, or the
 server/Worker secret pair was not configured; a successful protocol check must
 never imply that shared monitoring was updated.
 
+Validation also distinguishes admission from evidence. A third-party seller
+that returns a valid quote is a `quote_verified_candidate` and remains blocked
+until manual marketplace admission. A seller already configured by the
+marketplace reports `marketplace_configured` and `canHire: true`; validation
+does not re-promote it, and Hire still requests a new quote before signatures.
+
 ## 2026-08-30 — Make hiring the catalogue's primary presentation
 
 The catalogue now presents one dataset through two layouts. Cards remain the

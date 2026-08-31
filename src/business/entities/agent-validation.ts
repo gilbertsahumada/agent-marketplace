@@ -69,12 +69,12 @@ export interface AgentValidationReport {
     note: string;
   };
   promotion: {
-    status: "manual_review_required";
+    status: "already_marketplace_configured" | "manual_review_required";
     note: string;
   };
   qualification: {
-    status: "quote_verified_candidate" | "not_qualified";
-    canHire: false;
+    status: "marketplace_configured" | "quote_verified_candidate" | "not_qualified";
+    canHire: boolean;
     note: string;
   };
   evidence: {

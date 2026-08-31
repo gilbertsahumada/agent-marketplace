@@ -84,6 +84,19 @@ describe("ValidateMarketplaceAgent", () => {
     });
   });
 
+  it("reports an already configured marketplace seller as hireable without treating validation as promotion", async () => {
+    const base = evidence();
+    const report = await new ValidateMarketplaceAgent(
+      { validate: async () => evidence({ agent: { ...base.agent, operator: "marketplace" } }) },
+      () => Date.parse("2026-08-26T10:05:00.000Z"),
+    ).execute({ agentId: "303779" });
+
+    expect(report.promotion).toMatchObject({ status: "already_marketplace_configured" });
+    expect(report.qualification).toMatchObject({ status: "marketplace_configured", canHire: true });
+    expect(report.qualification.note).toMatch(/fresh ERC-8183 quote before signing/i);
+    expect(report.passport.state).toBe("hireable");
+  });
+
   it("keeps failed or unprobed endpoints visible and does not invent quote evidence", async () => {
     const report = await new ValidateMarketplaceAgent(
       { validate: async () => evidence({

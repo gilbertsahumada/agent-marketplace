@@ -947,6 +947,13 @@ resultado de persistencia (`recorded`, `partial`, `failed`, `not_configured` o
 `not_attempted`) y sus conteos. La UI no puede decir ni insinuar que el índice
 compartido fue actualizado si ese estado no es `recorded`.
 
+La respuesta separa además admisión de validación. Un tercero que responde una
+quote válida queda como `quote_verified_candidate`, con `canHire=false`, hasta
+una admisión manual; guardar evidencia nunca lo promueve. Un seller que ya
+estaba configurado por el marketplace devuelve `marketplace_configured` y
+`canHire=true`, sin afirmar que la validación lo promovió. En ambos casos el
+CTA Hire pide y valida una quote nueva antes de solicitar firmas.
+
 La autoridad para continuar a `prepare` y pedir firmas es la quote transaccional
 recién solicitada y validada, junto con las relecturas onchain requeridas. Ni una
 fila D1, ni `/observations`, ni el snapshot de release autorizan Hire. Si

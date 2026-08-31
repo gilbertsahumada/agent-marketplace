@@ -230,8 +230,8 @@ function validationReport(): AgentValidationReport {
       declaredServices: [{ name: "A2A", hasEndpoint: true, tools: [] }],
     },
     classification: { status: "not_assigned", categories: [], note: "Validation does not assign marketplace categories." },
-    promotion: { status: "manual_review_required", note: "Validation evidence never promotes an agent automatically." },
-    qualification: { status: "quote_verified_candidate", canHire: false, note: "Manual review is required before Hire." },
+    promotion: { status: "already_marketplace_configured", note: "The seller was configured before validation." },
+    qualification: { status: "marketplace_configured", canHire: true, note: "Hire requests a fresh quote before signing." },
     evidence: {
       identity: {
         status: "match",
