@@ -35,12 +35,18 @@ export interface CatalogCandidateObservation {
   errorCode: string | null;
   durationMs: number;
   details: unknown;
+  /** Present on normalized v2 rows; omitted by the legacy compatibility feed. */
+  validationKind?: "reachability" | "protocol" | "quote" | "chain";
+  verificationLevel?: "user_observed" | "platform_observed" | "cryptographic" | "onchain";
+  artifactHash?: string | null;
 }
 
 export interface CatalogCandidate {
   agentKey: string;
   agentId: string;
   chainId: 56;
+  owner: string | null;
+  metadataUri: string | null;
   name: string | null;
   description: string | null;
   imageUrl: string | null;

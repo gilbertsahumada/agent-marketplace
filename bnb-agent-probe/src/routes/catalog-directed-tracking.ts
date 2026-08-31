@@ -127,6 +127,7 @@ export async function createCatalogDirectedTrackingResponse(
     }),
     db.insert(catalogAgents).values({
       agentKey, agentId: input.agentId, chainId: 56, name: null, description: null, imageUrl: null,
+      owner: null, metadataUri: null,
       categoriesJson: "[]", marketplaceConfigured: 0, metadataState: "other", indexState: "current",
       registeredAt: now, blockNumber: proof.blockNumber.toString(), firstSeenAt: now, lastSeenAt: now,
       priority: 100, metadataVersion: placeholderVersion, metadataObservedAt: null, policyVersion: 2,

@@ -161,6 +161,15 @@ function registeredAt(value: unknown, path: string): number | null {
   throw new CatalogSchemaError(path, "non-negative timestamp or ISO timestamp", value);
 }
 
+function blockNumber(value: unknown, path: string): string | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value === "number" && Number.isSafeInteger(value) && value >= 0) return String(value);
+  if (typeof value === "string" && /^\d+$/.test(value) && value.length <= 78) {
+    try { return BigInt(value).toString(); } catch { /* fall through */ }
+  }
+  throw new CatalogSchemaError(path, "non-negative integer string or number", value);
+}
+
 export function parseCatalogAgent(value: unknown, path = "item"): CatalogAgent {
   const item = record(value, path);
   const rawChainId = typeof item.chainId === "string" && /^\d+$/.test(item.chainId)
@@ -198,6 +207,12 @@ export function parseCatalogAgent(value: unknown, path = "item"): CatalogAgent {
   return {
     chainId: BSC_CHAIN_ID,
     agentId: numericAgentId(item.agentId, `${path}.agentId`),
+    owner: nullableString(item.ownerAddress ?? item.owner, `${path}.owner`),
+    metadataUri: nullableString(
+      item.metadataUri ?? item.agentURI ?? item.ipfsUri,
+      `${path}.metadataUri`,
+    ),
+    blockNumber: blockNumber(item.blockNumber, `${path}.blockNumber`),
     name: nullableString(item.name, `${path}.name`),
     description: nullableString(item.description, `${path}.description`)?.slice(0, 2_048) ?? null,
     imageUrl: normalizedImage(item.imageUrl ?? item.image ?? item.avatar ?? item.logo),

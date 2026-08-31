@@ -61,6 +61,11 @@ export async function normalizeCatalogResource(
 
 export async function catalogMetadataVersion(agent: CatalogAgent): Promise<string> {
   return sha256(JSON.stringify({
+    owner: agent.owner,
+    metadataUri: agent.metadataUri,
+    blockNumber: agent.blockNumber,
+    registeredAt: agent.registeredAt,
+    metadataUpdatedAt: agent.metadataUpdatedAt,
     name: agent.name,
     description: agent.description ?? null,
     imageUrl: agent.imageUrl ?? null,

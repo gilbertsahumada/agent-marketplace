@@ -1,7 +1,7 @@
 import type { CatalogCandidate } from "@/src/business/entities/catalog-candidate";
 import type { AgentCardViewModel, EvidenceStepViewModel } from "./presentation-types";
 
-const PLATFORM_SOURCES = new Set(["marketplace_probe", "worker_probe", "chain_index"]);
+const PLATFORM_SOURCES = new Set(["marketplace_probe", "worker_probe", "buyer_refresh", "migration"]);
 const FAILURE_OUTCOMES = new Set([
   "http_error", "timeout", "network_error", "invalid_response", "unsafe_url", "quote_rejected", "unreachable", "error",
 ]);
@@ -18,18 +18,26 @@ export function catalogCandidateCard(
   const browser = candidate.observations
     .filter((observation) => observation.source === "browser_reported")
     .sort((left, right) => right.observedAt - left.observedAt || right.id - left.id);
+  const quote = candidate.observations
+    .filter((observation) => (observation.validationKind === "quote"
+      && observation.verificationLevel === "cryptographic")
+      || (observation.validationKind === undefined
+        && PLATFORM_SOURCES.has(observation.source)
+        && (observation.outcome === "quote_verified"
+          || observation.outcome === "quote_rejected"
+          || observation.protocol === "erc8183")))
+    .sort((left, right) => right.observedAt - left.observedAt || right.id - left.id)[0];
   const transport = platform.find((observation) => observation.outcome === "protocol_valid"
     || observation.outcome === "quote_verified"
-    || (observation.protocol !== "erc8183" && FAILURE_OUTCOMES.has(observation.outcome)));
+    || (observation.protocol !== "erc8183" && FAILURE_OUTCOMES.has(observation.outcome)))
+    ?? (quote?.validationKind === "quote" && quote.verificationLevel === "cryptographic" ? quote : undefined);
   const freshTransport = (transport?.outcome === "protocol_valid" || transport?.outcome === "quote_verified")
     && transport.expiresAt !== null && transport.expiresAt > now;
-  const quote = platform.find((observation) => observation.outcome === "quote_verified"
-    || observation.protocol === "erc8183");
   const freshQuote = quote?.outcome === "quote_verified"
     && quote.expiresAt !== null && quote.expiresAt > now;
-  const canRequestQuote = candidate.marketplaceConfigured
-    && candidate.declarations.some(({ protocol, safety }) => safety === "safe"
-      && (protocol === "a2a" || protocol === "erc8183_http"));
+  // v2 state is the only commerce authority.  `marketplaceConfigured` is a
+  // compatibility column and must never make an agent hireable by itself.
+  const canRequestQuote = candidate.state?.canRequestQuote === true;
   const latest = platform[0];
   const evidence: EvidenceStepViewModel[] = [
     {
@@ -84,13 +92,14 @@ export function catalogCandidateCard(
     name: candidate.name ?? `Agent #${candidate.agentId}`,
     description: candidate.description ?? "No description declared.",
     ...(candidate.imageUrl ? { imageUrl: candidate.imageUrl } : {}),
-    operator: candidate.marketplaceConfigured ? "marketplace" : "third_party",
+    operator: candidate.admission?.state === "admitted" ? "marketplace" : "third_party",
     quoteRequestAvailable: canRequestQuote,
     categories: candidate.categories,
     href: `/agents/${candidate.agentId}`,
     hireability: canRequestQuote ? (freshQuote ? "hireable" : "quote_stale") : "listed_only",
     evidence,
-    passportState: freshQuote && canRequestQuote ? "hireable" : platform.length > 0 ? "evaluated" : "registered",
+    passportState: freshQuote && candidate.state?.canPrepareHire === true ? "hireable"
+      : platform.length > 0 ? "evaluated" : "registered",
     passportHref: `/agents/${candidate.agentId}/passport`,
     monitoring: latest ? {
       state: "probed",

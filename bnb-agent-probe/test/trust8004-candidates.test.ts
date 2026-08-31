@@ -8,6 +8,9 @@ function agent(overrides: Partial<CatalogAgent> = {}): CatalogAgent {
   return {
     chainId: 56,
     agentId: "42",
+    owner: null,
+    metadataUri: null,
+    blockNumber: null,
     name: null,
     registeredAt: null,
     metadataUpdatedAt: null,

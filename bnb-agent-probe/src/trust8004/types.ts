@@ -22,6 +22,10 @@ export interface CatalogIndexEndpoint {
 export interface CatalogAgent {
   chainId: typeof BSC_CHAIN_ID;
   agentId: string;
+  /** Identity and URI as declared by the trust8004 public catalog. */
+  owner: string | null;
+  metadataUri: string | null;
+  blockNumber: string | null;
   name: string | null;
   description?: string | null;
   imageUrl?: string | null;

@@ -18,15 +18,17 @@ This specification describes the next infrastructure migration. The measured WP2
 
 Local evidence captured on 2026-08-31:
 
-- all additive migrations `0008` through `0013` apply successfully to the Wrangler local D1;
+- all additive migrations `0008` through `0014` apply successfully to the Wrangler local D1;
+  migration `0014_catalog_agent_identity.sql` preserves the declared owner,
+  metadata URI and registration block alongside the normalized catalog row;
 - Worker typecheck and manifest validation pass;
-- 484 unit tests and 89 Miniflare integration tests pass in
+- 484 unit tests and 92 Miniflare integration tests pass in
   `bnb-agent-probe` (`vitest.config.ts` and `vitest.worker.config.ts`);
 - production, staging and validation dry-run bundles build successfully;
 - application-side endpoint policy, controller and observation-sync coverage passes
   23 focused tests (`browser-endpoint-validation.test.ts`,
   `marketplace-controllers.test.ts` and `catalog-observation-sync.test.ts`);
-- the complete application gate passes: typecheck, 498 tests across 57 files and
+- the complete application gate passes: typecheck, 505 tests across 57 files and
   the production CLI/Web build. The BNB Agent SDK still emits its known dynamic
   dependency warning during bundling; the bundle completes successfully.
 
@@ -175,12 +177,15 @@ The Queue is transport, not the full worklist. D1 stores pending/due work and le
 
 ## 7. D1 normalized model
 
-Use additive migration first. Suggested migration name: `0008_catalog_resource_roles_and_validation_jobs.sql`.
+Use additive migrations first. The implementation currently applies `0008` through
+`0014`; `0014_catalog_agent_identity.sql` adds the declared identity provenance
+columns without rewriting existing rows.
 
 ### 7.1 `catalog_agents`
 
 Retain identity and discovery columns. Required additions/normalization:
 
+- `owner`, `metadataUri` and `blockNumber` copied from the trust8004 catalog;
 - `metadataVersion` or metadata hash.
 - `metadataObservedAt`.
 - `policyVersion` used for the derived projection.
@@ -661,7 +666,9 @@ After replacement tests pass, remove:
 - Browser endpoint-test actions for social and human-facing resources.
 - Hard-coded agent-specific scheduled quote logic once general admission/on-demand quote paths cover it.
 - Duplicate observation writes/readers and transitional bridge code after v2 parity.
-- `marketplaceConfigured`-based hireability logic.
+- `marketplaceConfigured`-based hireability logic. During the compatibility window
+  the legacy storage field may remain, but v2 cards, Passport and API capabilities
+  must read `catalog_agent_admission`/derived state only.
 - Queries where any historical failure overrides a later effective success.
 - Obsolete bootstrap/rotation code once the Worker is the sole owner and tests prove no import remains.
 - Obsolete summary types that no longer describe actual phase output.

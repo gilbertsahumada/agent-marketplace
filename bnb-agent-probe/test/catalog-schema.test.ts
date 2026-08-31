@@ -32,6 +32,10 @@ const observationSourceMigration = readFileSync(
   new URL("../migrations/0013_catalog_observation_sources.sql", import.meta.url),
   "utf8",
 );
+const identityMigration = readFileSync(
+  new URL("../migrations/0014_catalog_agent_identity.sql", import.meta.url),
+  "utf8",
+);
 
 describe("catalog index schema", () => {
   it("models identity, declaration and append-only observation facts separately", () => {
@@ -49,7 +53,8 @@ describe("catalog index schema", () => {
         const declaredInBase = new RegExp(`(^|\\n)\\s*${column.name}\\s`, "m").test(migrationTable!);
         const addedLater = new RegExp(`ALTER TABLE ${name} ADD COLUMN ${column.name}\\s`, "m").test(normalizationMigration);
         const addedForLeases = new RegExp(`ALTER TABLE ${name} ADD COLUMN ${column.name}\\s`, "m").test(endpointLeaseMigration);
-        expect(declaredInBase || addedLater || addedForLeases, `missing migration column ${name}.${column.name}`).toBe(true);
+        const addedForIdentity = new RegExp(`ALTER TABLE ${name} ADD COLUMN ${column.name}\\s`, "m").test(identityMigration);
+        expect(declaredInBase || addedLater || addedForLeases || addedForIdentity, `missing migration column ${name}.${column.name}`).toBe(true);
       }
     }
   });

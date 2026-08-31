@@ -6,6 +6,17 @@ beforeEach(async () => {
 });
 
 describe("catalog normalization migration", () => {
+  it("keeps declared identity provenance columns available after additive migration", async () => {
+    await env.DB.prepare(`INSERT INTO catalog_agents (
+      agentKey, agentId, chainId, owner, metadataUri, name, metadataState,
+      firstSeenAt, lastSeenAt
+    ) VALUES ('eip155:56:700', '700', 56,
+      '0x1111111111111111111111111111111111111111', 'ipfs://metadata/700', 'Agent 700', 'ok', 1, 1)`).run();
+
+    await expect(env.DB.prepare("SELECT owner, metadataUri FROM catalog_agents WHERE agentId = '700'").first())
+      .resolves.toEqual({ owner: "0x1111111111111111111111111111111111111111", metadataUri: "ipfs://metadata/700" });
+  });
+
   it("enforces append-only observations in D1", async () => {
     await env.DB.prepare(`INSERT INTO catalog_observations (
       agentKey, protocol, source, outcome, observedAt, durationMs, detailsJson,

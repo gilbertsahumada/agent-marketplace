@@ -299,9 +299,22 @@ describe("GetAgentEvidencePassport", () => {
     } as unknown as MarketplaceAgent;
     const candidate: CatalogCandidate = {
       agentKey: "eip155:56:303779", agentId: "303779", chainId: 56,
+      owner: null, metadataUri: null,
       name: "Marketplace Grid Planner", description: null, imageUrl: null,
       categories: ["grid_trading"], marketplaceConfigured: true, metadataState: "ok",
       registeredAt: null, blockNumber: null, priority: 100,
+      state: {
+        operationalStatus: "platform_reachable",
+        freshness: "live",
+        commerceStatus: "admitted",
+        quoteStatus: "verified_fresh",
+        buyerAction: "prepare_hire",
+        canRequestBrowserValidation: true,
+        canRequestInfrastructureValidation: true,
+        canRequestQuote: true,
+        canPrepareHire: true,
+        blockingReasons: [],
+      },
       declarations: [{ endpointKey: "a".repeat(64), protocol: "a2a", endpoint: "https://seller.example/a2a",
         originKey: "b".repeat(64), safety: "safe", safetyReason: null, representativeAgentKey: null,
         lastProbedAt: now, nextProbeAt: now + 900_000, consecutiveFailures: 0, priority: 100 }],
@@ -325,6 +338,83 @@ describe("GetAgentEvidencePassport", () => {
       provenance: "observed",
       hireabilityStatus: "quote_verified",
     });
+  });
+
+  it("fails closed when only the legacy marketplace flag is present", async () => {
+    const now = Date.parse("2026-08-31T10:29:00.000Z");
+    const agent = {
+      chainId: 56,
+      agentId: "303779",
+      name: "Marketplace Grid Planner",
+      operator: "marketplace",
+      freshness: { fetchedAt: OBSERVED_AT },
+      onchainIdentity: { status: "match", observedAt: OBSERVED_AT, blockNumber: "118077255" },
+    } as unknown as MarketplaceAgent;
+    const candidate: CatalogCandidate = {
+      agentKey: "eip155:56:303779", agentId: "303779", chainId: 56,
+      owner: null, metadataUri: null,
+      name: "Marketplace Grid Planner", description: null, imageUrl: null,
+      categories: ["grid_trading"], marketplaceConfigured: true, metadataState: "ok",
+      registeredAt: null, blockNumber: null, priority: 100,
+      declarations: [{ endpointKey: "a".repeat(64), protocol: "a2a", endpoint: "https://seller.example/a2a",
+        originKey: "b".repeat(64), safety: "safe", safetyReason: null, representativeAgentKey: null,
+        lastProbedAt: now, nextProbeAt: now + 900_000, consecutiveFailures: 0, priority: 100 }],
+      observations: [{ id: 8, agentKey: "eip155:56:303779", endpointKey: null,
+        protocol: "a2a", source: "marketplace_probe", outcome: "quote_verified",
+        observedAt: now - 60_000, expiresAt: now + 840_000, httpStatus: null,
+        errorCode: null, durationMs: 20, details: { legacyObservationId: 8 } }],
+    };
+
+    const passport = await new GetAgentEvidencePassport(
+      { execute: async () => agent },
+      { listByAgentId: () => [] },
+      () => now,
+      { execute: async () => candidate },
+    ).execute({ agentId: "303779" });
+
+    expect(passport.state).toBe("evaluated");
+    expect(passport.checks.quote.status).toBe("verified");
+  });
+
+  it("uses a cryptographically verified browser quote as scoped evidence", async () => {
+    const now = Date.parse("2026-08-31T10:29:00.000Z");
+    const agent = {
+      chainId: 56,
+      agentId: "303779",
+      name: "Marketplace Grid Planner",
+      operator: "marketplace",
+      freshness: { fetchedAt: OBSERVED_AT },
+      onchainIdentity: { status: "match", observedAt: OBSERVED_AT, blockNumber: "118077255" },
+    } as unknown as MarketplaceAgent;
+    const candidate: CatalogCandidate = {
+      agentKey: "eip155:56:303779", agentId: "303779", chainId: 56,
+      owner: null, metadataUri: null, name: "Marketplace Grid Planner", description: null, imageUrl: null,
+      categories: ["grid_trading"], marketplaceConfigured: false, metadataState: "ok",
+      registeredAt: null, blockNumber: null, priority: 100,
+      state: {
+        operationalStatus: "pending", freshness: "never", commerceStatus: "admitted",
+        quoteStatus: "verified_fresh", buyerAction: "prepare_hire", canRequestBrowserValidation: true,
+        canRequestInfrastructureValidation: true, canRequestQuote: true, canPrepareHire: true,
+        blockingReasons: [],
+      },
+      declarations: [{ endpointKey: "a".repeat(64), protocol: "a2a", endpoint: "https://seller.example/a2a",
+        originKey: "b".repeat(64), safety: "safe", safetyReason: null, representativeAgentKey: null,
+        lastProbedAt: now, nextProbeAt: now + 900_000, consecutiveFailures: 0, priority: 100 }],
+      observations: [{ id: 9, agentKey: "eip155:56:303779", endpointKey: "a".repeat(64), protocol: "a2a",
+        source: "browser_reported", outcome: "quote_verified", observedAt: now - 60_000,
+        expiresAt: now + 840_000, httpStatus: 200, errorCode: null, durationMs: 20, details: {},
+        validationKind: "quote", verificationLevel: "cryptographic", artifactHash: "f".repeat(64) }],
+    };
+
+    const passport = await new GetAgentEvidencePassport(
+      { execute: async () => agent },
+      { listByAgentId: () => [] },
+      () => now,
+      { execute: async () => candidate },
+    ).execute({ agentId: "303779" });
+
+    expect(passport.checks.quote).toMatchObject({ status: "verified", hireabilityStatus: "quote_verified" });
+    expect(passport.checks.endpoint.status).toBe("verified");
   });
 
   it("does not turn release-snapshot qualification into current indexed Passport claims", async () => {

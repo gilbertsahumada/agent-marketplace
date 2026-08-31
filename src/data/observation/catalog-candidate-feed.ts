@@ -16,6 +16,8 @@ const FRESHNESS = ["never", "live", "historical", "stale"] as const;
 const COMMERCE_STATUSES = ["none", "declared", "admission_pending", "admitted", "suspended"] as const;
 const QUOTE_STATUSES = ["not_supported", "not_requested", "verified_fresh", "verified_historical", "rejected"] as const;
 const BUYER_ACTIONS = ["unavailable", "check_availability", "request_quote", "prepare_hire"] as const;
+const VALIDATION_KINDS = ["reachability", "protocol", "quote", "chain"] as const;
+const VERIFICATION_LEVELS = ["user_observed", "platform_observed", "cryptographic", "onchain"] as const;
 
 function record(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("CATALOG_FEED_INVALID");
@@ -73,6 +75,14 @@ function observation(value: unknown, schemaVersion: 1 | 2): CatalogCandidateObse
       "unsafe_url", "erc8183_detected", "quote_verified", "quote_rejected", "unreachable", "error"].includes(String(item.outcome))) {
     throw new Error("CATALOG_FEED_INVALID");
   }
+  const validationKind = item.validationKind === undefined ? undefined : string(item.validationKind);
+  const verificationLevel = item.verificationLevel === undefined ? undefined : string(item.verificationLevel);
+  if ((validationKind !== undefined && !VALIDATION_KINDS.includes(validationKind as typeof VALIDATION_KINDS[number]))
+    || (verificationLevel !== undefined
+      && !VERIFICATION_LEVELS.includes(verificationLevel as typeof VERIFICATION_LEVELS[number]))) {
+    throw new Error("CATALOG_FEED_INVALID");
+  }
+  const artifactHash = item.artifactHash === undefined ? undefined : string(item.artifactHash, true);
   return {
     id: integer(item.id)!,
     agentKey: string(item.agentKey)!,
@@ -86,6 +96,13 @@ function observation(value: unknown, schemaVersion: 1 | 2): CatalogCandidateObse
     errorCode: string(item.errorCode, true),
     durationMs: integer(item.durationMs)!,
     details: item.details,
+    ...(validationKind === undefined ? {} : {
+      validationKind: validationKind as NonNullable<CatalogCandidateObservation["validationKind"]>,
+    }),
+    ...(verificationLevel === undefined ? {} : {
+      verificationLevel: verificationLevel as NonNullable<CatalogCandidateObservation["verificationLevel"]>,
+    }),
+    ...(artifactHash === undefined ? {} : { artifactHash }),
   };
 }
 
@@ -104,6 +121,7 @@ function candidate(value: unknown, schemaVersion: 1 | 2): CatalogCandidate {
     throw new Error("CATALOG_FEED_INVALID");
   }
   const stateValue = item.state === undefined ? null : record(item.state);
+  if (schemaVersion === 2 && stateValue === null) throw new Error("CATALOG_FEED_INVALID");
   if (stateValue !== null && (!OPERATIONAL_STATUSES.includes(stateValue.operationalStatus as typeof OPERATIONAL_STATUSES[number])
     || !FRESHNESS.includes(stateValue.freshness as typeof FRESHNESS[number])
     || !COMMERCE_STATUSES.includes(stateValue.commerceStatus as typeof COMMERCE_STATUSES[number])
@@ -129,6 +147,8 @@ function candidate(value: unknown, schemaVersion: 1 | 2): CatalogCandidate {
     agentKey: string(item.agentKey)!,
     agentId: item.agentId as string,
     chainId: 56,
+    owner: item.owner === undefined ? null : string(item.owner, true),
+    metadataUri: item.metadataUri === undefined ? null : string(item.metadataUri, true),
     name: string(item.name, true),
     description: string(item.description, true),
     imageUrl: string(item.imageUrl, true),

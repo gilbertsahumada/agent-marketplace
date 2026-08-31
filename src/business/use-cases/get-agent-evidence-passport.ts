@@ -16,7 +16,10 @@ export interface CatalogCandidateReader {
   execute(input: { agentId: string }): Promise<CatalogCandidate | null>;
 }
 
-const PLATFORM_SOURCES = new Set(["marketplace_probe", "worker_probe", "chain_index", "buyer_refresh", "chain_read", "migration"]);
+// Chain reads prove on-chain identity/job state, not endpoint reachability.
+// Keep only observations produced by an HTTP/MCP/ERC-8183 platform probe (plus
+// the legacy marketplace probe during the compatibility window).
+const PLATFORM_SOURCES = new Set(["marketplace_probe", "worker_probe", "buyer_refresh", "migration"]);
 const FAILURE_OUTCOMES = new Set([
   "http_error", "timeout", "network_error", "invalid_response", "unsafe_url", "quote_rejected", "unreachable", "error",
 ]);
@@ -25,6 +28,16 @@ function newestPlatformObservation(candidate: CatalogCandidate): CatalogCandidat
   return candidate.observations
     .filter(({ source }) => PLATFORM_SOURCES.has(source))
     .sort((left, right) => right.observedAt - left.observedAt || right.id - left.id);
+}
+
+function newestQuoteObservation(candidate: CatalogCandidate | null): CatalogCandidateObservation | undefined {
+  return candidate?.observations
+    .filter((observation) => (observation.validationKind === "quote"
+      && observation.verificationLevel === "cryptographic")
+      || (observation.validationKind === undefined
+        && PLATFORM_SOURCES.has(observation.source)
+        && (observation.outcome === "quote_verified" || observation.outcome === "quote_rejected")))
+    .sort((left, right) => right.observedAt - left.observedAt || right.id - left.id)[0];
 }
 
 export class GetAgentEvidencePassport {
@@ -58,7 +71,7 @@ export class GetAgentEvidencePassport {
   private build(agent: MarketplaceAgent, catalogCandidate: CatalogCandidate | null): AgentEvidencePassport {
     const now = this.now();
     const platform = catalogCandidate ? newestPlatformObservation(catalogCandidate) : [];
-    const quote = platform.find(({ outcome }) => outcome === "quote_verified");
+    const quote = newestQuoteObservation(catalogCandidate);
     const latestEndpoint = platform.find(({ outcome }) => outcome === "protocol_valid"
       || outcome === "quote_verified" || FAILURE_OUTCOMES.has(outcome));
     const endpointExpiresAt = latestEndpoint?.expiresAt ?? null;
@@ -68,8 +81,9 @@ export class GetAgentEvidencePassport {
     const quoteIsFresh = quote !== undefined && quote.expiresAt !== null && quote.expiresAt > now;
     const compatibleDeclaration = catalogCandidate?.declarations.some(({ protocol, safety }) => safety === "safe"
       && (protocol === "a2a" || protocol === "erc8183_http")) ?? false;
-    const canHire = catalogCandidate?.state?.canRequestQuote
-      ?? ((catalogCandidate?.marketplaceConfigured ?? false) && compatibleDeclaration);
+    // The normalized v2 state is the commerce authority.  Keep this fail-closed
+    // during the compatibility window instead of promoting the legacy flag.
+    const canHire = catalogCandidate?.state?.canRequestQuote === true;
     const hireabilityStatus = quoteIsFresh
       ? "quote_verified" as const
       : quote

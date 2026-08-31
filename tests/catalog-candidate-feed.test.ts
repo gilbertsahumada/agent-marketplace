@@ -14,10 +14,17 @@ describe("catalog candidate feed", () => {
     const fixtures = JSON.parse(readFileSync(new URL("../contracts/catalog-api-v2.fixtures.json", import.meta.url), "utf8"));
     expect(parseCatalogCandidatePage(fixtures.list)).toMatchObject({
       total: 1,
-      items: [{ agentId: "42", state: { buyerAction: "request_quote" } }],
+      items: [{
+        agentId: "42",
+        owner: "0x1111111111111111111111111111111111111111",
+        metadataUri: "ipfs://bafybeigdyrzt5-example",
+        state: { buyerAction: "request_quote" },
+      }],
     });
     expect(parseCatalogCandidateDetail(fixtures.detail, "42")).toMatchObject({
       agentId: "42",
+      owner: "0x1111111111111111111111111111111111111111",
+      metadataUri: "ipfs://bafybeigdyrzt5-example",
       admission: { state: "candidate" },
       state: { canRequestQuote: true },
     });
@@ -34,6 +41,20 @@ describe("catalog candidate feed", () => {
       items: [{ observations: [{ source: "marketplace_probe" }] }],
     });
   });
+
+  it("requires normalized derived state on v2 responses", () => {
+    const fixtures = JSON.parse(readFileSync(
+      new URL("../contracts/catalog-api-v2.fixtures.json", import.meta.url), "utf8",
+    )) as { list: Record<string, unknown>; detail: Record<string, unknown> };
+    const list = structuredClone(fixtures.list) as Record<string, unknown>;
+    delete (list.items as Array<Record<string, unknown>>)[0]!.state;
+    expect(() => parseCatalogCandidatePage(list)).toThrow("CATALOG_FEED_INVALID");
+
+    const detail = structuredClone(fixtures.detail) as Record<string, unknown>;
+    delete detail.state;
+    expect(() => parseCatalogCandidateDetail(detail, "42")).toThrow("CATALOG_FEED_INVALID");
+  });
+
   it("reads the public catalog from the configured observation Worker origin", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(Response.json({
       schemaVersion: 1,
@@ -49,6 +70,8 @@ describe("catalog candidate feed", () => {
         agentKey: "eip155:56:42",
         agentId: "42",
         chainId: 56,
+        owner: null,
+        metadataUri: null,
         name: "Grid",
         description: null,
         imageUrl: null,
@@ -140,6 +163,7 @@ describe("catalog candidate feed", () => {
       platformAttemptCount: 73,
       agent: {
         agentKey: "eip155:56:42", agentId: "42", chainId: 56, name: "Grid",
+        owner: null, metadataUri: null,
         description: null, imageUrl: null, categoriesJson: "[]", marketplaceConfigured: 0,
         metadataState: "ok", registeredAt: null, blockNumber: null, priority: 60,
       },

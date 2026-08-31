@@ -116,19 +116,20 @@ export function buildCatalogD1Seed(
 
   for (const group of chunks(snapshot.candidates, chunkSize)) {
     const values = group.map((agent) => `(${[
-      quote(agent.agentKey), quote(agent.agentId), "56", quote(agent.name), quote(agent.description),
-      quote(agent.imageUrl), quote(JSON.stringify(options.categoriesByAgentId?.[agent.agentId] ?? [])),
+      quote(agent.agentKey), quote(agent.agentId), "56", quote(agent.owner), quote(agent.metadataUri),
+      quote(agent.name), quote(agent.description), quote(agent.imageUrl),
+      quote(JSON.stringify(options.categoriesByAgentId?.[agent.agentId] ?? [])),
       marketplaceIds.has(agent.agentId) ? "1" : "0",
       quote(agent.metadataState), quote("current"), integer(agent.registeredAt),
       quote(agent.blockNumber), String(measuredAt), String(measuredAt), String(priorities.get(agent.agentKey)!),
     ].join(",")})`).join(",\n");
     statements.push(`INSERT INTO catalog_agents (
-  agentKey, agentId, chainId, name, description, imageUrl, categoriesJson, marketplaceConfigured,
+  agentKey, agentId, chainId, owner, metadataUri, name, description, imageUrl, categoriesJson, marketplaceConfigured,
   metadataState, indexState,
   registeredAt, blockNumber, firstSeenAt, lastSeenAt, priority
 ) VALUES\n${values}
 ON CONFLICT(agentKey) DO UPDATE SET
-  name=excluded.name, description=excluded.description, imageUrl=excluded.imageUrl,
+  owner=excluded.owner, metadataUri=excluded.metadataUri, name=excluded.name, description=excluded.description, imageUrl=excluded.imageUrl,
   categoriesJson=excluded.categoriesJson, marketplaceConfigured=excluded.marketplaceConfigured,
   metadataState=excluded.metadataState, indexState='current', registeredAt=excluded.registeredAt,
   blockNumber=excluded.blockNumber, lastSeenAt=excluded.lastSeenAt, priority=excluded.priority;`);

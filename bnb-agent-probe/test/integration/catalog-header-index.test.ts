@@ -12,7 +12,7 @@ beforeEach(async () => {
 
 function agent(agentId: string): CatalogAgent {
   return {
-    chainId: 56, agentId, name: `Agent ${agentId}`, description: null, imageUrl: null,
+    chainId: 56, agentId, owner: null, metadataUri: null, blockNumber: null, name: `Agent ${agentId}`, description: null, imageUrl: null,
     registeredAt: NOW, metadataUpdatedAt: NOW, metadataAvailable: true,
     declarations: { a2a: false, erc8183: false }, declaredEndpoints: [],
     indexEndpoints: [{ protocol: "mcp", endpoint: "https://shared.example.com/mcp" }],

@@ -12,6 +12,9 @@ describe("trust8004 catalog parser", () => {
         {
           chainId: "56",
           agentId: "42",
+          owner: "0x1111111111111111111111111111111111111111",
+          agentURI: "ipfs://bafybeigdyrzt5-example",
+          blockNumber: "12345678",
           name: " Seller ",
           registeredAt: 1_770_000_000_000,
           metadataUpdatedAt: "1770000000001",
@@ -37,6 +40,9 @@ describe("trust8004 catalog parser", () => {
       registeredAt: 1_770_000_000_000,
       metadataUpdatedAt: 1_770_000_000_001,
       metadataAvailable: true,
+      owner: "0x1111111111111111111111111111111111111111",
+      metadataUri: "ipfs://bafybeigdyrzt5-example",
+      blockNumber: "12345678",
       declarations: { a2a: true, erc8183: true },
     });
     expect(page.items[0]?.declaredEndpoints.map(({ transport, endpoint }) => ({

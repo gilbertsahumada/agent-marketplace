@@ -126,6 +126,9 @@ export async function enqueueCatalogDiscoveryPage(
       agentKey,
       agentId: agent.agentId,
       chainId: 56,
+      owner: agent.owner,
+      metadataUri: agent.metadataUri,
+      blockNumber: agent.blockNumber,
       name: agent.name,
       description: agent.description,
       imageUrl: agent.imageUrl,
@@ -134,7 +137,6 @@ export async function enqueueCatalogDiscoveryPage(
       metadataState: agent.metadataAvailable ? "ok" : "other",
       indexState: "current",
       registeredAt: agent.registeredAt,
-      blockNumber: null,
       firstSeenAt: existing?.firstSeenAt ?? input.nowMs,
       lastSeenAt: input.nowMs,
       priority,
@@ -170,6 +172,8 @@ export async function enqueueCatalogDiscoveryPage(
     ...chunks(agentRows, AGENT_CHUNK).map((rows) => db.insert(catalogAgents).values(rows).onConflictDoUpdate({
       target: catalogAgents.agentKey,
       set: {
+        owner: sql.raw("excluded.owner"), metadataUri: sql.raw("excluded.metadataUri"),
+        blockNumber: sql.raw("excluded.blockNumber"),
         name: sql.raw("excluded.name"), description: sql.raw("excluded.description"),
         imageUrl: sql.raw("excluded.imageUrl"), categoriesJson: sql.raw("excluded.categoriesJson"),
         metadataState: sql.raw("excluded.metadataState"), indexState: "current",
@@ -376,6 +380,9 @@ export async function processNextCatalogIngestTask(
       agentKey: active.agentKey,
       agentId,
       chainId: 56,
+      owner: agent.owner,
+      metadataUri: agent.metadataUri,
+      blockNumber: agent.blockNumber,
       name: agent.name,
       description: agent.description,
       imageUrl: agent.imageUrl,
@@ -384,7 +391,6 @@ export async function processNextCatalogIngestTask(
       metadataState: agent.metadataAvailable ? "ok" : "other",
       indexState: "current",
       registeredAt: agent.registeredAt,
-      blockNumber: null,
       firstSeenAt: input.nowMs,
       lastSeenAt: input.nowMs,
       priority: current.priority,
@@ -394,6 +400,7 @@ export async function processNextCatalogIngestTask(
     }).onConflictDoUpdate({
       target: catalogAgents.agentKey,
       set: {
+        owner: agent.owner, metadataUri: agent.metadataUri, blockNumber: agent.blockNumber,
         name: agent.name, description: agent.description, imageUrl: agent.imageUrl,
         categoriesJson: JSON.stringify(categories(agentId)), metadataState: agent.metadataAvailable ? "ok" : "other",
         indexState: "current", registeredAt: agent.registeredAt, lastSeenAt: input.nowMs,

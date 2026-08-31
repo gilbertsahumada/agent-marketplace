@@ -9,6 +9,7 @@ import {
   not,
   or,
   sql,
+  aliasedTable,
 } from "drizzle-orm";
 import type { D1DatabaseLike } from "../db/client";
 import { createDatabase, readEffectiveAgentObservations, readEffectiveCatalogObservations } from "../db/orm";
@@ -36,6 +37,8 @@ const PROTOCOLS = ["a2a", "mcp", "erc8183_http"] as const;
 const REACHABILITY = ["live", "historical", "never", "browser_observed"] as const;
 const COMMERCE = ["declared", "candidate", "admitted", "suspended", "none"] as const;
 const QUOTE = ["verified", "expired", "missing"] as const;
+
+const newerObservation = aliasedTable(catalogObservations, "newer_catalog_observation");
 
 function invalid(): Response {
   return Response.json({ error: "invalid_request" }, {
@@ -142,7 +145,7 @@ export async function catalogAgentsResponse(
       inArray(catalogObservations.source, [...PLATFORM_SOURCES]),
       observationBelongsToAgent,
     )));
-  const freshProtocol = (protocol: "a2a" | "mcp") => exists(db.select({ value: sql`1` })
+  const freshProtocol = (protocol: "a2a" | "mcp" | "erc8183_http") => exists(db.select({ value: sql`1` })
     .from(catalogObservations)
     .where(and(
       inArray(catalogObservations.source, [...PLATFORM_SOURCES]),
@@ -150,8 +153,25 @@ export async function catalogAgentsResponse(
       eq(catalogObservations.outcome, "protocol_valid"),
       gt(catalogObservations.expiresAt, nowMs),
       observationBelongsToAgent,
+      not(exists(db.select({ value: sql`1` }).from(newerObservation).where(and(
+        eq(newerObservation.agentKey, catalogObservations.agentKey),
+        eq(newerObservation.endpointKey, catalogObservations.endpointKey),
+        inArray(newerObservation.source, [...PLATFORM_SOURCES]),
+        inArray(newerObservation.validationKind, ["reachability", "protocol"]),
+        or(
+          gt(newerObservation.observedAt, catalogObservations.observedAt),
+          and(
+            eq(newerObservation.observedAt, catalogObservations.observedAt),
+            gt(newerObservation.id, catalogObservations.id),
+          ),
+        ),
+      )))),
     )));
-  const anyFreshProtocol = or(freshProtocol("a2a"), freshProtocol("mcp"));
+  const anyFreshProtocol = or(
+    freshProtocol("a2a"),
+    freshProtocol("mcp"),
+    freshProtocol("erc8183_http"),
+  );
   const anyPlatformSuccess = exists(db.select({ value: sql`1` })
     .from(catalogObservations)
     .where(and(
@@ -198,6 +218,19 @@ export async function catalogAgentsResponse(
       inArray(catalogObservations.outcome, ["protocol_valid", "quote_verified"]),
       gt(catalogObservations.expiresAt, nowMs),
       observationBelongsToAgent,
+      not(exists(db.select({ value: sql`1` }).from(newerObservation).where(and(
+        eq(newerObservation.agentKey, catalogObservations.agentKey),
+        eq(newerObservation.endpointKey, catalogObservations.endpointKey),
+        inArray(newerObservation.source, [...PLATFORM_SOURCES]),
+        inArray(newerObservation.validationKind, ["reachability", "protocol"]),
+        or(
+          gt(newerObservation.observedAt, catalogObservations.observedAt),
+          and(
+            eq(newerObservation.observedAt, catalogObservations.observedAt),
+            gt(newerObservation.id, catalogObservations.id),
+          ),
+        ),
+      )))),
     )));
   const failureExists = exists(db.select({ value: sql`1` })
     .from(catalogAgentEndpoints)

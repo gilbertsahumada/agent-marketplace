@@ -17,6 +17,9 @@ function agent(agentId: string, endpoints = 1, version = 1): CatalogAgent {
   return {
     chainId: 56,
     agentId,
+    owner: `0x${agentId.padStart(40, "0")}`,
+    metadataUri: `ipfs://metadata/${agentId}/${version}`,
+    blockNumber: String(1_000 + Number(agentId)),
     name: `Agent ${agentId} v${version}`,
     description: null,
     imageUrl: null,
@@ -82,6 +85,8 @@ describe("resumable catalog discovery ingest", () => {
     expect(summary.d1Queries).toBeLessThanOrEqual(40);
     expect(await env.DB.prepare("SELECT COUNT(*) AS count FROM catalog_agents").first())
       .toMatchObject({ count: 8 });
+    expect(await env.DB.prepare("SELECT owner, metadataUri, blockNumber FROM catalog_agents WHERE agentId = '1'").first())
+      .toEqual({ owner: `0x${"1".padStart(40, "0")}`, metadataUri: "ipfs://metadata/1/1", blockNumber: "1001" });
     expect(await env.DB.prepare("SELECT COUNT(*) AS count FROM catalog_ingest_tasks WHERE status = 'pending'").first())
       .toMatchObject({ count: 8 });
     expect(await env.DB.prepare("SELECT integerValue FROM runtime_state WHERE key = 'catalog_sweep_offset'").first())

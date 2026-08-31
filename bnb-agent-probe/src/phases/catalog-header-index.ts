@@ -98,6 +98,9 @@ export async function syncCatalogHeaderCandidates(
       agentKey: `eip155:56:${agent.agentId}`,
       agentId: agent.agentId,
       chainId: 56 as const,
+      owner: agent.owner,
+      metadataUri: agent.metadataUri,
+      blockNumber: agent.blockNumber,
       name: agent.name,
       description: agent.description ?? null,
       imageUrl: agent.imageUrl ?? null,
@@ -106,7 +109,6 @@ export async function syncCatalogHeaderCandidates(
       metadataState: "ok",
       indexState: "current",
       registeredAt: agent.registeredAt,
-      blockNumber: null,
       firstSeenAt: nowMs,
       lastSeenAt: nowMs,
       priority: priority(agent),
@@ -168,6 +170,8 @@ export async function syncCatalogHeaderCandidates(
     db.insert(catalogAgents).values(agentRows).onConflictDoUpdate({
       target: catalogAgents.agentKey,
       set: {
+        owner: sql.raw("excluded.owner"), metadataUri: sql.raw("excluded.metadataUri"),
+        blockNumber: sql.raw("excluded.blockNumber"),
         name: sql.raw("excluded.name"), description: sql.raw("excluded.description"),
         imageUrl: sql.raw("excluded.imageUrl"), categoriesJson: sql.raw("excluded.categoriesJson"),
         marketplaceConfigured: sql.raw("excluded.marketplaceConfigured"), metadataState: sql.raw("excluded.metadataState"),

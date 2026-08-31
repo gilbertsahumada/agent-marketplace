@@ -89,9 +89,10 @@ describe("WP1 in the Workers runtime", () => {
     const endpointKey = "a".repeat(64);
     const originKey = "b".repeat(64);
     await env.DB.prepare(`INSERT INTO catalog_agents (
-      agentKey, agentId, chainId, name, categoriesJson, marketplaceConfigured, metadataState,
+      agentKey, agentId, chainId, owner, metadataUri, name, categoriesJson, marketplaceConfigured, metadataState,
       indexState, registeredAt, blockNumber, firstSeenAt, lastSeenAt, priority
-    ) VALUES ('eip155:56:42', '42', 56, 'Contract fixture seller', '["grid_trading"]', 0,
+    ) VALUES ('eip155:56:42', '42', 56, '0x1111111111111111111111111111111111111111',
+      'ipfs://bafybeigdyrzt5-example', 'Contract fixture seller', '["grid_trading"]', 0,
       'ok', 'current', ?, '123', ?, ?, 80)`).bind(now, now, now).run();
     await env.DB.prepare(`INSERT INTO catalog_endpoints (
       endpointKey, protocol, endpoint, originKey, safety, representativeAgentKey, lastProbedAt,
@@ -284,6 +285,84 @@ describe("WP1 in the Workers runtime", () => {
       state: { canRequestInfrastructureValidation: true },
       policyVersion: 2,
     });
+  });
+
+  it("treats a fresh ERC-8183 HTTP health observation as live reachability", async () => {
+    const now = 1_788_000_000_000;
+    const endpointKey = "9".repeat(64);
+    await env.DB.prepare(`INSERT INTO catalog_agents (
+      agentKey, agentId, chainId, name, categoriesJson, metadataState, indexState,
+      firstSeenAt, lastSeenAt, priority
+    ) VALUES ('eip155:56:8183', '8183', 56, 'ERC-8183 seller', '["grid_trading"]', 'ok', 'current', ?, ?, 80)`)
+      .bind(now, now).run();
+    await env.DB.prepare(`INSERT INTO catalog_endpoints (
+      endpointKey, protocol, endpoint, originKey, safety, representativeAgentKey,
+      nextProbeAt, consecutiveFailures, declaredProtocol, role, validationProtocol,
+      eligibility, lastAttemptAt, lastAttemptOutcome, lastSuccessfulAt
+    ) VALUES (?, 'erc8183_http', 'https://seller.example/jobs', 'seller', 'safe',
+      'eip155:56:8183', ?, 0, 'erc8183_http', 'operational', 'erc8183_http',
+      'eligible', ?, 'protocol_valid', ?)`)
+      .bind(endpointKey, now + 60_000, now, now).run();
+    await env.DB.prepare(`INSERT INTO catalog_agent_endpoints (
+      agentKey, endpointKey, declarationState, firstSeenAt, lastSeenAt, priority
+    ) VALUES ('eip155:56:8183', ?, 'current', ?, ?, 80)`)
+      .bind(endpointKey, now, now).run();
+    await env.DB.prepare(`INSERT INTO catalog_observations (
+      attemptId, agentKey, endpointKey, protocol, source, outcome, observedAt,
+      expiresAt, durationMs, detailsJson, validationKind, verificationLevel
+    ) VALUES ('erc8183-live', 'eip155:56:8183', ?, 'erc8183_http', 'worker_probe',
+      'protocol_valid', ?, ?, 25, '{}', 'protocol', 'platform_observed')`)
+      .bind(endpointKey, now, now + 360 * 60_000).run();
+
+    const app = createWorker({ now: () => now });
+    const response = await app.fetch(new Request(
+      "https://worker.test/catalog-agents?protocol=erc8183_http&reachability=live",
+    ), env, createExecutionContext());
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      total: 1,
+      items: [{ agentId: "8183", state: { operationalStatus: "platform_reachable", freshness: "live" } }],
+    });
+  });
+
+  it("does not classify a successful endpoint as live after a newer platform failure", async () => {
+    const now = 1_788_000_000_000;
+    const endpointKey = "7".repeat(64);
+    await env.DB.prepare(`INSERT INTO catalog_agents (
+      agentKey, agentId, chainId, name, categoriesJson, metadataState, indexState,
+      firstSeenAt, lastSeenAt, priority
+    ) VALUES ('eip155:56:7001', '7001', 56, 'Flaky endpoint', '[]', 'ok', 'current', ?, ?, 20)`)
+      .bind(now, now).run();
+    await env.DB.prepare(`INSERT INTO catalog_endpoints (
+      endpointKey, protocol, endpoint, originKey, safety, representativeAgentKey,
+      nextProbeAt, consecutiveFailures, declaredProtocol, role, validationProtocol,
+      eligibility, lastAttemptAt, lastAttemptOutcome, lastSuccessfulAt
+    ) VALUES (?, 'a2a', 'https://flaky.example/a2a', 'flaky', 'safe',
+      'eip155:56:7001', ?, 1, 'a2a', 'operational', 'a2a', 'eligible', ?, 'timeout', ?)`)
+      .bind(endpointKey, now, now, now - 1_000).run();
+    await env.DB.prepare(`INSERT INTO catalog_agent_endpoints (
+      agentKey, endpointKey, declarationState, firstSeenAt, lastSeenAt, priority
+    ) VALUES ('eip155:56:7001', ?, 'current', ?, ?, 20)`)
+      .bind(endpointKey, now, now).run();
+    await env.DB.prepare(`INSERT INTO catalog_observations (
+      attemptId, agentKey, endpointKey, protocol, source, outcome, observedAt,
+      expiresAt, durationMs, detailsJson, validationKind, verificationLevel
+    ) VALUES
+      ('flaky-success', 'eip155:56:7001', ?, 'a2a', 'worker_probe', 'protocol_valid', ?, ?, 20, '{}', 'protocol', 'platform_observed'),
+      ('flaky-failure', 'eip155:56:7001', ?, 'a2a', 'worker_probe', 'timeout', ?, NULL, 20, '{}', 'protocol', 'platform_observed')`)
+      .bind(endpointKey, now - 1_000, now + 900_000, endpointKey, now).run();
+
+    const app = createWorker({ now: () => now });
+    const live = await app.fetch(new Request(
+      "https://worker.test/catalog-agents?reachability=live&protocol=a2a",
+    ), env, createExecutionContext());
+    expect(await live.json()).toMatchObject({ total: 0, items: [] });
+
+    const historical = await app.fetch(new Request(
+      "https://worker.test/catalog-agents?reachability=historical&protocol=a2a",
+    ), env, createExecutionContext());
+    expect(await historical.json()).toMatchObject({ total: 1, items: [{ agentId: "7001" }] });
   });
 
   it("can roll catalog reads back to the compatibility contract independently", async () => {

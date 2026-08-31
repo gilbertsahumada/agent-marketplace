@@ -241,6 +241,8 @@ export const catalogAgents = sqliteTable(
     agentKey: text().primaryKey(),
     agentId: text().notNull().unique(),
     chainId: integer().notNull(),
+    owner: text(),
+    metadataUri: text(),
     name: text(),
     description: text(),
     imageUrl: text(),
