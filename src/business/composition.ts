@@ -89,6 +89,8 @@ export const getPublicMainnetJobProof = new GetPublicMainnetJobProof(mainnetJobP
 export const getAgentEvidencePassport = new GetAgentEvidencePassport(
   getMarketplaceAgent,
   mainnetJobProofRepository,
+  Date.now,
+  { execute: loadCatalogCandidate },
 );
 export const validateMarketplaceAgent = new ValidateMarketplaceAgent(agentValidationRepository);
 export const getFunnelEvidence = new GetFunnelEvidence(funnelEvidenceRepository);
