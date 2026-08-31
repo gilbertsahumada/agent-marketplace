@@ -236,16 +236,18 @@ export async function readCatalogAgentEvidence(
     readEffectiveAgentObservations(db, [agentKey]),
     db.select({ total: count() }).from(catalogObservations).where(and(
       observationCondition,
-      inArray(catalogObservations.source, ["worker_probe", "buyer_refresh", "chain_read", "migration"]),
+      inArray(catalogObservations.source, ["worker_probe", "buyer_refresh", "migration"]),
       inArray(catalogObservations.validationKind, ["protocol", "reachability"]),
+      eq(catalogObservations.verificationLevel, "platform_observed"),
     )),
     endpointKeys.length === 0 ? Promise.resolve([]) : db.select({
       endpointKey: catalogObservations.endpointKey,
       total: count(),
     }).from(catalogObservations).where(and(
       inArray(catalogObservations.endpointKey, endpointKeys),
-      inArray(catalogObservations.source, ["worker_probe", "buyer_refresh", "chain_read", "migration"]),
+      inArray(catalogObservations.source, ["worker_probe", "buyer_refresh", "migration"]),
       inArray(catalogObservations.validationKind, ["protocol", "reachability"]),
+      eq(catalogObservations.verificationLevel, "platform_observed"),
     )).groupBy(catalogObservations.endpointKey),
   ]);
   const observations = [...new Map([

@@ -52,6 +52,8 @@ const FAILURE_OUTCOMES = new Set([
   "http_error", "timeout", "network_error", "invalid_response", "unsafe_url",
   "unreachable", "error",
 ]);
+const PLATFORM_SOURCES = new Set(["worker_probe", "buyer_refresh", "migration"]);
+const PLATFORM_VALIDATION_KINDS = new Set(["reachability", "protocol"]);
 
 function newest(left: ObservationFact | undefined, right: ObservationFact): ObservationFact {
   if (!left || right.observedAt > left.observedAt
@@ -76,8 +78,9 @@ export function deriveCatalogEvidenceState(input: {
   const endpointKeys = new Set(eligible.map(({ endpointKey }) => endpointKey));
   const relevant = input.observations.filter((observation) => observation.endpointKey === null
     || endpointKeys.has(observation.endpointKey));
-  const platform = relevant.filter((observation) => observation.source !== "browser_reported"
-    && observation.validationKind !== "quote" && observation.validationKind !== "chain");
+  const platform = relevant.filter((observation) => PLATFORM_SOURCES.has(observation.source)
+    && PLATFORM_VALIDATION_KINDS.has(observation.validationKind ?? "")
+    && observation.verificationLevel === "platform_observed");
   const browser = relevant.filter((observation) => observation.source === "browser_reported");
   const latestPlatformByEndpoint = new Map<string, ObservationFact>();
   for (const observation of platform) {

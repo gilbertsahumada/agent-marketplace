@@ -5,6 +5,7 @@ import { CATALOG_API_VERSION, publicCatalogObservation } from "../catalog/api-co
 import type { D1Database } from "../types";
 
 const AGENT_ID = /^[1-9]\d*$/;
+const PLATFORM_SOURCES = new Set(["worker_probe", "buyer_refresh", "migration"]);
 
 export async function catalogAgentResponse(
   request: Request,
@@ -47,8 +48,9 @@ export async function catalogAgentResponse(
     const endpoint = evidence.endpoints.find((candidate) => candidate.endpointKey === declaration.endpointKey);
     if (!endpoint) return [];
     const endpointObservations = evidence.observations.filter((observation) => observation.endpointKey === endpoint.endpointKey);
-    const platformEvidence = endpointObservations.filter((observation) => observation.source !== "browser_reported"
-      && (observation.validationKind === "protocol" || observation.validationKind === "reachability"));
+    const platformEvidence = endpointObservations.filter((observation) => PLATFORM_SOURCES.has(observation.source)
+      && (observation.validationKind === "protocol" || observation.validationKind === "reachability")
+      && observation.verificationLevel === "platform_observed");
     const latestEvidence = platformEvidence[0] ?? null;
     const latestSuccess = platformEvidence.find((observation) => observation.outcome === "protocol_valid") ?? null;
     const latestBrowserEvidence = endpointObservations.find((observation) => observation.source === "browser_reported") ?? null;

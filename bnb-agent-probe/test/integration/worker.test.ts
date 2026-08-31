@@ -191,6 +191,46 @@ describe("WP1 in the Workers runtime", () => {
     expect(await hireable.json()).toMatchObject({ total: 1, items: [{ agentId: "1" }] });
   });
 
+  it("does not treat onchain reads as platform reachability evidence", async () => {
+    const now = 1_788_000_000_000;
+    const agentKey = "eip155:56:7002";
+    const endpointKey = "c".repeat(64);
+    await env.DB.prepare(`INSERT INTO catalog_agents (
+      agentKey, agentId, chainId, name, categoriesJson, metadataState, indexState, firstSeenAt, lastSeenAt
+    ) VALUES (?, '7002', 56, 'Chain-only evidence', '[]', 'ok', 'current', ?, ?)`)
+      .bind(agentKey, now, now).run();
+    await env.DB.prepare(`INSERT INTO catalog_endpoints (
+      endpointKey, protocol, endpoint, originKey, safety, representativeAgentKey,
+      nextProbeAt, consecutiveFailures, declaredProtocol, role, validationProtocol, eligibility
+    ) VALUES (?, 'a2a', 'https://chain-only.example/a2a', 'chain-only', 'safe', ?, ?, 0,
+      'a2a', 'operational', 'a2a', 'eligible')`)
+      .bind(endpointKey, agentKey, now).run();
+    await env.DB.prepare(`INSERT INTO catalog_agent_endpoints (
+      agentKey, endpointKey, declarationState, firstSeenAt, lastSeenAt
+    ) VALUES (?, ?, 'current', ?, ?)`)
+      .bind(agentKey, endpointKey, now, now).run();
+    await env.DB.prepare(`INSERT INTO catalog_observations (
+      attemptId, agentKey, endpointKey, protocol, source, outcome, observedAt,
+      expiresAt, durationMs, detailsJson, validationKind, verificationLevel
+    ) VALUES ('chain-only-read', ?, ?, 'a2a', 'chain_read', 'protocol_valid', ?, ?, 1, '{}', 'protocol', 'onchain')`)
+      .bind(agentKey, endpointKey, now, now + 900_000).run();
+
+    const app = createWorker({ now: () => now });
+    const context = createExecutionContext();
+    const pending = await app.fetch(new Request("https://worker.test/catalog-agents?status=pending"), env, context);
+    expect(await pending.json()).toMatchObject({ total: 1, items: [{ agentId: "7002" }] });
+
+    const never = await app.fetch(new Request(
+      "https://worker.test/catalog-agents?reachability=never&protocol=a2a",
+    ), env, context);
+    expect(await never.json()).toMatchObject({ total: 1, items: [{ agentId: "7002" }] });
+
+    const live = await app.fetch(new Request(
+      "https://worker.test/catalog-agents?reachability=live&protocol=a2a",
+    ), env, context);
+    expect(await live.json()).toMatchObject({ total: 0, items: [] });
+  });
+
   it("serves the v2 catalog contract with combinable filters, cursor paging, and resource evidence", async () => {
     const now = 1_788_000_000_000;
     await env.DB.prepare(`INSERT INTO catalog_agents (

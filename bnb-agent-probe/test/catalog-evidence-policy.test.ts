@@ -62,6 +62,22 @@ describe("catalog effective evidence policy", () => {
     });
   });
 
+  it("does not promote an onchain read that is mislabeled as protocol evidence", () => {
+    expect(deriveCatalogEvidenceState({
+      endpoints: [endpoint],
+      observations: [observation({
+        source: "chain_read",
+        verificationLevel: "onchain",
+      })],
+      admission: null,
+      nowMs: NOW,
+    })).toMatchObject({
+      operationalStatus: "pending",
+      freshness: "never",
+      canRequestInfrastructureValidation: true,
+    });
+  });
+
   it("requires admission, a fresh cryptographic quote and a current chain check before prepare", () => {
     const admitted = { state: "admitted", endpointKey: "endpoint" };
     const quote = observation({

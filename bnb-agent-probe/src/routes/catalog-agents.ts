@@ -28,7 +28,8 @@ const STATUSES = [
   "declared", "pending", "a2a", "mcp", "erc8183", "quote_capable", "hireable", "failed",
 ] as const;
 type CatalogStatus = (typeof STATUSES)[number];
-const PLATFORM_SOURCES = ["worker_probe", "buyer_refresh", "chain_read", "migration"] as const;
+const PLATFORM_SOURCES = ["worker_probe", "buyer_refresh", "migration"] as const;
+const PLATFORM_VALIDATION_KINDS = ["reachability", "protocol"] as const;
 const FAILURE_OUTCOMES = [
   "http_error", "timeout", "network_error", "invalid_response", "unsafe_url", "quote_rejected", "unreachable", "error",
 ] as const;
@@ -143,12 +144,16 @@ export async function catalogAgentsResponse(
     .from(catalogObservations)
     .where(and(
       inArray(catalogObservations.source, [...PLATFORM_SOURCES]),
+      inArray(catalogObservations.validationKind, [...PLATFORM_VALIDATION_KINDS]),
+      eq(catalogObservations.verificationLevel, "platform_observed"),
       observationBelongsToAgent,
     )));
   const freshProtocol = (protocol: "a2a" | "mcp" | "erc8183_http") => exists(db.select({ value: sql`1` })
     .from(catalogObservations)
     .where(and(
       inArray(catalogObservations.source, [...PLATFORM_SOURCES]),
+      inArray(catalogObservations.validationKind, [...PLATFORM_VALIDATION_KINDS]),
+      eq(catalogObservations.verificationLevel, "platform_observed"),
       eq(catalogObservations.protocol, protocol),
       eq(catalogObservations.outcome, "protocol_valid"),
       gt(catalogObservations.expiresAt, nowMs),
@@ -157,7 +162,8 @@ export async function catalogAgentsResponse(
         eq(newerObservation.agentKey, catalogObservations.agentKey),
         eq(newerObservation.endpointKey, catalogObservations.endpointKey),
         inArray(newerObservation.source, [...PLATFORM_SOURCES]),
-        inArray(newerObservation.validationKind, ["reachability", "protocol"]),
+        inArray(newerObservation.validationKind, [...PLATFORM_VALIDATION_KINDS]),
+        eq(newerObservation.verificationLevel, "platform_observed"),
         or(
           gt(newerObservation.observedAt, catalogObservations.observedAt),
           and(
@@ -176,6 +182,8 @@ export async function catalogAgentsResponse(
     .from(catalogObservations)
     .where(and(
       inArray(catalogObservations.source, [...PLATFORM_SOURCES]),
+      inArray(catalogObservations.validationKind, [...PLATFORM_VALIDATION_KINDS]),
+      eq(catalogObservations.verificationLevel, "platform_observed"),
       eq(catalogObservations.outcome, "protocol_valid"),
       observationBelongsToAgent,
     )));
@@ -215,6 +223,8 @@ export async function catalogAgentsResponse(
     .from(catalogObservations)
     .where(and(
       inArray(catalogObservations.source, [...PLATFORM_SOURCES]),
+      inArray(catalogObservations.validationKind, [...PLATFORM_VALIDATION_KINDS]),
+      eq(catalogObservations.verificationLevel, "platform_observed"),
       inArray(catalogObservations.outcome, ["protocol_valid", "quote_verified"]),
       gt(catalogObservations.expiresAt, nowMs),
       observationBelongsToAgent,
@@ -222,7 +232,8 @@ export async function catalogAgentsResponse(
         eq(newerObservation.agentKey, catalogObservations.agentKey),
         eq(newerObservation.endpointKey, catalogObservations.endpointKey),
         inArray(newerObservation.source, [...PLATFORM_SOURCES]),
-        inArray(newerObservation.validationKind, ["reachability", "protocol"]),
+        inArray(newerObservation.validationKind, [...PLATFORM_VALIDATION_KINDS]),
+        eq(newerObservation.verificationLevel, "platform_observed"),
         or(
           gt(newerObservation.observedAt, catalogObservations.observedAt),
           and(
