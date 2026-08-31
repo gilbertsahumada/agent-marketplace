@@ -14,7 +14,7 @@ describe("public marketplace CLI", () => {
   it("is packaged as a thin HTTP client without data-layer imports", () => {
     const packageJson = JSON.parse(readFileSync("package.json", "utf8")) as { bin?: Record<string, string> };
     const source = readFileSync("src/marketplace-cli.ts", "utf8");
-    expect(packageJson.bin?.marketplace).toBe("dist/marketplace-cli-bin.js");
+    expect(packageJson.bin?.marketplace).toBe("dist/src/marketplace-cli-bin.js");
     expect(source).not.toMatch(/src\/(?:data|trust8004|readiness|verification)|@bnbagent\/sdk|\bviem\b/);
   });
 
