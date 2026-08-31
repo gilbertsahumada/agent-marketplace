@@ -1348,11 +1348,11 @@ kill switch está abierto. Staging y producción usan nombres de Queue distintos
 Vercel configura `OBSERVATIONS_URL` con el endpoint público `/observations` del
 entorno Cloudflare correspondiente; no es secreto y nunca se expone como
 `NEXT_PUBLIC_` porque la lectura ocurre en Server Components.
-Estado medido 2026-08-31: Preview de Vercel contiene las tres variables y el
-desarrollo local lee el catálogo público de staging. Production todavía no
-contiene `OBSERVATIONS_URL`, `BUYER_OBSERVATION_ALLOWED_ORIGIN` ni
-`BUYER_OBSERVATION_SECRET`; por eso WP4 no se declara productivo antes de su
-promoción coordinada.
+Estado previo a la promoción, medido 2026-08-31: Preview de Vercel contenía las
+tres variables y el desarrollo local leía el catálogo público de staging,
+mientras Production todavía carecía de `OBSERVATIONS_URL`,
+`BUYER_OBSERVATION_ALLOWED_ORIGIN` y `BUYER_OBSERVATION_SECRET`. Ese estado se
+usó como baseline y no se declaró productivo.
 
 Promoción staging medida 2026-08-31: D1 aplicó
 `0007_bridge_probe_observations.sql`, importó 180 observaciones históricas y el
@@ -1364,12 +1364,33 @@ contratable (`303779`). Una validación real de ese seller verificó A2A y quote
 persistió 2/2 observaciones y devolvió `marketplace_configured`, `canHire=true`
 y Passport `hireable`.
 
-Production seguía deliberadamente sin promover al cierre de esta medición. Su
-fallback mostraba 320.466 registros en `All registered agents`, mientras
-`Marketplace` mostraba solo el seller configurado y carecía de sincronización
-con D1. Esta mezcla no es el estado final: antes del merge deben existir las
-tres variables server-side en Production y debe repetirse la prueba HTTP y de
-persistencia contra el deployment productivo.
+El cierre de Production se midió el 2026-08-31 después de rotar, sin exponer su
+valor, un mismo `BUYER_OBSERVATION_SECRET` en Vercel Preview, Vercel Production
+y Worker staging. Las tres variables server-side quedaron confirmadas por
+nombre en ambos entornos Vercel. El PR #43 se fusionó a `main` en el commit
+`750c90232232fcf100af04f7814f9fb04a247afd` a las 09:42:42Z y Vercel dejó
+`dpl_H7HuJ64Zb5vU72SzzRCCFdNPUrea` Ready en Production.
+
+Las consultas Production a `/agents?view=marketplace`,
+`/agents?view=marketplace&status=hireable` y
+`/agents?view=marketplace&status=erc8183` devolvieron HTTP 200, monitorización
+conectada y la narrativa del índice normalizado, no el fallback híbrido. El
+índice compartido midió 29.994 candidatos declarados, 14 con declaración
+ERC-8183 y exactamente un hireable (`303779`) entre 09:45:22Z y 09:45:25Z.
+
+La validación Production de `303779` a las 09:46:26Z verificó identidad en el
+bloque BSC `119129868`, A2A y quote; devolvió `observationSync=recorded` 2/2,
+`marketplace_configured`, `canHire=true` y Passport `hireable`. El conteo D1
+filtrado para ese agente y fuente `marketplace_probe` subió de 199 a 201; las
+filas nuevas `247` y `248` registraron respectivamente
+`erc8183/quote_verified` y `a2a/protocol_valid`.
+
+La rotación dejó activa al 100 % la versión Worker
+`b492f10e-7285-4345-8586-d3eae3e7e421`, disparada por cambio de secreto, con
+D1 staging `6fbeea3e-4516-4c4e-a5c4-392cb067198a`, Queue staging y ambos kill
+switches en `0`. El feed confirmó productor y consumidor activos, intervalo de
+cinco minutos y un HEADER completado a las 09:45:26Z; el Cron declarado sigue
+siendo `*/5 * * * *`.
 La sincronización de quotes configura además `BUYER_OBSERVATION_ALLOWED_ORIGIN`
 y `BUYER_OBSERVATION_SECRET`; Cloudflare recibe este último como secret del
 Worker. `SHARED_SECRET` permanece reservado para la ruta administrativa de
