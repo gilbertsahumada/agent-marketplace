@@ -449,3 +449,30 @@ ERC-8183 quote verified before any wallet interaction.
 Also recorded: `/agents?view=all&category=<invalid>` now renders instead of
 returning 404, matching the API route, which already ignored category in the
 registered view; the behavior is pinned by tests.
+
+## 2026-08-31 — Landing redesign: value-first copy, visual funnel, proof-led hero
+
+The landing talked to judges, not buyers: headlines described editorial policy,
+the hero badge opened with a caveat, and the first screen was dominated by
+"Not Observed" states. Redesigned against an approved mockup:
+
+- Hero: BNB badge removed, primary CTA shortened to "Get a Mainnet quote"
+  (seller named in a support line), evidence rail rendered compact.
+- Funnel: headline is computed from the real evidence counts ("309,897
+  registered. 16 declare hiring.") and stages render as proportional bars.
+  Citation (artifact, SHA-256, block) unchanged. Unmeasured stages stay
+  "Pending observation" — no invented counts.
+- The "What Hireable now means" explainer collapses into a details block;
+  content unchanged and still pinned by tests.
+- The candidates section (observation alerts, provenance legend and agent
+  cards) is removed from the landing entirely: the catalogue is reached via
+  the category cards, the header nav and the hero's secondary CTA. Live
+  observations still power the hero evidence and the admitted-seller state.
+- Verified evidence steps render green with a green check everywhere the
+  evidence rail appears; funnel bars are neutral, with provenance carried by
+  the existing badges.
+
+All figures remain sourced from evidence artifacts, catalogue counts and
+observation view models; nothing is hardcoded. Network-aware hero behavior
+(Mainnet default, Testnet on chain 97) is unchanged and remains pinned by
+tests/frontend-components.test.tsx.
