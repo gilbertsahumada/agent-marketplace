@@ -47,9 +47,9 @@ describe("trust8004 catalog parser", () => {
       { transport: "a2a", endpoint: "https://seller.example/a2a" },
     ]);
     expect(page.items[0]?.indexEndpoints).toEqual([
-      { protocol: "erc8183_http", endpoint: "https://seller.example/jobs" },
-      { protocol: "a2a", endpoint: "https://seller.example/a2a" },
-      { protocol: "mcp", endpoint: "https://seller.example/mcp" },
+      { protocol: "erc8183_http", endpoint: "https://seller.example/jobs", rawProtocol: "ERC-8183", source: "services", sourceIndex: 0 },
+      { protocol: "a2a", endpoint: "https://seller.example/a2a", rawProtocol: "A2A", source: "endpoints", sourceIndex: 0 },
+      { protocol: "mcp", endpoint: "https://seller.example/mcp", rawProtocol: "mcp", source: "shortcut", sourceIndex: 0 },
     ]);
   });
 
@@ -82,6 +82,25 @@ describe("trust8004 catalog parser", () => {
         sourceIndex: 0,
       }],
     });
+  });
+
+  it("normalizes website labels as external web declarations", () => {
+    const page = parseCatalogPage({
+      items: [{
+        chainId: 56,
+        agentId: "7",
+        metadataReasonCode: "ok",
+        services: [{ name: "website", endpoint: "https://agent.example.com" }],
+        endpoints: [],
+      }],
+      total: 1,
+      limit: 1,
+      offset: 0,
+    });
+    expect(page.items[0]?.indexEndpoints).toEqual([expect.objectContaining({
+      protocol: "web",
+      rawProtocol: "website",
+    })]);
   });
 
   it("treats null metadata collections as empty when metadata is available", () => {

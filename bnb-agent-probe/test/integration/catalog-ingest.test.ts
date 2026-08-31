@@ -1,0 +1,212 @@
+import { env } from "cloudflare:workers";
+import { describe, expect, it } from "vitest";
+
+import type { D1DatabaseLike } from "../../src/db/client";
+import {
+  catalogIngestTaskLimitForBudget,
+  enqueueCatalogDiscoveryPage,
+  processNextCatalogIngestTask,
+} from "../../src/phases/catalog-ingest";
+import { CatalogHttpError } from "../../src/trust8004/client";
+import type { CatalogAgent } from "../../src/trust8004/types";
+import { clearCatalogFixtures } from "./catalog-fixtures";
+
+const NOW = 1_788_000_000_000;
+
+function agent(agentId: string, endpoints = 1, version = 1): CatalogAgent {
+  return {
+    chainId: 56,
+    agentId,
+    name: `Agent ${agentId} v${version}`,
+    description: null,
+    imageUrl: null,
+    registeredAt: NOW + Number(agentId),
+    metadataUpdatedAt: NOW + version,
+    metadataAvailable: true,
+    declarations: { a2a: true, erc8183: false },
+    declaredEndpoints: [],
+    indexEndpoints: Array.from({ length: endpoints }, (_, index) => index === endpoints - 1
+      ? {
+          protocol: "web" as const,
+          endpoint: `https://agent-${agentId}.example.com/about-${version}`,
+          rawProtocol: "website",
+          source: "services" as const,
+          sourceIndex: index,
+        }
+      : {
+          protocol: index % 2 === 0 ? "a2a" as const : "mcp" as const,
+          endpoint: `https://agent-${agentId}.example.com/${version}/endpoint-${index}`,
+          rawProtocol: index % 2 === 0 ? "A2A" : "MCP",
+          source: "services" as const,
+          sourceIndex: index,
+        }),
+  };
+}
+
+beforeEach(async () => {
+  await clearCatalogFixtures();
+  await env.DB.prepare("DELETE FROM runtime_state").run();
+});
+
+describe("resumable catalog discovery ingest", () => {
+  it("defers whole ingest tasks when the remaining D1 query budget cannot cover their worst case", () => {
+    expect(catalogIngestTaskLimitForBudget({
+      remainingQueries: 18,
+      maxDeclarations: 4,
+      requestedTasks: 2,
+      reserveQueries: 1,
+    })).toBe(1);
+    expect(catalogIngestTaskLimitForBudget({
+      remainingQueries: 19,
+      maxDeclarations: 4,
+      requestedTasks: 2,
+      reserveQueries: 1,
+    })).toBe(2);
+  });
+
+  it("makes every identity visible and commits the sweep cursor with its worklist", async () => {
+    const agents = Array.from({ length: 8 }, (_, index) => agent(String(index + 1)));
+    const summary = await enqueueCatalogDiscoveryPage(
+      env.DB as unknown as D1DatabaseLike,
+      agents,
+      { nowMs: NOW, source: "sweep", cursor: 8, cursorKey: "catalog_sweep_offset" },
+    );
+
+    expect(summary).toMatchObject({
+      agentsSeen: 8,
+      identitiesWritten: 8,
+      tasksQueued: 8,
+      cursor: 8,
+      d1RowsWritten: 17,
+    });
+    expect(summary.d1Queries).toBeLessThanOrEqual(40);
+    expect(await env.DB.prepare("SELECT COUNT(*) AS count FROM catalog_agents").first())
+      .toMatchObject({ count: 8 });
+    expect(await env.DB.prepare("SELECT COUNT(*) AS count FROM catalog_ingest_tasks WHERE status = 'pending'").first())
+      .toMatchObject({ count: 8 });
+    expect(await env.DB.prepare("SELECT integerValue FROM runtime_state WHERE key = 'catalog_sweep_offset'").first())
+      .toMatchObject({ integerValue: 8 });
+  });
+
+  it("processes every declaration in bounded resumable batches and never schedules external links", async () => {
+    const large = agent("42", 30);
+    await enqueueCatalogDiscoveryPage(env.DB as unknown as D1DatabaseLike, [large], {
+      nowMs: NOW,
+      source: "header",
+    });
+    const fetchAgent = async () => large;
+    const summaries = [];
+    for (let index = 0; index < 4; index += 1) {
+      summaries.push(await processNextCatalogIngestTask(env.DB as unknown as D1DatabaseLike, {
+        nowMs: NOW + index + 1,
+        maxDeclarations: 12,
+        fetchAgent,
+        leaseOwner: `test-${index}`,
+      }));
+    }
+
+    expect(summaries.map(({ status }) => status)).toEqual(["partial", "partial", "retiring", "completed"]);
+    expect(summaries.every(({ d1Queries }) => d1Queries <= 40)).toBe(true);
+    expect(await env.DB.prepare("SELECT COUNT(*) AS count FROM catalog_agent_endpoints").first())
+      .toMatchObject({ count: 30 });
+    expect(await env.DB.prepare("SELECT nextDeclarationIndex, declarationCount, status FROM catalog_ingest_tasks").first())
+      .toMatchObject({ nextDeclarationIndex: 30, declarationCount: 30, status: "completed" });
+    expect(await env.DB.prepare(`SELECT role, externalKind, eligibility, representativeAgentKey, nextProbeAt
+      FROM catalog_endpoints WHERE declaredProtocol = 'web'`).first()).toMatchObject({
+      role: "external",
+      externalKind: "website",
+      eligibility: "unsupported",
+      representativeAgentKey: null,
+      nextProbeAt: null,
+    });
+  });
+
+  it("retires replaced declarations in bounded batches without deleting their history", async () => {
+    const original = agent("42", 30, 1);
+    await enqueueCatalogDiscoveryPage(env.DB as unknown as D1DatabaseLike, [original], { nowMs: NOW, source: "header" });
+    for (let index = 0; index < 4; index += 1) {
+      await processNextCatalogIngestTask(env.DB as unknown as D1DatabaseLike, {
+        nowMs: NOW + index + 1,
+        maxDeclarations: 12,
+        fetchAgent: async () => original,
+      });
+    }
+    const replacement = agent("42", 1, 2);
+    await enqueueCatalogDiscoveryPage(env.DB as unknown as D1DatabaseLike, [replacement], {
+      nowMs: NOW + 100,
+      source: "reconciliation",
+    });
+    const states = [];
+    for (let index = 0; index < 5; index += 1) {
+      states.push((await processNextCatalogIngestTask(env.DB as unknown as D1DatabaseLike, {
+        nowMs: NOW + 101 + index,
+        maxDeclarations: 12,
+        fetchAgent: async () => replacement,
+      })).status);
+    }
+
+    expect(states).toEqual(["retiring", "retiring", "retiring", "completed", "idle"]);
+    expect(await env.DB.prepare(`SELECT declarationState, COUNT(*) AS count
+      FROM catalog_agent_endpoints GROUP BY declarationState ORDER BY declarationState`).all()).toMatchObject({
+      results: [
+        { declarationState: "current", count: 1 },
+        { declarationState: "removed", count: 30 },
+      ],
+    });
+  });
+
+  it("backs off directed tracking while trust8004 has not indexed the registration", async () => {
+    await env.DB.prepare(`INSERT INTO catalog_directed_tracking (
+      agentKey, chainId, agentId, txHash, blockNumber, status, registeredAt, createdAt, updatedAt
+    ) VALUES ('eip155:56:99', 56, '99', ?, '123', 'registered', ?, ?, ?)`)
+      .bind(`0x${"9".repeat(64)}`, NOW, NOW, NOW).run();
+    await env.DB.prepare(`INSERT INTO catalog_ingest_tasks (
+      agentKey, metadataVersion, nextDeclarationIndex, declarationCount, status, requestedBy,
+      priority, generationStartedAt, updatedAt, attemptCount, retryAt
+    ) VALUES ('eip155:56:99', 'directed:pending', 0, 0, 'pending', 'directed', 100, ?, ?, 0, 0)`)
+      .bind(NOW, NOW).run();
+
+    const missing = await processNextCatalogIngestTask(env.DB as unknown as D1DatabaseLike, {
+      nowMs: NOW,
+      maxDeclarations: 4,
+      fetchAgent: async () => { throw new CatalogHttpError(404, "https://trust8004.example/agents/56:99"); },
+    });
+    expect(missing).toMatchObject({ status: "failed", errorCode: "TRUST8004_NOT_INDEXED" });
+    expect(await env.DB.prepare(`SELECT status, attemptCount, retryAt, errorCode
+      FROM catalog_ingest_tasks WHERE agentKey = 'eip155:56:99'`).first()).toMatchObject({
+      status: "failed",
+      attemptCount: 1,
+      retryAt: NOW + 10_000,
+      errorCode: "TRUST8004_NOT_INDEXED",
+    });
+    expect(await env.DB.prepare(`SELECT errorCode FROM catalog_directed_tracking
+      WHERE agentKey = 'eip155:56:99'`).first()).toEqual({ errorCode: "TRUST8004_NOT_INDEXED" });
+
+    const beforeRetry = await processNextCatalogIngestTask(env.DB as unknown as D1DatabaseLike, {
+      nowMs: NOW + 9_999,
+      maxDeclarations: 4,
+      fetchAgent: async () => agent("99"),
+    });
+    expect(beforeRetry.status).toBe("idle");
+
+    const indexed = agent("99");
+    const ingested = await processNextCatalogIngestTask(env.DB as unknown as D1DatabaseLike, {
+      nowMs: NOW + 10_000,
+      maxDeclarations: 4,
+      fetchAgent: async () => indexed,
+    });
+    expect(ingested.status).toBe("retiring");
+    const completed = await processNextCatalogIngestTask(env.DB as unknown as D1DatabaseLike, {
+      nowMs: NOW + 10_001,
+      maxDeclarations: 4,
+      fetchAgent: async () => indexed,
+    });
+    expect(completed.status).toBe("completed");
+    expect(await env.DB.prepare(`SELECT status, listedAt, errorCode FROM catalog_directed_tracking
+      WHERE agentKey = 'eip155:56:99'`).first()).toMatchObject({
+      status: "listed",
+      listedAt: NOW + 10_001,
+      errorCode: null,
+    });
+  });
+});

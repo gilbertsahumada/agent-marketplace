@@ -1,7 +1,8 @@
 export const BSC_CHAIN_ID = 56 as const;
 
 export type CatalogTransport = "a2a" | "erc8183_http";
-export type CatalogEndpointProtocol = CatalogTransport | "mcp" | "web";
+export type CatalogEndpointProtocol = CatalogTransport | "mcp" | "x402" | "web" | "unknown";
+export type CatalogEndpointSource = "services" | "endpoints" | "shortcut";
 
 export interface CatalogDeclaredEndpoint {
   transport: CatalogTransport;
@@ -13,6 +14,9 @@ export interface CatalogDeclaredEndpoint {
 export interface CatalogIndexEndpoint {
   protocol: CatalogEndpointProtocol;
   endpoint: string;
+  rawProtocol?: string | null;
+  source?: CatalogEndpointSource;
+  sourceIndex?: number;
 }
 
 export interface CatalogAgent {

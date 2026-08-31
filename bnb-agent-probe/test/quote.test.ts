@@ -179,6 +179,22 @@ describe("WP3 quote validation", () => {
     }))).rejects.toMatchObject({ code: "QUOTE_SIGNER" });
   });
 
+  it("accepts an ERC-1271 account signature only when the account verifier passes", async () => {
+    await expect(validateProbeQuote(acceptedEnvelope(), context(), async () => ({
+      valid: true,
+      method: "erc1271",
+      signer: PROVIDER,
+    }))).resolves.toMatchObject({
+      outcome: "quote_verified",
+      signatureMethod: "erc1271",
+      signer: PROVIDER,
+    });
+    await expect(validateProbeQuote(acceptedEnvelope(), context(), async () => ({
+      valid: false,
+      reason: "ERC1271_INVALID",
+    }))).rejects.toMatchObject({ code: "QUOTE_SIGNATURE" });
+  });
+
   it("normalizes a viem-wrapped RPC failure during signature verification", async () => {
     const wrapped = new Error("Unknown RPC error", {
       cause: new BscProbeError("BSC_RPC_TIMEOUT"),

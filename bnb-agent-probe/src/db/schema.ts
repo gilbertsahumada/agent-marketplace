@@ -253,6 +253,9 @@ export const catalogAgents = sqliteTable(
     firstSeenAt: integer().notNull(),
     lastSeenAt: integer().notNull(),
     priority: integer().notNull().default(0),
+    metadataVersion: text(),
+    metadataObservedAt: integer(),
+    policyVersion: integer().notNull().default(2),
   },
   (table) => [
     index("idx_catalog_agents_priority").on(
@@ -282,8 +285,18 @@ export const catalogEndpoints = sqliteTable(
     safetyReason: text(),
     representativeAgentKey: text(),
     lastProbedAt: integer(),
-    nextProbeAt: integer().notNull().default(0),
+    nextProbeAt: integer(),
     consecutiveFailures: integer().notNull().default(0),
+    declaredProtocol: text().notNull().default("unknown"),
+    role: text().notNull().default("external"),
+    validationProtocol: text(),
+    externalKind: text(),
+    eligibility: text().notNull().default("unsupported"),
+    lastAttemptAt: integer(),
+    lastAttemptOutcome: text(),
+    lastSuccessfulAt: integer(),
+    leaseOwner: text(),
+    leaseExpiresAt: integer(),
   },
   (table) => [
     index("idx_catalog_endpoints_queue").on(
@@ -294,6 +307,17 @@ export const catalogEndpoints = sqliteTable(
       table.endpointKey,
     ),
     index("idx_catalog_endpoints_origin").on(table.originKey, table.protocol),
+    index("idx_catalog_endpoints_validation_queue").on(
+      table.role,
+      table.eligibility,
+      table.validationProtocol,
+      table.nextProbeAt,
+      table.lastAttemptAt,
+      table.endpointKey,
+    ),
+    index("idx_catalog_endpoints_lease").on(
+      table.role, table.eligibility, table.nextProbeAt, table.leaseExpiresAt, table.endpointKey,
+    ),
     check(
       "catalog_endpoints_protocol",
       sql`${table.protocol} IN ('a2a', 'mcp', 'web', 'erc8183_http')`,
@@ -319,6 +343,10 @@ export const catalogAgentEndpoints = sqliteTable(
     firstSeenAt: integer().notNull(),
     lastSeenAt: integer().notNull(),
     priority: integer().notNull().default(0),
+    rawServiceLabel: text(),
+    rawSource: text(),
+    rawSourceIndex: integer(),
+    metadataVersion: text(),
   },
   (table) => [
     primaryKey({ columns: [table.agentKey, table.endpointKey] }),
@@ -338,6 +366,10 @@ export const catalogAgentEndpoints = sqliteTable(
       "catalog_agent_endpoints_declaration_state",
       sql`${table.declarationState} IN ('current', 'removed')`,
     ),
+    check(
+      "catalog_agent_endpoints_raw_source",
+      sql`${table.rawSource} IS NULL OR ${table.rawSource} IN ('services', 'endpoints', 'shortcut')`,
+    ),
   ],
 );
 
@@ -356,18 +388,28 @@ export const catalogObservations = sqliteTable(
     errorCode: text(),
     durationMs: integer().notNull(),
     detailsJson: text().notNull().default("{}"),
+    attemptId: text(),
+    validationKind: text().notNull().default("protocol"),
+    verificationLevel: text().notNull().default("platform_observed"),
+    artifactHash: text(),
   },
   (table) => [
     index("idx_catalog_observations_agent").on(table.agentKey, desc(table.observedAt), desc(table.id)),
     index("idx_catalog_observations_endpoint").on(table.endpointKey, desc(table.observedAt), desc(table.id)),
     index("idx_catalog_observations_outcome").on(table.outcome, desc(table.observedAt), desc(table.id)),
+    uniqueIndex("idx_catalog_observations_attempt")
+      .on(table.attemptId)
+      .where(sql`${table.attemptId} IS NOT NULL`),
+    uniqueIndex("idx_catalog_observations_quote_artifact")
+      .on(table.artifactHash)
+      .where(sql`${table.validationKind} = 'quote' AND ${table.artifactHash} IS NOT NULL`),
     check(
       "catalog_observations_protocol",
       sql`${table.protocol} IN ('a2a', 'mcp', 'web', 'erc8183_http', 'erc8183')`,
     ),
     check(
       "catalog_observations_source",
-      sql`${table.source} IN ('browser_reported', 'marketplace_probe', 'worker_probe', 'chain_index')`,
+      sql`${table.source} IN ('browser_reported', 'worker_probe', 'buyer_refresh', 'chain_read', 'migration')`,
     ),
     check(
       "catalog_observations_outcome",
@@ -378,6 +420,120 @@ export const catalogObservations = sqliteTable(
       )`,
     ),
     check("catalog_observations_duration", sql`${table.durationMs} >= 0`),
+    check(
+      "catalog_observations_browser_verification",
+      sql`${table.source} <> 'browser_reported' OR ${table.verificationLevel} IN ('user_observed', 'cryptographic')`,
+    ),
+    check(
+      "catalog_observations_chain_source_verification",
+      sql`${table.source} <> 'chain_read' OR ${table.verificationLevel} = 'onchain'`,
+    ),
+    check(
+      "catalog_observations_chain_kind_verification",
+      sql`${table.validationKind} <> 'chain' OR ${table.verificationLevel} = 'onchain'`,
+    ),
+    check(
+      "catalog_observations_quote_verification",
+      sql`${table.outcome} <> 'quote_verified' OR ${table.verificationLevel} = 'cryptographic'`,
+    ),
+  ],
+);
+
+export const catalogValidationRequests = sqliteTable(
+  "catalog_validation_requests",
+  {
+    id: integer().primaryKey({ autoIncrement: true }),
+    dedupeKey: text().notNull(),
+    agentKey: text().notNull(),
+    endpointKey: text().notNull(),
+    validationKind: text().notNull(),
+    requestedBy: text().notNull(),
+    status: text().notNull(),
+    priority: integer().notNull().default(0),
+    createdAt: integer().notNull(),
+    startedAt: integer(),
+    completedAt: integer(),
+    attemptCount: integer().notNull().default(0),
+    resultObservationId: integer(),
+    errorCode: text(),
+    leaseOwner: text(),
+    leaseExpiresAt: integer(),
+  },
+  (table) => [
+    uniqueIndex("idx_catalog_validation_requests_active")
+      .on(table.dedupeKey)
+      .where(sql`${table.status} IN ('queued', 'running')`),
+    index("idx_catalog_validation_requests_queue").on(
+      table.status,
+      desc(table.priority),
+      table.createdAt,
+      table.id,
+    ),
+  ],
+);
+
+export const catalogAgentAdmission = sqliteTable(
+  "catalog_agent_admission",
+  {
+    agentKey: text().primaryKey(),
+    state: text().notNull(),
+    commerceTransport: text(),
+    endpointKey: text(),
+    chainId: integer().notNull().default(56),
+    provider: text(),
+    validatedAt: integer(),
+    configurationVersion: text(),
+    reasonCode: text(),
+  },
+);
+
+export const catalogIngestTasks = sqliteTable(
+  "catalog_ingest_tasks",
+  {
+    agentKey: text().primaryKey(),
+    metadataVersion: text().notNull(),
+    nextDeclarationIndex: integer().notNull().default(0),
+    declarationCount: integer().notNull(),
+    status: text().notNull(),
+    requestedBy: text().notNull(),
+    priority: integer().notNull().default(0),
+    generationStartedAt: integer().notNull(),
+    upstreamObservedAt: integer(),
+    updatedAt: integer().notNull(),
+    attemptCount: integer().notNull().default(0),
+    retryAt: integer().notNull().default(0),
+    errorCode: text(),
+    leaseOwner: text(),
+    leaseExpiresAt: integer(),
+  },
+  (table) => [
+    index("idx_catalog_ingest_tasks_work").on(
+      table.status,
+      table.retryAt,
+      desc(table.priority),
+      table.updatedAt,
+      table.agentKey,
+    ),
+  ],
+);
+
+export const catalogDirectedTracking = sqliteTable(
+  "catalog_directed_tracking",
+  {
+    agentKey: text().primaryKey(),
+    chainId: integer().notNull(),
+    agentId: text().notNull(),
+    txHash: text().notNull().unique(),
+    blockNumber: text().notNull(),
+    status: text().notNull(),
+    registeredAt: integer().notNull(),
+    listedAt: integer(),
+    createdAt: integer().notNull(),
+    updatedAt: integer().notNull(),
+    errorCode: text(),
+  },
+  (table) => [
+    index("idx_catalog_directed_tracking_status").on(table.status, table.updatedAt, table.agentKey),
   ],
 );
 
@@ -392,4 +548,8 @@ export const schema = {
   catalogEndpoints,
   catalogAgentEndpoints,
   catalogObservations,
+  catalogValidationRequests,
+  catalogAgentAdmission,
+  catalogIngestTasks,
+  catalogDirectedTracking,
 } as const;

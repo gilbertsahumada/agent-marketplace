@@ -3,12 +3,13 @@ import { env } from "cloudflare:workers";
 import type { D1DatabaseLike } from "../../src/db/client";
 import { createBudgetedD1Database } from "../../src/db/query-budget";
 import { createD1ProbePersistence } from "../../src/phases/probe-d1";
+import { clearCatalogObservationFixtures } from "./catalog-fixtures";
 
 const NOW = 2_000_000_000_000;
 const ENDPOINT = "https://bnb-agent-marketplace-ruby.vercel.app/grid";
 
 beforeEach(async () => {
-  await env.DB.prepare("DELETE FROM catalog_observations").run();
+  await clearCatalogObservationFixtures();
   await env.DB.prepare("DELETE FROM probe_observations").run();
   await env.DB.prepare("DELETE FROM probe_targets").run();
   await env.DB.prepare("DELETE FROM runtime_state").run();
@@ -293,7 +294,7 @@ describe("WP3 typed D1 persistence", () => {
     ).first()).toEqual({
       agentKey: "eip155:56:303779",
       protocol: "a2a",
-      source: "marketplace_probe",
+      source: "migration",
       outcome: "quote_verified",
       expiresAt: NOW + 900_000,
     });

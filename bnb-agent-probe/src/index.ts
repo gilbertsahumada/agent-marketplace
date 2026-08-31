@@ -20,6 +20,17 @@ export interface WorkerDependencies {
     context: ExecutionContext,
     config: WorkerConfig,
   ) => Promise<ScheduledRunResult | void>;
+  runCatalogValidation?: (
+    validationId: number,
+    env: Env,
+    config: WorkerConfig,
+  ) => Promise<"completed" | "duplicate">;
+  verifyCatalogRegistration?: (input: {
+    schemaVersion: 2;
+    chainId: 56;
+    agentId: string;
+    txHash: `0x${string}`;
+  }) => Promise<{ blockNumber: bigint }>;
 }
 
 function queueErrorCode(error: unknown): string {
@@ -56,11 +67,26 @@ async function bearerMatches(header: string | null, secret: string): Promise<boo
   return difference === 0 && candidate.length > 0;
 }
 
-function queueScheduledTime(body: unknown, currentTime: number): number {
+type QueueWork =
+  | { kind: "scheduled"; scheduledTime: number }
+  | { kind: "catalog_validation"; validationId: number; enqueuedAt: number };
+
+function queueWork(body: unknown, currentTime: number): QueueWork {
   if (body === null || typeof body !== "object" || Array.isArray(body)) {
     throw new Error("WP2_QUEUE_MESSAGE_INVALID");
   }
   const value = body as Record<string, unknown>;
+  if (value.schemaVersion === 2
+    && value.kind === "catalog_validation"
+    && typeof value.validationId === "number"
+    && Number.isSafeInteger(value.validationId)
+    && value.validationId >= 1
+    && typeof value.enqueuedAt === "number"
+    && Number.isSafeInteger(value.enqueuedAt)
+    && value.enqueuedAt >= 0
+    && value.enqueuedAt <= currentTime + QUEUE_MAX_FUTURE_SKEW_MS) {
+    return { kind: "catalog_validation", validationId: value.validationId, enqueuedAt: value.enqueuedAt };
+  }
   if (value.schemaVersion !== 1
     || typeof value.scheduledTime !== "number"
     || !Number.isSafeInteger(value.scheduledTime)
@@ -68,7 +94,7 @@ function queueScheduledTime(body: unknown, currentTime: number): number {
     || value.scheduledTime > currentTime + QUEUE_MAX_FUTURE_SKEW_MS) {
     throw new Error("WP2_QUEUE_MESSAGE_INVALID");
   }
-  return value.scheduledTime;
+  return { kind: "scheduled", scheduledTime: value.scheduledTime };
 }
 
 export function createWorker(dependencies: WorkerDependencies = {}): WorkerEntrypoint {
@@ -117,13 +143,74 @@ export function createWorker(dependencies: WorkerDependencies = {}): WorkerEntry
         if (response.ok) await publicCache.put(cacheKey, response.clone());
         return response;
       }
-      if (request.method === "GET" && url.pathname === "/catalog-agent") {
+      if (request.method === "GET" && (url.pathname === "/catalog-agent" || /^\/catalog-agent\/[1-9]\d*$/.test(url.pathname))) {
         const { catalogAgentResponse } = await import("./routes/catalog-agent");
-        return catalogAgentResponse(request, env.DB);
+        return catalogAgentResponse(request, env.DB, now(), config.catalogV2ReadsEnabled ? 2 : 1);
       }
       if (request.method === "GET" && url.pathname === "/catalog-agents") {
         const { catalogAgentsResponse } = await import("./routes/catalog-agents");
-        return catalogAgentsResponse(request, env.DB, now());
+        return catalogAgentsResponse(request, env.DB, now(), config.catalogV2ReadsEnabled ? 2 : 1);
+      }
+      if (request.method === "GET" && /^\/catalog-validations\/\d+$/.test(url.pathname)) {
+        if (env.BUYER_OBSERVATION_SECRET === undefined) return errorResponse("not_found", 404);
+        if (!await bearerMatches(request.headers.get("authorization"), env.BUYER_OBSERVATION_SECRET)) {
+          return errorResponse("unauthorized", 401);
+        }
+        const { catalogValidationStatusResponse } = await import("./routes/catalog-validation");
+        return catalogValidationStatusResponse(request, env.DB);
+      }
+      if (request.method === "GET" && /^\/catalog-directed-tracking\/[1-9]\d*$/.test(url.pathname)) {
+        const { catalogDirectedTrackingStatusResponse } = await import("./routes/catalog-directed-tracking");
+        return catalogDirectedTrackingStatusResponse(request, env.DB);
+      }
+      if (request.method === "POST" && url.pathname === "/catalog-directed-tracking" && url.search === "") {
+        if (env.BUYER_OBSERVATION_SECRET === undefined) return errorResponse("not_found", 404);
+        if (!await bearerMatches(request.headers.get("authorization"), env.BUYER_OBSERVATION_SECRET)) {
+          return errorResponse("unauthorized", 401);
+        }
+        const { createCatalogDirectedTrackingResponse } = await import("./routes/catalog-directed-tracking");
+        return createCatalogDirectedTrackingResponse(request, env.DB, {
+          nowMs: now(),
+          timeoutMs: config.probeTimeoutMs,
+          ...(env.BSC_RPC_URL === undefined ? {} : { rpcUrl: env.BSC_RPC_URL }),
+          ...(dependencies.verifyCatalogRegistration === undefined
+            ? {}
+            : { verifyRegistration: dependencies.verifyCatalogRegistration }),
+        });
+      }
+      if (request.method === "POST" && url.pathname === "/catalog-validations" && url.search === "") {
+        if (env.BUYER_OBSERVATION_SECRET === undefined) return errorResponse("not_found", 404);
+        if (!await bearerMatches(request.headers.get("authorization"), env.BUYER_OBSERVATION_SECRET)) {
+          return errorResponse("unauthorized", 401);
+        }
+        const { createCatalogValidationResponse } = await import("./routes/catalog-validation");
+        return createCatalogValidationResponse(
+          request,
+          env.DB,
+          env.WP2_QUEUE,
+          now(),
+          config.catalogValidationRequestsPerDay,
+        );
+      }
+      if (request.method === "POST" && url.pathname === "/catalog-quote-evidence" && url.search === "") {
+        if (env.BUYER_OBSERVATION_SECRET === undefined) return errorResponse("not_found", 404);
+        if (!await bearerMatches(request.headers.get("authorization"), env.BUYER_OBSERVATION_SECRET)) {
+          return errorResponse("unauthorized", 401);
+        }
+        const { catalogQuoteEvidenceResponse } = await import("./routes/catalog-quote-evidence");
+        return catalogQuoteEvidenceResponse(request, env.DB, {
+          ...(env.BSC_RPC_URL === undefined ? {} : { rpcUrl: env.BSC_RPC_URL }),
+          nowMs: now(),
+          timeoutMs: config.probeTimeoutMs,
+        });
+      }
+      if (request.method === "POST" && url.pathname === "/catalog-browser-observations" && url.search === "") {
+        if (env.BUYER_OBSERVATION_SECRET === undefined) return errorResponse("not_found", 404);
+        if (!await bearerMatches(request.headers.get("authorization"), env.BUYER_OBSERVATION_SECRET)) {
+          return errorResponse("unauthorized", 401);
+        }
+        const { catalogObservationResponse } = await import("./routes/catalog-observation");
+        return catalogObservationResponse(request, env.DB, now());
       }
       if (request.method === "POST" && url.pathname === "/__internal/catalog-observation" && url.search === "") {
         if (env.BUYER_OBSERVATION_SECRET === undefined) return errorResponse("not_found", 404);
@@ -148,6 +235,14 @@ export function createWorker(dependencies: WorkerDependencies = {}): WorkerEntry
           await publicCache.delete(new Request(`${url.origin}/observations/__scope/${scopeHash}`, { method: "GET" }));
         }
         return response;
+      }
+      if (request.method === "GET" && url.pathname === "/__admin/catalog-operations" && url.search === "") {
+        if (env.SHARED_SECRET === undefined) return errorResponse("not_found", 404);
+        if (!await bearerMatches(request.headers.get("authorization"), env.SHARED_SECRET)) {
+          return errorResponse("unauthorized", 401);
+        }
+        const { catalogOperationsResponse } = await import("./routes/catalog-operations");
+        return catalogOperationsResponse(env.DB, config, now());
       }
       if (request.method === "POST" && url.pathname === "/__admin/run-scheduled") {
         if (config.killSwitch
@@ -195,15 +290,37 @@ export function createWorker(dependencies: WorkerDependencies = {}): WorkerEntry
         message.ack();
         return;
       }
-      if (dependencies.runScheduled === undefined) throw new Error("WP2_QUEUE_RUNNER_REQUIRED");
-      const scheduledTime = queueScheduledTime(message.body, now());
+      const work = queueWork(message.body, now());
       if (!Number.isSafeInteger(message.attempts) || message.attempts < 1 || message.attempts > 4) {
         throw new Error("WP2_QUEUE_MESSAGE_INVALID");
       }
       if (message.id.length < 1 || message.id.length > 256) {
         throw new Error("WP2_QUEUE_MESSAGE_ID_INVALID");
       }
-      logger.info("wp2.queue.received", { attempt: message.attempts, scheduledTime });
+      logger.info("wp2.queue.received", {
+        attempt: message.attempts,
+        kind: work.kind,
+        ...(work.kind === "scheduled" ? { scheduledTime: work.scheduledTime } : { validationId: work.validationId }),
+      });
+      if (work.kind === "catalog_validation") {
+        const runner = dependencies.runCatalogValidation ?? defaultRunCatalogValidation;
+        let result: "completed" | "duplicate";
+        try {
+          result = await runner(work.validationId, env, config);
+        } catch (error) {
+          logger.error("catalog.validation.failed", {
+            attempt: message.attempts,
+            errorCode: queueErrorCode(error),
+            validationId: work.validationId,
+          });
+          throw error;
+        }
+        message.ack();
+        logger.info("catalog.validation.completed", { validationId: work.validationId, outcome: result });
+        return;
+      }
+      if (dependencies.runScheduled === undefined) throw new Error("WP2_QUEUE_RUNNER_REQUIRED");
+      const scheduledTime = work.scheduledTime;
       let result: ScheduledRunResult | void;
       try {
         result = await dependencies.runScheduled(
@@ -242,6 +359,19 @@ export function createWorker(dependencies: WorkerDependencies = {}): WorkerEntry
 const defaultRunScheduled: NonNullable<WorkerDependencies["runScheduled"]> = async (...args) => {
   const { runWp2Scheduled } = await import("./scheduled");
   return runWp2Scheduled(...args);
+};
+
+const defaultRunCatalogValidation: NonNullable<WorkerDependencies["runCatalogValidation"]> = async (
+  validationId,
+  env,
+  config,
+) => {
+  const { runCatalogValidationRequest } = await import("./phases/catalog-validation-request");
+  return runCatalogValidationRequest(
+    env.DB as unknown as Parameters<typeof runCatalogValidationRequest>[0],
+    validationId,
+    config,
+  );
 };
 
 export default createWorker({ runScheduled: defaultRunScheduled });

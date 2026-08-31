@@ -94,7 +94,7 @@ describe("WP2 Free queue dispatch", () => {
     expect(logger.info.mock.calls).toEqual([
       ["wp2.cron.received", { cron: "*/5 * * * *", scheduledTime: 1_800_000_000_000 }],
       ["wp2.cron.enqueued", { scheduledTime: 1_800_000_000_000 }],
-      ["wp2.queue.received", { attempt: 1, scheduledTime: 1_800_000_000_000 }],
+      ["wp2.queue.received", { attempt: 1, kind: "scheduled", scheduledTime: 1_800_000_000_000 }],
       ["wp2.queue.completed", { attempt: 1, outcome: "completed", scheduledTime: 1_800_000_000_000 }],
     ]);
     expect(logger.error).not.toHaveBeenCalled();

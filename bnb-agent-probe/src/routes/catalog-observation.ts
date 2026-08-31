@@ -1,19 +1,21 @@
+import { and, desc, eq } from "drizzle-orm";
 import type { D1DatabaseLike } from "../db/client";
 import { appendCatalogObservation, createDatabase } from "../db/orm";
+import { catalogAgentEndpoints, catalogEndpoints, catalogObservations } from "../db/schema";
 import type { D1Database } from "../types";
 
 const MAX_BODY_BYTES = 4_096;
 const MAX_CLOCK_SKEW_MS = 5 * 60_000;
 const MAX_EXPIRY_MS = 24 * 60 * 60_000;
+const REPORT_COOLDOWN_MS = 10_000;
 const HASH = /^[0-9a-f]{64}$/;
 const AGENT_ID = /^[1-9]\d*$/;
 const ERROR_CODE = /^[A-Z][A-Z0-9_]{2,63}$/;
-const PROTOCOLS = new Set(["a2a", "mcp", "web", "erc8183_http", "erc8183"]);
-const SOURCES = new Set(["browser_reported", "marketplace_probe"]);
+const PROTOCOLS = new Set(["a2a", "mcp", "erc8183_http"]);
+const SOURCES = new Set(["browser_reported"]);
 const OUTCOMES = new Set([
   "protocol_valid", "cors_blocked", "http_error", "timeout", "network_error",
-  "invalid_response", "unsafe_url", "erc8183_detected", "quote_verified",
-  "quote_rejected", "unreachable", "error",
+  "invalid_response", "unsafe_url", "unreachable", "error",
 ]);
 const KEYS = [
   "agentId", "details", "durationMs", "endpointKey", "errorCode", "expiresAt",
@@ -22,11 +24,11 @@ const KEYS = [
 const DETAIL_KEYS = ["capabilityCount", "cors", "method"] as const;
 
 interface CatalogObservationInput {
-  schemaVersion: 1;
-  source: "browser_reported" | "marketplace_probe";
+  schemaVersion: 2;
+  source: "browser_reported";
   agentId: string;
   endpointKey: string;
-  protocol: "a2a" | "mcp" | "web" | "erc8183_http" | "erc8183";
+  protocol: "a2a" | "mcp" | "erc8183_http";
   outcome: string;
   observedAt: number;
   expiresAt: number | null;
@@ -68,7 +70,7 @@ function parseInput(raw: unknown, now: number): CatalogObservationInput {
   if (raw === null || typeof raw !== "object" || Array.isArray(raw)) throw new InvalidCatalogObservation();
   const value = raw as Record<string, unknown>;
   if (!closedKeys(value, KEYS)
-    || value.schemaVersion !== 1
+    || value.schemaVersion !== 2
     || typeof value.source !== "string" || !SOURCES.has(value.source)
     || typeof value.agentId !== "string" || !AGENT_ID.test(value.agentId)
     || typeof value.endpointKey !== "string" || !HASH.test(value.endpointKey)
@@ -110,8 +112,41 @@ export async function catalogObservationResponse(
       headers: { "cache-control": "no-store" },
     });
   }
-  const id = await appendCatalogObservation(createDatabase(d1 as unknown as D1DatabaseLike), {
-    agentKey: `eip155:56:${input.agentId}`,
+  const db = createDatabase(d1 as unknown as D1DatabaseLike);
+  const agentKey = `eip155:56:${input.agentId}`;
+  const targets = await db.select({ endpointKey: catalogEndpoints.endpointKey })
+    .from(catalogAgentEndpoints)
+    .innerJoin(catalogEndpoints, eq(catalogEndpoints.endpointKey, catalogAgentEndpoints.endpointKey))
+    .where(and(
+      eq(catalogAgentEndpoints.agentKey, agentKey),
+      eq(catalogAgentEndpoints.endpointKey, input.endpointKey),
+      eq(catalogAgentEndpoints.declarationState, "current"),
+      eq(catalogEndpoints.role, "operational"),
+      eq(catalogEndpoints.eligibility, "eligible"),
+      eq(catalogEndpoints.validationProtocol, input.protocol),
+    )).limit(1);
+  if (targets.length === 0) {
+    return Response.json({ error: "target_unavailable" }, {
+      status: 409,
+      headers: { "cache-control": "no-store" },
+    });
+  }
+  const latest = await db.select({ observedAt: catalogObservations.observedAt })
+    .from(catalogObservations).where(and(
+      eq(catalogObservations.agentKey, agentKey),
+      eq(catalogObservations.endpointKey, input.endpointKey),
+      eq(catalogObservations.source, "browser_reported"),
+      eq(catalogObservations.validationKind, "protocol"),
+    )).orderBy(desc(catalogObservations.observedAt), desc(catalogObservations.id)).limit(1);
+  if (latest[0] && latest[0].observedAt > now - REPORT_COOLDOWN_MS) {
+    const retryAfterMs = latest[0].observedAt + REPORT_COOLDOWN_MS - now;
+    return Response.json({ error: "rate_limited", retryAfterMs }, {
+      status: 429,
+      headers: { "cache-control": "no-store", "retry-after": String(Math.ceil(retryAfterMs / 1_000)) },
+    });
+  }
+  const id = await appendCatalogObservation(db, {
+    agentKey,
     endpointKey: input.endpointKey,
     protocol: input.protocol,
     source: input.source,
@@ -122,6 +157,9 @@ export async function catalogObservationResponse(
     errorCode: input.errorCode,
     durationMs: input.durationMs,
     detailsJson: JSON.stringify(input.details),
+    attemptId: crypto.randomUUID(),
+    validationKind: "protocol",
+    verificationLevel: "user_observed",
   });
   return Response.json({ status: "recorded", id }, {
     status: 201,

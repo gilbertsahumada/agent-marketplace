@@ -19,6 +19,7 @@ const READ_ONLY_RPC_METHODS = new Set([
   "eth_getBlockByNumber",
   "eth_call",
   "eth_getCode",
+  "eth_getTransactionReceipt",
 ]);
 
 export const BSC_REGISTRY = getAddress("0x8004A169FB4a3325136EB29fA0ceB6D2e539a432");

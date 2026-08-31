@@ -14,6 +14,22 @@ describe("loadConfig", () => {
       sweepLimit: 4,
       sweepPagesPerRun: 1,
       probeBatchSize: 1,
+      catalogProbeBatchSize: 1,
+      catalogProbeConcurrency: 2,
+      catalogValidationRequestsPerDay: 100,
+      catalogDiscoveryPageSize: 12,
+      catalogIngestTasksPerRun: 2,
+      catalogDeclarationsPerTask: 4,
+      catalogA2aTimeoutMs: 5_000,
+      catalogMcpTimeoutMs: 5_000,
+      catalogErc8183TimeoutMs: 5_000,
+      catalogPriorityRefreshMinutes: 15,
+      catalogA2aRefreshMinutes: 720,
+      catalogMcpRefreshMinutes: 1_440,
+      catalogErc8183RefreshMinutes: 360,
+      catalogFailureBackoffMinutes: [60, 360, 1_440, 10_080],
+      catalogV2ReadsEnabled: false,
+      catalogV2WritesEnabled: false,
       probeAgentAllowlist: ["303779"],
       probeEndpointAllowlist: ["https://bnb-agent-marketplace-ruby.vercel.app/grid"],
       trust8004RequestsPerRun: 4,
@@ -36,7 +52,9 @@ describe("loadConfig", () => {
         d1RowsWrittenNominal: 17_856,
         d1RowsRead: 3_456_000,
         d1RowsWritten: 71_424,
-        queueOperations: 1_728,
+        scheduledQueueOperations: 1_728,
+        onDemandQueueOperations: 600,
+        queueOperations: 2_328,
         freeQueueOperationsCeiling: 8_000,
       },
     });
@@ -53,6 +71,11 @@ describe("loadConfig", () => {
       sweepLimit: 2_000,
       sweepPagesPerRun: 2,
       probeBatchSize: 10,
+      catalogProbeBatchSize: 10,
+      catalogProbeConcurrency: 4,
+      catalogDiscoveryPageSize: 200,
+      catalogIngestTasksPerRun: 10,
+      catalogDeclarationsPerTask: 20,
       d1QueriesPerRun: 800,
     });
   });
@@ -67,6 +90,12 @@ describe("loadConfig", () => {
     [{ PROBE_BATCH_SIZE: "2" }, "PROBE_BATCH_SIZE"],
     [{ PROBE_BATCH_SIZE: "0" }, "PROBE_BATCH_SIZE"],
     [{ PROBE_TIMEOUT_MS: "0" }, "PROBE_TIMEOUT_MS"],
+    [{ CATALOG_DISCOVERY_PAGE_SIZE: "0" }, "CATALOG_DISCOVERY_PAGE_SIZE"],
+    [{ CATALOG_INGEST_TASKS_PER_RUN: "0" }, "CATALOG_INGEST_TASKS_PER_RUN"],
+    [{ CATALOG_DECLARATIONS_PER_TASK: "0" }, "CATALOG_DECLARATIONS_PER_TASK"],
+    [{ CATALOG_A2A_TIMEOUT_MS: "0" }, "CATALOG_A2A_TIMEOUT_MS"],
+    [{ CATALOG_MCP_TIMEOUT_MS: "10001" }, "CATALOG_MCP_TIMEOUT_MS"],
+    [{ CATALOG_PRIORITY_REFRESH_MINUTES: "0" }, "CATALOG_PRIORITY_REFRESH_MINUTES"],
     [{ MAX_SELLER_RESPONSE_BYTES: "0" }, "MAX_SELLER_RESPONSE_BYTES"],
     [{ EXTERNAL_SUBREQUESTS_PER_RUN: "41" }, "EXTERNAL_SUBREQUESTS_PER_RUN"],
     [{ D1_QUERIES_PER_RUN: "41" }, "D1_QUERIES_PER_RUN"],
@@ -112,6 +141,99 @@ describe("loadConfig", () => {
   it("requires the Free SWEEP detail count to fit the upstream request budget", () => {
     expect(() => loadConfig({ SWEEP_LIMIT: "5" })).toThrow(/^SWEEP_LIMIT:/);
     expect(loadConfig({ SWEEP_LIMIT: "4", TRUST8004_REQUESTS_PER_RUN: "4" }).sweepLimit).toBe(4);
+  });
+
+  it("requires the catalog batch worst case to fit the external subrequest budget", () => {
+    expect(() => loadConfig({
+      CATALOG_PROBE_BATCH_SIZE: "4",
+      CATALOG_PROBE_CONCURRENCY: "2",
+    })).toThrow(/^CATALOG_PROBE_BATCH_SIZE:/);
+    expect(loadConfig({
+      CATALOG_PROBE_BATCH_SIZE: "4",
+      CATALOG_PROBE_CONCURRENCY: "2",
+      EXTERNAL_SUBREQUESTS_PER_RUN: "15",
+    })).toMatchObject({
+      catalogProbeBatchSize: 4,
+      catalogProbeConcurrency: 2,
+      externalSubrequestsPerRun: 15,
+    });
+    expect(() => loadConfig({ CATALOG_PROBE_BATCH_SIZE: "5" })).toThrow(/^CATALOG_PROBE_BATCH_SIZE:/);
+    expect(() => loadConfig({ CATALOG_PROBE_CONCURRENCY: "3" })).toThrow(/^CATALOG_PROBE_CONCURRENCY:/);
+  });
+
+  it("reserves Free Queue capacity for bounded on-demand validations", () => {
+    expect(loadConfig({ CATALOG_VALIDATION_REQUESTS_PER_DAY: "1" })).toMatchObject({
+      catalogValidationRequestsPerDay: 1,
+      projectedDailyBudget: { onDemandQueueOperations: 6, queueOperations: 1_734 },
+    });
+    expect(() => loadConfig({ CATALOG_VALIDATION_REQUESTS_PER_DAY: "501" }))
+      .toThrow(/^CATALOG_VALIDATION_REQUESTS_PER_DAY:/);
+  });
+
+  it("keeps ingest, protocol deadlines, freshness and backoff configurable", () => {
+    expect(loadConfig({
+      CATALOG_DISCOVERY_PAGE_SIZE: "10",
+      CATALOG_INGEST_TASKS_PER_RUN: "1",
+      CATALOG_DECLARATIONS_PER_TASK: "3",
+      CATALOG_A2A_TIMEOUT_MS: "4000",
+      CATALOG_MCP_TIMEOUT_MS: "9000",
+      CATALOG_ERC8183_TIMEOUT_MS: "3000",
+      CATALOG_PRIORITY_REFRESH_MINUTES: "10",
+      CATALOG_A2A_REFRESH_MINUTES: "600",
+      CATALOG_MCP_REFRESH_MINUTES: "1200",
+      CATALOG_ERC8183_REFRESH_MINUTES: "300",
+      CATALOG_FAILURE_BACKOFF_MINUTES: "30,120,720,4320",
+    })).toMatchObject({
+      catalogDiscoveryPageSize: 10,
+      catalogIngestTasksPerRun: 1,
+      catalogDeclarationsPerTask: 3,
+      catalogA2aTimeoutMs: 4_000,
+      catalogMcpTimeoutMs: 9_000,
+      catalogErc8183TimeoutMs: 3_000,
+      catalogPriorityRefreshMinutes: 10,
+      catalogA2aRefreshMinutes: 600,
+      catalogMcpRefreshMinutes: 1_200,
+      catalogErc8183RefreshMinutes: 300,
+      catalogFailureBackoffMinutes: [30, 120, 720, 4_320],
+    });
+  });
+
+  it.each([
+    "",
+    "60",
+    "60,30",
+    "0,60",
+    "60,abc",
+    "60,360,1440,10081",
+  ])("rejects an invalid catalog failure backoff sequence: %s", (value) => {
+    expect(() => loadConfig({ CATALOG_FAILURE_BACKOFF_MINUTES: value }))
+      .toThrow(/^CATALOG_FAILURE_BACKOFF_MINUTES:/);
+  });
+
+  it("requires catalog discovery and ingest to fit the trust8004 request budget", () => {
+    expect(() => loadConfig({
+      CATALOG_INGEST_TASKS_PER_RUN: "4",
+      TRUST8004_REQUESTS_PER_RUN: "4",
+    })).toThrow(/^CATALOG_INGEST_TASKS_PER_RUN:/);
+  });
+
+  it("requires an all-new two-page discovery sweep to fit the D1 query budget", () => {
+    expect(loadConfig({ CATALOG_DISCOVERY_PAGE_SIZE: "15" }).catalogDiscoveryPageSize).toBe(15);
+    expect(() => loadConfig({ CATALOG_DISCOVERY_PAGE_SIZE: "16" }))
+      .toThrow(/^CATALOG_DISCOVERY_PAGE_SIZE:/);
+  });
+
+  it("keeps v2 writes behind an explicit rollout switch", () => {
+    expect(loadConfig({ CATALOG_V2_WRITES_ENABLED: "1" }).catalogV2WritesEnabled).toBe(true);
+    expect(() => loadConfig({ CATALOG_V2_WRITES_ENABLED: "yes" }))
+      .toThrow(/^CATALOG_V2_WRITES_ENABLED:/);
+  });
+
+  it("can roll API reads back independently of v2 writes", () => {
+    expect(loadConfig({ CATALOG_V2_READS_ENABLED: "0" }).catalogV2ReadsEnabled).toBe(false);
+    expect(loadConfig({ CATALOG_V2_READS_ENABLED: "1" }).catalogV2ReadsEnabled).toBe(true);
+    expect(() => loadConfig({ CATALOG_V2_READS_ENABLED: "yes" }))
+      .toThrow(/^CATALOG_V2_READS_ENABLED:/);
   });
 
   it.each([
