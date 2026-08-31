@@ -1,7 +1,7 @@
 # Observation Infrastructure and D1 Normalization — Specification
 
-**Status:** Implementation in progress — infrastructure local gates pass; application integration and remote staging gates pending  
-**Date:** 2026-08-31  
+**Status:** Implementation in progress — infrastructure local gates pass; public API integration is merged; frontend integration and remote staging gates pending
+**Date:** 2026-09-01
 **Owner:** Infrastructure session  
 **Companion specification:** `docs/FRONTEND_HIRE_JOURNEY_SPEC.md`
 
@@ -27,11 +27,14 @@ Local evidence captured on 2026-09-01:
   `bnb-agent-probe` (`vitest.config.ts` and `vitest.worker.config.ts`);
 - production, staging and validation dry-run bundles build successfully;
 - application-side endpoint policy, controller and observation-sync coverage passes
-  23 focused tests (`browser-endpoint-validation.test.ts`,
+  25 focused tests (`browser-endpoint-validation.test.ts`,
   `marketplace-controllers.test.ts` and `catalog-observation-sync.test.ts`);
-- the complete application gate passes: typecheck, 515 tests across 59 files and
+- the complete application gate passes: typecheck, 544 tests across 62 files and
   the production CLI/Web build. The BNB Agent SDK still emits its known dynamic
   dependency warning during bundling; the bundle completes successfully.
+- `docs/API.md`, `docs/HIRE-SPEC.md`, `docs/MCP.md` and `docs/MARKETPLACE.md`
+  are now integrated from `main` in PR #56; the frontend companion remains a
+  separate concurrent change and is not included in this infrastructure commit.
 - catalog evidence reads enforce cryptographic/on-chain verification levels,
   isolate shared-endpoint observations by declaring agent, and release Queue/D1
   leases after a failed result batch; these paths are covered by the integration
