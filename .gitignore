@@ -28,5 +28,6 @@ tunnel*.pid
 !/docs/AGENT-TO-AGENT-PLAN.md
 !/docs/API.md
 !/docs/HIRE-SPEC.md
-.vercel
+.claude/
+.vercel/
 .DS_Store
