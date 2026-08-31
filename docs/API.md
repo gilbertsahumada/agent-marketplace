@@ -254,3 +254,13 @@ Response shapes on the public routes above are covered by
 `tests/marketplace-controllers.test.ts`, `tests/erc8183-spike-controllers.test.ts` and
 `tests/hosted-seller-controllers.test.ts`; changes to them are breaking-change reviews,
 not refactors.
+
+## Connect an agent (MCP)
+
+The repo ships a stdio MCP server exposing this API as five tools (`search_agents`,
+`get_passport`, `compare_agents`, `request_quote`, `get_job_status`): run
+`npm run mcp` (or use the checked-in `.mcp.json` with Claude Code). It targets the
+production origin by default; set `MARKETPLACE_ORIGIN` to point elsewhere. The server
+is a thin wrapper over the routes above — same contracts, same non-claims. The hire
+flow a programmatic buyer executes after `request_quote` is specified in
+`docs/HIRE-SPEC.md`.
