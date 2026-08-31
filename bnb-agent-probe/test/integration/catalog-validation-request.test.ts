@@ -116,6 +116,60 @@ describe("catalog validation Queue work", () => {
       .toMatchObject({ count: 1 });
   });
 
+  it("does not overwrite the shared projection for a nonrepresentative declarer", async () => {
+    const representativeKey = "eip155:56:1";
+    const previousAttemptAt = NOW - 10_000;
+    await env.DB.prepare(`INSERT INTO catalog_agents (
+      agentKey, agentId, chainId, metadataState, indexState, firstSeenAt, lastSeenAt
+    ) VALUES (?, '1', 56, 'ok', 'current', ?, ?)`)
+      .bind(representativeKey, NOW, NOW).run();
+    await env.DB.prepare(`UPDATE catalog_endpoints SET
+      representativeAgentKey = ?, lastAttemptAt = ?, lastAttemptOutcome = 'protocol_valid',
+      lastSuccessfulAt = ?, nextProbeAt = ?, consecutiveFailures = 0
+      WHERE endpointKey = ?`)
+      .bind(representativeKey, previousAttemptAt, previousAttemptAt, NOW + 60_000, ENDPOINT_KEY).run();
+    await env.DB.prepare(`INSERT INTO catalog_observations (
+      attemptId, agentKey, endpointKey, protocol, source, outcome, observedAt,
+      expiresAt, durationMs, detailsJson, validationKind, verificationLevel
+    ) VALUES ('representative-observation', ?, ?, 'mcp', 'worker_probe',
+      'protocol_valid', ?, ?, 20, '{}', 'protocol', 'platform_observed')`)
+      .bind(representativeKey, ENDPOINT_KEY, previousAttemptAt, NOW + 60_000).run();
+
+    const fetchImpl = vi.fn()
+      .mockResolvedValueOnce(Response.json({ jsonrpc: "2.0", id: 1, result: { protocolVersion: "2025-06-18" } }, {
+        headers: { "mcp-session-id": "session" },
+      }))
+      .mockResolvedValueOnce(new Response(null, { status: 202 }))
+      .mockResolvedValueOnce(Response.json({ jsonrpc: "2.0", id: 2, result: { tools: [] } }));
+    const request = await env.DB.prepare("SELECT id FROM catalog_validation_requests").first<{ id: number }>();
+
+    await expect(runCatalogValidationRequest(
+      env.DB as unknown as D1DatabaseLike,
+      request!.id,
+      loadConfig({ KILL_SWITCH: "0", PROBE_GENERAL_EGRESS_APPROVED: "1" }),
+      () => NOW,
+      fetchImpl,
+    )).resolves.toBe("completed");
+
+    expect(await env.DB.prepare(`SELECT lastAttemptAt, lastAttemptOutcome, lastSuccessfulAt,
+      nextProbeAt, consecutiveFailures FROM catalog_endpoints WHERE endpointKey = ?`)
+      .bind(ENDPOINT_KEY).first()).toMatchObject({
+      lastAttemptAt: previousAttemptAt,
+      lastAttemptOutcome: "protocol_valid",
+      lastSuccessfulAt: previousAttemptAt,
+      nextProbeAt: NOW + 60_000,
+      consecutiveFailures: 0,
+    });
+    expect(await env.DB.prepare(`SELECT source, outcome, agentKey FROM catalog_observations
+      WHERE attemptId = 'representative-observation'`).first()).toMatchObject({
+      source: "worker_probe", outcome: "protocol_valid", agentKey: representativeKey,
+    });
+    expect(await env.DB.prepare(`SELECT source, outcome, agentKey FROM catalog_observations
+      WHERE source = 'buyer_refresh'`).first()).toMatchObject({
+      source: "buyer_refresh", outcome: "protocol_valid", agentKey: "eip155:56:42",
+    });
+  });
+
   it("releases leases and leaves the request retryable when the result batch fails", async () => {
     const request = await env.DB.prepare("SELECT id FROM catalog_validation_requests").first<{ id: number }>();
     const raw = env.DB as unknown as D1DatabaseLike;

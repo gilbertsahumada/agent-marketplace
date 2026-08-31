@@ -17,6 +17,8 @@ export interface CatalogProbeTarget {
   readonly endpoint: string;
   readonly priority: number;
   readonly consecutiveFailures: number;
+  /** Whether this attempt is allowed to update the shared endpoint projection. */
+  readonly isRepresentative?: boolean;
   readonly leaseOwner?: string;
   readonly queueDelayMs?: number;
   readonly leaseWaitMs?: number;

@@ -48,6 +48,7 @@ export async function runCatalogValidationRequest(
     endpoint: catalogEndpoints.endpoint,
     priority: catalogAgentEndpoints.priority,
     consecutiveFailures: catalogEndpoints.consecutiveFailures,
+    representativeAgentKey: catalogEndpoints.representativeAgentKey,
   }).from(catalogAgentEndpoints)
     .innerJoin(catalogEndpoints, eq(catalogEndpoints.endpointKey, catalogAgentEndpoints.endpointKey))
     .where(and(
@@ -90,6 +91,7 @@ export async function runCatalogValidationRequest(
     endpoint: row.endpoint,
     priority: row.priority,
     consecutiveFailures: row.consecutiveFailures,
+    isRepresentative: row.representativeAgentKey === null || row.representativeAgentKey === row.agentKey,
     leaseOwner: endpointLeaseOwner,
     queueDelayMs: Math.max(0, nowMs - request.createdAt),
     leaseWaitMs: Math.max(0, Math.round(performance.now() - leaseStarted)),
