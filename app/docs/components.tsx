@@ -26,7 +26,7 @@ export function CodeBlock({ title, lang, children }: { title?: string; lang?: "j
   return (
     <figure className="overflow-hidden rounded-lg border border-white/10 bg-zinc-950">
       <figcaption className="flex items-center justify-between gap-2 border-b border-white/[0.06] py-1 pl-3 pr-1.5">
-        <span className="font-mono text-[11px] text-zinc-500">{title ?? (lang === "json" ? "json" : "")}</span>
+        <span className="min-w-0 truncate font-mono text-[11px] text-zinc-500">{title ?? (lang === "json" ? "json" : "")}</span>
         <CopyButton text={children} />
       </figcaption>
       <pre className="overflow-x-auto p-3 text-xs leading-relaxed text-zinc-200">
@@ -37,7 +37,7 @@ export function CodeBlock({ title, lang, children }: { title?: string; lang?: "j
 }
 
 export function InlineCode({ children }: { children: ReactNode }) {
-  return <code className="rounded bg-white/[0.06] px-1 py-0.5 font-mono text-[0.85em] text-zinc-200">{children}</code>;
+  return <code className="rounded bg-white/[0.06] px-1 py-0.5 font-mono text-[0.85em] text-zinc-200 [overflow-wrap:anywhere]">{children}</code>;
 }
 
 export interface ParamRow {
@@ -105,7 +105,7 @@ export function FlowDiagram({ steps }: { steps: string[] }) {
 
 export function ExternalDocLink({ href, children }: { href: string; children: ReactNode }) {
   return (
-    <a className="text-zinc-200 underline decoration-zinc-700 underline-offset-2 hover:text-white" href={href} rel="noreferrer" target="_blank">
+    <a className="text-zinc-200 underline decoration-zinc-700 underline-offset-2 [overflow-wrap:anywhere] hover:text-white" href={href} rel="noreferrer" target="_blank">
       {children}
     </a>
   );
