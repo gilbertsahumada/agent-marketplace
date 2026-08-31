@@ -426,10 +426,10 @@ does not re-promote it, and Hire still requests a new quote before signatures.
 The 2026-08-31 staging promotion applied the legacy observation bridge and
 deployed Worker version `80c76b08-0467-4e14-ba41-08f3902164b0`. The acceptance
 probe recorded both A2A protocol and ERC-8183 quote observations and returned
-the pre-admitted seller as hireable. Production promotion remains ordered as:
-configure all three server-side observation variables, merge, then repeat the
-HTTP and D1 persistence checks; merging into an unconfigured Production is not
-an acceptable fallback.
+the pre-admitted seller as hireable. The Production promotion then followed the
+required order: configure all three server-side observation variables, merge,
+and repeat the HTTP and D1 persistence checks. The measured close-out is
+recorded below; an unconfigured Production fallback was never accepted.
 
 ## 2026-08-30 — Make hiring the catalogue's primary presentation
 
@@ -526,3 +526,14 @@ activated. The UI must therefore remain honest when no scheduler run exists.
 - Worker staging version `7b6836c5-bd57-473a-a755-8e9d7d669d71` runs the public BSC RPC and `*/5 * * * *`. Its first post-deploy HEADER tick completed without retry and reported 74 candidates seen, six indexed, 68 deferred, one endpoint and six declarations. Production and validation remain safe-off.
 - The first generic PROBE tick at 2026-08-30T22:30:00Z completed on delivery one and persisted one `network_error`, proving queue-to-D1 operation. It also selected Beefy's generic `web` declaration before its MCP declaration. The following candidate fixes that information-value bug by ordering due targets `erc8183_http → mcp → a2a → web`; the measured staging version remains unchanged until that candidate is explicitly promoted.
 - Preview smoke testing found that Grid's verified WP3 observations remained only in the legacy table, so the v2 profile reported zero platform attempts and the `hireable` filter returned zero. Migration `0007_bridge_probe_observations.sql` now backfills and continuously mirrors those append-only facts into the normalized catalogue. `Hireable` remains stable for an admitted executable seller even after an informational quote expires; clicking it obtains and validates a new transaction quote. MCP-only agents remain non-hireable.
+
+## 2026-08-31 — Promote the shared catalogue to the Production frontend
+
+- `OBSERVATIONS_URL`, `BUYER_OBSERVATION_ALLOWED_ORIGIN` and `BUYER_OBSERVATION_SECRET` were confirmed by name in Vercel Preview and Production. One newly generated buyer-observation secret was delivered by stdin to both Vercel environments and Worker staging; its value is not part of this record.
+- Preview deployment `bnb-agent-marketplace-9v45k0p5a-teterabobs-projects.vercel.app` passed the three catalogue views and a real validation before merge. Its validation at `2026-08-31T09:41:16.735Z` returned A2A verified, quote verified, `observationSync` recorded 2/2, `canHire=true` and Passport `hireable`; the filtered D1 count increased from 197 to 199.
+- PR #43 merged to `main` as `750c90232232fcf100af04f7814f9fb04a247afd` at `2026-08-31T09:42:42Z`. Vercel Production deployment `dpl_H7HuJ64Zb5vU72SzzRCCFdNPUrea` reached Ready and received the public aliases.
+- Production returned HTTP 200 for the declared, hireable and ERC-8183 catalogue views. Each rendered the normalized shared-index description with monitoring connected, proving that the previous hybrid fallback was no longer serving the marketplace view.
+- The Production read between `2026-08-31T09:45:22.791Z` and `2026-08-31T09:45:25.995Z` measured 29,994 declared candidates, 14 ERC-8183 declarants and exactly one hireable agent, `303779`.
+- Production validation at `2026-08-31T09:46:26.661Z` matched identity at BSC block `119129868`, verified A2A and a fresh ERC-8183 quote, recorded 2/2 observations, returned `marketplace_configured` with `canHire=true`, and produced a `hireable` Passport. The filtered D1 count increased from 199 to 201; rows `247` and `248` are the corresponding `erc8183/quote_verified` and `a2a/protocol_valid` facts.
+- Rotating the Worker secret created active version `b492f10e-7285-4345-8586-d3eae3e7e421` at 100%. Its deployed bindings retain staging D1 `6fbeea3e-4516-4c4e-a5c4-392cb067198a`, the staging Queue, `KILL_SWITCH=0` and `PRODUCER_KILL_SWITCH=0`. The public feed reported producer and consumer enabled, a five-minute interval, and a completed HEADER attempt at `2026-08-31T09:45:26.322Z`; the checked-in Cron remains `*/5 * * * *`.
+- This is a release/configuration close-out, not a new MVP feature. It promotes the already accepted shared-index path and does not activate the safe-off production Worker environment or expand the staging allowlist.
