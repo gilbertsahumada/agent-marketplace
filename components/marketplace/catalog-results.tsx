@@ -114,9 +114,9 @@ export function CatalogResults({ agents, registry = false, toolbar, emptyContent
 
   return (
     <Tabs className="gap-5" defaultValue="cards">
-      <div className="grid items-center gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
+      <div className="grid items-center gap-3 min-[30rem]:grid-cols-[minmax(0,1fr)_auto]">
         {toolbar ?? <span />}
-        <TabsList aria-label="Catalog layout">
+        <TabsList aria-label="Catalog layout" className="justify-self-start min-[30rem]:justify-self-end">
           <TabsTrigger value="cards"><LayoutGrid aria-hidden="true" data-icon="inline-start" />Cards</TabsTrigger>
           <TabsTrigger value="table"><List aria-hidden="true" data-icon="inline-start" />Table</TabsTrigger>
         </TabsList>
