@@ -136,7 +136,19 @@ export async function catalogAgentsResponse(
       eq(catalogEndpoints.role, "operational"),
       eq(catalogEndpoints.eligibility, "eligible"),
     )));
-  const observationBelongsToAgent = eq(catalogObservations.agentKey, catalogAgents.agentKey);
+  const observationBelongsToAgent = and(
+    eq(catalogObservations.agentKey, catalogAgents.agentKey),
+    exists(db.select({ value: sql`1` })
+      .from(catalogAgentEndpoints)
+      .innerJoin(catalogEndpoints, eq(catalogEndpoints.endpointKey, catalogAgentEndpoints.endpointKey))
+      .where(and(
+        eq(catalogAgentEndpoints.agentKey, catalogAgents.agentKey),
+        eq(catalogAgentEndpoints.endpointKey, catalogObservations.endpointKey),
+        eq(catalogAgentEndpoints.declarationState, "current"),
+        eq(catalogEndpoints.role, "operational"),
+        eq(catalogEndpoints.eligibility, "eligible"),
+      ))),
+  );
   const platformObservationExists = exists(db.select({ value: sql`1` })
     .from(catalogObservations)
     .where(and(
@@ -202,7 +214,7 @@ export async function catalogAgentsResponse(
   const freshQuote = exists(db.select({ value: sql`1` })
     .from(catalogObservations)
     .where(and(
-      eq(catalogObservations.agentKey, catalogAgents.agentKey),
+      observationBelongsToAgent,
       eq(catalogObservations.validationKind, "quote"),
       eq(catalogObservations.verificationLevel, "cryptographic"),
       eq(catalogObservations.outcome, "quote_verified"),
@@ -211,7 +223,7 @@ export async function catalogAgentsResponse(
   const anyQuote = exists(db.select({ value: sql`1` })
     .from(catalogObservations)
     .where(and(
-      eq(catalogObservations.agentKey, catalogAgents.agentKey),
+      observationBelongsToAgent,
       eq(catalogObservations.validationKind, "quote"),
       eq(catalogObservations.verificationLevel, "cryptographic"),
       eq(catalogObservations.outcome, "quote_verified"),

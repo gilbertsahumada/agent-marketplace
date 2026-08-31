@@ -44,6 +44,9 @@ export async function catalogAgentResponse(
     nowMs,
   });
   const serializeObservation = publicCatalogObservation;
+  const currentOperationalEndpointKeys = new Set(evidence.endpoints
+    .filter((endpoint) => endpoint.role === "operational" && endpoint.eligibility === "eligible")
+    .map((endpoint) => endpoint.endpointKey));
   const resources = evidence.declarations.flatMap((declaration) => {
     const endpoint = evidence.endpoints.find((candidate) => candidate.endpointKey === declaration.endpointKey);
     if (!endpoint) return [];
@@ -74,7 +77,9 @@ export async function catalogAgentResponse(
     }];
   });
   const quoteObservation = evidence.observations.find((observation) => observation.validationKind === "quote"
-    && observation.verificationLevel === "cryptographic") ?? null;
+    && observation.verificationLevel === "cryptographic"
+    && observation.endpointKey !== null
+    && currentOperationalEndpointKeys.has(observation.endpointKey)) ?? null;
   const chainObservations = evidence.observations.filter((observation) => observation.validationKind === "chain"
     && observation.verificationLevel === "onchain");
   const v1Body = {
