@@ -131,6 +131,8 @@ Discover → Understand → Compare → Hire → Track → Result
 - Do not build a full frontend before the buyer spike passes.
 - Do not build four proprietary agents.
 - Build a fallback seller only when a missing category blocks judging.
+- Agent-to-agent hiring is in scope as a hackathon differentiator: an agent may be the ERC-8183 buyer, and the signed-quote gate applies to agent buyers exactly as to humans.
+- The machine-readable marketplace surface is one HTTP API in this repository; CLI and MCP are thin wrappers over it, never parallel implementations.
 - Partner tracks, multichain support, social features, and a new reputation protocol are out of scope.
 
 ## Provenance
