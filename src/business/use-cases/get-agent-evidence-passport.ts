@@ -16,7 +16,7 @@ export interface CatalogCandidateReader {
   execute(input: { agentId: string }): Promise<CatalogCandidate | null>;
 }
 
-const PLATFORM_SOURCES = new Set(["marketplace_probe", "worker_probe", "chain_index"]);
+const PLATFORM_SOURCES = new Set(["marketplace_probe", "worker_probe", "chain_index", "buyer_refresh", "chain_read", "migration"]);
 const FAILURE_OUTCOMES = new Set([
   "http_error", "timeout", "network_error", "invalid_response", "unsafe_url", "quote_rejected", "unreachable", "error",
 ]);
@@ -68,7 +68,8 @@ export class GetAgentEvidencePassport {
     const quoteIsFresh = quote !== undefined && quote.expiresAt !== null && quote.expiresAt > now;
     const compatibleDeclaration = catalogCandidate?.declarations.some(({ protocol, safety }) => safety === "safe"
       && (protocol === "a2a" || protocol === "erc8183_http")) ?? false;
-    const canHire = (catalogCandidate?.marketplaceConfigured ?? false) && compatibleDeclaration;
+    const canHire = catalogCandidate?.state?.canRequestQuote
+      ?? ((catalogCandidate?.marketplaceConfigured ?? false) && compatibleDeclaration);
     const hireabilityStatus = quoteIsFresh
       ? "quote_verified" as const
       : quote

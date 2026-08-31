@@ -32,7 +32,7 @@ const quote = {
 afterEach(() => vi.unstubAllEnvs());
 
 describe("buyer-triggered observation sync", () => {
-  it("sends a bounded sanitized payload with the buyer-observation Bearer secret", async () => {
+  it("sends the exact signed envelope for independent Worker verification", async () => {
     vi.stubEnv("OBSERVATIONS_URL", "https://worker.example/observations");
     vi.stubEnv("BUYER_OBSERVATION_ALLOWED_ORIGIN", "https://worker.example");
     vi.stubEnv("BUYER_OBSERVATION_SECRET", "buyer-secret");
@@ -40,28 +40,21 @@ describe("buyer-triggered observation sync", () => {
     const fetchImpl = vi.fn(async (_input: string | URL | Request, init?: RequestInit) => {
       expect(init?.headers).toMatchObject({ authorization: "Bearer buyer-secret" });
       const raw = String(init?.body);
-      expect(raw.length).toBeLessThan(8_192);
-      expect(raw).not.toContain("provider_sig");
-      expect(raw).not.toContain("must-never-sync");
+      expect(raw.length).toBeLessThan(64 * 1_024);
       expect(JSON.parse(raw)).toMatchObject({
-        schemaVersion: 1,
-        source: "buyer_refresh",
+        schemaVersion: 2,
         agentId: "303779",
-        chainId: 56,
-        transport: "a2a",
-        endpoint: "https://seller.example/grid",
+        endpointKey: expect.stringMatching(/^[0-9a-f]{64}$/),
         probeCategory: "grid_trading",
-        observedWallet: quote.provider,
-        requestHash: quote.envelope.request_hash,
-        negotiationHash: quote.envelope.negotiation_hash,
+        envelope: quote.envelope,
       });
-      return Response.json({ status: "synced" }, { status: 201 });
+      return Response.json({ status: "verified" }, { status: 201 });
     });
 
     await expect(syncBuyerQuoteObservation(quote, { fetchImpl, now: () => 1_788_000_125_000 }))
       .resolves.toEqual({ status: "synced" });
     expect(fetchImpl).toHaveBeenCalledWith(
-      "https://worker.example/__internal/on-demand-observation",
+      "https://worker.example/catalog-quote-evidence",
       expect.objectContaining({ method: "POST", cache: "no-store" }),
     );
   });

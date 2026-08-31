@@ -1,0 +1,147 @@
+{
+  "list": {
+    "schemaVersion": 2,
+    "apiVersion": 2,
+    "chainId": 56,
+    "status": "declared",
+    "statuses": ["declared"],
+    "query": "",
+    "category": null,
+    "categories": [],
+    "generatedAt": 1788000000000,
+    "page": 1,
+    "limit": 24,
+    "total": 1,
+    "items": [
+      {
+        "agentKey": "eip155:56:42",
+        "agentId": "42",
+        "chainId": 56,
+        "name": "Contract fixture seller",
+        "description": null,
+        "imageUrl": null,
+        "categoriesJson": "[\"grid_trading\"]",
+        "marketplaceConfigured": 0,
+        "metadataState": "ok",
+        "registeredAt": 1788000000000,
+        "blockNumber": "123",
+        "priority": 80,
+        "admission": {
+          "state": "candidate",
+          "endpointKey": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        "state": {
+          "operationalStatus": "platform_reachable",
+          "freshness": "live",
+          "commerceStatus": "admission_pending",
+          "quoteStatus": "not_requested",
+          "buyerAction": "request_quote",
+          "canRequestBrowserValidation": true,
+          "canRequestInfrastructureValidation": true,
+          "canRequestQuote": true,
+          "canPrepareHire": false,
+          "blockingReasons": ["COMMERCE_NOT_ADMITTED"]
+        },
+        "declarations": [
+          {
+            "endpointKey": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "protocol": "a2a",
+            "endpoint": "https://seller.example/a2a",
+            "originKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "safety": "safe",
+            "safetyReason": null,
+            "representativeAgentKey": "eip155:56:42",
+            "lastProbedAt": 1788000000000,
+            "nextProbeAt": 1788043200000,
+            "consecutiveFailures": 0,
+            "priority": 80
+          }
+        ],
+        "observations": [
+          {
+            "id": 1,
+            "agentKey": "eip155:56:42",
+            "endpointKey": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "protocol": "a2a",
+            "source": "worker_probe",
+            "outcome": "protocol_valid",
+            "observedAt": 1788000000000,
+            "expiresAt": 1788043200000,
+            "httpStatus": 200,
+            "errorCode": null,
+            "durationMs": 42,
+            "details": { "schemaVersion": 2, "stageDurationsMs": { "agentCard": 42 } }
+          }
+        ]
+      }
+    ]
+  },
+  "detail": {
+    "schemaVersion": 2,
+    "apiVersion": 2,
+    "chainId": 56,
+    "agentId": "42",
+    "platformAttemptCount": 1,
+    "agent": {
+      "agentKey": "eip155:56:42",
+      "agentId": "42",
+      "chainId": 56,
+      "name": "Contract fixture seller",
+      "description": null,
+      "imageUrl": null,
+      "categoriesJson": "[\"grid_trading\"]",
+      "marketplaceConfigured": 0,
+      "metadataState": "ok",
+      "registeredAt": 1788000000000,
+      "blockNumber": "123",
+      "priority": 80
+    },
+    "admission": {
+      "state": "candidate",
+      "endpointKey": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "state": {
+      "operationalStatus": "platform_reachable",
+      "freshness": "live",
+      "commerceStatus": "admission_pending",
+      "quoteStatus": "not_requested",
+      "buyerAction": "request_quote",
+      "canRequestBrowserValidation": true,
+      "canRequestInfrastructureValidation": true,
+      "canRequestQuote": true,
+      "canPrepareHire": false,
+      "blockingReasons": ["COMMERCE_NOT_ADMITTED"]
+    },
+    "declarations": [
+      {
+        "endpointKey": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "protocol": "a2a",
+        "endpoint": "https://seller.example/a2a",
+        "originKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "safety": "safe",
+        "safetyReason": null,
+        "representativeAgentKey": "eip155:56:42",
+        "lastProbedAt": 1788000000000,
+        "nextProbeAt": 1788043200000,
+        "consecutiveFailures": 0,
+        "priority": 80
+      }
+    ],
+    "observations": [
+      {
+        "id": 1,
+        "agentKey": "eip155:56:42",
+        "endpointKey": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "protocol": "a2a",
+        "source": "worker_probe",
+        "outcome": "protocol_valid",
+        "observedAt": 1788000000000,
+        "expiresAt": 1788043200000,
+        "httpStatus": 200,
+        "errorCode": null,
+        "durationMs": 42,
+        "details": { "schemaVersion": 2, "stageDurationsMs": { "agentCard": 42 } }
+      }
+    ]
+  }
+}

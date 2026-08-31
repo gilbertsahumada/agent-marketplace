@@ -5,7 +5,7 @@ import type {
   BrowserValidationResult,
 } from "../../business/entities/browser-validation.ts";
 
-export type CatalogObservationSource = "browser_reported" | "marketplace_probe";
+export type CatalogObservationSource = "browser_reported";
 export type CatalogObservationSyncStatus = "recorded" | "failed" | "not_configured";
 
 type Environment = Readonly<Record<string, string | undefined>>;
@@ -13,15 +13,9 @@ type Environment = Readonly<Record<string, string | undefined>>;
 export interface CatalogObservationSyncInput {
   source: CatalogObservationSource;
   agentId: string;
-  protocol: BrowserValidationProtocol | "erc8183";
+  protocol: BrowserValidationProtocol;
   endpoint: string;
-  outcome:
-    | BrowserValidationResult["outcome"]
-    | "erc8183_detected"
-    | "quote_verified"
-    | "quote_rejected"
-    | "unreachable"
-    | "error";
+  outcome: BrowserValidationResult["outcome"];
   observedAt: string;
   expiresAt: string | null;
   httpStatus: number | null;
@@ -41,7 +35,7 @@ function destinationUrl(env: Environment): URL | null {
       || allowed.protocol !== "https:" || allowed.username || allowed.password
       || allowed.pathname !== "/" || allowed.search || allowed.hash
       || url.origin !== allowed.origin) return null;
-    url.pathname = "/__internal/catalog-observation";
+    url.pathname = "/catalog-browser-observations";
     url.search = "";
     url.hash = "";
     return url;
@@ -69,7 +63,7 @@ export async function syncCatalogObservation(
   let payload: Record<string, unknown>;
   try {
     payload = {
-      schemaVersion: 1,
+      schemaVersion: 2,
       source: input.source,
       agentId: input.agentId,
       endpointKey: catalogEndpointKey(input.protocol, input.endpoint),

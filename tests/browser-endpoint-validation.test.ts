@@ -3,6 +3,7 @@ import {
   validateEndpointInBrowser,
   type BrowserValidationTarget,
 } from "../src/verification/browser-endpoint-validation.ts";
+import { declaredBrowserValidationTargets } from "../src/business/policies/catalog-validation-policy.ts";
 
 const now = () => 1_788_000_000_000;
 
@@ -15,6 +16,42 @@ function target(overrides: Partial<BrowserValidationTarget> = {}): BrowserValida
 }
 
 describe("browser endpoint validation", () => {
+  it("offers only safe declared A2A, MCP and ERC-8183 HTTP transports", () => {
+    const targets = declaredBrowserValidationTargets({
+      services: [
+        { name: "A2A", endpoint: "https://seller.example/a2a", version: null, tools: [], capabilities: [] },
+        { name: "MCP", endpoint: "https://seller.example/mcp", version: null, tools: [], capabilities: [] },
+        { name: "ERC-8183", endpoint: "https://seller.example/jobs", version: null, tools: [], capabilities: [] },
+        { name: "Website", endpoint: "https://seller.example", version: null, tools: [], capabilities: [] },
+        { name: "Twitter", endpoint: "https://x.com/seller", version: null, tools: [], capabilities: [] },
+        { name: "Telegram", endpoint: "https://t.me/seller", version: null, tools: [], capabilities: [] },
+      ],
+      endpoints: [
+        { name: "GitHub", endpoint: "https://github.com/example/seller" },
+        { name: null, endpoint: "https://docs.seller.example/guide" },
+      ],
+    });
+
+    expect(targets).toEqual([
+      { protocol: "a2a", endpoint: "https://seller.example/a2a" },
+      { protocol: "mcp", endpoint: "https://seller.example/mcp" },
+      { protocol: "erc8183_http", endpoint: "https://seller.example/jobs" },
+    ]);
+  });
+
+  it.each([
+    ["MCP", "https://twitter.com/seller"],
+    ["A2A", "https://telegram.me/seller"],
+    ["ERC8183", "https://github.com/example/seller"],
+    ["MCP", "https://docs.seller.example/mcp"],
+    ["A2A", "http://127.0.0.1/private"],
+  ])("does not offer a mislabeled or unsafe %s declaration at %s", (name, endpoint) => {
+    expect(declaredBrowserValidationTargets({
+      services: [{ name, endpoint, version: null, tools: [], capabilities: [] }],
+      endpoints: [],
+    })).toEqual([]);
+  });
+
   it("validates an A2A Agent Card without sending a task or quote", async () => {
     const fetchImpl = vi.fn(async () => Response.json({
       name: "Seller",

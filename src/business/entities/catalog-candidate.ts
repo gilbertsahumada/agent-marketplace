@@ -14,7 +14,7 @@ export interface CatalogCandidateDeclaration {
   safetyReason: string | null;
   representativeAgentKey: string | null;
   lastProbedAt: number | null;
-  nextProbeAt: number;
+  nextProbeAt: number | null;
   consecutiveFailures: number;
   priority: number;
 }
@@ -24,7 +24,8 @@ export interface CatalogCandidateObservation {
   agentKey: string;
   endpointKey: string | null;
   protocol: "a2a" | "mcp" | "web" | "erc8183_http" | "erc8183";
-  source: "browser_reported" | "marketplace_probe" | "worker_probe" | "chain_index";
+  source: "browser_reported" | "worker_probe" | "buyer_refresh" | "chain_read" | "migration"
+    | "marketplace_probe" | "chain_index";
   outcome: "protocol_valid" | "cors_blocked" | "http_error" | "timeout" | "network_error"
     | "invalid_response" | "unsafe_url" | "erc8183_detected" | "quote_verified"
     | "quote_rejected" | "unreachable" | "error";
@@ -50,17 +51,37 @@ export interface CatalogCandidate {
   blockNumber: string | null;
   priority: number;
   platformAttemptCount?: number;
+  admission?: {
+    state: "candidate" | "admitted" | "suspended";
+    endpointKey: string | null;
+  } | null;
+  state?: {
+    operationalStatus: "pending" | "browser_observed" | "platform_reachable" | "platform_failed"
+      | "invalid_declaration" | "unsafe" | "unsupported";
+    freshness: "never" | "live" | "historical" | "stale";
+    commerceStatus: "none" | "declared" | "admission_pending" | "admitted" | "suspended";
+    quoteStatus: "not_supported" | "not_requested" | "verified_fresh" | "verified_historical" | "rejected";
+    buyerAction: "unavailable" | "check_availability" | "request_quote" | "prepare_hire";
+    canRequestBrowserValidation: boolean;
+    canRequestInfrastructureValidation: boolean;
+    canRequestQuote: boolean;
+    canPrepareHire: boolean;
+    blockingReasons: string[];
+  };
   declarations: CatalogCandidateDeclaration[];
   observations: CatalogCandidateObservation[];
 }
 
 export interface CatalogCandidatePage {
   status: CatalogStatus;
+  statuses?: CatalogStatus[];
   query: string;
   category: MarketplaceCategory | null;
+  categories?: MarketplaceCategory[];
   generatedAt: number;
   page: number;
   limit: number;
   total: number;
+  nextCursor?: string | null;
   items: CatalogCandidate[];
 }
