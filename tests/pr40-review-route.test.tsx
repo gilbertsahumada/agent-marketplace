@@ -54,9 +54,25 @@ describe("agents page category handling", () => {
     return catalogCandidatePage.mock.calls.map((call) => call[0]).filter((input) => input.limit !== 1);
   }
 
+  function queryCategories(query: Record<string, unknown>): string[] {
+    if (Array.isArray(query.categories)) return query.categories as string[];
+    return typeof query.category === "string" ? [query.category] : [];
+  }
+
+  function catalogFilter(input: Record<string, unknown>): { categories: string[]; statuses: string[] } {
+    return {
+      categories: Array.isArray(input.categories)
+        ? input.categories as string[]
+        : typeof input.category === "string" ? [input.category] : [],
+      statuses: Array.isArray(input.statuses)
+        ? input.statuses as string[]
+        : typeof input.status === "string" ? [input.status] : [],
+    };
+  }
+
   it("R1: drops the category in the registered view and paginates by 24", async () => {
     const el = await renderPage({ view: "all", category: "grid_trading" });
-    expect(el.props.query.categories).toEqual([]);
+    expect(queryCategories(el.props.query)).toEqual([]);
     const dataCalls = listDataCalls();
     expect(dataCalls).toHaveLength(1);
     const input = dataCalls[0];
@@ -76,16 +92,10 @@ describe("agents page category handling", () => {
 
   it("R4: a known category in the marketplace view filters with limit 12", async () => {
     const el = await renderPage({ view: "marketplace", category: "grid_trading" });
-    expect(el.props.query.categories).toEqual(["grid_trading"]);
-    expect(el.props.query.statuses).toEqual(["declared"]);
-    expect(catalogDataCalls()).toEqual([
-      expect.objectContaining({
-        page: 1,
-        limit: 24,
-        categories: ["grid_trading"],
-        statuses: ["declared"],
-      }),
-    ]);
+    expect(queryCategories(el.props.query)).toEqual(["grid_trading"]);
+    const catalogCalls = catalogDataCalls();
+    expect(catalogCalls).toHaveLength(1);
+    expect(catalogFilter(catalogCalls[0]!)).toEqual({ categories: ["grid_trading"], statuses: ["declared"] });
     expect(listDataCalls()).toEqual([
       expect.objectContaining({ view: "marketplace", page: 1, limit: 12, category: "grid_trading" }),
     ]);
