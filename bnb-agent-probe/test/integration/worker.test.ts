@@ -231,6 +231,51 @@ describe("WP1 in the Workers runtime", () => {
     expect(await live.json()).toMatchObject({ total: 0, items: [] });
   });
 
+  it("does not transfer a representative endpoint observation to another declarer", async () => {
+    const now = 1_788_000_000_000;
+    const endpointKey = "4".repeat(64);
+    await env.DB.prepare(`INSERT INTO catalog_agents (
+      agentKey, agentId, chainId, name, categoriesJson, metadataState, indexState,
+      firstSeenAt, lastSeenAt, priority
+    ) VALUES
+      ('eip155:56:7301', '7301', 56, 'Representative', '[]', 'ok', 'current', ?, ?, 2),
+      ('eip155:56:7302', '7302', 56, 'Shared declarer', '[]', 'ok', 'current', ?, ?, 1)`)
+      .bind(now, now, now, now).run();
+    await env.DB.prepare(`INSERT INTO catalog_endpoints (
+      endpointKey, protocol, endpoint, originKey, safety, representativeAgentKey,
+      nextProbeAt, consecutiveFailures, declaredProtocol, role, validationProtocol, eligibility
+    ) VALUES (?, 'a2a', 'https://shared-agent.example/a2a', 'shared-agent', 'safe',
+      'eip155:56:7301', ?, 0, 'a2a', 'operational', 'a2a', 'eligible')`)
+      .bind(endpointKey, now).run();
+    await env.DB.prepare(`INSERT INTO catalog_agent_endpoints (
+      agentKey, endpointKey, declarationState, firstSeenAt, lastSeenAt, priority
+    ) VALUES
+      ('eip155:56:7301', ?, 'current', ?, ?, 2),
+      ('eip155:56:7302', ?, 'current', ?, ?, 1)`)
+      .bind(endpointKey, now, now, endpointKey, now, now).run();
+    await env.DB.prepare(`INSERT INTO catalog_observations (
+      attemptId, agentKey, endpointKey, protocol, source, outcome, observedAt,
+      expiresAt, durationMs, detailsJson, validationKind, verificationLevel
+    ) VALUES ('representative-success', 'eip155:56:7301', ?, 'a2a', 'worker_probe',
+      'protocol_valid', ?, ?, 25, '{}', 'protocol', 'platform_observed')`)
+      .bind(endpointKey, now, now + 900_000).run();
+
+    const app = createWorker({ now: () => now });
+    const live = await app.fetch(new Request(
+      "https://worker.test/catalog-agents?reachability=live&protocol=a2a",
+    ), env, createExecutionContext());
+    expect(await live.json()).toMatchObject({ total: 1, items: [{ agentId: "7301" }] });
+
+    const sharedDeclarer = await app.fetch(
+      new Request("https://worker.test/catalog-agent/7302"), env, createExecutionContext(),
+    );
+    expect(await sharedDeclarer.json()).toMatchObject({
+      agentId: "7302",
+      resources: [{ endpointKey, attemptCount: 0, latestEvidence: null }],
+      state: { operationalStatus: "pending", freshness: "never" },
+    });
+  });
+
   it("serves the v2 catalog contract with combinable filters, cursor paging, and resource evidence", async () => {
     const now = 1_788_000_000_000;
     await env.DB.prepare(`INSERT INTO catalog_agents (

@@ -94,48 +94,74 @@ export async function runCatalogValidationRequest(
     queueDelayMs: Math.max(0, nowMs - request.createdAt),
     leaseWaitMs: Math.max(0, Math.round(performance.now() - leaseStarted)),
   };
-  const observation = {
-    ...await probeCatalogEndpoint(target, {
-      timeoutMs: catalogProbeTimeoutMs(config, target.protocol),
-      freshnessMs: catalogProbeFreshnessMs(config, target),
-      fetchImpl,
-      now,
-    }),
-    attemptId: crypto.randomUUID(),
-  };
-  const statements = catalogProbeCommitStatements(
-    db,
-    target,
-    observation,
-    "buyer_refresh",
-    catalogProbeSchedulePolicy(config),
-  );
-  const results = await db.batch([
-    ...statements,
-    db.update(catalogValidationRequests).set({
-      status: "completed", completedAt: now(), errorCode: observation.errorCode,
-      resultObservationId: sql`(SELECT ${catalogObservations.id} FROM ${catalogObservations}
-        WHERE ${catalogObservations.attemptId} = ${observation.attemptId} LIMIT 1)`,
-      leaseOwner: null, leaseExpiresAt: null,
-    }).where(eq(catalogValidationRequests.id, validationId)),
-  ] as unknown as Parameters<typeof db.batch>[0]);
-  const inserted = results[0] as Array<{ id: number }>;
-  if (!inserted[0]?.id) throw new Error("CATALOG_VALIDATION_RESULT_MISSING");
-  console.info("catalog.probe.attempt", {
-    attemptId: observation.attemptId,
-    validationId,
-    agentKey: target.agentKey,
-    endpointKey: target.endpointKey,
-    protocol: target.protocol,
-    priority: target.priority,
-    source: "buyer_refresh",
-    outcome: observation.outcome,
-    errorCode: observation.errorCode,
-    durationMs: observation.durationMs,
-    stageDurationsMs: observation.stageDurationsMs ?? {},
-    queueDelayMs: target.queueDelayMs,
-    leaseWaitMs: target.leaseWaitMs,
-    retryDecision: observation.outcome === "protocol_valid" ? "refresh_scheduled" : "backoff_scheduled",
-  });
-  return "completed";
+  try {
+    const observation = {
+      ...await probeCatalogEndpoint(target, {
+        timeoutMs: catalogProbeTimeoutMs(config, target.protocol),
+        freshnessMs: catalogProbeFreshnessMs(config, target),
+        fetchImpl,
+        now,
+      }),
+      attemptId: crypto.randomUUID(),
+    };
+    const statements = catalogProbeCommitStatements(
+      db,
+      target,
+      observation,
+      "buyer_refresh",
+      catalogProbeSchedulePolicy(config),
+    );
+    const results = await db.batch([
+      ...statements,
+      db.update(catalogValidationRequests).set({
+        status: "completed", completedAt: now(), errorCode: observation.errorCode,
+        resultObservationId: sql`(SELECT ${catalogObservations.id} FROM ${catalogObservations}
+          WHERE ${catalogObservations.attemptId} = ${observation.attemptId} LIMIT 1)`,
+        leaseOwner: null, leaseExpiresAt: null,
+      }).where(eq(catalogValidationRequests.id, validationId)),
+    ] as unknown as Parameters<typeof db.batch>[0]);
+    const inserted = results[0] as Array<{ id: number }>;
+    if (!inserted[0]?.id) throw new Error("CATALOG_VALIDATION_RESULT_MISSING");
+    console.info("catalog.probe.attempt", {
+      attemptId: observation.attemptId,
+      validationId,
+      agentKey: target.agentKey,
+      endpointKey: target.endpointKey,
+      protocol: target.protocol,
+      priority: target.priority,
+      source: "buyer_refresh",
+      outcome: observation.outcome,
+      errorCode: observation.errorCode,
+      durationMs: observation.durationMs,
+      stageDurationsMs: observation.stageDurationsMs ?? {},
+      queueDelayMs: target.queueDelayMs,
+      leaseWaitMs: target.leaseWaitMs,
+      retryDecision: observation.outcome === "protocol_valid" ? "refresh_scheduled" : "backoff_scheduled",
+    });
+    return "completed";
+  } catch (error) {
+    const releaseEndpoint = () => db.update(catalogEndpoints).set({
+      leaseOwner: null,
+      leaseExpiresAt: null,
+    }).where(and(
+      eq(catalogEndpoints.endpointKey, row.endpointKey),
+      eq(catalogEndpoints.leaseOwner, endpointLeaseOwner),
+    )).run();
+    const failRequest = () => db.update(catalogValidationRequests).set({
+      status: "failed",
+      completedAt: now(),
+      errorCode: "CATALOG_VALIDATION_RUN_FAILED",
+      leaseOwner: null,
+      leaseExpiresAt: null,
+    }).where(and(
+      eq(catalogValidationRequests.id, validationId),
+      eq(catalogValidationRequests.leaseOwner, requestLeaseOwner),
+    )).run();
+    try {
+      await db.batch([releaseEndpoint(), failRequest()] as unknown as Parameters<typeof db.batch>[0]);
+    } catch {
+      await Promise.allSettled([releaseEndpoint(), failRequest()]);
+    }
+    throw error;
+  }
 }

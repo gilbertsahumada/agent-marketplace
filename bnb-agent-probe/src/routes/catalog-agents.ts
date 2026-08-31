@@ -12,7 +12,11 @@ import {
   aliasedTable,
 } from "drizzle-orm";
 import type { D1DatabaseLike } from "../db/client";
-import { createDatabase, readEffectiveAgentObservations, readEffectiveCatalogObservations } from "../db/orm";
+import {
+  createDatabase,
+  readEffectiveAgentObservations,
+  readEffectiveCatalogObservationsForAgents,
+} from "../db/orm";
 import { deriveCatalogEvidenceState } from "../catalog/evidence-policy";
 import { CATALOG_API_VERSION, publicCatalogObservation } from "../catalog/api-contract";
 import {
@@ -132,14 +136,7 @@ export async function catalogAgentsResponse(
       eq(catalogEndpoints.role, "operational"),
       eq(catalogEndpoints.eligibility, "eligible"),
     )));
-  const observationBelongsToAgent = or(
-    eq(catalogObservations.agentKey, catalogAgents.agentKey),
-    exists(db.select({ value: sql`1` }).from(catalogAgentEndpoints).where(and(
-      eq(catalogAgentEndpoints.agentKey, catalogAgents.agentKey),
-      eq(catalogAgentEndpoints.endpointKey, catalogObservations.endpointKey),
-      eq(catalogAgentEndpoints.declarationState, "current"),
-    ))),
-  );
+  const observationBelongsToAgent = eq(catalogObservations.agentKey, catalogAgents.agentKey);
   const platformObservationExists = exists(db.select({ value: sql`1` })
     .from(catalogObservations)
     .where(and(
@@ -244,20 +241,50 @@ export async function catalogAgentsResponse(
       )))),
     )));
   const failureExists = exists(db.select({ value: sql`1` })
-    .from(catalogAgentEndpoints)
-    .innerJoin(catalogEndpoints, eq(catalogEndpoints.endpointKey, catalogAgentEndpoints.endpointKey))
+    .from(catalogObservations)
     .where(and(
-      eq(catalogAgentEndpoints.agentKey, catalogAgents.agentKey),
-      eq(catalogAgentEndpoints.declarationState, "current"),
-      inArray(catalogEndpoints.lastAttemptOutcome, [...FAILURE_OUTCOMES]),
+      inArray(catalogObservations.source, [...PLATFORM_SOURCES]),
+      inArray(catalogObservations.validationKind, [...PLATFORM_VALIDATION_KINDS]),
+      eq(catalogObservations.verificationLevel, "platform_observed"),
+      inArray(catalogObservations.outcome, [...FAILURE_OUTCOMES]),
+      observationBelongsToAgent,
+      not(exists(db.select({ value: sql`1` }).from(newerObservation).where(and(
+        eq(newerObservation.agentKey, catalogObservations.agentKey),
+        eq(newerObservation.endpointKey, catalogObservations.endpointKey),
+        inArray(newerObservation.source, [...PLATFORM_SOURCES]),
+        inArray(newerObservation.validationKind, [...PLATFORM_VALIDATION_KINDS]),
+        eq(newerObservation.verificationLevel, "platform_observed"),
+        or(
+          gt(newerObservation.observedAt, catalogObservations.observedAt),
+          and(
+            eq(newerObservation.observedAt, catalogObservations.observedAt),
+            gt(newerObservation.id, catalogObservations.id),
+          ),
+        ),
+      )))),
     )));
   const latestReachableExists = exists(db.select({ value: sql`1` })
-    .from(catalogAgentEndpoints)
-    .innerJoin(catalogEndpoints, eq(catalogEndpoints.endpointKey, catalogAgentEndpoints.endpointKey))
+    .from(catalogObservations)
     .where(and(
-      eq(catalogAgentEndpoints.agentKey, catalogAgents.agentKey),
-      eq(catalogAgentEndpoints.declarationState, "current"),
-      eq(catalogEndpoints.lastAttemptOutcome, "protocol_valid"),
+      inArray(catalogObservations.source, [...PLATFORM_SOURCES]),
+      inArray(catalogObservations.validationKind, [...PLATFORM_VALIDATION_KINDS]),
+      eq(catalogObservations.verificationLevel, "platform_observed"),
+      eq(catalogObservations.outcome, "protocol_valid"),
+      observationBelongsToAgent,
+      not(exists(db.select({ value: sql`1` }).from(newerObservation).where(and(
+        eq(newerObservation.agentKey, catalogObservations.agentKey),
+        eq(newerObservation.endpointKey, catalogObservations.endpointKey),
+        inArray(newerObservation.source, [...PLATFORM_SOURCES]),
+        inArray(newerObservation.validationKind, [...PLATFORM_VALIDATION_KINDS]),
+        eq(newerObservation.verificationLevel, "platform_observed"),
+        or(
+          gt(newerObservation.observedAt, catalogObservations.observedAt),
+          and(
+            eq(newerObservation.observedAt, catalogObservations.observedAt),
+            gt(newerObservation.id, catalogObservations.id),
+          ),
+        ),
+      )))),
     )));
   const admitted = exists(db.select({ value: sql`1` })
     .from(catalogAgentAdmission)
@@ -342,13 +369,10 @@ export async function catalogAgentsResponse(
   const endpointKeys = declarations.map((entry) => entry.endpoint.endpointKey);
   const [recentObservations, effectiveEndpointObservations, effectiveAgentObservations, admissions] = await Promise.all([
     agentKeys.length === 0 ? Promise.resolve([]) : db.select().from(catalogObservations)
-      .where(or(
-        inArray(catalogObservations.agentKey, agentKeys),
-        ...(endpointKeys.length > 0 ? [inArray(catalogObservations.endpointKey, endpointKeys)] : []),
-      ))
+      .where(inArray(catalogObservations.agentKey, agentKeys))
       .orderBy(desc(catalogObservations.observedAt), desc(catalogObservations.id))
       .limit(Math.min(1_000, limit * 20)),
-    readEffectiveCatalogObservations(db, endpointKeys),
+    readEffectiveCatalogObservationsForAgents(db, agentKeys, endpointKeys),
     readEffectiveAgentObservations(db, agentKeys),
     agentKeys.length === 0 ? Promise.resolve([]) : db.select().from(catalogAgentAdmission)
       .where(inArray(catalogAgentAdmission.agentKey, agentKeys)),
@@ -362,8 +386,7 @@ export async function catalogAgentsResponse(
 
   const items = agents.map((agent) => {
     const agentDeclarations = declarations.filter((entry) => entry.agentKey === agent.agentKey);
-    const agentObservations = observations.filter((observation) => observation.agentKey === agent.agentKey
-      || agentDeclarations.some((entry) => entry.endpoint.endpointKey === observation.endpointKey));
+    const agentObservations = observations.filter((observation) => observation.agentKey === agent.agentKey);
     const admission = admissions.find((entry) => entry.agentKey === agent.agentKey) ?? null;
     return {
       ...agent,

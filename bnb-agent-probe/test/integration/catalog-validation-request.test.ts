@@ -1,7 +1,7 @@
 import { env } from "cloudflare:workers";
 import { vi } from "vitest";
 import { loadConfig } from "../../src/config";
-import type { D1DatabaseLike } from "../../src/db/client";
+import type { D1DatabaseLike, D1PreparedStatementLike } from "../../src/db/client";
 import { createDatabase, readCatalogProjectionMismatches } from "../../src/db/orm";
 import { runCatalogValidationRequest } from "../../src/phases/catalog-validation-request";
 import { clearCatalogFixtures } from "./catalog-fixtures";
@@ -114,5 +114,48 @@ describe("catalog validation Queue work", () => {
     });
     expect(await env.DB.prepare("SELECT COUNT(*) AS count FROM catalog_observations").first())
       .toMatchObject({ count: 1 });
+  });
+
+  it("releases leases and leaves the request retryable when the result batch fails", async () => {
+    const request = await env.DB.prepare("SELECT id FROM catalog_validation_requests").first<{ id: number }>();
+    const raw = env.DB as unknown as D1DatabaseLike;
+    let failNextBatch = true;
+    const flaky: D1DatabaseLike = {
+      prepare: (query) => raw.prepare(query),
+      async batch<Meta>(statements: readonly D1PreparedStatementLike[]) {
+        if (failNextBatch) {
+          failNextBatch = false;
+          throw new Error("CATALOG_COMMIT_TRANSIENT");
+        }
+        return raw.batch<Meta>(statements);
+      },
+    };
+    const fetchImpl = vi.fn()
+      .mockResolvedValueOnce(Response.json({ jsonrpc: "2.0", id: 1, result: { protocolVersion: "2025-06-18" } }, {
+        headers: { "mcp-session-id": "session" },
+      }))
+      .mockResolvedValueOnce(new Response(null, { status: 202 }))
+      .mockResolvedValueOnce(Response.json({ jsonrpc: "2.0", id: 2, result: { tools: [] } }));
+
+    await expect(runCatalogValidationRequest(
+      flaky,
+      request!.id,
+      loadConfig({ KILL_SWITCH: "0", PROBE_GENERAL_EGRESS_APPROVED: "1" }),
+      () => NOW,
+      fetchImpl,
+    )).rejects.toThrow("CATALOG_COMMIT_TRANSIENT");
+
+    expect(await env.DB.prepare(`SELECT status, errorCode, leaseOwner, leaseExpiresAt
+      FROM catalog_validation_requests WHERE id = ?`).bind(request!.id).first()).toMatchObject({
+      status: "failed",
+      errorCode: "CATALOG_VALIDATION_RUN_FAILED",
+      leaseOwner: null,
+      leaseExpiresAt: null,
+    });
+    expect(await env.DB.prepare(`SELECT leaseOwner, leaseExpiresAt
+      FROM catalog_endpoints WHERE endpointKey = ?`).bind(ENDPOINT_KEY).first()).toMatchObject({
+      leaseOwner: null,
+      leaseExpiresAt: null,
+    });
   });
 });

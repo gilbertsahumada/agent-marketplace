@@ -215,12 +215,7 @@ export async function readCatalogAgentEvidence(
       .limit(1),
   ]);
   const endpointKeys = declarations.map((entry) => entry.endpointKey);
-  const observationCondition = endpointKeys.length === 0
-    ? eq(catalogObservations.agentKey, agentKey)
-    : or(
-      eq(catalogObservations.agentKey, agentKey),
-      inArray(catalogObservations.endpointKey, endpointKeys),
-    );
+  const observationCondition = eq(catalogObservations.agentKey, agentKey);
   const [endpoints, recentObservations, effectiveEndpointObservations, effectiveAgentObservations,
     platformAttemptTotals, platformAttemptsByEndpoint] = await Promise.all([
     endpointKeys.length === 0
@@ -232,7 +227,7 @@ export async function readCatalogAgentEvidence(
       .where(observationCondition)
       .orderBy(desc(catalogObservations.observedAt), desc(catalogObservations.id))
       .limit(observationLimit),
-    readEffectiveCatalogObservations(db, endpointKeys),
+    readEffectiveCatalogObservations(db, agentKey, endpointKeys),
     readEffectiveAgentObservations(db, [agentKey]),
     db.select({ total: count() }).from(catalogObservations).where(and(
       observationCondition,
@@ -244,6 +239,7 @@ export async function readCatalogAgentEvidence(
       endpointKey: catalogObservations.endpointKey,
       total: count(),
     }).from(catalogObservations).where(and(
+      observationCondition,
       inArray(catalogObservations.endpointKey, endpointKeys),
       inArray(catalogObservations.source, ["worker_probe", "buyer_refresh", "migration"]),
       inArray(catalogObservations.validationKind, ["protocol", "reachability"]),
@@ -338,32 +334,46 @@ function chunks<T>(values: readonly T[], size: number): T[][] {
 
 export async function readEffectiveCatalogObservations(
   db: Database,
+  agentKey: string,
+  endpointKeys: readonly string[],
+): Promise<CatalogObservationRow[]> {
+  return readEffectiveCatalogObservationsForAgents(db, [agentKey], endpointKeys);
+}
+
+export async function readEffectiveCatalogObservationsForAgents(
+  db: Database,
+  agentKeys: readonly string[],
   endpointKeys: readonly string[],
 ): Promise<CatalogObservationRow[]> {
   const rows: CatalogObservationRow[] = [];
-  for (const endpointChunk of chunks([...new Set(endpointKeys)], 40)) {
-    if (endpointChunk.length === 0) continue;
-    rows.push(...await db.all<CatalogObservationRow>(sql`SELECT
-      id, agentKey, endpointKey, protocol, source, outcome, observedAt, expiresAt,
-      httpStatus, errorCode, durationMs, detailsJson, attemptId, validationKind,
-      verificationLevel, artifactHash
-    FROM (
-      SELECT observation.*,
-        ROW_NUMBER() OVER (
-          PARTITION BY endpointKey ORDER BY observedAt DESC, id DESC
-        ) AS attemptPosition,
-        ROW_NUMBER() OVER (
-          PARTITION BY endpointKey, CASE WHEN outcome = 'protocol_valid' THEN 1 ELSE 0 END
-          ORDER BY observedAt DESC, id DESC
-        ) AS outcomePosition
-      FROM catalog_observations observation
-      WHERE endpointKey IN (${sql.join(endpointChunk.map((key) => sql`${key}`), sql`, `)})
-        AND source IN ('worker_probe', 'buyer_refresh', 'migration')
-        AND verificationLevel = 'platform_observed'
-        AND validationKind IN ('reachability', 'protocol')
-    ) effective
-    WHERE attemptPosition = 1 OR (outcome = 'protocol_valid' AND outcomePosition = 1)
-    ORDER BY observedAt DESC, id DESC`));
+  const uniqueAgents = [...new Set(agentKeys)];
+  const uniqueEndpoints = [...new Set(endpointKeys)];
+  for (const agentChunk of chunks(uniqueAgents, 40)) {
+    for (const endpointChunk of chunks(uniqueEndpoints, 40)) {
+      if (agentChunk.length === 0 || endpointChunk.length === 0) continue;
+      rows.push(...await db.all<CatalogObservationRow>(sql`SELECT
+        id, agentKey, endpointKey, protocol, source, outcome, observedAt, expiresAt,
+        httpStatus, errorCode, durationMs, detailsJson, attemptId, validationKind,
+        verificationLevel, artifactHash
+      FROM (
+        SELECT observation.*,
+          ROW_NUMBER() OVER (
+            PARTITION BY agentKey, endpointKey ORDER BY observedAt DESC, id DESC
+          ) AS attemptPosition,
+          ROW_NUMBER() OVER (
+            PARTITION BY agentKey, endpointKey, CASE WHEN outcome = 'protocol_valid' THEN 1 ELSE 0 END
+            ORDER BY observedAt DESC, id DESC
+          ) AS outcomePosition
+        FROM catalog_observations observation
+        WHERE agentKey IN (${sql.join(agentChunk.map((key) => sql`${key}`), sql`, `)})
+          AND endpointKey IN (${sql.join(endpointChunk.map((key) => sql`${key}`), sql`, `)})
+          AND source IN ('worker_probe', 'buyer_refresh', 'migration')
+          AND verificationLevel = 'platform_observed'
+          AND validationKind IN ('reachability', 'protocol')
+      ) effective
+      WHERE attemptPosition = 1 OR (outcome = 'protocol_valid' AND outcomePosition = 1)
+      ORDER BY observedAt DESC, id DESC`));
+    }
   }
   return rows;
 }
