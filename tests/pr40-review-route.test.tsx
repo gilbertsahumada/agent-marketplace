@@ -44,18 +44,24 @@ describe("agents page category handling", () => {
     workerObservations.mockResolvedValue({ status: "unavailable", feed: null });
   });
 
+  // The page always issues one extra metrics call (limit: 1) for the catalog
+  // totals; these tests assert only on the data calls.
+  function listDataCalls() {
+    return executeList.mock.calls.map((call) => call[0]).filter((input) => input.limit !== 1);
+  }
+
   it("R1: drops the category in the registered view and paginates by 24", async () => {
     const el = await renderPage({ view: "all", category: "grid_trading" });
     expect(el.props.query.category).toBeUndefined();
-    expect(executeList).toHaveBeenCalledOnce();
-    const input = executeList.mock.calls[0]![0];
-    expect(input).not.toHaveProperty("category");
-    expect(input).toMatchObject({ view: "all", page: 1, limit: 24 });
+    const dataCalls = listDataCalls();
+    expect(dataCalls).toHaveLength(1);
+    expect(dataCalls[0]).not.toHaveProperty("category");
+    expect(dataCalls[0]).toMatchObject({ view: "all", page: 1, limit: 24 });
   });
 
   it("R2: an unknown category in the registered view still resolves (no 404)", async () => {
     await expect(renderPage({ view: "all", category: "bogus" })).resolves.toBeDefined();
-    expect(executeList).toHaveBeenCalledOnce();
+    expect(listDataCalls()).toHaveLength(1);
   });
 
   it("R3: an unknown category in the marketplace view is a 404", async () => {
@@ -66,9 +72,11 @@ describe("agents page category handling", () => {
   it("R4: a known category in the marketplace view filters with limit 12", async () => {
     const el = await renderPage({ view: "marketplace", category: "grid_trading" });
     expect(el.props.query.category).toBe("grid_trading");
-    expect(catalogCandidatePage).toHaveBeenCalledOnce();
-    expect(catalogCandidatePage.mock.calls[0]![0]).toMatchObject({ page: 1, limit: 24, category: "grid_trading" });
-    expect(executeList).toHaveBeenCalledOnce();
-    expect(executeList.mock.calls[0]![0]).toMatchObject({ view: "marketplace", page: 1, limit: 12, category: "grid_trading" });
+    const catalogDataCalls = catalogCandidatePage.mock.calls.map((call) => call[0]).filter((input) => input.limit !== 1);
+    expect(catalogDataCalls).toHaveLength(1);
+    expect(catalogDataCalls[0]).toMatchObject({ page: 1, limit: 24, category: "grid_trading" });
+    const dataCalls = listDataCalls();
+    expect(dataCalls).toHaveLength(1);
+    expect(dataCalls[0]).toMatchObject({ view: "marketplace", page: 1, limit: 12, category: "grid_trading" });
   });
 });
