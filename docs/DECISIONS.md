@@ -409,6 +409,75 @@ without userinfo whose origin exactly matches
 distributed per-buyer/origin rate limiter; process-local counters are rejected
 because they cannot enforce a limit across concurrent instances.
 
+## 2026-08-30 — Reconcile WP4 presentation with the hireability evidence model
+
+WP4's observation layer overrides card hireability to hireable, quote_stale or
+listed_only, while `quoteRequestAvailable` is computed on the base view model.
+A card could therefore say "Not evaluated" beside a "Get fresh quote" CTA. The
+card now labels that combination "Quote on request": a statement about the
+declared request path of a marketplace-operated seller, not a claim of
+verification, so it does not conflate availability with ERC-8183 hireability.
+
+WP4 also stopped rendering `hireability.reason` on the agent profile, which
+erased the prose distinction between "MCP declared but not hireable" and
+payment-safety blocks. The profile renders the policy-authored reason again
+when no quote request is available, and reuses the shared label map for the
+states it shares with cards.
+
+`/agents?view=all&category=…` used to accept and propagate a category that the
+registered view never applies — pagination links and the search form carried a
+filter that did not exist. The parameter is now dropped outside the marketplace
+view, and the registered-view intro states that category filters apply only to
+curated candidates.
+
+### Review addendum (same day)
+
+A three-agent review of the change found that the quote-on-request rule had
+been applied to the card only: the profile still rendered "Not hireable"
+beside the "Get fresh quote" button, /compare still printed raw enum values,
+and the restored entity-level `hireability.reason` could contradict a
+positive observation badge ("Hireable now" next to prose denying a verified
+quote). Every finding was reproduced by a failing test before being fixed
+(tests/pr40-review-*.test.tsx).
+
+The rule now lives in one exported helper, `hireabilityLabelFor`, consumed by
+card, profile and compare, so the label cannot fork per surface again. The
+profile shows the entity reason only when observations resolve the agent to
+listed_only — structural facts observations cannot contradict — and shows the
+observation-aware quote detail otherwise. The quote-on-request state gained
+its user-facing definition on the profile: continuing requests a fresh
+ERC-8183 quote verified before any wallet interaction.
+
+Also recorded: `/agents?view=all&category=<invalid>` now renders instead of
+returning 404, matching the API route, which already ignored category in the
+registered view; the behavior is pinned by tests.
+
+## 2026-08-31 — Landing redesign: value-first copy, visual funnel, proof-led hero
+
+The landing talked to judges, not buyers: headlines described editorial policy,
+the hero badge opened with a caveat, and the first screen was dominated by
+"Not Observed" states. Redesigned against an approved mockup:
+
+- Hero: BNB badge removed, primary CTA shortened to "Get a Mainnet quote"
+  (seller named in a support line), evidence rail rendered compact.
+- Funnel: headline is computed from the real evidence counts ("309,897
+  registered. 16 declare hiring.") and stages render as proportional bars.
+  Citation (artifact, SHA-256, block) unchanged. Unmeasured stages stay
+  "Pending observation" — no invented counts.
+- The "What Hireable now means" explainer collapses into a details block;
+  content unchanged and still pinned by tests.
+- The candidates section (observation alerts, provenance legend and agent
+  cards) is removed from the landing entirely: the catalogue is reached via
+  the category cards, the header nav and the hero's secondary CTA. Live
+  observations still power the hero evidence and the admitted-seller state.
+- Verified evidence steps render green with a green check everywhere the
+  evidence rail appears; funnel bars are neutral, with provenance carried by
+  the existing badges.
+
+All figures remain sourced from evidence artifacts, catalogue counts and
+observation view models; nothing is hardcoded. Network-aware hero behavior
+(Mainnet default, Testnet on chain 97) is unchanged and remains pinned by
+tests/frontend-components.test.tsx.
 `OBSERVATIONS_URL` is the server-side address of the Worker's public evidence
 feed and is also the source from which the marketplace derives the public
 catalog and authenticated write routes. `BUYER_OBSERVATION_ALLOWED_ORIGIN` is

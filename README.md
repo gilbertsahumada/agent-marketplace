@@ -266,7 +266,7 @@ counts toward qualification or category coverage.
 
 The observation Worker is the only source of current reachability and quote
 labels. A quote older than the 60-second `hireable_now` window is rendered as
-`Quote refresh required`; an observation older than 60 seconds cannot remain
+`Quote expired`; an observation older than 60 seconds cannot remain
 `Reachable · verified`. The release snapshot remains only as explicitly dated
 historical evidence. If
 `ownerOf(agentId) == agentWallet` for more than one evaluated ID, the report emits

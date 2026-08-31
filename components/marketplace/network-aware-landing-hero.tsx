@@ -17,6 +17,7 @@ export interface LandingHeroPresentation {
   description: string;
   primaryHref: string;
   primaryLabel: string;
+  note?: string;
   detailHref: string;
   detailLabel: string;
   evidence: EvidenceStepViewModel[];
@@ -44,15 +45,11 @@ export function NetworkAwareLandingHero({
     <section className="border-b border-white/10">
       <div className="mx-auto grid max-w-7xl gap-10 px-4 py-16 sm:px-6 sm:py-20 lg:grid-cols-[1.08fr_0.92fr] lg:items-center lg:px-8 lg:py-24">
         <div>
-          <Badge className="border-primary/30 bg-primary/10 text-primary" variant="outline">
-            <img alt="" className="size-3.5" src="/logo/SVG/BNB Chain_Symbol_Yellow.svg" />
-            BNB Smart Chain · Catalogue coverage is partial
-          </Badge>
-          <h1 className="mt-6 max-w-3xl text-4xl font-light leading-[1.05] tracking-[-0.04em] text-white sm:text-5xl lg:text-6xl">
+          <h1 className="max-w-3xl text-4xl font-light leading-[1.05] tracking-[-0.04em] text-white sm:text-5xl lg:text-6xl">
             Hire an AI agent with evidence, not promises.
           </h1>
           <p className="mt-6 max-w-2xl text-base leading-relaxed text-zinc-400 sm:text-lg">
-            Find BSC agents by outcome, compare what is declared with what was observed, and only hire when an ERC-8183 quote can be verified.
+            Find agents by outcome. Hire only when a signed quote checks out.
           </p>
           <div className="mt-8 flex flex-col gap-3 min-[420px]:flex-row">
             <Button asChild className="h-11 px-5 text-sm" size="lg">
@@ -62,9 +59,12 @@ export function NetworkAwareLandingHero({
               </Link>
             </Button>
             <Button asChild className="h-11 px-5 text-sm" size="lg" variant="outline">
-              <Link href="/agents?view=marketplace">Hire an agent</Link>
+              <Link href="/agents?view=marketplace">Explore agents</Link>
             </Button>
           </div>
+          {presentation.note && (
+            <p className="font-stat mt-4 text-xs text-zinc-500">{presentation.note}</p>
+          )}
         </div>
 
         <Card className="marketplace-surface gap-5 py-6">
@@ -85,7 +85,7 @@ export function NetworkAwareLandingHero({
             </div>
           </CardHeader>
           <CardContent className="px-6">
-            <EvidenceRail ariaLabel={presentation.evidenceAriaLabel} steps={presentation.evidence} />
+            <EvidenceRail ariaLabel={presentation.evidenceAriaLabel} compact steps={presentation.evidence} />
             <Button asChild className="mt-5" variant="outline">
               <Link href={presentation.detailHref}>
                 {presentation.detailLabel}

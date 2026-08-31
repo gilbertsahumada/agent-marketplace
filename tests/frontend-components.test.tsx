@@ -787,6 +787,7 @@ describe("marketplace presentation rules", () => {
     expect(within(breadcrumb).getByRole("link", { name: "Agents" })).toHaveAttribute("href", "/agents");
     expect(within(breadcrumb).getByText("V3 Pools powered by HeyAnon")).toHaveAttribute("aria-current", "page");
     expect(screen.queryByText(/Catalog coverage|Partial coverage/)).not.toBeInTheDocument();
+    expect(screen.getByText("No verified seller.")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Indexed Evidence Passport" })).toBeInTheDocument();
     expect(screen.queryByText("Live marketplace evidence snapshot — not a financial guarantee.")).not.toBeInTheDocument();
     expect(screen.getAllByText("derived")).not.toHaveLength(0);
@@ -955,7 +956,6 @@ describe("marketplace presentation rules", () => {
   it("does not claim Mainnet has no seller while Grid remains admitted for fresh quotes", () => {
     render(createElement(MarketplaceLanding, {
       categories: [],
-      observationSnapshot: null,
       demoEnabled: true,
       featuredAgents: [],
       funnel: null,
@@ -975,7 +975,6 @@ describe("marketplace presentation rules", () => {
     walletState.chainId = 97;
     render(createElement(MarketplaceLanding, {
       categories: [],
-      observationSnapshot: null,
       demoEnabled: true,
       featuredAgents: [],
       funnel: null,
@@ -993,7 +992,6 @@ describe("marketplace presentation rules", () => {
     walletState.chainId = 1;
     render(createElement(MarketplaceLanding, {
       categories: [],
-      observationSnapshot: null,
       demoEnabled: true,
       featuredAgents: [],
       funnel: null,
@@ -1010,7 +1008,6 @@ describe("marketplace presentation rules", () => {
     walletState.chainId = 56;
     const tree = createElement(MarketplaceLanding, {
       categories: [],
-      observationSnapshot: null,
       demoEnabled: true,
       featuredAgents: [],
       funnel: null,

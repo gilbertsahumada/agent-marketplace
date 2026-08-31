@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { FunnelSection } from "../components/marketplace/funnel-section.tsx";
 import type { FunnelSectionViewModel } from "../components/marketplace/presentation-types.ts";
@@ -39,7 +39,8 @@ describe("FunnelSection", () => {
 
   it("keeps the hireable definition and escrow close without figures", () => {
     render(<FunnelSection funnel={null} />);
-    expect(screen.getByText("What “Hireable now” means here")).toBeInTheDocument();
+    const trigger = screen.getByRole("button", { name: "What “Hireable now” means here" });
+    fireEvent.click(trigger);
     expect(screen.getByText("What it does not mean")).toBeInTheDocument();
     expect(screen.getByText(/It sits in ERC-8183 escrow\./)).toBeInTheDocument();
     expect(screen.queryByText(/block 118441354/)).not.toBeInTheDocument();

@@ -120,10 +120,6 @@ export default async function HomePage() {
   const qualified = featuredAgents.find((agent) => agent.hireability === "hireable") ?? null;
   return (
     <MarketplaceLanding
-      observationSnapshot={observations.feed ? {
-        generatedAt: new Date(observations.feed.generatedAt).toISOString(),
-        staleAfter: new Date(observations.feed.generatedAt + 60_000).toISOString(),
-      } : null}
       categories={categories}
       demoEnabled={Reflect.get(process.env, "ERC8183_BROWSER_SPIKE_ENABLED") === "true"}
       featuredAgents={featuredAgents}
