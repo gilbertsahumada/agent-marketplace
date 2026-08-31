@@ -76,9 +76,11 @@ export async function catalogAgentResponse(
       latestBrowserEvidence: latestBrowserEvidence ? serializeObservation(latestBrowserEvidence) : null,
     }];
   });
+  const admittedEndpointKey = evidence.admission?.endpointKey ?? null;
   const quoteObservation = evidence.observations.find((observation) => observation.validationKind === "quote"
     && observation.verificationLevel === "cryptographic"
     && observation.endpointKey !== null
+    && (admittedEndpointKey === null || observation.endpointKey === admittedEndpointKey)
     && currentOperationalEndpointKeys.has(observation.endpointKey)) ?? null;
   const chainObservations = evidence.observations.filter((observation) => observation.validationKind === "chain"
     && observation.verificationLevel === "onchain");

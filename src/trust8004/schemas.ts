@@ -206,11 +206,11 @@ function parseEndpointObservation(value: unknown, path: string): EndpointObserva
   }
 
   const health = record(parsed, path);
-  const entries = (["a2a", "mcp", "web"] as const)
+  const entries = (["a2a", "mcp", "erc8183_http", "web"] as const)
     .filter((protocol) => health[protocol] !== undefined)
     .map((protocol) => ({ protocol, data: record(health[protocol], `${path}.${protocol}`) }));
   if (entries.length === 0) {
-    throw new Trust8004SchemaError(path, "endpoint health object with mcp, a2a, or web", parsed);
+    throw new Trust8004SchemaError(path, "endpoint health object with mcp, a2a, erc8183_http, or web", parsed);
   }
   const latest = entries.sort(
     (left, right) => finiteNumber(right.data.lastTestedAt, `${path}.${right.protocol}.lastTestedAt`)

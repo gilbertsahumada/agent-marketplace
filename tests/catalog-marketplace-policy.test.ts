@@ -103,4 +103,23 @@ describe("catalog-backed marketplace policy", () => {
     expect(agent.hireability).toMatchObject({ status: "protocol_discovered", canHire: true });
     expect(agent.hireability.reason).toContain("fresh quote");
   });
+
+  it("shows evidence for the admitted endpoint when another declaration was probed later", () => {
+    const normalized = candidate({
+      operationalStatus: "platform_reachable", freshness: "live", commerceStatus: "admitted",
+      quoteStatus: "not_requested", buyerAction: "request_quote", canRequestBrowserValidation: true,
+      canRequestInfrastructureValidation: true, canRequestQuote: true, canPrepareHire: false,
+      blockingReasons: ["FRESH_QUOTE_REQUIRED"],
+    });
+    const admitted = normalized.declarations[0]!;
+    const otherEndpointKey = "c".repeat(64);
+    normalized.declarations.push({ ...admitted, endpointKey: otherEndpointKey, endpoint: "https://other.example/a2a" });
+    normalized.observations.push({
+      ...normalized.observations[0]!, id: 2, endpointKey: otherEndpointKey,
+      observedAt: OBSERVED_AT + 10_000, expiresAt: OBSERVED_AT + 910_000,
+    });
+
+    expect(toMarketplaceAgent({ ...baseData(), catalogCandidate: normalized }, { evaluateMarketplace: false }).endpointObservation)
+      .toMatchObject({ endpoint: admitted.endpoint, lastTestedAt: new Date(OBSERVED_AT).toISOString() });
+  });
 });

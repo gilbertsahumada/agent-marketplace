@@ -94,6 +94,31 @@ describe("catalog effective evidence policy", () => {
     })).toMatchObject({ quoteStatus: "verified_fresh", buyerAction: "prepare_hire", canPrepareHire: true });
   });
 
+  it("scopes quote and chain evidence to the admitted commerce endpoint", () => {
+    const currentEndpoint = { ...endpoint, endpointKey: "current-endpoint", validationProtocol: "a2a" };
+    const oldEndpoint = { ...endpoint, endpointKey: "old-endpoint", validationProtocol: "a2a" };
+    const admitted = { state: "admitted", endpointKey: "current-endpoint" };
+    const oldQuote = observation({
+      id: 2, endpointKey: "old-endpoint", outcome: "quote_verified",
+      validationKind: "quote", verificationLevel: "cryptographic", observedAt: NOW,
+    });
+    const currentChain = observation({
+      id: 3, endpointKey: null, outcome: "protocol_valid",
+      validationKind: "chain", verificationLevel: "onchain", observedAt: NOW,
+    });
+
+    expect(deriveCatalogEvidenceState({
+      endpoints: [currentEndpoint, oldEndpoint],
+      observations: [oldQuote, currentChain],
+      admission: admitted,
+      nowMs: NOW,
+    })).toMatchObject({
+      quoteStatus: "not_requested",
+      buyerAction: "request_quote",
+      canPrepareHire: false,
+    });
+  });
+
   it("never treats an unsigned browser quote claim as cryptographic evidence", () => {
     const admitted = { state: "admitted", endpointKey: "endpoint" };
     const browserClaim = observation({

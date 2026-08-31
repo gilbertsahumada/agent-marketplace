@@ -50,6 +50,7 @@ export async function createCatalogValidationResponse(
   const targets = await db.select({
     endpointKey: catalogEndpoints.endpointKey,
     lastSuccessfulAt: catalogEndpoints.lastSuccessfulAt,
+    lastAttemptOutcome: catalogEndpoints.lastAttemptOutcome,
     nextProbeAt: catalogEndpoints.nextProbeAt,
   }).from(catalogAgentEndpoints)
     .innerJoin(catalogEndpoints, eq(catalogEndpoints.endpointKey, catalogAgentEndpoints.endpointKey))
@@ -63,14 +64,18 @@ export async function createCatalogValidationResponse(
     )).limit(1);
   const target = targets[0];
   if (!target) return Response.json({ error: "target_unavailable" }, { status: 409, headers: { "cache-control": "no-store" } });
-  if (target.lastSuccessfulAt !== null && target.nextProbeAt !== null && target.nextProbeAt > nowMs) {
+  if (target.lastAttemptOutcome === "protocol_valid"
+    && target.lastSuccessfulAt !== null && target.nextProbeAt !== null && target.nextProbeAt > nowMs) {
     return Response.json({ status: "completed", reused: true, validationId: null }, {
       status: 200,
       headers: { "cache-control": "no-store" },
     });
   }
 
-  const dedupeKey = `${parsed.endpointKey}:${parsed.validationKind}`;
+  // Observations are scoped to the declaring agent even when two agents share
+  // an origin/path. Do not let one agent reuse a request whose result is
+  // committed under another agent key.
+  const dedupeKey = `${agentKey}:${parsed.endpointKey}:${parsed.validationKind}`;
   const latest = await db.select().from(catalogValidationRequests)
     .where(eq(catalogValidationRequests.dedupeKey, dedupeKey))
     .orderBy(desc(catalogValidationRequests.createdAt), desc(catalogValidationRequests.id))

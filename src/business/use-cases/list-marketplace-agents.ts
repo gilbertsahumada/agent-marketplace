@@ -120,6 +120,7 @@ export class ListMarketplaceAgents {
         ...(validated.q ? { q: validated.q } : {}),
         ...(input.category ? { category: input.category } : {}),
         ...(input.availability === "hireable" ? { statuses: ["hireable"] } : {}),
+        ...(input.availability === "mcp_only" ? { statuses: ["mcp_only"] } : {}),
         inventory: "operational",
       });
       if (catalog) {

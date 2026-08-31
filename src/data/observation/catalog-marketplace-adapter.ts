@@ -9,8 +9,10 @@ export interface CatalogCandidatePageReader {
     q?: string;
     category?: "rebalancing" | "grid_trading" | "yield_optimisation" | "health_factor_monitoring";
     categories?: Array<"rebalancing" | "grid_trading" | "yield_optimisation" | "health_factor_monitoring">;
+    protocols?: Array<"a2a" | "mcp" | "erc8183_http">;
+    commerce?: Array<"declared" | "candidate" | "admitted" | "suspended" | "none">;
     inventory?: "operational" | "registry";
-    statuses?: Array<"declared" | "pending" | "a2a" | "mcp" | "erc8183" | "quote_capable" | "hireable" | "failed">;
+    statuses?: Array<"declared" | "pending" | "a2a" | "mcp" | "mcp_only" | "erc8183" | "quote_capable" | "hireable" | "failed">;
   }): Promise<CatalogCandidatePage | null>;
 }
 
@@ -21,11 +23,16 @@ export interface CatalogCandidateReader {
 const PLATFORM_SOURCES = new Set(["worker_probe", "buyer_refresh", "migration"]);
 
 function latestPlatformObservation(candidate: CatalogCandidate): CatalogCandidateObservation | undefined {
-  return candidate.observations
+  const observations = candidate.observations
     .filter((observation) => PLATFORM_SOURCES.has(observation.source)
       && (observation.validationKind === "reachability" || observation.validationKind === "protocol")
       && observation.verificationLevel === "platform_observed")
-    .sort((left, right) => right.observedAt - left.observedAt || right.id - left.id)[0];
+    .sort((left, right) => right.observedAt - left.observedAt || right.id - left.id);
+  const admittedEndpointKey = candidate.admission?.endpointKey;
+  return (admittedEndpointKey === null || admittedEndpointKey === undefined
+    ? observations
+    : observations.filter((observation) => observation.endpointKey === admittedEndpointKey))[0]
+    ?? observations[0];
 }
 
 function endpointObservation(candidate: CatalogCandidate): EndpointObservation {
@@ -40,7 +47,9 @@ function endpointObservation(candidate: CatalogCandidate): EndpointObservation {
   return {
     status: observation.outcome === "protocol_valid" || observation.outcome === "quote_verified"
       ? "observed_ok" : "observed_failed",
-    protocol: observation.protocol === "mcp" ? "mcp" : observation.protocol === "web" ? "web" : "a2a",
+    protocol: observation.protocol === "mcp" ? "mcp"
+      : observation.protocol === "erc8183_http" ? "erc8183_http"
+        : observation.protocol === "web" ? "web" : "a2a",
     endpoint: declaration?.endpoint ?? null,
     lastTestedAt: new Date(observation.observedAt).toISOString(),
     httpStatus: observation.httpStatus,

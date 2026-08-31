@@ -99,7 +99,9 @@ export async function enqueueCatalogDiscoveryPage(
     readonly nowMs: number;
     readonly source: DiscoverySource;
     readonly cursor?: number;
-    readonly cursorKey?: "catalog_sweep_offset" | "catalog_header_high_water";
+    readonly cursorKey?: "catalog_sweep_offset";
+    /** Monotonic trust8004 high-water marker committed with the page/worklist. */
+    readonly headerHighWater?: string;
   },
 ): Promise<CatalogDiscoverySummary> {
   const uniqueAgents = [...new Map(agents.map((agent) => [agent.agentId, agent])).values()];
@@ -205,6 +207,17 @@ export async function enqueueCatalogDiscoveryPage(
         set: { textValue: null, integerValue: input.cursor, updatedAt: input.nowMs },
       }),
     ]),
+    ...(input.headerHighWater === undefined ? [] : [
+      db.insert(runtimeState).values({
+        key: "header_high_water",
+        textValue: input.headerHighWater,
+        integerValue: null,
+        updatedAt: input.nowMs,
+      }).onConflictDoUpdate({
+        target: runtimeState.key,
+        set: { textValue: input.headerHighWater, integerValue: null, updatedAt: input.nowMs },
+      }),
+    ]),
   ];
   if (statements.length > 0) await db.batch(statements as unknown as Parameters<typeof db.batch>[0]);
   return {
@@ -213,7 +226,9 @@ export async function enqueueCatalogDiscoveryPage(
     tasksQueued: taskRows.length,
     cursor: input.cursor ?? null,
     d1Queries: (agentKeys.length === 0 ? 0 : 2) + statements.length,
-    d1RowsWritten: agentRows.length + taskRows.length + (input.cursor === undefined ? 0 : 1),
+    d1RowsWritten: agentRows.length + taskRows.length
+      + (input.cursor === undefined ? 0 : 1)
+      + (input.headerHighWater === undefined ? 0 : 1),
   };
 }
 
@@ -375,6 +390,39 @@ export async function processNextCatalogIngestTask(
     ?? (CURATED_INVENTORY.entries.find((entry) => entry.agentId === agentId)?.operator === "marketplace"
       ? current.resources.find((resource) => resource.eligibility === "eligible" && resource.validationProtocol === "a2a")
       : undefined);
+  const admissionStatements = !declarationsComplete ? [] : commerce ? [db.insert(catalogAgentAdmission).values({
+    agentKey: active.agentKey,
+    state: "candidate",
+    commerceTransport: commerce.validationProtocol as "a2a" | "erc8183_http",
+    endpointKey: commerce.endpointKey,
+    chainId: 56,
+    provider: null,
+    validatedAt: null,
+    configurationVersion: `metadata:${current.metadataVersion}`,
+    reasonCode: "QUOTE_VERIFICATION_REQUIRED",
+  }).onConflictDoUpdate({
+    target: catalogAgentAdmission.agentKey,
+    set: {
+      state: sql`CASE WHEN ${catalogAgentAdmission.state} = 'admitted'
+        AND ${catalogAgentAdmission.endpointKey} = excluded.endpointKey THEN 'admitted' ELSE 'candidate' END`,
+      commerceTransport: sql.raw("excluded.commerceTransport"), endpointKey: sql.raw("excluded.endpointKey"),
+      provider: sql`CASE WHEN ${catalogAgentAdmission.state} = 'admitted'
+        AND ${catalogAgentAdmission.endpointKey} = excluded.endpointKey THEN ${catalogAgentAdmission.provider} ELSE NULL END`,
+      validatedAt: sql`CASE WHEN ${catalogAgentAdmission.state} = 'admitted'
+        AND ${catalogAgentAdmission.endpointKey} = excluded.endpointKey THEN ${catalogAgentAdmission.validatedAt} ELSE NULL END`,
+      configurationVersion: sql.raw("excluded.configurationVersion"),
+      reasonCode: sql`CASE WHEN ${catalogAgentAdmission.state} = 'admitted'
+        AND ${catalogAgentAdmission.endpointKey} = excluded.endpointKey THEN NULL ELSE 'QUOTE_VERIFICATION_REQUIRED' END`,
+    },
+  })] : [db.update(catalogAgentAdmission).set({
+    state: "suspended",
+    commerceTransport: null,
+    endpointKey: null,
+    provider: null,
+    validatedAt: null,
+    configurationVersion: `metadata:${current.metadataVersion}`,
+    reasonCode: "NO_COMMERCE_ENDPOINT",
+  }).where(eq(catalogAgentAdmission.agentKey, active.agentKey))];
   const statements = [
     db.insert(catalogAgents).values({
       agentKey: active.agentKey,
@@ -431,31 +479,7 @@ export async function processNextCatalogIngestTask(
           rawSourceIndex: sql.raw("excluded.rawSourceIndex"), metadataVersion: current.metadataVersion,
         },
       })),
-    ...(commerce && declarationsComplete ? [db.insert(catalogAgentAdmission).values({
-      agentKey: active.agentKey,
-      state: "candidate",
-      commerceTransport: commerce.validationProtocol as "a2a" | "erc8183_http",
-      endpointKey: commerce.endpointKey,
-      chainId: 56,
-      provider: null,
-      validatedAt: null,
-      configurationVersion: `metadata:${current.metadataVersion}`,
-      reasonCode: "QUOTE_VERIFICATION_REQUIRED",
-    }).onConflictDoUpdate({
-      target: catalogAgentAdmission.agentKey,
-      set: {
-        state: sql`CASE WHEN ${catalogAgentAdmission.state} = 'admitted'
-          AND ${catalogAgentAdmission.endpointKey} = excluded.endpointKey THEN 'admitted' ELSE 'candidate' END`,
-        commerceTransport: sql.raw("excluded.commerceTransport"), endpointKey: sql.raw("excluded.endpointKey"),
-        provider: sql`CASE WHEN ${catalogAgentAdmission.state} = 'admitted'
-          AND ${catalogAgentAdmission.endpointKey} = excluded.endpointKey THEN ${catalogAgentAdmission.provider} ELSE NULL END`,
-        validatedAt: sql`CASE WHEN ${catalogAgentAdmission.state} = 'admitted'
-          AND ${catalogAgentAdmission.endpointKey} = excluded.endpointKey THEN ${catalogAgentAdmission.validatedAt} ELSE NULL END`,
-        configurationVersion: sql.raw("excluded.configurationVersion"),
-        reasonCode: sql`CASE WHEN ${catalogAgentAdmission.state} = 'admitted'
-          AND ${catalogAgentAdmission.endpointKey} = excluded.endpointKey THEN NULL ELSE 'QUOTE_VERIFICATION_REQUIRED' END`,
-      },
-    })] : []),
+    ...admissionStatements,
     db.update(catalogIngestTasks).set({
       metadataVersion: current.metadataVersion,
       nextDeclarationIndex: next,

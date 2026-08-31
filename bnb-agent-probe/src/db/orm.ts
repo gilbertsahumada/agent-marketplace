@@ -392,7 +392,7 @@ export async function readEffectiveAgentObservations(
     FROM (
       SELECT observation.*,
         ROW_NUMBER() OVER (
-          PARTITION BY agentKey, validationKind ORDER BY observedAt DESC, id DESC
+          PARTITION BY agentKey, validationKind, endpointKey ORDER BY observedAt DESC, id DESC
         ) AS evidencePosition
       FROM catalog_observations observation
       WHERE agentKey IN (${sql.join(agentChunk.map((key) => sql`${key}`), sql`, `)})

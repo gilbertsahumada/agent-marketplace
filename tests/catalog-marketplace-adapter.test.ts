@@ -7,7 +7,11 @@ import type {
 import type { Address } from "viem";
 import { ListMarketplaceAgents } from "../src/business/use-cases/list-marketplace-agents.ts";
 import { GetMarketplaceAgent } from "../src/business/use-cases/get-marketplace-agent.ts";
-import type { CatalogCandidatePageReader, CatalogCandidateReader } from "../src/data/observation/catalog-marketplace-adapter.ts";
+import {
+  catalogCandidateToMarketplaceAgentData,
+  type CatalogCandidatePageReader,
+  type CatalogCandidateReader,
+} from "../src/data/observation/catalog-marketplace-adapter.ts";
 
 const GENERATED_AT = 1_788_000_000_000;
 
@@ -81,6 +85,22 @@ function repository(records: MarketplaceAgentData[]): MarketplaceAgentRepository
 }
 
 describe("public catalog application adapter", () => {
+  it("uses the admitted endpoint before a newer observation on another declaration", () => {
+    const normalized = candidate("42");
+    const admittedEndpoint = normalized.declarations[0]!;
+    const otherEndpointKey = "c".repeat(64);
+    normalized.declarations.push({ ...admittedEndpoint, endpointKey: otherEndpointKey, endpoint: "https://other.invalid/a2a" });
+    normalized.observations.push({
+      ...normalized.observations[0]!, id: 99, endpointKey: otherEndpointKey,
+      observedAt: GENERATED_AT + 10_000, expiresAt: GENERATED_AT + 910_000,
+    });
+
+    expect(catalogCandidateToMarketplaceAgentData(normalized).endpointObservation).toMatchObject({
+      endpoint: admittedEndpoint.endpoint,
+      lastTestedAt: new Date(GENERATED_AT).toISOString(),
+    });
+  });
+
   it("maps Worker v2 candidates into the public marketplace response", async () => {
     const pageReader: CatalogCandidatePageReader = {
       execute: vi.fn(async () => ({
@@ -98,6 +118,39 @@ describe("public catalog application adapter", () => {
       items: [{ agentId: "42", hireability: { status: "quote_verified", canHire: true }, operator: "marketplace" }],
     });
     expect(pageReader.execute).toHaveBeenCalledWith({ page: 1, limit: 24, inventory: "operational" });
+  });
+
+  it("uses server-side protocol and commerce filters for the MCP-only view", async () => {
+    const normalized = candidate("42", false);
+    normalized.admission = null;
+    normalized.state = {
+      ...normalized.state!,
+      commerceStatus: "none",
+      buyerAction: "check_availability",
+      canRequestQuote: false,
+    };
+    normalized.declarations = [{
+      ...normalized.declarations[0]!, protocol: "mcp", endpoint: "https://normalized.invalid/mcp",
+    }];
+    normalized.observations = [{
+      ...normalized.observations[0]!, protocol: "mcp",
+    }];
+    const pageReader: CatalogCandidatePageReader = {
+      execute: vi.fn(async () => ({
+        schemaVersion: 2, status: "declared" as const, statuses: ["declared" as const], query: "",
+        category: null, categories: [], generatedAt: GENERATED_AT, page: 1, limit: 24, total: 1,
+        items: [normalized],
+      })),
+    };
+
+    const result = await new ListMarketplaceAgents(repository([data("42")]), pageReader).execute({
+      view: "marketplace", availability: "mcp_only", page: 1, limit: 24,
+    });
+
+    expect(result.items).toMatchObject([{ agentId: "42", hireability: { status: "mcp_only", canHire: false } }]);
+    expect(pageReader.execute).toHaveBeenCalledWith({
+      page: 1, limit: 24, statuses: ["mcp_only"], inventory: "operational",
+    });
   });
 
   it("uses a catalog identity when trust8004 enrichment is temporarily unavailable", async () => {

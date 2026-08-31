@@ -107,8 +107,10 @@ export function deriveCatalogEvidenceState(input: {
     : input.admission?.state === "suspended" ? "suspended"
       : input.admission?.state === "candidate" ? "admission_pending"
         : input.endpoints.some(({ validationProtocol }) => validationProtocol === "erc8183_http") ? "declared" : "none";
+  const commerceEndpointKey = input.admission?.endpointKey ?? null;
   const quoteEvidence = relevant.filter((observation) => observation.validationKind === "quote"
     && observation.verificationLevel === "cryptographic"
+    && (commerceEndpointKey === null || observation.endpointKey === commerceEndpointKey)
     && (observation.outcome === "quote_verified" || observation.outcome === "quote_rejected"))
     .reduce<ObservationFact | undefined>(newest, undefined);
   const quoteStatus: QuoteStatus = commerceStatus === "none" ? "not_supported"
@@ -119,6 +121,7 @@ export function deriveCatalogEvidenceState(input: {
         : "not_requested";
   const freshOnchain = relevant.some((observation) => observation.validationKind === "chain"
     && observation.verificationLevel === "onchain"
+    && (commerceEndpointKey === null || observation.endpointKey === null || observation.endpointKey === commerceEndpointKey)
     && observation.expiresAt !== null && observation.expiresAt > input.nowMs);
   const canRequestQuote = (commerceStatus === "admitted" || commerceStatus === "admission_pending")
     && input.admission?.endpointKey !== null;

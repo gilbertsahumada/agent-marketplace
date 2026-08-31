@@ -143,11 +143,16 @@ export function determineHireability(
 const CATALOG_PLATFORM_SOURCES = new Set(["worker_probe", "buyer_refresh", "migration"]);
 
 function newestCatalogPlatformObservation(candidate: CatalogCandidate): CatalogCandidateObservation | undefined {
-  return candidate.observations
+  const observations = candidate.observations
     .filter((observation) => CATALOG_PLATFORM_SOURCES.has(observation.source)
       && (observation.validationKind === "reachability" || observation.validationKind === "protocol")
       && observation.verificationLevel === "platform_observed")
-    .sort((left, right) => right.observedAt - left.observedAt || right.id - left.id)[0];
+    .sort((left, right) => right.observedAt - left.observedAt || right.id - left.id);
+  const admittedEndpointKey = candidate.admission?.endpointKey;
+  return (admittedEndpointKey === null || admittedEndpointKey === undefined
+    ? observations
+    : observations.filter((observation) => observation.endpointKey === admittedEndpointKey))[0]
+    ?? observations[0];
 }
 
 function catalogEndpointObservation(candidate: CatalogCandidate): EndpointObservation {
@@ -167,6 +172,8 @@ function catalogEndpointObservation(candidate: CatalogCandidate): EndpointObserv
   const declaration = candidate.declarations.find(({ endpointKey }) => endpointKey === latest.endpointKey);
   const protocol = latest.protocol === "mcp"
     ? "mcp" as const
+    : latest.protocol === "erc8183_http"
+      ? "erc8183_http" as const
     : latest.protocol === "web"
       ? "web" as const
       : "a2a" as const;

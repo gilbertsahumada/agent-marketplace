@@ -36,6 +36,10 @@ const identityMigration = readFileSync(
   new URL("../migrations/0014_catalog_agent_identity.sql", import.meta.url),
   "utf8",
 );
+const validationDedupeMigration = readFileSync(
+  new URL("../migrations/0015_agent_scoped_validation_dedupe.sql", import.meta.url),
+  "utf8",
+);
 
 describe("catalog index schema", () => {
   it("models identity, declaration and append-only observation facts separately", () => {
@@ -119,5 +123,10 @@ describe("catalog index schema", () => {
     expect(observationBridgeMigration).toMatch(/INSERT INTO catalog_observations/i);
     expect(observationBridgeMigration).toMatch(/AFTER INSERT ON probe_observations/i);
     expect(observationBridgeMigration).not.toMatch(/UPDATE\s+catalog_observations|DELETE\s+FROM\s+catalog_observations/i);
+  });
+
+  it("migrates legacy validation dedupe keys to the declaring-agent scope", () => {
+    expect(validationDedupeMigration).toContain("dedupeKey = agentKey || ':' || endpointKey || ':' || validationKind");
+    expect(validationDedupeMigration).toContain("dedupeKey = endpointKey || ':' || validationKind");
   });
 });

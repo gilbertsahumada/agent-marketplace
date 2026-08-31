@@ -93,6 +93,18 @@ describe("resumable catalog discovery ingest", () => {
       .toMatchObject({ integerValue: 8 });
   });
 
+  it("commits the trust8004 header high-water marker with the discovery page", async () => {
+    const summary = await enqueueCatalogDiscoveryPage(
+      env.DB as unknown as D1DatabaseLike,
+      [agent("8")],
+      { nowMs: NOW, source: "header", headerHighWater: `${NOW + 8}:8` },
+    );
+
+    expect(summary.d1RowsWritten).toBe(3);
+    expect(await env.DB.prepare("SELECT textValue, integerValue FROM runtime_state WHERE key = 'header_high_water'").first())
+      .toEqual({ textValue: `${NOW + 8}:8`, integerValue: null });
+  });
+
   it("processes every declaration in bounded resumable batches and never schedules external links", async () => {
     const large = agent("42", 30);
     await enqueueCatalogDiscoveryPage(env.DB as unknown as D1DatabaseLike, [large], {
@@ -157,6 +169,42 @@ describe("resumable catalog discovery ingest", () => {
         { declarationState: "current", count: 1 },
         { declarationState: "removed", count: 30 },
       ],
+    });
+  });
+
+  it("suspends a previous commerce admission when metadata removes the commerce endpoint", async () => {
+    const original = agent("77", 2, 1);
+    original.indexEndpoints![0] = {
+      protocol: "erc8183_http",
+      endpoint: "https://agent-77.example.com/1/commerce",
+      rawProtocol: "ERC-8183",
+      source: "services",
+      sourceIndex: 0,
+    };
+    await enqueueCatalogDiscoveryPage(env.DB as unknown as D1DatabaseLike, [original], { nowMs: NOW, source: "header" });
+    await processNextCatalogIngestTask(env.DB as unknown as D1DatabaseLike, {
+      nowMs: NOW + 1, maxDeclarations: 4, fetchAgent: async () => original,
+    });
+    await processNextCatalogIngestTask(env.DB as unknown as D1DatabaseLike, {
+      nowMs: NOW + 2, maxDeclarations: 4, fetchAgent: async () => original,
+    });
+    expect(await env.DB.prepare("SELECT state FROM catalog_agent_admission WHERE agentKey = 'eip155:56:77'").first())
+      .toEqual({ state: "candidate" });
+
+    const replacement = agent("77", 1, 2);
+    await enqueueCatalogDiscoveryPage(env.DB as unknown as D1DatabaseLike, [replacement], {
+      nowMs: NOW + 100, source: "reconciliation",
+    });
+    await processNextCatalogIngestTask(env.DB as unknown as D1DatabaseLike, {
+      nowMs: NOW + 101, maxDeclarations: 4, fetchAgent: async () => replacement,
+    });
+    await processNextCatalogIngestTask(env.DB as unknown as D1DatabaseLike, {
+      nowMs: NOW + 102, maxDeclarations: 4, fetchAgent: async () => replacement,
+    });
+
+    expect(await env.DB.prepare(`SELECT state, endpointKey, reasonCode
+      FROM catalog_agent_admission WHERE agentKey = 'eip155:56:77'`).first()).toEqual({
+      state: "suspended", endpointKey: null, reasonCode: "NO_COMMERCE_ENDPOINT",
     });
   });
 

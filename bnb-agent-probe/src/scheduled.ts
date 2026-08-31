@@ -571,9 +571,12 @@ async function executeCatalogV2Phase(
   ]);
   const pageSize = input.config.catalogDiscoveryPageSize;
   const newest = await catalog.listHeader(pageSize);
+  const pageHighWater = catalogHeaderHighWater(newest.items);
+  const headerHighWater = maximumCatalogHighWater(input.headerHighWater, pageHighWater);
   const discovery = [await enqueueCatalogDiscoveryPage(input.db, newest.items, {
     nowMs: input.nowMs,
     source: "header",
+    ...(headerHighWater === null ? {} : { headerHighWater }),
   })];
 
   if (input.phase === "sweep") {
@@ -679,6 +682,43 @@ async function executeCatalogV2Phase(
     },
   });
   console.info("catalog.v2.phase.completed", summary);
+}
+
+function catalogHeaderHighWater(agents: readonly CatalogAgent[]): string | null {
+  let highest: { registeredAt: number; agentId: string } | null = null;
+  for (const agent of agents) {
+    if (agent.registeredAt === null) continue;
+    const current = { registeredAt: agent.registeredAt, agentId: agent.agentId };
+    if (highest === null || compareCatalogHighWater(current, highest) > 0) highest = current;
+  }
+  return highest === null ? null : `${highest.registeredAt}:${highest.agentId}`;
+}
+
+function maximumCatalogHighWater(left: string | null, right: string | null): string | null {
+  if (left === null) return right;
+  if (right === null) return left;
+  return compareCatalogHighWater(parseCatalogHighWater(left), parseCatalogHighWater(right)) >= 0 ? left : right;
+}
+
+function parseCatalogHighWater(value: string): { registeredAt: number; agentId: string } {
+  const separator = value.indexOf(":");
+  if (separator < 1) throw new Error("CATALOG_STATE:header_high_water");
+  const registeredAt = Number(value.slice(0, separator));
+  const agentId = value.slice(separator + 1);
+  if (!Number.isSafeInteger(registeredAt) || registeredAt < 0 || !/^\d+$/.test(agentId)) {
+    throw new Error("CATALOG_STATE:header_high_water");
+  }
+  return { registeredAt, agentId };
+}
+
+function compareCatalogHighWater(
+  left: { registeredAt: number; agentId: string },
+  right: { registeredAt: number; agentId: string },
+): number {
+  if (left.registeredAt !== right.registeredAt) return left.registeredAt - right.registeredAt;
+  const leftId = BigInt(left.agentId);
+  const rightId = BigInt(right.agentId);
+  return leftId < rightId ? -1 : leftId > rightId ? 1 : 0;
 }
 
 function catalogProbeErrorCode(error: unknown): string {

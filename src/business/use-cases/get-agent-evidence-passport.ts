@@ -25,19 +25,36 @@ const FAILURE_OUTCOMES = new Set([
 ]);
 
 function newestPlatformObservation(candidate: CatalogCandidate): CatalogCandidateObservation[] {
-  return candidate.observations
-    .filter(({ source }) => PLATFORM_SOURCES.has(source))
+  const observations = candidate.observations
+    .filter(({ source, validationKind }) => PLATFORM_SOURCES.has(source)
+      && (validationKind === undefined || validationKind === "reachability" || validationKind === "protocol"))
     .sort((left, right) => right.observedAt - left.observedAt || right.id - left.id);
+  const admittedEndpointKey = candidate.admission?.endpointKey;
+  if (admittedEndpointKey === null || admittedEndpointKey === undefined) return observations;
+  const scoped = observations.filter((observation) => observation.endpointKey === admittedEndpointKey);
+  return scoped.length > 0 ? scoped : observations;
 }
 
 function newestQuoteObservation(candidate: CatalogCandidate | null): CatalogCandidateObservation | undefined {
-  return candidate?.observations
+  const quotes = candidate?.observations
     .filter((observation) => (observation.validationKind === "quote"
       && observation.verificationLevel === "cryptographic")
       || (observation.validationKind === undefined
         && PLATFORM_SOURCES.has(observation.source)
         && (observation.outcome === "quote_verified" || observation.outcome === "quote_rejected")))
     .sort((left, right) => right.observedAt - left.observedAt || right.id - left.id)[0];
+  if (!candidate || !quotes) return quotes;
+  const admittedEndpointKey = candidate.admission?.endpointKey;
+  if (admittedEndpointKey === null || admittedEndpointKey === undefined) return quotes;
+  const scoped = candidate.observations
+    .filter((observation) => (observation.validationKind === "quote"
+      && observation.verificationLevel === "cryptographic")
+      || (observation.validationKind === undefined
+        && PLATFORM_SOURCES.has(observation.source)
+        && (observation.outcome === "quote_verified" || observation.outcome === "quote_rejected")))
+    .filter((observation) => observation.endpointKey === admittedEndpointKey)
+    .sort((left, right) => right.observedAt - left.observedAt || right.id - left.id)[0];
+  return scoped ?? quotes;
 }
 
 export class GetAgentEvidencePassport {
@@ -79,8 +96,8 @@ export class GetAgentEvidencePassport {
       && endpointExpiresAt !== null && endpointExpiresAt > now;
     const endpointFailed = latestEndpoint !== undefined && FAILURE_OUTCOMES.has(latestEndpoint.outcome);
     const quoteIsFresh = quote !== undefined && quote.expiresAt !== null && quote.expiresAt > now;
-    const compatibleDeclaration = catalogCandidate?.declarations.some(({ protocol, safety }) => safety === "safe"
-      && (protocol === "a2a" || protocol === "erc8183_http")) ?? false;
+    const compatibleDeclaration = catalogCandidate?.declarations.some(({ protocol, endpoint, safety }) => safety === "safe"
+      && endpoint !== null && (protocol === "a2a" || protocol === "erc8183_http")) ?? false;
     // The normalized v2 state is the commerce authority.  Keep this fail-closed
     // during the compatibility window instead of promoting the legacy flag.
     // `canHire` means an admitted executable seller can negotiate a fresh

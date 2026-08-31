@@ -1,7 +1,7 @@
 import type { MarketplaceCategory } from "./marketplace-agent.ts";
 
 export const CATALOG_STATUSES = [
-  "declared", "pending", "a2a", "mcp", "erc8183", "quote_capable", "hireable", "failed",
+  "declared", "pending", "a2a", "mcp", "mcp_only", "erc8183", "quote_capable", "hireable", "failed",
 ] as const;
 export type CatalogStatus = (typeof CATALOG_STATUSES)[number];
 

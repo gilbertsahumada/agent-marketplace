@@ -29,7 +29,7 @@ import {
 import type { D1Database } from "../types";
 
 const STATUSES = [
-  "declared", "pending", "a2a", "mcp", "erc8183", "quote_capable", "hireable", "failed",
+  "declared", "pending", "a2a", "mcp", "mcp_only", "erc8183", "quote_capable", "hireable", "failed",
 ] as const;
 type CatalogStatus = (typeof STATUSES)[number];
 const PLATFORM_SOURCES = ["worker_probe", "buyer_refresh", "migration"] as const;
@@ -44,6 +44,7 @@ const COMMERCE = ["declared", "candidate", "admitted", "suspended", "none"] as c
 const QUOTE = ["verified", "expired", "missing"] as const;
 
 const newerObservation = aliasedTable(catalogObservations, "newer_catalog_observation");
+const newerQuoteObservation = aliasedTable(catalogObservations, "newer_catalog_quote_observation");
 
 function invalid(): Response {
   return Response.json({ error: "invalid_request" }, {
@@ -211,19 +212,85 @@ export async function catalogAgentsResponse(
       eq(catalogAgentEndpoints.declarationState, "current"),
       eq(catalogEndpoints.declaredProtocol, "erc8183_http"),
     )));
+  const admittedCommerce = exists(db.select({ value: sql`1` })
+    .from(catalogAgentAdmission)
+    .innerJoin(catalogAgentEndpoints, and(
+      eq(catalogAgentEndpoints.agentKey, catalogAgentAdmission.agentKey),
+      eq(catalogAgentEndpoints.endpointKey, catalogAgentAdmission.endpointKey),
+      eq(catalogAgentEndpoints.declarationState, "current"),
+    ))
+    .innerJoin(catalogEndpoints, eq(catalogEndpoints.endpointKey, catalogAgentEndpoints.endpointKey))
+    .where(and(
+      eq(catalogAgentAdmission.agentKey, catalogAgents.agentKey),
+      eq(catalogAgentAdmission.state, "admitted"),
+      eq(catalogEndpoints.role, "operational"),
+      eq(catalogEndpoints.eligibility, "eligible"),
+      inArray(catalogEndpoints.validationProtocol, ["a2a", "erc8183_http"]),
+    )));
+  const mcpDeclarationExists = exists(db.select({ value: sql`1` })
+    .from(catalogAgentEndpoints)
+    .innerJoin(catalogEndpoints, eq(catalogEndpoints.endpointKey, catalogAgentEndpoints.endpointKey))
+    .where(and(
+      eq(catalogAgentEndpoints.agentKey, catalogAgents.agentKey),
+      eq(catalogAgentEndpoints.declarationState, "current"),
+      eq(catalogEndpoints.role, "operational"),
+      eq(catalogEndpoints.eligibility, "eligible"),
+      eq(catalogEndpoints.validationProtocol, "mcp"),
+    )));
+  const sellerDeclarationExists = exists(db.select({ value: sql`1` })
+    .from(catalogAgentEndpoints)
+    .innerJoin(catalogEndpoints, eq(catalogEndpoints.endpointKey, catalogAgentEndpoints.endpointKey))
+    .where(and(
+      eq(catalogAgentEndpoints.agentKey, catalogAgents.agentKey),
+      eq(catalogAgentEndpoints.declarationState, "current"),
+      eq(catalogEndpoints.role, "operational"),
+      eq(catalogEndpoints.eligibility, "eligible"),
+      inArray(catalogEndpoints.validationProtocol, ["a2a", "erc8183_http"]),
+    )));
+  const admittedCommerceObservation = exists(db.select({ value: sql`1` })
+    .from(catalogAgentAdmission)
+    .innerJoin(catalogAgentEndpoints, and(
+      eq(catalogAgentEndpoints.agentKey, catalogObservations.agentKey),
+      eq(catalogAgentEndpoints.endpointKey, catalogObservations.endpointKey),
+      eq(catalogAgentEndpoints.declarationState, "current"),
+    ))
+    .innerJoin(catalogEndpoints, eq(catalogEndpoints.endpointKey, catalogAgentEndpoints.endpointKey))
+    .where(and(
+      eq(catalogAgentAdmission.agentKey, catalogObservations.agentKey),
+      eq(catalogAgentAdmission.endpointKey, catalogObservations.endpointKey),
+      eq(catalogAgentAdmission.state, "admitted"),
+      eq(catalogEndpoints.role, "operational"),
+      eq(catalogEndpoints.eligibility, "eligible"),
+      inArray(catalogEndpoints.validationProtocol, ["a2a", "erc8183_http"]),
+    )));
   const freshQuote = exists(db.select({ value: sql`1` })
     .from(catalogObservations)
     .where(and(
       observationBelongsToAgent,
+      admittedCommerceObservation,
       eq(catalogObservations.validationKind, "quote"),
       eq(catalogObservations.verificationLevel, "cryptographic"),
       eq(catalogObservations.outcome, "quote_verified"),
       gt(catalogObservations.expiresAt, nowMs),
+      not(exists(db.select({ value: sql`1` }).from(newerQuoteObservation).where(and(
+        eq(newerQuoteObservation.agentKey, catalogObservations.agentKey),
+        eq(newerQuoteObservation.endpointKey, catalogObservations.endpointKey),
+        eq(newerQuoteObservation.validationKind, "quote"),
+        eq(newerQuoteObservation.verificationLevel, "cryptographic"),
+        or(
+          gt(newerQuoteObservation.observedAt, catalogObservations.observedAt),
+          and(
+            eq(newerQuoteObservation.observedAt, catalogObservations.observedAt),
+            gt(newerQuoteObservation.id, catalogObservations.id),
+          ),
+        ),
+      )))),
     )));
   const anyQuote = exists(db.select({ value: sql`1` })
     .from(catalogObservations)
     .where(and(
       observationBelongsToAgent,
+      admittedCommerceObservation,
       eq(catalogObservations.validationKind, "quote"),
       eq(catalogObservations.verificationLevel, "cryptographic"),
       eq(catalogObservations.outcome, "quote_verified"),
@@ -298,12 +365,6 @@ export async function catalogAgentsResponse(
         ),
       )))),
     )));
-  const admitted = exists(db.select({ value: sql`1` })
-    .from(catalogAgentAdmission)
-    .where(and(
-      eq(catalogAgentAdmission.agentKey, catalogAgents.agentKey),
-      eq(catalogAgentAdmission.state, "admitted"),
-    )));
   const admissionState = (state: "candidate" | "admitted" | "suspended") => exists(db.select({ value: sql`1` })
     .from(catalogAgentAdmission)
     .where(and(eq(catalogAgentAdmission.agentKey, catalogAgents.agentKey), eq(catalogAgentAdmission.state, state))));
@@ -313,9 +374,10 @@ export async function catalogAgentsResponse(
     : status === "pending" ? not(platformObservationExists)
       : status === "a2a" ? freshProtocol("a2a")
         : status === "mcp" ? freshProtocol("mcp")
+          : status === "mcp_only" ? and(mcpDeclarationExists, not(sellerDeclarationExists))!
           : status === "erc8183" ? erc8183Declaration
             : status === "quote_capable" ? freshQuote
-              : status === "hireable" ? and(admitted, declarationExists)!
+              : status === "hireable" ? admittedCommerce
                 : and(failureExists, not(latestReachableExists), not(freshValid))!;
   const escapedQuery = q.replaceAll("\\", "\\\\").replaceAll("%", "\\%").replaceAll("_", "\\_");
   const searchCondition = q.length === 0 ? undefined : or(

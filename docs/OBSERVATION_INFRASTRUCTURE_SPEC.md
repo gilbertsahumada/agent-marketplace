@@ -16,19 +16,20 @@ This specification describes the next infrastructure migration. The measured WP2
 
 ### Current implementation evidence
 
-Local evidence captured on 2026-08-31:
+Local evidence captured on 2026-09-01:
 
-- all additive migrations `0008` through `0014` apply successfully to the Wrangler local D1;
+- all additive migrations `0008` through `0015` apply successfully to the Wrangler local D1;
   migration `0014_catalog_agent_identity.sql` preserves the declared owner,
-  metadata URI and registration block alongside the normalized catalog row;
+  metadata URI and registration block alongside the normalized catalog row, and
+  `0015_agent_scoped_validation_dedupe.sql` scopes legacy validation keys by agent;
 - Worker typecheck and manifest validation pass;
-- 485 unit tests and 96 Miniflare integration tests pass in
+- 487 unit tests and 103 Miniflare integration tests pass in
   `bnb-agent-probe` (`vitest.config.ts` and `vitest.worker.config.ts`);
 - production, staging and validation dry-run bundles build successfully;
 - application-side endpoint policy, controller and observation-sync coverage passes
   23 focused tests (`browser-endpoint-validation.test.ts`,
   `marketplace-controllers.test.ts` and `catalog-observation-sync.test.ts`);
-- the complete application gate passes: typecheck, 505 tests across 57 files and
+- the complete application gate passes: typecheck, 515 tests across 59 files and
   the production CLI/Web build. The BNB Agent SDK still emits its known dynamic
   dependency warning during bundling; the bundle completes successfully.
 - catalog evidence reads enforce cryptographic/on-chain verification levels,
@@ -182,8 +183,10 @@ The Queue is transport, not the full worklist. D1 stores pending/due work and le
 ## 7. D1 normalized model
 
 Use additive migrations first. The implementation currently applies `0008` through
-`0014`; `0014_catalog_agent_identity.sql` adds the declared identity provenance
-columns without rewriting existing rows.
+`0015`; `0014_catalog_agent_identity.sql` adds the declared identity provenance
+columns without rewriting existing rows, and
+`0015_agent_scoped_validation_dedupe.sql` migrates legacy on-demand keys without
+touching the append-only observation ledger.
 
 ### 7.1 `catalog_agents`
 
@@ -296,7 +299,11 @@ leaseOwner
 leaseExpiresAt
 ```
 
-A partial unique index prevents more than one active request for the same `endpointKey + validationKind`, except quotes, whose dedupe key also includes `agentKey` and request/requirements hash.
+A partial unique index prevents more than one active request for the same declaring
+`agentKey + endpointKey + validationKind`. This agent scope is required even when
+several identities declare the same endpoint: an observation is committed to the
+declaring agent and must not be reused for another identity. Quote requests may
+extend the dedupe key with the requirements hash.
 
 ### 7.6 `catalog_agent_admission`
 
@@ -541,6 +548,7 @@ Supports combinable filters:
 
 - search;
 - operational protocol;
+- MCP-only (current eligible MCP declaration and no eligible A2A/ERC-8183 commerce declaration);
 - current platform reachability;
 - commerce declared/admitted;
 - quote evidence;
@@ -548,6 +556,10 @@ Supports combinable filters:
 - outcome/category;
 - chain;
 - cursor/page and limit.
+
+Quote filters use only cryptographic evidence for the agent's current admitted
+commerce endpoint; a valid quote on a different or historical endpoint cannot
+make the current seller appear quote-capable.
 
 Default inventory should prioritize actionable operational candidates. Registry-only identities are accessible without being presented as a separate source of truth. This route is consumed server-side only.
 
