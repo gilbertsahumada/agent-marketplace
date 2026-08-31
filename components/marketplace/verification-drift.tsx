@@ -5,7 +5,7 @@ import { ProvenanceBadge } from "./provenance-badge";
 import type { VerificationDriftViewModel } from "./presentation-types";
 
 function toolSummary(verification: VerificationDriftViewModel): string {
-  if (verification.toolsStatus === "not_probed") return "Tool endpoint was not probed";
+  if (verification.toolsStatus === "not_probed") return "Declared tool list was not compared";
   if (verification.toolReachability === "failed") {
     return `Probe did not establish reachability (${verification.toolProbeOutcomes.join(", ")})`;
   }
@@ -79,7 +79,7 @@ export function VerificationDrift({
         </div>
         <div>
           <div className="flex flex-wrap items-center gap-2"><strong className="text-zinc-200">Tools</strong><ProvenanceBadge provenance={verification.toolsStatus === "not_probed" ? "not_probed" : "observed"} /></div>
-          {verification.toolsStatus === "not_probed" ? <p className="mt-1">No observation was attempted; this is not a failed endpoint.</p> : (
+          {verification.toolsStatus === "not_probed" ? <p className="mt-1">No tool-list comparison was attempted; endpoint reachability is reported separately above.</p> : (
             <>
               <p className="mt-1">{toolSummary(verification)}.</p>
               {verification.declaredOnlyTools.length > 0 && <p className="mt-2 break-words"><span className="text-zinc-300">Declared, not observed:</span> {verification.declaredOnlyTools.join(", ")}</p>}
