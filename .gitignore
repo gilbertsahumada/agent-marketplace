@@ -26,5 +26,10 @@ tunnel*.pid
 !/docs/SPEC-MVP.md
 !/docs/DECISIONS.md
 !/docs/AGENT-TO-AGENT-PLAN.md
-.vercel
+!/docs/API.md
+!/docs/HIRE-SPEC.md
+!/docs/FRONTEND_HIRE_JOURNEY_SPEC.md
+!/docs/OBSERVATION_INFRASTRUCTURE_SPEC.md
+.claude/
+.vercel/
 .DS_Store
