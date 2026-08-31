@@ -441,7 +441,7 @@ export async function catalogAgentsResponse(
       eq(catalogAgentEndpoints.declarationState, "current"),
     ));
   const endpointKeys = declarations.map((entry) => entry.endpoint.endpointKey);
-  const [recentObservations, effectiveEndpointObservations, effectiveAgentObservations, admissions] = await Promise.all([
+  const [recentObservations, effectiveEndpointObservations, effectiveAgentObservations, admissions, platformAttemptCounts] = await Promise.all([
     agentKeys.length === 0 ? Promise.resolve([]) : db.select().from(catalogObservations)
       .where(inArray(catalogObservations.agentKey, agentKeys))
       .orderBy(desc(catalogObservations.observedAt), desc(catalogObservations.id))
@@ -450,7 +450,17 @@ export async function catalogAgentsResponse(
     readEffectiveAgentObservations(db, agentKeys),
     agentKeys.length === 0 ? Promise.resolve([]) : db.select().from(catalogAgentAdmission)
       .where(inArray(catalogAgentAdmission.agentKey, agentKeys)),
+    agentKeys.length === 0 ? Promise.resolve([]) : db.select({
+      agentKey: catalogObservations.agentKey,
+      total: count(),
+    }).from(catalogObservations).where(and(
+      inArray(catalogObservations.agentKey, agentKeys),
+      inArray(catalogObservations.source, [...PLATFORM_SOURCES]),
+      inArray(catalogObservations.validationKind, [...PLATFORM_VALIDATION_KINDS]),
+      eq(catalogObservations.verificationLevel, "platform_observed"),
+    )).groupBy(catalogObservations.agentKey),
   ]);
+  const platformAttemptCountByAgent = new Map(platformAttemptCounts.map((row) => [row.agentKey, row.total]));
   const observations = [...new Map([
     ...recentObservations,
     ...effectiveEndpointObservations,
@@ -465,6 +475,7 @@ export async function catalogAgentsResponse(
     return {
       ...agent,
       admission,
+      platformAttemptCount: platformAttemptCountByAgent.get(agent.agentKey) ?? 0,
       state: deriveCatalogEvidenceState({
         endpoints: agentDeclarations.map(({ endpoint }) => endpoint),
         observations: agentObservations,

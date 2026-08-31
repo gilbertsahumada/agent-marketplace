@@ -410,6 +410,73 @@ describe("WP1 in the Workers runtime", () => {
     });
   });
 
+  it("does not reuse a representative endpoint's fresh projection for another declarer", async () => {
+    const now = 1_788_000_000_000;
+    const endpointKey = "5".repeat(64);
+    await env.DB.prepare(`INSERT INTO catalog_agents (
+      agentKey, agentId, chainId, name, metadataState, indexState,
+      firstSeenAt, lastSeenAt
+    ) VALUES
+      ('eip155:56:7401', '7401', 56, 'Representative', 'ok', 'current', ?, ?),
+      ('eip155:56:7402', '7402', 56, 'Shared declarer', 'ok', 'current', ?, ?)`)
+      .bind(now, now, now, now).run();
+    await env.DB.prepare(`INSERT INTO catalog_endpoints (
+      endpointKey, protocol, endpoint, originKey, safety, representativeAgentKey,
+      lastAttemptAt, lastAttemptOutcome, lastSuccessfulAt, nextProbeAt,
+      consecutiveFailures, declaredProtocol, role, validationProtocol, eligibility
+    ) VALUES (?, 'a2a', 'https://shared-agent.example/a2a', 'shared-agent', 'safe',
+      'eip155:56:7401', ?, 'protocol_valid', ?, ?, 0, 'a2a', 'operational', 'a2a', 'eligible')`)
+      .bind(endpointKey, now, now, now + 900_000).run();
+    await env.DB.prepare(`INSERT INTO catalog_agent_endpoints (
+      agentKey, endpointKey, declarationState, firstSeenAt, lastSeenAt
+    ) VALUES
+      ('eip155:56:7401', ?, 'current', ?, ?),
+      ('eip155:56:7402', ?, 'current', ?, ?)`)
+      .bind(endpointKey, now, now, endpointKey, now, now).run();
+    await env.DB.prepare(`INSERT INTO catalog_observations (
+      attemptId, agentKey, endpointKey, protocol, source, outcome, observedAt,
+      expiresAt, durationMs, detailsJson, validationKind, verificationLevel
+    ) VALUES ('representative-fresh', 'eip155:56:7401', ?, 'a2a', 'worker_probe',
+      'protocol_valid', ?, ?, 25, '{}', 'protocol', 'platform_observed')`)
+      .bind(endpointKey, now, now + 900_000).run();
+
+    const send = vi.fn(async () => undefined);
+    const privateEnv = {
+      ...env, BUYER_OBSERVATION_SECRET: "catalog-secret", WP2_QUEUE: { send },
+    } as unknown as Env;
+    const response = await createWorker({ now: () => now }).fetch(
+      new Request("https://worker.test/catalog-validations", {
+        method: "POST",
+        headers: { authorization: "Bearer catalog-secret", "content-type": "application/json" },
+        body: JSON.stringify({
+          schemaVersion: 2, agentId: "7402", endpointKey, validationKind: "protocol",
+        }),
+      }),
+      privateEnv,
+      createExecutionContext(),
+    );
+
+    expect(response.status).toBe(202);
+    expect(await response.json()).toMatchObject({ status: "queued", reused: false });
+    expect(send).toHaveBeenCalledOnce();
+
+    const detail = await createWorker({ now: () => now }).fetch(
+      new Request("https://worker.test/catalog-agent/7402"),
+      privateEnv,
+      createExecutionContext(),
+    );
+    expect(await detail.json()).toMatchObject({
+      resources: [{
+        lastAttemptAt: null,
+        lastAttemptOutcome: null,
+        lastSuccessfulAt: null,
+        nextProbeAt: null,
+        attemptCount: 0,
+        latestEvidence: null,
+      }],
+    });
+  });
+
   it("serves the v2 catalog contract with combinable filters, cursor paging, and resource evidence", async () => {
     const now = 1_788_000_000_000;
     await env.DB.prepare(`INSERT INTO catalog_agents (
@@ -475,6 +542,7 @@ describe("WP1 in the Workers runtime", () => {
       nextCursor: null,
       items: [{
         agentId: "10",
+        platformAttemptCount: 1,
         state: { operationalStatus: "platform_reachable", commerceStatus: "admitted" },
       }],
     });
@@ -888,6 +956,12 @@ describe("WP1 in the Workers runtime", () => {
     }), privateEnv, createExecutionContext());
     expect(await status.json()).toMatchObject({ schemaVersion: 2, validation: { status: "queued", attemptCount: 0 } });
 
+    await env.DB.prepare(`INSERT INTO catalog_observations (
+      attemptId, agentKey, endpointKey, protocol, source, outcome, observedAt,
+      expiresAt, durationMs, detailsJson, validationKind, verificationLevel
+    ) VALUES ('fresh-agent-scoped', 'eip155:56:42', ?, 'mcp', 'worker_probe',
+      'protocol_valid', ?, ?, 25, '{}', 'protocol', 'platform_observed')`)
+      .bind(endpointKey, now, now + 60_000).run();
     await env.DB.prepare(`UPDATE catalog_endpoints
       SET lastSuccessfulAt = ?, lastAttemptOutcome = 'protocol_valid', nextProbeAt = ? WHERE endpointKey = ?`)
       .bind(now, now + 60_000, endpointKey).run();
@@ -901,6 +975,12 @@ describe("WP1 in the Workers runtime", () => {
     await env.DB.prepare(`UPDATE catalog_endpoints
       SET lastAttemptOutcome = 'network_error', nextProbeAt = ? WHERE endpointKey = ?`)
       .bind(now + 60_000, endpointKey).run();
+    await env.DB.prepare(`INSERT INTO catalog_observations (
+      attemptId, agentKey, endpointKey, protocol, source, outcome, observedAt,
+      expiresAt, durationMs, detailsJson, validationKind, verificationLevel
+    ) VALUES ('agent-scoped-failure', 'eip155:56:42', ?, 'mcp', 'worker_probe',
+      'network_error', ?, NULL, 25, '{}', 'protocol', 'platform_observed')`)
+      .bind(endpointKey, now + 1).run();
     const afterFailure = await app.fetch(request(), privateEnv, createExecutionContext());
     expect(afterFailure.status).toBe(202);
     expect(await afterFailure.json()).toMatchObject({ status: "queued", reused: false });

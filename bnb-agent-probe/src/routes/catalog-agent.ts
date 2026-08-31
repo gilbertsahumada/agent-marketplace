@@ -57,9 +57,23 @@ export async function catalogAgentResponse(
     const latestEvidence = platformEvidence[0] ?? null;
     const latestSuccess = platformEvidence.find((observation) => observation.outcome === "protocol_valid") ?? null;
     const latestBrowserEvidence = endpointObservations.find((observation) => observation.source === "browser_reported") ?? null;
+    // Endpoint projections are shared by declarations of the same exact URI.
+    // Only expose their schedule counters when the scoped ledger evidence
+    // belongs to this agent and still matches the shared projection.
+    const projectionMatches = latestEvidence !== null
+      && endpoint.representativeAgentKey === evidence.agent?.agentKey
+      && endpoint.lastAttemptAt === latestEvidence.observedAt
+      && endpoint.lastAttemptOutcome === latestEvidence.outcome;
+    const nextProbeAt = projectionMatches && endpoint.role === "operational" && endpoint.eligibility === "eligible"
+      ? endpoint.nextProbeAt : null;
     return [{
       ...endpoint,
-      nextProbeAt: endpoint.role === "external" || endpoint.eligibility !== "eligible" ? null : endpoint.nextProbeAt,
+      nextProbeAt,
+      lastProbedAt: latestEvidence?.observedAt ?? null,
+      lastAttemptAt: latestEvidence?.observedAt ?? null,
+      lastAttemptOutcome: latestEvidence?.outcome ?? null,
+      lastSuccessfulAt: latestSuccess?.observedAt ?? null,
+      consecutiveFailures: projectionMatches ? endpoint.consecutiveFailures : 0,
       declaration: {
         state: declaration.declarationState,
         priority: declaration.priority,

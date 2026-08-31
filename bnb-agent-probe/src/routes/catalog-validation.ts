@@ -4,6 +4,7 @@ import { createDatabase } from "../db/orm";
 import {
   catalogAgentEndpoints,
   catalogEndpoints,
+  catalogObservations,
   catalogValidationRequests,
 } from "../db/schema";
 import type { D1Database, QueueProducer } from "../types";
@@ -64,8 +65,20 @@ export async function createCatalogValidationResponse(
     )).limit(1);
   const target = targets[0];
   if (!target) return Response.json({ error: "target_unavailable" }, { status: 409, headers: { "cache-control": "no-store" } });
-  if (target.lastAttemptOutcome === "protocol_valid"
-    && target.lastSuccessfulAt !== null && target.nextProbeAt !== null && target.nextProbeAt > nowMs) {
+  const latestPlatformObservation = await db.select({
+    outcome: catalogObservations.outcome,
+    expiresAt: catalogObservations.expiresAt,
+  }).from(catalogObservations).where(and(
+    eq(catalogObservations.agentKey, agentKey),
+    eq(catalogObservations.endpointKey, parsed.endpointKey),
+    inArray(catalogObservations.source, ["worker_probe", "buyer_refresh", "migration"]),
+    eq(catalogObservations.validationKind, "protocol"),
+    eq(catalogObservations.verificationLevel, "platform_observed"),
+  )).orderBy(desc(catalogObservations.observedAt), desc(catalogObservations.id)).limit(1);
+  if (latestPlatformObservation[0]?.outcome === "protocol_valid"
+    && latestPlatformObservation[0].expiresAt !== null
+    && latestPlatformObservation[0].expiresAt > nowMs
+    && target.nextProbeAt !== null && target.nextProbeAt > nowMs) {
     return Response.json({ status: "completed", reused: true, validationId: null }, {
       status: 200,
       headers: { "cache-control": "no-store" },
