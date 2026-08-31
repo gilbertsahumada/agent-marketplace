@@ -1,5 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { handleMarketplaceMcpRequest, marketplaceMcpTools } from "../src/marketplace-mcp.ts";
 import { GET as mcpRouteGet, POST as mcpRoutePost } from "../app/api/mcp/route.ts";
 
@@ -181,5 +183,33 @@ describe("remote streamable http endpoint", () => {
     const response = await mcpRouteGet();
     expect(response.status).toBe(405);
     expect(response.headers.get("allow")).toBe("POST");
+  });
+
+  it("serves a real MCP client speaking streamable http end to end", async () => {
+    const { requests, fetch } = jsonFetch({ items: [], pagination: { total: 0 } });
+    const transport = new StreamableHTTPClientTransport(new URL("https://marketplace.example/api/mcp"), {
+      fetch: (url, init) => handleMarketplaceMcpRequest(new Request(url, init), { origin: ORIGIN, fetch }),
+    });
+    const client = new Client({ name: "e2e-suite", version: "0.0.1" });
+    // The SDK's client transport type clashes with its own Transport interface
+    // under exactOptionalPropertyTypes; the runtime shapes are identical.
+    await client.connect(transport as unknown as Parameters<Client["connect"]>[0]);
+    try {
+      const { tools } = await client.listTools();
+      expect(tools.map((entry) => entry.name)).toEqual([
+        "search_agents",
+        "get_passport",
+        "compare_agents",
+        "request_quote",
+        "get_job_status",
+      ]);
+      const result = await client.callTool({ name: "search_agents", arguments: { availability: "hireable" } });
+      expect(result.isError).toBeFalsy();
+      const marketplaceCalls = requests.filter(({ url }) => url.includes("/api/marketplace/"));
+      expect(marketplaceCalls).toHaveLength(1);
+      expect(new URL(marketplaceCalls[0]!.url).searchParams.get("availability")).toBe("hireable");
+    } finally {
+      await client.close();
+    }
   });
 });
