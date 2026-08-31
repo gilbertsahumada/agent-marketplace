@@ -18,10 +18,13 @@ export function catalogCandidateCard(
   const browser = candidate.observations
     .filter((observation) => observation.source === "browser_reported")
     .sort((left, right) => right.observedAt - left.observedAt || right.id - left.id);
-  const transport = platform.find((observation) => observation.protocol !== "erc8183");
-  const freshTransport = transport?.outcome === "protocol_valid"
+  const transport = platform.find((observation) => observation.outcome === "protocol_valid"
+    || observation.outcome === "quote_verified"
+    || (observation.protocol !== "erc8183" && FAILURE_OUTCOMES.has(observation.outcome)));
+  const freshTransport = (transport?.outcome === "protocol_valid" || transport?.outcome === "quote_verified")
     && transport.expiresAt !== null && transport.expiresAt > now;
-  const quote = platform.find((observation) => observation.protocol === "erc8183");
+  const quote = platform.find((observation) => observation.outcome === "quote_verified"
+    || observation.protocol === "erc8183");
   const freshQuote = quote?.outcome === "quote_verified"
     && quote.expiresAt !== null && quote.expiresAt > now;
   const canRequestQuote = candidate.marketplaceConfigured
@@ -43,7 +46,9 @@ export function catalogCandidateCard(
       status: freshTransport ? "verified" : transport && FAILURE_OUTCOMES.has(transport.outcome) ? "failed" : "unknown",
       provenance: transport ? "observed" : browser.length > 0 ? "unavailable" : "not_probed",
       detail: freshTransport
-        ? `A platform probe returned a protocol-valid ${transport.protocol.toUpperCase()} response.`
+        ? transport.outcome === "quote_verified"
+          ? `A platform quote request returned a verified response over ${transport.protocol.toUpperCase()}.`
+          : `A platform probe returned a protocol-valid ${transport.protocol.toUpperCase()} response.`
         : transport && FAILURE_OUTCOMES.has(transport.outcome)
           ? `The latest platform attempt failed (${transport.errorCode ?? transport.outcome}).`
           : browser.length > 0
