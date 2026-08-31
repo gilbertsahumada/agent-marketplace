@@ -75,7 +75,7 @@ export function CatalogPage({
   };
 
   const searchForm = (
-    <form action="/agents" className={allView ? "grid min-w-0 gap-3 sm:grid-cols-[minmax(0,1fr)_auto]" : "relative grid min-w-0 grid-cols-[auto_minmax(0,1fr)] gap-2"} key="catalog-search">
+    <form action="/agents" className={allView ? "grid min-w-0 gap-3 sm:grid-cols-[minmax(0,1fr)_auto]" : "relative grid w-full min-w-0 grid-cols-[auto_minmax(0,1fr)] gap-2 lg:block"} key="catalog-search">
       <input name="view" type="hidden" value={query.view} />
       {!allView && <input name="status" type="hidden" value={selectedStatus} />}
       {query.category && <input name="category" type="hidden" value={query.category} />}
@@ -99,11 +99,11 @@ export function CatalogPage({
           </div>
         </details>
       )}
-      <label className="relative">
+      <label className="relative block w-full min-w-0">
         <span className="sr-only">Search agents</span>
         <Search aria-hidden="true" className="absolute top-1/2 left-4 size-4 -translate-y-1/2 text-zinc-500" />
         <Input
-          className="h-10 pl-11"
+          className="h-10 pl-11 focus-visible:ring-inset"
           defaultValue={query.q}
           maxLength={120}
           name="q"
