@@ -20,11 +20,24 @@ const spaceMono = Space_Mono({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL("https://marketplace.trust8004.xyz"),
   title: {
     default: "BNB Agent Studio",
     template: "%s | BNB Agent Studio",
   },
   description: "Discover, compare, and verify AI agents on BNB Smart Chain before you hire.",
+  openGraph: {
+    type: "website",
+    siteName: "BNB Agent Studio",
+    url: "/",
+    title: "BNB Agent Studio",
+    description: "Discover, compare, and verify AI agents on BNB Smart Chain before you hire.",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "BNB Agent Studio",
+    description: "Discover, compare, and verify AI agents on BNB Smart Chain before you hire.",
+  },
 };
 
 export default function RootLayout({ children }: Readonly<{ children: ReactNode }>) {
