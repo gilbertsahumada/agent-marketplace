@@ -46,7 +46,23 @@ function declaration(value: unknown): CatalogCandidateDeclaration {
   if (!/^[a-f0-9]{64}$/.test(String(item.endpointKey))
     || !["a2a", "mcp", "web", "erc8183_http"].includes(String(item.protocol))
     || !["safe", "unsafe"].includes(String(item.safety))) throw new Error("CATALOG_FEED_INVALID");
-  return {
+  const declaredProtocol = item.declaredProtocol;
+  const role = item.role;
+  const validationProtocol = item.validationProtocol;
+  const externalKind = item.externalKind;
+  const eligibility = item.eligibility;
+  if ((declaredProtocol !== undefined
+      && !["a2a", "mcp", "web", "erc8183_http", "x402", "unknown"].includes(String(declaredProtocol)))
+    || (role !== undefined && !["operational", "external"].includes(String(role)))
+    || (validationProtocol !== undefined && validationProtocol !== null
+      && !["a2a", "mcp", "erc8183_http"].includes(String(validationProtocol)))
+    || (externalKind !== undefined && externalKind !== null
+      && !["website", "social", "repository", "documentation", "other"].includes(String(externalKind)))
+    || (eligibility !== undefined
+      && !["eligible", "unsafe", "invalid_declaration", "unsupported"].includes(String(eligibility)))) {
+    throw new Error("CATALOG_FEED_INVALID");
+  }
+  const result: CatalogCandidateDeclaration = {
     endpointKey: item.endpointKey as string,
     protocol: item.protocol as CatalogCandidateDeclaration["protocol"],
     endpoint: string(item.endpoint, true),
@@ -59,6 +75,20 @@ function declaration(value: unknown): CatalogCandidateDeclaration {
     consecutiveFailures: integer(item.consecutiveFailures)!,
     priority: integer(item.priority)!,
   };
+  if (declaredProtocol !== undefined) {
+    result.declaredProtocol = declaredProtocol as NonNullable<CatalogCandidateDeclaration["declaredProtocol"]>;
+  }
+  if (role !== undefined) result.role = role as NonNullable<CatalogCandidateDeclaration["role"]>;
+  if (validationProtocol !== undefined) {
+    result.validationProtocol = validationProtocol as Exclude<CatalogCandidateDeclaration["validationProtocol"], undefined>;
+  }
+  if (externalKind !== undefined) {
+    result.externalKind = externalKind as Exclude<CatalogCandidateDeclaration["externalKind"], undefined>;
+  }
+  if (eligibility !== undefined) {
+    result.eligibility = eligibility as NonNullable<CatalogCandidateDeclaration["eligibility"]>;
+  }
+  return result;
 }
 
 function observation(value: unknown, schemaVersion: 1 | 2): CatalogCandidateObservation {
