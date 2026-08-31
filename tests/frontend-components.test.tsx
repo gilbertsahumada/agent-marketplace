@@ -446,10 +446,11 @@ describe("marketplace presentation rules", () => {
     expect((await axe.run(document.body)).violations).toEqual([]);
   });
 
-  it("does not render a Hire action for an MCP-only agent", () => {
+  it("keeps Hire visible but disabled for an MCP-only agent", () => {
     render(createElement(AgentCard, { agent: { agentId: "45650", name: "V3 Pools", description: "Agent", operator: "third_party", categories: ["rebalancing"], href: "/agents/45650", hireability: "mcp_only", evidence, passportState: "evaluated", passportHref: "/agents/45650/passport" } }));
     expect(screen.getByText("Never probed")).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /hire agent/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /hire agent/i })).toBeDisabled();
     const profileLink = screen.getByRole("link", { name: /view profile/i });
     expect(profileLink).toHaveAttribute("href", "/agents/45650");
     expect(profileLink).toHaveAttribute("data-prefetch", "false");
@@ -476,6 +477,8 @@ describe("marketplace presentation rules", () => {
 
     expect(screen.getByText("No endpoint declared")).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /hire agent/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /hire agent/i })).toBeDisabled();
+    expect(screen.getByRole("link", { name: /view profile/i })).toHaveAttribute("href", "/agents/45650");
   });
 
   it("keeps the fresh-quote action visible for a compatible seller without a current observation", () => {
@@ -494,6 +497,7 @@ describe("marketplace presentation rules", () => {
     } }));
 
     expect(screen.getByText("Hireable on Mainnet")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /view profile/i })).toHaveAttribute("href", "/agents/303779");
     expect(screen.getByRole("link", { name: /hire agent/i })).toHaveAttribute("href", "/hire/303779");
   });
 
@@ -555,7 +559,8 @@ describe("marketplace presentation rules", () => {
         toolsObservedAt: null,
       },
     }));
-    expect(within(container).getByText(/Tool endpoint was not probed/)).toBeInTheDocument();
+    expect(within(container).getByText(/Declared tool list was not compared/)).toBeInTheDocument();
+    expect(within(container).queryByText(/Tool endpoint was not probed/)).toBeNull();
     expect(within(container).getByText(/Not probed/)).toBeInTheDocument();
     expect(container.querySelector(".text-emerald-300")).toBeNull();
   });
@@ -659,7 +664,7 @@ describe("marketplace presentation rules", () => {
     expect(screen.getByRole("link", { name: "Return to marketplace status" })).toHaveAttribute("href", "/");
   });
 
-  it("shows the upstream total only for all registered agents", () => {
+  it("shows registry and operational totals without explanatory copy", () => {
     const page: MarketplaceAgentPage = {
       view: "all",
       items: [],
@@ -668,12 +673,20 @@ describe("marketplace presentation rules", () => {
       catalogCoverage: "partial",
       fetchedAt: "2026-08-17T00:00:00.000Z",
     };
-    render(createElement(CatalogPage, { data: page, query: { view: "all", sort: "newest" } }));
-    expect(screen.getByRole("heading", { name: "All registered agents" })).toBeInTheDocument();
-    expect(screen.getByText("All registered agents · 80,058 agents")).toBeInTheDocument();
-    expect(screen.getByText(/Registration alone is not evaluation or hireability/)).toBeInTheDocument();
-    expect(screen.getByText(/count is trust8004 response\.total for chainId 56 with active=true, fetched /)).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "All registered agents" })).toHaveAttribute("aria-current", "page");
+    render(createElement(CatalogPage, {
+      data: page,
+      operationalTotal: 30_006,
+      query: { view: "all", sort: "newest" },
+      registryTotal: 80_058,
+    }));
+    expect(screen.getByRole("heading", { name: "Hire an agent" })).toBeInTheDocument();
+    const totals = screen.getByLabelText("Catalog totals");
+    expect(within(totals).getByText("ERC-8004 registered")).toBeInTheDocument();
+    expect(within(totals).getByText("80,058")).toBeInTheDocument();
+    expect(within(totals).getByText("Operational candidates")).toBeInTheDocument();
+    expect(within(totals).getByText("30,006")).toBeInTheDocument();
+    expect(screen.queryByText(/Registration alone is not evaluation or hireability/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/trust8004 response\.total/)).not.toBeInTheDocument();
     expect(screen.getByRole("combobox", { name: "Sort agents" })).toHaveValue("newest");
   });
 
@@ -689,11 +702,32 @@ describe("marketplace presentation rules", () => {
       fetchedAt: "2026-08-17T00:00:00.000Z",
     };
 
-    render(createElement(CatalogPage, { data: page, query: { view: "marketplace" } }));
+    const { container } = render(createElement(CatalogPage, {
+      data: page,
+      operationalTotal: 30_006,
+      query: { view: "marketplace" },
+      registryTotal: 80_058,
+    }));
 
-    expect(screen.getByText("One registry: all identities, or only identities that declare a usable public service endpoint.")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Operational candidates" })).toHaveAttribute("aria-current", "page");
-    expect(screen.getByRole("link", { name: "All registered agents" })).toHaveAttribute("href", "/agents?view=all&page=1&limit=24");
+    expect(screen.queryByText("One registry: all identities, or only identities that declare a usable public service endpoint.")).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Operational candidates" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "All registered agents" })).not.toBeInTheDocument();
+    const mobileFilterButton = screen.getByRole("button", { name: "Filters" });
+    const mobileFilterDetails = mobileFilterButton.closest("details");
+    expect(mobileFilterDetails).not.toHaveAttribute("open");
+    expect(mobileFilterDetails?.nextElementSibling).toContainElement(screen.getByRole("textbox", { name: "Search agents" }));
+    expect(mobileFilterButton.querySelector(".lucide-list-filter")).not.toBeNull();
+    await user.click(mobileFilterButton);
+    expect(mobileFilterDetails).toHaveAttribute("open");
+    await user.click(mobileFilterButton);
+    expect(mobileFilterDetails).not.toHaveAttribute("open");
+    expect(screen.getByRole("complementary", { name: "Catalog filters" })).toHaveClass("lg:sticky", "lg:overflow-y-auto");
+    expect(screen.getByRole("region", { name: "Agent results" })).toHaveClass("lg:h-full", "lg:overflow-y-auto");
+    expect(container.querySelector(".lucide-search")).toHaveClass("top-1/2", "-translate-y-1/2");
+    expect(screen.getAllByRole("checkbox", { name: "Declared endpoints" })).toHaveLength(2);
+    expect(screen.getAllByRole("checkbox", { name: "Declared endpoints" }).every((checkbox) => checkbox.getAttribute("data-state") === "checked")).toBe(true);
+    expect(screen.getAllByRole("checkbox", { name: "Quote verified" }).every((checkbox) => checkbox.getAttribute("data-state") === "unchecked")).toBe(true);
+    expect(screen.getAllByRole("checkbox", { name: "Grid trading" }).every((checkbox) => checkbox.getAttribute("data-state") === "unchecked")).toBe(true);
     expect(screen.getByRole("tab", { name: "Cards" })).toHaveAttribute("data-state", "active");
     expect(screen.getByRole("tab", { name: "Cards" })).toHaveClass("cursor-pointer");
     expect(screen.queryByRole("table", { name: "Agent comparison" })).not.toBeInTheDocument();
@@ -708,6 +742,7 @@ describe("marketplace presentation rules", () => {
     expect(screen.getByRole("columnheader", { name: "Evidence" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /View V3 Pools powered by HeyAnon on trust8004/i })).toHaveTextContent("Agent #45650");
     expect(screen.getByRole("link", { name: "View profile" })).toHaveAttribute("href", "/agents/45650");
+    expect(screen.getByRole("button", { name: /Hire agent/i })).toBeDisabled();
   });
 
   it("does not promote indexed reachability in the all-agents view when Worker observations are unavailable", () => {
