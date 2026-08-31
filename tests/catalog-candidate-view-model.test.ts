@@ -39,4 +39,26 @@ describe("catalog candidate card", () => {
     expect(card.quoteRequestAvailable).toBe(true);
     expect(card.monitoring).toMatchObject({ attemptCount: 17 });
   });
+
+  it("treats a fresh bridged A2A quote as both reachable and quote verified", () => {
+    const value = candidate();
+    value.marketplaceConfigured = true;
+    value.observations.push({ id: 3, agentKey: value.agentKey, endpointKey: null,
+      protocol: "a2a", source: "marketplace_probe", outcome: "quote_verified", observedAt: NOW,
+      expiresAt: NOW + 900_000, httpStatus: null, errorCode: null, durationMs: 20,
+      details: { legacyObservationId: 7 } });
+
+    const card = catalogCandidateCard(value, NOW);
+
+    expect(card.evidence.find(({ kind }) => kind === "reachable")).toMatchObject({
+      status: "verified",
+      provenance: "observed",
+      timestamp: new Date(NOW).toISOString(),
+    });
+    expect(card.evidence.find(({ kind }) => kind === "quote")).toMatchObject({
+      status: "verified",
+      provenance: "observed",
+      timestamp: new Date(NOW).toISOString(),
+    });
+  });
 });
