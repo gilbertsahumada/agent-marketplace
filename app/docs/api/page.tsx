@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Callout, CodeBlock, DocsSection, ExternalDocLink, InlineCode } from "../components";
+import { DOCS_MARKDOWN } from "../markdown";
+import { PageActions } from "../page-actions";
 
 export const metadata: Metadata = { title: "HTTP API documentation" };
 
@@ -35,6 +37,7 @@ export default function ApiDocsPage() {
           <InlineCode>https://marketplace.trust8004.xyz</InlineCode>. The MCP tools and the CLI wrap
           these routes — consuming them directly is equally supported.
         </p>
+        <div className="mt-4"><PageActions markdown={DOCS_MARKDOWN.api!} slug="api" /></div>
       </header>
 
       <DocsSection id="routes" title="Route map">

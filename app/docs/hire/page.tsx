@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Callout, CodeBlock, DocsSection, ExternalDocLink, FlowDiagram, InlineCode, SubHeading } from "../components";
+import { DOCS_MARKDOWN } from "../markdown";
+import { PageActions } from "../page-actions";
 
 export const metadata: Metadata = { title: "Hire flow documentation" };
 
@@ -23,6 +25,7 @@ export default function HireDocsPage() {
           UI. A valid signed quote is the <strong className="font-medium text-zinc-200">only</strong>{" "}
           gate to hiring; the flow is non-custodial and every financial fact resolves from chain.
         </p>
+        <div className="mt-4"><PageActions markdown={DOCS_MARKDOWN.hire!} slug="hire" /></div>
       </header>
 
       <DocsSection id="sequence" title="The sequence">
@@ -42,7 +45,7 @@ export default function HireDocsPage() {
           ceiling, and <InlineCode>quoteExpiresAt</InlineCode> is in the future.
         </p>
         <SubHeading id="prepare">3 · Prepare</SubHeading>
-        <CodeBlock title="request">{`POST …/prepare
+        <CodeBlock lang="json" title="request">{`POST …/prepare
 { "buyer": "0xYourCheckSummedAddress", "quote": <the envelope, byte-identical> }`}</CodeBlock>
         <p>
           The response is the ordered transaction plan: intents, <InlineCode>deadline</InlineCode>,{" "}
@@ -89,7 +92,7 @@ export default function HireDocsPage() {
           </p>
         </Callout>
         <SubHeading id="notify">5 · Notify the seller</SubHeading>
-        <CodeBlock title="request">{`POST …/notify
+        <CodeBlock lang="json" title="request">{`POST …/notify
 { "buyer": "0xYourAddress", "jobId": "552" }`}</CodeBlock>
         <p>The job must be <InlineCode>FUNDED</InlineCode>; the seller then submits its deliverable onchain.</p>
         <SubHeading id="track">6 · Track and verify the result</SubHeading>
