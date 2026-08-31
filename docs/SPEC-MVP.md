@@ -1353,6 +1353,23 @@ desarrollo local lee el catálogo público de staging. Production todavía no
 contiene `OBSERVATIONS_URL`, `BUYER_OBSERVATION_ALLOWED_ORIGIN` ni
 `BUYER_OBSERVATION_SECRET`; por eso WP4 no se declara productivo antes de su
 promoción coordinada.
+
+Promoción staging medida 2026-08-31: D1 aplicó
+`0007_bridge_probe_observations.sql`, importó 180 observaciones históricas y el
+Worker `bnb-agent-probe-staging` quedó en version
+`80c76b08-0467-4e14-ba41-08f3902164b0`, con Cron `*/5 * * * *`. Consultas HTTP
+desde el Preview del commit `24fdea3` mostraron 29.930 candidatos declarados,
+14 con declaración ERC-8183 y exactamente un seller configurado como
+contratable (`303779`). Una validación real de ese seller verificó A2A y quote,
+persistió 2/2 observaciones y devolvió `marketplace_configured`, `canHire=true`
+y Passport `hireable`.
+
+Production seguía deliberadamente sin promover al cierre de esta medición. Su
+fallback mostraba 320.466 registros en `All registered agents`, mientras
+`Marketplace` mostraba solo el seller configurado y carecía de sincronización
+con D1. Esta mezcla no es el estado final: antes del merge deben existir las
+tres variables server-side en Production y debe repetirse la prueba HTTP y de
+persistencia contra el deployment productivo.
 La sincronización de quotes configura además `BUYER_OBSERVATION_ALLOWED_ORIGIN`
 y `BUYER_OBSERVATION_SECRET`; Cloudflare recibe este último como secret del
 Worker. `SHARED_SECRET` permanece reservado para la ruta administrativa de

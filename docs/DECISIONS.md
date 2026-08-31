@@ -423,6 +423,14 @@ until manual marketplace admission. A seller already configured by the
 marketplace reports `marketplace_configured` and `canHire: true`; validation
 does not re-promote it, and Hire still requests a new quote before signatures.
 
+The 2026-08-31 staging promotion applied the legacy observation bridge and
+deployed Worker version `80c76b08-0467-4e14-ba41-08f3902164b0`. The acceptance
+probe recorded both A2A protocol and ERC-8183 quote observations and returned
+the pre-admitted seller as hireable. Production promotion remains ordered as:
+configure all three server-side observation variables, merge, then repeat the
+HTTP and D1 persistence checks; merging into an unconfigured Production is not
+an acceptable fallback.
+
 ## 2026-08-30 — Make hiring the catalogue's primary presentation
 
 The catalogue now presents one dataset through two layouts. Cards remain the
