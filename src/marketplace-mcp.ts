@@ -1,4 +1,5 @@
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
+import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import {
   CallToolRequestSchema,
   ErrorCode,
@@ -262,4 +263,21 @@ export function createMarketplaceMcpServer(options: MarketplaceMcpOptions = {}):
     }
   });
   return server;
+}
+
+export async function handleMarketplaceMcpRequest(
+  request: Request,
+  options: MarketplaceMcpOptions = {},
+): Promise<Response> {
+  const server = createMarketplaceMcpServer(options);
+  // No sessionIdGenerator: session management stays disabled (stateless mode).
+  const transport = new WebStandardStreamableHTTPServerTransport({
+    enableJsonResponse: true,
+  });
+  await server.connect(transport);
+  try {
+    return await transport.handleRequest(request);
+  } finally {
+    void server.close().catch(() => undefined);
+  }
 }
