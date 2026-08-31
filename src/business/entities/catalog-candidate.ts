@@ -8,6 +8,12 @@ export type CatalogStatus = (typeof CATALOG_STATUSES)[number];
 export interface CatalogCandidateDeclaration {
   endpointKey: string;
   protocol: "a2a" | "mcp" | "web" | "erc8183_http";
+  /** Normalized v2 classification; absent only on legacy compatibility feeds. */
+  declaredProtocol?: "a2a" | "mcp" | "web" | "erc8183_http" | "x402" | "unknown";
+  role?: "operational" | "external";
+  validationProtocol?: "a2a" | "mcp" | "erc8183_http" | null;
+  externalKind?: "website" | "social" | "repository" | "documentation" | "other" | null;
+  eligibility?: "eligible" | "unsafe" | "invalid_declaration" | "unsupported";
   endpoint: string | null;
   originKey: string | null;
   safety: "safe" | "unsafe";
@@ -17,6 +23,25 @@ export interface CatalogCandidateDeclaration {
   nextProbeAt: number | null;
   consecutiveFailures: number;
   priority: number;
+}
+
+export function isCatalogOperationalDeclaration(declaration: CatalogCandidateDeclaration): boolean {
+  if (declaration.role !== undefined || declaration.eligibility !== undefined
+    || declaration.validationProtocol !== undefined) {
+    return declaration.role === "operational"
+      && declaration.eligibility === "eligible"
+      && declaration.validationProtocol !== null;
+  }
+  // Legacy schema v1 has no normalized classification fields.
+  return declaration.safety === "safe"
+    && declaration.endpoint !== null
+    && declaration.protocol !== "web";
+}
+
+export function isCatalogSellerDeclaration(declaration: CatalogCandidateDeclaration): boolean {
+  const protocol = declaration.validationProtocol ?? declaration.protocol;
+  return isCatalogOperationalDeclaration(declaration)
+    && (protocol === "a2a" || protocol === "erc8183_http");
 }
 
 export interface CatalogCandidateObservation {
