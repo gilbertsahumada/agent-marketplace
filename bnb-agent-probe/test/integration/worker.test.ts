@@ -964,7 +964,7 @@ describe("WP1 in the Workers runtime", () => {
       .bind(endpointKey, now, now + 60_000).run();
     await env.DB.prepare(`UPDATE catalog_endpoints
       SET lastSuccessfulAt = ?, lastAttemptOutcome = 'protocol_valid', nextProbeAt = ? WHERE endpointKey = ?`)
-      .bind(now, now + 60_000, endpointKey).run();
+      .bind(now, now - 1, endpointKey).run();
     const fresh = await app.fetch(request(), privateEnv, createExecutionContext());
     expect(fresh.status).toBe(200);
     expect(await fresh.json()).toEqual({ status: "completed", reused: true, validationId: null });

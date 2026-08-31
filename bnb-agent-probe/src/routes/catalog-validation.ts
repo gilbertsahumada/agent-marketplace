@@ -77,8 +77,7 @@ export async function createCatalogValidationResponse(
   )).orderBy(desc(catalogObservations.observedAt), desc(catalogObservations.id)).limit(1);
   if (latestPlatformObservation[0]?.outcome === "protocol_valid"
     && latestPlatformObservation[0].expiresAt !== null
-    && latestPlatformObservation[0].expiresAt > nowMs
-    && target.nextProbeAt !== null && target.nextProbeAt > nowMs) {
+    && latestPlatformObservation[0].expiresAt > nowMs) {
     return Response.json({ status: "completed", reused: true, validationId: null }, {
       status: 200,
       headers: { "cache-control": "no-store" },
