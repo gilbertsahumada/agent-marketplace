@@ -1,8 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, type ReactNode } from "react";
 import Link from "next/link";
-import { ExternalLink, LayoutGrid, List, ShieldCheck } from "lucide-react";
+import { ArrowUpRight, ExternalLink, LayoutGrid, List, LockKeyhole, ShieldCheck } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -73,12 +73,25 @@ function AgentComparisonTable({ agents, registry }: { agents: AgentCardViewModel
                   <EvidenceRail ariaLabel={`Evidence for ${agent.name}`} density="summary" steps={agent.evidence} />
                 </TableCell>
                 <TableCell className="text-zinc-400">{typeof agent.trustScore === "number" ? "Derived" : "Unavailable"}</TableCell>
-                <TableCell className="px-4 text-right">
-                  <Button asChild size="sm" variant={canRequestQuote ? "default" : "outline"}>
-                    <Link href={canRequestQuote ? `/hire/${agent.agentId}` : agent.href} prefetch={false}>
-                      {canRequestQuote ? "Hire agent" : "View profile"}
-                    </Link>
-                  </Button>
+                <TableCell className="px-4">
+                  <div className="flex justify-end gap-2">
+                    <Button asChild size="sm" variant="outline">
+                      <Link href={agent.href} prefetch={false}>
+                        View profile
+                        <ArrowUpRight aria-hidden="true" data-icon="inline-end" />
+                      </Link>
+                    </Button>
+                    {canRequestQuote ? (
+                      <Button asChild size="sm">
+                        <Link href={`/hire/${agent.agentId}`} prefetch={false}>Hire agent</Link>
+                      </Button>
+                    ) : (
+                      <Button disabled size="sm" title="Hiring is not available for this agent" variant="secondary">
+                        Hire agent
+                        <LockKeyhole aria-hidden="true" data-icon="inline-end" />
+                      </Button>
+                    )}
+                  </div>
                 </TableCell>
               </TableRow>
             );
@@ -89,28 +102,20 @@ function AgentComparisonTable({ agents, registry }: { agents: AgentCardViewModel
   );
 }
 
-export function CatalogResults({ agents, registry = false }: { agents: AgentCardViewModel[]; registry?: boolean }) {
-  const [hireableOnly, setHireableOnly] = useState(false);
+export function CatalogResults({ agents, registry = false, toolbar, emptyContent }: {
+  agents: AgentCardViewModel[];
+  registry?: boolean;
+  toolbar?: ReactNode;
+  emptyContent?: ReactNode;
+}) {
   const visibleAgents = useMemo(() => {
-    const filtered = hireableOnly ? agents.filter((agent) => agent.quoteRequestAvailable === true) : agents;
-    return [...filtered].sort((left, right) => Number(right.quoteRequestAvailable === true) - Number(left.quoteRequestAvailable === true));
-  }, [agents, hireableOnly]);
+    return [...agents].sort((left, right) => Number(right.quoteRequestAvailable === true) - Number(left.quoteRequestAvailable === true));
+  }, [agents]);
 
   return (
-    <Tabs className="mt-6 gap-5" defaultValue="cards">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        {!registry ? (
-          <Button
-            aria-pressed={hireableOnly}
-            onClick={() => setHireableOnly((current) => !current)}
-            type="button"
-            variant={hireableOnly ? "default" : "outline"}
-          >
-            <ShieldCheck aria-hidden="true" data-icon="inline-start" />
-            Hireable now
-          </Button>
-        ) : <span className="text-xs text-zinc-500">Registration does not imply hireability.</span>}
-
+    <Tabs className="gap-5" defaultValue="cards">
+      <div className="grid items-center gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
+        {toolbar ?? <span />}
         <TabsList aria-label="Catalog layout">
           <TabsTrigger value="cards"><LayoutGrid aria-hidden="true" data-icon="inline-start" />Cards</TabsTrigger>
           <TabsTrigger value="table"><List aria-hidden="true" data-icon="inline-start" />Table</TabsTrigger>
@@ -127,7 +132,7 @@ export function CatalogResults({ agents, registry = false }: { agents: AgentCard
           <TabsContent value="table"><AgentComparisonTable agents={visibleAgents} registry={registry} /></TabsContent>
         </>
       ) : (
-        <p className="rounded-xl border border-white/10 p-6 text-sm text-zinc-400">No currently hireable agents match this view.</p>
+        emptyContent ?? <p className="rounded-xl border border-white/10 p-6 text-sm text-zinc-400">No agents match this view.</p>
       )}
     </Tabs>
   );
