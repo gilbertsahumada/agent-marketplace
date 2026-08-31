@@ -1,5 +1,7 @@
 import type { ReactNode } from "react";
 import { ArrowRight, Info, TriangleAlert } from "lucide-react";
+import { CopyButton } from "./copy-button";
+import { highlightJson } from "./highlight";
 
 export function DocsSection({ id, title, children }: { id: string; title: string; children: ReactNode }) {
   return (
@@ -20,13 +22,16 @@ export function SubHeading({ id, children }: { id: string; children: ReactNode }
   );
 }
 
-export function CodeBlock({ title, children }: { title?: string; children: ReactNode }) {
+export function CodeBlock({ title, lang, children }: { title?: string; lang?: "json"; children: string }) {
   return (
     <figure className="overflow-hidden rounded-lg border border-white/10 bg-zinc-950">
-      {title ? (
-        <figcaption className="border-b border-white/[0.06] px-3 py-1.5 font-mono text-[11px] text-zinc-500">{title}</figcaption>
-      ) : null}
-      <pre className="overflow-x-auto p-3 text-xs leading-relaxed text-zinc-200"><code>{children}</code></pre>
+      <figcaption className="flex items-center justify-between gap-2 border-b border-white/[0.06] py-1 pl-3 pr-1.5">
+        <span className="font-mono text-[11px] text-zinc-500">{title ?? (lang === "json" ? "json" : "")}</span>
+        <CopyButton text={children} />
+      </figcaption>
+      <pre className="overflow-x-auto p-3 text-xs leading-relaxed text-zinc-200">
+        <code>{lang === "json" ? highlightJson(children) : children}</code>
+      </pre>
     </figure>
   );
 }

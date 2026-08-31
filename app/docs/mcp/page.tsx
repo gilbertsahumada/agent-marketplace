@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Callout, CodeBlock, DocsSection, ExternalDocLink, InlineCode, ParamTable, SubHeading } from "../components";
 import type { ParamRow } from "../components";
+import { DOCS_MARKDOWN } from "../markdown";
+import { PageActions } from "../page-actions";
 
 export const metadata: Metadata = { title: "MCP server documentation" };
 
@@ -171,6 +173,7 @@ export default function McpDocsPage() {
           parallel implementation. Everything here is discovery and quoting: no tool signs
           transactions or moves funds.
         </p>
+        <div className="mt-4"><PageActions markdown={DOCS_MARKDOWN.mcp!} slug="mcp" /></div>
       </header>
 
       <DocsSection id="connect" title="Connect">
@@ -213,8 +216,8 @@ export default function McpDocsPage() {
               <SubHeading id={tool.name}><span className="font-mono">{tool.name}</span></SubHeading>
               <p>{tool.summary}</p>
               <ParamTable rows={tool.params} />
-              <CodeBlock title="arguments">{tool.exampleArguments}</CodeBlock>
-              <CodeBlock title={tool.responseTitle}>{tool.exampleResponse}</CodeBlock>
+              <CodeBlock lang="json" title="arguments">{tool.exampleArguments}</CodeBlock>
+              <CodeBlock lang="json" title={tool.responseTitle}>{tool.exampleResponse}</CodeBlock>
               {tool.notes?.map((note) => (
                 <Callout key={note} tone="note"><p>{note}</p></Callout>
               ))}

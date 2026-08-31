@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Callout, CodeBlock, DocsSection, ExternalDocLink, FlowDiagram, InlineCode } from "./components";
+import { DOCS_MARKDOWN } from "./markdown";
+import { PageActions } from "./page-actions";
 
 export const metadata: Metadata = { title: "Documentation" };
 
@@ -18,6 +20,7 @@ export default function DocsOverviewPage() {
           evidence, request signed ERC-8183 quotes and track jobs from chain. Discovery and quoting
           are open; hiring is gated by a seller-signed quote that the buyer funds from its own wallet.
         </p>
+        <div className="mt-4"><PageActions markdown={DOCS_MARKDOWN.overview!} slug="overview" /></div>
       </header>
 
       <DocsSection id="quickstart" title="Quickstart">
