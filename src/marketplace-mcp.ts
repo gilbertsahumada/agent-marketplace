@@ -1,7 +1,9 @@
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import {
   CallToolRequestSchema,
+  ErrorCode,
   ListToolsRequestSchema,
+  McpError,
 } from "@modelcontextprotocol/sdk/types.js";
 import { DEFAULT_ORIGIN, normalizedOrigin } from "./marketplace-cli.ts";
 
@@ -88,10 +90,16 @@ export function marketplaceMcpTools(options: MarketplaceMcpOptions = {}): Market
       headers: { accept: "application/json" },
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
-    const payload = await readJson(response);
     if (!response.ok) {
+      let payload: unknown;
+      try {
+        payload = await readJson(response);
+      } catch {
+        payload = undefined;
+      }
       return { content: [{ type: "text", text: errorText(response.status, payload) }], isError: true };
     }
+    const payload = await readJson(response);
     return { content: [{ type: "text", text: JSON.stringify(payload, null, 2) }] };
   }
 
@@ -244,7 +252,7 @@ export function createMarketplaceMcpServer(options: MarketplaceMcpOptions = {}):
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const tool = byName.get(request.params.name);
     if (!tool) {
-      return { content: [{ type: "text", text: `Unknown tool: ${request.params.name}` }], isError: true };
+      throw new McpError(ErrorCode.InvalidParams, `Unknown tool: ${request.params.name}`);
     }
     try {
       return await tool.handler(request.params.arguments ?? {});

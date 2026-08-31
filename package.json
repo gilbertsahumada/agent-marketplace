@@ -4,8 +4,8 @@
   "private": true,
   "type": "module",
   "bin": {
-    "marketplace": "dist/marketplace-cli-bin.js",
-    "marketplace-mcp": "dist/marketplace-mcp-bin.js"
+    "marketplace": "dist/src/marketplace-cli-bin.js",
+    "marketplace-mcp": "dist/src/marketplace-mcp-bin.js"
   },
   "engines": {
     "node": ">=20.9.0"
