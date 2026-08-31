@@ -86,12 +86,19 @@ export function EvidenceRail({
               <div
                 className={cn(
                   "absolute left-0 top-0 z-10 flex size-10 items-center justify-center rounded-full border bg-background md:relative",
-                  isActive ? kindStyles[step.kind] : "border-zinc-700 text-zinc-500",
+                  step.status === "verified"
+                    ? "border-emerald-400/60 bg-emerald-400/10 text-emerald-300"
+                    : isActive ? kindStyles[step.kind] : "border-zinc-700 text-zinc-500",
                   step.status === "unknown" && "border-dashed",
                 )}
               >
                 <KindIcon aria-hidden="true" className="size-4" />
-                <span className="absolute -bottom-0.5 -right-0.5 flex size-4 items-center justify-center rounded-full border border-background bg-zinc-800 text-zinc-200">
+                <span
+                  className={cn(
+                    "absolute -bottom-0.5 -right-0.5 flex size-4 items-center justify-center rounded-full border border-background",
+                    step.status === "verified" ? "bg-emerald-500 text-emerald-950" : "bg-zinc-800 text-zinc-200",
+                  )}
+                >
                   <StatusIcon status={step.status} />
                 </span>
               </div>
