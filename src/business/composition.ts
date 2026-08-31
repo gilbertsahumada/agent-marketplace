@@ -8,7 +8,6 @@ import {
   publicJobProofRepository,
   publicVerificationRepository,
   agentValidationRepository,
-  sellerObservationStoreFactory,
   funnelEvidenceRepository,
   workerObservationFeed,
 } from "../data/composition.ts";
@@ -28,7 +27,6 @@ import { GetMainnetHiringExposure } from "./use-cases/get-mainnet-hiring-exposur
 import { GetAgentEvidencePassport } from "./use-cases/get-agent-evidence-passport.ts";
 import { ValidateMarketplaceAgent } from "./use-cases/validate-marketplace-agent.ts";
 import { NotifyQualifiedMainnetFundedJob, PrepareQualifiedMainnetHire, RequestQualifiedMainnetQuote } from "./use-cases/qualified-mainnet-hire.ts";
-import { RecordSellerObservation } from "./use-cases/record-seller-observation.ts";
 import { GetFunnelEvidence } from "./use-cases/get-funnel-evidence.ts";
 import { requestQuoteWithObservationSync } from "../data/observation/on-demand-observation-sync.ts";
 import {
@@ -49,9 +47,6 @@ export const getErc8183TestnetJobTracking = new GetErc8183TestnetJobTracking(
   erc8183SpikeRepository,
   publicJobProofRepository,
 );
-// Exported for the seller-observation cron and reused by the buyer-triggered
-// refresh. Both paths validate the live identity, endpoint and signed quote;
-// the observation feed is evidence, not an authorization dependency.
 export const probeMainnetErc8183Quote = new RequestErc8183Quote(mainnetErc8183Repository);
 const liveMainnetQuote = probeMainnetErc8183Quote;
 const liveMainnetPrepare = new PrepareErc8183Hire(mainnetErc8183Repository);
@@ -79,11 +74,6 @@ export const notifyMainnetFundedJob = new NotifyQualifiedMainnetFundedJob(
   liveMainnetNotify,
 );
 export const getMainnetBrowserDemoConfig = new GetMainnetBrowserDemoConfig(mainnetBrowserDemoConfigRepository);
-export const recordMainnetSellerObservation = new RecordSellerObservation(
-  getMainnetBrowserDemoConfig,
-  probeMainnetErc8183Quote,
-  sellerObservationStoreFactory,
-);
 export const getMainnetJobProof = new GetMainnetJobProof(mainnetJobProofRepository);
 export const getPublicMainnetJobProof = new GetPublicMainnetJobProof(mainnetJobProofRepository);
 export const getAgentEvidencePassport = new GetAgentEvidencePassport(
