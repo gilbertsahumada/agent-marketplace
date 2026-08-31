@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowUpRight, Bot, CheckCircle2, CircleAlert } from "lucide-react";
+import { ArrowUpRight, CheckCircle2, CircleAlert, ExternalLink } from "lucide-react";
 import type { MarketplaceAgent } from "@/src/business/entities/marketplace-agent";
 import type { AgentEvidencePassport } from "@/src/business/entities/evidence-passport";
 import type { WorkerObservationTarget } from "@/src/business/entities/worker-observations";
@@ -14,6 +14,12 @@ import { ProvenanceBadge } from "./provenance-badge";
 import { agentCardWithObservations, hireabilityLabelFor, verificationViewModel } from "./view-models";
 import { VerificationDrift } from "./verification-drift";
 import { EvidencePassportCard } from "./evidence-passport-card";
+import { AgentAvatar } from "./agent-avatar";
+import { trust8004AgentHref } from "./agent-card";
+import { AgentValidationActions } from "./agent-validation-actions";
+import { declaredBrowserValidationTargets } from "@/src/business/policies/catalog-validation-policy";
+import type { CatalogCandidate } from "@/src/business/entities/catalog-candidate";
+import { catalogCandidateCard } from "./catalog-candidate-view-model";
 
 function MonoValue({ label, value }: { label: string; value: string | null }) {
   return (
@@ -24,22 +30,26 @@ function MonoValue({ label, value }: { label: string; value: string | null }) {
   );
 }
 
-export function AgentProfile({ agent, observationTargets = [], observationsAvailable = false, passport }: {
+export function AgentProfile({ agent, observationTargets = [], observationsAvailable = false, passport, catalogCandidate }: {
   agent: MarketplaceAgent;
   observationTargets?: WorkerObservationTarget[];
   observationsAvailable?: boolean;
   passport: AgentEvidencePassport;
+  catalogCandidate?: CatalogCandidate | null;
 }) {
   const evaluated = agent.categoryEvaluation === "evaluated";
   const verification = verificationViewModel(agent);
-  const current = agentCardWithObservations(agent, observationTargets, observationsAvailable);
+  const current = catalogCandidate
+    ? catalogCandidateCard(catalogCandidate)
+    : agentCardWithObservations(agent, observationTargets, observationsAvailable);
   const reachability = current.evidence.find((step) => step.kind === "reachable")!;
+  const validationTargets = declaredBrowserValidationTargets(agent);
   return (
     <main id="main-content" className="mx-auto w-full max-w-7xl flex-1 px-4 py-12 sm:px-6 lg:px-8">
       <Breadcrumb current={agent.name} trail={[{ href: "/agents", label: "Agents" }]} />
       <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
         <div className="flex min-w-0 items-start gap-4">
-          <span className="flex size-14 shrink-0 items-center justify-center rounded-2xl border border-white/10 bg-zinc-900"><Bot aria-hidden="true" /></span>
+          <AgentAvatar {...(agent.imageUrl ? { imageUrl: agent.imageUrl } : {})} className="size-14" name={agent.name} />
           <div>
             <div className="flex flex-wrap items-center gap-2">
               <Badge variant="outline">BSC · #{agent.agentId}</Badge>
@@ -55,9 +65,14 @@ export function AgentProfile({ agent, observationTargets = [], observationsAvail
           </div>
         </div>
         <div className="flex flex-col items-start gap-3 lg:items-end">
+          <Button asChild variant="outline">
+            <a href={trust8004AgentHref(agent.agentId)} rel="noopener noreferrer" target="_blank">
+              View on trust8004<ExternalLink aria-hidden="true" />
+            </a>
+          </Button>
           {current.quoteRequestAvailable ? (
             <>
-              <Button asChild><Link href={`/hire/${agent.agentId}`}>Get fresh quote<ArrowUpRight aria-hidden="true" /></Link></Button>
+              <Button asChild><Link href={`/hire/${agent.agentId}`}>Hire agent<ArrowUpRight aria-hidden="true" /></Link></Button>
               {!observationsAvailable && <p className="max-w-xs text-sm text-zinc-500">Automatic verification is unavailable. You can still request a new transactional quote.</p>}
               {observationsAvailable && current.hireability === "listed_only" && <p className="max-w-xs text-sm text-zinc-500">No current verified quote is held. Continuing requests a fresh ERC-8183 quote that is verified before any wallet interaction.</p>}
             </>
@@ -82,6 +97,46 @@ export function AgentProfile({ agent, observationTargets = [], observationsAvail
         <CardHeader><CardTitle>Evidence line</CardTitle></CardHeader>
         <CardContent><EvidenceRail ariaLabel={`Evidence for ${agent.name}`} steps={current.evidence} /></CardContent>
       </Card>
+
+      <Card className="marketplace-surface mt-5">
+        <CardHeader><CardTitle>Marketplace monitoring</CardTitle></CardHeader>
+        <CardContent>
+          {catalogCandidate && current.monitoring?.source === "worker" && (
+            <p className="mb-4 text-xs leading-relaxed text-zinc-500">
+              Counts include platform-operated observations stored for this agent or its shared endpoint. Browser-reported checks are kept separate and do not qualify reachability.
+            </p>
+          )}
+          {current.monitoring?.state === "feed_unavailable" ? (
+            <p className="text-sm leading-relaxed text-amber-200">The observation feed is not connected. Reachability is unknown; this does not mean the endpoint failed.</p>
+          ) : current.monitoring?.state === "no_endpoint_declared" ? (
+            <p className="text-sm leading-relaxed text-amber-200">This registration does not declare a service endpoint, so the marketplace has nothing it can probe.</p>
+          ) : current.monitoring?.state === "not_monitored" ? (
+            <p className="text-sm leading-relaxed text-zinc-400">This agent is not included in the Worker's current monitoring scope.</p>
+          ) : current.monitoring?.state === "never_probed" || !current.monitoring ? (
+            <p className="text-sm leading-relaxed text-zinc-400">This agent has never been probed by the marketplace Worker.</p>
+          ) : (
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <MonoValue
+                label={current.monitoring.source === "release_snapshot" ? "Attempts in this release" : "Probe attempts"}
+                value={current.monitoring.attemptCount === undefined ? "Not exposed by deployed Worker" : String(current.monitoring.attemptCount)}
+              />
+              <MonoValue label="Last attempt · UTC" value={current.monitoring.lastAttemptAt ?? null} />
+              <MonoValue label="Latest outcome" value={current.monitoring.latestOutcome?.replaceAll("_", " ") ?? null} />
+              <MonoValue
+                label="Last response"
+                value={[
+                  current.monitoring.latestHttpStatus ? `HTTP ${current.monitoring.latestHttpStatus}` : null,
+                  current.monitoring.latestDurationMs !== undefined ? `${current.monitoring.latestDurationMs} ms` : null,
+                  current.monitoring.latestErrorCode ?? null,
+                  current.monitoring.source === "release_snapshot" ? "Release verification snapshot" : null,
+                ].filter(Boolean).join(" · ") || null}
+              />
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <AgentValidationActions agentId={agent.agentId} targets={validationTargets} />
 
       {verification && <div className="mt-5"><VerificationDrift verification={verification} /></div>}
 

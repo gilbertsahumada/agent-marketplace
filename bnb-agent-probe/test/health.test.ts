@@ -567,7 +567,7 @@ describe("Worker runtime", () => {
 
   it("validates configuration before reading D1", async () => {
     const db = database({ fail: true });
-    const invalidEnv = { ...env(db), HEADER_LIMIT: "51" };
+    const invalidEnv = { ...env(db), HEADER_LIMIT: "101" };
 
     const response = await createWorker().fetch(
       new Request("https://worker.test/health"),

@@ -12,7 +12,10 @@ import {
   type MarketplaceAgentPage,
   type MarketplaceCategory,
 } from "../entities/marketplace-agent.ts";
-import { toMarketplaceAgent } from "../policies/marketplace-agent-policy.ts";
+import {
+  isAdmittedMarketplaceSeller,
+  toMarketplaceAgent,
+} from "../policies/marketplace-agent-policy.ts";
 
 export { DEFAULT_REGISTERED_AGENT_SORT, MARKETPLACE_DATA_SORTS };
 export type MarketplaceSort = MarketplaceDataSort;
@@ -117,7 +120,7 @@ export class ListMarketplaceAgents {
     for (const record of records) {
       unique.set(record.agentId, toMarketplaceAgent(record, { evaluateMarketplace: true }));
     }
-    let agents = [...unique.values()];
+    let agents = [...unique.values()].filter(isAdmittedMarketplaceSeller);
     if (validated.q) {
       const needle = validated.q.toLocaleLowerCase();
       agents = agents.filter((agent) => [

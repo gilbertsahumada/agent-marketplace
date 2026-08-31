@@ -77,6 +77,49 @@ function message(body: unknown, attempts = 1) {
 }
 
 describe("WP2 Free queue dispatch", () => {
+  it("emits structured Cron and Queue lifecycle logs without payload data", async () => {
+    const logger = { info: vi.fn(), error: vi.fn() };
+    const runScheduled = vi.fn().mockResolvedValue("completed");
+    const worker = createWorker({
+      now: () => 1_800_000_000_000,
+      runScheduled,
+      logger,
+    }) as unknown as QueueWorker;
+    const activeEnv = queueEnv();
+    const tick = message({ schemaVersion: 1, scheduledTime: 1_800_000_000_000 });
+
+    await worker.scheduled({ scheduledTime: 1_800_000_000_000, cron: "*/5 * * * *" }, activeEnv, context);
+    await worker.queue({ messages: [tick] }, activeEnv, context);
+
+    expect(logger.info.mock.calls).toEqual([
+      ["wp2.cron.received", { cron: "*/5 * * * *", scheduledTime: 1_800_000_000_000 }],
+      ["wp2.cron.enqueued", { scheduledTime: 1_800_000_000_000 }],
+      ["wp2.queue.received", { attempt: 1, scheduledTime: 1_800_000_000_000 }],
+      ["wp2.queue.completed", { attempt: 1, outcome: "completed", scheduledTime: 1_800_000_000_000 }],
+    ]);
+    expect(logger.error).not.toHaveBeenCalled();
+  });
+
+  it("logs a sanitized Queue failure code and preserves retry semantics", async () => {
+    const logger = { info: vi.fn(), error: vi.fn() };
+    const worker = createWorker({
+      now: () => 1_800_000_000_000,
+      runScheduled: vi.fn().mockRejectedValue(new Error("request contained a private endpoint")),
+      logger,
+    }) as unknown as QueueWorker;
+    const tick = message({ schemaVersion: 1, scheduledTime: 1_800_000_000_000 });
+
+    await expect(worker.queue({ messages: [tick] }, queueEnv(), context))
+      .rejects.toThrow("request contained a private endpoint");
+
+    expect(logger.error).toHaveBeenCalledWith("wp2.queue.failed", {
+      attempt: 1,
+      errorCode: "WORKER_QUEUE_FAILED",
+      scheduledTime: 1_800_000_000_000,
+    });
+    expect(tick.ack).not.toHaveBeenCalled();
+  });
+
   it("keeps Cron below the phase CPU path by enqueueing one versioned tick", async () => {
     const runScheduled = vi.fn();
     const worker = createWorker({ now: () => 1_800_000_000_000, runScheduled }) as unknown as QueueWorker;

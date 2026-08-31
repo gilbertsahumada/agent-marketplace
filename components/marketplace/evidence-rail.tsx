@@ -1,3 +1,5 @@
+"use client";
+
 import {
   ArrowUpRight,
   BadgeCheck,
@@ -7,7 +9,14 @@ import {
   CircleOff,
   FileText,
   RadioTower,
+  X,
 } from "lucide-react";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { ProvenanceBadge } from "./provenance-badge";
 import type {
@@ -16,11 +25,12 @@ import type {
   EvidenceStepViewModel,
 } from "./presentation-types";
 
-const kindStyles: Record<EvidenceKind, string> = {
-  declared: "border-indigo-400/50 bg-indigo-400/10 text-indigo-300",
-  reachable: "border-cyan-400/50 bg-cyan-400/10 text-cyan-300",
-  quote: "border-primary/60 bg-primary/10 text-primary",
-  job: "border-emerald-400/50 bg-emerald-400/10 text-emerald-300",
+const statusStyles: Record<EvidenceStatus, string> = {
+  verified: "border-emerald-400/70 bg-emerald-400/10 text-emerald-300",
+  failed: "border-red-400/70 bg-red-400/[0.06] text-zinc-500",
+  current: "border-cyan-400/60 bg-cyan-400/10 text-cyan-300",
+  unavailable: "border-zinc-700 bg-zinc-950 text-zinc-500",
+  unknown: "border-zinc-700 bg-zinc-950 text-zinc-500",
 };
 
 const kindIcons = {
@@ -32,6 +42,7 @@ const kindIcons = {
 
 const statusLabels: Record<EvidenceStatus, string> = {
   verified: "verified",
+  failed: "failed",
   current: "in progress",
   unavailable: "unavailable",
   unknown: "not observed",
@@ -41,101 +52,133 @@ function StepTimestamp({ iso }: { iso: string }) {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return <span>{iso}</span>;
   const formatted = `${date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" })} · ${date.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "UTC" })} UTC`;
-  return (
-    <time dateTime={iso} title={iso}>
-      {formatted}
-    </time>
-  );
+  return <time dateTime={iso} title={iso}>{formatted}</time>;
 }
 
 function StatusIcon({ status }: { status: EvidenceStatus }) {
   if (status === "verified") return <Check aria-hidden="true" className="size-3" />;
+  if (status === "failed") return <X aria-hidden="true" className="size-3" />;
   if (status === "current") return <CircleDashed aria-hidden="true" className="size-3" />;
   if (status === "unavailable") return <CircleOff aria-hidden="true" className="size-3" />;
   return <CircleDashed aria-hidden="true" className="size-3" />;
 }
 
+function EvidenceIcon({ step }: { step: EvidenceStepViewModel }) {
+  const KindIcon = kindIcons[step.kind];
+  return (
+    <span
+      data-evidence-status={step.status}
+      className={cn(
+        "relative flex size-10 items-center justify-center rounded-full border bg-background",
+        statusStyles[step.status],
+        step.status === "unknown" && "border-dashed",
+      )}
+    >
+      <KindIcon aria-hidden="true" className="size-4" />
+      <span className={cn(
+        "absolute -bottom-0.5 -right-0.5 flex size-4 items-center justify-center rounded-full border border-background",
+        step.status === "verified" && "bg-emerald-500 text-zinc-950",
+        step.status === "failed" && "bg-red-500 text-white",
+        step.status !== "verified" && step.status !== "failed" && "bg-zinc-800 text-zinc-200",
+      )}>
+        <StatusIcon status={step.status} />
+      </span>
+    </span>
+  );
+}
+
 export function EvidenceRail({
   steps,
   compact = false,
+  density = compact ? "compact" : "full",
   ariaLabel = "Evidence progress",
 }: {
   steps: EvidenceStepViewModel[];
   compact?: boolean;
+  density?: "full" | "compact" | "summary";
   ariaLabel?: string;
 }) {
-  return (
-    <ol
-      aria-label={ariaLabel}
-      className={cn(
-        "grid gap-4 md:grid-cols-4 md:gap-3",
-        compact && "gap-3 md:gap-2",
-      )}
-    >
-      {steps.map((step) => {
-        const KindIcon = kindIcons[step.kind];
-        const isActive = step.status === "verified" || step.status === "current";
+  const condensed = density !== "full";
+  const summary = density === "summary";
 
-        return (
+  return (
+    <TooltipProvider>
+      <ol
+        aria-label={ariaLabel}
+        className={cn(
+          "grid",
+          summary
+            ? "evidence-rail-summary grid-cols-4 gap-1.5 sm:gap-2"
+            : "gap-4 md:grid-cols-4 md:gap-3",
+          condensed && !summary && "gap-3 md:gap-2",
+        )}
+      >
+        {steps.map((step) => (
           <li
-            className="evidence-step min-w-0 pl-12 md:pl-0"
+            className={cn("evidence-step min-w-0", summary ? "px-0" : "pl-12 md:pl-0")}
             data-status={step.status}
             key={step.kind}
           >
-            <div className="flex min-w-0 items-start gap-2 md:flex-col md:items-center md:gap-0 md:text-center">
-              <div
-                className={cn(
-                  "absolute left-0 top-0 z-10 flex size-10 items-center justify-center rounded-full border bg-background md:relative",
-                  step.status === "verified"
-                    ? "border-emerald-400/60 bg-emerald-400/10 text-emerald-300"
-                    : isActive ? kindStyles[step.kind] : "border-zinc-700 text-zinc-500",
-                  step.status === "unknown" && "border-dashed",
-                )}
-              >
-                <KindIcon aria-hidden="true" className="size-4" />
-                <span
-                  className={cn(
-                    "absolute -bottom-0.5 -right-0.5 flex size-4 items-center justify-center rounded-full border border-background",
-                    step.status === "verified" ? "bg-emerald-500 text-emerald-950" : "bg-zinc-800 text-zinc-200",
-                  )}
-                >
-                  <StatusIcon status={step.status} />
-                </span>
-              </div>
-
-              <div className={cn("min-w-0 md:mt-3", compact && "md:mt-2")}>
-                <div className="flex flex-wrap items-center gap-1.5 md:justify-center">
-                  <p className="text-xs font-semibold text-zinc-100">{step.label}</p>
-                  {!compact && <ProvenanceBadge provenance={step.provenance} />}
-                  {!compact && (
-                    <span
-                      className={cn(
-                        "text-[10px] capitalize text-zinc-400",
-                        step.status === "verified" && "sr-only",
-                      )}
+            <div className={cn(
+              "flex min-w-0",
+              summary
+                ? "flex-col items-center gap-0 text-center"
+                : "items-start gap-2 md:flex-col md:items-center md:gap-0 md:text-center",
+            )}>
+              {summary ? (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      aria-label={`${step.label}: ${statusLabels[step.status]}`}
+                      className="relative cursor-pointer rounded-full"
+                      type="button"
                     >
+                      <EvidenceIcon step={step} />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent
+                    className="flex max-w-72 flex-col items-start gap-1 border border-zinc-700 bg-zinc-900 p-3 text-left text-zinc-100"
+                    sideOffset={8}
+                  >
+                    <p className="font-semibold">{step.label}</p>
+                    <p className="capitalize text-cyan-300">{step.provenance} · {statusLabels[step.status]}</p>
+                    <p className="leading-relaxed text-zinc-300">{step.detail}</p>
+                    {step.timestamp && <p className="text-zinc-400"><StepTimestamp iso={step.timestamp} /></p>}
+                  </TooltipContent>
+                </Tooltip>
+              ) : (
+                <span className="absolute left-0 top-0 md:relative"><EvidenceIcon step={step} /></span>
+              )}
+
+              <div className={cn(
+                "min-w-0",
+                summary ? "mt-2 w-full" : "md:mt-3",
+                condensed && !summary && "md:mt-2",
+              )}>
+                <div className={cn("flex flex-wrap items-center gap-1.5", summary ? "justify-center" : "md:justify-center")}>
+                  <p className={cn(
+                    "font-semibold text-zinc-100",
+                    summary ? "text-[10px] leading-tight sm:text-xs" : "text-xs",
+                  )}>{step.label}</p>
+                  {density === "full" && <ProvenanceBadge provenance={step.provenance} />}
+                  {density === "full" && (
+                    <span className={cn("text-[10px] capitalize text-zinc-400", step.status === "verified" && "sr-only")}>
                       {statusLabels[step.status]}
                     </span>
                   )}
                 </div>
-                {compact && (
-                  <p className="mt-1 text-[10px] capitalize text-zinc-400">
-                    {step.provenance} · {statusLabels[step.status]}
-                  </p>
+                {density === "compact" && (
+                  <p className="mt-1 text-[10px] capitalize text-zinc-400">{step.provenance} · {statusLabels[step.status]}</p>
                 )}
-                {!compact && (
-                  <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                    {step.detail}
-                  </p>
-                )}
-                {!compact && (step.source || step.timestamp) && (
+                {density === "full" && <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{step.detail}</p>}
+                {density === "full" && (step.source || step.timestamp) && (
                   <p className="font-stat mt-2 text-[10px] text-zinc-400">
                     {step.source && <span className="font-hash">{step.source}</span>}
                     {step.source && step.timestamp && " · "}
                     {step.timestamp && <StepTimestamp iso={step.timestamp} />}
                   </p>
                 )}
-                {!compact && step.link && (
+                {density === "full" && step.link && (
                   <a
                     className="font-stat mt-1.5 inline-flex items-center gap-0.5 text-[10px] text-zinc-300 underline decoration-zinc-600 underline-offset-2 hover:text-primary hover:decoration-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     href={step.link.href}
@@ -150,8 +193,8 @@ export function EvidenceRail({
               </div>
             </div>
           </li>
-        );
-      })}
-    </ol>
+        ))}
+      </ol>
+    </TooltipProvider>
   );
 }

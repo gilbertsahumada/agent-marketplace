@@ -8,6 +8,7 @@ import {
 import { Trust8004Provider } from "../src/trust8004/provider.ts";
 import {
   parseAgentListResponse,
+  parseProfileResponse,
   parseServices,
   Trust8004SchemaError,
 } from "../src/trust8004/schemas.ts";
@@ -54,6 +55,31 @@ describe("Trust8004Provider", () => {
   it("normalizes services supplied as a JSON string or an array", () => {
     const service = { name: "MCP", endpoint: "https://fixture.invalid/mcp", tools: ["quote"] };
     expect(parseServices(JSON.stringify([service]))).toEqual(parseServices([service]));
+  });
+
+  it("normalizes safe agent images and ignores unsafe image schemes", async () => {
+    const profiles = await fixture("profiles.json") as Record<string, { agent: Record<string, unknown> }>;
+    const withImage = structuredClone(profiles["45422"]!);
+    withImage.agent.image = "ipfs://bafybeigdyrzt/avatar.png";
+    expect(parseProfileResponse(withImage, "45422").imageUrl).toBe(
+      "https://ipfs.io/ipfs/bafybeigdyrzt/avatar.png",
+    );
+
+    const unsafe = structuredClone(profiles["45422"]!);
+    unsafe.agent.image = "javascript:alert(1)";
+    expect(parseProfileResponse(unsafe, "45422")).not.toHaveProperty("imageUrl");
+  });
+
+  it("preserves direct A2A and MCP profile declarations for validation", async () => {
+    const profiles = await fixture("profiles.json") as Record<string, { agent: Record<string, unknown> }>;
+    const profile = structuredClone(profiles["45422"]!);
+    profile.agent.a2aEndpoint = "https://seller.example/a2a";
+    profile.agent.mcpEndpoint = "https://seller.example/mcp";
+
+    expect(parseProfileResponse(profile, "45422")).toMatchObject({
+      a2aEndpoint: "https://seller.example/a2a",
+      mcpEndpoint: "https://seller.example/mcp",
+    });
   });
 
   it("lists only BSC agents with explicit pagination and partial coverage", async () => {

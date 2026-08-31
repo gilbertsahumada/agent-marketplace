@@ -35,6 +35,8 @@ export interface LatestObservation {
   quoteExpiresAt: number | null;
   signatureMethod: ProbeObservationRow["signatureMethod"];
   errorCode: string | null;
+  httpStatus: number | null;
+  durationMs: number;
 }
 
 function targetKey(row: {
@@ -87,6 +89,8 @@ function latestObservation(row: ProbeObservationRow): LatestObservation {
     quoteExpiresAt: row.quoteExpiresAt,
     signatureMethod: row.signatureMethod,
     errorCode: row.errorCode,
+    httpStatus: row.httpStatus,
+    durationMs: row.durationMs,
   };
 }
 
@@ -94,6 +98,11 @@ export async function observationsResponse(
   binding: unknown,
   generatedAt = Date.now(),
   agentIds: readonly string[] = [],
+  monitoringConfig?: {
+    producerEnabled: boolean;
+    consumerEnabled: boolean;
+    cronIntervalMinutes: number;
+  },
 ): Promise<Response> {
   try {
     const rows = await readObservationFeed(createDatabase(binding as D1DatabaseLike), agentIds);
@@ -107,10 +116,22 @@ export async function observationsResponse(
       const key = targetKey(row);
       verifiedQuotes.set(key, [...(verifiedQuotes.get(key) ?? []), row]);
     }
+    const attemptStats = new Map(rows.attemptStatsByTarget.map((row) => [targetKey(row), row]));
 
     const body = {
       schemaVersion: 1 as const,
       generatedAt,
+      monitoring: rows.lastSchedulerAttempt === null ? {
+        lastSchedulerAttemptAt: null,
+        lastSchedulerPhase: null,
+        lastSchedulerOutcome: null,
+        ...monitoringConfig,
+      } : {
+        lastSchedulerAttemptAt: rows.lastSchedulerAttempt.finishedAt,
+        lastSchedulerPhase: rows.lastSchedulerAttempt.phase,
+        lastSchedulerOutcome: rows.lastSchedulerAttempt.outcome,
+        ...monitoringConfig,
+      },
       funnel: rows.funnel === null ? null : {
         measuredAt: rows.funnel.measuredAt,
         blockNumber: rows.funnel.blockNumber,
@@ -130,6 +151,7 @@ export async function observationsResponse(
       },
       targets: rows.targets.map((target) => {
         const key = targetKey(target);
+        const stats = attemptStats.get(key);
         const targetObservations = observations.get(key) ?? [];
         const latestRow = targetObservations.reduce<ProbeObservationRow | null>(
           (latest, candidate) => latest === null || candidate.probedAt > latest.probedAt
@@ -165,6 +187,9 @@ export async function observationsResponse(
           declarationState: target.declarationState,
           currentMetadataUpdatedAt: target.currentMetadataUpdatedAt,
           lastMetadataCheckedAt: target.lastMetadataCheckedAt,
+          attemptCount: stats?.attemptCount ?? 0,
+          firstProbedAt: stats?.firstProbedAt ?? null,
+          lastProbedAt: stats?.lastProbedAt ?? null,
           latest: latestRow === null ? null : latestObservation(latestRow),
           latestByCategory,
           lastQuoteVerifiedAt,

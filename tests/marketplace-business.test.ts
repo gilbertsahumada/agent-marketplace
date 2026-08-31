@@ -106,7 +106,7 @@ describe("marketplace business catalogue", () => {
     expect(source.getOnchainIdentity).not.toHaveBeenCalled();
   });
 
-  it("resolves only manifest agents, deduplicates multi-label Venus, and exposes empty Grid", async () => {
+  it("keeps research candidates out of the marketplace while still evaluating the manifest", async () => {
     const source = repository([
       data("45650"),
       data("45381"),
@@ -116,29 +116,46 @@ describe("marketplace business catalogue", () => {
     ]);
     const result = await new ListMarketplaceAgents(source).execute({ view: "marketplace", limit: 24 });
 
-    expect(result.items.map((agent) => agent.agentId)).toEqual(["45650", "45381", "45422", "43129"]);
-    expect(result.items.find((agent) => agent.agentId === "43129")?.categories.map((entry) => entry.category))
-      .toEqual(["yield_optimisation", "health_factor_monitoring"]);
-    expect(result.items.flatMap((agent) => agent.categories).every((entry) =>
-      entry.evidence.kind === "derived" && entry.evidence.source === "marketplace-inventory"
-    )).toBe(true);
+    expect(result.items).toEqual([]);
     expect(result.categories.find((category) => category.category === "grid_trading"))
       .toEqual({ category: "grid_trading", count: 0, status: "unverified" });
-    expect(result.items.every((agent) => agent.hireability.status === "mcp_only")).toBe(true);
-    expect(result.items.every((agent) => !agent.hireability.canHire)).toBe(true);
     expect(source.getById).toHaveBeenCalledTimes(4);
     expect(source.getById).not.toHaveBeenCalledWith("99999");
     expect(source.listRegisteredPage).not.toHaveBeenCalled();
     expect(source.getOnchainIdentity).not.toHaveBeenCalled();
   });
 
-  it("filters categories without duplicating a multi-label agent and limits page size to 24", async () => {
+  it("filters categories after marketplace admission and limits page size to 24", async () => {
     const useCase = new ListMarketplaceAgents(repository([
       data("45650"), data("45381"), data("45422"), data("43129"),
     ]));
     const result = await useCase.execute({ view: "marketplace", category: "yield_optimisation", limit: 24 });
-    expect(result.items.map((agent) => agent.agentId)).toEqual(["45422", "43129"]);
+    expect(result.items).toEqual([]);
     await expect(useCase.execute({ view: "all", limit: 25 })).rejects.toThrow("at most 24");
+  });
+
+  it("admits the marketplace-operated seller and keeps research candidates in the public registry", async () => {
+    vi.stubEnv("ERC8183_MAINNET_SELLER_AGENT_ID", "303779");
+    try {
+      const source = repository([
+        data("45650"), data("45381"), data("45422"), data("43129"),
+        data("303779", [{
+          name: "ERC8183",
+          endpoint: "https://bnb-agent-marketplace-ruby.vercel.app/grid",
+          version: null,
+          tools: [],
+          capabilities: ["quote"],
+        }]),
+      ]);
+      const marketplace = await new ListMarketplaceAgents(source).execute({ view: "marketplace", limit: 24 });
+      const registry = await new ListMarketplaceAgents(source).execute({ view: "all", limit: 24 });
+
+      expect(marketplace.items.map((agent) => agent.agentId)).toEqual(["303779"]);
+      expect(marketplace.items[0]).toMatchObject({ operator: "marketplace" });
+      expect(registry.items.map((agent) => agent.agentId)).toContain("45422");
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   it("returns an open registry profile without globally classifying it", async () => {

@@ -74,7 +74,7 @@ export function MobileNav() {
       <button
         aria-controls="mobile-navigation"
         aria-expanded={open}
-        className="flex min-h-11 items-center gap-1 rounded-lg border border-white/10 px-3 text-sm text-zinc-300"
+        className="flex min-h-11 cursor-pointer items-center gap-1 rounded-lg border border-white/10 px-3 text-sm text-zinc-300"
         onClick={() => setOpen((current) => !current)}
         type="button"
       >

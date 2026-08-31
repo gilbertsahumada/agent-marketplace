@@ -36,16 +36,25 @@ function providerSort(sort: MarketplaceDataSort | undefined): {
 }
 
 function fromSummary(agent: AgentListItem, fetchedAt: string): MarketplaceAgentData {
+  const endpoints = [
+    ...agent.endpoints,
+    ...(agent.a2aEndpoint ? [{ name: "A2A", endpoint: agent.a2aEndpoint }] : []),
+    ...(agent.mcpEndpoint ? [{ name: "MCP", endpoint: agent.mcpEndpoint }] : []),
+  ];
   return {
     sourceDetail: "summary",
     chainId: agent.chainId,
     agentId: agent.agentId,
     name: agent.name,
     description: agent.description,
+    ...(agent.imageUrl ? { imageUrl: agent.imageUrl } : {}),
     owner: agent.owner,
     metadataUri: agent.metadataUri,
     services: agent.services,
-    endpoints: agent.endpoints,
+    endpoints: [...new Map(endpoints.map((endpoint) => [
+      `${endpoint.name ?? ""}:${endpoint.endpoint}`,
+      endpoint,
+    ])).values()],
     tools: agent.tools,
     capabilities: agent.capabilities,
     endpointObservation: agent.endpointObservation,
@@ -72,6 +81,7 @@ function fromProfile(agent: MarketplaceAgent): MarketplaceAgentData {
     agentId: agent.agentId,
     name: agent.name,
     description: agent.description,
+    ...(agent.imageUrl ? { imageUrl: agent.imageUrl } : {}),
     owner: agent.owner,
     metadataUri: agent.metadataUri,
     services: agent.services,

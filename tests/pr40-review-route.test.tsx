@@ -3,11 +3,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const executeList = vi.fn();
 const executeMainnetProof = vi.fn();
 const workerObservations = vi.fn();
+const catalogCandidatePage = vi.fn();
 
 vi.mock("@/src/business/composition", () => ({
   listMarketplaceAgents: { execute: executeList },
   getMainnetJobProof: { execute: executeMainnetProof },
   getWorkerObservations: workerObservations,
+  getCatalogCandidatePage: catalogCandidatePage,
 }));
 
 vi.mock("next/navigation", () => ({
@@ -38,6 +40,7 @@ describe("agents page category handling", () => {
     vi.clearAllMocks();
     executeList.mockImplementation(({ view }: { view: "all" | "marketplace" }) => Promise.resolve(emptyPage(view)));
     executeMainnetProof.mockReturnValue(null);
+    catalogCandidatePage.mockResolvedValue(null);
     workerObservations.mockResolvedValue({ status: "unavailable", feed: null });
   });
 
@@ -63,6 +66,8 @@ describe("agents page category handling", () => {
   it("R4: a known category in the marketplace view filters with limit 12", async () => {
     const el = await renderPage({ view: "marketplace", category: "grid_trading" });
     expect(el.props.query.category).toBe("grid_trading");
+    expect(catalogCandidatePage).toHaveBeenCalledOnce();
+    expect(catalogCandidatePage.mock.calls[0]![0]).toMatchObject({ page: 1, limit: 24, category: "grid_trading" });
     expect(executeList).toHaveBeenCalledOnce();
     expect(executeList.mock.calls[0]![0]).toMatchObject({ view: "marketplace", page: 1, limit: 12, category: "grid_trading" });
   });

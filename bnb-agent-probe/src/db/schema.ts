@@ -235,6 +235,152 @@ export const schedulerAttempts = sqliteTable(
   ],
 );
 
+export const catalogAgents = sqliteTable(
+  "catalog_agents",
+  {
+    agentKey: text().primaryKey(),
+    agentId: text().notNull().unique(),
+    chainId: integer().notNull(),
+    name: text(),
+    description: text(),
+    imageUrl: text(),
+    categoriesJson: text().notNull().default("[]"),
+    marketplaceConfigured: integer().notNull().default(0),
+    metadataState: text().notNull(),
+    indexState: text().notNull().default("current"),
+    registeredAt: integer(),
+    blockNumber: text(),
+    firstSeenAt: integer().notNull(),
+    lastSeenAt: integer().notNull(),
+    priority: integer().notNull().default(0),
+  },
+  (table) => [
+    index("idx_catalog_agents_priority").on(
+      table.indexState,
+      desc(table.priority),
+      desc(table.registeredAt),
+      table.agentId,
+    ),
+    check("catalog_agents_chain_bsc", sql`${table.chainId} = 56`),
+    check(
+      "catalog_agents_metadata_state",
+      sql`${table.metadataState} IN ('ok', 'http_unreachable', 'other')`,
+    ),
+    check("catalog_agents_index_state", sql`${table.indexState} IN ('current', 'removed')`),
+    check("catalog_agents_marketplace_configured", sql`${table.marketplaceConfigured} IN (0, 1)`),
+  ],
+);
+
+export const catalogEndpoints = sqliteTable(
+  "catalog_endpoints",
+  {
+    endpointKey: text().primaryKey(),
+    protocol: text().notNull(),
+    endpoint: text(),
+    originKey: text(),
+    safety: text().notNull(),
+    safetyReason: text(),
+    representativeAgentKey: text(),
+    lastProbedAt: integer(),
+    nextProbeAt: integer().notNull().default(0),
+    consecutiveFailures: integer().notNull().default(0),
+  },
+  (table) => [
+    index("idx_catalog_endpoints_queue").on(
+      table.safety,
+      table.representativeAgentKey,
+      table.nextProbeAt,
+      table.lastProbedAt,
+      table.endpointKey,
+    ),
+    index("idx_catalog_endpoints_origin").on(table.originKey, table.protocol),
+    check(
+      "catalog_endpoints_protocol",
+      sql`${table.protocol} IN ('a2a', 'mcp', 'web', 'erc8183_http')`,
+    ),
+    check("catalog_endpoints_safety", sql`${table.safety} IN ('safe', 'unsafe')`),
+    check("catalog_endpoints_failures", sql`${table.consecutiveFailures} >= 0`),
+    check(
+      "catalog_endpoints_safety_reason",
+      sql`${table.safetyReason} IS NULL OR ${table.safetyReason} IN (
+        'invalid_url', 'https_required', 'credentials_not_allowed',
+        'query_not_allowed', 'fragment_not_allowed', 'non_public_host'
+      )`,
+    ),
+  ],
+);
+
+export const catalogAgentEndpoints = sqliteTable(
+  "catalog_agent_endpoints",
+  {
+    agentKey: text().notNull(),
+    endpointKey: text().notNull(),
+    declarationState: text().notNull(),
+    firstSeenAt: integer().notNull(),
+    lastSeenAt: integer().notNull(),
+    priority: integer().notNull().default(0),
+  },
+  (table) => [
+    primaryKey({ columns: [table.agentKey, table.endpointKey] }),
+    index("idx_catalog_agent_endpoints_agent").on(
+      table.agentKey,
+      table.declarationState,
+      desc(table.priority),
+      table.endpointKey,
+    ),
+    index("idx_catalog_agent_endpoints_endpoint").on(
+      table.endpointKey,
+      table.declarationState,
+      desc(table.priority),
+      table.agentKey,
+    ),
+    check(
+      "catalog_agent_endpoints_declaration_state",
+      sql`${table.declarationState} IN ('current', 'removed')`,
+    ),
+  ],
+);
+
+export const catalogObservations = sqliteTable(
+  "catalog_observations",
+  {
+    id: integer().primaryKey({ autoIncrement: true }),
+    agentKey: text().notNull(),
+    endpointKey: text(),
+    protocol: text().notNull(),
+    source: text().notNull(),
+    outcome: text().notNull(),
+    observedAt: integer().notNull(),
+    expiresAt: integer(),
+    httpStatus: integer(),
+    errorCode: text(),
+    durationMs: integer().notNull(),
+    detailsJson: text().notNull().default("{}"),
+  },
+  (table) => [
+    index("idx_catalog_observations_agent").on(table.agentKey, desc(table.observedAt), desc(table.id)),
+    index("idx_catalog_observations_endpoint").on(table.endpointKey, desc(table.observedAt), desc(table.id)),
+    index("idx_catalog_observations_outcome").on(table.outcome, desc(table.observedAt), desc(table.id)),
+    check(
+      "catalog_observations_protocol",
+      sql`${table.protocol} IN ('a2a', 'mcp', 'web', 'erc8183_http', 'erc8183')`,
+    ),
+    check(
+      "catalog_observations_source",
+      sql`${table.source} IN ('browser_reported', 'marketplace_probe', 'worker_probe', 'chain_index')`,
+    ),
+    check(
+      "catalog_observations_outcome",
+      sql`${table.outcome} IN (
+        'protocol_valid', 'cors_blocked', 'http_error', 'timeout',
+        'network_error', 'invalid_response', 'unsafe_url', 'erc8183_detected',
+        'quote_verified', 'quote_rejected', 'unreachable', 'error'
+      )`,
+    ),
+    check("catalog_observations_duration", sql`${table.durationMs} >= 0`),
+  ],
+);
+
 export const schema = {
   probeTargets,
   probeObservations,
@@ -242,4 +388,8 @@ export const schema = {
   hireEvents,
   runtimeState,
   schedulerAttempts,
+  catalogAgents,
+  catalogEndpoints,
+  catalogAgentEndpoints,
+  catalogObservations,
 } as const;

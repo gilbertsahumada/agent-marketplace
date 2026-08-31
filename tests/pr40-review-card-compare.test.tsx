@@ -148,9 +148,9 @@ describe("PR40 review: card badge and compare hireability labels", () => {
       passportHref: "/agents/45650/passport",
     } }));
 
-    expect(screen.getByText("Not evaluated")).toBeInTheDocument();
-    expect(screen.queryByText("Quote on request")).not.toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /view evidence/i })).toHaveAttribute("href", "/agents/45650");
+    expect(screen.getByText("Never probed")).toBeInTheDocument();
+    expect(screen.queryByText("Hireable on Mainnet")).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /view profile/i })).toHaveAttribute("href", "/agents/45650");
   });
 
   // C2 — compare must render the shared human label, not the raw enum.

@@ -151,6 +151,10 @@ export function selectHireAlternative(
     ?? null;
 }
 
+export function isAdmittedMarketplaceSeller(agent: MarketplaceAgent): boolean {
+  return agent.operator === "marketplace" || agent.hireability.canHire;
+}
+
 export function toMarketplaceAgent(
   data: MarketplaceAgentData,
   options: { evaluateMarketplace: boolean },
@@ -164,6 +168,7 @@ export function toMarketplaceAgent(
     agentId: data.agentId,
     name: data.name,
     description: data.description,
+    ...(data.imageUrl ? { imageUrl: data.imageUrl } : {}),
     owner: data.owner,
     metadataUri: data.metadataUri,
     operator: data.verification?.operator ?? inventory?.operator ?? "third_party",

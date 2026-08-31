@@ -176,8 +176,9 @@ The unlock conditions for 6b and 6c are mandatory:
   ERC-8183-compatible seller from receiving a buyer-requested fresh quote. The
   committed snapshot is available only on its explicitly historical route;
 - the stored value is an `OBSERVATION` with its timestamp, never a persisted
-  boolean such as `hireable`; the label is calculated when read from the
-  observation age and current policy.
+  boolean such as `hireable`; `Quote verified` is calculated from observation
+  age, while `Hireable` is calculated from an admitted executable marketplace
+  configuration plus a current declaration and always requests a new quote.
 - Worker/D1 observations are never authority for `prepare` or wallet signatures.
   A new buyer-requested quote is validated independently and may publish only a
   sanitized observation after confirmation; MCP-only declarations remain
@@ -476,3 +477,132 @@ All figures remain sourced from evidence artifacts, catalogue counts and
 observation view models; nothing is hardcoded. Network-aware hero behavior
 (Mainnet default, Testnet on chain 97) is unchanged and remains pinned by
 tests/frontend-components.test.tsx.
+`OBSERVATIONS_URL` is the server-side address of the Worker's public evidence
+feed and is also the source from which the marketplace derives the public
+catalog and authenticated write routes. `BUYER_OBSERVATION_ALLOWED_ORIGIN` is
+an outbound destination allowlist, not a CORS setting and not the marketplace
+origin. Marketplace validation responses must expose whether every generated
+observation was `recorded`, only some were recorded, publishing failed, or the
+server/Worker secret pair was not configured; a successful protocol check must
+never imply that shared monitoring was updated.
+
+Validation also distinguishes admission from evidence. A third-party seller
+that returns a valid quote is a `quote_verified_candidate` and remains blocked
+until manual marketplace admission. A seller already configured by the
+marketplace reports `marketplace_configured` and `canHire: true`; validation
+does not re-promote it, and Hire still requests a new quote before signatures.
+
+The 2026-08-31 staging promotion applied the legacy observation bridge and
+deployed Worker version `80c76b08-0467-4e14-ba41-08f3902164b0`. The acceptance
+probe recorded both A2A protocol and ERC-8183 quote observations and returned
+the pre-admitted seller as hireable. The Production promotion then followed the
+required order: configure all three server-side observation variables, merge,
+and repeat the HTTP and D1 persistence checks. The measured close-out is
+recorded below; an unconfigured Production fallback was never accepted.
+
+## 2026-08-30 — Make hiring the catalogue's primary presentation
+
+The catalogue now presents one dataset through two layouts. Cards remain the
+default because they preserve the marketplace's four-stage evidence story;
+Table is an optional denser comparison of the same page of agents. Switching
+layout never changes the source, pagination or evidence semantics.
+
+`Marketplace selection` and `All registered agents` are two scopes over the
+same public BSC registry, not separate inventories. Marketplace selection is
+the curated outcome subset and sorts a currently hireable agent first. All
+registered agents is the live, paginated set of active registrations returned
+by trust8004; registration never implies evaluation or ERC-8183 hireability.
+The presentation uses explicit labels and
+icons as well as colour. The original `Research only` label was removed after
+it proved to collapse materially different states. Cards now say
+`Monitoring unavailable`, `No endpoint declared`, `Not monitored`, `Never probed`,
+`Verified in release`, `Observed reachable`, or `Last probe failed`; `Hireable on
+Mainnet` and `Registered only` remain distinct. A dated release verification is
+attached to the live catalogue record and may preserve its attempt timestamp,
+but it is labelled historical and never promoted to current Worker reachability.
+
+Compact cards and table rows keep `Declared → Reachable → Quote verified → Job
+proven`, but move provenance, state, detail and timestamps into keyboard-focusable
+tooltips. Full evidence remains visible on the agent profile. Each catalogue
+entry and profile links to `https://trust8004.xyz/agents/56:{agentId}`. Safe
+HTTPS and IPFS image declarations are normalized when trust8004 exposes them;
+the robot avatar remains the honest fallback. No new MVP feature or delayed
+gate is introduced by this presentation change.
+
+The global network context is explicit independently of the catalogue data.
+Before wallet hydration, and whenever no wallet is connected, the UI defaults
+to `BSC Mainnet`. A connected wallet on chain 56 or 97 changes that context to
+`BSC Mainnet` or `BSC Testnet`; every other chain is labelled unsupported rather
+than being presented as Mainnet. This does not relabel Mainnet registry records
+as Testnet records.
+
+## 2026-08-30 — Expose probe history instead of inferring failure
+
+The public observation feed now carries the latest scheduler attempt and, per
+target, total probe attempts, first/last attempt times, HTTP status, duration
+and the normalized error code. It still does not expose signatures, private
+keys or seller payloads. These are historical operational facts; they do not
+extend the 60-second transactional quote window.
+
+Feed availability and quote freshness are deliberately separate. A historical
+observation remains visible with its real timestamp even after the 60-second
+quote window or the 15-minute monitoring cadence; only a fresh buyer-requested
+quote can authorize hiring. Erasing older observations made “not connected”
+indistinguishable from “last checked earlier”, which is the ambiguity this
+decision removes.
+
+Reachability uses the intended 15-minute monitoring window; transactional
+quote validity remains independently bounded to 60 seconds and is refreshed on
+buyer request. A protocol-valid result older than 15 minutes is shown as
+historical evidence, never rewritten as “no valid response observed”.
+
+The catalogue explicitly reports whether the monitoring feed is disconnected
+or when the Worker last ran. An unavailable feed is never rendered as a failed
+endpoint. Agent profiles show the attempt count and last result, while compact
+cards keep the detail in the existing evidence tooltip. The vague `Partial
+coverage` badge is replaced with the actual scope and count: `Operational
+candidates` or `All registered agents`.
+
+This change does not turn the WP2 staging Worker into a continuously scheduled
+production monitor. The checked-in Worker configuration remains safe-off until
+a measured production candidate, cadence and allowlist are deliberately
+activated. The UI must therefore remain honest when no scheduler run exists.
+# 2026-08-30 — Staging marketplace monitoring is an active product feed
+
+- The staging Worker is configured for `HEADER → SWEEP → PROBE` on a five-minute Cron, so the allowlisted marketplace seller is probed approximately every 15 minutes after Cloudflare begins delivering the trigger.
+- Both staging kill switches are off. Production and validation remain safe-off.
+- The Free-plan scope remains explicit: agent `303779`, one endpoint, `PROBE_BATCH_SIZE=1`, and the existing per-invocation budgets.
+- The default marketplace view admits only marketplace-operated sellers or third-party sellers that have independently passed the hireability gate. Research candidates remain discoverable in **All registered agents**.
+- This activation supports current product monitoring; it is not the canonical WP2 24-hour evidence run and must not be presented as one.
+- Deployment `e5377bdf-fa2c-4dd4-995c-2aec747bd927` and schedule `*/5 * * * *` were verified in the control plane at 2026-08-30T19:31Z. Cloudflare delivered the first post-activation tick at 2026-08-30T20:20:16Z, after a longer delay than its documented propagation window.
+- Version `bcf1de57-ff9f-4d34-b4f7-50e8f66c47d2` added sanitized lifecycle logs without changing the existing Cron trigger. The first measured rotation completed HEADER, SWEEP and PROBE on the first Queue delivery with 7, 14 and 10 D1 queries respectively.
+- The PROBE tick scheduled at 2026-08-30T20:30:16Z recorded `quote_verified` for agent `303779` at 2026-08-30T20:30:18.787Z with no error and a 1,692 ms probe duration.
+- Local development and the remote staging Worker use BNB Chain's official public Mainnet RPC, `https://bsc-dataseed.bnbchain.org`. Production and validation remain safe-off and are not activated by this choice.
+- Public-RPC latency can make a freshly returned block appear slightly newer than the timestamp captured before the request. Chain validation therefore permits at most 10 seconds of future clock skew while retaining the 120-second stale-block ceiling; larger future timestamps still fail closed.
+- Staging uses the Free-profile maximum `PROBE_TIMEOUT_MS=10000`. This leaves enough wall-clock time for public-RPC reads and the seller exchange without changing the CPU, D1-query or subrequest budgets.
+- The complete local rotation passed as HEADER, SWEEP and PROBE with 7, 13 and 10 D1 queries. Its PROBE recorded `quote_verified` for agent `303779` with no error in 4,933 ms.
+- Version `0c219da0-09f3-45d7-93aa-8391dd40315a` was promoted to 100% of staging without modifying the existing Cron. The remote PROBE scheduled at 2026-08-30T20:45:16Z completed on its first Queue delivery, used 10 D1 queries and 8 upstream requests, and recorded `quote_verified` with no error in 1,837 ms at block `119025746`.
+
+## 2026-08-31 — Normalize the registry before expanding hireability
+
+- A catalog size is never a product target. Snapshot v2 measured 319,851 BSC registrations and derived 29,801 candidates from their declarations; future runs may produce any count dictated by the same criteria.
+- Identity, endpoint and declaration are separate records. The 30,721 declarations collapse to 1,330 unique endpoints and 218 representative origin/protocol probes, so shared services are fetched once rather than once per Agent ID.
+- The complete snapshot is the discovery baseline. Free HEADER writes only a bounded prioritized increment and reports candidates it deferred; those identities are reconciled by the next snapshot instead of being silently claimed as live-indexed.
+- Browser A2A, MCP, web and ERC-8183 HTTP checks are read-only user evidence. CORS failures are reported honestly, results are persisted as `browser_reported`, and they never satisfy platform reachability or hireability filters.
+- Worker and marketplace checks use distinct provenance. Public candidate filters can select declared, pending, A2A, MCP, ERC-8183-declared, quote-capable, hireable or failed agents; only platform evidence participates in those operational states.
+- A fresh valid quote is necessary but not sufficient for the existing Grid hiring UI. `Hire agent` additionally requires a marketplace-admitted configuration whose identity, contracts, policy, token, budget and post-funding delivery path are executable end to end. Dynamic third-party admission is not inferred from MCP/A2A.
+- Staging D1 was seeded with the snapshot and measured 29,801 agents, 1,330 endpoints, 30,721 relations and 218 representatives. The bulk import produced 61,854 logical changes but D1 counted 247,408 writes including indexes; future Free bootstrap imports must be split across UTC quota windows.
+- Worker staging version `7b6836c5-bd57-473a-a755-8e9d7d669d71` runs the public BSC RPC and `*/5 * * * *`. Its first post-deploy HEADER tick completed without retry and reported 74 candidates seen, six indexed, 68 deferred, one endpoint and six declarations. Production and validation remain safe-off.
+- The first generic PROBE tick at 2026-08-30T22:30:00Z completed on delivery one and persisted one `network_error`, proving queue-to-D1 operation. It also selected Beefy's generic `web` declaration before its MCP declaration. The following candidate fixes that information-value bug by ordering due targets `erc8183_http → mcp → a2a → web`; the measured staging version remains unchanged until that candidate is explicitly promoted.
+- Preview smoke testing found that Grid's verified WP3 observations remained only in the legacy table, so the v2 profile reported zero platform attempts and the `hireable` filter returned zero. Migration `0007_bridge_probe_observations.sql` now backfills and continuously mirrors those append-only facts into the normalized catalogue. `Hireable` remains stable for an admitted executable seller even after an informational quote expires; clicking it obtains and validates a new transaction quote. MCP-only agents remain non-hireable.
+
+## 2026-08-31 — Promote the shared catalogue to the Production frontend
+
+- `OBSERVATIONS_URL`, `BUYER_OBSERVATION_ALLOWED_ORIGIN` and `BUYER_OBSERVATION_SECRET` were confirmed by name in Vercel Preview and Production. One newly generated buyer-observation secret was delivered by stdin to both Vercel environments and Worker staging; its value is not part of this record.
+- Preview deployment `bnb-agent-marketplace-9v45k0p5a-teterabobs-projects.vercel.app` passed the three catalogue views and a real validation before merge. Its validation at `2026-08-31T09:41:16.735Z` returned A2A verified, quote verified, `observationSync` recorded 2/2, `canHire=true` and Passport `hireable`; the filtered D1 count increased from 197 to 199.
+- PR #43 merged to `main` as `750c90232232fcf100af04f7814f9fb04a247afd` at `2026-08-31T09:42:42Z`. Vercel Production deployment `dpl_H7HuJ64Zb5vU72SzzRCCFdNPUrea` reached Ready and received the public aliases.
+- Production returned HTTP 200 for the declared, hireable and ERC-8183 catalogue views. Each rendered the normalized shared-index description with monitoring connected, proving that the previous hybrid fallback was no longer serving the marketplace view.
+- The Production read between `2026-08-31T09:45:22.791Z` and `2026-08-31T09:45:25.995Z` measured 29,994 declared candidates, 14 ERC-8183 declarants and exactly one hireable agent, `303779`.
+- Production validation at `2026-08-31T09:46:26.661Z` matched identity at BSC block `119129868`, verified A2A and a fresh ERC-8183 quote, recorded 2/2 observations, returned `marketplace_configured` with `canHire=true`, and produced a `hireable` Passport. The filtered D1 count increased from 199 to 201; rows `247` and `248` are the corresponding `erc8183/quote_verified` and `a2a/protocol_valid` facts.
+- Rotating the Worker secret created active version `b492f10e-7285-4345-8586-d3eae3e7e421` at 100%. Its deployed bindings retain staging D1 `6fbeea3e-4516-4c4e-a5c4-392cb067198a`, the staging Queue, `KILL_SWITCH=0` and `PRODUCER_KILL_SWITCH=0`. The public feed reported producer and consumer enabled, a five-minute interval, and a completed HEADER attempt at `2026-08-31T09:45:26.322Z`; the checked-in Cron remains `*/5 * * * *`.
+- This is a release/configuration close-out, not a new MVP feature. It promotes the already accepted shared-index path and does not activate the safe-off production Worker environment or expand the staging allowlist.

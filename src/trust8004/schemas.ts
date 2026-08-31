@@ -50,6 +50,21 @@ function nullableNonEmptyString(value: unknown, path: string): string | null {
   return candidate ? candidate : null;
 }
 
+function imageUrl(value: unknown, path: string): string | null {
+  const candidate = nullableNonEmptyString(value, path);
+  if (!candidate) return null;
+  if (candidate.startsWith("ipfs://")) {
+    const cidPath = candidate.slice("ipfs://".length).replace(/^ipfs\//, "");
+    return cidPath ? `https://ipfs.io/ipfs/${cidPath}` : null;
+  }
+  try {
+    const parsed = new URL(candidate);
+    return parsed.protocol === "https:" ? parsed.href : null;
+  } catch {
+    return null;
+  }
+}
+
 function finiteNumber(value: unknown, path: string): number {
   if (typeof value !== "number" || !Number.isFinite(value)) {
     throw new Trust8004SchemaError(path, "finite number", value);
@@ -261,11 +276,16 @@ export function parseAgentListResponse(value: unknown): {
       ? null
       : record(reputationValue, `response.reputations.${parsedChainId}:${agentId}`);
     const updatedAt = nullableNumber(item.updatedAt, `response.items[${index}].updatedAt`);
+    const parsedImageUrl = imageUrl(
+      item.imageUrl ?? item.image ?? item.avatar ?? item.logo,
+      `response.items[${index}].imageUrl`,
+    );
     return {
       chainId: parsedChainId,
       agentId,
       name: string(item.name, `response.items[${index}].name`),
       description: nullableString(item.description, `response.items[${index}].description`),
+      ...(parsedImageUrl ? { imageUrl: parsedImageUrl } : {}),
       owner: nullableNonEmptyString(item.ownerAddress ?? item.owner, `response.items[${index}].ownerAddress`),
       metadataUri: nullableNonEmptyString(item.ipfsUri ?? item.agentURI, `response.items[${index}].ipfsUri`),
       mcpEndpoint: nullableString(item.mcpEndpoint, `response.items[${index}].mcpEndpoint`),
@@ -316,13 +336,20 @@ export function parseProfileResponse(value: unknown, expectedAgentId?: string): 
       parsedAgentId,
     );
   }
+  const parsedImageUrl = imageUrl(
+    agent.imageUrl ?? agent.image ?? agent.avatar ?? agent.logo,
+    "response.agent.imageUrl",
+  );
   return {
     chainId: chainId(agent.chainId, "response.agent.chainId"),
     agentId: parsedAgentId,
     name: string(agent.name, "response.agent.name"),
     description: nullableString(agent.description, "response.agent.description"),
+    ...(parsedImageUrl ? { imageUrl: parsedImageUrl } : {}),
     owner: string(agent.owner ?? agent.ownerAddress, "response.agent.owner"),
     metadataUri: nullableString(agent.agentURI ?? agent.ipfsUri, "response.agent.agentURI"),
+    mcpEndpoint: nullableNonEmptyString(agent.mcpEndpoint, "response.agent.mcpEndpoint"),
+    a2aEndpoint: nullableNonEmptyString(agent.a2aEndpoint, "response.agent.a2aEndpoint"),
     services: parseServices(agent.services, "response.agent.services"),
     endpoints: parseEndpoints(agent.endpoints, "response.agent.endpoints"),
     declaredCapabilities: unique([

@@ -212,8 +212,8 @@ describe("PR #40 review findings — AgentProfile", () => {
       passport: evidencePassport("registered"),
     }));
 
-    // Sanity: quoteRequestAvailable really is true — the fresh-quote CTA renders.
-    expect(screen.getByRole("link", { name: /get fresh quote/i })).toHaveAttribute("href", "/hire/45650");
+    // Sanity: quoteRequestAvailable really is true — the hire CTA renders.
+    expect(screen.getByRole("link", { name: /hire agent/i })).toHaveAttribute("href", "/hire/45650");
 
     expect(screen.getByText("Quote on request")).toBeInTheDocument();
     expect(screen.queryByText("Not hireable")).not.toBeInTheDocument();

@@ -230,8 +230,8 @@ function validationReport(): AgentValidationReport {
       declaredServices: [{ name: "A2A", hasEndpoint: true, tools: [] }],
     },
     classification: { status: "not_assigned", categories: [], note: "Validation does not assign marketplace categories." },
-    promotion: { status: "manual_review_required", note: "Validation evidence never promotes an agent automatically." },
-    qualification: { status: "quote_verified_candidate", canHire: false, note: "Manual review is required before Hire." },
+    promotion: { status: "already_marketplace_configured", note: "The seller was configured before validation." },
+    qualification: { status: "marketplace_configured", canHire: true, note: "Hire requests a fresh quote before signing." },
     evidence: {
       identity: {
         status: "match",
@@ -245,6 +245,7 @@ function validationReport(): AgentValidationReport {
       },
       endpointChecks: [{ protocol: "a2a", status: "verified", declaredTools: [], observedTools: [], declaredOnlyTools: [], observedOnlyTools: [], observedAt: "2026-08-26T10:00:00.000Z", error: null }],
       quote: { status: "verified", provider: "0x2222222222222222222222222222222222222222", currency: "0x4444444444444444444444444444444444444444", priceRaw: "1", expiresAt: "2026-08-26T10:10:00.000Z", observedAt: "2026-08-26T10:00:00.000Z" },
+      observationSync: { status: "recorded", attempted: 2, recorded: 2, failed: 0, notConfigured: 0 },
     },
     passport: evidencePassport("evaluated"),
   };
@@ -447,13 +448,34 @@ describe("marketplace presentation rules", () => {
 
   it("does not render a Hire action for an MCP-only agent", () => {
     render(createElement(AgentCard, { agent: { agentId: "45650", name: "V3 Pools", description: "Agent", operator: "third_party", categories: ["rebalancing"], href: "/agents/45650", hireability: "mcp_only", evidence, passportState: "evaluated", passportHref: "/agents/45650/passport" } }));
-    expect(screen.getByText("MCP only")).toBeInTheDocument();
+    expect(screen.getByText("Never probed")).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /hire agent/i })).not.toBeInTheDocument();
-    const profileLink = screen.getByRole("link", { name: /view evidence/i });
+    const profileLink = screen.getByRole("link", { name: /view profile/i });
     expect(profileLink).toHaveAttribute("href", "/agents/45650");
     expect(profileLink).toHaveAttribute("data-prefetch", "false");
-    expect(screen.getByRole("link", { name: "Passport · Evaluated" })).toHaveAttribute("href", "/agents/45650/passport");
-    expect(screen.getByRole("link", { name: "Compare V3 Pools" })).toHaveAttribute("href", "/compare?agentId=45650");
+    const registryLink = screen.getByRole("link", { name: /View V3 Pools on trust8004/i });
+    expect(registryLink).toHaveAttribute("href", "https://trust8004.xyz/agents/56:45650");
+    expect(registryLink).toHaveTextContent("BSC Mainnet · Agent #45650");
+    expect(screen.queryByText(/^trust8004$/i)).not.toBeInTheDocument();
+  });
+
+  it("labels registrations without a probeable endpoint explicitly", () => {
+    render(createElement(AgentCard, { agent: {
+      agentId: "45650",
+      name: "V3 Pools",
+      description: "Agent",
+      operator: "third_party",
+      categories: ["rebalancing"],
+      href: "/agents/45650",
+      hireability: "listed_only",
+      evidence,
+      passportState: "registered",
+      passportHref: "/agents/45650/passport",
+      monitoring: { state: "no_endpoint_declared", attemptCount: 0 },
+    } }));
+
+    expect(screen.getByText("No endpoint declared")).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /hire agent/i })).not.toBeInTheDocument();
   });
 
   it("keeps the fresh-quote action visible for a compatible seller without a current observation", () => {
@@ -471,9 +493,8 @@ describe("marketplace presentation rules", () => {
       passportHref: "/agents/303779/passport",
     } }));
 
-    expect(screen.getByRole("link", { name: /get fresh quote/i })).toHaveAttribute("href", "/hire/303779");
-    expect(screen.getByText("Quote on request")).toBeInTheDocument();
-    expect(screen.queryByText("Not evaluated")).not.toBeInTheDocument();
+    expect(screen.getByText("Hireable on Mainnet")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /hire agent/i })).toHaveAttribute("href", "/hire/303779");
   });
 
   it("keeps the quote CTA for an admitted seller that declares only ERC-8183", () => {
@@ -510,7 +531,8 @@ describe("marketplace presentation rules", () => {
       passport: evidencePassport("registered"),
     }));
 
-    expect(screen.getByRole("link", { name: /get fresh quote/i })).toHaveAttribute("href", "/hire/303779");
+    expect(screen.getByRole("link", { name: /hire agent/i })).toHaveAttribute("href", "/hire/303779");
+    expect(screen.getByRole("link", { name: /view on trust8004/i })).toHaveAttribute("href", "https://trust8004.xyz/agents/56:303779");
     expect(screen.getByText(/automatic verification is unavailable/i)).toBeInTheDocument();
   });
 
@@ -568,6 +590,52 @@ describe("marketplace presentation rules", () => {
     expect(screen.getAllByText("not observed")).toHaveLength(3);
   });
 
+  it("keeps summary evidence concise and exposes details on focus", async () => {
+    const user = userEvent.setup();
+    render(createElement(EvidenceRail, {
+      ariaLabel: "Agent evidence summary",
+      density: "summary",
+      steps: evidence,
+    }));
+
+    expect(screen.getByRole("list", { name: "Agent evidence summary" })).toHaveClass(
+      "evidence-rail-summary",
+      "grid-cols-4",
+    );
+    expect(screen.queryByText("derived · not observed")).not.toBeInTheDocument();
+    const quote = screen.getByRole("button", { name: /Quote verified: not observed/i });
+    expect(quote).toHaveClass("cursor-pointer");
+    quote.focus();
+    await user.keyboard("{Tab}{Shift>}{Tab}{/Shift}");
+    expect(await screen.findByRole("tooltip")).toHaveTextContent("Unknown");
+  });
+
+  it("uses green for verified evidence, red borders for observed failures, and gray for unknown states", () => {
+    const { container } = render(createElement(EvidenceRail, {
+      ariaLabel: "Evidence status colors",
+      density: "summary",
+      steps: [
+        evidence[0]!,
+        { ...evidence[1]!, status: "failed" as const, detail: "The endpoint failed." },
+        evidence[2]!,
+        evidence[3]!,
+      ],
+    }));
+
+    expect(container.querySelector('[data-evidence-status="verified"]')).toHaveClass(
+      "border-emerald-400/70",
+      "text-emerald-300",
+    );
+    expect(container.querySelector('[data-evidence-status="failed"]')).toHaveClass(
+      "border-red-400/70",
+      "text-zinc-500",
+    );
+    expect(container.querySelector('[data-evidence-status="unknown"]')).toHaveClass(
+      "border-zinc-700",
+      "text-zinc-500",
+    );
+  });
+
   it("shows the required honest Grid empty state", () => {
     const page: MarketplaceAgentPage = {
       view: "marketplace",
@@ -601,10 +669,45 @@ describe("marketplace presentation rules", () => {
       fetchedAt: "2026-08-17T00:00:00.000Z",
     };
     render(createElement(CatalogPage, { data: page, query: { view: "all", sort: "newest" } }));
-    expect(screen.getByText("Partial coverage · 80,058 agents")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "All registered agents" })).toBeInTheDocument();
+    expect(screen.getByText("All registered agents · 80,058 agents")).toBeInTheDocument();
+    expect(screen.getByText(/Registration alone is not evaluation or hireability/)).toBeInTheDocument();
     expect(screen.getByText(/count is trust8004 response\.total for chainId 56 with active=true, fetched /)).toBeInTheDocument();
-    expect(screen.getByText(/Category filters apply only to curated marketplace candidates/)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "All registered agents" })).toHaveAttribute("aria-current", "page");
     expect(screen.getByRole("combobox", { name: "Sort agents" })).toHaveValue("newest");
+  });
+
+  it("defaults the catalogue to cards and lets buyers switch to a comparison table", async () => {
+    const user = userEvent.setup();
+    const agent = marketplaceAgent();
+    const page: MarketplaceAgentPage = {
+      view: "marketplace",
+      items: [agent],
+      pagination: { page: 1, pageSize: 12, total: 1, totalPages: 1 },
+      categories: [],
+      catalogCoverage: "partial",
+      fetchedAt: "2026-08-17T00:00:00.000Z",
+    };
+
+    render(createElement(CatalogPage, { data: page, query: { view: "marketplace" } }));
+
+    expect(screen.getByText("One registry: all identities, or only identities that declare a usable public service endpoint.")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Operational candidates" })).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("link", { name: "All registered agents" })).toHaveAttribute("href", "/agents?view=all&page=1&limit=24");
+    expect(screen.getByRole("tab", { name: "Cards" })).toHaveAttribute("data-state", "active");
+    expect(screen.getByRole("tab", { name: "Cards" })).toHaveClass("cursor-pointer");
+    expect(screen.queryByRole("table", { name: "Agent comparison" })).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /View .* on trust8004/i })).toHaveAttribute(
+      "href",
+      "https://trust8004.xyz/agents/56:45650",
+    );
+
+    await user.click(screen.getByRole("tab", { name: "Table" }));
+    expect(screen.getByRole("table", { name: "Agent comparison" })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Scrollable agent comparison" })).toHaveClass("overflow-x-auto");
+    expect(screen.getByRole("columnheader", { name: "Evidence" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /View V3 Pools powered by HeyAnon on trust8004/i })).toHaveTextContent("Agent #45650");
+    expect(screen.getByRole("link", { name: "View profile" })).toHaveAttribute("href", "/agents/45650");
   });
 
   it("does not promote indexed reachability in the all-agents view when Worker observations are unavailable", () => {

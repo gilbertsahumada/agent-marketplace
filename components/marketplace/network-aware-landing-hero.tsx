@@ -59,7 +59,7 @@ export function NetworkAwareLandingHero({
               </Link>
             </Button>
             <Button asChild className="h-11 px-5 text-sm" size="lg" variant="outline">
-              <Link href="/agents">Explore agents</Link>
+              <Link href="/agents?view=marketplace">Explore agents</Link>
             </Button>
           </div>
           {presentation.note && (

@@ -8,6 +8,7 @@ const executeProof = vi.fn();
 const executePassport = vi.fn();
 const executeValidate = vi.fn();
 const executeMainnetProof = vi.fn();
+const syncCatalogObservation = vi.fn();
 
 vi.mock("@/src/business/composition", () => ({
   listMarketplaceAgents: { execute: executeList },
@@ -17,6 +18,7 @@ vi.mock("@/src/business/composition", () => ({
   getAgentEvidencePassport: { execute: executePassport },
   validateMarketplaceAgent: { execute: executeValidate },
   getPublicMainnetJobProof: { execute: executeMainnetProof },
+  recordCatalogObservation: syncCatalogObservation,
 }));
 
 const agentsRoute = await import("../app/api/marketplace/agents/route.ts");
@@ -26,6 +28,7 @@ const proofRoute = await import("../app/api/marketplace/proofs/jobs/514/route.ts
 const passportRoute = await import("../app/api/marketplace/agents/[agentId]/passport/route.ts");
 const validationRoute = await import("../app/api/marketplace/validate/route.ts");
 const mainnetProofRoute = await import("../app/api/marketplace/proofs/jobs/mainnet/[jobId]/route.ts");
+const browserObservationRoute = await import("../app/api/marketplace/agents/[agentId]/observations/browser/route.ts");
 
 describe("marketplace API controllers", () => {
   beforeEach(() => vi.clearAllMocks());
@@ -75,7 +78,12 @@ describe("marketplace API controllers", () => {
   });
 
   it("accepts only a bounded JSON Agent ID for read-only validation", async () => {
-    executeValidate.mockResolvedValue({ agent: { agentId: "303779" }, status: "complete" });
+    executeValidate.mockResolvedValue({
+      agent: { agentId: "303779" },
+      status: "complete",
+      generatedAt: "2026-08-30T00:00:00.000Z",
+      evidence: { endpointChecks: [], quote: { status: "not_requested" } },
+    });
     const response = await validationRoute.POST(new Request("http://local/api/marketplace/validate", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -94,6 +102,57 @@ describe("marketplace API controllers", () => {
     }));
     expect(rejected.status).toBe(400);
     expect(executeValidate).not.toHaveBeenCalled();
+  });
+
+  it("persists browser evidence only for an endpoint declared by the requested agent", async () => {
+    const observedAt = new Date().toISOString();
+    executeGet.mockResolvedValue({
+      agentId: "45422",
+      services: [{ name: "MCP", endpoint: "https://seller.example/mcp" }],
+      endpoints: [],
+    });
+    syncCatalogObservation.mockResolvedValue({ status: "recorded" });
+    const body = {
+      source: "browser_reported",
+      protocol: "mcp",
+      endpoint: "https://seller.example/mcp",
+      outcome: "protocol_valid",
+      observedAt,
+      expiresAt: new Date(Date.parse(observedAt) + 15 * 60_000).toISOString(),
+      httpStatus: 200,
+      durationMs: 42,
+      capabilityCount: 2,
+      errorCode: null,
+      message: "Protocol valid",
+      method: "POST",
+      cors: true,
+    };
+    const response = await browserObservationRoute.POST(new Request("http://local", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    }), { params: Promise.resolve({ agentId: "45422" }) });
+
+    expect(response.status).toBe(201);
+    expect(executeGet).toHaveBeenCalledWith({ agentId: "45422" });
+    expect(syncCatalogObservation).toHaveBeenCalledWith(expect.objectContaining({
+      source: "browser_reported",
+      agentId: "45422",
+      endpoint: "https://seller.example/mcp",
+      outcome: "protocol_valid",
+    }));
+
+    executeGet.mockResolvedValueOnce({
+      agentId: "45422",
+      services: [],
+      endpoints: [],
+    });
+    const rejected = await browserObservationRoute.POST(new Request("http://local", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    }), { params: Promise.resolve({ agentId: "45422" }) });
+    expect(rejected.status).toBe(400);
   });
 
   it("rejects oversized validation bodies before invoking the use case", async () => {

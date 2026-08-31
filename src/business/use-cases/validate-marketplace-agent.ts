@@ -46,6 +46,7 @@ export class ValidateMarketplaceAgent {
 
     const endpoint = endpointStatus(evidence);
     const quoteVerifiedCandidate = evidence.identity.status === "match" && evidence.quote.status === "verified";
+    const alreadyMarketplaceConfigured = evidence.agent.operator === "marketplace";
     const status = evidence.identity.status === "match" && endpoint === "verified"
       ? "complete" as const
       : "attention_required" as const;
@@ -70,7 +71,7 @@ export class ValidateMarketplaceAgent {
         staleAfter: new Date(Date.parse(evidence.generatedAt) + 15 * 60 * 1_000).toISOString(),
       },
       hireability: {
-        canHire: false,
+        canHire: alreadyMarketplaceConfigured,
         status: unpromotedHireabilityStatus(evidence),
         observedAt: evidence.quote.observedAt ?? evidence.generatedAt,
       },
@@ -90,20 +91,29 @@ export class ValidateMarketplaceAgent {
         note: "Validation does not assign marketplace categories.",
       },
       promotion: {
-        status: "manual_review_required",
-        note: "Validation evidence never promotes an agent into the curated marketplace automatically.",
+        status: alreadyMarketplaceConfigured ? "already_marketplace_configured" : "manual_review_required",
+        note: alreadyMarketplaceConfigured
+          ? "This seller was configured for marketplace hiring before this validation; the validation did not promote it."
+          : "Validation evidence never promotes an agent into the curated marketplace automatically.",
       },
       qualification: {
-        status: quoteVerifiedCandidate ? "quote_verified_candidate" : "not_qualified",
-        canHire: false,
-        note: quoteVerifiedCandidate
-          ? "The ad-hoc quote passed validation, but Hire remains disabled until the observation Worker records current evidence; Hire will still request a fresh quote."
-          : "No matching direct identity plus current verified ERC-8183 quote was established.",
+        status: alreadyMarketplaceConfigured
+          ? "marketplace_configured"
+          : quoteVerifiedCandidate
+            ? "quote_verified_candidate"
+            : "not_qualified",
+        canHire: alreadyMarketplaceConfigured,
+        note: alreadyMarketplaceConfigured
+          ? "This agent is already configured for marketplace hiring. Hire requests and validates a fresh ERC-8183 quote before signing."
+          : quoteVerifiedCandidate
+            ? "The ad-hoc quote passed validation, but Hire remains disabled until manual marketplace admission; storing an observation never promotes an agent automatically."
+            : "No matching direct identity plus current verified ERC-8183 quote was established.",
       },
       evidence: {
         identity: evidence.identity,
         endpointChecks: evidence.endpointChecks,
         quote: evidence.quote,
+        observationSync: evidence.observationSync,
       },
       passport,
     };
