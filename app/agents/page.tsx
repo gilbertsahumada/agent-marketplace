@@ -37,6 +37,15 @@ export default async function AgentsPage({ searchParams }: { searchParams: Promi
   if (q) retryParams.set("q", q);
   if (sort) retryParams.set("sort", sort);
   if (category) retryParams.set("category", category);
+  const metricsPromise = Promise.all([
+    listMarketplaceAgents.execute({
+      view: "all",
+      page: 1,
+      limit: 1,
+      sort: DEFAULT_REGISTERED_AGENT_SORT,
+    }).catch(() => null),
+    getCatalogCandidatePage({ status: "declared", page: 1, limit: 1 }).catch(() => null),
+  ]);
   const catalog = view === "marketplace" ? await getCatalogCandidatePage({
     status, page, limit: 24, ...optional, ...(category ? { category } : {}),
   }) : null;
@@ -55,5 +64,18 @@ export default async function AgentsPage({ searchParams }: { searchParams: Promi
   const observations = view === "marketplace"
     ? await getWorkerObservations()
     : { status: "unavailable" as const, feed: null };
-  return <CatalogPage {...(data ? { data } : {})} {...(catalog ? { catalog } : {})} observations={observations} query={{ view, status, ...optional, ...(category ? { category } : {}) }} {...(mainnetProof ? { provenAgentId: mainnetProof.agentId } : {})} />;
+  const [registryMetric, operationalMetric] = await metricsPromise;
+  const registryTotal = registryMetric?.pagination.total
+    ?? (view === "all" && !q ? data?.pagination.total : undefined);
+  const operationalTotal = operationalMetric?.total
+    ?? (catalog?.status === "declared" && !q && !category ? catalog.total : undefined);
+  return <CatalogPage
+    {...(data ? { data } : {})}
+    {...(catalog ? { catalog } : {})}
+    observations={observations}
+    query={{ view, status, ...optional, ...(category ? { category } : {}) }}
+    {...(mainnetProof ? { provenAgentId: mainnetProof.agentId } : {})}
+    {...(typeof registryTotal === "number" ? { registryTotal } : {})}
+    {...(typeof operationalTotal === "number" ? { operationalTotal } : {})}
+  />;
 }
