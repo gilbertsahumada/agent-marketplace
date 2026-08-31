@@ -1,4 +1,4 @@
-const DEFAULT_ORIGIN = "https://bnb-agent-marketplace-ruby.vercel.app";
+export const DEFAULT_ORIGIN = "https://bnb-agent-marketplace-ruby.vercel.app";
 const MAX_RESPONSE_BYTES = 1_048_576;
 const REQUEST_TIMEOUT_MS = 40_000;
 
@@ -29,7 +29,7 @@ function usage(): string {
   ].join("\n");
 }
 
-function normalizedOrigin(value: string): string {
+export function normalizedOrigin(value: string): string {
   let url: URL;
   try {
     url = new URL(value);
