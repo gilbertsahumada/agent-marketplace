@@ -113,21 +113,22 @@ describe("catalog signed quote evidence", () => {
 
     const stored = await env.DB.prepare(`SELECT source, outcome, validationKind, verificationLevel,
       artifactHash, detailsJson FROM catalog_observations ORDER BY id`).all();
-    expect(stored.results).toHaveLength(2);
-    expect(stored.results[0]).toMatchObject({
+    const storedResults = stored.results ?? [];
+    expect(storedResults).toHaveLength(2);
+    expect(storedResults[0]).toMatchObject({
       source: "browser_reported",
       outcome: "quote_verified",
       validationKind: "quote",
       verificationLevel: "cryptographic",
       artifactHash: expect.stringMatching(/^[0-9a-f]{64}$/),
     });
-    expect(stored.results[1]).toMatchObject({
+    expect(storedResults[1]).toMatchObject({
       source: "chain_read",
       validationKind: "chain",
       verificationLevel: "onchain",
     });
-    expect(JSON.stringify(stored.results)).not.toContain("provider_sig");
-    expect(JSON.stringify(stored.results)).not.toContain("envelope");
+    expect(JSON.stringify(storedResults)).not.toContain("provider_sig");
+    expect(JSON.stringify(storedResults)).not.toContain("envelope");
     expect(await env.DB.prepare(`SELECT state, commerceTransport, endpointKey, provider, validatedAt
       FROM catalog_agent_admission WHERE agentKey = 'eip155:56:42'`).first()).toMatchObject({
       state: "admitted",
