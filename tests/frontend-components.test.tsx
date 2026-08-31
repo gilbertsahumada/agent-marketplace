@@ -230,8 +230,8 @@ function validationReport(): AgentValidationReport {
       declaredServices: [{ name: "A2A", hasEndpoint: true, tools: [] }],
     },
     classification: { status: "not_assigned", categories: [], note: "Validation does not assign marketplace categories." },
-    promotion: { status: "manual_review_required", note: "Validation evidence never promotes an agent automatically." },
-    qualification: { status: "quote_verified_candidate", canHire: false, note: "Manual review is required before Hire." },
+    promotion: { status: "already_marketplace_configured", note: "The seller was configured before validation." },
+    qualification: { status: "marketplace_configured", canHire: true, note: "Hire requests a fresh quote before signing." },
     evidence: {
       identity: {
         status: "match",
@@ -245,6 +245,7 @@ function validationReport(): AgentValidationReport {
       },
       endpointChecks: [{ protocol: "a2a", status: "verified", declaredTools: [], observedTools: [], declaredOnlyTools: [], observedOnlyTools: [], observedAt: "2026-08-26T10:00:00.000Z", error: null }],
       quote: { status: "verified", provider: "0x2222222222222222222222222222222222222222", currency: "0x4444444444444444444444444444444444444444", priceRaw: "1", expiresAt: "2026-08-26T10:10:00.000Z", observedAt: "2026-08-26T10:00:00.000Z" },
+      observationSync: { status: "recorded", attempted: 2, recorded: 2, failed: 0, notConfigured: 0 },
     },
     passport: evidencePassport("evaluated"),
   };
@@ -669,8 +670,8 @@ describe("marketplace presentation rules", () => {
     };
     render(createElement(CatalogPage, { data: page, query: { view: "all", sort: "newest" } }));
     expect(screen.getByRole("heading", { name: "All registered agents" })).toBeInTheDocument();
-    expect(screen.getByText("Public registry · 80,058 agents")).toBeInTheDocument();
-    expect(screen.getByText(/Marketplace selection is a curated subset/)).toBeInTheDocument();
+    expect(screen.getByText("All registered agents · 80,058 agents")).toBeInTheDocument();
+    expect(screen.getByText(/Registration alone is not evaluation or hireability/)).toBeInTheDocument();
     expect(screen.getByText(/count is trust8004 response\.total for chainId 56 with active=true, fetched /)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "All registered agents" })).toHaveAttribute("aria-current", "page");
     expect(screen.getByRole("combobox", { name: "Sort agents" })).toHaveValue("newest");
@@ -690,8 +691,8 @@ describe("marketplace presentation rules", () => {
 
     render(createElement(CatalogPage, { data: page, query: { view: "marketplace" } }));
 
-    expect(screen.getByText("One public registry, shown at two levels of curation.")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Marketplace selection" })).toHaveAttribute("aria-current", "page");
+    expect(screen.getByText("One registry: all identities, or only identities that declare a usable public service endpoint.")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Operational candidates" })).toHaveAttribute("aria-current", "page");
     expect(screen.getByRole("link", { name: "All registered agents" })).toHaveAttribute("href", "/agents?view=all&page=1&limit=24");
     expect(screen.getByRole("tab", { name: "Cards" })).toHaveAttribute("data-state", "active");
     expect(screen.getByRole("tab", { name: "Cards" })).toHaveClass("cursor-pointer");

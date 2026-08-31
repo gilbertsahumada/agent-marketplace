@@ -16,6 +16,10 @@ import { VerificationDrift } from "./verification-drift";
 import { EvidencePassportCard } from "./evidence-passport-card";
 import { AgentAvatar } from "./agent-avatar";
 import { trust8004AgentHref } from "./agent-card";
+import { AgentValidationActions } from "./agent-validation-actions";
+import { declaredBrowserValidationTargets } from "@/src/business/policies/catalog-validation-policy";
+import type { CatalogCandidate } from "@/src/business/entities/catalog-candidate";
+import { catalogCandidateCard } from "./catalog-candidate-view-model";
 
 function MonoValue({ label, value }: { label: string; value: string | null }) {
   return (
@@ -26,16 +30,20 @@ function MonoValue({ label, value }: { label: string; value: string | null }) {
   );
 }
 
-export function AgentProfile({ agent, observationTargets = [], observationsAvailable = false, passport }: {
+export function AgentProfile({ agent, observationTargets = [], observationsAvailable = false, passport, catalogCandidate }: {
   agent: MarketplaceAgent;
   observationTargets?: WorkerObservationTarget[];
   observationsAvailable?: boolean;
   passport: AgentEvidencePassport;
+  catalogCandidate?: CatalogCandidate | null;
 }) {
   const evaluated = agent.categoryEvaluation === "evaluated";
   const verification = verificationViewModel(agent);
-  const current = agentCardWithObservations(agent, observationTargets, observationsAvailable);
+  const current = catalogCandidate
+    ? catalogCandidateCard(catalogCandidate)
+    : agentCardWithObservations(agent, observationTargets, observationsAvailable);
   const reachability = current.evidence.find((step) => step.kind === "reachable")!;
+  const validationTargets = declaredBrowserValidationTargets(agent);
   return (
     <main id="main-content" className="mx-auto w-full max-w-7xl flex-1 px-4 py-12 sm:px-6 lg:px-8">
       <Breadcrumb current={agent.name} trail={[{ href: "/agents", label: "Agents" }]} />
@@ -86,6 +94,11 @@ export function AgentProfile({ agent, observationTargets = [], observationsAvail
       <Card className="marketplace-surface mt-5">
         <CardHeader><CardTitle>Marketplace monitoring</CardTitle></CardHeader>
         <CardContent>
+          {catalogCandidate && current.monitoring?.source === "worker" && (
+            <p className="mb-4 text-xs leading-relaxed text-zinc-500">
+              Counts include platform-operated observations stored for this agent or its shared endpoint. Browser-reported checks are kept separate and do not qualify reachability.
+            </p>
+          )}
           {current.monitoring?.state === "feed_unavailable" ? (
             <p className="text-sm leading-relaxed text-amber-200">The observation feed is not connected. Reachability is unknown; this does not mean the endpoint failed.</p>
           ) : current.monitoring?.state === "no_endpoint_declared" ? (
@@ -115,6 +128,8 @@ export function AgentProfile({ agent, observationTargets = [], observationsAvail
           )}
         </CardContent>
       </Card>
+
+      <AgentValidationActions agentId={agent.agentId} targets={validationTargets} />
 
       {verification && <div className="mt-5"><VerificationDrift verification={verification} /></div>}
 

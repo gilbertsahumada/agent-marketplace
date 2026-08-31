@@ -34,7 +34,7 @@ export function CoverageBadge({ total, scope = "marketplace" }: { total?: number
   const count = typeof total === "number" ? ` · ${total.toLocaleString()} agents` : "";
   return (
     <Badge className="border-zinc-700 bg-zinc-900 text-zinc-300" variant="outline">
-      {scope === "registry" ? "Public registry" : "Marketplace selection"}{count}
+      {scope === "registry" ? "All registered agents" : "Operational candidates"}{count}
     </Badge>
   );
 }

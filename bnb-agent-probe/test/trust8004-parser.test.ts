@@ -16,6 +16,7 @@ describe("trust8004 catalog parser", () => {
           registeredAt: 1_770_000_000_000,
           metadataUpdatedAt: "1770000000001",
           metadataReasonCode: "ok",
+          mcpEndpoint: "https://seller.example/mcp",
           services: JSON.stringify([
             { name: "ERC-8183", endpoint: "https://seller.example/jobs" },
           ]),
@@ -44,6 +45,11 @@ describe("trust8004 catalog parser", () => {
     }))).toEqual([
       { transport: "erc8183_http", endpoint: "https://seller.example/jobs" },
       { transport: "a2a", endpoint: "https://seller.example/a2a" },
+    ]);
+    expect(page.items[0]?.indexEndpoints).toEqual([
+      { protocol: "erc8183_http", endpoint: "https://seller.example/jobs" },
+      { protocol: "a2a", endpoint: "https://seller.example/a2a" },
+      { protocol: "mcp", endpoint: "https://seller.example/mcp" },
     ]);
   });
 

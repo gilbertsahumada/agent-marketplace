@@ -158,6 +158,10 @@ export class Trust8004Provider {
     const serviceEndpoints: NormalizedEndpoint[] = profile.services.flatMap((service) =>
       service.endpoint ? [{ name: service.name, endpoint: service.endpoint }] : [],
     );
+    const directEndpoints: NormalizedEndpoint[] = [
+      ...(profile.a2aEndpoint ? [{ name: "A2A", endpoint: profile.a2aEndpoint }] : []),
+      ...(profile.mcpEndpoint ? [{ name: "MCP", endpoint: profile.mcpEndpoint }] : []),
+    ];
     const services = profile.services;
     const tools = [...new Set(services.flatMap((service) => service.tools))].sort();
     const capabilities = [...new Set([
@@ -176,7 +180,10 @@ export class Trust8004Provider {
       owner: profile.owner,
       metadataUri: profile.metadataUri,
       services,
-      endpoints: unique([...profile.endpoints, ...serviceEndpoints], (endpoint) => endpoint.endpoint),
+      endpoints: unique(
+        [...profile.endpoints, ...serviceEndpoints, ...directEndpoints],
+        (endpoint) => `${endpoint.name ?? ""}:${endpoint.endpoint}`,
+      ),
       tools,
       capabilities,
       reputation: profile.feedbackSummary,

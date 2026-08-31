@@ -1,7 +1,7 @@
 # Capa de observación de contratabilidad — SPEC MVP v5 Free-first
 
-**Estado:** WP0, WP1, WP3, WP4 y WP5 completos y fusionados. WP2 tiene implementación y gates remotos de Queue completos. La corrida UTC 2026-08-29 se conserva como ensayo operativo: empezó correctamente, pero su preflight literal no se publicó y la captura completa de activación ocurrió después del primer tick, por lo que no puede cerrar el gate documental. La próxima ventana final requiere fijar el commit, version y etag del candidato posterior al merge de WP4. Producción continúa sin Cron.
-**Fecha de corte del diseño:** 2026-08-29.
+**Estado:** WP0, WP1, WP3, WP4 y WP5 están completos. WP2 conserva pendiente únicamente su ventana canónica de evidencia de 24 horas; la corrida UTC 2026-08-29 fue un ensayo. Staging opera desde el 2026-08-30 con Cron de cinco minutos, Queue, D1 y RPC público BSC. El índice normalizado v2 y sus rutas públicas están desplegados en staging; producción y validation continúan safe-off y sin Cron.
+**Fecha de corte del diseño:** 2026-08-31.
 **Objetivo:** completar la capa de observación necesaria para recorrer:
 
 ```text
@@ -171,6 +171,35 @@ WP0 guarda respuesta y headers que prueben o corrijan:
 
 Si cambia un punto, se actualiza esta spec antes de WP1.
 
+### 1.5 Snapshot normalizado v2 que gobierna el catálogo actual
+
+La pasada ascendente completa del 2026-08-30 reemplaza la cifra de 21.210 como
+techo de ingeniería. Esa cifra sigue siendo un hecho histórico de WP0, no el
+tamaño de un conjunto fijo. El artefacto
+`evidence/catalog-v2-bsc-2026-08-30T21-58-00Z.json` midió:
+
+| Métrica | Medición v2 |
+| --- | ---: |
+| identidades registradas | 319.851 |
+| candidatos con al menos una declaración normalizable | 29.801 |
+| relaciones agente–endpoint | 30.721 |
+| endpoints únicos | 1.330 |
+| endpoints representativos por origin+protocolo | 218 |
+
+`sourceSha256=293704c31298e629db95ac5f6f47b166245e3385845921832d94ea8e8d087610`.
+El conteo de candidatos se deriva de criterios y puede subir o bajar en cada
+snapshot; nunca se rellena hasta 21.000 ni se trunca en ese valor. La pasada
+tolera crecimiento monotónico del total mientras pagina por registro ascendente,
+deduplica Agent IDs y falla ante regresión del total.
+
+El SQL derivado conserva todas las relaciones pero sondea un solo representante
+por `originKey+protocol`, evitando hacer fetch repetido a cientos de identidades
+que publican el mismo servicio. La importación inicial escribió 61.854 filas
+lógicas y D1 contabilizó 247.408 filas incluyendo índices. Por tanto, una
+instalación nueva en Free debe fragmentar la reconciliación entre ventanas UTC;
+no se presupuesta como trabajo normal del Cron. Una vez sembrado, el runtime
+permanece dentro de sus presupuestos Free por invocación y día.
+
 ---
 
 ## 2. Arquitectura mínima
@@ -189,7 +218,7 @@ Si cambia un punto, se actualiza esta spec antes de WP1.
  +---------------------------+-----------------------------+
                              |
                     +--------v---------+
-                    | D1, seis tablas  |
+                    | D1, tablas legacy + índice v2 |
                     +------------------+
                              |
                        BSC RPC / viem
@@ -214,6 +243,19 @@ ERC-8183 observadas por HEADER. No se afirma que los 16 históricos estén live
 sin un artefacto de IDs versionado, ni se ejecuta un rescan global dentro de
 Workers Free. La Queue no amplía el catálogo ni habilita Paid; solo proporciona
 el presupuesto de CPU que las mediciones directas demostraron necesario.
+
+El índice v2 separa cuatro entidades que no deben conflarse:
+
+```text
+catalog_agents 1──N catalog_agent_endpoints N──1 catalog_endpoints
+       │                                                │
+       └────────── catalog_observations ────────────────┘
+```
+
+Una observación puede pertenecer al agente, al endpoint compartido o a ambos.
+`browser_reported`, `worker_probe`, `marketplace_probe` y `chain_index` son
+fuentes distintas. Un resultado del browser se publica como evidencia del
+usuario, pero jamás satisface los filtros operados por la plataforma.
 
 ---
 
@@ -413,6 +455,39 @@ daily_budget_YYYYMMDD textValue=JSON sanitizado con invocaciones, outcomes,
                       requests, queries y filas D1 observadas antes del propio ledger
 ```
 
+### 3.4 Índice de candidatos v2
+
+La migración `0006_catalog_index.sql` añade:
+
+- `catalog_agents`: identidad BSC, metadata de presentación acotada, categorías,
+  estado de índice y si existe una configuración de contratación admitida;
+- `catalog_endpoints`: endpoint normalizado único, protocolo, `originKey`,
+  seguridad, representante y backoff;
+- `catalog_agent_endpoints`: relación current/removed entre una identidad y un
+  endpoint compartido;
+- `catalog_observations`: evidencia append-only con `source`, `outcome`, TTL,
+  status HTTP, duración, error normalizado y detalles sanitizados.
+
+La migración `0007_bridge_probe_observations.sql` proyecta el historial legacy
+de `probe_observations` hacia `catalog_observations` y crea un trigger
+append-only para observaciones futuras. Así WP3 y el índice v2 cuentan el mismo
+hecho una sola vez en sus respectivas vistas, sin hacer que una observación
+genérica autorice una contratación.
+
+Las rutas públicas son `GET /catalog-agents` y `GET /catalog-agent?agentId=`.
+La lista acepta estado, búsqueda, categoría, página y límite. Los estados
+`a2a`, `mcp`, `quote_capable` y `failed` consideran únicamente evidencia de
+plataforma. `hireable` se deriva de una configuración de compra explícitamente
+admitida y una declaración current; no depende de que la quote informativa del
+Cron siga dentro de su ventana de 60 segundos, porque Hire solicita y valida una
+quote nueva. Observar MCP/A2A o incluso una quote de investigación no basta para
+exponer un CTA que pueda firmar y ejecutar el flujo completo.
+
+La ficha devuelve el total exacto de intentos de plataforma y las últimas 50
+observaciones detalladas. Si varias identidades comparten endpoint, la ficha lo
+explica y atribuye esa evidencia compartida; no duplica requests para fabricar
+conteos por identidad.
+
 ---
 
 ## 4. Scheduler, concurrencia y presupuesto
@@ -479,11 +554,13 @@ Defaults iniciales:
 CLOUDFLARE_WORKERS_PLAN=free
 CRON_INTERVAL_MINUTES=5
 SCHEDULER_MODE=single_phase (derivado, no sobreescribible en Free)
-HEADER_LIMIT=25                  máximo Free 50
+HEADER_LIMIT=25                  producción/validation; máximo Free 100
 PROBE_BATCH_SIZE=1              máximo Free 1
 PROBE_AGENT_ALLOWLIST=303779    default seguro hasta cerrar gate egress general
 PROBE_ENDPOINT_ALLOWLIST=https://bnb-agent-marketplace-ruby.vercel.app/grid
 PROBE_GENERAL_EGRESS_APPROVED=0 wildcard falla cerrado sin gate explícito
+CATALOG_PROBE_ENABLED=0         producción/validation
+CATALOG_PROBE_BATCH_SIZE=1
 SWEEP_LIMIT=4                   máximo Free 4 y siempre <= TRUST8004_REQUESTS_PER_RUN
 SWEEP_PAGES_PER_RUN=1           máximo Free 1
 TRUST8004_REQUESTS_PER_RUN=4
@@ -494,6 +571,9 @@ D1_ROWS_WRITTEN_PER_RUN=60
 PROBE_TIMEOUT_MS=5000
 MAX_CATALOG_RESPONSE_BYTES=16777216
 MAX_SELLER_RESPONSE_BYTES=32768
+
+staging activo: HEADER_LIMIT=100, PROBE_GENERAL_EGRESS_APPROVED=1,
+CATALOG_PROBE_ENABLED=1, PROBE_TIMEOUT_MS=10000 y ambos kill switches en 0
 
 binding WP2_QUEUE                  Queue del mismo entorno
 consumer max_batch_size=1, max_batch_timeout=1, max_retries=3,
@@ -620,7 +700,8 @@ Después se actualiza la landing. WP1 importa el mismo resumen en
 ### 5.2 HEADER — registros recientes
 
 Cada fase HEADER pide `HEADER_LIMIT` registros más recientes y procesa la página
-completa (25 por defecto y máximo 50 en Free; 200 por defecto en Paid);
+completa para el conjunto legacy (25 en producción/validation, 100 en staging y
+máximo 100 en Free; 200 por defecto en Paid);
 nunca corta al encontrar el primer ID conocido.
 
 Por elemento:
@@ -649,6 +730,16 @@ Si una caída supera la ventana, `/health` muestra
 `header_window_exhausted=true`; SWEEP recupera lo omitido dentro del conjunto
 live. El check de frescura se calcula contra la cadencia y el límite del perfil,
 no contra una constante de dos minutos.
+
+Además, HEADER extrae identidades candidatas para el índice v2. Este write está
+acotado a seis candidatos y tres declaraciones por candidato en cada tick Free.
+El resumen publica `candidatesSeen`, `candidatesIndexed` y
+`candidatesDeferred`. Los diferidos no se presentan como indexados en tiempo
+real: entran en la siguiente reconciliación snapshot. Esta separación es
+deliberada porque persistir cada identidad de una ráfaga compartida puede
+superar la cuota diaria de D1 aun cuando solo represente un endpoint único.
+Staging midió una página con 74 candidatos, seis indexados, 68 diferidos y un
+endpoint único el 2026-08-30T22:20Z.
 
 ### 5.3 SWEEP — reconciliación rodante
 
@@ -699,6 +790,18 @@ LEFT JOIN latest observation per target
 ORDER BY priority DESC, latest.probedAt ASC NULLS FIRST
 LIMIT PROBE_BATCH_SIZE
 ```
+
+Después del target legacy, el mismo tick puede ejecutar un probe genérico v2 si
+`CATALOG_PROBE_ENABLED=1`. Selecciona endpoints seguros con representante por
+`nextProbeAt ASC`, prioridad y antigüedad; así un endpoint prioritario ya
+programado no bloquea para siempre uno nunca probado. El lote Free es uno. A2A
+valida Agent Card, MCP realiza `initialize` + `tools/list`, web/HTTP exige JSON
+válido y ERC-8183 se conserva como protocolo separado. Éste es un chequeo de
+transporte: no convierte MCP/A2A en una quote ni en contratación.
+
+Éxito programa 15 minutos; fallo aplica backoff acotado y mantiene la última
+evidencia. Toda observación es append-only y los logs exponen solo conteos,
+protocolos y códigos normalizados, nunca endpoint/payload/secreto.
 
 Cada target, secuencialmente:
 
@@ -832,6 +935,24 @@ del `SHARED_SECRET` administrativo. Vercel solo lo envía por HTTPS, sin userinf
 hacia el origen que coincide exactamente con
 `BUYER_OBSERVATION_ALLOWED_ORIGIN`. El navegador llama una ruta same-origin;
 esta valida, elimina contexto y reenvía.
+
+`OBSERVATIONS_URL` es una URL server-side del feed público del Worker, por
+ejemplo `https://worker.example/observations`; desde su origen también se
+derivan `/catalog-agents`, `/catalog-agent` y las rutas internas de escritura.
+`BUYER_OBSERVATION_ALLOWED_ORIGIN` contiene solamente el origen HTTPS exacto
+del Worker y funciona como allowlist de salida para impedir SSRF o exfiltración
+del bearer; no es una configuración CORS ni contiene el dominio del
+marketplace. Toda validación ejecutada por marketplace devuelve además el
+resultado de persistencia (`recorded`, `partial`, `failed`, `not_configured` o
+`not_attempted`) y sus conteos. La UI no puede decir ni insinuar que el índice
+compartido fue actualizado si ese estado no es `recorded`.
+
+La respuesta separa además admisión de validación. Un tercero que responde una
+quote válida queda como `quote_verified_candidate`, con `canHire=false`, hasta
+una admisión manual; guardar evidencia nunca lo promueve. Un seller que ya
+estaba configurado por el marketplace devuelve `marketplace_configured` y
+`canHire=true`, sin afirmar que la validación lo promovió. En ambos casos el
+CTA Hire pide y valida una quote nueva antes de solicitar firmas.
 
 La autoridad para continuar a `prepare` y pedir firmas es la quote transaccional
 recién solicitada y validada, junto con las relecturas onchain requeridas. Ni una
@@ -1210,6 +1331,8 @@ PROBE_BATCH_SIZE=1
 PROBE_AGENT_ALLOWLIST=303779
 PROBE_ENDPOINT_ALLOWLIST=https://bnb-agent-marketplace-ruby.vercel.app/grid
 PROBE_GENERAL_EGRESS_APPROVED=0
+CATALOG_PROBE_ENABLED=0
+CATALOG_PROBE_BATCH_SIZE=1
 TRUST8004_REQUESTS_PER_RUN=4
 EXTERNAL_SUBREQUESTS_PER_RUN=12
 D1_QUERIES_PER_RUN=40
@@ -1225,10 +1348,28 @@ kill switch está abierto. Staging y producción usan nombres de Queue distintos
 Vercel configura `OBSERVATIONS_URL` con el endpoint público `/observations` del
 entorno Cloudflare correspondiente; no es secreto y nunca se expone como
 `NEXT_PUBLIC_` porque la lectura ocurre en Server Components.
-Estado medido 2026-08-30: el entorno Production de Vercel todavía no contiene
-`OBSERVATIONS_URL`; la conexión existe solo en el entorno local hasta completar
-el deploy coordinado Worker → Vercel. No se declara WP4 productivo antes de ese
-paso.
+Estado medido 2026-08-31: Preview de Vercel contiene las tres variables y el
+desarrollo local lee el catálogo público de staging. Production todavía no
+contiene `OBSERVATIONS_URL`, `BUYER_OBSERVATION_ALLOWED_ORIGIN` ni
+`BUYER_OBSERVATION_SECRET`; por eso WP4 no se declara productivo antes de su
+promoción coordinada.
+
+Promoción staging medida 2026-08-31: D1 aplicó
+`0007_bridge_probe_observations.sql`, importó 180 observaciones históricas y el
+Worker `bnb-agent-probe-staging` quedó en version
+`80c76b08-0467-4e14-ba41-08f3902164b0`, con Cron `*/5 * * * *`. Consultas HTTP
+desde el Preview del commit `24fdea3` mostraron 29.930 candidatos declarados,
+14 con declaración ERC-8183 y exactamente un seller configurado como
+contratable (`303779`). Una validación real de ese seller verificó A2A y quote,
+persistió 2/2 observaciones y devolvió `marketplace_configured`, `canHire=true`
+y Passport `hireable`.
+
+Production seguía deliberadamente sin promover al cierre de esta medición. Su
+fallback mostraba 320.466 registros en `All registered agents`, mientras
+`Marketplace` mostraba solo el seller configurado y carecía de sincronización
+con D1. Esta mezcla no es el estado final: antes del merge deben existir las
+tres variables server-side en Production y debe repetirse la prueba HTTP y de
+persistencia contra el deployment productivo.
 La sincronización de quotes configura además `BUYER_OBSERVATION_ALLOWED_ORIGIN`
 y `BUYER_OBSERVATION_SECRET`; Cloudflare recibe este último como secret del
 Worker. `SHARED_SECRET` permanece reservado para la ruta administrativa de
@@ -1796,21 +1937,30 @@ vacíos y se eliminaron el secreto administrativo efímero y su archivo temporal
 
 ### WP4 — Probe general y `/observations`
 
-Entrega actual: lote 1 en Free sobre el target Grid exacto, contrato sección
-10.1, integración cacheada por un máximo de 60 segundos y degradación
-fail-closed. El contrato nuevo expone historial del scheduler, conteo y rango de
-intentos por target, resultado, error, HTTP y duración; su despliegue coordinado
-permanece pendiente y el frontend Production aún no configura
-`OBSERVATIONS_URL`. El snapshot de
+Entrega actual: lote legacy 1 para Grid y lote genérico 1 para endpoints
+representativos en Free, contratos públicos `/observations`, `/catalog-agents`
+y `/catalog-agent`, integración cacheada 30 segundos y degradación fail-closed.
+El contrato expone historial del scheduler y, por agente, conteo exacto de
+intentos de plataforma, últimas observaciones, error, HTTP y duración. Está
+desplegado en staging versión `7b6836c5-bd57-473a-a755-8e9d7d669d71`; el primer
+tick HEADER del bundle terminó en la primera entrega. El primer PROBE genérico,
+programado a las 2026-08-30T22:30:00Z, también terminó en la primera entrega:
+procesó un target y persistió `network_error`. Ese resultado fue útil para
+detectar que el selector ordenaba por hash después de la cadencia y podía elegir
+una página `web` antes de un endpoint de protocolo del mismo candidato. El
+candidato de código siguiente ordena, manteniendo intactos presupuesto y
+cadencia, `erc8183_http → mcp → a2a → web`; requiere una nueva promoción de
+staging antes de atribuir ese orden al runtime desplegado. El frontend Production
+requiere configurar `OBSERVATIONS_URL` al promover la aplicación. El snapshot de
 release deja de representar estado actual de agentes: una caída de Worker/D1
 conserva solo declaraciones live de trust8004, sin claims observados actuales.
 Eso no impide que un seller ERC-8183 compatible y admitido reciba una quote nueva bajo
 demanda; Worker/D1 no autorizan esa contratación. El funnel WP0 permanece como
 medición histórica fechada.
 
-El wildcard general sigue implementado como capacidad, pero no es un default ni
-un gate cerrado: promoverlo exige evidencia staging del egress Cloudflare y una
-decisión explícita; config exige además `PROBE_GENERAL_EGRESS_APPROVED=1`. El
+El wildcard general está activo únicamente en staging con
+`PROBE_GENERAL_EGRESS_APPROVED=1`; producción y validation conservan 0 y
+`CATALOG_PROBE_ENABLED=0`. El
 lote 10 de Paid es configuración futura; el pipeline Paid
 aborta deliberadamente hasta su promoción y medición separadas.
 

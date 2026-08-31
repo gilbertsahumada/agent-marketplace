@@ -348,6 +348,8 @@ export function parseProfileResponse(value: unknown, expectedAgentId?: string): 
     ...(parsedImageUrl ? { imageUrl: parsedImageUrl } : {}),
     owner: string(agent.owner ?? agent.ownerAddress, "response.agent.owner"),
     metadataUri: nullableString(agent.agentURI ?? agent.ipfsUri, "response.agent.agentURI"),
+    mcpEndpoint: nullableNonEmptyString(agent.mcpEndpoint, "response.agent.mcpEndpoint"),
+    a2aEndpoint: nullableNonEmptyString(agent.a2aEndpoint, "response.agent.a2aEndpoint"),
     services: parseServices(agent.services, "response.agent.services"),
     endpoints: parseEndpoints(agent.endpoints, "response.agent.endpoints"),
     declaredCapabilities: unique([

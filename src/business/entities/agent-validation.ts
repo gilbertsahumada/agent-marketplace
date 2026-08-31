@@ -14,6 +14,14 @@ export interface AgentValidationEndpointCheck {
   error: { code: string; message: string } | null;
 }
 
+export interface AgentValidationObservationSync {
+  status: "recorded" | "partial" | "failed" | "not_configured" | "not_attempted";
+  attempted: number;
+  recorded: number;
+  failed: number;
+  notConfigured: number;
+}
+
 export interface AgentValidationEvidence {
   chainId: 56;
   agent: {
@@ -45,6 +53,7 @@ export interface AgentValidationEvidence {
     expiresAt: string | null;
     observedAt: string | null;
   };
+  observationSync: AgentValidationObservationSync;
   generatedAt: string;
 }
 
@@ -60,18 +69,19 @@ export interface AgentValidationReport {
     note: string;
   };
   promotion: {
-    status: "manual_review_required";
+    status: "already_marketplace_configured" | "manual_review_required";
     note: string;
   };
   qualification: {
-    status: "quote_verified_candidate" | "not_qualified";
-    canHire: false;
+    status: "marketplace_configured" | "quote_verified_candidate" | "not_qualified";
+    canHire: boolean;
     note: string;
   };
   evidence: {
     identity: AgentValidationEvidence["identity"];
     endpointChecks: AgentValidationEndpointCheck[];
     quote: AgentValidationEvidence["quote"];
+    observationSync: AgentValidationObservationSync;
   };
   passport: AgentEvidencePassport;
 }

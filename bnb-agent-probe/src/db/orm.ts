@@ -2,7 +2,18 @@ import { and, count, desc, eq, getTableColumns, inArray, isNull, max, min, or } 
 import { drizzle, type DrizzleD1Database } from "drizzle-orm/d1";
 
 import type { D1DatabaseLike } from "./client";
-import { funnelSnapshots, probeObservations, probeTargets, runtimeState, schedulerAttempts, schema } from "./schema";
+import {
+  catalogAgents,
+  catalogAgentEndpoints,
+  catalogEndpoints,
+  catalogObservations,
+  funnelSnapshots,
+  probeObservations,
+  probeTargets,
+  runtimeState,
+  schedulerAttempts,
+  schema,
+} from "./schema";
 
 /**
  * Runtime Drizzle boundary. Schema-derived row types make schema drift fail at
@@ -18,6 +29,18 @@ export type FunnelSnapshotRow = typeof schema.funnelSnapshots.$inferSelect;
 export type HireEventRow = typeof schema.hireEvents.$inferSelect;
 export type RuntimeStateRow = typeof schema.runtimeState.$inferSelect;
 export type SchedulerAttemptRow = typeof schema.schedulerAttempts.$inferSelect;
+export type CatalogAgentRow = typeof schema.catalogAgents.$inferSelect;
+export type CatalogAgentEndpointRow = typeof schema.catalogAgentEndpoints.$inferSelect;
+export type CatalogEndpointRow = typeof schema.catalogEndpoints.$inferSelect;
+export type CatalogObservationRow = typeof schema.catalogObservations.$inferSelect;
+
+export interface CatalogAgentEvidenceRows {
+  readonly agent: CatalogAgentRow | null;
+  readonly declarations: CatalogAgentEndpointRow[];
+  readonly endpoints: CatalogEndpointRow[];
+  readonly observations: CatalogObservationRow[];
+  readonly platformAttemptCount: number;
+}
 
 export interface ObservationFeedRows {
   readonly funnel: FunnelSnapshotRow | null;
@@ -45,6 +68,64 @@ export interface ObservationFeedRows {
 
 export function createDatabase(d1: D1DatabaseLike): Database {
   return drizzle(d1 as Parameters<typeof drizzle>[0], { schema });
+}
+
+export async function readCatalogAgentEvidence(
+  db: Database,
+  agentId: string,
+  observationLimit = 50,
+): Promise<CatalogAgentEvidenceRows> {
+  const agentKey = `eip155:56:${agentId}`;
+  const [agents, declarations] = await Promise.all([
+    db.select().from(catalogAgents).where(eq(catalogAgents.agentKey, agentKey)).limit(1),
+    db.select().from(catalogAgentEndpoints)
+      .where(and(
+        eq(catalogAgentEndpoints.agentKey, agentKey),
+        eq(catalogAgentEndpoints.declarationState, "current"),
+      ))
+      .orderBy(desc(catalogAgentEndpoints.priority), catalogAgentEndpoints.endpointKey),
+  ]);
+  const endpointKeys = declarations.map((entry) => entry.endpointKey);
+  const observationCondition = endpointKeys.length === 0
+    ? eq(catalogObservations.agentKey, agentKey)
+    : or(
+      eq(catalogObservations.agentKey, agentKey),
+      inArray(catalogObservations.endpointKey, endpointKeys),
+    );
+  const [endpoints, observations, platformAttemptTotals] = await Promise.all([
+    endpointKeys.length === 0
+      ? Promise.resolve([])
+      : db.select().from(catalogEndpoints)
+        .where(inArray(catalogEndpoints.endpointKey, endpointKeys))
+        .orderBy(catalogEndpoints.protocol, catalogEndpoints.endpointKey),
+    db.select().from(catalogObservations)
+      .where(observationCondition)
+      .orderBy(desc(catalogObservations.observedAt), desc(catalogObservations.id))
+      .limit(observationLimit),
+    db.select({ total: count() }).from(catalogObservations).where(and(
+      observationCondition,
+      inArray(catalogObservations.source, ["marketplace_probe", "worker_probe", "chain_index"]),
+    )),
+  ]);
+  return {
+    agent: agents[0] ?? null,
+    declarations,
+    endpoints,
+    observations,
+    platformAttemptCount: platformAttemptTotals[0]?.total ?? 0,
+  };
+}
+
+export async function appendCatalogObservation(
+  db: Database,
+  observation: typeof schema.catalogObservations.$inferInsert,
+): Promise<number> {
+  const inserted = await db.insert(catalogObservations).values(observation).returning({
+    id: catalogObservations.id,
+  });
+  const id = inserted[0]?.id;
+  if (id === undefined) throw new Error("CATALOG_OBSERVATION_INSERT_FAILED");
+  return id;
 }
 
 export async function readRuntimeState(
