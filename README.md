@@ -442,6 +442,14 @@ the build/test boundary fails if any client import graph can reach the variable.
 
 See the [ERC-8183 Gate 1 interaction diagram](diagrams/erc8183-gate1-flow.html).
 
+## Documentation
+
+[docs/MARKETPLACE.md](docs/MARKETPLACE.md) is the hub: every surface (web, HTTP
+API, CLI, MCP), the key documents — [docs/API.md](docs/API.md),
+[docs/HIRE-SPEC.md](docs/HIRE-SPEC.md), [docs/MCP.md](docs/MCP.md) — and the
+current verified state. Agents connect directly at
+`https://marketplace.trust8004.xyz/api/mcp`.
+
 ## License
 
 [MIT](LICENSE)
