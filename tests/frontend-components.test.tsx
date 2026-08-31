@@ -4,7 +4,7 @@ import { createElement, type AnchorHTMLAttributes } from "react";
 import { hydrateRoot } from "react-dom/client";
 import { renderToString } from "react-dom/server";
 import axe from "axe-core";
-import { act, cleanup, render, screen, within } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AgentCard } from "../components/marketplace/agent-card.tsx";
@@ -38,6 +38,7 @@ import { MarketplaceLanding } from "../components/marketplace/landing-page.tsx";
 
 const walletState = vi.hoisted(() => ({
   address: null as `0x${string}` | null,
+  chainId: 56,
   switchChainAsync: vi.fn(),
 }));
 
@@ -50,6 +51,7 @@ vi.mock("wagmi", async (importOriginal) => {
       isConnected: walletState.address !== null,
       connector: null,
     }),
+    useChainId: () => walletState.chainId,
     useSwitchChain: () => ({ switchChainAsync: walletState.switchChainAsync }),
   };
 });
@@ -349,6 +351,7 @@ afterEach(() => {
   cleanup();
   localStorage.clear();
   walletState.address = null;
+  walletState.chainId = 56;
   walletState.switchChainAsync.mockReset();
   vi.unstubAllGlobals();
 });
@@ -819,6 +822,74 @@ describe("marketplace presentation rules", () => {
 
     expect(screen.queryByText(/no Mainnet seller is admitted/i)).not.toBeInTheDocument();
     expect(screen.getByText(/Grid.*admitted.*Mainnet.*quote/i)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Explore Mainnet agents" })).toHaveAttribute("href", "/agents?view=marketplace&category=grid_trading");
+    expect(screen.queryByText(/Try a verified Testnet hire/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/BSC Testnet.*Job #551/i)).not.toBeInTheDocument();
+  });
+
+  it("shows the historical Testnet journey only for a wallet connected to chain 97", async () => {
+    walletState.address = "0x7777777777777777777777777777777777777777";
+    walletState.chainId = 97;
+    render(createElement(MarketplaceLanding, {
+      categories: [],
+      observationSnapshot: null,
+      demoEnabled: true,
+      featuredAgents: [],
+      funnel: null,
+      publicProof: [],
+      qualifiedSeller: null,
+    }));
+
+    expect(await screen.findByRole("link", { name: /Try a verified Testnet hire/i })).toHaveAttribute("href", "/demo/erc8183");
+    expect(screen.getByText(/BSC Testnet.*Job #551/i)).toBeInTheDocument();
+    expect(screen.queryByText("BSC Mainnet · chain 56")).not.toBeInTheDocument();
+  });
+
+  it("keeps Mainnet as the default on unsupported chains", () => {
+    walletState.address = "0x7777777777777777777777777777777777777777";
+    walletState.chainId = 1;
+    render(createElement(MarketplaceLanding, {
+      categories: [],
+      observationSnapshot: null,
+      demoEnabled: true,
+      featuredAgents: [],
+      funnel: null,
+      publicProof: [],
+      qualifiedSeller: null,
+    }));
+
+    expect(screen.getByText("BSC Mainnet · chain 56")).toBeInTheDocument();
+    expect(screen.queryByText(/BSC Testnet.*Job #551/i)).not.toBeInTheDocument();
+  });
+
+  it("hydrates the Mainnet default safely before revealing a restored Testnet wallet", async () => {
+    walletState.address = null;
+    walletState.chainId = 56;
+    const tree = createElement(MarketplaceLanding, {
+      categories: [],
+      observationSnapshot: null,
+      demoEnabled: true,
+      featuredAgents: [],
+      funnel: null,
+      publicProof: [],
+      qualifiedSeller: null,
+    });
+    const container = document.createElement("div");
+    container.innerHTML = renderToString(tree);
+    expect(container.textContent).toContain("BSC Mainnet · chain 56");
+    walletState.address = "0x7777777777777777777777777777777777777777";
+    walletState.chainId = 97;
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    let root: ReturnType<typeof hydrateRoot>;
+
+    await act(async () => {
+      root = hydrateRoot(container, tree);
+    });
+
+    expect(consoleError.mock.calls.flat().join(" ")).not.toMatch(/hydration failed|did not match|hydration mismatch/i);
+    await waitFor(() => expect(within(container).getByText(/BSC Testnet.*Job #551/i)).toHaveTextContent("BSC Testnet · Job #551"));
+    await act(async () => root!.unmount());
+    consoleError.mockRestore();
   });
 
   it("invalidates the previous prepared plan when a quote refresh fails", async () => {
