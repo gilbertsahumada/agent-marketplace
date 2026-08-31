@@ -1,4 +1,9 @@
-import type { CatalogCandidate, CatalogCandidateObservation, CatalogCandidatePage } from "../../business/entities/catalog-candidate.ts";
+import {
+  isCatalogOperationalDeclaration,
+  type CatalogCandidate,
+  type CatalogCandidateObservation,
+  type CatalogCandidatePage,
+} from "../../business/entities/catalog-candidate.ts";
 import type { MarketplaceAgentData } from "../repositories/marketplace-agent-repository.ts";
 import type { EndpointObservation } from "../../trust8004/types.ts";
 
@@ -70,9 +75,10 @@ export function catalogCandidateToMarketplaceAgentData(
   fetchedAt = new Date().toISOString(),
 ): MarketplaceAgentData {
   const declarations = candidate.declarations
+    .filter(isCatalogOperationalDeclaration)
     .filter(({ endpoint }) => endpoint !== null)
-    .map(({ protocol, endpoint }) => ({
-      name: protocol.toUpperCase(),
+    .map(({ protocol, validationProtocol, endpoint }) => ({
+      name: (validationProtocol ?? protocol).toUpperCase(),
       endpoint: endpoint!,
       version: null,
       tools: [],
