@@ -101,6 +101,27 @@ describe("public catalog application adapter", () => {
     });
   });
 
+  it("does not expose external declarations as machine services", () => {
+    const normalized = candidate("42");
+    normalized.declarations.push({
+      ...normalized.declarations[0]!,
+      endpointKey: "c".repeat(64),
+      endpoint: "https://social.example/profile",
+      protocol: "web",
+      declaredProtocol: "mcp",
+      role: "external",
+      validationProtocol: null,
+      externalKind: "social",
+      eligibility: "unsupported",
+      representativeAgentKey: null,
+    });
+
+    const result = catalogCandidateToMarketplaceAgentData(normalized);
+
+    expect(result.services).toHaveLength(1);
+    expect(result.services[0]).toMatchObject({ name: "A2A", endpoint: "https://normalized.invalid/a2a" });
+  });
+
   it("maps Worker v2 candidates into the public marketplace response", async () => {
     const pageReader: CatalogCandidatePageReader = {
       execute: vi.fn(async () => ({
