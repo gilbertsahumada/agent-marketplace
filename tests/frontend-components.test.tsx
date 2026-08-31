@@ -714,9 +714,14 @@ describe("marketplace presentation rules", () => {
     expect(screen.queryByRole("link", { name: "All registered agents" })).not.toBeInTheDocument();
     const mobileFilterButton = screen.getByRole("button", { name: "Filters" });
     const mobileFilterDetails = mobileFilterButton.closest("details");
+    const searchInput = screen.getByRole("textbox", { name: "Search agents" });
     expect(mobileFilterDetails).not.toHaveAttribute("open");
-    expect(mobileFilterDetails?.nextElementSibling).toContainElement(screen.getByRole("textbox", { name: "Search agents" }));
+    expect(mobileFilterDetails?.nextElementSibling).toContainElement(searchInput);
     expect(mobileFilterButton.querySelector(".lucide-list-filter")).not.toBeNull();
+    expect(mobileFilterButton.closest("form")).toHaveClass("w-full", "lg:block");
+    expect(searchInput.closest("label")).toHaveClass("w-full", "min-w-0");
+    expect(searchInput).toHaveClass("focus-visible:ring-inset");
+    expect(screen.getByRole("tablist", { name: "Catalog layout" }).parentElement).toHaveClass("min-[30rem]:grid-cols-[minmax(0,1fr)_auto]");
     await user.click(mobileFilterButton);
     expect(mobileFilterDetails).toHaveAttribute("open");
     await user.click(mobileFilterButton);
@@ -815,6 +820,7 @@ describe("marketplace presentation rules", () => {
     const active = screen.getAllByRole("link").filter((link) => link.getAttribute("aria-current") === "page");
     expect(active).toHaveLength(1);
     expect(active[0]).toHaveAttribute("href", "/agents");
+    expect(screen.queryByRole("complementary", { name: "Network context" })).not.toBeInTheDocument();
 
     await user.tab();
     expect(screen.getByRole("link", { name: "Skip to content" })).toHaveFocus();
