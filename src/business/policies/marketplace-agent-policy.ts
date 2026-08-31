@@ -1,7 +1,12 @@
 import { getMarketplaceInventoryEntry } from "../../data/inventory/marketplace-inventory.ts";
 import type { MarketplaceAgentData } from "../../data/repositories/marketplace-agent-repository.ts";
 import type { OnchainIdentityData } from "../../data/repositories/marketplace-agent-repository.ts";
-import type { CatalogCandidate, CatalogCandidateObservation } from "../entities/catalog-candidate.ts";
+import {
+  isCatalogOperationalDeclaration,
+  isCatalogSellerDeclaration,
+  type CatalogCandidate,
+  type CatalogCandidateObservation,
+} from "../entities/catalog-candidate.ts";
 import type {
   EvidenceRecord,
   MarketplaceAgent,
@@ -198,9 +203,7 @@ function catalogHireability(candidate: CatalogCandidate, now: number): Marketpla
     ?? candidate.registeredAt
     ?? now;
   const timestamp = new Date(observedAt).toISOString();
-  const sellerDeclared = candidate.declarations.some(({ protocol, endpoint, safety }) => safety === "safe"
-    && endpoint !== null
-    && (protocol === "a2a" || protocol === "erc8183_http"));
+  const sellerDeclared = candidate.declarations.some(isCatalogSellerDeclaration);
   const admitted = state.commerceStatus === "admitted"
     && state.canRequestQuote
     && sellerDeclared;
@@ -237,7 +240,8 @@ function catalogHireability(candidate: CatalogCandidate, now: number): Marketpla
       evidence: readinessEvidence("Protocol declaration and commerce admission are distinct from hireability."),
     };
   }
-  if (candidate.declarations.some(({ protocol }) => protocol === "mcp")) {
+  if (candidate.declarations.some((declaration) => isCatalogOperationalDeclaration(declaration)
+    && (declaration.validationProtocol ?? declaration.protocol) === "mcp")) {
     return {
       status: "mcp_only",
       canHire: false,
