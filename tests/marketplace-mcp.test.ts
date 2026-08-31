@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
-import { marketplaceMcpTools } from "../src/marketplace-mcp.ts";
+import { handleMarketplaceMcpRequest, marketplaceMcpTools } from "../src/marketplace-mcp.ts";
+import { GET as mcpRouteGet, POST as mcpRoutePost } from "../app/api/mcp/route.ts";
 
 const ORIGIN = "https://marketplace.example";
 
@@ -110,5 +111,75 @@ describe("marketplace mcp server", () => {
     await expect(tool("get_job_status", fetch).handler({ network: "testnet", jobId: "0" }))
       .rejects.toThrow("positive");
     expect(() => marketplaceMcpTools({ origin: "http://evil.example" })).toThrow("HTTPS");
+  });
+});
+
+function rpcRequest(body: unknown): Request {
+  return new Request("https://marketplace.example/api/mcp", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      accept: "application/json, text/event-stream",
+    },
+    body: JSON.stringify(body),
+  });
+}
+
+describe("remote streamable http endpoint", () => {
+  it("answers initialize statelessly through the route", async () => {
+    const response = await mcpRoutePost(rpcRequest({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "initialize",
+      params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "probe", version: "0.0.1" } },
+    }));
+    expect(response.status).toBe(200);
+    const payload = await response.json();
+    expect(payload.result.serverInfo.name).toBe("bnb-agent-marketplace");
+    expect(response.headers.get("mcp-session-id")).toBeNull();
+  });
+
+  it("lists the five tools without a prior session", async () => {
+    const { fetch } = jsonFetch({});
+    const response = await handleMarketplaceMcpRequest(
+      rpcRequest({ jsonrpc: "2.0", id: 2, method: "tools/list" }),
+      { origin: ORIGIN, fetch },
+    );
+    expect(response.status).toBe(200);
+    const payload = await response.json();
+    expect(payload.result.tools.map((entry: { name: string }) => entry.name)).toEqual([
+      "search_agents",
+      "get_passport",
+      "compare_agents",
+      "request_quote",
+      "get_job_status",
+    ]);
+  });
+
+  it("executes a tool call end to end over http", async () => {
+    const { requests, fetch } = jsonFetch({ items: [], pagination: { total: 0 } });
+    const response = await handleMarketplaceMcpRequest(
+      rpcRequest({
+        jsonrpc: "2.0",
+        id: 3,
+        method: "tools/call",
+        params: { name: "search_agents", arguments: { availability: "hireable" } },
+      }),
+      { origin: ORIGIN, fetch },
+    );
+    expect(response.status).toBe(200);
+    const payload = await response.json();
+    expect(payload.result.isError).toBeUndefined();
+    expect(payload.result.content[0].type).toBe("text");
+    expect(requests).toHaveLength(1);
+    const url = new URL(requests[0]!.url);
+    expect(url.origin).toBe(ORIGIN);
+    expect(url.searchParams.get("availability")).toBe("hireable");
+  });
+
+  it("rejects non-POST methods as stateless", async () => {
+    const response = await mcpRouteGet();
+    expect(response.status).toBe(405);
+    expect(response.headers.get("allow")).toBe("POST");
   });
 });

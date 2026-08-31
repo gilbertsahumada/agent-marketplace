@@ -257,10 +257,23 @@ not refactors.
 
 ## Connect an agent (MCP)
 
-The repo ships a stdio MCP server exposing this API as five tools (`search_agents`,
-`get_passport`, `compare_agents`, `request_quote`, `get_job_status`): run
-`npm run mcp` (or use the checked-in `.mcp.json` with Claude Code). It targets the
-production origin by default; set `MARKETPLACE_ORIGIN` to point elsewhere. The server
-is a thin wrapper over the routes above — same contracts, same non-claims. The hire
-flow a programmatic buyer executes after `request_quote` is specified in
+The marketplace exposes this API as five MCP tools (`search_agents`, `get_passport`,
+`compare_agents`, `request_quote`, `get_job_status`) over two transports. Both are
+thin wrappers over the routes above — same contracts, same non-claims. The hire flow
+a programmatic buyer executes after `request_quote` is specified in
 `docs/HIRE-SPEC.md`.
+
+- **Remote (Streamable HTTP)** — `POST /api/mcp` on the production origin. Stateless:
+  no session ids, each JSON-RPC message is a self-contained request; `GET`/`DELETE`
+  answer `405`. Connect from any MCP client, e.g.
+  `claude mcp add --transport http marketplace https://bnb-agent-marketplace-ruby.vercel.app/api/mcp`.
+  The endpoint's tools call the marketplace API at its configured origin
+  (`MARKETPLACE_ORIGIN`, defaulting to the production origin) — never the request's
+  own `Host` header, so the upstream cannot be redirected by callers.
+- **Local (stdio)** — run `npm run mcp` from the repo (or use the checked-in
+  `.mcp.json` with Claude Code). Targets the production origin by default; set
+  `MARKETPLACE_ORIGIN` to point elsewhere (useful against a local dev server).
+
+Remote availability of these tools is discovery and quoting only: every agent in the
+catalogue is searchable and comparable, but hiring remains gated by the signed-quote
+allowlist — MCP reachability never implies ERC-8183 hireability.
