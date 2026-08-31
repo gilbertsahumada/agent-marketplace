@@ -30,6 +30,31 @@ describe("catalog candidate feed", () => {
     });
   });
 
+  it("preserves normalized declaration classification from the v2 feed", () => {
+    const fixtures = JSON.parse(readFileSync(
+      new URL("../contracts/catalog-api-v2.fixtures.json", import.meta.url), "utf8",
+    )) as { list: Record<string, unknown> };
+    const list = structuredClone(fixtures.list) as Record<string, unknown>;
+    const item = (list.items as Array<Record<string, unknown>>)[0]!;
+    const declarations = item.declarations as Array<Record<string, unknown>>;
+    declarations[0] = {
+      ...declarations[0],
+      declaredProtocol: "mcp",
+      role: "external",
+      validationProtocol: null,
+      externalKind: "social",
+      eligibility: "unsupported",
+    };
+
+    expect(parseCatalogCandidatePage(list).items[0]?.declarations[0]).toMatchObject({
+      declaredProtocol: "mcp",
+      role: "external",
+      validationProtocol: null,
+      externalKind: "social",
+      eligibility: "unsupported",
+    });
+  });
+
   it("rejects legacy provenance in v2 while retaining schema v1 compatibility", () => {
     const fixtures = JSON.parse(readFileSync(
       new URL("../contracts/catalog-api-v2.fixtures.json", import.meta.url), "utf8",
