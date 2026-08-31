@@ -104,6 +104,28 @@ describe("catalog-backed marketplace policy", () => {
     expect(agent.hireability.reason).toContain("fresh quote");
   });
 
+  it("does not treat an external or ineligible declaration as a seller transport", () => {
+    const normalized = candidate({
+      operationalStatus: "platform_reachable", freshness: "live", commerceStatus: "admitted",
+      quoteStatus: "not_requested", buyerAction: "request_quote", canRequestBrowserValidation: true,
+      canRequestInfrastructureValidation: true, canRequestQuote: true, canPrepareHire: false,
+      blockingReasons: ["COMMERCE_NOT_ADMITTED"],
+    });
+    normalized.declarations = [{
+      ...normalized.declarations[0]!,
+      protocol: "mcp",
+      declaredProtocol: "mcp",
+      role: "external",
+      validationProtocol: null,
+      externalKind: "social",
+      eligibility: "unsupported",
+    }];
+
+    const agent = toMarketplaceAgent({ ...baseData(), catalogCandidate: normalized }, { evaluateMarketplace: false });
+
+    expect(agent.hireability).toMatchObject({ status: "no_transport_declared", canHire: false });
+  });
+
   it("shows evidence for the admitted endpoint when another declaration was probed later", () => {
     const normalized = candidate({
       operationalStatus: "platform_reachable", freshness: "live", commerceStatus: "admitted",
