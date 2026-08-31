@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowUpRight, ExternalLink, ShieldCheck } from "lucide-react";
+import { ArrowUpRight, ExternalLink, LockKeyhole, ShieldCheck } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -67,7 +67,7 @@ export function AgentCard({ agent, registry = false }: { agent: AgentCardViewMod
         <div className="flex items-start gap-3">
           <AgentAvatar {...(agent.imageUrl ? { imageUrl: agent.imageUrl } : {})} name={agent.name} />
           <div className="min-w-0 flex-1">
-            <CardTitle className="truncate text-base">{agent.name}</CardTitle>
+            <CardTitle className="line-clamp-2 text-base leading-tight">{agent.name}</CardTitle>
             <a
               aria-label={`View ${agent.name} on trust8004 (opens in a new tab)`}
               className="font-stat mt-1 inline-flex items-center gap-1 text-[11px] text-zinc-400 hover:text-white"
@@ -104,13 +104,26 @@ export function AgentCard({ agent, registry = false }: { agent: AgentCardViewMod
         <EvidenceRail ariaLabel={`Evidence for ${agent.name}`} density="summary" steps={agent.evidence} />
       </CardContent>
 
-      <CardFooter className="justify-end gap-3 border-white/10 bg-zinc-950/40 px-5 py-3">
-        <Button asChild size="sm" variant={canRequestQuote ? "default" : "outline"}>
-          <Link href={canRequestQuote ? `/hire/${agent.agentId}` : agent.href} prefetch={false}>
-            {canRequestQuote ? "Hire agent" : "View profile"}
+      <CardFooter className="grid grid-cols-2 gap-3 border-white/10 bg-zinc-950/40 px-5 py-3">
+        <Button asChild size="sm" variant="outline">
+          <Link href={agent.href} prefetch={false}>
+            View profile
             <ArrowUpRight aria-hidden="true" data-icon="inline-end" />
           </Link>
         </Button>
+        {canRequestQuote ? (
+          <Button asChild size="sm">
+            <Link href={`/hire/${agent.agentId}`} prefetch={false}>
+              Hire agent
+              <ArrowUpRight aria-hidden="true" data-icon="inline-end" />
+            </Link>
+          </Button>
+        ) : (
+          <Button disabled size="sm" title="Hiring is not available for this agent" variant="secondary">
+            Hire agent
+            <LockKeyhole aria-hidden="true" data-icon="inline-end" />
+          </Button>
+        )}
       </CardFooter>
     </Card>
   );
