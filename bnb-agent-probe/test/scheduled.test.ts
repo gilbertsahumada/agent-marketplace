@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { loadConfig } from "../src/config";
 import type {
   D1DatabaseLike,
@@ -139,10 +139,12 @@ describe("WP2 scheduled runner", () => {
     const db = new LeaseDatabase();
     let now = 1_000;
     const phases: SchedulerPhase[] = [];
+    const logger = { info: vi.fn(), error: vi.fn() };
     const runner = createWp2ScheduledRunner({
       now: () => now++,
       randomUUID: () => "run-a",
       executePhase: async ({ phase }) => { phases.push(phase); },
+      logger,
     });
 
     await runner(controller, { DB: db } as unknown as Env, context, loadConfig({}));
@@ -151,6 +153,16 @@ describe("WP2 scheduled runner", () => {
     expect(db.releases).toBe(1);
     expect(db.lease).toEqual({ runId: null, expiresAt: 1_002 });
     expect(phases).toEqual(["header"]);
+    expect(logger.info).toHaveBeenCalledWith("wp2.scheduler.attempt", expect.objectContaining({
+      runId: "run-a",
+      phase: "header",
+      outcome: "completed",
+      upstreamRequests: 0,
+      d1Queries: expect.any(Number),
+      rowsRead: expect.any(Number),
+      rowsWritten: expect.any(Number),
+      configurationVersion: "wp2_legacy",
+    }));
   });
 
   it("does not release a lease held by another invocation", async () => {

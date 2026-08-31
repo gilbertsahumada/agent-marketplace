@@ -18,6 +18,8 @@ function agent(overrides: Partial<CatalogAgentInput> = {}): CatalogAgentInput {
 describe("catalog normalization", () => {
   it("keeps transport and commerce declarations as independent dimensions", () => {
     const normalized = normalizeCatalogAgent(agent({
+      owner: "0x1111111111111111111111111111111111111111",
+      agentURI: "ipfs://bafybeigdyrzt5-example",
       name: "  Grid planner  ",
       description: "Keeps a target allocation.",
       imageUrl: "ipfs://bafy-agent/avatar.png",
@@ -28,6 +30,8 @@ describe("catalog normalization", () => {
 
     expect(normalized.agentKey).toBe("eip155:56:42");
     expect(normalized).toMatchObject({
+      owner: "0x1111111111111111111111111111111111111111",
+      metadataUri: "ipfs://bafybeigdyrzt5-example",
       name: "Grid planner",
       description: "Keeps a target allocation.",
       imageUrl: "https://ipfs.io/ipfs/bafy-agent/avatar.png",

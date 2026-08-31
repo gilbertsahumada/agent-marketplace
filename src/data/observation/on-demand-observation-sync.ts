@@ -1,6 +1,7 @@
 import "server-only";
 
 import type { NormalizedErc8183Quote } from "../../business/entities/erc8183-browser-spike.ts";
+import { catalogEndpointKey } from "./catalog-observation-sync.ts";
 
 export type ObservationSyncStatus = "synced" | "duplicate" | "failed" | "not_configured";
 export interface ObservationSyncResult { readonly status: ObservationSyncStatus }
@@ -10,7 +11,7 @@ type Environment = Readonly<Record<string, string | undefined>>;
 
 function privateUrl(observationsUrl: string): string {
   const url = new URL(observationsUrl);
-  url.pathname = "/__internal/on-demand-observation";
+  url.pathname = "/catalog-quote-evidence";
   url.search = "";
   url.hash = "";
   return url.toString();
@@ -34,14 +35,6 @@ function allowedPrivateUrl(observationsUrl: string, allowedOrigin: string): stri
     ) return null;
     return privateUrl(url.toString());
   } catch { return null; }
-}
-
-function hash(envelope: Record<string, unknown>, field: string): string {
-  const value = envelope[field];
-  if (typeof value !== "string" || !/^0x[0-9a-fA-F]{64}$/.test(value)) {
-    throw new Error(`Verified quote omitted ${field}`);
-  }
-  return value.toLowerCase();
 }
 
 function observationEndpoint(endpoint: string): string {
@@ -72,32 +65,18 @@ export async function syncBuyerQuoteObservation(
   const destination = allowedPrivateUrl(observationsUrl, allowedOrigin);
   if (destination === null) return { status: "failed" };
   if (quote.chainId !== 56) return { status: "failed" };
-  const now = options.now?.() ?? Date.now();
+  let endpointKey: string;
+  try { endpointKey = catalogEndpointKey("a2a", observationEndpoint(quote.endpoint)); }
+  catch { return { status: "failed" }; }
   const payload = {
-    schemaVersion: 1,
-    source: "buyer_refresh",
+    schemaVersion: 2,
     agentId: String(quote.agentId),
-    chainId: 56,
-    transport: "a2a",
-    endpoint: observationEndpoint(quote.endpoint),
+    endpointKey,
     probeCategory: "grid_trading",
-    probedAt: now,
-    durationMs: Math.max(0, Math.min(60_000, Math.trunc(options.durationMs ?? 0))),
-    observedWallet: quote.provider,
-    commerce: quote.commerce,
-    router: quote.router,
-    policy: quote.policy,
-    priceRaw: quote.priceRaw,
-    currency: quote.token,
-    decimals: quote.tokenDecimals,
-    signer: quote.provider,
-    requestHash: hash(quote.envelope, "request_hash"),
-    negotiationHash: hash(quote.envelope, "negotiation_hash"),
-    quoteNegotiatedAt: quote.negotiatedAt * 1_000,
-    quoteExpiresAt: quote.quoteExpiresAt * 1_000,
+    envelope: quote.envelope,
   } as const;
   const raw = JSON.stringify(payload);
-  if (new TextEncoder().encode(raw).byteLength > 8_192) return { status: "failed" };
+  if (new TextEncoder().encode(raw).byteLength > 64 * 1_024) return { status: "failed" };
   try {
     const response = await (options.fetchImpl ?? fetch)(destination, {
       method: "POST",
@@ -111,7 +90,7 @@ export async function syncBuyerQuoteObservation(
     });
     if (!response.ok) return { status: "failed" };
     const body = await response.json() as { status?: unknown };
-    return body.status === "duplicate" ? { status: "duplicate" } : body.status === "synced" ? { status: "synced" } : { status: "failed" };
+    return body.status === "duplicate" ? { status: "duplicate" } : body.status === "verified" ? { status: "synced" } : { status: "failed" };
   } catch { return { status: "failed" }; }
 }
 

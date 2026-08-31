@@ -12,12 +12,10 @@ import { recordDailyBudget } from "../../src/db/daily-budget";
 import { healthResponse } from "../../src/routes/health";
 import { createWp2ScheduledRunner, runWp2Scheduled } from "../../src/scheduled";
 import type { Env } from "../../src/types";
+import { clearCatalogFixtures } from "./catalog-fixtures";
 
 beforeEach(async () => {
-  await env.DB.prepare("DELETE FROM catalog_observations").run();
-  await env.DB.prepare("DELETE FROM catalog_agent_endpoints").run();
-  await env.DB.prepare("DELETE FROM catalog_endpoints").run();
-  await env.DB.prepare("DELETE FROM catalog_agents").run();
+  await clearCatalogFixtures();
   await env.DB.prepare("DELETE FROM runtime_state").run();
   await env.DB.prepare("DELETE FROM probe_observations").run();
   await env.DB.prepare("DELETE FROM probe_targets").run();
@@ -26,7 +24,7 @@ beforeEach(async () => {
 function catalogObservationBody(overrides: Record<string, unknown> = {}) {
   const now = 1_788_000_000_000;
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     source: "browser_reported",
     agentId: "45422",
     endpointKey: "a".repeat(64),
@@ -83,18 +81,62 @@ function buyerRefreshBody(overrides: Record<string, unknown> = {}) {
 }
 
 describe("WP1 in the Workers runtime", () => {
+  it("serves the same versioned v2 contract fixture consumed by the application", async () => {
+    const fixture = JSON.parse(
+      (env as unknown as { CATALOG_API_V2_FIXTURE: string }).CATALOG_API_V2_FIXTURE,
+    ) as { list: Record<string, unknown>; detail: Record<string, unknown> };
+    const now = 1_788_000_000_000;
+    const endpointKey = "a".repeat(64);
+    const originKey = "b".repeat(64);
+    await env.DB.prepare(`INSERT INTO catalog_agents (
+      agentKey, agentId, chainId, owner, metadataUri, name, categoriesJson, marketplaceConfigured, metadataState,
+      indexState, registeredAt, blockNumber, firstSeenAt, lastSeenAt, priority
+    ) VALUES ('eip155:56:42', '42', 56, '0x1111111111111111111111111111111111111111',
+      'ipfs://bafybeigdyrzt5-example', 'Contract fixture seller', '["grid_trading"]', 0,
+      'ok', 'current', ?, '123', ?, ?, 80)`).bind(now, now, now).run();
+    await env.DB.prepare(`INSERT INTO catalog_endpoints (
+      endpointKey, protocol, endpoint, originKey, safety, representativeAgentKey, lastProbedAt,
+      nextProbeAt, consecutiveFailures, declaredProtocol, role, validationProtocol, eligibility,
+      lastAttemptAt, lastAttemptOutcome, lastSuccessfulAt
+    ) VALUES (?, 'a2a', 'https://seller.example/a2a', ?, 'safe', 'eip155:56:42', ?, ?, 0,
+      'a2a', 'operational', 'a2a', 'eligible', ?, 'protocol_valid', ?)`)
+      .bind(endpointKey, originKey, now, now + 43_200_000, now, now).run();
+    await env.DB.prepare(`INSERT INTO catalog_agent_endpoints (
+      agentKey, endpointKey, declarationState, firstSeenAt, lastSeenAt, priority
+    ) VALUES ('eip155:56:42', ?, 'current', ?, ?, 80)`).bind(endpointKey, now, now).run();
+    await env.DB.prepare(`INSERT INTO catalog_observations (
+      attemptId, agentKey, endpointKey, protocol, source, outcome, observedAt, expiresAt,
+      httpStatus, durationMs, detailsJson, validationKind, verificationLevel
+    ) VALUES ('contract-attempt', 'eip155:56:42', ?, 'a2a', 'worker_probe', 'protocol_valid', ?, ?,
+      200, 42, '{"schemaVersion":2,"stageDurationsMs":{"agentCard":42}}', 'protocol', 'platform_observed')`)
+      .bind(endpointKey, now, now + 43_200_000).run();
+    await env.DB.prepare(`INSERT INTO catalog_agent_admission (
+      agentKey, state, commerceTransport, endpointKey, chainId, configurationVersion, reasonCode
+    ) VALUES ('eip155:56:42', 'candidate', 'a2a', ?, 56, 'contract-v2', 'QUOTE_VERIFICATION_REQUIRED')`)
+      .bind(endpointKey).run();
+    const app = createWorker({ now: () => now });
+
+    const list = await app.fetch(new Request("https://worker.test/catalog-agents"), env);
+    expect(await list.json()).toMatchObject(fixture.list);
+    const detail = await app.fetch(new Request("https://worker.test/catalog-agent/42"), env);
+    expect(await detail.json()).toMatchObject(fixture.detail);
+  });
+
   it("filters normalized catalog candidates using platform evidence, never browser claims", async () => {
     const now = 1_788_000_000_000;
     await env.DB.prepare(`INSERT INTO catalog_agents (
-      agentKey, agentId, chainId, name, metadataState, indexState, firstSeenAt, lastSeenAt, priority
+      agentKey, agentId, chainId, name, categoriesJson, metadataState, indexState, firstSeenAt, lastSeenAt, priority
     ) VALUES
-      ('eip155:56:1', '1', 56, 'Agent one', 'ok', 'current', ?, ?, 60),
-      ('eip155:56:2', '2', 56, 'Agent two', 'ok', 'current', ?, ?, 40)`).bind(now, now, now, now).run();
+      ('eip155:56:1', '1', 56, 'Agent one', '["grid_trading"]', 'ok', 'current', ?, ?, 60),
+      ('eip155:56:2', '2', 56, 'Agent two', '["yield_optimisation"]', 'ok', 'current', ?, ?, 40)`).bind(now, now, now, now).run();
     await env.DB.prepare(`INSERT INTO catalog_endpoints (
-      endpointKey, protocol, endpoint, originKey, safety, representativeAgentKey, nextProbeAt, consecutiveFailures
+      endpointKey, protocol, endpoint, originKey, safety, representativeAgentKey, nextProbeAt, consecutiveFailures,
+      declaredProtocol, role, validationProtocol, eligibility
     ) VALUES
-      (?, 'a2a', 'https://one.example/a2a', 'origin-one', 'safe', 'eip155:56:1', 0, 0),
-      (?, 'mcp', 'https://two.example/mcp', 'origin-two', 'safe', 'eip155:56:2', 0, 0)`).bind(
+      (?, 'a2a', 'https://one.example/a2a', 'origin-one', 'safe', 'eip155:56:1', 0, 0,
+        'a2a', 'operational', 'a2a', 'eligible'),
+      (?, 'mcp', 'https://two.example/mcp', 'origin-two', 'safe', 'eip155:56:2', 0, 0,
+        'mcp', 'operational', 'mcp', 'eligible')`).bind(
       "a".repeat(64), "b".repeat(64),
     ).run();
     await env.DB.prepare(`INSERT INTO catalog_agent_endpoints (
@@ -105,10 +147,11 @@ describe("WP1 in the Workers runtime", () => {
       "a".repeat(64), now, now, "b".repeat(64), now, now,
     ).run();
     await env.DB.prepare(`INSERT INTO catalog_observations (
-      agentKey, endpointKey, protocol, source, outcome, observedAt, expiresAt, durationMs, detailsJson
+      agentKey, endpointKey, protocol, source, outcome, observedAt, expiresAt, durationMs, detailsJson,
+      verificationLevel
     ) VALUES
-      ('eip155:56:1', ?, 'a2a', 'worker_probe', 'protocol_valid', ?, ?, 20, '{}'),
-      ('eip155:56:2', ?, 'mcp', 'browser_reported', 'protocol_valid', ?, ?, 30, '{}')`).bind(
+      ('eip155:56:1', ?, 'a2a', 'worker_probe', 'protocol_valid', ?, ?, 20, '{}', 'platform_observed'),
+      ('eip155:56:2', ?, 'mcp', 'browser_reported', 'protocol_valid', ?, ?, 30, '{}', 'user_observed')`).bind(
       "a".repeat(64), now, now + 900_000,
       "b".repeat(64), now, now + 900_000,
     ).run();
@@ -119,24 +162,598 @@ describe("WP1 in the Workers runtime", () => {
     expect(a2a.status).toBe(200);
     expect(await a2a.json()).toMatchObject({ total: 1, items: [{ agentId: "1" }] });
 
+    const mcpOnly = await app.fetch(new Request("https://worker.test/catalog-agents?status=mcp_only"), env, context);
+    expect(mcpOnly.status).toBe(200);
+    expect(await mcpOnly.json()).toMatchObject({ total: 1, items: [{ agentId: "2" }] });
+
+    const combined = await app.fetch(new Request("https://worker.test/catalog-agents?status=declared&status=a2a"), env, context);
+    expect(combined.status).toBe(200);
+    expect(await combined.json()).toMatchObject({
+      statuses: ["declared", "a2a"],
+      total: 1,
+      items: [{ agentId: "1" }],
+    });
+
+    const outcomes = await app.fetch(new Request("https://worker.test/catalog-agents?status=declared&category=grid_trading&category=yield_optimisation"), env, context);
+    expect(await outcomes.json()).toMatchObject({
+      categories: ["grid_trading", "yield_optimisation"],
+      total: 2,
+    });
+
     const pending = await app.fetch(new Request("https://worker.test/catalog-agents?status=pending"), env, context);
     expect(await pending.json()).toMatchObject({
       total: 1,
       items: [{ agentId: "2", observations: [{ source: "browser_reported" }] }],
     });
 
-    await env.DB.prepare(
-      "UPDATE catalog_agents SET marketplaceConfigured = 1 WHERE agentId = '1'",
-    ).run();
+    await env.DB.prepare(`INSERT INTO catalog_agent_admission (
+      agentKey, state, commerceTransport, endpointKey, chainId, provider,
+      validatedAt, configurationVersion, reasonCode
+    ) VALUES ('eip155:56:1', 'admitted', 'a2a', ?, 56, 'test', ?, 'test-v1', 'fixture')`)
+      .bind("a".repeat(64), now).run();
     const hireable = await app.fetch(new Request("https://worker.test/catalog-agents?status=hireable"), env, context);
     expect(await hireable.json()).toMatchObject({ total: 1, items: [{ agentId: "1" }] });
+  });
+
+  it("does not call an externally declared resource hireable", async () => {
+    const now = 1_788_000_000_000;
+    const agentKey = "eip155:56:9001";
+    const endpointKey = "e".repeat(64);
+    await env.DB.prepare(`INSERT INTO catalog_agents (
+      agentKey, agentId, chainId, name, categoriesJson, metadataState, indexState, firstSeenAt, lastSeenAt
+    ) VALUES (?, '9001', 56, 'External only', '[]', 'ok', 'current', ?, ?)`).bind(agentKey, now, now).run();
+    await env.DB.prepare(`INSERT INTO catalog_endpoints (
+      endpointKey, protocol, endpoint, originKey, safety, representativeAgentKey,
+      nextProbeAt, consecutiveFailures, declaredProtocol, role, validationProtocol, eligibility
+    ) VALUES (?, 'web', 'https://example.com', 'external-origin', 'safe', NULL, NULL, 0,
+      'web', 'external', NULL, 'unsupported')`).bind(endpointKey).run();
+    await env.DB.prepare(`INSERT INTO catalog_agent_endpoints (
+      agentKey, endpointKey, declarationState, firstSeenAt, lastSeenAt
+    ) VALUES (?, ?, 'current', ?, ?)`).bind(agentKey, endpointKey, now, now).run();
+    await env.DB.prepare(`INSERT INTO catalog_agent_admission (
+      agentKey, state, commerceTransport, endpointKey, chainId, reasonCode
+    ) VALUES (?, 'admitted', 'a2a', ?, 56, 'fixture')`).bind(agentKey, endpointKey).run();
+
+    const app = createWorker({ now: () => now });
+    const response = await app.fetch(new Request(
+      "https://worker.test/catalog-agents?status=hireable&inventory=registry",
+    ), env, createExecutionContext());
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ total: 0, items: [] });
+  });
+
+  it("excludes agents with a seller declaration from the MCP-only filter", async () => {
+    const now = 1_788_000_000_000;
+    const agentKey = "eip155:56:9004";
+    const mcpEndpoint = "3".repeat(64);
+    const sellerEndpoint = "4".repeat(64);
+    await env.DB.prepare(`INSERT INTO catalog_agents (
+      agentKey, agentId, chainId, metadataState, indexState, firstSeenAt, lastSeenAt
+    ) VALUES (?, '9004', 56, 'ok', 'current', ?, ?)`).bind(agentKey, now, now).run();
+    await env.DB.prepare(`INSERT INTO catalog_endpoints (
+      endpointKey, protocol, endpoint, safety, nextProbeAt, declaredProtocol,
+      role, validationProtocol, eligibility
+    ) VALUES
+      (?, 'mcp', 'https://mixed.example/mcp', 'safe', ?, 'mcp', 'operational', 'mcp', 'eligible'),
+      (?, 'a2a', 'https://mixed.example/a2a', 'safe', ?, 'a2a', 'operational', 'a2a', 'eligible')`)
+      .bind(mcpEndpoint, now, sellerEndpoint, now).run();
+    await env.DB.prepare(`INSERT INTO catalog_agent_endpoints (
+      agentKey, endpointKey, declarationState, firstSeenAt, lastSeenAt
+    ) VALUES (?, ?, 'current', ?, ?), (?, ?, 'current', ?, ?)`)
+      .bind(agentKey, mcpEndpoint, now, now, agentKey, sellerEndpoint, now, now).run();
+
+    const app = createWorker({ now: () => now });
+    const response = await app.fetch(new Request(
+      "https://worker.test/catalog-agents?status=mcp_only&inventory=registry",
+    ), env, createExecutionContext());
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ total: 0, items: [] });
+  });
+
+  it("uses the latest cryptographic quote outcome for quote filters", async () => {
+    const now = 1_788_000_000_000;
+    const agentKey = "eip155:56:9002";
+    const endpointKey = "f".repeat(64);
+    await env.DB.prepare(`INSERT INTO catalog_agents (
+      agentKey, agentId, chainId, name, categoriesJson, metadataState, indexState, firstSeenAt, lastSeenAt
+    ) VALUES (?, '9002', 56, 'Quote changed', '[]', 'ok', 'current', ?, ?)`).bind(agentKey, now, now).run();
+    await env.DB.prepare(`INSERT INTO catalog_endpoints (
+      endpointKey, protocol, endpoint, originKey, safety, representativeAgentKey,
+      nextProbeAt, consecutiveFailures, declaredProtocol, role, validationProtocol, eligibility
+    ) VALUES (?, 'a2a', 'https://quote.example/a2a', 'quote-origin', 'safe', ?, ?, 0,
+      'a2a', 'operational', 'a2a', 'eligible')`).bind(endpointKey, agentKey, now).run();
+    await env.DB.prepare(`INSERT INTO catalog_agent_endpoints (
+      agentKey, endpointKey, declarationState, firstSeenAt, lastSeenAt
+    ) VALUES (?, ?, 'current', ?, ?)`).bind(agentKey, endpointKey, now, now).run();
+    await env.DB.prepare(`INSERT INTO catalog_observations (
+      agentKey, endpointKey, protocol, source, outcome, observedAt, expiresAt, durationMs,
+      detailsJson, validationKind, verificationLevel
+    ) VALUES (?, ?, 'a2a', 'buyer_refresh', 'quote_verified', ?, ?, 10, '{}', 'quote', 'cryptographic'),
+      (?, ?, 'a2a', 'buyer_refresh', 'quote_rejected', ?, NULL, 10, '{}', 'quote', 'cryptographic')`)
+      .bind(agentKey, endpointKey, now - 100, now + 900_000, agentKey, endpointKey, now).run();
+
+    const app = createWorker({ now: () => now });
+    const verified = await app.fetch(new Request(
+      "https://worker.test/catalog-agents?quote=verified&inventory=registry",
+    ), env, createExecutionContext());
+    expect(verified.status).toBe(200);
+    expect(await verified.json()).toMatchObject({ total: 0, items: [] });
+  });
+
+  it("requires quote evidence for the currently admitted commerce endpoint", async () => {
+    const now = 1_788_000_000_000;
+    const agentKey = "eip155:56:9003";
+    const admittedEndpoint = "1".repeat(64);
+    const otherEndpoint = "2".repeat(64);
+    await env.DB.prepare(`INSERT INTO catalog_agents (
+      agentKey, agentId, chainId, metadataState, indexState, firstSeenAt, lastSeenAt
+    ) VALUES (?, '9003', 56, 'ok', 'current', ?, ?)`).bind(agentKey, now, now).run();
+    await env.DB.prepare(`INSERT INTO catalog_endpoints (
+      endpointKey, protocol, endpoint, safety, nextProbeAt, declaredProtocol,
+      role, validationProtocol, eligibility
+    ) VALUES
+      (?, 'a2a', 'https://admitted.example/a2a', 'safe', ?, 'a2a', 'operational', 'a2a', 'eligible'),
+      (?, 'a2a', 'https://other.example/a2a', 'safe', ?, 'a2a', 'operational', 'a2a', 'eligible')`)
+      .bind(admittedEndpoint, now, otherEndpoint, now).run();
+    await env.DB.prepare(`INSERT INTO catalog_agent_endpoints (
+      agentKey, endpointKey, declarationState, firstSeenAt, lastSeenAt
+    ) VALUES (?, ?, 'current', ?, ?), (?, ?, 'current', ?, ?)`)
+      .bind(agentKey, admittedEndpoint, now, now, agentKey, otherEndpoint, now, now).run();
+    await env.DB.prepare(`INSERT INTO catalog_agent_admission (
+      agentKey, state, commerceTransport, endpointKey, chainId, reasonCode
+    ) VALUES (?, 'admitted', 'a2a', ?, 56, 'fixture')`).bind(agentKey, admittedEndpoint).run();
+    await env.DB.prepare(`INSERT INTO catalog_observations (
+      agentKey, endpointKey, protocol, source, outcome, observedAt, expiresAt, durationMs,
+      detailsJson, validationKind, verificationLevel
+    ) VALUES (?, ?, 'a2a', 'buyer_refresh', 'quote_verified', ?, ?, 10, '{}', 'quote', 'cryptographic')`)
+      .bind(agentKey, otherEndpoint, now, now + 900_000).run();
+
+    const app = createWorker({ now: () => now });
+    const withoutAdmittedQuote = await app.fetch(new Request(
+      "https://worker.test/catalog-agents?quote=verified&inventory=registry",
+    ), env, createExecutionContext());
+    expect(await withoutAdmittedQuote.json()).toMatchObject({ total: 0, items: [] });
+
+    await env.DB.prepare(`INSERT INTO catalog_observations (
+      agentKey, endpointKey, protocol, source, outcome, observedAt, expiresAt, durationMs,
+      detailsJson, validationKind, verificationLevel
+    ) VALUES (?, ?, 'a2a', 'buyer_refresh', 'quote_verified', ?, ?, 10, '{}', 'quote', 'cryptographic')`)
+      .bind(agentKey, admittedEndpoint, now, now + 900_000).run();
+    const withAdmittedQuote = await app.fetch(new Request(
+      "https://worker.test/catalog-agents?quote=verified&inventory=registry",
+    ), env, createExecutionContext());
+    expect(await withAdmittedQuote.json()).toMatchObject({ total: 1, items: [{ agentId: "9003" }] });
+  });
+
+  it("does not treat onchain reads as platform reachability evidence", async () => {
+    const now = 1_788_000_000_000;
+    const agentKey = "eip155:56:7002";
+    const endpointKey = "c".repeat(64);
+    await env.DB.prepare(`INSERT INTO catalog_agents (
+      agentKey, agentId, chainId, name, categoriesJson, metadataState, indexState, firstSeenAt, lastSeenAt
+    ) VALUES (?, '7002', 56, 'Chain-only evidence', '[]', 'ok', 'current', ?, ?)`)
+      .bind(agentKey, now, now).run();
+    await env.DB.prepare(`INSERT INTO catalog_endpoints (
+      endpointKey, protocol, endpoint, originKey, safety, representativeAgentKey,
+      nextProbeAt, consecutiveFailures, declaredProtocol, role, validationProtocol, eligibility
+    ) VALUES (?, 'a2a', 'https://chain-only.example/a2a', 'chain-only', 'safe', ?, ?, 0,
+      'a2a', 'operational', 'a2a', 'eligible')`)
+      .bind(endpointKey, agentKey, now).run();
+    await env.DB.prepare(`INSERT INTO catalog_agent_endpoints (
+      agentKey, endpointKey, declarationState, firstSeenAt, lastSeenAt
+    ) VALUES (?, ?, 'current', ?, ?)`)
+      .bind(agentKey, endpointKey, now, now).run();
+    await env.DB.prepare(`INSERT INTO catalog_observations (
+      attemptId, agentKey, endpointKey, protocol, source, outcome, observedAt,
+      expiresAt, durationMs, detailsJson, validationKind, verificationLevel
+    ) VALUES ('chain-only-read', ?, ?, 'a2a', 'chain_read', 'protocol_valid', ?, ?, 1, '{}', 'protocol', 'onchain')`)
+      .bind(agentKey, endpointKey, now, now + 900_000).run();
+
+    const app = createWorker({ now: () => now });
+    const context = createExecutionContext();
+    const pending = await app.fetch(new Request("https://worker.test/catalog-agents?status=pending"), env, context);
+    expect(await pending.json()).toMatchObject({ total: 1, items: [{ agentId: "7002" }] });
+
+    const never = await app.fetch(new Request(
+      "https://worker.test/catalog-agents?reachability=never&protocol=a2a",
+    ), env, context);
+    expect(await never.json()).toMatchObject({ total: 1, items: [{ agentId: "7002" }] });
+
+    const live = await app.fetch(new Request(
+      "https://worker.test/catalog-agents?reachability=live&protocol=a2a",
+    ), env, context);
+    expect(await live.json()).toMatchObject({ total: 0, items: [] });
+  });
+
+  it("does not transfer a representative endpoint observation to another declarer", async () => {
+    const now = 1_788_000_000_000;
+    const endpointKey = "4".repeat(64);
+    await env.DB.prepare(`INSERT INTO catalog_agents (
+      agentKey, agentId, chainId, name, categoriesJson, metadataState, indexState,
+      firstSeenAt, lastSeenAt, priority
+    ) VALUES
+      ('eip155:56:7301', '7301', 56, 'Representative', '[]', 'ok', 'current', ?, ?, 2),
+      ('eip155:56:7302', '7302', 56, 'Shared declarer', '[]', 'ok', 'current', ?, ?, 1)`)
+      .bind(now, now, now, now).run();
+    await env.DB.prepare(`INSERT INTO catalog_endpoints (
+      endpointKey, protocol, endpoint, originKey, safety, representativeAgentKey,
+      nextProbeAt, consecutiveFailures, declaredProtocol, role, validationProtocol, eligibility
+    ) VALUES (?, 'a2a', 'https://shared-agent.example/a2a', 'shared-agent', 'safe',
+      'eip155:56:7301', ?, 0, 'a2a', 'operational', 'a2a', 'eligible')`)
+      .bind(endpointKey, now).run();
+    await env.DB.prepare(`INSERT INTO catalog_agent_endpoints (
+      agentKey, endpointKey, declarationState, firstSeenAt, lastSeenAt, priority
+    ) VALUES
+      ('eip155:56:7301', ?, 'current', ?, ?, 2),
+      ('eip155:56:7302', ?, 'current', ?, ?, 1)`)
+      .bind(endpointKey, now, now, endpointKey, now, now).run();
+    await env.DB.prepare(`INSERT INTO catalog_observations (
+      attemptId, agentKey, endpointKey, protocol, source, outcome, observedAt,
+      expiresAt, durationMs, detailsJson, validationKind, verificationLevel
+    ) VALUES ('representative-success', 'eip155:56:7301', ?, 'a2a', 'worker_probe',
+      'protocol_valid', ?, ?, 25, '{}', 'protocol', 'platform_observed')`)
+      .bind(endpointKey, now, now + 900_000).run();
+
+    const app = createWorker({ now: () => now });
+    const live = await app.fetch(new Request(
+      "https://worker.test/catalog-agents?reachability=live&protocol=a2a",
+    ), env, createExecutionContext());
+    expect(await live.json()).toMatchObject({ total: 1, items: [{ agentId: "7301" }] });
+
+    const sharedDeclarer = await app.fetch(
+      new Request("https://worker.test/catalog-agent/7302"), env, createExecutionContext(),
+    );
+    expect(await sharedDeclarer.json()).toMatchObject({
+      agentId: "7302",
+      resources: [{ endpointKey, attemptCount: 0, latestEvidence: null }],
+      state: { operationalStatus: "pending", freshness: "never" },
+    });
+  });
+
+  it("serves the v2 catalog contract with combinable filters, cursor paging, and resource evidence", async () => {
+    const now = 1_788_000_000_000;
+    await env.DB.prepare(`INSERT INTO catalog_agents (
+      agentKey, agentId, chainId, name, categoriesJson, metadataState, indexState,
+      firstSeenAt, lastSeenAt, priority, metadataVersion, metadataObservedAt, policyVersion
+    ) VALUES
+      ('eip155:56:10', '10', 56, 'Live MCP', '["grid_trading"]', 'ok', 'current',
+        ?, ?, 80, 'meta-10', ?, 2),
+      ('eip155:56:11', '11', 56, 'Failed A2A', '["yield_optimisation"]', 'ok', 'current',
+        ?, ?, 70, 'meta-11', ?, 2)`).bind(now, now, now, now, now, now).run();
+    await env.DB.prepare(`INSERT INTO catalog_endpoints (
+      endpointKey, protocol, endpoint, originKey, safety, representativeAgentKey,
+      nextProbeAt, consecutiveFailures, declaredProtocol, role, validationProtocol,
+      externalKind, eligibility, lastAttemptAt, lastAttemptOutcome, lastSuccessfulAt
+    ) VALUES
+      (?, 'mcp', 'https://live.example/mcp', 'live', 'safe', 'eip155:56:10',
+        ?, 0, 'mcp', 'operational', 'mcp', NULL, 'eligible', ?, 'protocol_valid', ?),
+      (?, 'web', 'https://live.example/', 'live', 'safe', NULL,
+        NULL, 0, 'web', 'external', NULL, 'website', 'unsupported', NULL, NULL, NULL),
+      (?, 'a2a', 'https://failed.example/.well-known/agent-card.json', 'failed', 'safe', 'eip155:56:11',
+        ?, 2, 'a2a', 'operational', 'a2a', NULL, 'eligible', ?, 'timeout', NULL)`)
+      .bind("c".repeat(64), now + 60_000, now, now, "d".repeat(64), "e".repeat(64), now + 60_000, now).run();
+    await env.DB.prepare(`INSERT INTO catalog_agent_endpoints (
+      agentKey, endpointKey, declarationState, firstSeenAt, lastSeenAt, priority, rawServiceLabel, rawSource, metadataVersion
+    ) VALUES
+      ('eip155:56:10', ?, 'current', ?, ?, 80, 'mcp', 'services', 'meta-10'),
+      ('eip155:56:10', ?, 'current', ?, ?, 1, 'website', 'services', 'meta-10'),
+      ('eip155:56:11', ?, 'current', ?, ?, 70, 'a2a', 'services', 'meta-11')`)
+      .bind("c".repeat(64), now, now, "d".repeat(64), now, now, "e".repeat(64), now, now).run();
+    await env.DB.prepare(`INSERT INTO catalog_observations (
+      attemptId, agentKey, endpointKey, protocol, source, outcome, observedAt, expiresAt,
+      durationMs, detailsJson, validationKind, verificationLevel
+    ) VALUES
+      ('attempt-live', 'eip155:56:10', ?, 'mcp', 'worker_probe', 'protocol_valid', ?, ?, 42,
+        '{"schemaVersion":2,"stageDurations":{"initialize":12,"toolsList":30}}', 'protocol', 'platform_observed'),
+      ('attempt-failed', 'eip155:56:11', ?, 'a2a', 'worker_probe', 'timeout', ?, NULL, 5000,
+        '{"schemaVersion":2,"stage":"agent_card"}', 'protocol', 'platform_observed')`)
+      .bind("c".repeat(64), now, now + 86_400_000, "e".repeat(64), now).run();
+    await env.DB.prepare(`INSERT INTO catalog_agent_admission (
+      agentKey, state, commerceTransport, endpointKey, chainId, provider, validatedAt, configurationVersion
+    ) VALUES ('eip155:56:10', 'admitted', 'a2a', ?, 56,
+      '0x1111111111111111111111111111111111111111', ?, 'quote-v1')`)
+      .bind("c".repeat(64), now).run();
+    await env.DB.prepare(`INSERT INTO catalog_ingest_tasks (
+      agentKey, metadataVersion, nextDeclarationIndex, declarationCount, status, requestedBy,
+      priority, generationStartedAt, updatedAt, attemptCount, retryAt
+    ) VALUES ('eip155:56:10', 'meta-10', 2, 2, 'completed', 'header', 80, ?, ?, 1, 0)`)
+      .bind(now, now).run();
+
+    const app = createWorker({ now: () => now });
+    const context = createExecutionContext();
+    const filtered = await app.fetch(new Request(
+      "https://worker.test/catalog-agents?protocol=mcp&reachability=live&commerce=admitted&chain=56&category=grid_trading&limit=1",
+    ), env, context);
+    expect(filtered.status).toBe(200);
+    expect(await filtered.json()).toMatchObject({
+      schemaVersion: 2,
+      apiVersion: 2,
+      filters: {
+        protocols: ["mcp"], reachability: ["live"], commerce: ["admitted"], chainId: 56,
+      },
+      total: 1,
+      nextCursor: null,
+      items: [{
+        agentId: "10",
+        state: { operationalStatus: "platform_reachable", commerceStatus: "admitted" },
+      }],
+    });
+
+    const failed = await app.fetch(new Request(
+      "https://worker.test/catalog-agents?latestFailure=true&protocol=a2a",
+    ), env, context);
+    expect(await failed.json()).toMatchObject({ total: 1, items: [{ agentId: "11" }] });
+
+    const detail = await app.fetch(new Request("https://worker.test/catalog-agent/10"), env, context);
+    expect(detail.status).toBe(200);
+    expect(await detail.json()).toMatchObject({
+      schemaVersion: 2,
+      apiVersion: 2,
+      agentId: "10",
+      provenance: { source: "trust8004", metadataVersion: "meta-10" },
+      ingest: { status: "completed", nextDeclarationIndex: 2, declarationCount: 2 },
+      resources: [
+        {
+          role: "operational",
+          validationProtocol: "mcp",
+          attemptCount: 1,
+          latestEvidence: { attemptId: "attempt-live", outcome: "protocol_valid" },
+        },
+        { role: "external", externalKind: "website", attemptCount: 0, latestEvidence: null },
+      ],
+      state: { canRequestInfrastructureValidation: true },
+      policyVersion: 2,
+    });
+  });
+
+  it("treats a fresh ERC-8183 HTTP health observation as live reachability", async () => {
+    const now = 1_788_000_000_000;
+    const endpointKey = "9".repeat(64);
+    await env.DB.prepare(`INSERT INTO catalog_agents (
+      agentKey, agentId, chainId, name, categoriesJson, metadataState, indexState,
+      firstSeenAt, lastSeenAt, priority
+    ) VALUES ('eip155:56:8183', '8183', 56, 'ERC-8183 seller', '["grid_trading"]', 'ok', 'current', ?, ?, 80)`)
+      .bind(now, now).run();
+    await env.DB.prepare(`INSERT INTO catalog_endpoints (
+      endpointKey, protocol, endpoint, originKey, safety, representativeAgentKey,
+      nextProbeAt, consecutiveFailures, declaredProtocol, role, validationProtocol,
+      eligibility, lastAttemptAt, lastAttemptOutcome, lastSuccessfulAt
+    ) VALUES (?, 'erc8183_http', 'https://seller.example/jobs', 'seller', 'safe',
+      'eip155:56:8183', ?, 0, 'erc8183_http', 'operational', 'erc8183_http',
+      'eligible', ?, 'protocol_valid', ?)`)
+      .bind(endpointKey, now + 60_000, now, now).run();
+    await env.DB.prepare(`INSERT INTO catalog_agent_endpoints (
+      agentKey, endpointKey, declarationState, firstSeenAt, lastSeenAt, priority
+    ) VALUES ('eip155:56:8183', ?, 'current', ?, ?, 80)`)
+      .bind(endpointKey, now, now).run();
+    await env.DB.prepare(`INSERT INTO catalog_observations (
+      attemptId, agentKey, endpointKey, protocol, source, outcome, observedAt,
+      expiresAt, durationMs, detailsJson, validationKind, verificationLevel
+    ) VALUES ('erc8183-live', 'eip155:56:8183', ?, 'erc8183_http', 'worker_probe',
+      'protocol_valid', ?, ?, 25, '{}', 'protocol', 'platform_observed')`)
+      .bind(endpointKey, now, now + 360 * 60_000).run();
+
+    const app = createWorker({ now: () => now });
+    const response = await app.fetch(new Request(
+      "https://worker.test/catalog-agents?protocol=erc8183_http&reachability=live",
+    ), env, createExecutionContext());
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      total: 1,
+      items: [{ agentId: "8183", state: { operationalStatus: "platform_reachable", freshness: "live" } }],
+    });
+  });
+
+  it("does not expose user-level quote claims or mislabeled chain rows as verified evidence", async () => {
+    const now = 1_788_000_000_000;
+    const agentKey = "eip155:56:7200";
+    const endpointKey = "8".repeat(64);
+    await env.DB.prepare(`INSERT INTO catalog_agents (
+      agentKey, agentId, chainId, name, categoriesJson, metadataState, indexState,
+      firstSeenAt, lastSeenAt, priority
+    ) VALUES (?, '7200', 56, 'Evidence filtering', '[]', 'ok', 'current', ?, ?, 1)`)
+      .bind(agentKey, now, now).run();
+    await env.DB.prepare(`INSERT INTO catalog_endpoints (
+      endpointKey, protocol, endpoint, originKey, safety, representativeAgentKey,
+      nextProbeAt, consecutiveFailures, declaredProtocol, role, validationProtocol, eligibility
+    ) VALUES (?, 'a2a', 'https://evidence-filter.example/a2a', 'evidence-filter', ?, ?,
+      ?, 0, 'a2a', 'operational', 'a2a', 'eligible')`)
+      .bind(endpointKey, "safe", agentKey, now).run();
+    await env.DB.prepare(`INSERT INTO catalog_agent_endpoints (
+      agentKey, endpointKey, declarationState, firstSeenAt, lastSeenAt
+    ) VALUES (?, ?, 'current', ?, ?)`)
+      .bind(agentKey, endpointKey, now, now).run();
+    await env.DB.prepare(`INSERT INTO catalog_observations (
+      attemptId, agentKey, endpointKey, protocol, source, outcome, observedAt,
+      expiresAt, durationMs, detailsJson, validationKind, verificationLevel
+    ) VALUES
+      ('user-quote-claim', ?, ?, 'erc8183', 'browser_reported', 'quote_rejected', ?, ?, 1, '{}', 'quote', 'user_observed'),
+      ('mislabeled-chain', ?, ?, 'a2a', 'chain_read', 'protocol_valid', ?, ?, 1, '{}', 'protocol', 'onchain')`)
+      .bind(agentKey, endpointKey, now, now + 900_000, agentKey, endpointKey, now, now + 900_000).run();
+
+    const detail = await createWorker({ now: () => now }).fetch(
+      new Request("https://worker.test/catalog-agent/7200"), env, createExecutionContext(),
+    );
+
+    expect(detail.status).toBe(200);
+    expect(await detail.json()).toMatchObject({
+      quote: null,
+      onchainReferences: [],
+      state: { quoteStatus: "not_supported", canPrepareHire: false },
+    });
+  });
+
+  it("does not classify a successful endpoint as live after a newer platform failure", async () => {
+    const now = 1_788_000_000_000;
+    const endpointKey = "7".repeat(64);
+    await env.DB.prepare(`INSERT INTO catalog_agents (
+      agentKey, agentId, chainId, name, categoriesJson, metadataState, indexState,
+      firstSeenAt, lastSeenAt, priority
+    ) VALUES ('eip155:56:7001', '7001', 56, 'Flaky endpoint', '[]', 'ok', 'current', ?, ?, 20)`)
+      .bind(now, now).run();
+    await env.DB.prepare(`INSERT INTO catalog_endpoints (
+      endpointKey, protocol, endpoint, originKey, safety, representativeAgentKey,
+      nextProbeAt, consecutiveFailures, declaredProtocol, role, validationProtocol,
+      eligibility, lastAttemptAt, lastAttemptOutcome, lastSuccessfulAt
+    ) VALUES (?, 'a2a', 'https://flaky.example/a2a', 'flaky', 'safe',
+      'eip155:56:7001', ?, 1, 'a2a', 'operational', 'a2a', 'eligible', ?, 'timeout', ?)`)
+      .bind(endpointKey, now, now, now - 1_000).run();
+    await env.DB.prepare(`INSERT INTO catalog_agent_endpoints (
+      agentKey, endpointKey, declarationState, firstSeenAt, lastSeenAt, priority
+    ) VALUES ('eip155:56:7001', ?, 'current', ?, ?, 20)`)
+      .bind(endpointKey, now, now).run();
+    await env.DB.prepare(`INSERT INTO catalog_observations (
+      attemptId, agentKey, endpointKey, protocol, source, outcome, observedAt,
+      expiresAt, durationMs, detailsJson, validationKind, verificationLevel
+    ) VALUES
+      ('flaky-success', 'eip155:56:7001', ?, 'a2a', 'worker_probe', 'protocol_valid', ?, ?, 20, '{}', 'protocol', 'platform_observed'),
+      ('flaky-failure', 'eip155:56:7001', ?, 'a2a', 'worker_probe', 'timeout', ?, NULL, 20, '{}', 'protocol', 'platform_observed')`)
+      .bind(endpointKey, now - 1_000, now + 900_000, endpointKey, now).run();
+
+    const app = createWorker({ now: () => now });
+    const live = await app.fetch(new Request(
+      "https://worker.test/catalog-agents?reachability=live&protocol=a2a",
+    ), env, createExecutionContext());
+    expect(await live.json()).toMatchObject({ total: 0, items: [] });
+
+    const historical = await app.fetch(new Request(
+      "https://worker.test/catalog-agents?reachability=historical&protocol=a2a",
+    ), env, createExecutionContext());
+    expect(await historical.json()).toMatchObject({ total: 1, items: [{ agentId: "7001" }] });
+  });
+
+  it("can roll catalog reads back to the compatibility contract independently", async () => {
+    const now = 1_788_000_000_000;
+    await env.DB.prepare(`INSERT INTO catalog_agents (
+      agentKey, agentId, chainId, name, categoriesJson, metadataState, indexState,
+      firstSeenAt, lastSeenAt, priority
+    ) VALUES ('eip155:56:12', '12', 56, 'Compatibility agent', '[]', 'ok', 'current', ?, ?, 1)`)
+      .bind(now, now).run();
+    await env.DB.prepare(`INSERT INTO catalog_endpoints (
+      endpointKey, protocol, endpoint, originKey, safety, representativeAgentKey, nextProbeAt,
+      consecutiveFailures, declaredProtocol, role, validationProtocol, eligibility
+    ) VALUES (?, 'a2a', 'https://compat.example/a2a', 'compat', 'safe', 'eip155:56:12', 0,
+      0, 'a2a', 'operational', 'a2a', 'eligible')`).bind("f".repeat(64)).run();
+    await env.DB.prepare(`INSERT INTO catalog_agent_endpoints (
+      agentKey, endpointKey, declarationState, firstSeenAt, lastSeenAt, priority
+    ) VALUES ('eip155:56:12', ?, 'current', ?, ?, 1)`).bind("f".repeat(64), now, now).run();
+    const compatibilityEnv = { ...env, CATALOG_V2_READS_ENABLED: "0" } as unknown as Env;
+    const app = createWorker({ now: () => now });
+
+    const list = await app.fetch(new Request("https://worker.test/catalog-agents"), compatibilityEnv);
+    expect(await list.json()).toMatchObject({ schemaVersion: 1, total: 1, items: [{ agentId: "12" }] });
+    const detail = await app.fetch(new Request("https://worker.test/catalog-agent/12"), compatibilityEnv);
+    expect(await detail.json()).toMatchObject({ schemaVersion: 1, agentId: "12" });
+  });
+
+  it("exposes sanitized authenticated catalog operations metrics", async () => {
+    const now = 1_788_000_000_000;
+    await env.DB.prepare(`INSERT INTO catalog_agents (
+      agentKey, agentId, chainId, categoriesJson, metadataState, indexState, firstSeenAt, lastSeenAt
+    ) VALUES ('eip155:56:13', '13', 56, '[]', 'ok', 'current', ?, ?)`)
+      .bind(now - 10_000, now).run();
+    await env.DB.prepare(`INSERT INTO catalog_endpoints (
+      endpointKey, protocol, endpoint, originKey, safety, representativeAgentKey, nextProbeAt,
+      consecutiveFailures, declaredProtocol, role, validationProtocol, eligibility
+    ) VALUES (?, 'mcp', 'https://secret-target.example/mcp', 'secret-origin', 'safe',
+      'eip155:56:13', ?, 2, 'mcp', 'operational', 'mcp', 'eligible')`)
+      .bind("1".repeat(64), now - 5_000).run();
+    await env.DB.prepare(`INSERT INTO catalog_agent_endpoints (
+      agentKey, endpointKey, declarationState, firstSeenAt, lastSeenAt, priority
+    ) VALUES ('eip155:56:13', ?, 'current', ?, ?, 1)`)
+      .bind("1".repeat(64), now, now).run();
+    await env.DB.prepare(`INSERT INTO catalog_ingest_tasks (
+      agentKey, metadataVersion, nextDeclarationIndex, declarationCount, status, requestedBy,
+      priority, generationStartedAt, updatedAt, attemptCount, retryAt, upstreamObservedAt
+    ) VALUES ('eip155:56:13', 'meta-13', 0, 1, 'pending', 'header', 1, ?, ?, 0, 0, ?)`)
+      .bind(now - 2_000, now, now - 12_000).run();
+    const app = createWorker({ now: () => now });
+    const operationalEnv = { ...env, SHARED_SECRET: "operations-secret" } as unknown as Env;
+
+    const unauthorized = await app.fetch(
+      new Request("https://worker.test/__admin/catalog-operations"), operationalEnv,
+    );
+    expect(unauthorized.status).toBe(401);
+    const response = await app.fetch(new Request("https://worker.test/__admin/catalog-operations", {
+      headers: { authorization: "Bearer operations-secret" },
+    }), operationalEnv);
+    expect(response.status).toBe(200);
+    const body = await response.json() as Record<string, unknown>;
+    expect(body).toMatchObject({
+      schemaVersion: 2,
+      work: { dueEndpoints: 1, failedEndpoints: 1, ingestTasks: { pending: 1 } },
+      discovery: { maximumVisibilityLagMs: 10_000 },
+      budgetProfile: {
+        d1QueriesPerInvocation: 40,
+        ingest: { discoveryPageSize: 12, tasksPerRun: 2, declarationsPerTask: 4 },
+        protocolTimeoutMs: { a2a: 5_000, mcp: 5_000, erc8183Http: 5_000 },
+        refreshMinutes: { priority: 15, a2a: 720, mcp: 1_440, erc8183Http: 360 },
+        failureBackoffMinutes: [60, 360, 1_440, 10_080],
+        v2: { readsEnabled: true, writesEnabled: false },
+      },
+    });
+    expect(JSON.stringify(body)).not.toContain("secret-target.example");
+    expect(JSON.stringify(body)).not.toContain("operations-secret");
+  });
+
+  it("tracks a newly registered identity only after onchain transaction verification", async () => {
+    const now = 1_788_000_000_000;
+    const txHash = `0x${"a".repeat(64)}` as const;
+    const privateEnv = { ...env, BUYER_OBSERVATION_SECRET: "catalog-secret", BSC_RPC_URL: "https://rpc.example" } as unknown as Env;
+    const verifyCatalogRegistration = vi.fn(async () => ({ blockNumber: 123456n }));
+    const app = createWorker({ now: () => now, verifyCatalogRegistration });
+    const response = await app.fetch(new Request("https://worker.test/catalog-directed-tracking", {
+      method: "POST",
+      headers: { authorization: "Bearer catalog-secret", "content-type": "application/json" },
+      body: JSON.stringify({ schemaVersion: 2, chainId: 56, agentId: "777", txHash }),
+    }), privateEnv, createExecutionContext());
+
+    expect(response.status).toBe(201);
+    expect(await response.json()).toMatchObject({
+      schemaVersion: 2,
+      status: "registered",
+      tracking: { chainId: 56, agentId: "777", txHash, blockNumber: "123456" },
+    });
+    expect(verifyCatalogRegistration).toHaveBeenCalledOnce();
+    const status = await app.fetch(new Request("https://worker.test/catalog-directed-tracking/777"), privateEnv, createExecutionContext());
+    expect(await status.json()).toMatchObject({
+      tracking: { status: "registered", agentId: "777", txHash },
+      taskStatus: "pending",
+      nextDeclarationIndex: 0,
+      declarationCount: 0,
+    });
+    const evidence = await env.DB.prepare(`SELECT validationKind, verificationLevel, artifactHash
+      FROM catalog_observations WHERE agentKey = 'eip155:56:777'`).first<Record<string, unknown>>();
+    expect(evidence).toEqual({ validationKind: "chain", verificationLevel: "onchain", artifactHash: txHash });
+
+    const replay = await app.fetch(new Request("https://worker.test/catalog-directed-tracking", {
+      method: "POST",
+      headers: { authorization: "Bearer catalog-secret", "content-type": "application/json" },
+      body: JSON.stringify({ schemaVersion: 2, chainId: 56, agentId: "777", txHash }),
+    }), privateEnv, createExecutionContext());
+    expect(replay.status).toBe(200);
+    expect(verifyCatalogRegistration).toHaveBeenCalledOnce();
   });
 
   it("persists authenticated catalog evidence and exposes its provenance per agent", async () => {
     const now = 1_788_000_000_000;
     const privateEnv = { ...env, BUYER_OBSERVATION_SECRET: "catalog-secret" } as unknown as Env;
+    await env.DB.prepare(`INSERT INTO catalog_agents (
+      agentKey, agentId, chainId, metadataState, indexState, firstSeenAt, lastSeenAt
+    ) VALUES ('eip155:56:45422', '45422', 56, 'ok', 'current', ?, ?)`)
+      .bind(now, now).run();
+    await env.DB.prepare(`INSERT INTO catalog_endpoints (
+      endpointKey, protocol, endpoint, safety, nextProbeAt, declaredProtocol,
+      role, validationProtocol, eligibility
+    ) VALUES (?, 'mcp', 'https://seller.example/mcp', 'safe', 0, 'mcp',
+      'operational', 'mcp', 'eligible')`).bind("a".repeat(64)).run();
+    await env.DB.prepare(`INSERT INTO catalog_agent_endpoints (
+      agentKey, endpointKey, declarationState, firstSeenAt, lastSeenAt
+    ) VALUES ('eip155:56:45422', ?, 'current', ?, ?)`)
+      .bind("a".repeat(64), now, now).run();
     const response = await createWorker({ now: () => now }).fetch(
-      new Request("https://worker.test/__internal/catalog-observation", {
+      new Request("https://worker.test/catalog-browser-observations", {
         method: "POST",
         headers: { authorization: "Bearer catalog-secret", "content-type": "application/json" },
         body: JSON.stringify(catalogObservationBody()),
@@ -148,6 +765,18 @@ describe("WP1 in the Workers runtime", () => {
     expect(response.status).toBe(201);
     expect(await response.json()).toMatchObject({ status: "recorded", id: expect.any(Number) });
 
+    const throttled = await createWorker({ now: () => now }).fetch(
+      new Request("https://worker.test/catalog-browser-observations", {
+        method: "POST",
+        headers: { authorization: "Bearer catalog-secret", "content-type": "application/json" },
+        body: JSON.stringify(catalogObservationBody()),
+      }),
+      privateEnv,
+      createExecutionContext(),
+    );
+    expect(throttled.status).toBe(429);
+    expect(throttled.headers.get("retry-after")).toBe("10");
+
     const publicResponse = await createWorker({ now: () => now }).fetch(
       new Request("https://worker.test/catalog-agent?agentId=45422"),
       privateEnv,
@@ -156,17 +785,24 @@ describe("WP1 in the Workers runtime", () => {
     expect(publicResponse.status).toBe(200);
     expect(publicResponse.headers.get("cache-control")).toBe("public, max-age=30, stale-while-revalidate=60");
     expect(await publicResponse.json()).toMatchObject({
-      schemaVersion: 1,
+      schemaVersion: 2,
+      apiVersion: 2,
       chainId: 56,
       agentId: "45422",
       platformAttemptCount: 0,
-      declarations: [],
+      declarations: [{ endpointKey: "a".repeat(64), eligibility: "eligible" }],
       observations: [{
         source: "browser_reported",
         outcome: "protocol_valid",
         protocol: "mcp",
         details: { capabilityCount: 4, method: "POST", cors: true },
       }],
+      state: {
+        operationalStatus: "browser_observed",
+        freshness: "never",
+        canPrepareHire: false,
+        buyerAction: "check_availability",
+      },
     });
   });
 
@@ -185,10 +821,223 @@ describe("WP1 in the Workers runtime", () => {
 
     expect((await post(catalogObservationBody(), "Bearer wrong")).status).toBe(401);
     expect((await post(catalogObservationBody({ source: "worker_probe" }))).status).toBe(400);
+    expect((await post(catalogObservationBody({ source: "marketplace_probe" }))).status).toBe(400);
+    expect((await post(catalogObservationBody({ protocol: "web" }))).status).toBe(400);
+    expect((await post(catalogObservationBody({ outcome: "quote_verified" }))).status).toBe(400);
+    expect((await post(catalogObservationBody({ outcome: "erc8183_detected" }))).status).toBe(400);
     expect((await post(catalogObservationBody({ endpointKey: "raw-url" }))).status).toBe(400);
     expect((await post({ ...catalogObservationBody(), authorization: "secret" })).status).toBe(400);
     expect(await env.DB.prepare("SELECT COUNT(*) AS count FROM catalog_observations").first())
       .toMatchObject({ count: 0 });
+  });
+
+  it("deduplicates catalog validation requests and dispatches their Queue work", async () => {
+    const now = 1_788_000_000_000;
+    const endpointKey = "c".repeat(64);
+    await env.DB.prepare(`INSERT INTO catalog_agents (
+      agentKey, agentId, chainId, metadataState, indexState, firstSeenAt, lastSeenAt
+    ) VALUES ('eip155:56:42', '42', 56, 'ok', 'current', ?, ?)`)
+      .bind(now, now).run();
+    await env.DB.prepare(`INSERT INTO catalog_endpoints (
+      endpointKey, protocol, endpoint, safety, nextProbeAt, declaredProtocol,
+      role, validationProtocol, eligibility
+    ) VALUES (?, 'mcp', 'https://seller.example/mcp', 'safe', 0, 'mcp',
+      'operational', 'mcp', 'eligible')`).bind(endpointKey).run();
+    await env.DB.prepare(`INSERT INTO catalog_agent_endpoints (
+      agentKey, endpointKey, declarationState, firstSeenAt, lastSeenAt
+    ) VALUES ('eip155:56:42', ?, 'current', ?, ?)`)
+      .bind(endpointKey, now, now).run();
+    const send = vi.fn(async () => undefined);
+    const privateEnv = {
+      ...env,
+      BUYER_OBSERVATION_SECRET: "catalog-secret",
+      WP2_QUEUE: { send },
+    } as unknown as Env;
+    const request = () => new Request("https://worker.test/catalog-validations", {
+      method: "POST",
+      headers: { authorization: "Bearer catalog-secret", "content-type": "application/json" },
+      body: JSON.stringify({ schemaVersion: 2, agentId: "42", endpointKey, validationKind: "protocol" }),
+    });
+    const app = createWorker({ now: () => now });
+    const first = await app.fetch(request(), privateEnv, createExecutionContext());
+    const firstBody = await first.json() as { validationId: number };
+    expect(first.status).toBe(202);
+    expect(firstBody).toMatchObject({ status: "queued", reused: false, validationId: expect.any(Number) });
+    expect(send).toHaveBeenCalledOnce();
+    const duplicate = await app.fetch(request(), privateEnv, createExecutionContext());
+    expect(await duplicate.json()).toMatchObject({ status: "queued", reused: true, validationId: firstBody.validationId });
+    expect(send).toHaveBeenCalledOnce();
+
+    await env.DB.prepare("UPDATE catalog_validation_requests SET status = 'failed' WHERE id = ?")
+      .bind(firstBody.validationId).run();
+    const rateLimited = await app.fetch(request(), privateEnv, createExecutionContext());
+    expect(rateLimited.status).toBe(429);
+    expect(rateLimited.headers.get("retry-after")).toBe("60");
+    expect(await rateLimited.json()).toMatchObject({
+      error: "rate_limited",
+      validationId: firstBody.validationId,
+      retryAfterMs: 60_000,
+    });
+    await env.DB.prepare("UPDATE catalog_validation_requests SET status = 'queued' WHERE id = ?")
+      .bind(firstBody.validationId).run();
+
+    const statusUrl = `https://worker.test/catalog-validations/${firstBody.validationId}`;
+    expect((await app.fetch(new Request(statusUrl), privateEnv, createExecutionContext())).status).toBe(401);
+    const status = await app.fetch(new Request(statusUrl, {
+      headers: { authorization: "Bearer catalog-secret" },
+    }), privateEnv, createExecutionContext());
+    expect(await status.json()).toMatchObject({ schemaVersion: 2, validation: { status: "queued", attemptCount: 0 } });
+
+    await env.DB.prepare(`UPDATE catalog_endpoints
+      SET lastSuccessfulAt = ?, lastAttemptOutcome = 'protocol_valid', nextProbeAt = ? WHERE endpointKey = ?`)
+      .bind(now, now + 60_000, endpointKey).run();
+    const fresh = await app.fetch(request(), privateEnv, createExecutionContext());
+    expect(fresh.status).toBe(200);
+    expect(await fresh.json()).toEqual({ status: "completed", reused: true, validationId: null });
+    expect(send).toHaveBeenCalledOnce();
+
+    await env.DB.prepare(`UPDATE catalog_validation_requests
+      SET status = 'completed', createdAt = ? WHERE id = ?`).bind(now - 120_000, firstBody.validationId).run();
+    await env.DB.prepare(`UPDATE catalog_endpoints
+      SET lastAttemptOutcome = 'network_error', nextProbeAt = ? WHERE endpointKey = ?`)
+      .bind(now + 60_000, endpointKey).run();
+    const afterFailure = await app.fetch(request(), privateEnv, createExecutionContext());
+    expect(afterFailure.status).toBe(202);
+    expect(await afterFailure.json()).toMatchObject({ status: "queued", reused: false });
+    expect(send).toHaveBeenCalledTimes(2);
+
+    const runCatalogValidation = vi.fn(async () => "completed" as const);
+    const ack = vi.fn();
+    await createWorker({ now: () => now, runCatalogValidation }).queue({
+      messages: [{
+        ...queueMessage({ schemaVersion: 2, kind: "catalog_validation", validationId: firstBody.validationId, enqueuedAt: now }),
+        ack,
+      }],
+    }, { ...privateEnv, KILL_SWITCH: "0" }, createExecutionContext());
+    expect(runCatalogValidation).toHaveBeenCalledWith(firstBody.validationId, expect.anything(), expect.anything());
+    expect(ack).toHaveBeenCalledOnce();
+  });
+
+  it("does not share an on-demand validation request between agents sharing an endpoint", async () => {
+    const now = 1_788_000_000_000;
+    const endpointKey = "a".repeat(64);
+    await env.DB.prepare(`INSERT INTO catalog_agents (
+      agentKey, agentId, chainId, metadataState, indexState, firstSeenAt, lastSeenAt
+    ) VALUES
+      ('eip155:56:42', '42', 56, 'ok', 'current', ?, ?),
+      ('eip155:56:43', '43', 56, 'ok', 'current', ?, ?)`).bind(now, now, now, now).run();
+    await env.DB.prepare(`INSERT INTO catalog_endpoints (
+      endpointKey, protocol, endpoint, safety, nextProbeAt, declaredProtocol,
+      role, validationProtocol, eligibility
+    ) VALUES (?, 'mcp', 'https://shared.example/mcp', 'safe', 0, 'mcp',
+      'operational', 'mcp', 'eligible')`).bind(endpointKey).run();
+    await env.DB.prepare(`INSERT INTO catalog_agent_endpoints (
+      agentKey, endpointKey, declarationState, firstSeenAt, lastSeenAt
+    ) VALUES
+      ('eip155:56:42', ?, 'current', ?, ?),
+      ('eip155:56:43', ?, 'current', ?, ?)`).bind(endpointKey, now, now, endpointKey, now, now).run();
+    const send = vi.fn(async () => undefined);
+    const privateEnv = {
+      ...env, BUYER_OBSERVATION_SECRET: "catalog-secret", WP2_QUEUE: { send },
+    } as unknown as Env;
+    const post = (agentId: string) => createWorker({ now: () => now }).fetch(
+      new Request("https://worker.test/catalog-validations", {
+        method: "POST",
+        headers: { authorization: "Bearer catalog-secret", "content-type": "application/json" },
+        body: JSON.stringify({ schemaVersion: 2, agentId, endpointKey, validationKind: "protocol" }),
+      }),
+      privateEnv,
+      createExecutionContext(),
+    );
+
+    const first = await post("42");
+    const second = await post("43");
+    const firstBody = await first.json() as { validationId: number };
+    const secondBody = await second.json() as { validationId: number };
+    expect(first.status).toBe(202);
+    expect(second.status).toBe(202);
+    expect(firstBody.validationId).not.toBe(secondBody.validationId);
+    expect(send).toHaveBeenCalledTimes(2);
+    expect(await env.DB.prepare("SELECT dedupeKey, agentKey FROM catalog_validation_requests ORDER BY id").all())
+      .toMatchObject({ results: [
+        { dedupeKey: `eip155:56:42:${endpointKey}:protocol`, agentKey: "eip155:56:42" },
+        { dedupeKey: `eip155:56:43:${endpointKey}:protocol`, agentKey: "eip155:56:43" },
+      ] });
+  });
+
+  it("does not leave an active validation request when Queue dispatch fails", async () => {
+    const now = 1_788_000_000_000;
+    const endpointKey = "9".repeat(64);
+    await env.DB.prepare(`INSERT INTO catalog_agents (
+      agentKey, agentId, chainId, metadataState, indexState, firstSeenAt, lastSeenAt
+    ) VALUES ('eip155:56:99', '99', 56, 'ok', 'current', ?, ?)`)
+      .bind(now, now).run();
+    await env.DB.prepare(`INSERT INTO catalog_endpoints (
+      endpointKey, protocol, endpoint, safety, nextProbeAt, declaredProtocol,
+      role, validationProtocol, eligibility
+    ) VALUES (?, 'a2a', 'https://queue-failure.example/a2a', 'safe', 0, 'a2a',
+      'operational', 'a2a', 'eligible')`).bind(endpointKey).run();
+    await env.DB.prepare(`INSERT INTO catalog_agent_endpoints (
+      agentKey, endpointKey, declarationState, firstSeenAt, lastSeenAt
+    ) VALUES ('eip155:56:99', ?, 'current', ?, ?)`).bind(endpointKey, now, now).run();
+    const privateEnv = {
+      ...env,
+      BUYER_OBSERVATION_SECRET: "catalog-secret",
+      WP2_QUEUE: { send: vi.fn(async () => { throw new Error("queue unavailable"); }) },
+    } as unknown as Env;
+    const response = await createWorker({ now: () => now }).fetch(new Request(
+      "https://worker.test/catalog-validations",
+      {
+        method: "POST",
+        headers: { authorization: "Bearer catalog-secret", "content-type": "application/json" },
+        body: JSON.stringify({ schemaVersion: 2, agentId: "99", endpointKey, validationKind: "protocol" }),
+      },
+    ), privateEnv, createExecutionContext());
+
+    expect(response.status).toBe(503);
+    expect(await response.json()).toMatchObject({ error: "queue_unavailable", validationId: expect.any(Number) });
+    expect(await env.DB.prepare(`SELECT status, errorCode FROM catalog_validation_requests`).first())
+      .toMatchObject({ status: "failed", errorCode: "QUEUE_SEND_FAILED" });
+  });
+
+  it("enforces the configured daily Queue reserve across distinct validation targets", async () => {
+    const now = 1_788_000_000_000;
+    const endpointKey = "8".repeat(64);
+    await env.DB.prepare(`INSERT INTO catalog_agents (
+      agentKey, agentId, chainId, metadataState, indexState, firstSeenAt, lastSeenAt
+    ) VALUES ('eip155:56:88', '88', 56, 'ok', 'current', ?, ?)`)
+      .bind(now, now).run();
+    await env.DB.prepare(`INSERT INTO catalog_endpoints (
+      endpointKey, protocol, endpoint, safety, nextProbeAt, declaredProtocol,
+      role, validationProtocol, eligibility
+    ) VALUES (?, 'mcp', 'https://daily-limit.example/mcp', 'safe', 0, 'mcp',
+      'operational', 'mcp', 'eligible')`).bind(endpointKey).run();
+    await env.DB.prepare(`INSERT INTO catalog_agent_endpoints (
+      agentKey, endpointKey, declarationState, firstSeenAt, lastSeenAt
+    ) VALUES ('eip155:56:88', ?, 'current', ?, ?)`).bind(endpointKey, now, now).run();
+    await env.DB.prepare(`INSERT INTO catalog_validation_requests (
+      dedupeKey, agentKey, endpointKey, validationKind, requestedBy, status, createdAt, completedAt
+    ) VALUES ('prior:protocol', 'eip155:56:1', ?, 'protocol', 'browser_fallback', 'completed', ?, ?)`)
+      .bind("7".repeat(64), now - 1_000, now - 500).run();
+    const send = vi.fn(async () => undefined);
+    const privateEnv = {
+      ...env,
+      BUYER_OBSERVATION_SECRET: "catalog-secret",
+      CATALOG_VALIDATION_REQUESTS_PER_DAY: "1",
+      WP2_QUEUE: { send },
+    } as unknown as Env;
+    const response = await createWorker({ now: () => now }).fetch(new Request(
+      "https://worker.test/catalog-validations",
+      {
+        method: "POST",
+        headers: { authorization: "Bearer catalog-secret", "content-type": "application/json" },
+        body: JSON.stringify({ schemaVersion: 2, agentId: "88", endpointKey, validationKind: "protocol" }),
+      },
+    ), privateEnv, createExecutionContext());
+
+    expect(response.status).toBe(429);
+    expect(await response.json()).toMatchObject({ error: "daily_budget_exhausted", retryAfterMs: expect.any(Number) });
+    expect(send).not.toHaveBeenCalled();
   });
 
   it("accepts an authenticated sanitized buyer refresh and persists it idempotently", async () => {
@@ -1029,6 +1878,85 @@ describe("WP1 in the Workers runtime", () => {
     ).first()).toEqual({ declarationState: "removed" });
     const summary = JSON.parse(await runtimeText("last_sweep_summary") ?? "{}");
     expect(summary).toMatchObject({ requests: 4, removedTargets: 1 });
+  });
+
+  it("runs the v2 discovery worklist without the legacy allowlist", async () => {
+    const catalogAgent = {
+      chainId: 56,
+      agentId: "987654",
+      name: "New public agent",
+      registeredAt: 10_000,
+      metadataUpdatedAt: 9_000,
+      metadataReasonCode: "ok",
+      services: [
+        { name: "MCP", endpoint: "https://new-agent.example.com/mcp" },
+        { name: "website", endpoint: "https://new-agent.example.com" },
+      ],
+      endpoints: [],
+    };
+    const fetchCatalog = vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input));
+      if (url.pathname.endsWith("/agents")) {
+        return Response.json({
+          items: [catalogAgent],
+          total: 1,
+          limit: Number(url.searchParams.get("limit")),
+          offset: Number(url.searchParams.get("offset")),
+        });
+      }
+      if (url.pathname.endsWith("/agents/56:987654")) return Response.json(catalogAgent);
+      return new Response(null, { status: 404 });
+    });
+    let clock = 20_000;
+    const runner = createWp2ScheduledRunner({
+      now: () => clock++,
+      randomUUID: () => `catalog-v2-${clock}`,
+      fetch: fetchCatalog as typeof fetch,
+    });
+    const config = loadConfig({
+      KILL_SWITCH: "0",
+      PRODUCER_KILL_SWITCH: "0",
+      CATALOG_V2_WRITES_ENABLED: "1",
+      CATALOG_DISCOVERY_PAGE_SIZE: "1",
+      CATALOG_INGEST_TASKS_PER_RUN: "1",
+      CATALOG_DECLARATIONS_PER_TASK: "1",
+      PROBE_GENERAL_EGRESS_APPROVED: "1",
+      PROBE_AGENT_ALLOWLIST: "*",
+      PROBE_ENDPOINT_ALLOWLIST: "*",
+    });
+    const context = createExecutionContext();
+
+    await runner({ scheduledTime: 20_000, cron: "*/5 * * * *" }, env, context, config);
+    expect(await env.DB.prepare("SELECT name FROM catalog_agents WHERE agentId = '987654'").first())
+      .toEqual({ name: "New public agent" });
+    expect(await env.DB.prepare("SELECT status, nextDeclarationIndex FROM catalog_ingest_tasks").first())
+      .toEqual({ status: "pending", nextDeclarationIndex: 1 });
+    expect(fetchCatalog.mock.calls.some(([url]) => String(url).includes("limit=1"))).toBe(true);
+    expect(await env.DB.prepare("SELECT COUNT(*) AS total FROM catalog_endpoints").first())
+      .toEqual({ total: 1 });
+
+    await runner({ scheduledTime: 25_000, cron: "*/5 * * * *" }, env, context, config);
+    expect(await env.DB.prepare("SELECT status, nextDeclarationIndex FROM catalog_ingest_tasks").first())
+      .toEqual({ status: "retiring", nextDeclarationIndex: 2 });
+    expect(await env.DB.prepare(`SELECT declaredProtocol, role, eligibility, representativeAgentKey
+      FROM catalog_endpoints ORDER BY declaredProtocol`).all()).toMatchObject({
+      results: [
+        { declaredProtocol: "mcp", role: "operational", eligibility: "eligible", representativeAgentKey: "eip155:56:987654" },
+        { declaredProtocol: "web", role: "external", eligibility: "unsupported", representativeAgentKey: null },
+      ],
+    });
+    expect(await runtimeInteger("catalog_sweep_offset")).toBe(0);
+    expect(await runtimeText("next_scheduler_phase")).toBe("probe");
+    expect(fetchCatalog.mock.calls.some(([url]) => String(url).includes("sortOrder=asc"))).toBe(true);
+
+    await runner({ scheduledTime: 30_000, cron: "*/5 * * * *" }, env, context, config);
+    expect(await env.DB.prepare("SELECT status, nextDeclarationIndex FROM catalog_ingest_tasks").first())
+      .toEqual({ status: "completed", nextDeclarationIndex: 2 });
+    expect(await runtimeText("next_scheduler_phase")).toBe("header");
+    expect(JSON.parse(await runtimeText("last_probe_summary") ?? "{}")).toMatchObject({
+      mode: "catalog_v2",
+      status: "ok",
+    });
   });
 });
 

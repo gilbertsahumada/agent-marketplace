@@ -96,7 +96,6 @@ describe("Trust8004AgentValidationRepository", () => {
       identityReader: {} as never,
       buildVerificationReport,
       assessHireability,
-      syncObservation: vi.fn(async () => ({ status: "recorded" as const })),
       marketplaceOperatedGridSellerAgentId: "303779",
       now: () => Date.parse(OBSERVED_AT),
     });
@@ -116,29 +115,28 @@ describe("Trust8004AgentValidationRepository", () => {
     expect(first).toMatchObject({
       agent: { agentId: "303779", operator: "marketplace" },
       quote: { status: "verified", priceRaw: "1" },
-      observationSync: { status: "recorded", attempted: 2, recorded: 2, failed: 0, notConfigured: 0 },
+      observationSync: { status: "not_attempted", attempted: 0, recorded: 0, failed: 0, notConfigured: 0 },
     });
     expect(JSON.stringify(first)).not.toContain("seller.example");
     expect(JSON.stringify(first)).not.toContain("secret=redacted");
   });
 
-  it("reports when marketplace observations were not persisted", async () => {
+  it("does not publish ad-hoc server probes as global marketplace evidence", async () => {
     const repository = new Trust8004AgentValidationRepository({
       provider: { getAgent: vi.fn(async () => agent) },
       identityReader: {} as never,
       buildVerificationReport: vi.fn(async () => verification),
       assessHireability: vi.fn(async () => activation),
-      syncObservation: vi.fn(async () => ({ status: "not_configured" as const })),
       now: () => Date.parse(OBSERVED_AT),
     });
 
     await expect(repository.validate("303779")).resolves.toMatchObject({
       observationSync: {
-        status: "not_configured",
-        attempted: 2,
+        status: "not_attempted",
+        attempted: 0,
         recorded: 0,
         failed: 0,
-        notConfigured: 2,
+        notConfigured: 0,
       },
     });
   });

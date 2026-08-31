@@ -33,7 +33,7 @@ export type EndpointObservationStatus =
 
 export interface EndpointObservation {
   status: EndpointObservationStatus;
-  protocol: "mcp" | "a2a" | "web" | null;
+  protocol: "mcp" | "a2a" | "erc8183_http" | "web" | null;
   endpoint: string | null;
   lastTestedAt: string | null;
   httpStatus: number | null;

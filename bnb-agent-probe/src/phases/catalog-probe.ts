@@ -1,6 +1,6 @@
 import { isSyntacticallyPublicHttpsUrl } from "../trust8004/safe-url";
 
-export type CatalogProbeProtocol = "a2a" | "mcp" | "web" | "erc8183_http";
+export type CatalogProbeProtocol = "a2a" | "mcp" | "erc8183_http";
 export type CatalogProbeOutcome =
   | "protocol_valid"
   | "http_error"
@@ -17,9 +17,13 @@ export interface CatalogProbeTarget {
   readonly endpoint: string;
   readonly priority: number;
   readonly consecutiveFailures: number;
+  readonly leaseOwner?: string;
+  readonly queueDelayMs?: number;
+  readonly leaseWaitMs?: number;
 }
 
 export interface CatalogProbeObservation {
+  readonly attemptId?: string;
   readonly outcome: CatalogProbeOutcome;
   readonly observedAt: number;
   readonly expiresAt: number | null;
@@ -28,6 +32,8 @@ export interface CatalogProbeObservation {
   readonly durationMs: number;
   readonly capabilityCount: number;
   readonly method: "GET" | "POST";
+  readonly stageDurationsMs?: Readonly<Record<string, number>>;
+  readonly commerceCapability?: "erc8183_a2a" | null;
 }
 
 export interface CatalogProbePhaseSummary {
@@ -41,10 +47,30 @@ interface CatalogProbeDependencies {
   selectTargets(input: { limit: number; nowMs: number }): Promise<CatalogProbeTarget[]>;
   probe(target: CatalogProbeTarget): Promise<CatalogProbeObservation>;
   commit(target: CatalogProbeTarget, observation: CatalogProbeObservation): Promise<void>;
+  onAttempt?: (attempt: {
+    attemptId: string;
+    agentKey: string;
+    endpointKey: string;
+    protocol: CatalogProbeProtocol;
+    priority: number;
+    source: "worker_probe";
+    outcome: CatalogProbeOutcome;
+    errorCode: string | null;
+    durationMs: number;
+    stageDurationsMs: Readonly<Record<string, number>>;
+    queueDelayMs: number;
+    leaseWaitMs: number;
+    retryDecision: "refresh_scheduled" | "backoff_scheduled";
+  }) => void;
 }
 
 const MAX_RESPONSE_BYTES = 64 * 1024;
-const EVIDENCE_TTL_MS = 15 * 60_000;
+const MINUTE = 60_000;
+const EVIDENCE_TTL_BY_PROTOCOL = {
+  a2a: 12 * 60 * MINUTE,
+  mcp: 24 * 60 * MINUTE,
+  erc8183_http: 6 * 60 * MINUTE,
+} as const;
 
 function record(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("INVALID_RESPONSE");
@@ -86,7 +112,10 @@ async function mcpProbe(
   target: CatalogProbeTarget,
   fetchImpl: typeof fetch,
   signal: AbortSignal,
-): Promise<{ status: number; capabilityCount: number }> {
+  clock: () => number,
+): Promise<{ status: number; capabilityCount: number; stageDurationsMs: Record<string, number>; commerceCapability: null }> {
+  const stageDurationsMs: Record<string, number> = {};
+  let stageStarted = clock();
   const initialize = await fetchImpl(target.endpoint, {
     method: "POST",
     redirect: "error",
@@ -103,12 +132,14 @@ async function mcpProbe(
       },
     }),
   });
+  stageDurationsMs.initialize = Math.max(0, Math.round(clock() - stageStarted));
   if (!initialize.ok) throw Object.assign(new Error("HTTP_ERROR"), { status: initialize.status });
   const initialized = record(await boundedJson(initialize));
   if (initialized.jsonrpc !== "2.0" || typeof record(initialized.result).protocolVersion !== "string") {
     throw new Error("INVALID_RESPONSE");
   }
   const sessionId = initialize.headers.get("mcp-session-id") ?? undefined;
+  stageStarted = clock();
   const notification = await fetchImpl(target.endpoint, {
     method: "POST",
     redirect: "error",
@@ -116,7 +147,9 @@ async function mcpProbe(
     signal,
     body: JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }),
   });
+  stageDurationsMs.initialized = Math.max(0, Math.round(clock() - stageStarted));
   if (!notification.ok) throw Object.assign(new Error("HTTP_ERROR"), { status: notification.status });
+  stageStarted = clock();
   const tools = await fetchImpl(target.endpoint, {
     method: "POST",
     redirect: "error",
@@ -124,66 +157,88 @@ async function mcpProbe(
     signal,
     body: JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/list", params: {} }),
   });
+  stageDurationsMs.toolsList = Math.max(0, Math.round(clock() - stageStarted));
   if (!tools.ok) throw Object.assign(new Error("HTTP_ERROR"), { status: tools.status });
   const values = record(record(await boundedJson(tools)).result).tools;
   if (!Array.isArray(values) || !values.every((tool) => typeof record(tool).name === "string")) {
     throw new Error("INVALID_RESPONSE");
   }
-  return { status: tools.status, capabilityCount: values.length };
+  return { status: tools.status, capabilityCount: values.length, stageDurationsMs, commerceCapability: null };
 }
 
 async function getProbe(
   target: CatalogProbeTarget,
   fetchImpl: typeof fetch,
   signal: AbortSignal,
-): Promise<{ status: number; capabilityCount: number }> {
+  clock: () => number,
+): Promise<{ status: number; capabilityCount: number; stageDurationsMs: Record<string, number>; commerceCapability: "erc8183_a2a" | null }> {
   const destination = target.protocol === "a2a"
     ? routeUrl(target.endpoint, ".well-known/agent-card.json")
     : target.protocol === "erc8183_http"
-      ? routeUrl(target.endpoint, "status")
+      ? routeUrl(target.endpoint, "health")
       : target.endpoint;
+  const requestStarted = clock();
   const response = await fetchImpl(destination, {
     method: "GET",
     redirect: "error",
     headers: { accept: "application/json" },
     signal,
   });
+  const requestDuration = Math.max(0, Math.round(clock() - requestStarted));
   if (!response.ok) throw Object.assign(new Error("HTTP_ERROR"), { status: response.status });
   const value = record(await boundedJson(response));
   if (target.protocol === "a2a") {
     if (typeof value.name !== "string" || typeof value.url !== "string" || !Array.isArray(value.skills)
       || new URL(value.url).origin !== new URL(target.endpoint).origin) throw new Error("INVALID_RESPONSE");
-    return { status: response.status, capabilityCount: value.skills.length };
+    const skillIds = value.skills.map((skill) => record(skill).id);
+    if (skillIds.some((id) => typeof id !== "string")) throw new Error("INVALID_RESPONSE");
+    const commerceCapability = skillIds.some((id) => id === "negotiate" || id === "negotiate-erc8183-job")
+      && skillIds.includes("notify_funded") ? "erc8183_a2a" : null;
+    return { status: response.status, capabilityCount: value.skills.length,
+      stageDurationsMs: { agentCard: requestDuration }, commerceCapability };
   }
   if (target.protocol === "erc8183_http" && value.status !== "ok") throw new Error("INVALID_RESPONSE");
-  return { status: response.status, capabilityCount: 0 };
+  return { status: response.status, capabilityCount: 0, stageDurationsMs: { health: requestDuration }, commerceCapability: null };
 }
 
 export async function probeCatalogEndpoint(
   target: CatalogProbeTarget,
-  options: { fetchImpl?: typeof fetch; timeoutMs: number; now?: () => number },
+  options: {
+    fetchImpl?: typeof fetch;
+    timeoutMs: number;
+    freshnessMs?: number;
+    now?: () => number;
+    clock?: () => number;
+  },
 ): Promise<CatalogProbeObservation> {
   const now = options.now ?? Date.now;
+  const clock = options.clock ?? (() => performance.now());
   const observedAt = now();
+  const startedAt = clock();
   const method = target.protocol === "mcp" ? "POST" : "GET";
   if (!isSyntacticallyPublicHttpsUrl(target.endpoint)) {
     return { outcome: "unsafe_url", observedAt, expiresAt: null, httpStatus: null,
-      errorCode: "CATALOG_UNSAFE_URL", durationMs: 0, capabilityCount: 0, method };
+      errorCode: "CATALOG_UNSAFE_URL", durationMs: 0, capabilityCount: 0, method,
+      stageDurationsMs: { preflight: 0 } };
   }
   try {
     const signal = AbortSignal.timeout(options.timeoutMs);
     const result = target.protocol === "mcp"
-      ? await mcpProbe(target, options.fetchImpl ?? fetch, signal)
-      : await getProbe(target, options.fetchImpl ?? fetch, signal);
+      ? await mcpProbe(target, options.fetchImpl ?? fetch, signal, clock)
+      : await getProbe(target, options.fetchImpl ?? fetch, signal, clock);
     return {
       outcome: "protocol_valid",
       observedAt,
-      expiresAt: observedAt + EVIDENCE_TTL_MS,
+      expiresAt: observedAt + (options.freshnessMs ?? (target.priority >= 100
+        ? 15 * MINUTE
+        : EVIDENCE_TTL_BY_PROTOCOL[target.protocol])),
       httpStatus: result.status,
       errorCode: null,
-      durationMs: Math.max(0, now() - observedAt),
+      durationMs: Math.max(0, Math.round(clock() - startedAt)),
       capabilityCount: result.capabilityCount,
       method,
+      stageDurationsMs: result.stageDurationsMs,
+      commerceCapability: result.commerceCapability,
     };
   } catch (error) {
     const name = error instanceof Error ? error.name : "";
@@ -202,24 +257,50 @@ export async function probeCatalogEndpoint(
       errorCode: outcome === "timeout" ? "CATALOG_TIMEOUT"
         : outcome === "network_error" ? "CATALOG_NETWORK_ERROR"
           : outcome === "http_error" ? `CATALOG_HTTP_${status}` : "CATALOG_INVALID_RESPONSE",
-      durationMs: Math.max(0, now() - observedAt),
+      durationMs: Math.max(0, Math.round(clock() - startedAt)),
       capabilityCount: 0,
       method,
+      stageDurationsMs: { failed: Math.max(0, Math.round(clock() - startedAt)) },
     };
   }
 }
 
 export async function runCatalogProbePhase(
-  input: { limit: number; nowMs: number; timeoutMs: number },
+  input: { limit: number; nowMs: number; timeoutMs: number; concurrency?: number },
   dependencies: CatalogProbeDependencies,
 ): Promise<CatalogProbePhaseSummary> {
   if (!Number.isSafeInteger(input.limit) || input.limit < 1) throw new Error("CATALOG_PROBE_LIMIT");
+  const concurrency = input.concurrency ?? 1;
+  if (!Number.isSafeInteger(concurrency) || concurrency < 1 || concurrency > input.limit) {
+    throw new Error("CATALOG_PROBE_CONCURRENCY");
+  }
   const targets = await dependencies.selectTargets({ limit: input.limit, nowMs: input.nowMs });
   const outcomes: Partial<Record<CatalogProbeOutcome, number>> = {};
-  for (const target of targets) {
-    const observation = await dependencies.probe(target);
-    await dependencies.commit(target, observation);
-    outcomes[observation.outcome] = (outcomes[observation.outcome] ?? 0) + 1;
+  for (let offset = 0; offset < targets.length; offset += concurrency) {
+    const batch = targets.slice(offset, offset + concurrency);
+    const observations = await Promise.all(batch.map(async (target) => {
+      const observation = await dependencies.probe(target);
+      return { target, observation: { ...observation, attemptId: observation.attemptId ?? crypto.randomUUID() } };
+    }));
+    for (const { target, observation } of observations) {
+      await dependencies.commit(target, observation);
+      dependencies.onAttempt?.({
+        attemptId: observation.attemptId,
+        agentKey: target.agentKey,
+        endpointKey: target.endpointKey,
+        protocol: target.protocol,
+        priority: target.priority,
+        source: "worker_probe",
+        outcome: observation.outcome,
+        errorCode: observation.errorCode,
+        durationMs: observation.durationMs,
+        stageDurationsMs: observation.stageDurationsMs ?? {},
+        queueDelayMs: target.queueDelayMs ?? 0,
+        leaseWaitMs: target.leaseWaitMs ?? 0,
+        retryDecision: observation.outcome === "protocol_valid" ? "refresh_scheduled" : "backoff_scheduled",
+      });
+      outcomes[observation.outcome] = (outcomes[observation.outcome] ?? 0) + 1;
+    }
   }
   return { phase: "catalog_probe", status: "ok", processedTargets: targets.length, outcomes };
 }

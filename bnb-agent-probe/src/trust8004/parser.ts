@@ -84,8 +84,9 @@ function normalizedProtocol(value: unknown): CatalogEndpointProtocol | null {
   if (typeof value !== "string") return null;
   const normalized = value.toLowerCase().replace(/[^a-z0-9]/g, "");
   if (normalized === "mcp") return "mcp";
-  if (["http", "https", "web", "rest", "api"].includes(normalized)) return "web";
-  return null;
+  if (normalized === "x402") return "x402";
+  if (["http", "https", "web", "website", "homepage", "rest", "api"].includes(normalized)) return "web";
+  return normalized.length > 0 ? "unknown" : null;
 }
 
 function parseIndexDeclarations(values: unknown[], path: string): CatalogIndexEndpoint[] {
@@ -98,7 +99,15 @@ function parseIndexDeclarations(values: unknown[], path: string): CatalogIndexEn
     if (typeof endpoint !== "string" || endpoint.length === 0 || endpoint.length > MAX_STRING_LENGTH) {
       throw new CatalogSchemaError(`${path}[${index}].endpoint`, "non-empty string", endpoint);
     }
-    declarations.push({ protocol, endpoint });
+    declarations.push({
+      protocol,
+      endpoint,
+      rawProtocol: typeof (item.name ?? item.type ?? item.protocol) === "string"
+        ? String(item.name ?? item.type ?? item.protocol)
+        : null,
+      source: path.endsWith(".services") ? "services" : "endpoints",
+      sourceIndex: index,
+    });
   }
   return declarations;
 }
@@ -152,6 +161,15 @@ function registeredAt(value: unknown, path: string): number | null {
   throw new CatalogSchemaError(path, "non-negative timestamp or ISO timestamp", value);
 }
 
+function blockNumber(value: unknown, path: string): string | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value === "number" && Number.isSafeInteger(value) && value >= 0) return String(value);
+  if (typeof value === "string" && /^\d+$/.test(value) && value.length <= 78) {
+    try { return BigInt(value).toString(); } catch { /* fall through */ }
+  }
+  throw new CatalogSchemaError(path, "non-negative integer string or number", value);
+}
+
 export function parseCatalogAgent(value: unknown, path = "item"): CatalogAgent {
   const item = record(value, path);
   const rawChainId = typeof item.chainId === "string" && /^\d+$/.test(item.chainId)
@@ -173,8 +191,14 @@ export function parseCatalogAgent(value: unknown, path = "item"): CatalogAgent {
     indexEndpoints = [
       ...parseIndexDeclarations(services, `${path}.services`),
       ...parseIndexDeclarations(endpoints, `${path}.endpoints`),
-      ...(typeof item.a2aEndpoint === "string" ? [{ protocol: "a2a" as const, endpoint: item.a2aEndpoint }] : []),
-      ...(typeof item.mcpEndpoint === "string" ? [{ protocol: "mcp" as const, endpoint: item.mcpEndpoint }] : []),
+      ...(typeof item.a2aEndpoint === "string" ? [{
+        protocol: "a2a" as const, endpoint: item.a2aEndpoint,
+        rawProtocol: "a2a", source: "shortcut" as const, sourceIndex: 0,
+      }] : []),
+      ...(typeof item.mcpEndpoint === "string" ? [{
+        protocol: "mcp" as const, endpoint: item.mcpEndpoint,
+        rawProtocol: "mcp", source: "shortcut" as const, sourceIndex: 0,
+      }] : []),
     ];
     metadataParsed = true;
   } catch (error) {
@@ -183,6 +207,12 @@ export function parseCatalogAgent(value: unknown, path = "item"): CatalogAgent {
   return {
     chainId: BSC_CHAIN_ID,
     agentId: numericAgentId(item.agentId, `${path}.agentId`),
+    owner: nullableString(item.ownerAddress ?? item.owner, `${path}.owner`),
+    metadataUri: nullableString(
+      item.metadataUri ?? item.agentURI ?? item.ipfsUri,
+      `${path}.metadataUri`,
+    ),
+    blockNumber: blockNumber(item.blockNumber, `${path}.blockNumber`),
     name: nullableString(item.name, `${path}.name`),
     description: nullableString(item.description, `${path}.description`)?.slice(0, 2_048) ?? null,
     imageUrl: normalizedImage(item.imageUrl ?? item.image ?? item.avatar ?? item.logo),

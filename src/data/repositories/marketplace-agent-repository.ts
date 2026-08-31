@@ -5,6 +5,7 @@ import type {
   TrustScoreDimension,
 } from "../../trust8004/types.ts";
 import type { Address } from "viem";
+import type { CatalogCandidate } from "../../business/entities/catalog-candidate.ts";
 
 export const MARKETPLACE_DATA_SORTS = ["newest", "reputation", "trust_score", "agent_id"] as const;
 export type MarketplaceDataSort = typeof MARKETPLACE_DATA_SORTS[number];
@@ -83,6 +84,12 @@ export interface MarketplaceAgentData {
       observedAt: string | null;
     };
   } | null;
+  /**
+   * Normalized Worker evidence attached by the catalog-aware application
+   * adapter. It is an internal composition field and is never serialized by
+   * the repository itself.
+   */
+  catalogCandidate?: CatalogCandidate;
 }
 
 export interface MarketplaceAgentDataPage {

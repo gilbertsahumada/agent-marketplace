@@ -1,4 +1,4 @@
-export type BrowserValidationProtocol = "a2a" | "mcp" | "web" | "erc8183_http";
+export type BrowserValidationProtocol = "a2a" | "mcp" | "erc8183_http";
 export type BrowserValidationOutcome =
   | "protocol_valid"
   | "cors_blocked"

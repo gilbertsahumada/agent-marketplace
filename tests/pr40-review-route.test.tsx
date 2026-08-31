@@ -50,13 +50,34 @@ describe("agents page category handling", () => {
     return executeList.mock.calls.map((call) => call[0]).filter((input) => input.limit !== 1);
   }
 
+  function catalogDataCalls() {
+    return catalogCandidatePage.mock.calls.map((call) => call[0]).filter((input) => input.limit !== 1);
+  }
+
+  function queryCategories(query: Record<string, unknown>): string[] {
+    if (Array.isArray(query.categories)) return query.categories as string[];
+    return typeof query.category === "string" ? [query.category] : [];
+  }
+
+  function catalogFilter(input: Record<string, unknown>): { categories: string[]; statuses: string[] } {
+    return {
+      categories: Array.isArray(input.categories)
+        ? input.categories as string[]
+        : typeof input.category === "string" ? [input.category] : [],
+      statuses: Array.isArray(input.statuses)
+        ? input.statuses as string[]
+        : typeof input.status === "string" ? [input.status] : [],
+    };
+  }
+
   it("R1: drops the category in the registered view and paginates by 24", async () => {
     const el = await renderPage({ view: "all", category: "grid_trading" });
-    expect(el.props.query.category).toBeUndefined();
+    expect(queryCategories(el.props.query)).toEqual([]);
     const dataCalls = listDataCalls();
     expect(dataCalls).toHaveLength(1);
-    expect(dataCalls[0]).not.toHaveProperty("category");
-    expect(dataCalls[0]).toMatchObject({ view: "all", page: 1, limit: 24 });
+    const input = dataCalls[0];
+    expect(input).not.toHaveProperty("category");
+    expect(input).toMatchObject({ view: "all", page: 1, limit: 24 });
   });
 
   it("R2: an unknown category in the registered view still resolves (no 404)", async () => {
@@ -71,12 +92,12 @@ describe("agents page category handling", () => {
 
   it("R4: a known category in the marketplace view filters with limit 12", async () => {
     const el = await renderPage({ view: "marketplace", category: "grid_trading" });
-    expect(el.props.query.category).toBe("grid_trading");
-    const catalogDataCalls = catalogCandidatePage.mock.calls.map((call) => call[0]).filter((input) => input.limit !== 1);
-    expect(catalogDataCalls).toHaveLength(1);
-    expect(catalogDataCalls[0]).toMatchObject({ page: 1, limit: 24, category: "grid_trading" });
-    const dataCalls = listDataCalls();
-    expect(dataCalls).toHaveLength(1);
-    expect(dataCalls[0]).toMatchObject({ view: "marketplace", page: 1, limit: 12, category: "grid_trading" });
+    expect(queryCategories(el.props.query)).toEqual(["grid_trading"]);
+    const catalogCalls = catalogDataCalls();
+    expect(catalogCalls).toHaveLength(1);
+    expect(catalogFilter(catalogCalls[0]!)).toEqual({ categories: ["grid_trading"], statuses: ["declared"] });
+    expect(listDataCalls()).toEqual([
+      expect.objectContaining({ view: "marketplace", page: 1, limit: 12, category: "grid_trading" }),
+    ]);
   });
 });

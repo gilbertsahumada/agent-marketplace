@@ -1,9 +1,60 @@
+import { readFileSync } from "node:fs";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { getCatalogCandidate, getCatalogCandidatePage } from "../src/data/observation/catalog-candidate-feed.ts";
+import {
+  getCatalogCandidate,
+  getCatalogCandidatePage,
+  parseCatalogCandidateDetail,
+  parseCatalogCandidatePage,
+} from "../src/data/observation/catalog-candidate-feed.ts";
 
 afterEach(() => vi.restoreAllMocks());
 
 describe("catalog candidate feed", () => {
+  it("accepts the shared v2 list and detail contract fixtures", () => {
+    const fixtures = JSON.parse(readFileSync(new URL("../contracts/catalog-api-v2.fixtures.json", import.meta.url), "utf8"));
+    expect(parseCatalogCandidatePage(fixtures.list)).toMatchObject({
+      total: 1,
+      items: [{
+        agentId: "42",
+        owner: "0x1111111111111111111111111111111111111111",
+        metadataUri: "ipfs://bafybeigdyrzt5-example",
+        state: { buyerAction: "request_quote" },
+      }],
+    });
+    expect(parseCatalogCandidateDetail(fixtures.detail, "42")).toMatchObject({
+      agentId: "42",
+      owner: "0x1111111111111111111111111111111111111111",
+      metadataUri: "ipfs://bafybeigdyrzt5-example",
+      admission: { state: "candidate" },
+      state: { canRequestQuote: true },
+    });
+  });
+
+  it("rejects legacy provenance in v2 while retaining schema v1 compatibility", () => {
+    const fixtures = JSON.parse(readFileSync(
+      new URL("../contracts/catalog-api-v2.fixtures.json", import.meta.url), "utf8",
+    ));
+    fixtures.list.items[0].observations[0].source = "marketplace_probe";
+    expect(() => parseCatalogCandidatePage(fixtures.list)).toThrow("CATALOG_FEED_INVALID");
+    fixtures.list.schemaVersion = 1;
+    expect(parseCatalogCandidatePage(fixtures.list)).toMatchObject({
+      items: [{ observations: [{ source: "marketplace_probe" }] }],
+    });
+  });
+
+  it("requires normalized derived state on v2 responses", () => {
+    const fixtures = JSON.parse(readFileSync(
+      new URL("../contracts/catalog-api-v2.fixtures.json", import.meta.url), "utf8",
+    )) as { list: Record<string, unknown>; detail: Record<string, unknown> };
+    const list = structuredClone(fixtures.list) as Record<string, unknown>;
+    delete (list.items as Array<Record<string, unknown>>)[0]!.state;
+    expect(() => parseCatalogCandidatePage(list)).toThrow("CATALOG_FEED_INVALID");
+
+    const detail = structuredClone(fixtures.detail) as Record<string, unknown>;
+    delete detail.state;
+    expect(() => parseCatalogCandidateDetail(detail, "42")).toThrow("CATALOG_FEED_INVALID");
+  });
+
   it("reads the public catalog from the configured observation Worker origin", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(Response.json({
       schemaVersion: 1,
@@ -19,6 +70,8 @@ describe("catalog candidate feed", () => {
         agentKey: "eip155:56:42",
         agentId: "42",
         chainId: 56,
+        owner: null,
+        metadataUri: null,
         name: "Grid",
         description: null,
         imageUrl: null,
@@ -47,7 +100,35 @@ describe("catalog candidate feed", () => {
       new URL("https://worker.example/catalog-agents?status=pending&page=1&limit=24&q=grid"),
       expect.objectContaining({ cache: "no-store" }),
     );
-    expect(result).toMatchObject({ total: 1, items: [{ agentId: "42", marketplaceConfigured: false }] });
+    expect(result).toMatchObject({ statuses: ["pending"], categories: [], total: 1, items: [{ agentId: "42", marketplaceConfigured: false }] });
+  });
+
+  it("preserves combined evidence and outcome filters in the Worker request", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(Response.json({
+      schemaVersion: 1,
+      chainId: 56,
+      status: "declared",
+      query: "",
+      category: "grid_trading",
+      generatedAt: 1_788_000_000_000,
+      page: 1,
+      limit: 24,
+      total: 0,
+      items: [],
+    }));
+
+    await getCatalogCandidatePage({
+      statuses: ["declared", "a2a"],
+      categories: ["grid_trading", "rebalancing"],
+      page: 1,
+      limit: 24,
+      env: { OBSERVATIONS_URL: "https://worker.example/observations" },
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      new URL("https://worker.example/catalog-agents?status=declared&status=a2a&page=1&limit=24&category=grid_trading&category=rebalancing"),
+      expect.objectContaining({ cache: "no-store" }),
+    );
   });
 
   it("fails closed when the configured observation URL is not the public Worker route", async () => {
@@ -82,6 +163,7 @@ describe("catalog candidate feed", () => {
       platformAttemptCount: 73,
       agent: {
         agentKey: "eip155:56:42", agentId: "42", chainId: 56, name: "Grid",
+        owner: null, metadataUri: null,
         description: null, imageUrl: null, categoriesJson: "[]", marketplaceConfigured: 0,
         metadataState: "ok", registeredAt: null, blockNumber: null, priority: 60,
       },

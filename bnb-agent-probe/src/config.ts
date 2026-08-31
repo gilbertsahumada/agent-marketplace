@@ -15,7 +15,22 @@ export interface WorkerConfig {
   sweepPagesPerRun: number;
   probeBatchSize: number;
   catalogProbeEnabled: boolean;
+  catalogV2ReadsEnabled: boolean;
+  catalogV2WritesEnabled: boolean;
   catalogProbeBatchSize: number;
+  catalogProbeConcurrency: number;
+  catalogValidationRequestsPerDay: number;
+  catalogDiscoveryPageSize: number;
+  catalogIngestTasksPerRun: number;
+  catalogDeclarationsPerTask: number;
+  catalogA2aTimeoutMs: number;
+  catalogMcpTimeoutMs: number;
+  catalogErc8183TimeoutMs: number;
+  catalogPriorityRefreshMinutes: number;
+  catalogA2aRefreshMinutes: number;
+  catalogMcpRefreshMinutes: number;
+  catalogErc8183RefreshMinutes: number;
+  catalogFailureBackoffMinutes: readonly number[];
   probeAgentAllowlist: readonly string[];
   probeEndpointAllowlist: readonly string[];
   trust8004RequestsPerRun: number;
@@ -45,6 +60,8 @@ export interface WorkerConfig {
     d1RowsRead: number;
     d1RowsWritten: number;
     queueOperations: number;
+    scheduledQueueOperations: number;
+    onDemandQueueOperations: number;
     freeReadCeiling: number;
     freeWriteCeiling: number;
     freeQueueOperationsCeiling: number;
@@ -60,6 +77,9 @@ type NumericConfig = Omit<
   | "probeAgentAllowlist"
   | "probeEndpointAllowlist"
   | "catalogProbeEnabled"
+  | "catalogV2ReadsEnabled"
+  | "catalogV2WritesEnabled"
+  | "catalogFailureBackoffMinutes"
   | "platformLimits"
   | "projectedDailyBudget"
 >;
@@ -68,6 +88,8 @@ interface Profile {
   schedulerMode: SchedulerMode;
   defaults: NumericConfig;
   maximums: NumericConfig;
+  failureBackoffMinutes: readonly number[];
+  maxFailureBackoffMinutes: number;
 }
 
 const FREE_D1_READS_PER_DAY = 5_000_000;
@@ -91,6 +113,18 @@ const FREE_PROFILE: Profile = {
     sweepPagesPerRun: 1,
     probeBatchSize: 1,
     catalogProbeBatchSize: 1,
+    catalogProbeConcurrency: 2,
+    catalogValidationRequestsPerDay: 100,
+    catalogDiscoveryPageSize: 12,
+    catalogIngestTasksPerRun: 2,
+    catalogDeclarationsPerTask: 4,
+    catalogA2aTimeoutMs: 5_000,
+    catalogMcpTimeoutMs: 5_000,
+    catalogErc8183TimeoutMs: 5_000,
+    catalogPriorityRefreshMinutes: 15,
+    catalogA2aRefreshMinutes: 720,
+    catalogMcpRefreshMinutes: 1_440,
+    catalogErc8183RefreshMinutes: 360,
     trust8004RequestsPerRun: 4,
     externalSubrequestsPerRun: 12,
     d1QueriesPerRun: 40,
@@ -106,7 +140,19 @@ const FREE_PROFILE: Profile = {
     sweepLimit: 4,
     sweepPagesPerRun: 1,
     probeBatchSize: 1,
-    catalogProbeBatchSize: 1,
+    catalogProbeBatchSize: 4,
+    catalogProbeConcurrency: 2,
+    catalogValidationRequestsPerDay: 500,
+    catalogDiscoveryPageSize: 100,
+    catalogIngestTasksPerRun: 2,
+    catalogDeclarationsPerTask: 24,
+    catalogA2aTimeoutMs: 10_000,
+    catalogMcpTimeoutMs: 10_000,
+    catalogErc8183TimeoutMs: 10_000,
+    catalogPriorityRefreshMinutes: 60,
+    catalogA2aRefreshMinutes: 10_080,
+    catalogMcpRefreshMinutes: 10_080,
+    catalogErc8183RefreshMinutes: 10_080,
     trust8004RequestsPerRun: 40,
     externalSubrequestsPerRun: 40,
     d1QueriesPerRun: 40,
@@ -116,6 +162,8 @@ const FREE_PROFILE: Profile = {
     maxCatalogResponseBytes: 16 * 1_024 * 1_024,
     maxSellerResponseBytes: 65_536,
   },
+  failureBackoffMinutes: [60, 360, 1_440, 10_080],
+  maxFailureBackoffMinutes: 10_080,
 };
 
 const PAID_PROFILE: Profile = {
@@ -127,6 +175,18 @@ const PAID_PROFILE: Profile = {
     sweepPagesPerRun: 2,
     probeBatchSize: 10,
     catalogProbeBatchSize: 10,
+    catalogProbeConcurrency: 4,
+    catalogValidationRequestsPerDay: 1_000,
+    catalogDiscoveryPageSize: 200,
+    catalogIngestTasksPerRun: 10,
+    catalogDeclarationsPerTask: 20,
+    catalogA2aTimeoutMs: 10_000,
+    catalogMcpTimeoutMs: 10_000,
+    catalogErc8183TimeoutMs: 10_000,
+    catalogPriorityRefreshMinutes: 15,
+    catalogA2aRefreshMinutes: 720,
+    catalogMcpRefreshMinutes: 1_440,
+    catalogErc8183RefreshMinutes: 360,
     trust8004RequestsPerRun: 20,
     externalSubrequestsPerRun: 55,
     d1QueriesPerRun: 800,
@@ -143,6 +203,18 @@ const PAID_PROFILE: Profile = {
     sweepPagesPerRun: 20,
     probeBatchSize: 100,
     catalogProbeBatchSize: 100,
+    catalogProbeConcurrency: 4,
+    catalogValidationRequestsPerDay: 10_000,
+    catalogDiscoveryPageSize: 2_000,
+    catalogIngestTasksPerRun: 50,
+    catalogDeclarationsPerTask: 24,
+    catalogA2aTimeoutMs: 30_000,
+    catalogMcpTimeoutMs: 30_000,
+    catalogErc8183TimeoutMs: 30_000,
+    catalogPriorityRefreshMinutes: 60,
+    catalogA2aRefreshMinutes: 43_200,
+    catalogMcpRefreshMinutes: 43_200,
+    catalogErc8183RefreshMinutes: 43_200,
     trust8004RequestsPerRun: 55,
     externalSubrequestsPerRun: 1_000,
     d1QueriesPerRun: 800,
@@ -152,6 +224,8 @@ const PAID_PROFILE: Profile = {
     maxCatalogResponseBytes: 16 * 1_024 * 1_024,
     maxSellerResponseBytes: 65_536,
   },
+  failureBackoffMinutes: [60, 360, 1_440, 10_080],
+  maxFailureBackoffMinutes: 43_200,
 };
 
 const NUMERIC_FIELDS = {
@@ -161,6 +235,18 @@ const NUMERIC_FIELDS = {
   SWEEP_PAGES_PER_RUN: "sweepPagesPerRun",
   PROBE_BATCH_SIZE: "probeBatchSize",
   CATALOG_PROBE_BATCH_SIZE: "catalogProbeBatchSize",
+  CATALOG_PROBE_CONCURRENCY: "catalogProbeConcurrency",
+  CATALOG_VALIDATION_REQUESTS_PER_DAY: "catalogValidationRequestsPerDay",
+  CATALOG_DISCOVERY_PAGE_SIZE: "catalogDiscoveryPageSize",
+  CATALOG_INGEST_TASKS_PER_RUN: "catalogIngestTasksPerRun",
+  CATALOG_DECLARATIONS_PER_TASK: "catalogDeclarationsPerTask",
+  CATALOG_A2A_TIMEOUT_MS: "catalogA2aTimeoutMs",
+  CATALOG_MCP_TIMEOUT_MS: "catalogMcpTimeoutMs",
+  CATALOG_ERC8183_TIMEOUT_MS: "catalogErc8183TimeoutMs",
+  CATALOG_PRIORITY_REFRESH_MINUTES: "catalogPriorityRefreshMinutes",
+  CATALOG_A2A_REFRESH_MINUTES: "catalogA2aRefreshMinutes",
+  CATALOG_MCP_REFRESH_MINUTES: "catalogMcpRefreshMinutes",
+  CATALOG_ERC8183_REFRESH_MINUTES: "catalogErc8183RefreshMinutes",
   TRUST8004_REQUESTS_PER_RUN: "trust8004RequestsPerRun",
   EXTERNAL_SUBREQUESTS_PER_RUN: "externalSubrequestsPerRun",
   D1_QUERIES_PER_RUN: "d1QueriesPerRun",
@@ -210,6 +296,18 @@ function parseInteger(field: keyof typeof NUMERIC_FIELDS, raw: string, maximum: 
     "SWEEP_PAGES_PER_RUN",
     "PROBE_BATCH_SIZE",
     "CATALOG_PROBE_BATCH_SIZE",
+    "CATALOG_PROBE_CONCURRENCY",
+    "CATALOG_VALIDATION_REQUESTS_PER_DAY",
+    "CATALOG_DISCOVERY_PAGE_SIZE",
+    "CATALOG_INGEST_TASKS_PER_RUN",
+    "CATALOG_DECLARATIONS_PER_TASK",
+    "CATALOG_A2A_TIMEOUT_MS",
+    "CATALOG_MCP_TIMEOUT_MS",
+    "CATALOG_ERC8183_TIMEOUT_MS",
+    "CATALOG_PRIORITY_REFRESH_MINUTES",
+    "CATALOG_A2A_REFRESH_MINUTES",
+    "CATALOG_MCP_REFRESH_MINUTES",
+    "CATALOG_ERC8183_REFRESH_MINUTES",
     "TRUST8004_REQUESTS_PER_RUN",
     "EXTERNAL_SUBREQUESTS_PER_RUN",
     "D1_ROWS_READ_PER_RUN",
@@ -298,6 +396,31 @@ function parseCsv(field: string, raw: string): readonly string[] {
   return values;
 }
 
+function parseFailureBackoff(raw: string | undefined, profile: Profile): readonly number[] {
+  if (raw === undefined) return profile.failureBackoffMinutes;
+  const values = raw.split(",");
+  if (values.length < 2 || values.length > 8) {
+    throw new ConfigError("CATALOG_FAILURE_BACKOFF_MINUTES", "must contain between 2 and 8 entries");
+  }
+  const parsed = values.map((value) => {
+    if (!/^[1-9]\d*$/.test(value)) {
+      throw new ConfigError("CATALOG_FAILURE_BACKOFF_MINUTES", "must contain positive integer minutes");
+    }
+    const minutes = Number(value);
+    if (!Number.isSafeInteger(minutes) || minutes > profile.maxFailureBackoffMinutes) {
+      throw new ConfigError(
+        "CATALOG_FAILURE_BACKOFF_MINUTES",
+        `entries must not exceed ${profile.maxFailureBackoffMinutes}`,
+      );
+    }
+    return minutes;
+  });
+  if (parsed.some((value, index) => index > 0 && value <= parsed[index - 1]!)) {
+    throw new ConfigError("CATALOG_FAILURE_BACKOFF_MINUTES", "entries must be strictly increasing");
+  }
+  return parsed;
+}
+
 export function loadConfig(env: Partial<Env>): WorkerConfig {
   const source = configEnvironment(env);
   const plan = parsePlan(source.CLOUDFLARE_WORKERS_PLAN);
@@ -318,6 +441,18 @@ export function loadConfig(env: Partial<Env>): WorkerConfig {
   if (catalogProbeEnabled && !generalEgressApproved) {
     throw new ConfigError("CATALOG_PROBE_ENABLED", "requires the WP4 general-egress gate");
   }
+  const catalogV2WritesEnabled = source.CATALOG_V2_WRITES_ENABLED === "1";
+  if (source.CATALOG_V2_WRITES_ENABLED !== undefined
+    && source.CATALOG_V2_WRITES_ENABLED !== "0"
+    && source.CATALOG_V2_WRITES_ENABLED !== "1") {
+    throw new ConfigError("CATALOG_V2_WRITES_ENABLED", "must be 0 or 1");
+  }
+  const catalogV2ReadsEnabled = source.CATALOG_V2_READS_ENABLED === "1";
+  if (source.CATALOG_V2_READS_ENABLED !== undefined
+    && source.CATALOG_V2_READS_ENABLED !== "0"
+    && source.CATALOG_V2_READS_ENABLED !== "1") {
+    throw new ConfigError("CATALOG_V2_READS_ENABLED", "must be 0 or 1");
+  }
 
   for (const [field, property] of Object.entries(NUMERIC_FIELDS) as Array<
     [keyof typeof NUMERIC_FIELDS, keyof NumericConfig]
@@ -337,6 +472,37 @@ export function loadConfig(env: Partial<Env>): WorkerConfig {
     throw new ConfigError(
       "SWEEP_LIMIT",
       "must not exceed TRUST8004_REQUESTS_PER_RUN on Free",
+    );
+  }
+
+  const discoveryRequestsPerSweep = 2;
+  if (discoveryRequestsPerSweep + values.catalogIngestTasksPerRun > values.trust8004RequestsPerRun) {
+    throw new ConfigError(
+      "CATALOG_INGEST_TASKS_PER_RUN",
+      "discovery plus ingest tasks must fit TRUST8004_REQUESTS_PER_RUN",
+    );
+  }
+
+  const worstCaseCatalogExternalRequests = Math.max(
+    discoveryRequestsPerSweep + values.catalogIngestTasksPerRun,
+    1 + values.catalogIngestTasksPerRun + (3 * values.catalogProbeBatchSize),
+  );
+  if (worstCaseCatalogExternalRequests > values.externalSubrequestsPerRun) {
+    throw new ConfigError(
+      "CATALOG_PROBE_BATCH_SIZE",
+      `v2 discovery, ingest and an all-MCP batch require up to ${worstCaseCatalogExternalRequests} external subrequests; lower the batch or raise EXTERNAL_SUBREQUESTS_PER_RUN`,
+    );
+  }
+
+  const catalogPhaseQueryLimit = values.d1QueriesPerRun - 4;
+  const worstCaseDiscoverySweepQueries = 9 + 2 * (
+    Math.ceil(values.catalogDiscoveryPageSize / 2)
+    + Math.ceil(values.catalogDiscoveryPageSize / 3)
+  );
+  if (worstCaseDiscoverySweepQueries > catalogPhaseQueryLimit) {
+    throw new ConfigError(
+      "CATALOG_DISCOVERY_PAGE_SIZE",
+      `an all-new header+sweep discovery can require ${worstCaseDiscoverySweepQueries} phase queries; lower the page size or raise D1_QUERIES_PER_RUN`,
     );
   }
 
@@ -364,7 +530,9 @@ export function loadConfig(env: Partial<Env>): WorkerConfig {
         d1RowsRead: maxAttempts * values.d1RowsReadPerRun,
         d1RowsWritten: maxAttempts
           * (values.d1RowsWrittenPerRun + D1_TELEMETRY_WRITES_PER_ATTEMPT),
-        queueOperations: invocations * QUEUE_OPERATIONS_PER_MESSAGE,
+        scheduledQueueOperations: invocations * QUEUE_OPERATIONS_PER_MESSAGE,
+        onDemandQueueOperations: values.catalogValidationRequestsPerDay * QUEUE_OPERATIONS_PER_MESSAGE,
+        queueOperations: (invocations + values.catalogValidationRequestsPerDay) * QUEUE_OPERATIONS_PER_MESSAGE,
         freeReadCeiling: FREE_D1_READS_PER_DAY * FREE_SAFETY_RATIO,
         freeWriteCeiling: FREE_D1_WRITES_PER_DAY * FREE_SAFETY_RATIO,
         freeQueueOperationsCeiling: FREE_QUEUE_OPERATIONS_PER_DAY * FREE_SAFETY_RATIO,
@@ -399,6 +567,9 @@ export function loadConfig(env: Partial<Env>): WorkerConfig {
     producerKillSwitch: parseProducerKillSwitch(source.PRODUCER_KILL_SWITCH, killSwitch),
     schedulerMode: profile.schedulerMode,
     catalogProbeEnabled,
+    catalogV2ReadsEnabled,
+    catalogV2WritesEnabled,
+    catalogFailureBackoffMinutes: parseFailureBackoff(source.CATALOG_FAILURE_BACKOFF_MINUTES, profile),
     probeAgentAllowlist: parseAgentAllowlist(source.PROBE_AGENT_ALLOWLIST, plan, generalEgressApproved),
     probeEndpointAllowlist: parseEndpointAllowlist(source.PROBE_ENDPOINT_ALLOWLIST, plan, generalEgressApproved),
     ...values,

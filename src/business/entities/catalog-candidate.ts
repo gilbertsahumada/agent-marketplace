@@ -1,7 +1,7 @@
 import type { MarketplaceCategory } from "./marketplace-agent.ts";
 
 export const CATALOG_STATUSES = [
-  "declared", "pending", "a2a", "mcp", "erc8183", "quote_capable", "hireable", "failed",
+  "declared", "pending", "a2a", "mcp", "mcp_only", "erc8183", "quote_capable", "hireable", "failed",
 ] as const;
 export type CatalogStatus = (typeof CATALOG_STATUSES)[number];
 
@@ -14,7 +14,7 @@ export interface CatalogCandidateDeclaration {
   safetyReason: string | null;
   representativeAgentKey: string | null;
   lastProbedAt: number | null;
-  nextProbeAt: number;
+  nextProbeAt: number | null;
   consecutiveFailures: number;
   priority: number;
 }
@@ -24,7 +24,8 @@ export interface CatalogCandidateObservation {
   agentKey: string;
   endpointKey: string | null;
   protocol: "a2a" | "mcp" | "web" | "erc8183_http" | "erc8183";
-  source: "browser_reported" | "marketplace_probe" | "worker_probe" | "chain_index";
+  source: "browser_reported" | "worker_probe" | "buyer_refresh" | "chain_read" | "migration"
+    | "marketplace_probe" | "chain_index";
   outcome: "protocol_valid" | "cors_blocked" | "http_error" | "timeout" | "network_error"
     | "invalid_response" | "unsafe_url" | "erc8183_detected" | "quote_verified"
     | "quote_rejected" | "unreachable" | "error";
@@ -34,12 +35,18 @@ export interface CatalogCandidateObservation {
   errorCode: string | null;
   durationMs: number;
   details: unknown;
+  /** Present on normalized v2 rows; omitted by the legacy compatibility feed. */
+  validationKind?: "reachability" | "protocol" | "quote" | "chain";
+  verificationLevel?: "user_observed" | "platform_observed" | "cryptographic" | "onchain";
+  artifactHash?: string | null;
 }
 
 export interface CatalogCandidate {
   agentKey: string;
   agentId: string;
   chainId: 56;
+  owner: string | null;
+  metadataUri: string | null;
   name: string | null;
   description: string | null;
   imageUrl: string | null;
@@ -50,17 +57,37 @@ export interface CatalogCandidate {
   blockNumber: string | null;
   priority: number;
   platformAttemptCount?: number;
+  admission?: {
+    state: "candidate" | "admitted" | "suspended";
+    endpointKey: string | null;
+  } | null;
+  state?: {
+    operationalStatus: "pending" | "browser_observed" | "platform_reachable" | "platform_failed"
+      | "invalid_declaration" | "unsafe" | "unsupported";
+    freshness: "never" | "live" | "historical" | "stale";
+    commerceStatus: "none" | "declared" | "admission_pending" | "admitted" | "suspended";
+    quoteStatus: "not_supported" | "not_requested" | "verified_fresh" | "verified_historical" | "rejected";
+    buyerAction: "unavailable" | "check_availability" | "request_quote" | "prepare_hire";
+    canRequestBrowserValidation: boolean;
+    canRequestInfrastructureValidation: boolean;
+    canRequestQuote: boolean;
+    canPrepareHire: boolean;
+    blockingReasons: string[];
+  };
   declarations: CatalogCandidateDeclaration[];
   observations: CatalogCandidateObservation[];
 }
 
 export interface CatalogCandidatePage {
   status: CatalogStatus;
+  statuses?: CatalogStatus[];
   query: string;
   category: MarketplaceCategory | null;
+  categories?: MarketplaceCategory[];
   generatedAt: number;
   page: number;
   limit: number;
   total: number;
+  nextCursor?: string | null;
   items: CatalogCandidate[];
 }

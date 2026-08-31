@@ -14,7 +14,7 @@ const KEYS = [
 const OUTCOMES = new Set([
   "protocol_valid", "cors_blocked", "http_error", "timeout", "invalid_response", "unsafe_url",
 ]);
-const PROTOCOLS = new Set(["a2a", "mcp", "web", "erc8183_http"]);
+const PROTOCOLS = new Set(["a2a", "mcp", "erc8183_http"]);
 
 async function boundedJson(request: Request): Promise<unknown> {
   const declared = request.headers.get("content-length");

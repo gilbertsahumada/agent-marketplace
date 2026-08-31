@@ -2,6 +2,7 @@ import type {
   BrowserValidationResult,
   BrowserValidationTarget,
 } from "../business/entities/browser-validation.ts";
+import { safePublicBrowserUrl } from "../business/policies/catalog-validation-policy.ts";
 export type {
   BrowserValidationOutcome,
   BrowserValidationProtocol,
@@ -18,21 +19,6 @@ interface ValidationOptions {
 
 const MAX_RESPONSE_BYTES = 64 * 1024;
 const VALID_FOR_MS = 15 * 60_000;
-
-function safePublicUrl(endpoint: string): URL | null {
-  try {
-    const url = new URL(endpoint);
-    if (url.protocol !== "https:" || url.username || url.password || url.search || url.hash) return null;
-    const host = url.hostname.toLowerCase().replace(/^\[|\]$/g, "").replace(/\.$/, "");
-    if (!host || host === "localhost" || host.endsWith(".localhost") || host.endsWith(".local")) return null;
-    if (/^(?:127\.|10\.|192\.168\.|169\.254\.|0\.)/.test(host)) return null;
-    if (/^172\.(?:1[6-9]|2\d|3[01])\./.test(host)) return null;
-    if (host === "::1" || host.startsWith("fc") || host.startsWith("fd") || host.startsWith("fe80:")) return null;
-    return url;
-  } catch {
-    return null;
-  }
-}
 
 function routeUrl(endpoint: URL, route: string): string {
   const result = new URL(endpoint);
@@ -171,7 +157,7 @@ export async function validateEndpointInBrowser(
     capabilityCount: 0,
     method,
   };
-  const url = safePublicUrl(target.endpoint);
+  const url = safePublicBrowserUrl(target.endpoint);
   if (!url) {
     return {
       ...base,

@@ -166,6 +166,14 @@ describe("marketplace API controllers", () => {
       body: JSON.stringify(body),
     }), { params: Promise.resolve({ agentId: "45422" }) });
     expect(rejected.status).toBe(400);
+
+    const genericWeb = await browserObservationRoute.POST(new Request("http://local", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ ...body, protocol: "web", endpoint: "https://seller.example" }),
+    }), { params: Promise.resolve({ agentId: "45422" }) });
+    expect(genericWeb.status).toBe(400);
+    expect(syncCatalogObservation).toHaveBeenCalledTimes(1);
   });
 
   it("rejects oversized validation bodies before invoking the use case", async () => {

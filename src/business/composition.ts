@@ -35,9 +35,11 @@ import {
 } from "../data/observation/catalog-candidate-feed.ts";
 import { syncCatalogObservation } from "../data/observation/catalog-observation-sync.ts";
 
-export const listMarketplaceAgents = new ListMarketplaceAgents(marketplaceAgentRepository);
-export const getMarketplaceAgent = new GetMarketplaceAgent(marketplaceAgentRepository);
-export const compareMarketplaceAgents = new CompareMarketplaceAgents(marketplaceAgentRepository);
+const catalogPageReader = { execute: loadCatalogCandidatePage };
+const catalogReader = { execute: loadCatalogCandidate };
+export const listMarketplaceAgents = new ListMarketplaceAgents(marketplaceAgentRepository, catalogPageReader);
+export const getMarketplaceAgent = new GetMarketplaceAgent(marketplaceAgentRepository, catalogReader);
+export const compareMarketplaceAgents = new CompareMarketplaceAgents(marketplaceAgentRepository, catalogReader);
 export const getPublicJobProof = new GetPublicJobProof(publicJobProofRepository);
 export const requestErc8183Quote = new RequestErc8183Quote(erc8183SpikeRepository);
 export const prepareErc8183Hire = new PrepareErc8183Hire(erc8183SpikeRepository);

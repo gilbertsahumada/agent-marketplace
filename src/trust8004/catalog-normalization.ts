@@ -19,6 +19,11 @@ export type CatalogEndpointSafetyReason =
 export interface CatalogAgentInput {
   chainId: number | string;
   agentId: number | string;
+  owner?: unknown;
+  ownerAddress?: unknown;
+  metadataUri?: unknown;
+  agentURI?: unknown;
+  ipfsUri?: unknown;
   name?: unknown;
   description?: unknown;
   imageUrl?: unknown;
@@ -50,6 +55,8 @@ export interface CatalogAgentIndexRecord {
   agentKey: string;
   chainId: 56;
   agentId: string;
+  owner: string | null;
+  metadataUri: string | null;
   name: string | null;
   description: string | null;
   imageUrl: string | null;
@@ -241,6 +248,8 @@ export function normalizeCatalogAgent(input: CatalogAgentInput): CatalogAgentInd
     agentKey: `eip155:56:${agentId}`,
     chainId: 56,
     agentId,
+    owner: boundedText(input.ownerAddress ?? input.owner, 128),
+    metadataUri: boundedText(input.metadataUri ?? input.agentURI ?? input.ipfsUri, 16_384),
     name: boundedText(input.name, 256),
     description: boundedText(input.description, 2_048),
     imageUrl: normalizedImageUrl(input.imageUrl ?? input.image ?? input.avatar ?? input.logo),

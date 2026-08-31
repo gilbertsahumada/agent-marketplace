@@ -32,7 +32,7 @@ describe("catalog observation sync", () => {
 
     expect(result).toEqual({ status: "recorded" });
     expect(fetchImpl).toHaveBeenCalledWith(
-      new URL("https://worker.example/__internal/catalog-observation"),
+      new URL("https://worker.example/catalog-browser-observations"),
       expect.objectContaining({
         method: "POST",
         headers: expect.objectContaining({ authorization: "Bearer private-secret" }),

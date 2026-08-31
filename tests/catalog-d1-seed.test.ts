@@ -37,6 +37,7 @@ describe("catalog D1 seed", () => {
     expect(result.sql).toContain("'eip155:56:1'");
     expect(result.sql).toContain("'eip155:56:2'");
     expect(result.sql).toContain("representativeAgentKey");
+    expect(result.sql).toContain("metadataUri");
     expect(result.sql).not.toContain("BEGIN TRANSACTION");
     expect(result.sql).not.toMatch(/[\t ]+\n/);
   });
