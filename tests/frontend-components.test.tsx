@@ -245,6 +245,7 @@ function validationReport(): AgentValidationReport {
       },
       endpointChecks: [{ protocol: "a2a", status: "verified", declaredTools: [], observedTools: [], declaredOnlyTools: [], observedOnlyTools: [], observedAt: "2026-08-26T10:00:00.000Z", error: null }],
       quote: { status: "verified", provider: "0x2222222222222222222222222222222222222222", currency: "0x4444444444444444444444444444444444444444", priceRaw: "1", expiresAt: "2026-08-26T10:10:00.000Z", observedAt: "2026-08-26T10:00:00.000Z" },
+      observationSync: { status: "recorded", attempted: 2, recorded: 2, failed: 0, notConfigured: 0 },
     },
     passport: evidencePassport("evaluated"),
   };

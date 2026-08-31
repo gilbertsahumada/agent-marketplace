@@ -408,6 +408,15 @@ without userinfo whose origin exactly matches
 distributed per-buyer/origin rate limiter; process-local counters are rejected
 because they cannot enforce a limit across concurrent instances.
 
+`OBSERVATIONS_URL` is the server-side address of the Worker's public evidence
+feed and is also the source from which the marketplace derives the public
+catalog and authenticated write routes. `BUYER_OBSERVATION_ALLOWED_ORIGIN` is
+an outbound destination allowlist, not a CORS setting and not the marketplace
+origin. Marketplace validation responses must expose whether every generated
+observation was `recorded`, only some were recorded, publishing failed, or the
+server/Worker secret pair was not configured; a successful protocol check must
+never imply that shared monitoring was updated.
+
 ## 2026-08-30 — Make hiring the catalogue's primary presentation
 
 The catalogue now presents one dataset through two layouts. Cards remain the

@@ -104,6 +104,7 @@ export class ValidateMarketplaceAgent {
         identity: evidence.identity,
         endpointChecks: evidence.endpointChecks,
         quote: evidence.quote,
+        observationSync: evidence.observationSync,
       },
       passport,
     };

@@ -936,6 +936,17 @@ hacia el origen que coincide exactamente con
 `BUYER_OBSERVATION_ALLOWED_ORIGIN`. El navegador llama una ruta same-origin;
 esta valida, elimina contexto y reenvía.
 
+`OBSERVATIONS_URL` es una URL server-side del feed público del Worker, por
+ejemplo `https://worker.example/observations`; desde su origen también se
+derivan `/catalog-agents`, `/catalog-agent` y las rutas internas de escritura.
+`BUYER_OBSERVATION_ALLOWED_ORIGIN` contiene solamente el origen HTTPS exacto
+del Worker y funciona como allowlist de salida para impedir SSRF o exfiltración
+del bearer; no es una configuración CORS ni contiene el dominio del
+marketplace. Toda validación ejecutada por marketplace devuelve además el
+resultado de persistencia (`recorded`, `partial`, `failed`, `not_configured` o
+`not_attempted`) y sus conteos. La UI no puede decir ni insinuar que el índice
+compartido fue actualizado si ese estado no es `recorded`.
+
 La autoridad para continuar a `prepare` y pedir firmas es la quote transaccional
 recién solicitada y validada, junto con las relecturas onchain requeridas. Ni una
 fila D1, ni `/observations`, ni el snapshot de release autorizan Hire. Si

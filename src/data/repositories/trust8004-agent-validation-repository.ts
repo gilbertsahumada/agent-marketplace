@@ -1,5 +1,9 @@
 import "server-only";
-import type { AgentValidationEvidence, AgentValidationEndpointCheck } from "../../business/entities/agent-validation.ts";
+import type {
+  AgentValidationEvidence,
+  AgentValidationEndpointCheck,
+  AgentValidationObservationSync,
+} from "../../business/entities/agent-validation.ts";
 import type { AgentValidationRepository } from "../../business/use-cases/validate-marketplace-agent.ts";
 import { createHireabilityAssessor } from "../../readiness/protocols.ts";
 import type { HireabilityAssessment } from "../../readiness/types.ts";
@@ -10,7 +14,11 @@ import { createBscIdentityReader, type BscIdentityReader } from "../../verificat
 import { createProbeBudget } from "../../verification/probe-budget.ts";
 import type { BscVerificationReport, IdentityVerification } from "../../verification/types.ts";
 import { AsyncTtlCache } from "../cache/async-ttl-cache.ts";
-import { syncCatalogObservation, type CatalogObservationSyncInput } from "../observation/catalog-observation-sync.ts";
+import {
+  syncCatalogObservation,
+  type CatalogObservationSyncInput,
+  type CatalogObservationSyncStatus,
+} from "../observation/catalog-observation-sync.ts";
 
 const VALIDATION_TTL_MS = 60 * 1_000;
 const VALIDATION_TIMEOUT_MS = 30 * 1_000;
@@ -27,7 +35,25 @@ export interface Trust8004AgentValidationRepositoryOptions {
   assessHireability?: (agent: MarketplaceAgent, identity: IdentityVerification) => Promise<HireabilityAssessment>;
   marketplaceOperatedGridSellerAgentId?: string;
   now?: () => number;
-  syncObservation?: (input: CatalogObservationSyncInput) => Promise<{ status: string }>;
+  syncObservation?: (input: CatalogObservationSyncInput) => Promise<{ status: CatalogObservationSyncStatus }>;
+}
+
+function observationSyncSummary(
+  results: PromiseSettledResult<{ status: CatalogObservationSyncStatus }>[],
+): AgentValidationObservationSync {
+  const recorded = results.filter((result) => result.status === "fulfilled" && result.value.status === "recorded").length;
+  const notConfigured = results.filter((result) => result.status === "fulfilled" && result.value.status === "not_configured").length;
+  const failed = results.length - recorded - notConfigured;
+  const status = results.length === 0
+    ? "not_attempted" as const
+    : recorded === results.length
+      ? "recorded" as const
+      : notConfigured === results.length
+        ? "not_configured" as const
+        : recorded > 0
+          ? "partial" as const
+          : "failed" as const;
+  return { status, attempted: results.length, recorded, failed, notConfigured };
 }
 
 function validationInventory(agent: MarketplaceAgent, generatedAt: string, baseUrl: string): BscCandidateInventory {
@@ -144,7 +170,7 @@ export class Trust8004AgentValidationRepository implements AgentValidationReposi
   private readonly assessHireabilityOverride: ((agent: MarketplaceAgent, identity: IdentityVerification) => Promise<HireabilityAssessment>) | undefined;
   private readonly marketplaceOperatedGridSellerAgentId: string | undefined;
   private readonly now: () => number;
-  private readonly syncObservation: (input: CatalogObservationSyncInput) => Promise<{ status: string }>;
+  private readonly syncObservation: (input: CatalogObservationSyncInput) => Promise<{ status: CatalogObservationSyncStatus }>;
 
   constructor(options: Trust8004AgentValidationRepositoryOptions = {}) {
     this.provider = options.provider ?? new Trust8004Provider();
@@ -197,7 +223,7 @@ export class Trust8004AgentValidationRepository implements AgentValidationReposi
           : {}),
       });
       const activation = await assessHireability(agent, verifiedAgent.identity);
-      const syncs: Array<Promise<{ status: string }>> = [];
+      const syncs: Array<Promise<{ status: CatalogObservationSyncStatus }>> = [];
       for (const endpoint of verifiedAgent.mcpEndpoints) {
         if (endpoint.status === "not_probed") continue;
         syncs.push(this.syncObservation({
@@ -267,7 +293,7 @@ export class Trust8004AgentValidationRepository implements AgentValidationReposi
           }));
         }
       }
-      await Promise.allSettled(syncs);
+      const observationSync = observationSyncSummary(await Promise.allSettled(syncs));
       const identity = verifiedAgent.identity;
       const declaredServices = new Map<string, { name: string; hasEndpoint: boolean; tools: string[] }>();
       for (const service of agent.services) {
@@ -312,6 +338,7 @@ export class Trust8004AgentValidationRepository implements AgentValidationReposi
           ...activation.protocols.map(sellerCheck),
         ],
         quote: quoteEvidence(activation),
+        observationSync,
         generatedAt: verification.generatedAt,
       };
     });

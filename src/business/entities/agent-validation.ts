@@ -14,6 +14,14 @@ export interface AgentValidationEndpointCheck {
   error: { code: string; message: string } | null;
 }
 
+export interface AgentValidationObservationSync {
+  status: "recorded" | "partial" | "failed" | "not_configured" | "not_attempted";
+  attempted: number;
+  recorded: number;
+  failed: number;
+  notConfigured: number;
+}
+
 export interface AgentValidationEvidence {
   chainId: 56;
   agent: {
@@ -45,6 +53,7 @@ export interface AgentValidationEvidence {
     expiresAt: string | null;
     observedAt: string | null;
   };
+  observationSync: AgentValidationObservationSync;
   generatedAt: string;
 }
 
@@ -72,6 +81,7 @@ export interface AgentValidationReport {
     identity: AgentValidationEvidence["identity"];
     endpointChecks: AgentValidationEndpointCheck[];
     quote: AgentValidationEvidence["quote"];
+    observationSync: AgentValidationObservationSync;
   };
   passport: AgentEvidencePassport;
 }

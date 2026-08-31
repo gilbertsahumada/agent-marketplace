@@ -46,7 +46,11 @@ describe("AgentValidationActions", () => {
 
   it("offers the marketplace fallback and reports quote evidence separately", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => Response.json({
-      evidence: { endpointChecks: [{ status: "verified" }], quote: { status: "verified" } },
+      evidence: {
+        endpointChecks: [{ status: "verified" }],
+        quote: { status: "verified" },
+        observationSync: { status: "not_configured", attempted: 1, recorded: 0, failed: 0, notConfigured: 1 },
+      },
       qualification: { note: "Fresh quote candidate; manual admission remains required." },
     })));
     render(<AgentValidationActions agentId="45422" targets={[]} />);
@@ -54,5 +58,6 @@ describe("AgentValidationActions", () => {
 
     await waitFor(() => expect(screen.getByText(/marketplace check completed/i)).toBeInTheDocument());
     expect(screen.getByText(/ERC-8183 quote: verified/i)).toBeInTheDocument();
+    expect(screen.getByText(/observation publishing is not configured/i)).toBeInTheDocument();
   });
 });

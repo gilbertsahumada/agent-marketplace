@@ -45,6 +45,13 @@ function evidence(overrides: Partial<AgentValidationEvidence> = {}): AgentValida
       expiresAt: "2026-08-26T10:10:00.000Z",
       observedAt: OBSERVED_AT,
     },
+    observationSync: {
+      status: "recorded",
+      attempted: 2,
+      recorded: 2,
+      failed: 0,
+      notConfigured: 0,
+    },
     generatedAt: OBSERVED_AT,
     ...overrides,
   };
@@ -72,6 +79,7 @@ describe("ValidateMarketplaceAgent", () => {
       classification: { status: "not_assigned", categories: [] },
       promotion: { status: "manual_review_required" },
       qualification: { status: "quote_verified_candidate", canHire: false },
+      evidence: { observationSync: { status: "recorded", attempted: 2, recorded: 2 } },
       passport: { state: "evaluated", checks: { quote: { status: "verified" } } },
     });
   });

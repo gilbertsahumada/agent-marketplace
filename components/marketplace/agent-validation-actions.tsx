@@ -39,6 +39,20 @@ function resultClass(outcome: BrowserValidationResult["outcome"]): string {
   return "border-red-400/30 bg-red-400/10 text-red-200";
 }
 
+function observationSyncMessage(sync: AgentValidationReport["evidence"]["observationSync"]): string {
+  if (sync.status === "recorded") return "Evidence saved to the monitoring index.";
+  if (sync.status === "partial") {
+    return `Only ${sync.recorded} of ${sync.attempted} observations were saved to the monitoring index.`;
+  }
+  if (sync.status === "not_configured") {
+    return "Validation completed, but observation publishing is not configured; the result was not added to shared monitoring.";
+  }
+  if (sync.status === "failed") {
+    return "Validation completed, but the monitoring index could not be updated.";
+  }
+  return "No endpoint observation was produced for shared monitoring.";
+}
+
 export function AgentValidationActions({ agentId, targets }: {
   agentId: string;
   targets: BrowserValidationTarget[];
@@ -178,7 +192,7 @@ export function AgentValidationActions({ agentId, targets }: {
             <ShieldCheck aria-hidden="true" />
             <AlertTitle>Marketplace check completed</AlertTitle>
             <AlertDescription>
-              {fallback.evidence.endpointChecks.filter((check) => check.status === "verified").length} endpoint checks passed. ERC-8183 quote: {fallback.evidence.quote.status.replaceAll("_", " ")}. {fallback.qualification.note}
+              {fallback.evidence.endpointChecks.filter((check) => check.status === "verified").length} endpoint checks passed. ERC-8183 quote: {fallback.evidence.quote.status.replaceAll("_", " ")}. {fallback.qualification.note} {observationSyncMessage(fallback.evidence.observationSync)}
             </AlertDescription>
           </Alert>
         )}
