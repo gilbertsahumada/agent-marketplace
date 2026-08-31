@@ -23,7 +23,7 @@ Local evidence captured on 2026-09-01:
   metadata URI and registration block alongside the normalized catalog row, and
   `0015_agent_scoped_validation_dedupe.sql` scopes legacy validation keys by agent;
 - Worker typecheck and manifest validation pass;
-- 487 unit tests and 103 Miniflare integration tests pass in
+- 487 unit tests and 104 Miniflare integration tests pass in
   `bnb-agent-probe` (`vitest.config.ts` and `vitest.worker.config.ts`);
 - production, staging and validation dry-run bundles build successfully;
 - application-side endpoint policy, controller and observation-sync coverage passes
