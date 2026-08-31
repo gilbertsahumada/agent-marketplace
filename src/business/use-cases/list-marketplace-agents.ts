@@ -13,6 +13,11 @@ import {
   type MarketplaceCategory,
 } from "../entities/marketplace-agent.ts";
 import {
+  attachCatalogCandidate,
+  catalogCandidateToMarketplaceAgentData,
+  type CatalogCandidatePageReader,
+} from "../../data/observation/catalog-marketplace-adapter.ts";
+import {
   isAdmittedMarketplaceSeller,
   toMarketplaceAgent,
 } from "../policies/marketplace-agent-policy.ts";
@@ -74,7 +79,10 @@ function categorySummaries(agents: MarketplaceAgent[]) {
 }
 
 export class ListMarketplaceAgents {
-  constructor(private readonly repository: MarketplaceAgentRepository) {}
+  constructor(
+    private readonly repository: MarketplaceAgentRepository,
+    private readonly catalogPageReader?: CatalogCandidatePageReader,
+  ) {}
 
   async execute(input: ListMarketplaceAgentsInput): Promise<MarketplaceAgentPage> {
     const validated = validateInput(input);
@@ -102,6 +110,50 @@ export class ListMarketplaceAgents {
         };
       } catch (error) {
         throw new MarketplaceDataUnavailableError("list registered agents", { cause: error });
+      }
+    }
+
+    if (input.view === "marketplace" && this.catalogPageReader) {
+      const catalog = await this.catalogPageReader.execute({
+        page: validated.page,
+        limit: validated.limit,
+        ...(validated.q ? { q: validated.q } : {}),
+        ...(input.category ? { category: input.category } : {}),
+        ...(input.availability === "hireable" ? { statuses: ["hireable"] } : {}),
+        inventory: "operational",
+      });
+      if (catalog) {
+        const fetchedAt = new Date(catalog.generatedAt).toISOString();
+        const records = await Promise.all(catalog.items.map(async (candidate) => {
+          try {
+            const source = await this.repository.getById(candidate.agentId);
+            return source
+              ? attachCatalogCandidate(source, candidate)
+              : catalogCandidateToMarketplaceAgentData(candidate, fetchedAt);
+          } catch {
+            return catalogCandidateToMarketplaceAgentData(candidate, fetchedAt);
+          }
+        }));
+        let agents = records.map((record) => toMarketplaceAgent(record, { evaluateMarketplace: true }));
+        if (input.availability === "hireable") agents = agents.filter((agent) => agent.hireability.canHire);
+        if (input.availability === "mcp_only") {
+          agents = agents.filter((agent) => agent.hireability.status === "mcp_only");
+        }
+        sortAgents(agents, input.sort);
+        const total = input.availability === "mcp_only" ? agents.length : catalog.total;
+        return {
+          view: "marketplace",
+          items: agents,
+          pagination: {
+            page: catalog.page,
+            pageSize: catalog.limit,
+            total,
+            totalPages: total === 0 ? 0 : Math.ceil(total / catalog.limit),
+          },
+          categories: categorySummaries(agents),
+          catalogCoverage: "partial",
+          fetchedAt,
+        };
       }
     }
 

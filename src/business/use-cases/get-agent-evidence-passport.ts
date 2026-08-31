@@ -83,7 +83,11 @@ export class GetAgentEvidencePassport {
       && (protocol === "a2a" || protocol === "erc8183_http")) ?? false;
     // The normalized v2 state is the commerce authority.  Keep this fail-closed
     // during the compatibility window instead of promoting the legacy flag.
-    const canHire = catalogCandidate?.state?.canRequestQuote === true;
+    // `canHire` means an admitted executable seller can negotiate a fresh
+    // quote.  `canPrepareHire` remains the stricter transaction-preview gate.
+    const canHire = catalogCandidate?.state?.commerceStatus === "admitted"
+      && catalogCandidate.state.canRequestQuote
+      && compatibleDeclaration;
     const hireabilityStatus = quoteIsFresh
       ? "quote_verified" as const
       : quote

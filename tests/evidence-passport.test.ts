@@ -376,6 +376,44 @@ describe("GetAgentEvidencePassport", () => {
     expect(passport.checks.quote.status).toBe("verified");
   });
 
+  it("does not treat quote eligibility as hireability before a quote is verified", async () => {
+    const now = Date.parse("2026-08-31T10:29:00.000Z");
+    const agent = {
+      chainId: 56,
+      agentId: "303779",
+      name: "Marketplace Grid Planner",
+      operator: "marketplace",
+      freshness: { fetchedAt: OBSERVED_AT },
+      onchainIdentity: { status: "match", observedAt: OBSERVED_AT, blockNumber: "118077255" },
+    } as unknown as MarketplaceAgent;
+    const candidate: CatalogCandidate = {
+      agentKey: "eip155:56:303779", agentId: "303779", chainId: 56,
+      owner: null, metadataUri: null, name: "Marketplace Grid Planner", description: null, imageUrl: null,
+      categories: ["grid_trading"], marketplaceConfigured: true, metadataState: "ok",
+      registeredAt: null, blockNumber: null, priority: 100,
+      state: {
+        operationalStatus: "platform_reachable", freshness: "live", commerceStatus: "admitted",
+        quoteStatus: "not_requested", buyerAction: "request_quote", canRequestBrowserValidation: true,
+        canRequestInfrastructureValidation: true, canRequestQuote: true, canPrepareHire: false,
+        blockingReasons: ["QUOTE_NOT_VERIFIED"],
+      },
+      declarations: [],
+      observations: [],
+    };
+
+    const passport = await new GetAgentEvidencePassport(
+      { execute: async () => agent },
+      { listByAgentId: () => [] },
+      () => now,
+      { execute: async () => candidate },
+    ).execute({ agentId: "303779" });
+
+    expect(passport).toMatchObject({
+      state: "registered",
+      checks: { quote: { status: "missing", hireabilityStatus: "not_evaluated" } },
+    });
+  });
+
   it("uses a cryptographically verified browser quote as scoped evidence", async () => {
     const now = Date.parse("2026-08-31T10:29:00.000Z");
     const agent = {

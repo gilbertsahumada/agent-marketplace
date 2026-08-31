@@ -1,12 +1,14 @@
 import { getMarketplaceInventoryEntry } from "../../data/inventory/marketplace-inventory.ts";
 import type { MarketplaceAgentData } from "../../data/repositories/marketplace-agent-repository.ts";
 import type { OnchainIdentityData } from "../../data/repositories/marketplace-agent-repository.ts";
+import type { CatalogCandidate, CatalogCandidateObservation } from "../entities/catalog-candidate.ts";
 import type {
   EvidenceRecord,
   MarketplaceAgent,
   MarketplaceCategory,
   MarketplaceHireability,
 } from "../entities/marketplace-agent.ts";
+import type { EndpointObservation } from "../../trust8004/types.ts";
 import { isReleaseQuoteCurrent } from "./release-qualification-policy.ts";
 
 function evidence(
@@ -138,6 +140,126 @@ export function determineHireability(
   };
 }
 
+const CATALOG_PLATFORM_SOURCES = new Set(["worker_probe", "buyer_refresh", "migration"]);
+
+function newestCatalogPlatformObservation(candidate: CatalogCandidate): CatalogCandidateObservation | undefined {
+  return candidate.observations
+    .filter((observation) => CATALOG_PLATFORM_SOURCES.has(observation.source)
+      && (observation.validationKind === "reachability" || observation.validationKind === "protocol")
+      && observation.verificationLevel === "platform_observed")
+    .sort((left, right) => right.observedAt - left.observedAt || right.id - left.id)[0];
+}
+
+function catalogEndpointObservation(candidate: CatalogCandidate): EndpointObservation {
+  const latest = newestCatalogPlatformObservation(candidate);
+  if (!latest) {
+    return {
+      status: "not_observed",
+      protocol: null,
+      endpoint: null,
+      lastTestedAt: null,
+      httpStatus: null,
+      capabilitiesCount: 0,
+      requiresAuth: null,
+      error: null,
+    };
+  }
+  const declaration = candidate.declarations.find(({ endpointKey }) => endpointKey === latest.endpointKey);
+  const protocol = latest.protocol === "mcp"
+    ? "mcp" as const
+    : latest.protocol === "web"
+      ? "web" as const
+      : "a2a" as const;
+  return {
+    status: latest.outcome === "protocol_valid" || latest.outcome === "quote_verified"
+      ? "observed_ok" : "observed_failed",
+    protocol,
+    endpoint: declaration?.endpoint ?? null,
+    lastTestedAt: new Date(latest.observedAt).toISOString(),
+    httpStatus: latest.httpStatus,
+    capabilitiesCount: 0,
+    requiresAuth: null,
+    error: latest.outcome === "protocol_valid" || latest.outcome === "quote_verified"
+      ? null : latest.errorCode ?? latest.outcome,
+  };
+}
+
+function catalogHireability(candidate: CatalogCandidate, now: number): MarketplaceHireability | null {
+  const state = candidate.state;
+  if (!state) return null;
+  const observedAt = newestCatalogPlatformObservation(candidate)?.observedAt
+    ?? candidate.registeredAt
+    ?? now;
+  const timestamp = new Date(observedAt).toISOString();
+  const sellerDeclared = candidate.declarations.some(({ protocol, endpoint, safety }) => safety === "safe"
+    && endpoint !== null
+    && (protocol === "a2a" || protocol === "erc8183_http"));
+  const admitted = state.commerceStatus === "admitted"
+    && state.canRequestQuote
+    && sellerDeclared;
+  const readinessEvidence = (note: string, kind: EvidenceRecord["kind"] = "derived"): EvidenceRecord => evidence(
+    kind,
+    "marketplace-readiness",
+    timestamp,
+    false,
+    note,
+  );
+  if (state.canPrepareHire) {
+    return {
+      status: "quote_verified",
+      canHire: admitted,
+      reason: "The normalized catalog has a fresh verified quote and current chain evidence for this admitted endpoint.",
+      evidence: readinessEvidence("Derived from the normalized Worker admission and evidence state."),
+    };
+  }
+  if (state.quoteStatus === "verified_historical") {
+    return {
+      status: "quote_stale",
+      canHire: admitted,
+      reason: "A signed quote was verified previously, but it is outside its validity window.",
+      evidence: readinessEvidence("The quote remains in the append-only ledger but is no longer fresh.", "observed"),
+    };
+  }
+  if (sellerDeclared) {
+    return {
+      status: "protocol_discovered",
+      canHire: admitted,
+      reason: state.commerceStatus === "admitted"
+        ? "The seller is admitted and can request a fresh quote; a cached observation never authorizes a transaction."
+        : "A compatible seller transport is declared, but marketplace admission is not complete.",
+      evidence: readinessEvidence("Protocol declaration and commerce admission are distinct from hireability."),
+    };
+  }
+  if (candidate.declarations.some(({ protocol }) => protocol === "mcp")) {
+    return {
+      status: "mcp_only",
+      canHire: false,
+      reason: "MCP reachability does not provide an ERC-8183 hiring path.",
+      evidence: readinessEvidence("MCP is an operational transport, not commerce admission."),
+    };
+  }
+  return {
+    status: "no_transport_declared",
+    canHire: false,
+    reason: "No compatible A2A or ERC-8183 HTTP seller transport is declared.",
+    evidence: readinessEvidence("The normalized catalog has no eligible seller transport."),
+  };
+}
+
+function catalogCategoryAssignments(candidate: CatalogCandidate): MarketplaceAgent["categories"] {
+  const observedAt = new Date(candidate.registeredAt ?? Date.now()).toISOString();
+  return candidate.categories.map((category) => ({
+    category,
+    evidence: evidence(
+      "derived",
+      "marketplace-readiness",
+      observedAt,
+      false,
+      "Category assignment comes from the normalized marketplace catalogue and is not proof of performance.",
+    ),
+  }));
+}
+
 export function selectHireAlternative(
   selected: MarketplaceAgent,
   candidates: readonly MarketplaceAgent[],
@@ -163,6 +285,10 @@ export function toMarketplaceAgent(
   const fetchedAt = data.freshness.fetchedAt;
   const trustSource = "trust8004-public-api" as const;
   const evaluatesCandidate = options.evaluateMarketplace && inventory !== null;
+  const catalog = data.catalogCandidate;
+  const catalogHire = catalog ? catalogHireability(catalog, Date.now()) : null;
+  const catalogObservation = catalog ? catalogEndpointObservation(catalog) : null;
+  const catalogCategories = catalog ? catalogCategoryAssignments(catalog) : null;
   return {
     chainId: data.chainId,
     agentId: data.agentId,
@@ -171,7 +297,9 @@ export function toMarketplaceAgent(
     ...(data.imageUrl ? { imageUrl: data.imageUrl } : {}),
     owner: data.owner,
     metadataUri: data.metadataUri,
-    operator: data.verification?.operator ?? inventory?.operator ?? "third_party",
+    operator: catalog?.admission?.state === "admitted"
+      ? "marketplace"
+      : data.verification?.operator ?? inventory?.operator ?? "third_party",
     indexedIdentity: {
       owner: data.owner,
       metadataUri: data.metadataUri,
@@ -195,8 +323,8 @@ export function toMarketplaceAgent(
       error: null,
       evidence: null,
     },
-    categoryEvaluation: evaluatesCandidate ? "evaluated" : "not_evaluated",
-    categories: (evaluatesCandidate ? inventory.categories : []).map((categoryEvidence) => ({
+    categoryEvaluation: catalog ? "evaluated" : evaluatesCandidate ? "evaluated" : "not_evaluated",
+    categories: catalogCategories ?? (evaluatesCandidate ? inventory.categories.map((categoryEvidence) => ({
       category: categoryEvidence.category as MarketplaceCategory,
       evidence: evidence(
         "derived",
@@ -205,15 +333,15 @@ export function toMarketplaceAgent(
         false,
         `${categoryEvidence.signal} Candidate mapping is not proof of operational capability.`,
       ),
-    })),
+    })) : []),
     services: data.services,
     endpoints: data.endpoints,
     tools: data.tools,
     capabilities: data.capabilities,
-    endpointObservation: data.endpointObservation,
+    endpointObservation: catalogObservation ?? data.endpointObservation,
     reputation: data.reputation,
     trustScore: data.trustScore,
-    hireability: evaluatesCandidate
+    hireability: catalogHire ?? (evaluatesCandidate
       ? determineHireability(data)
       : {
         status: "not_evaluated",
@@ -226,7 +354,7 @@ export function toMarketplaceAgent(
           false,
           "Global registry presence does not imply marketplace classification or hireability.",
         ),
-      },
+      }),
     freshness: data.freshness,
     verification: data.verification ? {
       ...data.verification,
@@ -257,12 +385,16 @@ export function toMarketplaceAgent(
       ),
       endpointObservation: evidence(
         "observed",
-        trustSource,
-        data.endpointObservation.lastTestedAt ?? fetchedAt,
-        data.endpointObservation.status !== "not_observed",
-        data.endpointObservation.status === "not_observed"
-          ? "No persisted endpoint observation is available."
-          : "Persisted endpoint observation reported by trust8004.",
+        catalog ? "marketplace-readiness" : trustSource,
+        catalogObservation?.lastTestedAt ?? data.endpointObservation.lastTestedAt ?? fetchedAt,
+        catalogObservation ? catalogObservation.status !== "not_observed" : data.endpointObservation.status !== "not_observed",
+        catalogObservation
+          ? catalogObservation.status === "not_observed"
+            ? "No platform observation is available in the normalized Worker ledger."
+            : "Latest platform endpoint observation from the normalized Worker ledger."
+          : data.endpointObservation.status === "not_observed"
+            ? "No persisted endpoint observation is available."
+            : "Persisted endpoint observation reported by trust8004.",
       ),
       reputation: evidence(
         "onchain",

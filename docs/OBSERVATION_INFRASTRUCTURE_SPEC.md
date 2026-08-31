@@ -596,6 +596,10 @@ Policy examples:
 - MCP-only reachable agent: reachable, not hireable.
 - Commerce admitted but no quote: `request_quote`.
 - Fresh verified quote plus current chain checks: `prepare_hire`.
+- `hireable`/availability means an admitted executable seller has a current
+  compatible declaration and a fresh quote can be requested. It does not mean
+  that a cached quote authorizes a transaction; `canPrepareHire` is the
+  stricter gate that requires a fresh verified quote plus current chain facts.
 - Browser-only unsigned success: `browser_observed`, never platform reachable.
 - CORS browser failure: no platform failure transition.
 
