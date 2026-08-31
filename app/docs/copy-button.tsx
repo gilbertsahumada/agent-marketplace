@@ -8,7 +8,7 @@ export function CopyButton({ text, label }: { text: string; label?: string }) {
   return (
     <button
       aria-label={label ?? "Copy to clipboard"}
-      className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md border border-white/10 px-2 py-1 text-[11px] text-zinc-400 transition-colors hover:border-white/25 hover:text-white"
+      className="inline-flex shrink-0 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-md border border-white/10 px-2 py-1 text-[11px] text-zinc-400 transition-colors hover:border-white/25 hover:text-white"
       onClick={() => {
         navigator.clipboard.writeText(text).then(() => {
           setCopied(true);
