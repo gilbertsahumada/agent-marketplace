@@ -393,6 +393,10 @@ export const catalogAgentEndpoints = sqliteTable(
       "catalog_agent_endpoints_raw_source",
       sql`${table.rawSource} IS NULL OR ${table.rawSource} IN ('services', 'endpoints', 'shortcut')`,
     ),
+    check(
+      "catalog_agent_endpoints_raw_source_index",
+      sql`${table.rawSourceIndex} IS NULL OR ${table.rawSourceIndex} >= 0`,
+    ),
   ],
 );
 
@@ -500,6 +504,19 @@ export const catalogValidationRequests = sqliteTable(
       table.createdAt,
       table.id,
     ),
+    check(
+      "catalog_validation_requests_kind",
+      sql`${table.validationKind} IN ('reachability', 'protocol', 'quote', 'chain')`,
+    ),
+    check(
+      "catalog_validation_requests_requested_by",
+      sql`${table.requestedBy} IN ('system', 'browser_fallback', 'admission')`,
+    ),
+    check(
+      "catalog_validation_requests_status",
+      sql`${table.status} IN ('queued', 'running', 'completed', 'failed', 'cancelled')`,
+    ),
+    check("catalog_validation_requests_attempts", sql`${table.attemptCount} >= 0`),
   ],
 );
 
@@ -516,6 +533,17 @@ export const catalogAgentAdmission = sqliteTable(
     configurationVersion: text(),
     reasonCode: text(),
   },
+  (table) => [
+    check(
+      "catalog_agent_admission_state",
+      sql`${table.state} IN ('candidate', 'admitted', 'suspended')`,
+    ),
+    check(
+      "catalog_agent_admission_transport",
+      sql`${table.commerceTransport} IS NULL OR ${table.commerceTransport} IN ('a2a', 'erc8183_http')`,
+    ),
+    check("catalog_agent_admission_chain_bsc", sql`${table.chainId} = 56`),
+  ],
 );
 
 export const catalogIngestTasks = sqliteTable(
@@ -545,6 +573,17 @@ export const catalogIngestTasks = sqliteTable(
       table.updatedAt,
       table.agentKey,
     ),
+    check("catalog_ingest_tasks_index", sql`${table.nextDeclarationIndex} >= 0`),
+    check("catalog_ingest_tasks_count", sql`${table.declarationCount} >= 0`),
+    check(
+      "catalog_ingest_tasks_status",
+      sql`${table.status} IN ('pending', 'retiring', 'completed', 'failed')`,
+    ),
+    check(
+      "catalog_ingest_tasks_requested_by",
+      sql`${table.requestedBy} IN ('header', 'sweep', 'directed', 'reconciliation')`,
+    ),
+    check("catalog_ingest_tasks_attempts", sql`${table.attemptCount} >= 0`),
   ],
 );
 
@@ -565,6 +604,11 @@ export const catalogDirectedTracking = sqliteTable(
   },
   (table) => [
     index("idx_catalog_directed_tracking_status").on(table.status, table.updatedAt, table.agentKey),
+    check("catalog_directed_tracking_chain_bsc", sql`${table.chainId} = 56`),
+    check(
+      "catalog_directed_tracking_status",
+      sql`${table.status} IN ('registered', 'listed')`,
+    ),
   ],
 );
 

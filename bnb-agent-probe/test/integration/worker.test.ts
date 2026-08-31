@@ -366,6 +366,45 @@ describe("WP1 in the Workers runtime", () => {
     });
   });
 
+  it("does not expose user-level quote claims or mislabeled chain rows as verified evidence", async () => {
+    const now = 1_788_000_000_000;
+    const agentKey = "eip155:56:7200";
+    const endpointKey = "8".repeat(64);
+    await env.DB.prepare(`INSERT INTO catalog_agents (
+      agentKey, agentId, chainId, name, categoriesJson, metadataState, indexState,
+      firstSeenAt, lastSeenAt, priority
+    ) VALUES (?, '7200', 56, 'Evidence filtering', '[]', 'ok', 'current', ?, ?, 1)`)
+      .bind(agentKey, now, now).run();
+    await env.DB.prepare(`INSERT INTO catalog_endpoints (
+      endpointKey, protocol, endpoint, originKey, safety, representativeAgentKey,
+      nextProbeAt, consecutiveFailures, declaredProtocol, role, validationProtocol, eligibility
+    ) VALUES (?, 'a2a', 'https://evidence-filter.example/a2a', 'evidence-filter', ?, ?,
+      ?, 0, 'a2a', 'operational', 'a2a', 'eligible')`)
+      .bind(endpointKey, "safe", agentKey, now).run();
+    await env.DB.prepare(`INSERT INTO catalog_agent_endpoints (
+      agentKey, endpointKey, declarationState, firstSeenAt, lastSeenAt
+    ) VALUES (?, ?, 'current', ?, ?)`)
+      .bind(agentKey, endpointKey, now, now).run();
+    await env.DB.prepare(`INSERT INTO catalog_observations (
+      attemptId, agentKey, endpointKey, protocol, source, outcome, observedAt,
+      expiresAt, durationMs, detailsJson, validationKind, verificationLevel
+    ) VALUES
+      ('user-quote-claim', ?, ?, 'erc8183', 'browser_reported', 'quote_rejected', ?, ?, 1, '{}', 'quote', 'user_observed'),
+      ('mislabeled-chain', ?, ?, 'a2a', 'chain_read', 'protocol_valid', ?, ?, 1, '{}', 'protocol', 'onchain')`)
+      .bind(agentKey, endpointKey, now, now + 900_000, agentKey, endpointKey, now, now + 900_000).run();
+
+    const detail = await createWorker({ now: () => now }).fetch(
+      new Request("https://worker.test/catalog-agent/7200"), env, createExecutionContext(),
+    );
+
+    expect(detail.status).toBe(200);
+    expect(await detail.json()).toMatchObject({
+      quote: null,
+      onchainReferences: [],
+      state: { quoteStatus: "not_supported", canPrepareHire: false },
+    });
+  });
+
   it("does not classify a successful endpoint as live after a newer platform failure", async () => {
     const now = 1_788_000_000_000;
     const endpointKey = "7".repeat(64);

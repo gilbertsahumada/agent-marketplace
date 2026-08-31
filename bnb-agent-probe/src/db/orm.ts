@@ -386,7 +386,10 @@ export async function readEffectiveAgentObservations(
         ) AS evidencePosition
       FROM catalog_observations observation
       WHERE agentKey IN (${sql.join(agentChunk.map((key) => sql`${key}`), sql`, `)})
-        AND validationKind IN ('quote', 'chain')
+        AND (
+          (validationKind = 'quote' AND verificationLevel = 'cryptographic')
+          OR (validationKind = 'chain' AND verificationLevel = 'onchain')
+        )
     ) effective
     WHERE evidencePosition = 1
     ORDER BY observedAt DESC, id DESC`));

@@ -73,8 +73,10 @@ export async function catalogAgentResponse(
       latestBrowserEvidence: latestBrowserEvidence ? serializeObservation(latestBrowserEvidence) : null,
     }];
   });
-  const quoteObservation = evidence.observations.find((observation) => observation.validationKind === "quote") ?? null;
-  const chainObservations = evidence.observations.filter((observation) => observation.validationKind === "chain");
+  const quoteObservation = evidence.observations.find((observation) => observation.validationKind === "quote"
+    && observation.verificationLevel === "cryptographic") ?? null;
+  const chainObservations = evidence.observations.filter((observation) => observation.validationKind === "chain"
+    && observation.verificationLevel === "onchain");
   const v1Body = {
     schemaVersion: 1,
     chainId: 56,
