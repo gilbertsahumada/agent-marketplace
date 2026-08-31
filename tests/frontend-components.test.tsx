@@ -812,7 +812,6 @@ describe("marketplace presentation rules", () => {
   it("does not claim Mainnet has no seller while Grid remains admitted for fresh quotes", () => {
     render(createElement(MarketplaceLanding, {
       categories: [],
-      observationSnapshot: null,
       demoEnabled: true,
       featuredAgents: [],
       funnel: null,
@@ -832,7 +831,6 @@ describe("marketplace presentation rules", () => {
     walletState.chainId = 97;
     render(createElement(MarketplaceLanding, {
       categories: [],
-      observationSnapshot: null,
       demoEnabled: true,
       featuredAgents: [],
       funnel: null,
@@ -850,7 +848,6 @@ describe("marketplace presentation rules", () => {
     walletState.chainId = 1;
     render(createElement(MarketplaceLanding, {
       categories: [],
-      observationSnapshot: null,
       demoEnabled: true,
       featuredAgents: [],
       funnel: null,
@@ -867,7 +864,6 @@ describe("marketplace presentation rules", () => {
     walletState.chainId = 56;
     const tree = createElement(MarketplaceLanding, {
       categories: [],
-      observationSnapshot: null,
       demoEnabled: true,
       featuredAgents: [],
       funnel: null,
