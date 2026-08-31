@@ -30,8 +30,10 @@ Local evidence captured on 2026-09-01:
   25 focused tests (`browser-endpoint-validation.test.ts`,
   `marketplace-controllers.test.ts` and `catalog-observation-sync.test.ts`);
 - the complete application gate passes: typecheck, 544 tests across 62 files and
-  the production CLI/Web build. The BNB Agent SDK still emits its known dynamic
-  dependency warning during bundling; the bundle completes successfully.
+  the production CLI/Web build. The current checkout also passes 548 tests because
+  it contains four concurrent frontend tests outside this infrastructure commit;
+  the BNB Agent SDK still emits its known dynamic dependency warning during
+  bundling, but the bundle completes successfully.
 - `docs/API.md`, `docs/HIRE-SPEC.md`, `docs/MCP.md` and `docs/MARKETPLACE.md`
   are now integrated from `main` in PR #56; the frontend companion remains a
   separate concurrent change and is not included in this infrastructure commit.
