@@ -1,4 +1,11 @@
-const DEFAULT_ORIGIN = "https://bnb-agent-marketplace-ruby.vercel.app";
+export const DEFAULT_ORIGIN = "https://marketplace.trust8004.xyz";
+
+// On Vercel the deployment's own production domain is available programmatically;
+// elsewhere (CLI, stdio MCP on a user machine) the pinned custom domain is the default.
+export function defaultMarketplaceOrigin(env: Record<string, string | undefined> = process.env): string {
+  const productionHost = env.VERCEL_PROJECT_PRODUCTION_URL;
+  return productionHost ? `https://${productionHost}` : DEFAULT_ORIGIN;
+}
 const MAX_RESPONSE_BYTES = 1_048_576;
 const REQUEST_TIMEOUT_MS = 40_000;
 
@@ -29,7 +36,7 @@ function usage(): string {
   ].join("\n");
 }
 
-function normalizedOrigin(value: string): string {
+export function normalizedOrigin(value: string): string {
   let url: URL;
   try {
     url = new URL(value);
@@ -59,7 +66,7 @@ export function parseMarketplaceCliArguments(
   const match = /^(\d+):([0-9]+)$/.exec(target);
   if (!match || match[1] !== "56") throw new Error("Only BSC chain target 56:<id> is supported");
   if (resource === "job" && !/^[1-9]\d*$/.test(match[2]!)) throw new Error("jobId must be positive");
-  const origin = normalizedOrigin(options[1] ?? env.MARKETPLACE_ORIGIN ?? DEFAULT_ORIGIN);
+  const origin = normalizedOrigin(options[1] ?? env.MARKETPLACE_ORIGIN ?? defaultMarketplaceOrigin(env));
   return {
     resource,
     action,

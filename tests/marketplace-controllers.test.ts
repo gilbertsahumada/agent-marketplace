@@ -47,6 +47,19 @@ describe("marketplace API controllers", () => {
     expect(executeList).toHaveBeenCalledWith({ view: "marketplace", page: 1, limit: 12, category: "grid_trading" });
   });
 
+  it("delegates the hireable availability filter to the use case", async () => {
+    executeList.mockResolvedValue({ items: [] });
+    await agentsRoute.GET(new Request("http://local/api/marketplace/agents?view=marketplace&availability=hireable"));
+    expect(executeList).toHaveBeenCalledWith({ view: "marketplace", page: 1, limit: 12, availability: "hireable" });
+  });
+
+  it("rejects an unknown availability value visibly", async () => {
+    const response = await agentsRoute.GET(new Request("http://local/api/marketplace/agents?view=marketplace&availability=sometimes"));
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ error: { code: "InvalidMarketplaceInputError" } });
+    expect(executeList).not.toHaveBeenCalled();
+  });
+
   it("rejects invalid controller input visibly", async () => {
     const response = await agentsRoute.GET(new Request("http://local/api/marketplace/agents?view=everything"));
     expect(response.status).toBe(400);

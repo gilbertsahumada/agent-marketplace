@@ -44,6 +44,8 @@ describe("agents page category handling", () => {
     workerObservations.mockResolvedValue({ status: "unavailable", feed: null });
   });
 
+  // The page always issues one extra metrics call (limit: 1) for the catalog
+  // totals; these tests assert only on the data calls.
   function listDataCalls() {
     return executeList.mock.calls.map((call) => call[0]).filter((input) => input.limit !== 1);
   }

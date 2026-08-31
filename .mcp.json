@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "marketplace": {
+      "command": "npx",
+      "args": ["tsx", "src/marketplace-mcp-bin.ts"]
+    }
+  }
+}

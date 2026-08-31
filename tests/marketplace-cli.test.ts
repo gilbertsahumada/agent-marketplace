@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import {
+  defaultMarketplaceOrigin,
   executeMarketplaceCli,
   parseMarketplaceCliArguments,
 } from "../src/marketplace-cli.ts";
@@ -14,7 +15,7 @@ describe("public marketplace CLI", () => {
   it("is packaged as a thin HTTP client without data-layer imports", () => {
     const packageJson = JSON.parse(readFileSync("package.json", "utf8")) as { bin?: Record<string, string> };
     const source = readFileSync("src/marketplace-cli.ts", "utf8");
-    expect(packageJson.bin?.marketplace).toBe("dist/marketplace-cli-bin.js");
+    expect(packageJson.bin?.marketplace).toBe("dist/src/marketplace-cli-bin.js");
     expect(source).not.toMatch(/src\/(?:data|trust8004|readiness|verification)|@bnbagent\/sdk|\bviem\b/);
   });
 
@@ -87,5 +88,13 @@ describe("public marketplace CLI", () => {
     const fetch = vi.fn(async () => Response.json({ chainId: 97, agentId: "45650" }));
     const args = parseMarketplaceCliArguments(["agent", "inspect", "56:45650", "--origin", ORIGIN]);
     await expect(executeMarketplaceCli(args, { fetch })).rejects.toThrow("schema");
+  });
+
+  it("defaults to the marketplace domain, or the deployment's own production domain on Vercel", () => {
+    expect(defaultMarketplaceOrigin({})).toBe("https://marketplace.trust8004.xyz");
+    expect(defaultMarketplaceOrigin({ VERCEL_PROJECT_PRODUCTION_URL: "marketplace.trust8004.xyz" }))
+      .toBe("https://marketplace.trust8004.xyz");
+    const args = parseMarketplaceCliArguments(["agent", "inspect", "56:45650"], { NODE_ENV: "test" });
+    expect(args.origin).toBe("https://marketplace.trust8004.xyz");
   });
 });

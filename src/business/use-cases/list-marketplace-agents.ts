@@ -25,6 +25,9 @@ import {
 export { DEFAULT_REGISTERED_AGENT_SORT, MARKETPLACE_DATA_SORTS };
 export type MarketplaceSort = MarketplaceDataSort;
 
+export const MARKETPLACE_AVAILABILITIES = ["all", "hireable", "mcp_only"] as const;
+export type MarketplaceAvailability = (typeof MARKETPLACE_AVAILABILITIES)[number];
+
 interface BaseListInput {
   q?: string;
   sort?: MarketplaceDataSort;
@@ -37,7 +40,7 @@ export type ListMarketplaceAgentsInput =
   | (BaseListInput & {
     view: "marketplace";
     category?: MarketplaceCategory;
-    availability?: "all" | "hireable" | "mcp_only";
+    availability?: MarketplaceAvailability;
   });
 
 function positiveInteger(value: number, name: string): number {
