@@ -6,7 +6,7 @@ import {
   ListToolsRequestSchema,
   McpError,
 } from "@modelcontextprotocol/sdk/types.js";
-import { DEFAULT_ORIGIN, normalizedOrigin } from "./marketplace-cli.ts";
+import { defaultMarketplaceOrigin, normalizedOrigin } from "./marketplace-cli.ts";
 
 const MAX_RESPONSE_BYTES = 1_048_576;
 const REQUEST_TIMEOUT_MS = 40_000;
@@ -81,7 +81,7 @@ function errorText(status: number, payload: unknown): string {
 
 export function marketplaceMcpTools(options: MarketplaceMcpOptions = {}): MarketplaceMcpTool[] {
   const origin = normalizedOrigin(
-    options.origin ?? process.env.MARKETPLACE_ORIGIN ?? DEFAULT_ORIGIN,
+    options.origin ?? process.env.MARKETPLACE_ORIGIN ?? defaultMarketplaceOrigin(),
   );
   const fetchImplementation = options.fetch ?? globalThis.fetch;
 

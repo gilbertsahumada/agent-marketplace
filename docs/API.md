@@ -266,7 +266,7 @@ a programmatic buyer executes after `request_quote` is specified in
 - **Remote (Streamable HTTP)** — `POST /api/mcp` on the production origin. Stateless:
   no session ids, each JSON-RPC message is a self-contained request; `GET`/`DELETE`
   answer `405`. Connect from any MCP client, e.g.
-  `claude mcp add --transport http marketplace https://bnb-agent-marketplace-ruby.vercel.app/api/mcp`.
+  `claude mcp add --transport http marketplace https://marketplace.trust8004.xyz/api/mcp`.
   The endpoint's tools call the marketplace API at its configured origin
   (`MARKETPLACE_ORIGIN`, defaulting to the production origin) — never the request's
   own `Host` header, so the upstream cannot be redirected by callers.
