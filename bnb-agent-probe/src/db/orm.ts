@@ -287,25 +287,39 @@ export async function readCatalogProjectionMismatches(db: Database): Promise<Arr
   projectedSuccessAt: number | null;
   ledgerSuccessAt: number | null;
 }>> {
+  // Shared endpoint columns are owned by the representative declaration. A
+  // non-representative buyer refresh remains agent-scoped ledger evidence and
+  // must not make the shared projection look inconsistent.
   return db.all(sql`WITH ranked AS (
-    SELECT endpointKey, observedAt, outcome,
-      ROW_NUMBER() OVER (PARTITION BY endpointKey ORDER BY observedAt DESC, id DESC) AS position
-    FROM catalog_observations
-    WHERE endpointKey IS NOT NULL
-      AND source IN ('worker_probe', 'buyer_refresh', 'migration')
-      AND verificationLevel = 'platform_observed'
-      AND validationKind IN ('reachability', 'protocol')
+    SELECT observation.endpointKey, observation.observedAt, observation.outcome,
+      ROW_NUMBER() OVER (
+        PARTITION BY observation.endpointKey
+        ORDER BY observation.observedAt DESC, observation.id DESC
+      ) AS position
+    FROM catalog_observations observation
+    INNER JOIN catalog_endpoints scope
+      ON scope.endpointKey = observation.endpointKey
+      AND (scope.representativeAgentKey IS NULL
+        OR scope.representativeAgentKey = observation.agentKey)
+    WHERE observation.endpointKey IS NOT NULL
+      AND observation.source IN ('worker_probe', 'buyer_refresh', 'migration')
+      AND observation.verificationLevel = 'platform_observed'
+      AND observation.validationKind IN ('reachability', 'protocol')
   ), latest AS (
     SELECT endpointKey, observedAt, outcome FROM ranked WHERE position = 1
   ), successes AS (
-    SELECT endpointKey, MAX(observedAt) AS observedAt
-    FROM catalog_observations
-    WHERE endpointKey IS NOT NULL
-      AND source IN ('worker_probe', 'buyer_refresh', 'migration')
-      AND verificationLevel = 'platform_observed'
-      AND outcome = 'protocol_valid'
-      AND validationKind IN ('reachability', 'protocol')
-    GROUP BY endpointKey
+    SELECT observation.endpointKey, MAX(observation.observedAt) AS observedAt
+    FROM catalog_observations observation
+    INNER JOIN catalog_endpoints scope
+      ON scope.endpointKey = observation.endpointKey
+      AND (scope.representativeAgentKey IS NULL
+        OR scope.representativeAgentKey = observation.agentKey)
+    WHERE observation.endpointKey IS NOT NULL
+      AND observation.source IN ('worker_probe', 'buyer_refresh', 'migration')
+      AND observation.verificationLevel = 'platform_observed'
+      AND observation.outcome = 'protocol_valid'
+      AND observation.validationKind IN ('reachability', 'protocol')
+    GROUP BY observation.endpointKey
   )
   SELECT
     endpoint.endpointKey AS endpointKey,

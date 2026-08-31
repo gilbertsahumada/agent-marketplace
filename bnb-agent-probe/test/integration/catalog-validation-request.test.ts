@@ -168,6 +168,9 @@ describe("catalog validation Queue work", () => {
       WHERE source = 'buyer_refresh'`).first()).toMatchObject({
       source: "buyer_refresh", outcome: "protocol_valid", agentKey: "eip155:56:42",
     });
+    expect(await readCatalogProjectionMismatches(
+      createDatabase(env.DB as unknown as D1DatabaseLike),
+    )).toEqual([]);
   });
 
   it("releases leases and leaves the request retryable when the result batch fails", async () => {
