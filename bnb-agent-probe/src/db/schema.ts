@@ -326,12 +326,33 @@ export const catalogEndpoints = sqliteTable(
     ),
     check("catalog_endpoints_safety", sql`${table.safety} IN ('safe', 'unsafe')`),
     check("catalog_endpoints_failures", sql`${table.consecutiveFailures} >= 0`),
+    check("catalog_endpoints_role", sql`${table.role} IN ('operational', 'external')`),
+    check(
+      "catalog_endpoints_validation_protocol",
+      sql`${table.validationProtocol} IS NULL OR ${table.validationProtocol} IN ('a2a', 'mcp', 'erc8183_http')`,
+    ),
+    check(
+      "catalog_endpoints_external_kind",
+      sql`${table.externalKind} IS NULL OR ${table.externalKind} IN ('website', 'social', 'repository', 'documentation', 'other')`,
+    ),
+    check(
+      "catalog_endpoints_eligibility",
+      sql`${table.eligibility} IN ('eligible', 'unsafe', 'invalid_declaration', 'unsupported')`,
+    ),
     check(
       "catalog_endpoints_safety_reason",
       sql`${table.safetyReason} IS NULL OR ${table.safetyReason} IN (
         'invalid_url', 'https_required', 'credentials_not_allowed',
         'query_not_allowed', 'fragment_not_allowed', 'non_public_host'
       )`,
+    ),
+    check(
+      "catalog_endpoints_external_schedule",
+      sql`${table.role} != 'external' OR (${table.validationProtocol} IS NULL AND ${table.nextProbeAt} IS NULL)`,
+    ),
+    check(
+      "catalog_endpoints_eligible_schedule",
+      sql`${table.eligibility} != 'eligible' OR (${table.role} = 'operational' AND ${table.validationProtocol} IS NOT NULL AND ${table.nextProbeAt} IS NOT NULL)`,
     ),
   ],
 );
@@ -422,6 +443,14 @@ export const catalogObservations = sqliteTable(
       )`,
     ),
     check("catalog_observations_duration", sql`${table.durationMs} >= 0`),
+    check(
+      "catalog_observations_validation_kind",
+      sql`${table.validationKind} IN ('reachability', 'protocol', 'quote', 'chain')`,
+    ),
+    check(
+      "catalog_observations_verification_level",
+      sql`${table.verificationLevel} IN ('user_observed', 'platform_observed', 'cryptographic', 'onchain')`,
+    ),
     check(
       "catalog_observations_browser_verification",
       sql`${table.source} <> 'browser_reported' OR ${table.verificationLevel} IN ('user_observed', 'cryptographic')`,
