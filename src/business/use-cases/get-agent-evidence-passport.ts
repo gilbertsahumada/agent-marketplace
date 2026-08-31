@@ -1,4 +1,5 @@
 import type { AgentEvidencePassport } from "../entities/evidence-passport.ts";
+import type { CatalogCandidate, CatalogCandidateObservation } from "../entities/catalog-candidate.ts";
 import type { MarketplaceAgent } from "../entities/marketplace-agent.ts";
 import type { MainnetJobProof } from "../entities/mainnet-job-proof.ts";
 import { buildEvidencePassport } from "../policies/evidence-passport-policy.ts";
@@ -11,27 +12,74 @@ export interface MainnetJobProofReader {
   listByAgentId(agentId: string): MainnetJobProof[];
 }
 
+export interface CatalogCandidateReader {
+  execute(input: { agentId: string }): Promise<CatalogCandidate | null>;
+}
+
+const PLATFORM_SOURCES = new Set(["marketplace_probe", "worker_probe", "chain_index"]);
+const FAILURE_OUTCOMES = new Set([
+  "http_error", "timeout", "network_error", "invalid_response", "unsafe_url", "quote_rejected", "unreachable", "error",
+]);
+
+function newestPlatformObservation(candidate: CatalogCandidate): CatalogCandidateObservation[] {
+  return candidate.observations
+    .filter(({ source }) => PLATFORM_SOURCES.has(source))
+    .sort((left, right) => right.observedAt - left.observedAt || right.id - left.id);
+}
+
 export class GetAgentEvidencePassport {
   constructor(
     private readonly getAgent: MarketplaceAgentReader,
     private readonly jobProofs: MainnetJobProofReader,
     private readonly now: () => number = Date.now,
+    private readonly catalogCandidates?: CatalogCandidateReader,
   ) {}
 
   async execute(input: { agentId: string }): Promise<AgentEvidencePassport> {
-    const agent = await this.getAgent.execute(input);
-    return this.build(agent);
+    const [agent, catalogCandidate] = await Promise.all([
+      this.getAgent.execute(input),
+      this.catalogCandidates?.execute(input) ?? Promise.resolve(null),
+    ]);
+    return this.build(agent, catalogCandidate);
   }
 
   async executeWithAgent(input: { agentId: string }): Promise<{
     agent: MarketplaceAgent;
     passport: AgentEvidencePassport;
+    catalogCandidate: CatalogCandidate | null;
   }> {
-    const agent = await this.getAgent.execute(input);
-    return { agent, passport: this.build(agent) };
+    const [agent, catalogCandidate] = await Promise.all([
+      this.getAgent.execute(input),
+      this.catalogCandidates?.execute(input) ?? Promise.resolve(null),
+    ]);
+    return { agent, passport: this.build(agent, catalogCandidate), catalogCandidate };
   }
 
-  private build(agent: MarketplaceAgent): AgentEvidencePassport {
+  private build(agent: MarketplaceAgent, catalogCandidate: CatalogCandidate | null): AgentEvidencePassport {
+    const now = this.now();
+    const platform = catalogCandidate ? newestPlatformObservation(catalogCandidate) : [];
+    const quote = platform.find(({ outcome }) => outcome === "quote_verified");
+    const latestEndpoint = platform.find(({ outcome }) => outcome === "protocol_valid"
+      || outcome === "quote_verified" || FAILURE_OUTCOMES.has(outcome));
+    const endpointExpiresAt = latestEndpoint?.expiresAt ?? null;
+    const endpointIsFresh = latestEndpoint !== undefined
+      && endpointExpiresAt !== null && endpointExpiresAt > now;
+    const endpointFailed = latestEndpoint !== undefined && FAILURE_OUTCOMES.has(latestEndpoint.outcome);
+    const quoteIsFresh = quote !== undefined && quote.expiresAt !== null && quote.expiresAt > now;
+    const compatibleDeclaration = catalogCandidate?.declarations.some(({ protocol, safety }) => safety === "safe"
+      && (protocol === "a2a" || protocol === "erc8183_http")) ?? false;
+    const canHire = (catalogCandidate?.marketplaceConfigured ?? false) && compatibleDeclaration;
+    const hireabilityStatus = quoteIsFresh
+      ? "quote_verified" as const
+      : quote
+        ? "quote_stale" as const
+        : compatibleDeclaration
+          ? "protocol_discovered" as const
+          : catalogCandidate?.declarations.some(({ protocol }) => protocol === "mcp")
+            ? "mcp_only" as const
+            : "not_evaluated" as const;
+    const observedAt = latestEndpoint ? new Date(latestEndpoint.observedAt).toISOString() : null;
+
     return buildEvidencePassport({
       chainId: agent.chainId,
       agentId: agent.agentId,
@@ -43,14 +91,21 @@ export class GetAgentEvidencePassport {
         observedAt: agent.onchainIdentity.observedAt,
         blockNumber: agent.onchainIdentity.blockNumber,
       },
-      verification: null,
+      verification: latestEndpoint ? {
+        freshness: endpointIsFresh || endpointFailed ? "current" : "stale",
+        identityStatus: agent.onchainIdentity.status === "match" ? "match"
+          : agent.onchainIdentity.status === "mismatch" ? "mismatch" : "read_error",
+        endpointStatus: endpointIsFresh ? "verified" : endpointFailed ? "failed" : "not_probed",
+        observedAt: observedAt!,
+        staleAfter: new Date(endpointExpiresAt ?? latestEndpoint.observedAt + 15 * 60_000).toISOString(),
+      } : null,
       hireability: {
-        canHire: false,
-        status: "not_evaluated",
-        observedAt: null,
+        canHire,
+        status: hireabilityStatus,
+        observedAt: quote ? new Date(quote.observedAt).toISOString() : observedAt,
       },
       jobProofs: this.jobProofs.listByAgentId(agent.agentId),
-      generatedAt: new Date(this.now()).toISOString(),
+      generatedAt: new Date(now).toISOString(),
     });
   }
 }
