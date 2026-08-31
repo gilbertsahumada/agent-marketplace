@@ -47,7 +47,7 @@ envelope        raw seller-signed object — keep it byte-identical for step 3
 agentId         seller's ERC-8004 agent id
 chainId         56 | 97
 provider        seller address
-endpoint        seller's A2A endpoint
+endpoint        seller's A2A endpoint origin (scheme + host only)
 commerce, router, policy, token   contract addresses the job will use
 tokenSymbol, tokenDecimals
 priceRaw        decimal string, raw units
@@ -56,8 +56,15 @@ negotiatedAt, quoteExpiresAt      unix seconds
 description     job description the quote covers
 ```
 
-The server has already validated the quote against the allowlist
-(`assertAllowedQuote`); each failure is `409 ERC8183_QUOTE_REJECTED`:
+The Mainnet variant additionally carries `observationSync: { status }` (see API.md);
+treat it as informational.
+
+The server validates the quote in two layers before returning it. The repository
+layer verifies the seller's signature and the contract/provider/token bindings while
+normalizing the envelope — those failures surface as `503
+ERC8183_SPIKE_UNAVAILABLE`, not 409 (on Mainnet, budget and staleness violations are
+also caught at this layer). The allowlist policy (`assertAllowedQuote`) then enforces
+these rules, whose failures are `409 ERC8183_QUOTE_REJECTED`:
 
 1. `agentId` and `chainId` must match the fixed seller for the network.
 2. `commerce` must be the allowlisted Commerce contract.
@@ -76,10 +83,14 @@ permanent `quote_invalid` rejections on the seller side).
 ## Step 3 — Prepare
 
 `POST …/prepare` with `{ "buyer": "<checksummed EVM address>", "quote": <the envelope> }`.
-Failures: `400 INVALID_ERC8183_SPIKE_INPUT` (malformed buyer), `409
-ERC8183_QUOTE_REJECTED` (envelope re-validation), `409 ERC8183_JOB_NOT_READY` when the
-buyer preconditions fail — policy not allowlisted by the Router, token balance below
-`priceRaw`, or zero native balance.
+Failures: `400 INVALID_ERC8183_SPIKE_INPUT` (malformed buyer); `503
+ERC8183_SPIKE_UNAVAILABLE` when the envelope fails re-verification — including a
+tampered or edited envelope, whose broken signature is indistinguishable from a seller
+outage at this layer, so **on a 503 from prepare, request a fresh quote before
+retrying; never retry a modified envelope**; `409 ERC8183_QUOTE_REJECTED` for
+policy-level rejections; `409 ERC8183_JOB_NOT_READY` when the buyer preconditions
+fail — policy not allowlisted by the Router, token balance below `priceRaw`, or zero
+native balance.
 
 The response is an `Erc8183HirePlan`. Load-bearing fields:
 
@@ -95,11 +106,16 @@ The response is an `Erc8183HirePlan`. Load-bearing fields:
   `approvalMode: "exact_if_required"`, `approvalSpender` (the Commerce contract),
   `cancellationAvailableAfterFunding: false`.
 
-Before signing, verify the plan against the quote (the browser adapter's
-`validateHirePlan` does exactly this): contract addresses match the quote, `0 <
-priceRaw ≤ spendCeilingRaw`, `approvalAmountRaw` is `priceRaw` iff approval is
-required and `"0"` otherwise, `tokenBalanceRaw ≥ priceRaw`, `nativeBalanceRaw > 0`,
-and `executeBefore` is still in the future.
+Before signing, verify the plan and quote against a **locally pinned allowlist** of
+contract addresses — not against each other. This is what gives the check its value:
+a malicious or buggy server could return a plan and quote that are mutually
+consistent but point at the wrong contracts. The browser adapter's
+`validateHirePlan` pins the quote's commerce/router/policy/token/seller/agentId to
+hard-coded deployment constants, then checks `0 < priceRaw ≤` the pinned budget
+ceiling, `approvalAmountRaw` is `priceRaw` iff approval is required and `"0"`
+otherwise, `maximumSignatures` consistency, `tokenBalanceRaw ≥ priceRaw`,
+`nativeBalanceRaw > 0`, the deadline within `(now, now + disputeWindow + 7200]`, and
+`executeBefore === quoteExpiresAt` still in the future.
 
 ## Step 4 — Execute the five transactions
 
@@ -126,8 +142,8 @@ Mechanics the reference implementation applies and a programmatic buyer should t
   its state before re-sending.
 - **Orphan warning**: if execution stops after `createJob`, an unfunded job exists
   onchain. It is harmless (nothing was paid) but must be resumed or abandoned
-  explicitly; `fund` passes `expectedBudget` so a mismatched budget reverts instead of
-  paying the wrong amount.
+  explicitly; `fund` takes an explicit `expectedBudget` argument so the funding
+  amount is stated by the buyer rather than read from job state.
 - **Atomic alternative**: a wallet supporting EIP-5792 `wallet_sendCalls` can submit
   the five calls as one atomic batch (plan P6), removing the intermediate states.
 
@@ -139,20 +155,33 @@ sellerTransactionHash?, job }` — the seller proceeds to submit its deliverable
 
 ## Step 6 — Track and verify the result
 
-`GET /api/marketplace/jobs/testnet/{jobId}` (or `…/jobs/mainnet/{jobId}`). Job status
-machine: `OPEN → FUNDED → SUBMITTED → COMPLETED`, with `REJECTED` and `EXPIRED` as
-terminal failures. `deliverableHash` is read from chain; when the deliverable content
-is available the response carries `result.hashVerified: true` only if the fetched
-content matches the onchain hash. Do not trust a deliverable whose hash was not
-verified.
+The two networks return different shapes:
+
+- `GET /api/marketplace/jobs/testnet/{jobId}` → `{ liveStatus: "verified" |
+  "unavailable", job, snapshot }`; when the live chain read fails but a stored
+  snapshot exists, `job` is `null` and the snapshot is served with
+  `liveStatus: "unavailable"`.
+- `GET /api/marketplace/jobs/mainnet/{jobId}` → `{ job }`.
+
+Both routes only expose jobs matching the fixed demo allowlist; anything else is
+`404 ERC8183_DEMO_JOB_NOT_FOUND` — expect it when polling a job id outside the
+allowlisted seller's bounds. Job status machine: `OPEN → FUNDED → SUBMITTED →
+COMPLETED`, with `REJECTED` and `EXPIRED` as terminal failures. `deliverableHash` is
+read from chain; when the deliverable content is available, `job.result` carries
+`hashVerified: true` only if the fetched content matches the onchain hash. Do not
+trust a deliverable whose hash was not verified.
 
 ## Error handling summary
 
 All error bodies are `{ "error": { "code", "message" } }` (tables in API.md). The
 codes a programmatic buyer must branch on: `ERC8183_SPIKE_DISABLED` (404 — flow off,
-do not retry), `ERC8183_QUOTE_REJECTED` (409 — get a fresh quote; do not modify the
-old one), `ERC8183_JOB_NOT_READY` (409 — fix balances/preconditions, then retry),
-`ERC8183_SPIKE_UNAVAILABLE` (503 — transient, retry with backoff).
+do not retry), `ERC8183_DEMO_JOB_NOT_FOUND` (404 — job outside the demo allowlist),
+`ERC8183_QUOTE_REJECTED` (409 — get a fresh quote; do not modify the old one),
+`ERC8183_JOB_NOT_READY` (409 — fix balances/preconditions, then retry),
+`ERC8183_SPIKE_UNAVAILABLE` (503 — either a genuinely unavailable seller/chain OR a
+quote that failed signature/binding re-verification; the safe recovery is always to
+request a fresh quote, then retry with backoff — never resubmit the same envelope
+unchanged after editing it).
 
 ## Non-claims
 
