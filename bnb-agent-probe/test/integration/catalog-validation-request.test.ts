@@ -120,6 +120,7 @@ describe("catalog validation Queue work", () => {
     const request = await env.DB.prepare("SELECT id FROM catalog_validation_requests").first<{ id: number }>();
     const raw = env.DB as unknown as D1DatabaseLike;
     let failNextBatch = true;
+    let cleanupBatchPrepared = false;
     const flaky: D1DatabaseLike = {
       prepare: (query) => raw.prepare(query),
       async batch<Meta>(statements: readonly D1PreparedStatementLike[]) {
@@ -127,6 +128,8 @@ describe("catalog validation Queue work", () => {
           failNextBatch = false;
           throw new Error("CATALOG_COMMIT_TRANSIENT");
         }
+        cleanupBatchPrepared = statements.length === 2
+          && statements.every((statement) => typeof statement.run === "function");
         return raw.batch<Meta>(statements);
       },
     };
@@ -157,5 +160,6 @@ describe("catalog validation Queue work", () => {
       leaseOwner: null,
       leaseExpiresAt: null,
     });
+    expect(cleanupBatchPrepared).toBe(true);
   });
 });

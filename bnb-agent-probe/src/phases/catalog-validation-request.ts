@@ -146,7 +146,7 @@ export async function runCatalogValidationRequest(
     }).where(and(
       eq(catalogEndpoints.endpointKey, row.endpointKey),
       eq(catalogEndpoints.leaseOwner, endpointLeaseOwner),
-    )).run();
+    ));
     const failRequest = () => db.update(catalogValidationRequests).set({
       status: "failed",
       completedAt: now(),
@@ -156,11 +156,11 @@ export async function runCatalogValidationRequest(
     }).where(and(
       eq(catalogValidationRequests.id, validationId),
       eq(catalogValidationRequests.leaseOwner, requestLeaseOwner),
-    )).run();
+    ));
     try {
       await db.batch([releaseEndpoint(), failRequest()] as unknown as Parameters<typeof db.batch>[0]);
     } catch {
-      await Promise.allSettled([releaseEndpoint(), failRequest()]);
+      await Promise.allSettled([releaseEndpoint().run(), failRequest().run()]);
     }
     throw error;
   }
