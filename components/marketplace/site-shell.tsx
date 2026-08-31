@@ -48,6 +48,7 @@ function Footer() {
           <Link className="hover:text-white" href="/compare">Compare</Link>
           <Link className="hover:text-white" href="/validate">Validate my agent</Link>
           <Link className="hover:text-white" href="/evidence/verification">Methodology</Link>
+          <Link className="hover:text-white" href="/docs">Docs</Link>
           <Link className="hover:text-white" href="/jobs/testnet/551">Public proof</Link>
           <a
             aria-label="BNB Agent Marketplace on GitHub"
