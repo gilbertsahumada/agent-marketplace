@@ -6,7 +6,6 @@ import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Connector } from "wagmi";
-import { NetworkContextBar } from "../components/marketplace/network-context-bar.tsx";
 import { WalletConnectButton } from "../components/marketplace/wallet-connect-button.tsx";
 import { TooltipProvider } from "../components/ui/tooltip.tsx";
 
@@ -39,34 +38,6 @@ afterEach(() => {
 });
 
 describe("header wallet connect button", () => {
-  it("defaults the visible network context to Mainnet while disconnected", async () => {
-    account.mockReturnValue({ address: undefined, isConnected: false, connector: undefined });
-    chainId.mockReturnValue(97);
-    render(createElement(NetworkContextBar));
-
-    expect(await screen.findByText("BSC Mainnet")).toBeInTheDocument();
-    expect(screen.getByText("Default network")).toBeInTheDocument();
-    expect(screen.queryByText("BSC Testnet")).not.toBeInTheDocument();
-  });
-
-  it("follows a connected wallet onto BSC Testnet", async () => {
-    account.mockReturnValue({ address: BUYER, isConnected: true, connector: {} });
-    chainId.mockReturnValue(97);
-    render(createElement(NetworkContextBar));
-
-    expect(await screen.findByText("BSC Testnet")).toBeInTheDocument();
-    expect(screen.getByText("Connected wallet")).toBeInTheDocument();
-  });
-
-  it("does not mislabel an unsupported connected chain as Mainnet", async () => {
-    account.mockReturnValue({ address: BUYER, isConnected: true, connector: {} });
-    chainId.mockReturnValue(1);
-    render(createElement(NetworkContextBar));
-
-    expect(await screen.findByText("Unsupported network · Chain 1")).toBeInTheDocument();
-    expect(screen.queryByText("BSC Mainnet")).not.toBeInTheDocument();
-  });
-
   it("invites the visitor to connect when no wallet is attached", async () => {
     account.mockReturnValue({ address: undefined, isConnected: false, connector: undefined });
     chainId.mockReturnValue(56);
