@@ -102,6 +102,11 @@ function routeUrl(endpoint: string, route: string): string {
   return url.toString();
 }
 
+function canonicalPath(pathname: string): string {
+  const trimmed = pathname.replace(/\/+$/, "");
+  return trimmed.length === 0 ? "/" : trimmed;
+}
+
 function mcpHeaders(sessionId?: string): Record<string, string> {
   return {
     accept: "application/json, text/event-stream",
@@ -191,7 +196,13 @@ async function getProbe(
   const value = record(await boundedJson(response));
   if (target.protocol === "a2a") {
     if (typeof value.name !== "string" || typeof value.url !== "string" || !Array.isArray(value.skills)
-      || new URL(value.url).origin !== new URL(target.endpoint).origin) throw new Error("INVALID_RESPONSE");
+      || !isSyntacticallyPublicHttpsUrl(value.url)) throw new Error("INVALID_RESPONSE");
+    const declaredUrl = new URL(target.endpoint);
+    const cardUrl = new URL(value.url);
+    if (cardUrl.origin !== declaredUrl.origin
+      || canonicalPath(cardUrl.pathname) !== canonicalPath(declaredUrl.pathname)) {
+      throw new Error("INVALID_RESPONSE");
+    }
     const skillIds = value.skills.map((skill) => record(skill).id);
     if (skillIds.some((id) => typeof id !== "string")) throw new Error("INVALID_RESPONSE");
     const commerceCapability = skillIds.some((id) => id === "negotiate" || id === "negotiate-erc8183-job")
