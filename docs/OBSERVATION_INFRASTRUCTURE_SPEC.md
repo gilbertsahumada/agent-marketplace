@@ -30,6 +30,9 @@ Local evidence captured on 2026-09-01:
 - 501 unit tests and 118 Miniflare integration tests pass in
   `bnb-agent-probe` (`vitest.config.ts` and `vitest.worker.config.ts`);
 - production, staging and validation dry-run bundles build successfully;
+- the Wrangler local runtime smoke test returns `200` for `/health` and
+  `/catalog-agents?limit=1`, with the seeded catalog reporting 29,801 current
+  identities; `npm run migrate:local` reports no migrations pending.
 - application-side endpoint policy, controller and observation-sync coverage passes
   41 focused tests (`browser-endpoint-validation.test.ts`,
   `marketplace-controllers.test.ts`, `catalog-observation-sync.test.ts`,
