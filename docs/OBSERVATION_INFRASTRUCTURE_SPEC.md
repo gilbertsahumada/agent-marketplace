@@ -510,6 +510,17 @@ deterministic retry loop.
 
 One-minute Queue scheduling is not the initial default. It is allowed only after measured retries keep projected Queue operations within the Free allowance and the project's reserve. Nominal one-minute producer+consumer work can approach 4,320 operations/day and retry scenarios can approach the existing 8,000-operation reserve.
 
+This is a project-level safety choice, not a Cloudflare Cron restriction. Cloudflare
+supports `* * * * *` (one invocation every minute) on Workers Free and Paid; see
+the [Cron Trigger documentation](https://developers.cloudflare.com/workers/configuration/cron-triggers/).
+The Worker remains cadence-agnostic: a one-minute tick still publishes one small
+Queue message and the consumer claims only bounded due work. With the current
+Free defaults, `loadConfig` deliberately fails closed for a one-minute override
+because its worst-case retry projection plus the on-demand validation reserve
+exceeds the project's 80% Queue safety ceiling. A one-minute Free deployment
+therefore requires an explicitly measured budget profile; it does not require a
+schema or scheduler redesign.
+
 ### 10.4 Paid profile
 
 Initial paid profile, still measured rather than assumed:
