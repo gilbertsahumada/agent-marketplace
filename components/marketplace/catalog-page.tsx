@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ListFilter, Search } from "lucide-react";
+import { ListFilter } from "lucide-react";
 import type { MarketplaceAgentPage, MarketplaceCategory } from "@/src/business/entities/marketplace-agent";
 import type { CatalogCandidatePage, CatalogStatus } from "@/src/business/entities/catalog-candidate";
 import {
@@ -8,13 +8,14 @@ import {
 } from "@/src/business/use-cases/list-marketplace-agents";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { buttonVariants } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { CatalogFilters } from "./catalog-filters";
 import { CatalogResults } from "./catalog-results";
 import { PaginationLinks } from "./page-primitives";
 import { agentCardWithObservations } from "./view-models";
 import { observationTargetsByAgentId, type ObservationFeedResult } from "@/src/business/entities/worker-observations";
 import { catalogCandidateCard } from "./catalog-candidate-view-model";
+import { CatalogNavigationProvider } from "./catalog-navigation";
+import { CatalogSearch } from "./catalog-search";
 
 function CatalogMetric({ label, value }: { label: string; value: number | undefined }) {
   return (
@@ -39,14 +40,23 @@ export function CatalogPage({
   data?: MarketplaceAgentPage;
   catalog?: CatalogCandidatePage;
   observations?: ObservationFeedResult;
-  query: { view: "all" | "marketplace"; status?: CatalogStatus; category?: MarketplaceCategory; q?: string; sort?: MarketplaceSort };
+  query: {
+    view: "all" | "marketplace";
+    status?: CatalogStatus;
+    category?: MarketplaceCategory;
+    statuses?: CatalogStatus[];
+    categories?: MarketplaceCategory[];
+    q?: string;
+    sort?: MarketplaceSort;
+  };
   provenAgentId?: string;
   registryTotal?: number;
   operationalTotal?: number;
 }) {
   if (!data && !catalog) throw new Error("CATALOG_PAGE_DATA_REQUIRED");
   const allView = query.view === "all";
-  const selectedStatus = query.status ?? "declared";
+  const selectedStatuses = query.statuses ?? [query.status ?? "declared"];
+  const selectedCategories = query.categories ?? (query.category ? [query.category] : []);
   const targets = observationTargetsByAgentId(observations.feed);
   const now = Date.now();
   const cards = catalog
@@ -62,13 +72,13 @@ export function CatalogPage({
   const total = catalog?.total ?? data!.pagination.total;
   const registryTotal = providedRegistryTotal ?? (allView ? total : undefined);
   const operationalTotal = providedOperationalTotal
-    ?? (!allView && selectedStatus === "declared" && !query.category && !query.q ? total : undefined);
+    ?? (!allView && selectedStatuses.length === 1 && selectedStatuses[0] === "declared" && selectedCategories.length === 0 && !query.q ? total : undefined);
   const currentPage = catalog?.page ?? data!.pagination.page;
   const totalPages = total === 0 ? 0 : Math.ceil(total / (catalog?.limit ?? data!.pagination.pageSize));
   const hrefForPage = (page: number) => {
     const params = new URLSearchParams({ view: query.view, page: String(page), limit: "24" });
-    if (!allView) params.set("status", selectedStatus);
-    if (query.category) params.set("category", query.category);
+    if (!allView) for (const status of selectedStatuses) params.append("status", status);
+    for (const category of selectedCategories) params.append("category", category);
     if (query.q) params.set("q", query.q);
     if (query.sort) params.set("sort", query.sort);
     return `/agents?${params}`;
@@ -77,8 +87,8 @@ export function CatalogPage({
   const searchForm = (
     <form action="/agents" className={allView ? "grid min-w-0 gap-3 sm:grid-cols-[minmax(0,1fr)_auto]" : "relative grid w-full min-w-0 grid-cols-[auto_minmax(0,1fr)] gap-2 lg:block"} key="catalog-search">
       <input name="view" type="hidden" value={query.view} />
-      {!allView && <input name="status" type="hidden" value={selectedStatus} />}
-      {query.category && <input name="category" type="hidden" value={query.category} />}
+      {!allView && selectedStatuses.map((status) => <input key={status} name="status" type="hidden" value={status} />)}
+      {selectedCategories.map((category) => <input key={category} name="category" type="hidden" value={category} />)}
       {!allView && (
         <details className="lg:hidden">
           <summary
@@ -92,24 +102,20 @@ export function CatalogPage({
           <div className="absolute inset-x-0 top-12 z-20 max-h-[min(70vh,32rem)] overflow-y-auto rounded-xl border border-border bg-background p-4 shadow-xl">
             <CatalogFilters
               idPrefix="catalog-mobile"
-              status={selectedStatus}
-              {...(query.category ? { category: query.category } : {})}
+              categories={selectedCategories}
+              statuses={selectedStatuses}
               {...(query.q ? { q: query.q } : {})}
             />
           </div>
         </details>
       )}
-      <label className="relative block w-full min-w-0">
-        <span className="sr-only">Search agents</span>
-        <Search aria-hidden="true" className="absolute top-1/2 left-4 size-4 -translate-y-1/2 text-zinc-500" />
-        <Input
-          className="h-10 pl-11 focus-visible:ring-inset"
-          defaultValue={query.q}
-          maxLength={120}
-          name="q"
-          placeholder={allView ? "Search all registered agents" : "Search operational candidates"}
-        />
-      </label>
+      <CatalogSearch
+        categories={selectedCategories}
+        statuses={selectedStatuses}
+        {...(query.q ? { q: query.q } : {})}
+        {...(query.sort ? { sort: query.sort } : {})}
+        view={query.view}
+      />
       {allView && (
         <label>
           <span className="sr-only">Sort agents</span>
@@ -128,7 +134,7 @@ export function CatalogPage({
     </form>
   );
 
-  const emptyContent = query.category === "grid_trading" ? (
+  const emptyContent = selectedCategories.length === 1 && selectedCategories[0] === "grid_trading" ? (
     <Alert className="border-zinc-800 bg-zinc-950">
       <AlertTitle>No verified Grid Trading agent yet</AlertTitle>
       <AlertDescription>
@@ -155,23 +161,25 @@ export function CatalogPage({
         </div>
       </header>
 
-      <div className={allView ? "mt-7" : "mt-7 grid gap-6 lg:h-[calc(100dvh-15rem)] lg:min-h-[28rem] lg:grid-cols-[15rem_minmax(0,1fr)]"}>
-        {!allView && (
-          <aside aria-label="Catalog filters" className="hidden border-r border-white/10 pr-6 lg:sticky lg:top-0 lg:block lg:max-h-full lg:self-start lg:overflow-y-auto">
-            <CatalogFilters
-              idPrefix="catalog-desktop"
-              status={selectedStatus}
-              {...(query.category ? { category: query.category } : {})}
-              {...(query.q ? { q: query.q } : {})}
-            />
-          </aside>
-        )}
+      <CatalogNavigationProvider navigationKey={JSON.stringify(query)}>
+        <div className={allView ? "mt-7" : "mt-7 grid gap-6 lg:h-[calc(100dvh-15rem)] lg:min-h-[28rem] lg:grid-cols-[15rem_minmax(0,1fr)]"}>
+          {!allView && (
+            <aside aria-label="Catalog filters" className="hidden border-r border-white/10 pr-6 lg:sticky lg:top-0 lg:block lg:max-h-full lg:self-start lg:overflow-y-auto">
+              <CatalogFilters
+                idPrefix="catalog-desktop"
+                categories={selectedCategories}
+                statuses={selectedStatuses}
+                {...(query.q ? { q: query.q } : {})}
+              />
+            </aside>
+          )}
 
-        <section aria-label="Agent results" className="min-w-0 lg:h-full lg:overflow-y-auto lg:pr-2">
-          <CatalogResults agents={cards} emptyContent={emptyContent} registry={allView} toolbar={searchForm} />
-          <PaginationLinks hrefFor={hrefForPage} page={currentPage} totalPages={totalPages} />
-        </section>
-      </div>
+          <section aria-label="Agent results" className="min-w-0 lg:h-full lg:overflow-y-auto lg:pr-2">
+            <CatalogResults agents={cards} emptyContent={emptyContent} registry={allView} toolbar={searchForm} />
+            <PaginationLinks hrefFor={hrefForPage} page={currentPage} totalPages={totalPages} />
+          </section>
+        </div>
+      </CatalogNavigationProvider>
     </main>
   );
 }
