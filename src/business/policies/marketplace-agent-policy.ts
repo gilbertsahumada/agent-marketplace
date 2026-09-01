@@ -3,6 +3,7 @@ import type { MarketplaceAgentData } from "../../data/repositories/marketplace-a
 import type { OnchainIdentityData } from "../../data/repositories/marketplace-agent-repository.ts";
 import {
   isCatalogOperationalDeclaration,
+  isCatalogOperationalObservation,
   isCatalogSellerDeclaration,
   type CatalogCandidate,
   type CatalogCandidateObservation,
@@ -151,7 +152,8 @@ function newestCatalogPlatformObservation(candidate: CatalogCandidate): CatalogC
   const observations = candidate.observations
     .filter((observation) => CATALOG_PLATFORM_SOURCES.has(observation.source)
       && (observation.validationKind === "reachability" || observation.validationKind === "protocol")
-      && observation.verificationLevel === "platform_observed")
+      && observation.verificationLevel === "platform_observed"
+      && isCatalogOperationalObservation(candidate, observation))
     .sort((left, right) => right.observedAt - left.observedAt || right.id - left.id);
   const admittedEndpointKey = candidate.admission?.endpointKey;
   return (admittedEndpointKey === null || admittedEndpointKey === undefined
