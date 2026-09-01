@@ -66,7 +66,7 @@ interface CatalogProbeDependencies {
   }) => void;
 }
 
-const MAX_RESPONSE_BYTES = 64 * 1024;
+const DEFAULT_MAX_RESPONSE_BYTES = 64 * 1024;
 const MINUTE = 60_000;
 const EVIDENCE_TTL_BY_PROTOCOL = {
   a2a: 12 * 60 * MINUTE,
@@ -79,14 +79,36 @@ function record(value: unknown): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
-async function boundedJson(response: Response): Promise<unknown> {
+async function boundedJson(response: Response, maxResponseBytes: number): Promise<unknown> {
+  if (!Number.isSafeInteger(maxResponseBytes) || maxResponseBytes < 1) {
+    throw new Error("INVALID_RESPONSE");
+  }
   const declared = response.headers.get("content-length");
-  if (declared && /^\d+$/.test(declared) && Number(declared) > MAX_RESPONSE_BYTES) {
+  if (declared && /^\d+$/.test(declared) && Number(declared) > maxResponseBytes) {
     await response.body?.cancel();
     throw new Error("INVALID_RESPONSE");
   }
-  const body = await response.text();
-  if (new TextEncoder().encode(body).byteLength > MAX_RESPONSE_BYTES) throw new Error("INVALID_RESPONSE");
+  if (response.body === null) throw new Error("INVALID_RESPONSE");
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  while (true) {
+    const result = await reader.read();
+    if (result.done) break;
+    total += result.value.byteLength;
+    if (total > maxResponseBytes) {
+      await reader.cancel();
+      throw new Error("INVALID_RESPONSE");
+    }
+    chunks.push(result.value);
+  }
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  const body = new TextDecoder().decode(bytes);
   if (response.headers.get("content-type")?.includes("text/event-stream")) {
     const data = body.split(/\r?\n/).find((line) => line.startsWith("data:"))?.slice(5).trim();
     if (!data) throw new Error("INVALID_RESPONSE");
@@ -120,6 +142,7 @@ async function mcpProbe(
   fetchImpl: typeof fetch,
   signal: AbortSignal,
   clock: () => number,
+  maxResponseBytes: number,
 ): Promise<{ status: number; capabilityCount: number; stageDurationsMs: Record<string, number>; commerceCapability: null }> {
   const stageDurationsMs: Record<string, number> = {};
   let stageStarted = clock();
@@ -141,7 +164,7 @@ async function mcpProbe(
   });
   stageDurationsMs.initialize = Math.max(0, Math.round(clock() - stageStarted));
   if (!initialize.ok) throw Object.assign(new Error("HTTP_ERROR"), { status: initialize.status });
-  const initialized = record(await boundedJson(initialize));
+  const initialized = record(await boundedJson(initialize, maxResponseBytes));
   if (initialized.jsonrpc !== "2.0" || typeof record(initialized.result).protocolVersion !== "string") {
     throw new Error("INVALID_RESPONSE");
   }
@@ -166,7 +189,7 @@ async function mcpProbe(
   });
   stageDurationsMs.toolsList = Math.max(0, Math.round(clock() - stageStarted));
   if (!tools.ok) throw Object.assign(new Error("HTTP_ERROR"), { status: tools.status });
-  const values = record(record(await boundedJson(tools)).result).tools;
+  const values = record(record(await boundedJson(tools, maxResponseBytes)).result).tools;
   if (!Array.isArray(values) || !values.every((tool) => typeof record(tool).name === "string")) {
     throw new Error("INVALID_RESPONSE");
   }
@@ -178,6 +201,7 @@ async function getProbe(
   fetchImpl: typeof fetch,
   signal: AbortSignal,
   clock: () => number,
+  maxResponseBytes: number,
 ): Promise<{ status: number; capabilityCount: number; stageDurationsMs: Record<string, number>; commerceCapability: "erc8183_a2a" | null }> {
   const destination = target.protocol === "a2a"
     ? routeUrl(target.endpoint, ".well-known/agent-card.json")
@@ -193,7 +217,7 @@ async function getProbe(
   });
   const requestDuration = Math.max(0, Math.round(clock() - requestStarted));
   if (!response.ok) throw Object.assign(new Error("HTTP_ERROR"), { status: response.status });
-  const value = record(await boundedJson(response));
+  const value = record(await boundedJson(response, maxResponseBytes));
   if (target.protocol === "a2a") {
     if (typeof value.name !== "string" || typeof value.url !== "string" || !Array.isArray(value.skills)
       || !isSyntacticallyPublicHttpsUrl(value.url)) throw new Error("INVALID_RESPONSE");
@@ -219,6 +243,7 @@ export async function probeCatalogEndpoint(
   options: {
     fetchImpl?: typeof fetch;
     timeoutMs: number;
+    maxResponseBytes?: number;
     freshnessMs?: number;
     now?: () => number;
     clock?: () => number;
@@ -229,6 +254,7 @@ export async function probeCatalogEndpoint(
   const observedAt = now();
   const startedAt = clock();
   const method = target.protocol === "mcp" ? "POST" : "GET";
+  const maxResponseBytes = options.maxResponseBytes ?? DEFAULT_MAX_RESPONSE_BYTES;
   if (!isSyntacticallyPublicHttpsUrl(target.endpoint)) {
     return { outcome: "unsafe_url", observedAt, expiresAt: null, httpStatus: null,
       errorCode: "CATALOG_UNSAFE_URL", durationMs: 0, capabilityCount: 0, method,
@@ -237,8 +263,8 @@ export async function probeCatalogEndpoint(
   try {
     const signal = AbortSignal.timeout(options.timeoutMs);
     const result = target.protocol === "mcp"
-      ? await mcpProbe(target, options.fetchImpl ?? fetch, signal, clock)
-      : await getProbe(target, options.fetchImpl ?? fetch, signal, clock);
+      ? await mcpProbe(target, options.fetchImpl ?? fetch, signal, clock, maxResponseBytes)
+      : await getProbe(target, options.fetchImpl ?? fetch, signal, clock, maxResponseBytes);
     return {
       outcome: "protocol_valid",
       observedAt,
