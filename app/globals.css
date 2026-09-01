@@ -290,6 +290,12 @@ body {
   outline-offset: 3px;
 }
 
+.catalog-search-input:focus-visible {
+  border-color: var(--ring);
+  outline: none;
+  box-shadow: none;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
