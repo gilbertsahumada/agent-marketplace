@@ -295,7 +295,7 @@ export async function getCatalogValidationStatus(
     || attemptCount === null || createdAt === null
     || (validation?.startedAt !== null && startedAt === null)
     || (validation?.completedAt !== null && completedAt === null)
-    || (errorCode !== null && typeof errorCode !== "string")) {
+    || (errorCode !== null && (typeof errorCode !== "string" || !/^[A-Z][A-Z0-9_]{2,63}$/.test(errorCode)))) {
     throw new CatalogValidationRequestError("CATALOG_VALIDATION_INVALID_RESPONSE", 502);
   }
   return {
