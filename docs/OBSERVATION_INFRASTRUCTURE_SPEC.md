@@ -34,7 +34,7 @@ Local evidence captured on 2026-09-01:
   41 focused tests (`browser-endpoint-validation.test.ts`,
   `marketplace-controllers.test.ts`, `catalog-observation-sync.test.ts`,
   `catalog-validation-sync.test.ts` and `catalog-validation-route.test.ts`);
-- the complete application gate passes: typecheck, 588 tests across 64 files and
+- the complete application gate passes: typecheck, 589 tests across 64 files and
   the production CLI/Web build. The current checkout includes the concurrent
   frontend changes and the endpoint-scoped fallback tests;
   the BNB Agent SDK still emits its known dynamic dependency warning during
@@ -43,6 +43,9 @@ Local evidence captured on 2026-09-01:
   `metadataObservedAt` provenance and no longer presents `registeredAt` as a
   metadata freshness timestamp; focused feed/adapter regression tests cover
   both fields.
+- the application catalog feed parser revalidates normalized image URLs and
+  drops credentials, query strings or other unsafe targets before exposing
+  them to UI consumers; the focused feed suite covers unsafe and safe URLs.
 - the catalog D1 seed generator now materializes normalized endpoint role,
   validation protocol, eligibility and due-probe scheduling, creates
   quote-verification admission candidates, and accepts legacy snapshots that
