@@ -80,6 +80,10 @@ export interface CatalogCandidate {
   categories: MarketplaceCategory[];
   marketplaceConfigured: boolean;
   metadataState: "ok" | "http_unreachable" | "other";
+  /** Hash/version of the metadata document used for this normalized row. */
+  metadataVersion?: string | null;
+  /** Timestamp at which the metadata document was observed by the indexer. */
+  metadataObservedAt?: number | null;
   registeredAt: number | null;
   blockNumber: string | null;
   priority: number;

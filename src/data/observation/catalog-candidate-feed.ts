@@ -146,6 +146,10 @@ function candidate(value: unknown, schemaVersion: 1 | 2): CatalogCandidate {
     throw new Error("CATALOG_FEED_INVALID");
   }
   if (!["ok", "http_unreachable", "other"].includes(String(item.metadataState))) throw new Error("CATALOG_FEED_INVALID");
+  const metadataVersion = item.metadataVersion === undefined
+    ? undefined : string(item.metadataVersion, true);
+  const metadataObservedAt = item.metadataObservedAt === undefined
+    ? undefined : integer(item.metadataObservedAt, true);
   const admissionValue = item.admission === undefined || item.admission === null ? null : record(item.admission);
   if (admissionValue && !["candidate", "admitted", "suspended"].includes(String(admissionValue.state))) {
     throw new Error("CATALOG_FEED_INVALID");
@@ -185,6 +189,8 @@ function candidate(value: unknown, schemaVersion: 1 | 2): CatalogCandidate {
     categories: categories as MarketplaceCategory[],
     marketplaceConfigured: item.marketplaceConfigured === 1,
     metadataState: item.metadataState as CatalogCandidate["metadataState"],
+    ...(metadataVersion === undefined ? {} : { metadataVersion }),
+    ...(metadataObservedAt === undefined ? {} : { metadataObservedAt }),
     registeredAt: integer(item.registeredAt, true),
     blockNumber: string(item.blockNumber, true),
     priority: integer(item.priority)!,

@@ -101,6 +101,16 @@ describe("public catalog application adapter", () => {
     });
   });
 
+  it("uses metadata observation time for freshness provenance", () => {
+    const normalized = candidate("42");
+    normalized.metadataVersion = "sha256:catalog-metadata-42";
+    normalized.metadataObservedAt = GENERATED_AT - 60_000;
+
+    expect(catalogCandidateToMarketplaceAgentData(normalized).freshness).toMatchObject({
+      metadataUpdatedAt: new Date(GENERATED_AT - 60_000).toISOString(),
+    });
+  });
+
   it("does not expose external declarations as machine services", () => {
     const normalized = candidate("42");
     normalized.declarations.push({

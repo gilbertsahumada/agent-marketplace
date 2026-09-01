@@ -107,7 +107,8 @@ export function catalogCandidateToMarketplaceAgentData(
     trustScore: { total: null, tier: null, dimensions: {}, calculatedAt: null, expiresAt: null },
     freshness: {
       fetchedAt,
-      metadataUpdatedAt: candidate.registeredAt === null ? null : new Date(candidate.registeredAt).toISOString(),
+      metadataUpdatedAt: candidate.metadataObservedAt == null
+        ? null : new Date(candidate.metadataObservedAt).toISOString(),
       indexedUpdatedAt: fetchedAt,
     },
     catalogCandidate: candidate,
