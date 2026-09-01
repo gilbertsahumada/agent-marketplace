@@ -1,12 +1,13 @@
 "use client";
 
-import { useTransition } from "react";
-import { useRouter } from "next/navigation";
+import { RotateCcw } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Field, FieldGroup, FieldLabel, FieldLegend, FieldSet } from "@/components/ui/field";
 import { Separator } from "@/components/ui/separator";
 import type { MarketplaceCategory } from "@/src/business/entities/marketplace-agent";
 import type { CatalogStatus } from "@/src/business/entities/catalog-candidate";
+import { useCatalogNavigation } from "./catalog-navigation";
 
 const statusFilters: Array<{ value: CatalogStatus; label: string }> = [
   { value: "declared", label: "Declared endpoints" },
@@ -26,20 +27,20 @@ const categoryFilters: Array<{ value: MarketplaceCategory; label: string }> = [
   { value: "health_factor_monitoring", label: "Health factor monitoring" },
 ];
 
-export function CatalogFilters({ status, category, q, idPrefix = "catalog" }: {
-  status: CatalogStatus;
-  category?: MarketplaceCategory;
+export function CatalogFilters({ statuses, categories, q, idPrefix = "catalog" }: {
+  statuses: CatalogStatus[];
+  categories: MarketplaceCategory[];
   q?: string;
   idPrefix?: string;
 }) {
-  const router = useRouter();
-  const [pending, startTransition] = useTransition();
+  const { navigate, pending } = useCatalogNavigation();
 
-  const navigate = (nextStatus: CatalogStatus, nextCategory?: MarketplaceCategory) => {
-    const params = new URLSearchParams({ view: "marketplace", status: nextStatus });
-    if (nextCategory) params.set("category", nextCategory);
+  const apply = (nextStatuses: CatalogStatus[], nextCategories: MarketplaceCategory[]) => {
+    const params = new URLSearchParams({ view: "marketplace" });
+    for (const status of nextStatuses) params.append("status", status);
+    for (const category of nextCategories) params.append("category", category);
     if (q) params.set("q", q);
-    startTransition(() => router.push(`/agents?${params.toString()}`));
+    navigate(`/agents?${params.toString()}`);
   };
 
   return (
@@ -52,11 +53,14 @@ export function CatalogFilters({ status, category, q, idPrefix = "catalog" }: {
             return (
               <Field key={filter.value} orientation="horizontal">
                 <Checkbox
-                  checked={status === filter.value}
+                  checked={statuses.includes(filter.value)}
                   disabled={pending}
                   id={id}
                   onCheckedChange={(checked) => {
-                    if (checked) navigate(filter.value, category);
+                    const next = checked
+                      ? [...statuses, filter.value]
+                      : statuses.filter((status) => status !== filter.value);
+                    apply(next.length > 0 ? next : ["declared"], categories);
                   }}
                 />
                 <FieldLabel className="cursor-pointer text-sm font-normal text-zinc-300" htmlFor={id}>
@@ -78,10 +82,13 @@ export function CatalogFilters({ status, category, q, idPrefix = "catalog" }: {
             return (
               <Field key={filter.value} orientation="horizontal">
                 <Checkbox
-                  checked={category === filter.value}
+                  checked={categories.includes(filter.value)}
                   disabled={pending}
                   id={id}
-                  onCheckedChange={(checked) => navigate(status, checked ? filter.value : undefined)}
+                  onCheckedChange={(checked) => apply(
+                    statuses,
+                    checked ? [...categories, filter.value] : categories.filter((category) => category !== filter.value),
+                  )}
                 />
                 <FieldLabel className="cursor-pointer text-sm font-normal text-zinc-300" htmlFor={id}>
                   {filter.label}
@@ -91,6 +98,17 @@ export function CatalogFilters({ status, category, q, idPrefix = "catalog" }: {
           })}
         </FieldGroup>
       </FieldSet>
+
+      <Button
+        className="w-full"
+        disabled={pending}
+        onClick={() => navigate("/agents?view=marketplace")}
+        type="button"
+        variant="outline"
+      >
+        <RotateCcw aria-hidden="true" data-icon="inline-start" />
+        Clear filters
+      </Button>
     </div>
   );
 }
