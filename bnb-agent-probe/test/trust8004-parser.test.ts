@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   CatalogSchemaError,
+  parseCatalogAgent,
   parseCatalogPage,
 } from "../src/trust8004/parser.ts";
 
@@ -107,6 +108,23 @@ describe("trust8004 catalog parser", () => {
       protocol: "web",
       rawProtocol: "website",
     })]);
+  });
+
+  it.each([
+    "https://127.0.0.1/avatar.png",
+    "https://user:pass@cdn.example/avatar.png",
+    "https://cdn.example/avatar.png?token=secret",
+  ])("drops image URL that is not safe to render: %s", (imageUrl) => {
+    const parsed = parseCatalogAgent({
+      chainId: 56,
+      agentId: "42",
+      metadataReasonCode: "ok",
+      imageUrl,
+      services: [],
+      endpoints: [],
+    });
+
+    expect(parsed.imageUrl).toBeNull();
   });
 
   it("treats null metadata collections as empty when metadata is available", () => {

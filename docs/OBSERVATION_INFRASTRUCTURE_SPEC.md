@@ -72,6 +72,9 @@ Local evidence captured on 2026-09-01:
 - Registry inventory reads retain current ERC-8004 identities even when their
   metadata has no endpoint declaration; the operational inventory remains
   endpoint-gated by default.
+- Declared image metadata is normalized only to public HTTPS/IPFS URLs without
+  credentials, query strings or fragments; unsafe image targets are discarded
+  before they reach catalog/API consumers.
 - catalog evidence reads enforce cryptographic/on-chain verification levels,
   isolate shared-endpoint observations by declaring agent, and release Queue/D1
   leases after a failed result batch; these paths are covered by the integration

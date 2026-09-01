@@ -68,6 +68,16 @@ describe("Trust8004Provider", () => {
     const unsafe = structuredClone(profiles["45422"]!);
     unsafe.agent.image = "javascript:alert(1)";
     expect(parseProfileResponse(unsafe, "45422")).not.toHaveProperty("imageUrl");
+
+    for (const image of [
+      "https://127.0.0.1/avatar.png",
+      "https://user:pass@cdn.example/avatar.png",
+      "https://cdn.example/avatar.png?token=secret",
+    ]) {
+      const unsafeHost = structuredClone(profiles["45422"]!);
+      unsafeHost.agent.image = image;
+      expect(parseProfileResponse(unsafeHost, "45422")).not.toHaveProperty("imageUrl");
+    }
   });
 
   it("preserves direct A2A and MCP profile declarations for validation", async () => {

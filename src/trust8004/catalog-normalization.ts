@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { isIP } from "node:net";
 import { isPublicIpAddress } from "../verification/safe-http.ts";
+import { isSafeImageUrl } from "./safe-url.ts";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -84,16 +85,13 @@ function normalizedImageUrl(value: unknown): string | null {
   if (!candidate) return null;
   if (candidate.startsWith("ipfs://")) {
     const path = candidate.slice("ipfs://".length).replace(/^ipfs\//, "");
-    return path ? `https://ipfs.io/ipfs/${path}` : null;
+    const normalized = path ? `https://ipfs.io/ipfs/${path}` : null;
+    return normalized && isSafeImageUrl(normalized) ? normalized : null;
   }
   try {
     const parsed = new URL(candidate);
-    return parsed.protocol === "https:" && !parsed.username && !parsed.password
-      ? parsed.toString()
-      : null;
-  } catch {
-    return null;
-  }
+    return isSafeImageUrl(parsed.toString()) ? parsed.toString() : null;
+  } catch { return null; }
 }
 
 function digest(value: string): string {

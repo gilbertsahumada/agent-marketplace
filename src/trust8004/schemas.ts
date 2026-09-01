@@ -9,6 +9,7 @@ import {
   type TrustScore,
   type TrustScoreDimension,
 } from "./types.ts";
+import { isSafeImageUrl } from "./safe-url.ts";
 
 type JsonRecord = Record<string, unknown>;
 const MAX_STRING_LENGTH = 16_384;
@@ -55,11 +56,12 @@ function imageUrl(value: unknown, path: string): string | null {
   if (!candidate) return null;
   if (candidate.startsWith("ipfs://")) {
     const cidPath = candidate.slice("ipfs://".length).replace(/^ipfs\//, "");
-    return cidPath ? `https://ipfs.io/ipfs/${cidPath}` : null;
+    const normalized = cidPath ? `https://ipfs.io/ipfs/${cidPath}` : null;
+    return normalized && isSafeImageUrl(normalized) ? normalized : null;
   }
   try {
     const parsed = new URL(candidate);
-    return parsed.protocol === "https:" ? parsed.href : null;
+    return isSafeImageUrl(parsed.href) ? parsed.href : null;
   } catch {
     return null;
   }

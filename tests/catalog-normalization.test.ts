@@ -62,6 +62,16 @@ describe("catalog normalization", () => {
     expect(normalized.imageUrl).toBeNull();
   });
 
+  it.each([
+    "https://127.0.0.1/avatar.png",
+    "https://user:pass@cdn.example/avatar.png",
+    "https://cdn.example/avatar.png?token=secret",
+  ])("drops image URL that is not safe to render: %s", (imageUrl) => {
+    const normalized = normalizeCatalogAgent(agent({ imageUrl }));
+
+    expect(normalized.imageUrl).toBeNull();
+  });
+
   it("deduplicates equivalent declarations without collapsing different protocols", () => {
     const normalized = normalizeCatalogAgent(agent({
       a2aEndpoint: "https://seller.example/a2a",
