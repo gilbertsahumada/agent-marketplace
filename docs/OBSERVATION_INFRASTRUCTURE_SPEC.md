@@ -27,7 +27,7 @@ Local evidence captured on 2026-09-01:
   adds an opaque caller scope and indexed target dimensions for distributed
   on-demand admission limits;
 - Worker typecheck and manifest validation pass;
-- 498 unit tests and 115 Miniflare integration tests pass in
+- 498 unit tests and 116 Miniflare integration tests pass in
   `bnb-agent-probe` (`vitest.config.ts` and `vitest.worker.config.ts`);
 - production, staging and validation dry-run bundles build successfully;
 - application-side endpoint policy, controller and observation-sync coverage passes
@@ -67,6 +67,9 @@ Local evidence captured on 2026-09-01:
   isolate shared-endpoint observations by declaring agent, and release Queue/D1
   leases after a failed result batch; these paths are covered by the integration
   suites above.
+- The v2 catalog serializers tolerate malformed legacy `detailsJson` by exposing
+  an explicit `null` detail while preserving the surrounding evidence envelope;
+  the Worker integration suite covers the detail route regression.
 
 This is not the remote rollout gate. Staging migrations, shadow parity, bounded v2
 writes/reads, operational metrics and legacy-retirement evidence remain required

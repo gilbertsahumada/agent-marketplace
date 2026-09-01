@@ -122,6 +122,43 @@ describe("WP1 in the Workers runtime", () => {
     expect(await detail.json()).toMatchObject(fixture.detail);
   });
 
+  it("keeps catalog detail available when a legacy evidence detail is malformed", async () => {
+    const now = 1_788_000_000_000;
+    const agentKey = "eip155:56:9101";
+    const endpointKey = "9".repeat(64);
+    await env.DB.prepare(`INSERT INTO catalog_agents (
+      agentKey, agentId, chainId, name, categoriesJson, metadataState, indexState, firstSeenAt, lastSeenAt
+    ) VALUES (?, '9101', 56, 'Malformed evidence seller', '[]', 'ok', 'current', ?, ?)`)
+      .bind(agentKey, now, now).run();
+    await env.DB.prepare(`INSERT INTO catalog_endpoints (
+      endpointKey, protocol, endpoint, safety, representativeAgentKey, nextProbeAt,
+      consecutiveFailures, declaredProtocol, role, validationProtocol, eligibility
+    ) VALUES (?, 'a2a', 'https://malformed.example/a2a', 'safe', ?, ?, 0,
+      'a2a', 'operational', 'a2a', 'eligible')`)
+      .bind(endpointKey, agentKey, now).run();
+    await env.DB.prepare(`INSERT INTO catalog_agent_endpoints (
+      agentKey, endpointKey, declarationState, firstSeenAt, lastSeenAt
+    ) VALUES (?, ?, 'current', ?, ?)`)
+      .bind(agentKey, endpointKey, now, now).run();
+    await env.DB.prepare(`INSERT INTO catalog_observations (
+      agentKey, endpointKey, protocol, source, outcome, observedAt, expiresAt,
+      durationMs, detailsJson, validationKind, verificationLevel
+    ) VALUES (?, ?, 'a2a', 'worker_probe', 'protocol_valid', ?, ?, 20,
+      '{not-json', 'protocol', 'platform_observed')`)
+      .bind(agentKey, endpointKey, now, now + 900_000).run();
+
+    const app = createWorker({ now: () => now });
+    const response = await app.fetch(
+      new Request("https://worker.test/catalog-agent/9101"), env, createExecutionContext(),
+    );
+    expect(response.status).toBe(200);
+    const body = await response.json() as {
+      observations: Array<{ details?: unknown; detailsJson?: unknown }>;
+    };
+    expect(body.observations[0]?.details).toBeNull();
+    expect(body.observations[0]).not.toHaveProperty("detailsJson");
+  });
+
   it("filters normalized catalog candidates using platform evidence, never browser claims", async () => {
     const now = 1_788_000_000_000;
     await env.DB.prepare(`INSERT INTO catalog_agents (
@@ -1148,6 +1185,7 @@ describe("WP1 in the Workers runtime", () => {
       ...env,
       BUYER_OBSERVATION_SECRET: "catalog-secret",
       CATALOG_VALIDATION_REQUESTS_PER_DAY: "1",
+      CATALOG_VALIDATION_REQUESTS_PER_CALLER_DAY: "1",
       WP2_QUEUE: { send },
     } as unknown as Env;
     const response = await createWorker({ now: () => now }).fetch(new Request(

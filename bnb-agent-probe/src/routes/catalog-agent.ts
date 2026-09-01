@@ -1,7 +1,7 @@
 import type { D1DatabaseLike } from "../db/client";
 import { createDatabase, readCatalogAgentEvidence } from "../db/orm";
 import { deriveCatalogEvidenceState } from "../catalog/evidence-policy";
-import { CATALOG_API_VERSION, publicCatalogObservation } from "../catalog/api-contract";
+import { CATALOG_API_VERSION, publicCatalogDetails, publicCatalogObservation } from "../catalog/api-contract";
 import type { D1Database } from "../types";
 
 const AGENT_ID = /^[1-9]\d*$/;
@@ -145,7 +145,7 @@ export async function catalogAgentResponse(
       observationId: observation.id,
       observedAt: observation.observedAt,
       artifactHash: observation.artifactHash,
-      details: JSON.parse(observation.detailsJson) as unknown,
+      details: publicCatalogDetails(observation.detailsJson),
     })),
     declarations: evidence.declarations.map((declaration) => ({
       ...evidence.endpoints.find((endpoint) => endpoint.endpointKey === declaration.endpointKey),
