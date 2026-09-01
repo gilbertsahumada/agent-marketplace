@@ -105,6 +105,17 @@ export interface CatalogCandidate {
   observations: CatalogCandidateObservation[];
 }
 
+export function isCatalogOperationalObservation(
+  candidate: Pick<CatalogCandidate, "declarations">,
+  observation: Pick<CatalogCandidateObservation, "endpointKey">,
+): boolean {
+  // Legacy observations may not have an endpoint key. Keep them readable
+  // during the compatibility window; normalized v2 evidence is always scoped.
+  if (observation.endpointKey === null) return true;
+  const declaration = candidate.declarations.find(({ endpointKey }) => endpointKey === observation.endpointKey);
+  return declaration !== undefined && isCatalogOperationalDeclaration(declaration);
+}
+
 export interface CatalogCandidatePage {
   status: CatalogStatus;
   statuses?: CatalogStatus[];
