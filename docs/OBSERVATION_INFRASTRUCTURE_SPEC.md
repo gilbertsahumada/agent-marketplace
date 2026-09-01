@@ -29,6 +29,10 @@ Local evidence captured on 2026-09-01:
 - Worker typecheck and manifest validation pass;
 - 502 unit tests and 118 Miniflare integration tests pass in
   `bnb-agent-probe` (`vitest.config.ts` and `vitest.worker.config.ts`);
+- the versioned raw-SQL allowlist contains only the two normative runtime
+  exceptions (`src/db/query-budget.ts` and `src/lib/scheduler-lease.ts`); its
+  ORM/schema/query-budget gate passes 16 focused tests and reports no new or
+  stale callsites;
 - production, staging and validation dry-run bundles build successfully;
 - the Wrangler local runtime smoke test returns `200` for `/health` and
   `/catalog-agents?limit=1`; the seeded local D1 currently contains 29,801
