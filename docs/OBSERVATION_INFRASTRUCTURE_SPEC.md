@@ -214,11 +214,13 @@ The Queue is transport, not the full worklist. D1 stores pending/due work and le
 ## 7. D1 normalized model
 
 Use additive migrations first. The implementation currently applies `0008` through
-`0016`; `0014_catalog_agent_identity.sql` adds the declared identity provenance
-columns without rewriting existing rows, and
-`0015_agent_scoped_validation_dedupe.sql` migrates legacy on-demand keys and
-`0016_scoped_quote_artifact_dedupe.sql` scopes signed-quote artifact uniqueness
-without touching the append-only observation ledger.
+`0017`; `0014_catalog_agent_identity.sql` adds the declared identity provenance
+columns without rewriting existing rows,
+`0015_agent_scoped_validation_dedupe.sql` migrates legacy on-demand keys,
+`0016_scoped_quote_artifact_dedupe.sql` scopes signed-quote artifact uniqueness,
+and `0017_catalog_validation_caller_rate_limit.sql` adds the opaque caller scope
+and indexed target dimensions for on-demand admission limits. None of these
+migrations rewrites or deletes the append-only observation ledger.
 
 ### 7.1 `catalog_agents`
 
