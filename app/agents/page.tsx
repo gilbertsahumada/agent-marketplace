@@ -21,15 +21,16 @@ export default async function AgentsPage({ searchParams }: { searchParams: Promi
   const view = params.view === "all" ? "all" : "marketplace";
   // Categories only exist for curated marketplace candidates; in the registered
   // view the parameter is dropped so URLs never claim a filter that is not applied.
-  const rawCategory = view === "marketplace" && typeof params.category === "string" ? params.category : undefined;
-  const category = rawCategory && MARKETPLACE_CATEGORIES.includes(rawCategory as MarketplaceCategory)
-    ? rawCategory as MarketplaceCategory
-    : undefined;
-  if (rawCategory && !category && rawCategory !== "all") notFound();
+  const rawCategories = view === "marketplace"
+    ? Array.isArray(params.category) ? params.category : typeof params.category === "string" ? [params.category] : []
+    : [];
+  const categories = [...new Set(rawCategories.filter((category): category is MarketplaceCategory => MARKETPLACE_CATEGORIES.includes(category as MarketplaceCategory)))];
+  if (categories.length !== rawCategories.length) notFound();
   const q = typeof params.q === "string" ? params.q : undefined;
-  const status = typeof params.status === "string" && CATALOG_STATUSES.includes(params.status as CatalogStatus)
-    ? params.status as CatalogStatus
-    : "declared";
+  const rawStatuses = Array.isArray(params.status) ? params.status : typeof params.status === "string" ? [params.status] : [];
+  const validStatuses = rawStatuses.filter((status): status is CatalogStatus => CATALOG_STATUSES.includes(status as CatalogStatus));
+  if (validStatuses.length !== rawStatuses.length) notFound();
+  const statuses: CatalogStatus[] = rawStatuses.length === 0 ? ["declared"] : [...new Set(validStatuses)];
   const sort = typeof params.sort === "string" && SUPPORTED_SORTS.has(params.sort as MarketplaceSort)
     ? params.sort as MarketplaceSort
     : view === "all" ? DEFAULT_REGISTERED_AGENT_SORT : undefined;
@@ -38,7 +39,8 @@ export default async function AgentsPage({ searchParams }: { searchParams: Promi
   const retryParams = new URLSearchParams({ view, page: String(page) });
   if (q) retryParams.set("q", q);
   if (sort) retryParams.set("sort", sort);
-  if (category) retryParams.set("category", category);
+  for (const category of categories) retryParams.append("category", category);
+  for (const status of statuses) retryParams.append("status", status);
   const metricsPromise = Promise.all([
     listMarketplaceAgents.execute({
       view: "all",
@@ -49,14 +51,17 @@ export default async function AgentsPage({ searchParams }: { searchParams: Promi
     getCatalogCandidatePage({ status: "declared", page: 1, limit: 1 }).catch(() => null),
   ]);
   const catalog = view === "marketplace" ? await getCatalogCandidatePage({
-    status, page, limit: 24, ...optional, ...(category ? { category } : {}),
+    statuses, categories, page, limit: 24, ...optional,
   }) : null;
   let data;
   if (!catalog) {
+    if (view === "marketplace" && (statuses.length !== 1 || statuses[0] !== "declared" || categories.length > 1)) {
+      return <CatalogUnavailable retryHref={`/agents?${retryParams.toString()}`} />;
+    }
     try {
       data = view === "all"
         ? await listMarketplaceAgents.execute({ view, page, limit: 24, ...optional })
-        : await listMarketplaceAgents.execute({ view, page, limit: 12, ...optional, ...(category ? { category } : {}) });
+        : await listMarketplaceAgents.execute({ view, page, limit: 12, ...optional, ...(categories[0] ? { category: categories[0] } : {}) });
     } catch (error) {
       if (!(error instanceof MarketplaceDataUnavailableError)) throw error;
       return <CatalogUnavailable retryHref={`/agents?${retryParams.toString()}`} />;
@@ -70,12 +75,12 @@ export default async function AgentsPage({ searchParams }: { searchParams: Promi
   const registryTotal = registryMetric?.pagination.total
     ?? (view === "all" && !q ? data?.pagination.total : undefined);
   const operationalTotal = operationalMetric?.total
-    ?? (catalog?.status === "declared" && !q && !category ? catalog.total : undefined);
+    ?? (statuses.length === 1 && statuses[0] === "declared" && !q && categories.length === 0 ? catalog?.total : undefined);
   return <CatalogPage
     {...(data ? { data } : {})}
     {...(catalog ? { catalog } : {})}
     observations={observations}
-    query={{ view, status, ...optional, ...(category ? { category } : {}) }}
+    query={{ view, statuses, categories, ...optional }}
     {...(mainnetProof ? { provenAgentId: mainnetProof.agentId } : {})}
     {...(typeof registryTotal === "number" ? { registryTotal } : {})}
     {...(typeof operationalTotal === "number" ? { operationalTotal } : {})}
