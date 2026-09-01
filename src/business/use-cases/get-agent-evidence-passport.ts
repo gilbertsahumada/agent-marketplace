@@ -1,6 +1,7 @@
 import type { AgentEvidencePassport } from "../entities/evidence-passport.ts";
 import {
   isCatalogOperationalDeclaration,
+  isCatalogOperationalObservation,
   isCatalogSellerDeclaration,
   type CatalogCandidate,
   type CatalogCandidateObservation,
@@ -31,8 +32,11 @@ const FAILURE_OUTCOMES = new Set([
 
 function newestPlatformObservation(candidate: CatalogCandidate): CatalogCandidateObservation[] {
   const observations = candidate.observations
-    .filter(({ source, validationKind }) => PLATFORM_SOURCES.has(source)
-      && (validationKind === undefined || validationKind === "reachability" || validationKind === "protocol"))
+    .filter((observation) => PLATFORM_SOURCES.has(observation.source)
+      && (observation.validationKind === undefined
+        || observation.validationKind === "reachability"
+        || observation.validationKind === "protocol")
+      && isCatalogOperationalObservation(candidate, observation))
     .sort((left, right) => right.observedAt - left.observedAt || right.id - left.id);
   const admittedEndpointKey = candidate.admission?.endpointKey;
   if (admittedEndpointKey === null || admittedEndpointKey === undefined) return observations;
