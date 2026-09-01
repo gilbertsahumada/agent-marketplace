@@ -45,6 +45,9 @@ describe("browser endpoint validation", () => {
     ["ERC8183", "https://github.com/example/seller"],
     ["MCP", "https://docs.seller.example/mcp"],
     ["A2A", "http://127.0.0.1/private"],
+    ["MCP", "https://[::1]/private"],
+    ["A2A", "https://[fd00::1]/private"],
+    ["ERC8183", "https://[fe80::1]/private"],
   ])("does not offer a mislabeled or unsafe %s declaration at %s", (name, endpoint) => {
     expect(declaredBrowserValidationTargets({
       services: [{ name, endpoint, version: null, tools: [], capabilities: [] }],
