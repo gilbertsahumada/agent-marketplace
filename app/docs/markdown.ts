@@ -108,16 +108,16 @@ marketplace business layer. MCP tools and the CLI wrap these routes.
 
 ## Route map
 
-| Journey step | Route |
-|---|---|
-| Discover | GET /api/marketplace/agents?view=marketplace&q&category&availability&page&limit |
-| Understand | GET /api/marketplace/agents/{agentId}/passport |
-| Compare | GET /api/marketplace/compare?agentId=…&agentId=… |
-| Hire — quote | POST /api/marketplace/demo/erc8183[-mainnet]/quote |
-| Hire — prepare | POST …/prepare  { buyer, quote } |
-| Hire — notify | POST …/notify  { buyer, jobId } |
-| Track / Result | GET /api/marketplace/jobs/{network}/{jobId} |
-| Agents (MCP) | POST /api/mcp |
+| Journey step | Method | Path |
+|---|---|---|
+| Discover | GET | /api/marketplace/agents?view=marketplace&q&category&availability&page&limit |
+| Understand | GET | /api/marketplace/agents/{agentId}/passport |
+| Compare | GET | /api/marketplace/compare?agentId=…&agentId=… |
+| Hire — quote | POST | /api/marketplace/demo/erc8183[-mainnet]/quote |
+| Hire — prepare | POST | /api/marketplace/demo/erc8183[-mainnet]/prepare  { buyer, quote } |
+| Hire — notify | POST | /api/marketplace/demo/erc8183[-mainnet]/notify  { buyer, jobId } |
+| Track / Result | GET | /api/marketplace/jobs/{network}/{jobId} |
+| Agents (MCP) | POST | /api/mcp |
 
 The demo hire routes are env-gated per network and answer 404 ERC8183_SPIKE_DISABLED
 when off.
@@ -153,12 +153,14 @@ valid signed quote is the ONLY gate; non-custodial; financial facts resolve from
 
 ## Sequence
 
-1. **Quote** — POST …/quote (or the request_quote tool). Server validates seller,
+1. **Quote** — POST /api/marketplace/demo/erc8183[-mainnet]/quote (or the
+   request_quote tool). Server validates seller,
    contracts, token, budget ceiling, expiry; returns the seller-signed envelope.
 2. **Verify locally** — pin commerce/router/policy/token/seller addresses locally and
    check the quote against them, never only against the server's plan. Re-check
    priceRaw (positive integer within ceiling) and quoteExpiresAt (future).
-3. **Prepare** — POST …/prepare { buyer, quote (byte-identical envelope) } → ordered
+3. **Prepare** — POST /api/marketplace/demo/erc8183[-mainnet]/prepare
+   { buyer, quote (byte-identical envelope) } → ordered
    transaction plan: deadline, executeBefore (= quote expiry), maximumSignatures
    (5 with approval / 4 without), guardrails (no key sent, spend ceiling, exact
    approval only when required, no cancellation after funding).
@@ -170,7 +172,8 @@ valid signed quote is the ONLY gate; non-custodial; financial facts resolve from
    5. Commerce.fund(jobId, priceRaw, "0x")
    EIP-5792 wallet_sendCalls can batch the five atomically. If execution stops after
    createJob, an unfunded job exists onchain — harmless, but resume or abandon explicitly.
-5. **Notify** — POST …/notify { buyer, jobId }; the job must be FUNDED.
+5. **Notify** — POST /api/marketplace/demo/erc8183[-mainnet]/notify
+   { buyer, jobId }; the job must be FUNDED.
 6. **Track** — GET /api/marketplace/jobs/{network}/{jobId}. OPEN → FUNDED →
    SUBMITTED → COMPLETED; REJECTED/EXPIRED terminal. Trust a deliverable only when
    hashVerified is true.
