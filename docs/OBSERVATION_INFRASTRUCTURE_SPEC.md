@@ -37,7 +37,7 @@ Local evidence captured on 2026-09-01:
   41 focused tests (`browser-endpoint-validation.test.ts`,
   `marketplace-controllers.test.ts`, `catalog-observation-sync.test.ts`,
   `catalog-validation-sync.test.ts` and `catalog-validation-route.test.ts`);
-- the complete application gate passes: typecheck, 592 tests across 64 files and
+- the complete application gate passes: typecheck, 593 tests across 64 files and
   the production CLI/Web build. The current checkout includes the concurrent
   frontend changes and the endpoint-scoped fallback tests;
   the BNB Agent SDK still emits its known dynamic dependency warning during
@@ -90,6 +90,9 @@ Local evidence captured on 2026-09-01:
 - catalog protocol probes enforce the configured `MAX_SELLER_RESPONSE_BYTES`
   limit while streaming seller responses, so Free/Paid response budgets are
   applied consistently to scheduled and on-demand A2A/MCP/ERC-8183 checks.
+- the application card adapter accepts only platform reachability/protocol
+  evidence for the Reachable state and keeps on-chain/quote-only rows from
+  masquerading as transport probes, with legacy compatibility coverage.
 - The v2 catalog serializers tolerate malformed legacy `detailsJson` by exposing
   an explicit `null` detail while preserving the surrounding evidence envelope;
   the Worker integration suite covers the detail route regression.
