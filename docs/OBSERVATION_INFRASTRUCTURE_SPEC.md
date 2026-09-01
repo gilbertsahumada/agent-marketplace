@@ -31,8 +31,12 @@ Local evidence captured on 2026-09-01:
   `bnb-agent-probe` (`vitest.config.ts` and `vitest.worker.config.ts`);
 - production, staging and validation dry-run bundles build successfully;
 - the Wrangler local runtime smoke test returns `200` for `/health` and
-  `/catalog-agents?limit=1`, with the seeded catalog reporting 29,801 current
-  identities; `npm run migrate:local` reports no migrations pending.
+  `/catalog-agents?limit=1`; the seeded local D1 currently contains 29,801
+  identities where `indexState='current'` and `metadataState='ok'`, 681
+  eligible operational endpoints, and one `catalog_agent_admission` candidate.
+  `npm run migrate:local` reports no migrations pending. The identity count is
+  explicitly based on `indexState`, not the metadata-state enum (whose valid
+  value is `ok`, not `current`).
 - application-side endpoint policy, controller and observation-sync coverage passes
   41 focused tests (`browser-endpoint-validation.test.ts`,
   `marketplace-controllers.test.ts`, `catalog-observation-sync.test.ts`,
