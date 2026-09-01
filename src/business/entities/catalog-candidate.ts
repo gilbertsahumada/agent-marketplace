@@ -30,7 +30,9 @@ export function isCatalogOperationalDeclaration(declaration: CatalogCandidateDec
     || declaration.validationProtocol !== undefined) {
     return declaration.role === "operational"
       && declaration.eligibility === "eligible"
-      && declaration.validationProtocol !== null;
+      && declaration.validationProtocol !== null
+      && declaration.safety === "safe"
+      && declaration.endpoint !== null;
   }
   // Legacy schema v1 has no normalized classification fields.
   return declaration.safety === "safe"
