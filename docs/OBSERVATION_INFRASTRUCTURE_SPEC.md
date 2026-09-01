@@ -42,6 +42,13 @@ Local evidence captured on 2026-09-01:
   `total=29,314` operational candidates; the sample `303779` row is exposed as
   `declared`/`pending` with `commerceStatus=admission_pending` until a current
   commerce declaration is admitted.
+- A clean Wrangler tick was then run against an isolated copy of that seeded
+  D1 with v2 reads/writes, catalog probing and both kill switches temporarily
+  enabled. `GET /__scheduled?cron=*/5+*+*+*+*` returned `200`; the producer
+  enqueued one message and the consumer completed the `header` phase on attempt
+  1, persisted `nextPhase=sweep`, released its lease, and recorded 2 upstream
+  requests, 18 D1 queries, 47 rows read and 39 rows written. The copy was
+  discarded after the smoke; shared local and remote state were not modified.
 - application-side endpoint policy, controller and observation-sync coverage passes
   41 focused tests (`browser-endpoint-validation.test.ts`,
   `marketplace-controllers.test.ts`, `catalog-observation-sync.test.ts`,
