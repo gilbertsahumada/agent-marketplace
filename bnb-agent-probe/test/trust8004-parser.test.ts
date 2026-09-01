@@ -112,8 +112,8 @@ describe("trust8004 catalog parser", () => {
 
   it.each([
     "https://127.0.0.1/avatar.png",
-    "https://user:pass@cdn.example/avatar.png",
-    "https://cdn.example/avatar.png?token=secret",
+    "https://user:pass@cdn.example.com/avatar.png",
+    "https://cdn.example.com/avatar.png?token=secret",
   ])("drops image URL that is not safe to render: %s", (imageUrl) => {
     const parsed = parseCatalogAgent({
       chainId: 56,

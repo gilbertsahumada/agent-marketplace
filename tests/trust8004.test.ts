@@ -71,8 +71,8 @@ describe("Trust8004Provider", () => {
 
     for (const image of [
       "https://127.0.0.1/avatar.png",
-      "https://user:pass@cdn.example/avatar.png",
-      "https://cdn.example/avatar.png?token=secret",
+      "https://user:pass@cdn.example.com/avatar.png",
+      "https://cdn.example.com/avatar.png?token=secret",
     ]) {
       const unsafeHost = structuredClone(profiles["45422"]!);
       unsafeHost.agent.image = image;
