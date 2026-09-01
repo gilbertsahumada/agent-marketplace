@@ -61,6 +61,23 @@ curl -X POST https://marketplace.trust8004.xyz/api/mcp \\
 Local (stdio): \`npm run mcp\` from a clone of the repo; \`MARKETPLACE_ORIGIN\` targets
 another deployment (HTTPS only, except localhost).
 
+## What goes through MCP — and what deliberately does not
+
+| Step | Surface | Why |
+|---|---|---|
+| Discover · Understand · Compare | MCP | Read-only evidence with provenance |
+| Quote | MCP | Free, signs nothing; returns the seller-signed envelope |
+| Prepare · Notify | HTTP | Prepare returns WHAT to sign (intents, deadlines, guardrails) — never a signature |
+| Sign + send 5 transactions | buyer's wallet → chain | The key never leaves the buyer; the marketplace is not in the money path |
+| Track · Result | MCP or HTTP | State is resolved from chain either way |
+
+There is no sign or submit_transaction tool on purpose. A server that could produce a
+buyer signature would hold custody of the key; a server relaying signed transactions
+would sit in the money path adding a trust point the chain already solves. The
+marketplace tells the buyer WHAT to sign and verifies the outcome from chain — it
+never signs and never transports signatures. This applies identically to a human
+buyer (browser wallet) and an agent buyer (local key).
+
 ## Tools
 
 ### search_agents(q?, category?, availability?, page?, limit?)
