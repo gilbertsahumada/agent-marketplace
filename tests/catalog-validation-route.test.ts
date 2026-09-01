@@ -72,6 +72,29 @@ describe("public catalog validation controllers", () => {
     expect(issueCatalogValidationRequestToken).not.toHaveBeenCalled();
   });
 
+  it("passes only the normalized proxy/origin context to the infrastructure adapter", async () => {
+    requestCatalogValidation.mockResolvedValue({ status: "queued", reused: false, validationId: 18 });
+    issueCatalogValidationRequestToken.mockReturnValue("opaque-request-token");
+    const response = await postRoute.POST(new Request("http://local/api/marketplace/validate", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        origin: "https://marketplace.example",
+        "x-forwarded-for": "198.51.100.10, 203.0.113.5",
+      },
+      body: JSON.stringify({
+        agentId: "303779",
+        endpointKey: "a".repeat(64),
+        validationKind: "protocol",
+      }),
+    }));
+
+    expect(response.status).toBe(202);
+    expect(requestCatalogValidation).toHaveBeenCalledWith(expect.objectContaining({ agentId: "303779" }), {
+      caller: "198.51.100.10|https://marketplace.example",
+    });
+  });
+
   it("rejects an infrastructure request that omits the endpoint key", async () => {
     const response = await postRoute.POST(new Request("http://local/api/marketplace/validate", {
       method: "POST",
