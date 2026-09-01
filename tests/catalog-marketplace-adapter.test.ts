@@ -118,6 +118,18 @@ describe("public catalog application adapter", () => {
     normalized.declarations.push({
       ...normalized.declarations[0]!,
       endpointKey: "d".repeat(64),
+      endpoint: "https://social.example/profile",
+      role: "operational",
+      protocol: "mcp",
+      declaredProtocol: "mcp",
+      validationProtocol: "mcp",
+      externalKind: "social",
+      eligibility: "invalid_declaration",
+      representativeAgentKey: null,
+    });
+    normalized.declarations.push({
+      ...normalized.declarations[0]!,
+      endpointKey: "e".repeat(64),
       endpoint: "https://unsafe.example/a2a",
       safety: "unsafe",
       role: "operational",
