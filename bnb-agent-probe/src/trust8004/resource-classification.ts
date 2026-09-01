@@ -5,6 +5,13 @@ export type CatalogResourceRole = "operational" | "external";
 export type CatalogValidationProtocol = "a2a" | "mcp" | "erc8183_http";
 export type CatalogExternalKind = "website" | "social" | "repository" | "documentation" | "other";
 export type CatalogEndpointEligibility = "eligible" | "unsafe" | "invalid_declaration" | "unsupported";
+export type CatalogSafetyReason =
+  | "invalid_url"
+  | "https_required"
+  | "credentials_not_allowed"
+  | "query_not_allowed"
+  | "fragment_not_allowed"
+  | "non_public_host";
 
 export interface CatalogResourceClassification {
   readonly declaredProtocol: CatalogEndpointProtocol;
@@ -13,7 +20,7 @@ export interface CatalogResourceClassification {
   readonly externalKind: CatalogExternalKind | null;
   readonly eligibility: CatalogEndpointEligibility;
   readonly safety: "safe" | "unsafe";
-  readonly safetyReason: "invalid_url" | null;
+  readonly safetyReason: CatalogSafetyReason | null;
 }
 
 const SOCIAL_HOSTS = new Set([
@@ -43,6 +50,20 @@ function validationProtocol(protocol: CatalogEndpointProtocol): CatalogValidatio
     : null;
 }
 
+function unsafeReason(endpoint: string): CatalogSafetyReason {
+  let url: URL;
+  try {
+    url = new URL(endpoint);
+  } catch {
+    return "invalid_url";
+  }
+  if (url.protocol !== "https:") return "https_required";
+  if (url.username !== "" || url.password !== "") return "credentials_not_allowed";
+  if (url.search !== "") return "query_not_allowed";
+  if (url.hash !== "") return "fragment_not_allowed";
+  return "non_public_host";
+}
+
 export function classifyCatalogResource(
   declaredProtocol: CatalogEndpointProtocol,
   endpoint: string,
@@ -55,7 +76,7 @@ export function classifyCatalogResource(
       externalKind: null,
       eligibility: "unsafe",
       safety: "unsafe",
-      safetyReason: "invalid_url",
+      safetyReason: unsafeReason(endpoint),
     };
   }
 
