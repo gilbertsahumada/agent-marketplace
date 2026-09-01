@@ -67,6 +67,9 @@ describe("catalog-backed marketplace policy", () => {
       operator: "marketplace",
       categoryEvaluation: "evaluated",
       categories: [{ category: "grid_trading" }],
+      validationTargets: [{
+        endpointKey: "a".repeat(64), protocol: "a2a", endpoint: "https://normalized.example/a2a",
+      }],
       hireability: { status: "quote_verified", canHire: true },
       endpointObservation: {
         status: "observed_ok", protocol: "a2a", endpoint: "https://normalized.example/a2a",
@@ -124,6 +127,7 @@ describe("catalog-backed marketplace policy", () => {
     const agent = toMarketplaceAgent({ ...baseData(), catalogCandidate: normalized }, { evaluateMarketplace: false });
 
     expect(agent.hireability).toMatchObject({ status: "no_transport_declared", canHire: false });
+    expect(agent.validationTargets).toEqual([]);
   });
 
   it("does not admit a protocol declared on a social URL", () => {

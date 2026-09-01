@@ -13,6 +13,7 @@ import type {
   MarketplaceAgent,
   MarketplaceCategory,
   MarketplaceHireability,
+  MarketplaceValidationTarget,
 } from "../entities/marketplace-agent.ts";
 import type { EndpointObservation } from "../../trust8004/types.ts";
 import { isReleaseQuoteCurrent } from "./release-qualification-policy.ts";
@@ -302,6 +303,17 @@ export function toMarketplaceAgent(
   const catalogHire = catalog ? catalogHireability(catalog, Date.now()) : null;
   const catalogObservation = catalog ? catalogEndpointObservation(catalog) : null;
   const catalogCategories = catalog ? catalogCategoryAssignments(catalog) : null;
+  const validationTargets: MarketplaceValidationTarget[] | undefined = catalog
+    ? catalog.declarations
+      .filter(isCatalogOperationalDeclaration)
+      .flatMap((declaration) => {
+        const protocol = declaration.validationProtocol ?? declaration.protocol;
+        return declaration.endpoint !== null
+          && (protocol === "a2a" || protocol === "mcp" || protocol === "erc8183_http")
+          ? [{ endpointKey: declaration.endpointKey, protocol, endpoint: declaration.endpoint }]
+          : [];
+      })
+    : undefined;
   return {
     chainId: data.chainId,
     agentId: data.agentId,
@@ -349,6 +361,7 @@ export function toMarketplaceAgent(
     })) : []),
     services: data.services,
     endpoints: data.endpoints,
+    ...(validationTargets === undefined ? {} : { validationTargets }),
     tools: data.tools,
     capabilities: data.capabilities,
     endpointObservation: catalogObservation ?? data.endpointObservation,

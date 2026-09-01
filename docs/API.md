@@ -95,7 +95,9 @@ categories: [{ category, count, status }], catalogCoverage: "partial", fetchedAt
 
 Each `MarketplaceAgent` carries, among others: `chainId`, `agentId`, `name`,
 `description`, `owner`, `operator`, `metadataUri`, declared `services` / `endpoints` /
-`tools` / `capabilities`, `endpointObservation`, `reputation`, `trustScore`,
+`tools` / `capabilities`, catalog-owned `validationTargets` (each with `endpointKey`,
+`protocol` and `endpoint`, only for current eligible operational declarations),
+`endpointObservation`, `reputation`, `trustScore`,
 `categories` (each with an `EvidenceRecord`), `provenance` (per-fact
 `EvidenceRecord`s), `hireability: { status, canHire, reason, evidence }` and
 `freshness`. `hireability.status` is one of `quote_verified | quote_stale |
