@@ -42,6 +42,11 @@ Local evidence captured on 2026-09-01:
   quote-verification admission candidates, and accepts legacy snapshots that
   omit optional identity fields; the generated 29,801-agent snapshot seed
   applies cleanly after migrations `0001` through `0016`.
+- seed reconciliation now suspends admissions that are absent from the complete
+  registry snapshot or no longer have an eligible commerce endpoint, while
+  leaving the append-only observation ledger untouched; non-transport
+  declarations (`x402` and unknown/custom labels) are retained as external
+  resources and are never scheduled for protocol probing.
 - `docs/API.md`, `docs/HIRE-SPEC.md`, `docs/MCP.md` and `docs/MARKETPLACE.md`
   are now integrated from `main` in PR #56; the frontend companion remains a
   separate concurrent change and is not included in this infrastructure commit.

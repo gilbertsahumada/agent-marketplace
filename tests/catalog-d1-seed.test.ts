@@ -111,11 +111,49 @@ describe("catalog D1 seed", () => {
     expect(result.stats.probeRepresentatives).toBe(0);
   });
 
+  it("preserves non-transport declarations as external resources", () => {
+    const externalAgent = normalizeCatalogAgent({
+      chainId: 56,
+      agentId: "88",
+      name: "External payment agent",
+      metadataReasonCode: "ok",
+      services: [
+        { name: "x402", endpoint: "https://seller.example/pay" },
+        { name: "Custom settlement", endpoint: "https://seller.example/settle" },
+      ],
+    });
+    const externalSnapshot: CatalogSnapshotV2 = {
+      ...snapshot(),
+      candidates: [externalAgent],
+      registeredAgentIds: ["88"],
+      stats: {
+        registered: 1, candidates: 1, declarations: 2, safeDeclarations: 2,
+        unsafeDeclarations: 0, sharedOrigins: 0,
+      },
+    };
+    const result = buildCatalogD1Seed(externalSnapshot);
+
+    expect(result.sql).toContain("'x402','external',NULL,'other','unsupported'");
+    expect(result.sql).toContain("'unknown','external',NULL,'other','unsupported'");
+    expect(result.stats.probeRepresentatives).toBe(0);
+  });
+
   it("reconciles previous rows without deleting append-only observations", () => {
     const result = buildCatalogD1Seed(snapshot());
     expect(result.sql).toContain("UPDATE catalog_agents SET indexState = 'removed'");
     expect(result.sql).toContain("UPDATE catalog_agent_endpoints SET declarationState = 'removed'");
     expect(result.sql).not.toMatch(/DELETE\s+FROM/i);
+    expect(result.sql).not.toMatch(/UPDATE\s+catalog_observations/i);
+  });
+
+  it("suspends stale admissions while preserving the append-only evidence ledger", () => {
+    const result = buildCatalogD1Seed(snapshot());
+
+    expect(result.sql).toContain("UPDATE catalog_agent_admission");
+    expect(result.sql).toContain("reasonCode = 'AGENT_REMOVED_FROM_SNAPSHOT'");
+    expect(result.sql).toContain("reasonCode = 'NO_COMMERCE_ENDPOINT'");
+    expect(result.sql).toContain("state = 'suspended'");
+    expect(result.sql).not.toMatch(/DELETE\s+FROM\s+catalog_agent_admission/i);
     expect(result.sql).not.toMatch(/UPDATE\s+catalog_observations/i);
   });
 });

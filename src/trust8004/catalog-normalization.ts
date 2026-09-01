@@ -5,7 +5,7 @@ import { isPublicIpAddress } from "../verification/safe-http.ts";
 type JsonRecord = Record<string, unknown>;
 
 export type CatalogTransportProtocol = "a2a" | "mcp" | "web";
-export type CatalogEndpointProtocol = CatalogTransportProtocol | "erc8183_http";
+export type CatalogEndpointProtocol = CatalogTransportProtocol | "erc8183_http" | "x402" | "unknown";
 export type CatalogCommerceProtocol = "erc8183";
 export type CatalogMetadataState = "ok" | "http_unreachable" | "other";
 export type CatalogEndpointSafetyReason =
@@ -135,13 +135,14 @@ function metadataState(input: CatalogAgentInput): CatalogMetadataState {
 }
 
 function protocol(value: unknown): CatalogEndpointProtocol | null {
-  if (typeof value !== "string") return null;
+  if (typeof value !== "string") return "unknown";
   const normalized = value.toLowerCase().replace(/[^a-z0-9]/g, "");
   if (normalized === "a2a") return "a2a";
   if (normalized === "mcp") return "mcp";
   if (normalized === "erc8183") return "erc8183_http";
+  if (normalized === "x402") return "x402";
   if (["http", "https", "web", "rest", "api"].includes(normalized)) return "web";
-  return null;
+  return "unknown";
 }
 
 function unsafeDeclaration(
@@ -236,8 +237,10 @@ export function normalizeCatalogAgent(input: CatalogAgentInput): CatalogAgentInd
   const state = metadataState(input);
   const transportProtocols = [...new Set(
     declarations
-      .filter((item) => item.protocol !== "erc8183_http")
-      .map((item) => item.protocol as CatalogTransportProtocol),
+      .filter((item): item is CatalogEndpointDeclaration & { protocol: CatalogTransportProtocol } => (
+        item.protocol === "a2a" || item.protocol === "mcp" || item.protocol === "web"
+      ))
+      .map((item) => item.protocol),
   )].sort();
   const commerceProtocols: CatalogCommerceProtocol[] = declarations.some(
     (item) => item.protocol === "erc8183_http",

@@ -130,4 +130,22 @@ describe("catalog normalization", () => {
     expect(normalized.transportProtocols).toEqual(["web"]);
     expect(normalized.declarations[0]).toMatchObject({ protocol: "web", safety: "safe" });
   });
+
+  it("retains x402 and unknown declarations without treating them as probe transports", () => {
+    const normalized = normalizeCatalogAgent(agent({
+      services: [
+        { name: "x402", endpoint: "https://seller.example/pay" },
+        { name: "Custom settlement", endpoint: "https://seller.example/settle" },
+        { endpoint: "https://seller.example/unknown" },
+      ],
+    }));
+
+    expect(normalized.transportProtocols).toEqual([]);
+    expect(normalized.declarations.map(({ protocol, url }) => ({ protocol, url }))).toEqual([
+      { protocol: "unknown", url: "https://seller.example/settle" },
+      { protocol: "unknown", url: "https://seller.example/unknown" },
+      { protocol: "x402", url: "https://seller.example/pay" },
+    ]);
+    expect(normalized.candidate).toBe(true);
+  });
 });

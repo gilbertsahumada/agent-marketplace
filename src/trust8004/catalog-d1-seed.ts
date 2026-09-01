@@ -44,7 +44,9 @@ function projectDeclaration(declaration: SeedDeclaration): SeedEndpointProjectio
       declaredProtocol: declaration.protocol,
       role: validationProtocol === null ? "external" : "operational",
       validationProtocol,
-      externalKind: declaration.protocol === "web" ? "website" : null,
+      externalKind: validationProtocol === null
+        ? declaration.protocol === "web" ? "website" : "other"
+        : null,
       eligibility: "unsafe",
     };
   }
@@ -59,12 +61,13 @@ function projectDeclaration(declaration: SeedDeclaration): SeedEndpointProjectio
         ? "documentation"
         : null;
   const validationProtocol = isOperationalProtocol(declaration.protocol) ? declaration.protocol : null;
+  const declaredExternalKind = declaration.protocol === "web" ? "website" : externalKind ?? "other";
   return {
     declaredProtocol: declaration.protocol,
     role: validationProtocol === null ? "external" : "operational",
     validationProtocol,
     externalKind: validationProtocol !== null && externalKind !== null
-      ? externalKind : (validationProtocol !== null ? null : externalKind ?? "website"),
+      ? externalKind : (validationProtocol !== null ? null : declaredExternalKind),
     eligibility: validationProtocol !== null && externalKind === null
       ? "eligible" : validationProtocol !== null ? "invalid_declaration" : "unsupported",
   };
@@ -276,6 +279,31 @@ ON CONFLICT(agentKey) DO UPDATE SET
   reasonCode=CASE WHEN catalog_agent_admission.state = 'admitted'
     AND catalog_agent_admission.endpointKey = excluded.endpointKey
     THEN NULL ELSE 'QUOTE_VERIFICATION_REQUIRED' END;`);
+  }
+
+  // Reconciliation must suspend old admission rows as well as marking the
+  // normalized catalog resources removed. Admissions are mutable projections;
+  // observations remain append-only and are deliberately untouched here.
+  const registeredAgentKeys = [...new Set(snapshot.registeredAgentIds.map((agentId) => `eip155:56:${agentId}`))];
+  const commerceAgentKeys = [...new Set(admissions.map((admission) => admission.agentKey))];
+  const seedConfiguration = quote(`seed:${snapshot.sourceSha256}`);
+  const suspensionFields = `state = 'suspended', commerceTransport = NULL, endpointKey = NULL,
+  provider = NULL, validatedAt = NULL, configurationVersion = ${seedConfiguration}`;
+  if (registeredAgentKeys.length === 0) {
+    statements.push(`UPDATE catalog_agent_admission SET
+  ${suspensionFields}, reasonCode = 'AGENT_REMOVED_FROM_SNAPSHOT'
+WHERE 1 = 1;`);
+  } else {
+    const registeredList = registeredAgentKeys.map(quote).join(",");
+    statements.push(`UPDATE catalog_agent_admission SET
+  ${suspensionFields}, reasonCode = 'AGENT_REMOVED_FROM_SNAPSHOT'
+WHERE agentKey NOT IN (${registeredList});`);
+    const commerceCondition = commerceAgentKeys.length === 0
+      ? "1 = 1"
+      : `agentKey NOT IN (${commerceAgentKeys.map(quote).join(",")})`;
+    statements.push(`UPDATE catalog_agent_admission SET
+  ${suspensionFields}, reasonCode = 'NO_COMMERCE_ENDPOINT'
+WHERE agentKey IN (${registeredList}) AND ${commerceCondition};`);
   }
 
   return {
