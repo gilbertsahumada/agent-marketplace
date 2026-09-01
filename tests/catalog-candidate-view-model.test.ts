@@ -80,6 +80,22 @@ describe("catalog candidate card", () => {
     expect(card.monitoring).toMatchObject({ state: "never_probed", attemptCount: 0 });
   });
 
+  it("does not treat onchain evidence as a platform reachability attempt", () => {
+    const value = candidate();
+    value.observations.push({ id: 11, agentKey: value.agentKey, endpointKey: "a".repeat(64),
+      protocol: "erc8183", source: "chain_read", outcome: "protocol_valid", observedAt: NOW,
+      expiresAt: NOW + 900_000, httpStatus: null, errorCode: null, durationMs: 20, details: {},
+      validationKind: "chain", verificationLevel: "onchain" });
+
+    const card = catalogCandidateCard(value, NOW);
+
+    expect(card.evidence.find(({ kind }) => kind === "reachable")).toMatchObject({
+      status: "unknown",
+      provenance: "not_probed",
+    });
+    expect(card.monitoring).toMatchObject({ state: "never_probed", attemptCount: 0 });
+  });
+
   it("treats a fresh bridged A2A quote as both reachable and quote verified", () => {
     const value = candidate();
     value.marketplaceConfigured = true;
