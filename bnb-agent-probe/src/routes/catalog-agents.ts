@@ -453,11 +453,20 @@ export async function catalogAgentsResponse(
     agentKeys.length === 0 ? Promise.resolve([]) : db.select({
       agentKey: catalogObservations.agentKey,
       total: count(),
-    }).from(catalogObservations).where(and(
+    }).from(catalogObservations)
+      .innerJoin(catalogAgentEndpoints, and(
+        eq(catalogAgentEndpoints.agentKey, catalogObservations.agentKey),
+        eq(catalogAgentEndpoints.endpointKey, catalogObservations.endpointKey),
+        eq(catalogAgentEndpoints.declarationState, "current"),
+      ))
+      .innerJoin(catalogEndpoints, eq(catalogEndpoints.endpointKey, catalogObservations.endpointKey))
+      .where(and(
       inArray(catalogObservations.agentKey, agentKeys),
       inArray(catalogObservations.source, [...PLATFORM_SOURCES]),
       inArray(catalogObservations.validationKind, [...PLATFORM_VALIDATION_KINDS]),
       eq(catalogObservations.verificationLevel, "platform_observed"),
+      eq(catalogEndpoints.role, "operational"),
+      eq(catalogEndpoints.eligibility, "eligible"),
     )).groupBy(catalogObservations.agentKey),
   ]);
   const platformAttemptCountByAgent = new Map(platformAttemptCounts.map((row) => [row.agentKey, row.total]));

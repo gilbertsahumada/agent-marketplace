@@ -50,7 +50,10 @@ export async function catalogAgentResponse(
   const resources = evidence.declarations.flatMap((declaration) => {
     const endpoint = evidence.endpoints.find((candidate) => candidate.endpointKey === declaration.endpointKey);
     if (!endpoint) return [];
-    const endpointObservations = evidence.observations.filter((observation) => observation.endpointKey === endpoint.endpointKey);
+    const operational = endpoint.role === "operational" && endpoint.eligibility === "eligible";
+    const endpointObservations = operational
+      ? evidence.observations.filter((observation) => observation.endpointKey === endpoint.endpointKey)
+      : [];
     const platformEvidence = endpointObservations.filter((observation) => PLATFORM_SOURCES.has(observation.source)
       && (observation.validationKind === "protocol" || observation.validationKind === "reachability")
       && observation.verificationLevel === "platform_observed");
@@ -84,7 +87,7 @@ export async function catalogAgentResponse(
         firstSeenAt: declaration.firstSeenAt,
         lastSeenAt: declaration.lastSeenAt,
       },
-      attemptCount: evidence.platformAttemptCountByEndpoint.get(endpoint.endpointKey) ?? 0,
+      attemptCount: operational ? evidence.platformAttemptCountByEndpoint.get(endpoint.endpointKey) ?? 0 : 0,
       latestEvidence: latestEvidence ? serializeObservation(latestEvidence) : null,
       latestSuccess: latestSuccess ? serializeObservation(latestSuccess) : null,
       latestBrowserEvidence: latestBrowserEvidence ? serializeObservation(latestBrowserEvidence) : null,

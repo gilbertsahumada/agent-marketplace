@@ -515,6 +515,12 @@ describe("WP1 in the Workers runtime", () => {
       ('attempt-failed', 'eip155:56:11', ?, 'a2a', 'worker_probe', 'timeout', ?, NULL, 5000,
         '{"schemaVersion":2,"stage":"agent_card"}', 'protocol', 'platform_observed')`)
       .bind("c".repeat(64), now, now + 86_400_000, "e".repeat(64), now).run();
+    await env.DB.prepare(`INSERT INTO catalog_observations (
+      attemptId, agentKey, endpointKey, protocol, source, outcome, observedAt, expiresAt,
+      durationMs, detailsJson, validationKind, verificationLevel
+    ) VALUES ('external-attempt', 'eip155:56:10', ?, 'web', 'worker_probe', 'protocol_valid', ?, ?,
+      12, '{}', 'protocol', 'platform_observed')`)
+      .bind("d".repeat(64), now + 1, now + 86_400_000).run();
     await env.DB.prepare(`INSERT INTO catalog_agent_admission (
       agentKey, state, commerceTransport, endpointKey, chainId, provider, validatedAt, configurationVersion
     ) VALUES ('eip155:56:10', 'admitted', 'a2a', ?, 56,
