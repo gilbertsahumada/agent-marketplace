@@ -566,6 +566,7 @@ describe("WP1 in the Workers runtime", () => {
       agentId: "10",
       provenance: { source: "trust8004", metadataVersion: "meta-10" },
       ingest: { status: "completed", nextDeclarationIndex: 2, declarationCount: 2 },
+      platformAttemptCount: 1,
       resources: [
         {
           role: "operational",

@@ -229,21 +229,39 @@ export async function readCatalogAgentEvidence(
       .limit(observationLimit),
     readEffectiveCatalogObservations(db, agentKey, endpointKeys),
     readEffectiveAgentObservations(db, [agentKey]),
-    db.select({ total: count() }).from(catalogObservations).where(and(
+    db.select({ total: count() }).from(catalogObservations)
+      .innerJoin(catalogAgentEndpoints, and(
+        eq(catalogAgentEndpoints.agentKey, catalogObservations.agentKey),
+        eq(catalogAgentEndpoints.endpointKey, catalogObservations.endpointKey),
+        eq(catalogAgentEndpoints.declarationState, "current"),
+      ))
+      .innerJoin(catalogEndpoints, eq(catalogEndpoints.endpointKey, catalogObservations.endpointKey))
+      .where(and(
       observationCondition,
       inArray(catalogObservations.source, ["worker_probe", "buyer_refresh", "migration"]),
       inArray(catalogObservations.validationKind, ["protocol", "reachability"]),
       eq(catalogObservations.verificationLevel, "platform_observed"),
+      eq(catalogEndpoints.role, "operational"),
+      eq(catalogEndpoints.eligibility, "eligible"),
     )),
     endpointKeys.length === 0 ? Promise.resolve([]) : db.select({
       endpointKey: catalogObservations.endpointKey,
       total: count(),
-    }).from(catalogObservations).where(and(
+    }).from(catalogObservations)
+      .innerJoin(catalogAgentEndpoints, and(
+        eq(catalogAgentEndpoints.agentKey, catalogObservations.agentKey),
+        eq(catalogAgentEndpoints.endpointKey, catalogObservations.endpointKey),
+        eq(catalogAgentEndpoints.declarationState, "current"),
+      ))
+      .innerJoin(catalogEndpoints, eq(catalogEndpoints.endpointKey, catalogObservations.endpointKey))
+      .where(and(
       observationCondition,
       inArray(catalogObservations.endpointKey, endpointKeys),
       inArray(catalogObservations.source, ["worker_probe", "buyer_refresh", "migration"]),
       inArray(catalogObservations.validationKind, ["protocol", "reachability"]),
       eq(catalogObservations.verificationLevel, "platform_observed"),
+      eq(catalogEndpoints.role, "operational"),
+      eq(catalogEndpoints.eligibility, "eligible"),
     )).groupBy(catalogObservations.endpointKey),
   ]);
   const observations = [...new Map([
