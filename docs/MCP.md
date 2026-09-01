@@ -31,6 +31,24 @@ Claude Code picks it up automatically via the checked-in `.mcp.json`. Set
 `MARKETPLACE_ORIGIN` to target another deployment (HTTPS only, except
 `localhost` — useful against `npm run dev`).
 
+## What goes through MCP — and what deliberately does not
+
+| Step | Surface | Why |
+|---|---|---|
+| Discover · Understand · Compare | MCP | Read-only evidence with provenance |
+| Quote | MCP | Free, signs nothing; returns the seller-signed envelope |
+| Prepare · Notify | HTTP | Prepare returns *what* to sign (intents, deadlines, guardrails) — never a signature |
+| Sign + send 5 transactions | buyer's wallet → chain | The key never leaves the buyer; the marketplace is not in the money path |
+| Track · Result | MCP or HTTP | State is resolved from chain either way |
+
+There is no `sign` or `submit_transaction` tool on purpose. A server that could
+produce a buyer signature would hold custody of the buyer's key; a server that
+relays already-signed transactions would sit in the money path, adding a trust
+point the chain itself already solves. The marketplace's job ends at evidence and
+the signed quote: it tells the buyer *what* to sign and verifies the outcome from
+chain — it never signs and never transports signatures. This applies identically to
+a human buyer (browser wallet) and an agent buyer (local key).
+
 ## What the tools do and do not claim
 
 - **MCP or A2A availability never implies ERC-8183 hireability.** Only a valid

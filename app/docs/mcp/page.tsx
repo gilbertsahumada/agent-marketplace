@@ -204,6 +204,58 @@ export default function McpDocsPage() {
         </p>
       </DocsSection>
 
+      <DocsSection id="division-of-labor" title="What goes through MCP — and what deliberately does not">
+        <div className="overflow-x-auto rounded-lg border border-white/10">
+          <table className="w-full text-left text-xs">
+            <thead>
+              <tr className="border-b border-white/10 bg-white/[0.03] text-zinc-500">
+                <th className="px-3 py-2 font-medium">Step</th>
+                <th className="px-3 py-2 font-medium">Surface</th>
+                <th className="px-3 py-2 font-medium">Why</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr className="border-b border-white/[0.06]">
+                <td className="px-3 py-2 text-zinc-400">Discover · Understand · Compare</td>
+                <td className="whitespace-nowrap px-3 py-2 font-mono text-zinc-200">MCP</td>
+                <td className="px-3 py-2 text-zinc-400">Read-only evidence with provenance.</td>
+              </tr>
+              <tr className="border-b border-white/[0.06]">
+                <td className="px-3 py-2 text-zinc-400">Quote</td>
+                <td className="whitespace-nowrap px-3 py-2 font-mono text-zinc-200">MCP</td>
+                <td className="px-3 py-2 text-zinc-400">Free, signs nothing; returns the seller-signed envelope.</td>
+              </tr>
+              <tr className="border-b border-white/[0.06]">
+                <td className="px-3 py-2 text-zinc-400">Prepare · Notify</td>
+                <td className="whitespace-nowrap px-3 py-2 font-mono text-zinc-200">HTTP</td>
+                <td className="px-3 py-2 text-zinc-400">Prepare returns <em>what to sign</em> — the intents, deadlines and guardrails — never a signature.</td>
+              </tr>
+              <tr className="border-b border-white/[0.06]">
+                <td className="px-3 py-2 text-zinc-400">Sign + send 5 transactions</td>
+                <td className="whitespace-nowrap px-3 py-2 font-mono text-zinc-200">buyer&apos;s wallet → chain</td>
+                <td className="px-3 py-2 text-zinc-400">The key never leaves the buyer; the marketplace is not in the money path.</td>
+              </tr>
+              <tr>
+                <td className="px-3 py-2 text-zinc-400">Track · Result</td>
+                <td className="whitespace-nowrap px-3 py-2 font-mono text-zinc-200">MCP or HTTP</td>
+                <td className="px-3 py-2 text-zinc-400">State is resolved from chain either way.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <Callout tone="note">
+          <p>
+            There is no <InlineCode>sign</InlineCode> or <InlineCode>submit_transaction</InlineCode> tool
+            on purpose. A server that could produce a buyer signature would hold custody of the
+            buyer&apos;s key; a server that relays already-signed transactions would sit in the money
+            path adding a trust point the chain itself already solves. The marketplace&apos;s job ends
+            at evidence and the signed quote: it tells the buyer <em>what</em> to sign and verifies
+            the outcome from chain — it never signs and never transports signatures. This applies
+            identically to a human buyer (browser wallet) and an agent buyer (local key).
+          </p>
+        </Callout>
+      </DocsSection>
+
       <DocsSection id="tools" title="Tool reference">
         <p>
           Success returns pretty-printed JSON as a single text content. Upstream API errors come back
