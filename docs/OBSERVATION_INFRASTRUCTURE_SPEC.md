@@ -25,7 +25,7 @@ Local evidence captured on 2026-09-01:
   `0016_scoped_quote_artifact_dedupe.sql` scopes signed-quote artifact uniqueness
   by declaring agent and exact endpoint;
 - Worker typecheck and manifest validation pass;
-- 490 unit tests and 109 Miniflare integration tests pass in
+- 491 unit tests and 111 Miniflare integration tests pass in
   `bnb-agent-probe` (`vitest.config.ts` and `vitest.worker.config.ts`);
 - production, staging and validation dry-run bundles build successfully;
 - application-side endpoint policy, controller and observation-sync coverage passes
@@ -424,9 +424,9 @@ Initial safe profile:
 
 ```text
 Cron cadence:           5 minutes during staging, then 2 minutes after evidence
-Discovery page:         12 identities
-Ingest tasks/run:       2
-Declarations/task:      4
+Discovery page:         2 identities (measured Free row-safe maximum)
+Ingest tasks/run:       1
+Declarations/task:      1
 Batch size:             configurable 1 → 4
 Concurrency:            2
 Protocol timeouts:      A2A 5s / MCP 5s / ERC-8183 HTTP 5s
@@ -444,12 +444,18 @@ requests and an all-MCP four-target batch can require twelve more. Configuration
 validation fails closed when this worst case does not fit the declared ceiling,
 and the scheduler enforces the ceiling again at runtime.
 
-The Free discovery page is additionally constrained by its all-new
-header+sweep D1 projection (page 15 is the largest value compatible with the
-40-query ceiling and the scheduler's cleanup reserve). After discovery, the
-scheduler admits only whole ingest tasks whose conservative query ceiling fits
-the remaining invocation budget, reserving the final state write and any due
-probe work instead of entering a deterministic retry loop.
+The Free discovery page is additionally constrained by both D1 budgets. The
+initial twelve-identity page was measured in Miniflare at 88--91
+`rows_written` before cleanup and therefore cannot fit the 60-row invocation
+allowance. A two-identity page with one ingest operation and one declaration
+per task was measured at 39 rows for a new header and 54 rows for an all-new
+header+sweep fixture (including a four-declaration agent), leaving the required
+cleanup/telemetry reserve. `loadConfig` rejects larger Free values; Paid retains
+the larger configurable envelope. After discovery, the scheduler admits only
+whole ingest tasks whose conservative query ceiling fits the remaining
+invocation budget,
+reserving the final state write and any due probe work instead of entering a
+deterministic retry loop.
 
 One-minute Queue scheduling is not the initial default. It is allowed only after measured retries keep projected Queue operations within the Free allowance and the project's reserve. Nominal one-minute producer+consumer work can approach 4,320 operations/day and retry scenarios can approach the existing 8,000-operation reserve.
 

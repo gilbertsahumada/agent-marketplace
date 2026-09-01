@@ -761,7 +761,7 @@ describe("WP1 in the Workers runtime", () => {
       discovery: { maximumVisibilityLagMs: 10_000 },
       budgetProfile: {
         d1QueriesPerInvocation: 40,
-        ingest: { discoveryPageSize: 12, tasksPerRun: 2, declarationsPerTask: 4 },
+        ingest: { discoveryPageSize: 2, tasksPerRun: 1, declarationsPerTask: 1 },
         protocolTimeoutMs: { a2a: 5_000, mcp: 5_000, erc8183Http: 5_000 },
         refreshMinutes: { priority: 15, a2a: 720, mcp: 1_440, erc8183Http: 360 },
         failureBackoffMinutes: [60, 360, 1_440, 10_080],
@@ -2044,6 +2044,128 @@ describe("WP1 in the Workers runtime", () => {
       mode: "catalog_v2",
       status: "ok",
     });
+  });
+
+  it("admits ingest within the measured Free discovery page budget", async () => {
+    const agents = Array.from({ length: 12 }, (_, index) => {
+      const agentId = String(700_000 + index);
+      return {
+        chainId: 56,
+        agentId,
+        name: `Agent ${agentId}`,
+        registeredAt: 10_000 + index,
+        metadataUpdatedAt: 9_000 + index,
+        metadataReasonCode: "ok",
+        services: Array.from({ length: 4 }, (_, serviceIndex) => ({
+          name: "MCP",
+          endpoint: `https://${agentId}.example.com/mcp-${serviceIndex}`,
+        })),
+        endpoints: [],
+      };
+    });
+    const byId = new Map(agents.map((agent) => [agent.agentId, agent]));
+    const fetchCatalog = vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input));
+      if (url.pathname.endsWith("/agents")) {
+        const offset = Number(url.searchParams.get("offset"));
+        const limit = Number(url.searchParams.get("limit"));
+        return Response.json({
+          items: agents.slice(offset, offset + limit),
+          total: agents.length,
+          limit,
+          offset,
+        });
+      }
+      const agentId = url.pathname.split("56:")[1];
+      const item = agentId === undefined ? undefined : byId.get(agentId);
+      return item === undefined ? new Response(null, { status: 404 }) : Response.json(item);
+    });
+    let clock = 40_000;
+    const runner = createWp2ScheduledRunner({
+      now: () => clock++,
+      randomUUID: () => `catalog-default-${clock}`,
+      fetch: fetchCatalog as typeof fetch,
+    });
+    const config = loadConfig({
+      KILL_SWITCH: "0",
+      PRODUCER_KILL_SWITCH: "0",
+      CATALOG_V2_WRITES_ENABLED: "1",
+      CATALOG_PROBE_ENABLED: "0",
+      PROBE_GENERAL_EGRESS_APPROVED: "1",
+      PROBE_AGENT_ALLOWLIST: "*",
+      PROBE_ENDPOINT_ALLOWLIST: "*",
+    });
+
+    await runner({ scheduledTime: 40_000, cron: "*/5 * * * *" }, env, createExecutionContext(), config);
+
+    expect(await env.DB.prepare("SELECT COUNT(*) AS count FROM catalog_agents").first())
+      .toEqual({ count: 2 });
+    expect(await env.DB.prepare("SELECT COUNT(*) AS count FROM catalog_endpoints").first())
+      .toEqual({ count: 1 });
+    expect(await env.DB.prepare("SELECT COUNT(*) AS count FROM catalog_ingest_tasks WHERE status = 'pending'").first())
+      .toEqual({ count: 2 });
+  });
+
+  it("keeps an all-new Free sweep page inside the row budget", async () => {
+    const agents = Array.from({ length: 4 }, (_, index) => {
+      const agentId = String(710_000 + index);
+      return {
+        chainId: 56,
+        agentId,
+        name: `Sweep agent ${agentId}`,
+        registeredAt: 20_000 + index,
+        metadataUpdatedAt: 19_000 + index,
+        metadataReasonCode: "ok",
+        services: Array.from({ length: 4 }, (_, serviceIndex) => ({
+          name: "MCP",
+          endpoint: `https://${agentId}.example.com/mcp-${serviceIndex}`,
+        })),
+        endpoints: [],
+      };
+    });
+    const byId = new Map(agents.map((agent) => [agent.agentId, agent]));
+    const fetchCatalog = vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input));
+      if (url.pathname.endsWith("/agents")) {
+        const limit = Number(url.searchParams.get("limit"));
+        const items = url.searchParams.get("sortOrder") === "asc"
+          ? agents.slice(2, 2 + limit)
+          : agents.slice(0, limit);
+        return Response.json({ items, total: agents.length, limit, offset: 0 });
+      }
+      const agentId = url.pathname.split("56:")[1];
+      const item = agentId === undefined ? undefined : byId.get(agentId);
+      return item === undefined ? new Response(null, { status: 404 }) : Response.json(item);
+    });
+    await env.DB.prepare(
+      "INSERT INTO runtime_state (key, textValue, updatedAt) VALUES ('next_scheduler_phase', 'sweep', 40000)",
+    ).run();
+    let clock = 50_000;
+    const runner = createWp2ScheduledRunner({
+      now: () => clock++,
+      randomUUID: () => `catalog-sweep-${clock}`,
+      fetch: fetchCatalog as typeof fetch,
+    });
+    const config = loadConfig({
+      KILL_SWITCH: "0",
+      PRODUCER_KILL_SWITCH: "0",
+      CATALOG_V2_WRITES_ENABLED: "1",
+      CATALOG_PROBE_ENABLED: "0",
+      CATALOG_DISCOVERY_PAGE_SIZE: "2",
+      CATALOG_INGEST_TASKS_PER_RUN: "1",
+      PROBE_GENERAL_EGRESS_APPROVED: "1",
+      PROBE_AGENT_ALLOWLIST: "*",
+      PROBE_ENDPOINT_ALLOWLIST: "*",
+    });
+
+    await expect(runner({ scheduledTime: 50_000, cron: "*/5 * * * *" }, env, createExecutionContext(), config))
+      .resolves.toBe("completed");
+    expect(await env.DB.prepare("SELECT COUNT(*) AS count FROM catalog_agents").first())
+      .toEqual({ count: 4 });
+    expect(await env.DB.prepare("SELECT COUNT(*) AS count FROM catalog_endpoints").first())
+      .toEqual({ count: 1 });
+    expect(await env.DB.prepare("SELECT COUNT(*) AS count FROM catalog_ingest_tasks WHERE status = 'pending'").first())
+      .toEqual({ count: 4 });
   });
 });
 

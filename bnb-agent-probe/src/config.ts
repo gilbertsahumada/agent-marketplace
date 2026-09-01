@@ -115,9 +115,12 @@ const FREE_PROFILE: Profile = {
     catalogProbeBatchSize: 1,
     catalogProbeConcurrency: 2,
     catalogValidationRequestsPerDay: 100,
-    catalogDiscoveryPageSize: 12,
-    catalogIngestTasksPerRun: 2,
-    catalogDeclarationsPerTask: 4,
+    // A full all-new page of twelve identities exceeds the 60-row Free
+    // invocation budget once the resumable ingest work is admitted. Keep the
+    // default at the largest measured safe page and let Paid scale it up.
+    catalogDiscoveryPageSize: 2,
+    catalogIngestTasksPerRun: 1,
+    catalogDeclarationsPerTask: 1,
     catalogA2aTimeoutMs: 5_000,
     catalogMcpTimeoutMs: 5_000,
     catalogErc8183TimeoutMs: 5_000,
@@ -143,9 +146,9 @@ const FREE_PROFILE: Profile = {
     catalogProbeBatchSize: 4,
     catalogProbeConcurrency: 2,
     catalogValidationRequestsPerDay: 500,
-    catalogDiscoveryPageSize: 100,
-    catalogIngestTasksPerRun: 2,
-    catalogDeclarationsPerTask: 24,
+    catalogDiscoveryPageSize: 2,
+    catalogIngestTasksPerRun: 1,
+    catalogDeclarationsPerTask: 1,
     catalogA2aTimeoutMs: 10_000,
     catalogMcpTimeoutMs: 10_000,
     catalogErc8183TimeoutMs: 10_000,

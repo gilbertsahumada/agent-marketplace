@@ -595,29 +595,24 @@ async function executeCatalogV2Phase(
     }));
   }
 
-  const discoveryWrites = discovery.reduce((total, summary) => total + summary.d1RowsWritten, 0);
   const ingestSummaries = [];
   const probeQueryReserve = input.phase === "probe" && input.config.catalogProbeEnabled
     ? 1 + (4 * input.config.catalogProbeBatchSize)
     : 0;
-  const ingestTaskLimit = discoveryWrites <= 20
-    ? catalogIngestTaskLimitForBudget({
-        remainingQueries: input.queryBudget.remaining,
-        maxDeclarations: input.config.catalogDeclarationsPerTask,
-        requestedTasks: input.config.catalogIngestTasksPerRun,
-        reserveQueries: 1 + probeQueryReserve,
-      })
-    : 0;
-  if (discoveryWrites <= 20) {
-    for (let index = 0; index < ingestTaskLimit; index += 1) {
-      const summary = await processNextCatalogIngestTask(input.db, {
-        nowMs: input.now(),
-        maxDeclarations: input.config.catalogDeclarationsPerTask,
-        fetchAgent: (agentId) => catalog.getAgent(agentId),
-      });
-      ingestSummaries.push(summary);
-      if (summary.status === "idle") break;
-    }
+  const ingestTaskLimit = catalogIngestTaskLimitForBudget({
+    remainingQueries: input.queryBudget.remaining,
+    maxDeclarations: input.config.catalogDeclarationsPerTask,
+    requestedTasks: input.config.catalogIngestTasksPerRun,
+    reserveQueries: 1 + probeQueryReserve,
+  });
+  for (let index = 0; index < ingestTaskLimit; index += 1) {
+    const summary = await processNextCatalogIngestTask(input.db, {
+      nowMs: input.now(),
+      maxDeclarations: input.config.catalogDeclarationsPerTask,
+      fetchAgent: (agentId) => catalog.getAgent(agentId),
+    });
+    ingestSummaries.push(summary);
+    if (summary.status === "idle") break;
   }
 
   let probeSummary: Awaited<ReturnType<typeof runCatalogProbePhase>> | null = null;
