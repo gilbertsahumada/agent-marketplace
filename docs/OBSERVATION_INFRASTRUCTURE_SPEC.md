@@ -27,7 +27,7 @@ Local evidence captured on 2026-09-01:
   adds an opaque caller scope and indexed target dimensions for distributed
   on-demand admission limits;
 - Worker typecheck and manifest validation pass;
-- 498 unit tests and 117 Miniflare integration tests pass in
+- 498 unit tests and 118 Miniflare integration tests pass in
   `bnb-agent-probe` (`vitest.config.ts` and `vitest.worker.config.ts`);
 - production, staging and validation dry-run bundles build successfully;
 - application-side endpoint policy, controller and observation-sync coverage passes
