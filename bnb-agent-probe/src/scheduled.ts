@@ -540,6 +540,7 @@ async function executeWp2Phase(input: PhaseExecution, fetchImpl: typeof fetch): 
         probe: (target) => probeCatalogEndpoint(target, {
           fetchImpl: probeFetch,
           timeoutMs: catalogProbeTimeoutMs(input.config, target.protocol),
+          maxResponseBytes: input.config.maxSellerResponseBytes,
           freshnessMs: catalogProbeFreshnessMs(input.config, target),
           now: input.now,
         }),
@@ -632,6 +633,7 @@ async function executeCatalogV2Phase(
       probe: (target) => probeCatalogEndpoint(target, {
         fetchImpl,
         timeoutMs: catalogProbeTimeoutMs(input.config, target.protocol),
+        maxResponseBytes: input.config.maxSellerResponseBytes,
         freshnessMs: catalogProbeFreshnessMs(input.config, target),
         now: input.now,
       }),
