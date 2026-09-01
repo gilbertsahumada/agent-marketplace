@@ -1,7 +1,8 @@
 # Observation Infrastructure and D1 Normalization — Specification
 
-**Status:** Implementation in progress — infrastructure local gates pass; public API integration is merged; frontend integration and remote staging gates pending
+**Status:** Implementation in progress — local infrastructure and frontend integration pass; remote staging/24-hour evidence and legacy retirement pending
 **Date:** 2026-09-01
+**Audit commit:** `7c133ef27906284f654064b24a42c43bf8859a40` (PR #62 merged)
 **Owner:** Infrastructure session  
 **Companion specification:** `docs/FRONTEND_HIRE_JOURNEY_SPEC.md`
 
@@ -18,7 +19,11 @@ This specification describes the next infrastructure migration. The measured WP2
 
 Local evidence captured on 2026-09-01:
 
-- all additive migrations `0008` through `0017` apply successfully to the Wrangler local D1;
+`[x]` means verified against the current checkout and its local test/runtime
+artifacts. `[ ]` means not complete or not yet verifiable; in particular, a
+local pass never stands in for the still-pending remote staging/24-hour gate.
+
+- [x] all additive migrations `0008` through `0017` apply successfully to the Wrangler local D1;
   migration `0014_catalog_agent_identity.sql` preserves the declared owner,
   metadata URI and registration block alongside the normalized catalog row, and
   `0015_agent_scoped_validation_dedupe.sql` scopes legacy validation keys by agent;
@@ -26,100 +31,103 @@ Local evidence captured on 2026-09-01:
   by declaring agent and exact endpoint; `0017_catalog_validation_caller_rate_limit.sql`
   adds an opaque caller scope and indexed target dimensions for distributed
   on-demand admission limits;
-- Worker typecheck and manifest validation pass;
-- 502 unit tests and 118 Miniflare integration tests pass in
+- [x] Worker typecheck and manifest validation pass;
+- [x] 502 unit tests and 118 Miniflare integration tests pass in
   `bnb-agent-probe` (`vitest.config.ts` and `vitest.worker.config.ts`);
-- the versioned raw-SQL allowlist contains only the two normative runtime
+- [x] the versioned raw-SQL allowlist contains only the two normative runtime
   exceptions (`src/db/query-budget.ts` and `src/lib/scheduler-lease.ts`); its
   ORM/schema/query-budget gate passes 16 focused tests and reports no new or
   stale callsites;
-- production, staging and validation dry-run bundles build successfully;
-- the Wrangler local runtime smoke test returns `200` for `/health` and
+- [x] production, staging and validation dry-run bundles build successfully;
+- [x] the Wrangler local runtime smoke test returns `200` for `/health` and
   `/catalog-agents?limit=1`; the seeded local D1 currently contains 29,801
   identities where `indexState='current'` and `metadataState='ok'`, 681
   eligible operational endpoints, and one `catalog_agent_admission` candidate.
   `npm run migrate:local` reports no migrations pending. The identity count is
   explicitly based on `indexState`, not the metadata-state enum (whose valid
   value is `ok`, not `current`).
-- With `CATALOG_V2_READS_ENABLED=1`, the same local Worker returns the v2
+- [x] With `CATALOG_V2_READS_ENABLED=1`, the same local Worker returns the v2
   `/catalog-agents?limit=1` contract with HTTP `200`, `schemaVersion=2`, and
   `total=29,314` operational candidates; the sample `303779` row is exposed as
   `declared`/`pending` with `commerceStatus=admission_pending` until a current
   commerce declaration is admitted.
-- A clean Wrangler tick was then run against an isolated copy of that seeded
+- [x] A clean Wrangler tick was then run against an isolated copy of that seeded
   D1 with v2 reads/writes, catalog probing and both kill switches temporarily
-  enabled. `GET /__scheduled?cron=*/5+*+*+*+*` returned `200`; the producer
-  enqueued one message and the consumer completed the `header` phase on attempt
-  1, persisted `nextPhase=sweep`, released its lease, and recorded 2 upstream
-  requests, 18 D1 queries, 47 rows read and 39 rows written. The copy was
-  discarded after the smoke; shared local and remote state were not modified.
-- application-side endpoint policy, controller and observation-sync coverage passes
+  enabled. The first successful `GET /__scheduled?cron=*/5+*+*+*+*` returned
+  `200` and completed `HEADER` (2 identities, 21 rows written, 17 D1 queries);
+  the following tick returned `200` and completed `SWEEP` (cursor advanced, 2
+  identities/tasks, 24 rows written, 21 D1 queries). The initial stale-copy
+  migration error was corrected by applying `0014` through `0017` to the
+  isolated fixture; the copy was discarded after the smoke and shared local and
+  remote state were not modified.
+- [x] application-side endpoint policy, controller and observation-sync coverage passes
   41 focused tests (`browser-endpoint-validation.test.ts`,
   `marketplace-controllers.test.ts`, `catalog-observation-sync.test.ts`,
   `catalog-validation-sync.test.ts` and `catalog-validation-route.test.ts`);
-- the complete application gate passes: typecheck, 593 tests across 64 files and
-  the production CLI/Web build. The current checkout includes the concurrent
-  frontend changes and the endpoint-scoped fallback tests;
+- [x] the complete application gate passes: typecheck, 598 tests across 65 files and
+  the production CLI/Web build. The frontend changes and endpoint-scoped fallback
+  tests are integrated by PR #62 (merge commit `7c133ef...`);
   the BNB Agent SDK still emits its known dynamic dependency warning during
   bundling, but the bundle completes successfully.
-- the application catalog adapter preserves v2 `metadataVersion` and
+- [x] the application catalog adapter preserves v2 `metadataVersion` and
   `metadataObservedAt` provenance and no longer presents `registeredAt` as a
   metadata freshness timestamp; focused feed/adapter regression tests cover
   both fields.
-- the application catalog feed parser revalidates normalized image URLs and
+- [x] the application catalog feed parser revalidates normalized image URLs and
   drops credentials, query strings or other unsafe targets before exposing
   them to UI consumers; the focused feed suite covers unsafe and safe URLs.
-- browser validation target policy coverage includes reserved IPv4 and IPv6
+- [x] browser validation target policy coverage includes reserved IPv4 and IPv6
   hosts, so loopback, link-local and private targets are rejected before fetch.
-- the catalog D1 seed generator now materializes normalized endpoint role,
+- [x] the catalog D1 seed generator now materializes normalized endpoint role,
   validation protocol, eligibility and due-probe scheduling, creates
   quote-verification admission candidates, and accepts legacy snapshots that
   omit optional identity fields; the generated 29,801-agent snapshot seed
   applies cleanly after migrations `0001` through `0017`.
-- seed reconciliation now suspends admissions that are absent from the complete
+- [x] seed reconciliation now suspends admissions that are absent from the complete
   registry snapshot or no longer have an eligible commerce endpoint, while
   leaving the append-only observation ledger untouched; non-transport
   declarations (`x402` and unknown/custom labels) are retained as external
   resources and are never scheduled for protocol probing.
-- `docs/API.md`, `docs/HIRE-SPEC.md`, `docs/MCP.md` and `docs/MARKETPLACE.md`
-  are now integrated from `main` in PR #56; the frontend companion remains a
-  separate concurrent change and is not included in this infrastructure commit.
-- The application exposes the endpoint-scoped infrastructure fallback through
+- [x] `docs/API.md`, `docs/HIRE-SPEC.md`, `docs/MCP.md` and `docs/MARKETPLACE.md`
+  are integrated from `main`; the frontend companion is now integrated by PR #62
+  (merge commit `7c133ef...`).
+- [x] The application exposes the endpoint-scoped infrastructure fallback through
   `POST /api/marketplace/validate` and its opaque-token status route; the private
   Worker `/catalog-validations` route remains server-only.
-- Local development E2E can point the mutation adapters at a Wrangler/Miniflare
+- [x] Local development E2E can point the mutation adapters at a Wrangler/Miniflare
   Worker over HTTP on `localhost` or `127.0.0.1`; non-loopback HTTP and every
   production/non-development destination remain rejected, and the private
   origin/secret checks are unchanged.
-- The fallback derives a caller fingerprint from application request context,
+- [x] The fallback derives a caller fingerprint from application request context,
   HMACs it with `BUYER_OBSERVATION_SECRET`, and sends only the opaque key to the
   Worker; D1 enforces both the global daily budget and the configured per-caller
   daily budget without storing an IP or origin.
-- The Worker rejects missing or malformed caller fingerprints before any D1
+- [x] The Worker rejects missing or malformed caller fingerprints before any D1
   lookup or Queue admission; accepted values are fixed-size opaque hex keys.
-- Registry inventory reads retain current ERC-8004 identities even when their
+- [x] Registry inventory reads retain current ERC-8004 identities even when their
   metadata has no endpoint declaration; the operational inventory remains
   endpoint-gated by default.
-- Declared image metadata is normalized only to public HTTPS/IPFS URLs without
+- [x] Declared image metadata is normalized only to public HTTPS/IPFS URLs without
   credentials, query strings or fragments; unsafe image targets are discarded
   before they reach catalog/API consumers.
-- catalog evidence reads enforce cryptographic/on-chain verification levels,
+- [x] catalog evidence reads enforce cryptographic/on-chain verification levels,
   isolate shared-endpoint observations by declaring agent, and release Queue/D1
   leases after a failed result batch; these paths are covered by the integration
   suites above.
-- catalog protocol probes enforce the configured `MAX_SELLER_RESPONSE_BYTES`
+- [x] catalog protocol probes enforce the configured `MAX_SELLER_RESPONSE_BYTES`
   limit while streaming seller responses, so Free/Paid response budgets are
   applied consistently to scheduled and on-demand A2A/MCP/ERC-8183 checks.
-- the application card adapter accepts only platform reachability/protocol
+- [x] the application card adapter accepts only platform reachability/protocol
   evidence for the Reachable state and keeps on-chain/quote-only rows from
   masquerading as transport probes, with legacy compatibility coverage.
-- The v2 catalog serializers tolerate malformed legacy `detailsJson` by exposing
+- [x] The v2 catalog serializers tolerate malformed legacy `detailsJson` by exposing
   an explicit `null` detail while preserving the surrounding evidence envelope;
   the Worker integration suite covers the detail route regression.
 
-This is not the remote rollout gate. Staging migrations, shadow parity, bounded v2
-writes/reads, operational metrics and legacy-retirement evidence remain required
-before this specification can be marked complete.
+- [ ] Remote rollout gate: staging migrations, shadow parity, bounded v2 writes/reads,
+  operational metrics and legacy-retirement evidence remain outstanding. The remote
+  gate is also blocked until a newly measured candidate commit/version/etag is
+  authorized for deployment; no remote completion is inferred from local smoke tests.
 
 ## 1. Purpose
 
@@ -755,37 +763,55 @@ Use high-resolution timing. Zero-millisecond failures are allowed only when the 
 
 ### Phase A — Additive schema
 
-1. Create normalized columns/tables and indexes.
-2. Keep current APIs and writes active.
-3. Backfill roles, protocols, eligibility, admission candidates and projections deterministically.
-4. Record migration provenance and counts.
+- [x] 1. Create normalized columns/tables and indexes. Migrations `0008`–`0017`
+  and the schema/integration suites pass locally.
+- [x] 2. Keep current APIs and writes active. Compatibility reads/writes remain
+  covered while the v2 flags are independently switchable.
+- [x] 3. Backfill roles, protocols, eligibility, admission candidates and
+  projections deterministically. The generated seeded catalog applies cleanly
+  through migration `0017`.
+- [x] 4. Record migration provenance and counts. Owner, metadata URI, block,
+  metadata timestamps and normalized counts are persisted and asserted by tests.
 
 ### Phase B — Shadow parity
 
-1. Produce v1 and v2 derived results for fixtures and a staging sample.
-2. Assert that differences are explained by the new policy.
-3. Specifically verify social/web exclusion, latest-attempt ordering and admission behavior.
+- [x] 1. Produce v1 and v2 derived results for deterministic local fixtures.
+- [ ] 1a. Produce the corresponding result for a remote staging sample; this
+  requires an authorized, newly measured deployment and is not inferred from
+  local fixtures.
+- [x] 2. Assert that local differences are explained by the new policy.
+- [x] 3. Verify social/web exclusion, latest-attempt ordering and admission
+  behavior. Classification, evidence-policy, ingest and admission integration
+  tests cover these cases.
 
 ### Phase C — Switch writes
 
-1. Write observations and projections atomically to the normalized model.
-2. Enable validation-request deduplication and leases.
-3. Keep compatibility reads during the observation window.
+- [x] 1. Write observations and projections atomically to the normalized model;
+  local HEADER and SWEEP smoke ticks persisted bounded batches successfully.
+- [x] 2. Enable validation-request deduplication and leases; local integration
+  tests cover duplicate delivery, reclaim and release after failure.
+- [x] 3. Keep compatibility reads during the observation window; the v2
+  read/write switches remain independently configurable.
+- [ ] 3a. Complete the remote observation window and publish its evidence; the
+  Cloudflare rollout gate remains pending.
 
 ### Phase D — Switch API reads
 
-1. Publish API v2 contract fixtures.
-2. Frontend consumes v2 after rebasing.
-3. Compare production/staging counts and sample agent histories.
+- [x] 1. Publish API v2 contract fixtures and Worker serializers.
+- [x] 2. Frontend consumes v2 after rebasing; this is included in merged PR #62
+  (`7c133ef27906284f654064b24a42c43bf8859a40`).
+- [ ] 3. Compare production/staging counts and sample agent histories; remote
+  control-plane access and a measured candidate are still required.
 
 ### Phase E — Retire legacy storage
 
 Only after runtime-reference search, parity tests and an evidence export:
 
-- drop transitional bridge triggers;
-- stop writes to legacy `probe_targets`/`probe_observations`;
-- retain/archive historical evidence before any destructive drop;
-- remove `marketplaceConfigured` after admission backfill and all consumers migrate.
+- [ ] drop transitional bridge triggers;
+- [ ] stop writes to legacy `probe_targets`/`probe_observations`;
+- [ ] retain/archive historical evidence before any destructive drop;
+- [ ] remove `marketplaceConfigured` after admission backfill and all consumers
+  migrate.
 
 Database rollback is additive: disable v2 readers/writers and return to compatibility reads. Do not attempt destructive down-migrations that lose observations.
 
@@ -793,19 +819,25 @@ Database rollback is additive: disable v2 readers/writers and return to compatib
 
 After replacement tests pass, remove:
 
-- `web` as a generic probe protocol and all scheduler branches that fetch it.
-- Unknown/null service fallback to `web` in catalog validation target selection.
-- Browser endpoint-test actions for social and human-facing resources.
-- Hard-coded agent-specific scheduled quote logic once general admission/on-demand quote paths cover it.
-- Duplicate observation writes/readers and transitional bridge code after v2 parity.
-- `marketplaceConfigured`-based hireability logic. During the compatibility window
+- [ ] `web` as a generic probe protocol and all scheduler branches that fetch it;
+  it remains in the compatibility schema and fixtures until the remote parity gate.
+- [ ] Unknown/null service fallback to `web` in catalog validation target selection;
+  compatibility normalization still preserves this legacy representation.
+- [ ] Browser endpoint-test actions for social and human-facing resources; policy
+  rejection is covered, but the legacy compatibility surface remains.
+- [ ] Hard-coded agent-specific scheduled quote logic once general admission/on-demand
+  quote paths cover it.
+- [ ] Duplicate observation writes/readers and transitional bridge code after v2 parity.
+- [ ] `marketplaceConfigured`-based hireability logic. During the compatibility window
   the legacy storage field may remain, but v2 cards, Passport and API capabilities
   must read `catalog_agent_admission`/derived state only.
-- Queries where any historical failure overrides a later effective success.
-- Obsolete bootstrap/rotation code once the Worker is the sole owner and tests prove no import remains.
-- Obsolete summary types that no longer describe actual phase output.
+- [x] Queries where any historical failure overrides a later effective success;
+  latest-effective-attempt projection tests prevent that regression.
+- [ ] Obsolete bootstrap/rotation code once the Worker is the sole owner and tests
+  prove no import remains; the compatibility bootstrap is still present.
+- [ ] Obsolete summary types that no longer describe actual phase output.
 
-The Worker test suite enforces the ORM boundary with a versioned file-and-count
+- [x] The Worker test suite enforces the ORM boundary with a versioned file-and-count
 allowlist. Only the atomic query-budget wrapper and scheduler lease helper are
 currently exempt from the Drizzle runtime boundary; any new raw `.prepare()` call
 fails the standard check.
@@ -822,84 +854,108 @@ Do not remove:
 
 ### WP-B1 — Classification
 
-Write failing table-driven tests for every example in §8, including Twitter, Telegram and website mislabeled as MCP/A2A/ERC-8183.
+- [x] Write and pass table-driven tests for every example in §8, including
+  Twitter, Telegram and website mislabeled as MCP/A2A/ERC-8183
+  (`catalog-resource-classification.test.ts` and header-index integration tests).
 
-**Gate:** only eligible operational resources can produce work.
+**Gate:** [x] only eligible operational resources can produce work.
 
 ### WP-B2 — D1 migration
 
-Test migration from representative current rows, constraints, indexes, backfill counts and rollback-compatible reads.
+- [x] Test migration from representative current rows, constraints, indexes,
+  backfill counts and rollback-compatible reads
+  (`catalog-normalization-migration.test.ts` and schema tests).
 
-**Gate:** no agent/declaration/observation loss; append-only triggers hold.
+**Gate:** [x] no agent/declaration/observation loss; append-only triggers hold.
 
 ### WP-B3 — Effective evidence projection
 
-Test success→failure, failure→success, stale success, browser-only success, shared origin/different path, metadata replacement and representative reassignment after retirement.
+- [x] Test success→failure, failure→success, stale success, browser-only success,
+  shared origin/different path, metadata replacement and representative
+  reassignment after retirement.
 
-**Gate:** projection equals ledger-derived result and never overstates scope.
+**Gate:** [x] projection equals ledger-derived result and never overstates scope.
 
 ### WP-B4 — Work selection and budgets
 
-Test due ordering, leases, duplicate Queue deliveries, partial batches, retry/backoff and query/subrequest accounting.
+- [x] Test due ordering, leases, duplicate Queue deliveries, partial batches,
+  retry/backoff and query/subrequest accounting.
 
-**Gate:** `D1 queries <= 40` under every configured Free invocation fixture; external resources are absent.
+**Gate:** [x] `D1 queries <= 40` under every configured Free invocation fixture;
+external resources are absent.
 
 ### WP-B5 — Protocol probes
 
-Use deterministic local servers for A2A schema, MCP three-step handshake, ERC-8183 HTTP convention, timeouts, redirects, unsafe targets and malformed responses.
+- [x] Use deterministic local servers for A2A schema, MCP three-step handshake,
+  ERC-8183 HTTP convention, timeouts, redirects, unsafe targets and malformed
+  responses.
 
-**Gate:** protocol-valid outcomes are distinct from HTTP success; timing is per-stage and total.
+**Gate:** [x] protocol-valid outcomes are distinct from HTTP success; timing is
+per-stage and total.
 
 ### WP-B6 — Browser/on-demand APIs
 
-Test arbitrary URL rejection, undeclared endpoint rejection, CORS report semantics, deduplication, fresh reuse, rate limit, queue completion and attempt history.
+- [x] Test arbitrary URL rejection, undeclared endpoint rejection, CORS report
+  semantics, deduplication, fresh reuse, rate limit, queue completion and attempt
+  history.
 
-**Gate:** unsigned browser evidence never changes platform reachability.
+**Gate:** [x] unsigned browser evidence never changes platform reachability.
 
 ### WP-B7 — Quote evidence
 
-Test valid/invalid EIP-191, ERC-1271 pass/fail, wrong agent, wrong chain, changed terms, expired quote, replay/deduplication and sanitized storage.
+- [x] Test valid/invalid EIP-191, ERC-1271 pass/fail, wrong agent, wrong chain,
+  changed terms, expired quote, replay/deduplication and sanitized storage.
 
-**Gate:** only independently verified exact artifacts create `quote_verified`.
+**Gate:** [x] only independently verified exact artifacts create `quote_verified`.
 
 ### WP-B8 — Discovery
 
-Test cursor paging, page+cursor atomicity, new/changed/removed metadata, directed tracking, trust8004 delay and resume after interruption.
+- [x] Test cursor paging, page+cursor atomicity, new/changed/removed metadata,
+  directed tracking, trust8004 delay and resume after interruption.
 
-**Gate:** a newly indexed identity appears without waiting for an endpoint probe.
+**Gate:** [x] a newly indexed identity appears without waiting for an endpoint
+probe.
 
 ### WP-B9 — API contract
 
-Contract-test all list/detail filters, capabilities and blocker combinations consumed by the frontend specification.
+- [x] Contract-test all list/detail filters, capabilities and blocker combinations
+  consumed by the frontend specification.
 
-**Gate:** one versioned fixture set passes in Worker and application consumer tests.
+**Gate:** [x] one versioned fixture set passes in Worker and application consumer
+tests.
 
 ### WP-B10 — Local and remote E2E
 
-1. Run migrations and Worker locally with Wrangler/Miniflare.
-2. Ingest deterministic trust8004 fixtures.
-3. Process mixed operational/external resources.
-4. Exercise browser report, fallback Queue and signed quote flows.
-5. Deploy staging with kill switches safe, then enable a bounded batch.
-6. Inspect structured logs, D1 rows, Queue counts and public API results.
+- [x] 1. Run migrations and Worker locally with Wrangler/Miniflare.
+- [x] 2. Ingest deterministic trust8004 fixtures.
+- [x] 3. Process mixed operational/external resources.
+- [x] 4. Exercise browser report, fallback Queue and signed quote flows in the
+  local Worker/application test suites.
+- [ ] 5. Deploy staging with kill switches safe, then enable a bounded batch;
+  remote deployment is blocked pending the new candidate identity and control-
+  plane authorization.
+- [x] 6. Inspect structured logs, D1 rows, Queue-shaped results and public API
+  results locally; [ ] remote metrics and control-plane evidence remain pending.
 
-**Gate:** unit, integration, Miniflare, typecheck, budget validation and production bundle checks pass before runtime promotion.
+**Gate:** [x] unit, integration, Miniflare, typecheck, budget validation and
+production bundle checks pass locally; [ ] remote runtime promotion gate.
 
 ## 18. Rollout, safety and configuration
 
-All capacity controls remain configurable:
+All capacity controls remain configurable and are covered by the configuration
+validation tests:
 
-- producer/consumer kill switches;
-- ingest cadence;
-- validation cadence;
-- batch size and concurrency;
-- per-protocol timeout and total deadline;
-- retry/backoff;
-- freshness policy;
-- query/subrequest/Queue budgets;
-- daily on-demand validation admission budget;
-- per-caller daily on-demand validation admission budget;
-- API v2 read/write feature flags.
+- [x] producer/consumer kill switches;
+- [x] ingest cadence;
+- [x] validation cadence;
+- [x] batch size and concurrency;
+- [x] per-protocol timeout and total deadline;
+- [x] retry/backoff;
+- [x] freshness policy;
+- [x] query/subrequest/Queue budgets;
+- [x] daily on-demand validation admission budget;
+- [x] per-caller daily on-demand validation admission budget;
+- [x] API v2 read/write feature flags.
 
 The checked-in controls are `CRON_INTERVAL_MINUTES`,
 `CATALOG_DISCOVERY_PAGE_SIZE`, `CATALOG_INGEST_TASKS_PER_RUN`,
@@ -915,41 +971,56 @@ Paid profile and rejects a discovery+ingest request projection that exceeds
 
 Rollout order:
 
-1. Local schema/protocol E2E.
-2. Additive staging migration with both kill switches enabled.
-3. Shadow ingest/classification and parity report.
-4. Enable v2 writes for a bounded sample.
-5. Enable Queue consumer, then producer at 5-minute cadence.
-6. Promote batch up to four only from measured evidence.
-7. Move to 2-minute Free cadence if daily budgets/retries permit.
-8. Enable v2 internal reads, prove application-adapter parity, then enable the corresponding `/api/marketplace/*` integration.
-9. Retire legacy code only after the observation gate.
+- [x] 1. Local schema/protocol E2E.
+- [ ] 2. Additive staging migration with both kill switches enabled (remote gate pending).
+- [ ] 3. Shadow ingest/classification and parity report for a remote staging sample.
+- [x] 4. Enable v2 writes for a bounded local sample.
+- [ ] 5. Enable Queue consumer, then producer at the authorized remote cadence.
+- [ ] 6. Promote batch up to four only from measured remote evidence.
+- [ ] 7. Move to 2-minute Free cadence if daily budgets/retries permit; not enabled
+  in the current safe configuration.
+- [x] 8. Enable v2 internal reads, prove application-adapter parity, and integrate
+  the corresponding `/api/marketplace/*` surface in merged PR #62.
+- [ ] 9. Retire legacy code only after the observation gate.
 
-On error, stop producer first, drain/disable consumer safely, preserve Queue/D1 and keep evidence append-only.
+- [x] Rollback procedure stops the producer first, preserves Queue/D1 and keeps
+  evidence append-only in local tests; [ ] remote rehearsal remains pending.
 
 ## 19. Acceptance criteria
 
-- Newly indexed trust8004 agents appear as declared/pending within the configured ingest cadence.
-- Registry size is unbounded by an obsolete snapshot count.
-- Website/social resources are preserved but never probed.
-- A2A, MCP and ERC-8183 HTTP checks follow distinct protocol semantics.
-- Queue consumers process bounded due work; cron cadence never implies probing every agent.
-- Free profile stays within self-validated D1, subrequest and Queue budgets.
-- Browser-only observations cannot create platform reachability or hireability.
-- Signed quote evidence is independently verified and agent-specific.
-- Latest attempt, last success, freshness and attempt count are queryable without contradiction.
-- Commerce admission replaces the `marketplaceConfigured` shortcut.
-- Internal API v2 returns one normalized state/capability model that the application maps consistently into cards, table, Passport and hire-page responses.
-- Migration/backfill loses no declarations or observations.
-- Legacy code is removed only after parity and runtime-reference gates.
-- Local Wrangler/Miniflare and remote staging evidence both pass before production promotion.
+- [x] Newly indexed trust8004 agents appear as declared/pending without waiting
+  for an endpoint probe (local discovery/integration coverage).
+- [x] Registry size is unbounded by an obsolete snapshot count.
+- [x] Website/social resources are preserved but never probed.
+- [x] A2A, MCP and ERC-8183 HTTP checks follow distinct protocol semantics.
+- [x] Queue consumers process bounded due work; cron cadence never implies probing
+  every agent (local budget and scheduler coverage).
+- [x] Free profile stays within self-validated D1, subrequest and Queue budgets.
+- [x] Browser-only observations cannot create platform reachability or hireability.
+- [x] Signed quote evidence is independently verified and agent-specific.
+- [x] Latest attempt, last success, freshness and attempt count are queryable
+  without contradiction.
+- [x] Commerce admission is the v2 source of hireability; the legacy
+  `marketplaceConfigured` field remains only for compatibility.
+- [x] Internal API v2 returns one normalized state/capability model that the
+  application maps consistently into cards, table, Passport and hire-page
+  responses; the application integration is in merged PR #62.
+- [x] Migration/backfill loses no declarations or observations in local tests.
+- [ ] Legacy code is removed only after parity and runtime-reference gates.
+- [ ] Local Wrangler/Miniflare and remote staging evidence both pass before
+  production promotion; the remote evidence gate is still pending.
 
 ## 20. Integration order with the other sessions
 
-1. Infrastructure lands the additive D1 migration, internal API v2 schema and deterministic fixtures.
-2. Frontend rebases and implements the companion hire journey against those fixtures.
-3. Hiring session exposes quote/prepare/submit interfaces under `docs/HIRE-SPEC.md` and consumes verified quote/admission IDs.
-4. Integration session resolves shared DTOs, updates `docs/DECISIONS.md`, runs the full application build and end-to-end story.
-5. Legacy deletion occurs last, in its own reviewable change, after production/staging parity.
+- [x] 1. Infrastructure lands the additive D1 migration, internal API v2 schema
+  and deterministic fixtures.
+- [x] 2. Frontend rebases and implements the companion hire journey against those
+  fixtures (merged PR #62).
+- [x] 3. Hiring session exposes quote/prepare/submit interfaces under
+  `docs/HIRE-SPEC.md` and consumes verified quote/admission IDs.
+- [x] 4. Integration session resolves shared DTOs, keeps `docs/DECISIONS.md`
+  aligned with `main`, and passes the full application build/test gate.
+- [ ] 5. Legacy deletion occurs last, in its own reviewable change, after
+  production/staging parity.
 
 This order prevents the frontend from inventing state, the infrastructure from owning wallet behavior, and the hiring flow from duplicating observation logic.
