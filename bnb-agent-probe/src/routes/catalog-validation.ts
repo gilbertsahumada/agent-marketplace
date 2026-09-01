@@ -17,9 +17,9 @@ const REQUEST_COOLDOWN_MS = 60_000;
 
 class InvalidValidationRequest extends Error {}
 
-function callerKey(request: Request): string {
+function callerKey(request: Request): string | null {
   const value = request.headers.get("x-marketplace-caller")?.trim().toLowerCase();
-  return value && CALLER_KEY.test(value) ? value : "anonymous";
+  return value && CALLER_KEY.test(value) ? value : null;
 }
 
 async function input(request: Request): Promise<{ agentId: string; endpointKey: string; validationKind: "protocol" }> {
@@ -50,6 +50,10 @@ export async function createCatalogValidationResponse(
 ): Promise<Response> {
   let parsed: Awaited<ReturnType<typeof input>>;
   try { parsed = await input(request); } catch {
+    return Response.json({ error: "invalid_request" }, { status: 400, headers: { "cache-control": "no-store" } });
+  }
+  const caller = callerKey(request);
+  if (caller === null) {
     return Response.json({ error: "invalid_request" }, { status: 400, headers: { "cache-control": "no-store" } });
   }
   if (!queue) return Response.json({ error: "queue_unavailable" }, { status: 503, headers: { "cache-control": "no-store" } });
@@ -125,7 +129,6 @@ export async function createCatalogValidationResponse(
       headers: { "cache-control": "no-store", "retry-after": String(Math.ceil(retryAfterMs / 1_000)) },
     });
   }
-  const caller = callerKey(request);
   const callerRows = await db.select({ total: count() }).from(catalogValidationRequests).where(and(
     eq(catalogValidationRequests.callerKey, caller),
     eq(catalogValidationRequests.requestedBy, "browser_fallback"),

@@ -14,6 +14,8 @@ import { createWp2ScheduledRunner, runWp2Scheduled } from "../../src/scheduled";
 import type { Env } from "../../src/types";
 import { clearCatalogFixtures } from "./catalog-fixtures";
 
+const VALID_CALLER_KEY = "a".repeat(64);
+
 beforeEach(async () => {
   await clearCatalogFixtures();
   await env.DB.prepare("DELETE FROM runtime_state").run();
@@ -521,7 +523,11 @@ describe("WP1 in the Workers runtime", () => {
     const response = await createWorker({ now: () => now }).fetch(
       new Request("https://worker.test/catalog-validations", {
         method: "POST",
-        headers: { authorization: "Bearer catalog-secret", "content-type": "application/json" },
+        headers: {
+          authorization: "Bearer catalog-secret",
+          "content-type": "application/json",
+          "x-marketplace-caller": VALID_CALLER_KEY,
+        },
         body: JSON.stringify({
           schemaVersion: 2, agentId: "7402", endpointKey, validationKind: "protocol",
         }),
@@ -980,6 +986,43 @@ describe("WP1 in the Workers runtime", () => {
       .toMatchObject({ count: 0 });
   });
 
+  it("requires a fixed-size opaque caller fingerprint before catalog validation admission", async () => {
+    const send = vi.fn(async () => undefined);
+    const privateEnv = {
+      ...env,
+      BUYER_OBSERVATION_SECRET: "catalog-secret",
+      WP2_QUEUE: { send },
+    } as unknown as Env;
+    const body = JSON.stringify({
+      schemaVersion: 2,
+      agentId: "42",
+      endpointKey: "a".repeat(64),
+      validationKind: "protocol",
+    });
+    const callers: Array<string | undefined> = [undefined, "anonymous", "a".repeat(63), "g".repeat(64)];
+    for (const caller of callers) {
+      const headers: Record<string, string> = {
+        authorization: "Bearer catalog-secret",
+        "content-type": "application/json",
+      };
+      if (caller !== undefined) headers["x-marketplace-caller"] = caller;
+      const response = await createWorker({ now: () => 1_788_000_000_000 }).fetch(
+        new Request("https://worker.test/catalog-validations", {
+          method: "POST",
+          headers,
+          body,
+        }),
+        privateEnv,
+        createExecutionContext(),
+      );
+      expect(response.status).toBe(400);
+      expect(await response.json()).toEqual({ error: "invalid_request" });
+    }
+    expect(send).not.toHaveBeenCalled();
+    expect(await env.DB.prepare("SELECT COUNT(*) AS count FROM catalog_validation_requests").first())
+      .toMatchObject({ count: 0 });
+  });
+
   it("deduplicates catalog validation requests and dispatches their Queue work", async () => {
     const now = 1_788_000_000_000;
     const endpointKey = "c".repeat(64);
@@ -1004,7 +1047,11 @@ describe("WP1 in the Workers runtime", () => {
     } as unknown as Env;
     const request = () => new Request("https://worker.test/catalog-validations", {
       method: "POST",
-      headers: { authorization: "Bearer catalog-secret", "content-type": "application/json" },
+      headers: {
+        authorization: "Bearer catalog-secret",
+        "content-type": "application/json",
+        "x-marketplace-caller": VALID_CALLER_KEY,
+      },
       body: JSON.stringify({ schemaVersion: 2, agentId: "42", endpointKey, validationKind: "protocol" }),
     });
     const app = createWorker({ now: () => now });
@@ -1104,7 +1151,11 @@ describe("WP1 in the Workers runtime", () => {
     const post = (agentId: string) => createWorker({ now: () => now }).fetch(
       new Request("https://worker.test/catalog-validations", {
         method: "POST",
-        headers: { authorization: "Bearer catalog-secret", "content-type": "application/json" },
+        headers: {
+          authorization: "Bearer catalog-secret",
+          "content-type": "application/json",
+          "x-marketplace-caller": VALID_CALLER_KEY,
+        },
         body: JSON.stringify({ schemaVersion: 2, agentId, endpointKey, validationKind: "protocol" }),
       }),
       privateEnv,
@@ -1150,7 +1201,11 @@ describe("WP1 in the Workers runtime", () => {
       "https://worker.test/catalog-validations",
       {
         method: "POST",
-        headers: { authorization: "Bearer catalog-secret", "content-type": "application/json" },
+        headers: {
+          authorization: "Bearer catalog-secret",
+          "content-type": "application/json",
+          "x-marketplace-caller": VALID_CALLER_KEY,
+        },
         body: JSON.stringify({ schemaVersion: 2, agentId: "99", endpointKey, validationKind: "protocol" }),
       },
     ), privateEnv, createExecutionContext());
@@ -1192,7 +1247,11 @@ describe("WP1 in the Workers runtime", () => {
       "https://worker.test/catalog-validations",
       {
         method: "POST",
-        headers: { authorization: "Bearer catalog-secret", "content-type": "application/json" },
+        headers: {
+          authorization: "Bearer catalog-secret",
+          "content-type": "application/json",
+          "x-marketplace-caller": VALID_CALLER_KEY,
+        },
         body: JSON.stringify({ schemaVersion: 2, agentId: "88", endpointKey, validationKind: "protocol" }),
       },
     ), privateEnv, createExecutionContext());

@@ -27,7 +27,7 @@ Local evidence captured on 2026-09-01:
   adds an opaque caller scope and indexed target dimensions for distributed
   on-demand admission limits;
 - Worker typecheck and manifest validation pass;
-- 498 unit tests and 116 Miniflare integration tests pass in
+- 498 unit tests and 117 Miniflare integration tests pass in
   `bnb-agent-probe` (`vitest.config.ts` and `vitest.worker.config.ts`);
 - production, staging and validation dry-run bundles build successfully;
 - application-side endpoint policy, controller and observation-sync coverage passes
@@ -67,6 +67,8 @@ Local evidence captured on 2026-09-01:
   HMACs it with `BUYER_OBSERVATION_SECRET`, and sends only the opaque key to the
   Worker; D1 enforces both the global daily budget and the configured per-caller
   daily budget without storing an IP or origin.
+- The Worker rejects missing or malformed caller fingerprints before any D1
+  lookup or Queue admission; accepted values are fixed-size opaque hex keys.
 - catalog evidence reads enforce cryptographic/on-chain verification levels,
   isolate shared-endpoint observations by declaring agent, and release Queue/D1
   leases after a failed result batch; these paths are covered by the integration
