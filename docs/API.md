@@ -112,11 +112,13 @@ not_evaluated`.
 
 `availability=hireable` filters to `hireability.canHire === true`;
 `availability=mcp_only` filters to `hireability.status === "mcp_only"`.
-Repeated values within one filter dimension are ORed; different dimensions are
-ANDed. For example, `status=hireable&status=quote_capable&category=grid_trading`
-returns agents matching either status and the selected category. Advanced catalog
-filters fail closed with `503` if the catalog service is unavailable; the curated
-fallback is never used to fabricate an answer for them.
+Repeated evidence `status` values are ANDed (an agent must satisfy every selected
+state); repeated values in category, protocol, reachability, commerce and quote
+dimensions are ORed. All dimensions are then ANDed. For example,
+`status=declared&status=hireable&category=grid_trading` returns hireable agents in
+that category. Advanced catalog filters fail closed with `503` if the catalog
+service is unavailable; the curated fallback is never used to fabricate an answer
+for them. Marketplace-only filters sent with `view=all` are rejected with `400`.
 
 ### `GET /api/marketplace/agents/[agentId]`
 
