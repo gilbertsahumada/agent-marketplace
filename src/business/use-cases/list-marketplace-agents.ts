@@ -186,7 +186,10 @@ export class ListMarketplaceAgents {
           agents = agents.filter((agent) => agent.hireability.status === "mcp_only");
         }
         sortAgents(agents, input.sort);
-        const total = input.availability === "mcp_only" ? agents.length : catalog.total;
+        // The Worker already applies the mcp_only status filter. Preserve its
+        // authoritative total so pagination does not collapse to the current
+        // page size when more matching candidates exist.
+        const total = catalog.total;
         return {
           view: "marketplace",
           items: agents,

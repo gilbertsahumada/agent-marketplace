@@ -202,7 +202,7 @@ describe("public catalog application adapter", () => {
     const pageReader: CatalogCandidatePageReader = {
       execute: vi.fn(async () => ({
         schemaVersion: 2, status: "declared" as const, statuses: ["declared" as const], query: "",
-        category: null, categories: [], generatedAt: GENERATED_AT, page: 1, limit: 24, total: 1,
+        category: null, categories: [], generatedAt: GENERATED_AT, page: 1, limit: 24, total: 3,
         items: [normalized],
       })),
     };
@@ -212,6 +212,7 @@ describe("public catalog application adapter", () => {
     });
 
     expect(result.items).toMatchObject([{ agentId: "42", hireability: { status: "mcp_only", canHire: false } }]);
+    expect(result.pagination).toMatchObject({ total: 3, totalPages: 1 });
     expect(pageReader.execute).toHaveBeenCalledWith({
       page: 1, limit: 24, statuses: ["mcp_only"], inventory: "operational",
     });
