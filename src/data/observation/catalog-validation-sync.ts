@@ -67,9 +67,15 @@ function privateUrl(env: Environment, path: string): URL | null {
   try {
     const url = new URL(raw);
     const allowed = new URL(allowedRaw);
-    if (url.protocol !== "https:" || url.username || url.password
+    const loopbackDevelopment = env.NODE_ENV === "development"
+      && url.protocol === "http:"
+      && allowed.protocol === "http:"
+      && (url.hostname === "localhost" || url.hostname === "127.0.0.1")
+      && (allowed.hostname === "localhost" || allowed.hostname === "127.0.0.1");
+    if ((!loopbackDevelopment && url.protocol !== "https:") || url.username || url.password
       || url.pathname !== "/observations" || url.search || url.hash
-      || allowed.protocol !== "https:" || allowed.username || allowed.password
+      || (!loopbackDevelopment && allowed.protocol !== "https:")
+      || allowed.username || allowed.password
       || allowed.pathname !== "/" || allowed.search || allowed.hash
       || url.origin !== allowed.origin) return null;
     return new URL(path, url.origin);

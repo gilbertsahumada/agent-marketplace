@@ -31,10 +31,10 @@ Local evidence captured on 2026-09-01:
   `bnb-agent-probe` (`vitest.config.ts` and `vitest.worker.config.ts`);
 - production, staging and validation dry-run bundles build successfully;
 - application-side endpoint policy, controller and observation-sync coverage passes
-  39 focused tests (`browser-endpoint-validation.test.ts`,
+  41 focused tests (`browser-endpoint-validation.test.ts`,
   `marketplace-controllers.test.ts`, `catalog-observation-sync.test.ts`,
   `catalog-validation-sync.test.ts` and `catalog-validation-route.test.ts`);
-- the complete application gate passes: typecheck, 578 tests across 64 files and
+- the complete application gate passes: typecheck, 582 tests across 64 files and
   the production CLI/Web build. The current checkout includes the concurrent
   frontend changes and the endpoint-scoped fallback tests;
   the BNB Agent SDK still emits its known dynamic dependency warning during
@@ -59,6 +59,10 @@ Local evidence captured on 2026-09-01:
 - The application exposes the endpoint-scoped infrastructure fallback through
   `POST /api/marketplace/validate` and its opaque-token status route; the private
   Worker `/catalog-validations` route remains server-only.
+- Local development E2E can point the mutation adapters at a Wrangler/Miniflare
+  Worker over HTTP on `localhost` or `127.0.0.1`; non-loopback HTTP and every
+  production/non-development destination remain rejected, and the private
+  origin/secret checks are unchanged.
 - The fallback derives a caller fingerprint from application request context,
   HMACs it with `BUYER_OBSERVATION_SECRET`, and sends only the opaque key to the
   Worker; D1 enforces both the global daily budget and the configured per-caller

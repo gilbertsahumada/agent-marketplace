@@ -41,6 +41,23 @@ describe("catalog validation sync", () => {
     });
   });
 
+  it("allows a loopback Worker over HTTP during local development", async () => {
+    const fetchImpl = vi.fn(async (url: string | URL | Request) => {
+      expect(String(url)).toBe("http://127.0.0.1:8787/catalog-validations");
+      return Response.json({ status: "queued", reused: false, validationId: 18 }, { status: 202 });
+    });
+
+    await expect(requestCatalogValidation(input, {
+      env: {
+        ...env,
+        NODE_ENV: "development",
+        OBSERVATIONS_URL: "http://127.0.0.1:8787/observations",
+        BUYER_OBSERVATION_ALLOWED_ORIGIN: "http://127.0.0.1:8787",
+      },
+      fetchImpl,
+    })).resolves.toEqual({ status: "queued", reused: false, validationId: 18 });
+  });
+
   it("uses a different opaque caller fingerprint for a different request origin", async () => {
     const callerHeaders: string[] = [];
     const fetchImpl = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
@@ -73,6 +90,14 @@ describe("catalog validation sync", () => {
       code: "CATALOG_VALIDATION_NOT_CONFIGURED",
       httpStatus: 503,
     });
+    await expect(requestCatalogValidation(input, {
+      env: {
+        OBSERVATIONS_URL: "http://127.0.0.1:8787/observations",
+        BUYER_OBSERVATION_ALLOWED_ORIGIN: "http://127.0.0.1:8787",
+        BUYER_OBSERVATION_SECRET: "buyer-secret",
+      },
+      fetchImpl,
+    })).rejects.toMatchObject({ code: "CATALOG_VALIDATION_NOT_CONFIGURED", httpStatus: 503 });
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 
