@@ -115,6 +115,16 @@ describe("public catalog application adapter", () => {
       eligibility: "unsupported",
       representativeAgentKey: null,
     });
+    normalized.declarations.push({
+      ...normalized.declarations[0]!,
+      endpointKey: "d".repeat(64),
+      endpoint: "https://unsafe.example/a2a",
+      safety: "unsafe",
+      role: "operational",
+      validationProtocol: "a2a",
+      eligibility: "eligible",
+      representativeAgentKey: null,
+    });
 
     const result = catalogCandidateToMarketplaceAgentData(normalized);
 
