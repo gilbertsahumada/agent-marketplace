@@ -137,6 +137,22 @@ describe("catalog probe phase", () => {
     expect(malformed).toMatchObject({ outcome: "invalid_response", errorCode: "CATALOG_INVALID_RESPONSE" });
   });
 
+  it("enforces the configured seller response limit while reading the body", async () => {
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({
+      name: "Seller",
+      url: "https://seller.example.com/a2a",
+      skills: [],
+      description: "x".repeat(256),
+    }), { headers: { "content-type": "application/json" } }));
+    const observation = await probeCatalogEndpoint({ ...target, protocol: "a2a", endpoint: "https://seller.example.com/a2a" }, {
+      fetchImpl,
+      timeoutMs: 5_000,
+      maxResponseBytes: 128,
+      now: () => 1_000,
+    });
+    expect(observation).toMatchObject({ outcome: "invalid_response", errorCode: "CATALOG_INVALID_RESPONSE" });
+  });
+
   it("processes only the configured batch and commits every attempt", async () => {
     const commit = vi.fn(async () => undefined);
     const targets = [target, { ...target, endpointKey: "b".repeat(64), agentKey: "eip155:56:45650" }];
