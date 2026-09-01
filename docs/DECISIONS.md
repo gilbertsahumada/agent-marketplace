@@ -654,3 +654,10 @@ Cross-session reconciliation between the observation/D1 migration (per `docs/OBS
 - Stateless by design (`sessionIdGenerator: undefined`, JSON responses): each JSON-RPC POST is self-contained, which is what a serverless deployment can honestly guarantee; `GET`/`DELETE` answer 405. No sessions, no SSE push, no resumability claims.
 - The endpoint's upstream origin comes from `MARKETPLACE_ORIGIN`/the pinned production default — never from the request's `Host` header — so callers cannot redirect the server's own fetches (no SSRF via Host).
 - Scope unchanged in substance: this is a second transport over the same thin wrapper, not a parallel implementation, and it widens discovery/quoting only. Hiring remains gated by the signed-quote allowlist; the stdio server and `.mcp.json` stay for local development.
+
+## 2026-09-01 — P4: the agent buyer demo (Testnet)
+
+- `src/demo/agent-buyer-cli.ts` (`npm run agent-buyer`) is the autonomous ERC-8183 buyer: it discovers and quotes through the public MCP endpoint (`/api/mcp` — the same surface any third-party agent uses), enforces the demo spend ceiling before anything else, prepares over HTTP, verifies the plan with `validateHirePlan` — the identical pinned-allowlist module the browser UI runs — then signs the five intents with viem from a plain local key, notifies the seller and reads the job back from chain. Testnet only, by assertion.
+- Custody stays as decided on 2026-08-31: `AGENT_BUYER_PRIVATE_KEY` from the environment, never sent anywhere, bounded by the allowlist `maximumBudgetRaw` (1 raw unit). Altana remains set aside.
+- `--dry-run` executes everything up to the signature boundary; verified against production on 2026-09-01: MCP discovery (agent 303779), passport read, live signed quote, prepare, plan validation — nothing signed.
+- Done-when (the onchain job with an agent wallet as buyer) is pending a funded Testnet key; the run itself is one command.
