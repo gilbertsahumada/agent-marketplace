@@ -90,6 +90,14 @@ describe("marketplace API controllers", () => {
     expect(executeList).not.toHaveBeenCalled();
   });
 
+  it("does not silently ignore marketplace filters in the registry view", async () => {
+    const response = await agentsRoute.GET(new Request(
+      "http://local/api/marketplace/agents?view=all&status=hireable",
+    ));
+    expect(response.status).toBe(400);
+    expect(executeList).not.toHaveBeenCalled();
+  });
+
   it("rejects an unknown availability value visibly", async () => {
     const response = await agentsRoute.GET(new Request("http://local/api/marketplace/agents?view=marketplace&availability=sometimes"));
     expect(response.status).toBe(400);
