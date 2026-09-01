@@ -354,22 +354,30 @@ export async function processNextCatalogIngestTask(
   const selected = current.resources.slice(start, start + input.maxDeclarations);
   const next = start + selected.length;
   const declarationsComplete = next >= current.resources.length;
-  const existingOrigins = selected.length === 0 ? [] : await db.select({
+  const originKeys = [...new Set(selected
+    .map(({ originKey }) => originKey)
+    .filter((value): value is string => value !== null))];
+  const existingOrigins = originKeys.length === 0 ? [] : await db.select({
     originKey: catalogEndpoints.originKey,
     protocol: catalogEndpoints.validationProtocol,
     representativeAgentKey: catalogEndpoints.representativeAgentKey,
-  }).from(catalogEndpoints).where(inArray(
-    catalogEndpoints.endpointKey,
-    selected.map(({ endpointKey }) => endpointKey),
-  ));
-  const existingByKey = new Map(existingOrigins.map((entry) => [
-    `${entry.originKey ?? ""}:${entry.protocol ?? ""}`,
-    entry.representativeAgentKey,
-  ]));
+  }).from(catalogEndpoints).where(inArray(catalogEndpoints.originKey, originKeys))
+    .orderBy(desc(catalogEndpoints.representativeAgentKey));
+  const existingByKey = new Map<string, string>();
+  for (const entry of existingOrigins) {
+    if (!entry.originKey || !entry.protocol || !entry.representativeAgentKey) continue;
+    const key = `${entry.originKey}:${entry.protocol}`;
+    if (!existingByKey.has(key)) existingByKey.set(key, entry.representativeAgentKey);
+  }
   const endpointRows = selected.map((resource) => ({
     ...resource,
     representativeAgentKey: resource.eligibility === "eligible" && resource.originKey && resource.validationProtocol
-      ? existingByKey.get(`${resource.originKey}:${resource.validationProtocol}`) ?? active.agentKey
+      ? (() => {
+        const existingRepresentative = existingByKey.get(`${resource.originKey}:${resource.validationProtocol}`);
+        return existingRepresentative === undefined || existingRepresentative === active.agentKey
+          ? existingRepresentative ?? active.agentKey
+          : null;
+      })()
       : null,
     nextProbeAt: resource.eligibility === "eligible" ? input.nowMs : null,
   }));

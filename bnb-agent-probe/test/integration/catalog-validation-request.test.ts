@@ -32,6 +32,7 @@ beforeEach(async () => {
 
 describe("catalog validation Queue work", () => {
   it("runs the exact declared endpoint and completes the request with platform evidence", async () => {
+    const logger = { info: vi.fn(), error: vi.fn() };
     const fetchImpl = vi.fn()
       .mockResolvedValueOnce(Response.json({ jsonrpc: "2.0", id: 1, result: { protocolVersion: "2025-06-18" } }, {
         headers: { "mcp-session-id": "session" },
@@ -51,6 +52,7 @@ describe("catalog validation Queue work", () => {
       loadConfig({ KILL_SWITCH: "0", PROBE_GENERAL_EGRESS_APPROVED: "1" }),
       () => NOW,
       fetchImpl,
+      logger,
     )).toBe("completed");
 
     expect(await env.DB.prepare(`SELECT status, attemptCount, errorCode, leaseOwner, resultObservationId
@@ -59,6 +61,12 @@ describe("catalog validation Queue work", () => {
       resultObservationId: expect.any(Number),
     });
     expect(fetchImpl).toHaveBeenCalledTimes(3);
+    expect(logger.info).toHaveBeenCalledWith("catalog.probe.attempt", expect.objectContaining({
+      validationId: request!.id,
+      endpointKey: ENDPOINT_KEY,
+      source: "buyer_refresh",
+      outcome: "protocol_valid",
+    }));
     const persistedObservation = await env.DB.prepare(`SELECT id, source, outcome, verificationLevel, validationKind
       FROM catalog_observations WHERE endpointKey = ?`).bind(ENDPOINT_KEY).first<Record<string, unknown>>();
     expect(persistedObservation).toMatchObject({

@@ -25,14 +25,14 @@ Local evidence captured on 2026-09-01:
   `0016_scoped_quote_artifact_dedupe.sql` scopes signed-quote artifact uniqueness
   by declaring agent and exact endpoint;
 - Worker typecheck and manifest validation pass;
-- 490 unit tests and 106 Miniflare integration tests pass in
+- 490 unit tests and 107 Miniflare integration tests pass in
   `bnb-agent-probe` (`vitest.config.ts` and `vitest.worker.config.ts`);
 - production, staging and validation dry-run bundles build successfully;
 - application-side endpoint policy, controller and observation-sync coverage passes
   34 focused tests (`browser-endpoint-validation.test.ts`,
   `marketplace-controllers.test.ts`, `catalog-observation-sync.test.ts`,
   `catalog-validation-sync.test.ts` and `catalog-validation-route.test.ts`);
-- the complete application gate passes: typecheck, 565 tests across 64 files and
+- the complete application gate passes: typecheck, 566 tests across 64 files and
   the production CLI/Web build. The current checkout includes the concurrent
   frontend changes and the endpoint-scoped fallback tests;
   the BNB Agent SDK still emits its known dynamic dependency warning during
@@ -194,10 +194,11 @@ The Queue is transport, not the full worklist. D1 stores pending/due work and le
 ## 7. D1 normalized model
 
 Use additive migrations first. The implementation currently applies `0008` through
-`0015`; `0014_catalog_agent_identity.sql` adds the declared identity provenance
+`0016`; `0014_catalog_agent_identity.sql` adds the declared identity provenance
 columns without rewriting existing rows, and
-`0015_agent_scoped_validation_dedupe.sql` migrates legacy on-demand keys without
-touching the append-only observation ledger.
+`0015_agent_scoped_validation_dedupe.sql` migrates legacy on-demand keys and
+`0016_scoped_quote_artifact_dedupe.sql` scopes signed-quote artifact uniqueness
+without touching the append-only observation ledger.
 
 ### 7.1 `catalog_agents`
 

@@ -46,6 +46,18 @@ function agent(agentId: string, endpoints = 1, version = 1): CatalogAgent {
   };
 }
 
+function sharedOriginAgent(agentId: string, endpoint: string): CatalogAgent {
+  const candidate = agent(agentId, 1);
+  candidate.indexEndpoints = [{
+    protocol: "a2a",
+    endpoint,
+    rawProtocol: "A2A",
+    source: "services",
+    sourceIndex: 0,
+  }];
+  return candidate;
+}
+
 beforeEach(async () => {
   await clearCatalogFixtures();
   await env.DB.prepare("DELETE FROM runtime_state").run();
@@ -103,6 +115,45 @@ describe("resumable catalog discovery ingest", () => {
     expect(summary.d1RowsWritten).toBe(3);
     expect(await env.DB.prepare("SELECT textValue, integerValue FROM runtime_state WHERE key = 'header_high_water'").first())
       .toEqual({ textValue: `${NOW + 8}:8`, integerValue: null });
+  });
+
+  it("does not assign an origin representative to a different declared path", async () => {
+    const first = sharedOriginAgent("100", "https://shared.example.com/first");
+    await enqueueCatalogDiscoveryPage(env.DB as unknown as D1DatabaseLike, [first], {
+      nowMs: NOW,
+      source: "header",
+    });
+    await processNextCatalogIngestTask(env.DB as unknown as D1DatabaseLike, {
+      nowMs: NOW + 1,
+      maxDeclarations: 4,
+      fetchAgent: async () => first,
+    });
+    await processNextCatalogIngestTask(env.DB as unknown as D1DatabaseLike, {
+      nowMs: NOW + 2,
+      maxDeclarations: 4,
+      fetchAgent: async () => first,
+    });
+
+    const second = sharedOriginAgent("101", "https://shared.example.com/second");
+    await enqueueCatalogDiscoveryPage(env.DB as unknown as D1DatabaseLike, [second], {
+      nowMs: NOW + 3,
+      source: "sweep",
+    });
+    await processNextCatalogIngestTask(env.DB as unknown as D1DatabaseLike, {
+      nowMs: NOW + 4,
+      maxDeclarations: 4,
+      fetchAgent: async () => second,
+    });
+
+    expect(await env.DB.prepare(`SELECT e.endpoint, e.representativeAgentKey
+      FROM catalog_endpoints e
+      WHERE e.endpoint IN ('https://shared.example.com/first', 'https://shared.example.com/second')
+      ORDER BY e.endpoint`).all()).toMatchObject({
+      results: [
+        { endpoint: "https://shared.example.com/first", representativeAgentKey: "eip155:56:100" },
+        { endpoint: "https://shared.example.com/second", representativeAgentKey: null },
+      ],
+    });
   });
 
   it("processes every declaration in bounded resumable batches and never schedules external links", async () => {

@@ -8,6 +8,7 @@ import { catalogProbeCommitStatements } from "./catalog-probe-d1";
 import { probeCatalogEndpoint, type CatalogProbeTarget } from "./catalog-probe";
 
 const LEASE_MS = 30_000;
+type CatalogValidationLogger = Pick<Console, "info" | "error">;
 
 export async function runCatalogValidationRequest(
   d1: D1DatabaseLike,
@@ -15,6 +16,7 @@ export async function runCatalogValidationRequest(
   config: WorkerConfig,
   now: () => number = Date.now,
   fetchImpl: typeof fetch = fetch,
+  logger: CatalogValidationLogger = console,
 ): Promise<"completed" | "duplicate"> {
   const db = createDatabase(d1);
   const nowMs = now();
@@ -124,7 +126,7 @@ export async function runCatalogValidationRequest(
     ] as unknown as Parameters<typeof db.batch>[0]);
     const inserted = results[0] as Array<{ id: number }>;
     if (!inserted[0]?.id) throw new Error("CATALOG_VALIDATION_RESULT_MISSING");
-    console.info("catalog.probe.attempt", {
+    logger.info("catalog.probe.attempt", {
       attemptId: observation.attemptId,
       validationId,
       agentKey: target.agentKey,

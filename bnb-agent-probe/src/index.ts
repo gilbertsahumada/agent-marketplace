@@ -8,12 +8,13 @@ import type {
 } from "./types";
 
 type ScheduledRunResult = "completed" | "duplicate" | "locked";
+type StructuredLogger = Pick<Console, "info" | "error">;
 const QUEUE_LEASE_RETRY_DELAY_SECONDS = 240;
 const QUEUE_MAX_FUTURE_SKEW_MS = 5 * 60 * 1_000;
 
 export interface WorkerDependencies {
   now?: () => number;
-  logger?: Pick<Console, "info" | "error">;
+  logger?: StructuredLogger;
   runScheduled?: (
     controller: ScheduledController,
     env: Env,
@@ -303,7 +304,10 @@ export function createWorker(dependencies: WorkerDependencies = {}): WorkerEntry
         ...(work.kind === "scheduled" ? { scheduledTime: work.scheduledTime } : { validationId: work.validationId }),
       });
       if (work.kind === "catalog_validation") {
-        const runner = dependencies.runCatalogValidation ?? defaultRunCatalogValidation;
+        const runner = dependencies.runCatalogValidation
+          ?? ((validationId: number, runnerEnv: Env, runnerConfig: WorkerConfig) => (
+            defaultRunCatalogValidation(validationId, runnerEnv, runnerConfig, logger)
+          ));
         let result: "completed" | "duplicate";
         try {
           result = await runner(work.validationId, env, config);
@@ -361,16 +365,20 @@ const defaultRunScheduled: NonNullable<WorkerDependencies["runScheduled"]> = asy
   return runWp2Scheduled(...args);
 };
 
-const defaultRunCatalogValidation: NonNullable<WorkerDependencies["runCatalogValidation"]> = async (
-  validationId,
-  env,
-  config,
+const defaultRunCatalogValidation = async (
+  validationId: number,
+  env: Env,
+  config: WorkerConfig,
+  logger: StructuredLogger,
 ) => {
   const { runCatalogValidationRequest } = await import("./phases/catalog-validation-request");
   return runCatalogValidationRequest(
     env.DB as unknown as Parameters<typeof runCatalogValidationRequest>[0],
     validationId,
     config,
+    undefined,
+    undefined,
+    logger,
   );
 };
 
