@@ -134,6 +134,13 @@ describe("marketplace business catalogue", () => {
     await expect(useCase.execute({ view: "all", limit: 25 })).rejects.toThrow("at most 24");
   });
 
+  it("fails closed when advanced catalog filters have no catalog source", async () => {
+    const useCase = new ListMarketplaceAgents(repository([data("45650")]));
+    await expect(useCase.execute({
+      view: "marketplace", limit: 24, protocols: ["mcp"], latestFailure: false,
+    })).rejects.toThrow("unavailable");
+  });
+
   it("admits the marketplace-operated seller and keeps research candidates in the public registry", async () => {
     vi.stubEnv("ERC8183_MAINNET_SELLER_AGENT_ID", "303779");
     try {

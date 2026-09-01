@@ -207,6 +207,37 @@ describe("public catalog application adapter", () => {
     });
   });
 
+  it("propagates combined catalog filters without collapsing dimensions", async () => {
+    const pageReader: CatalogCandidatePageReader = {
+      execute: vi.fn(async () => ({
+        schemaVersion: 2, status: "declared" as const, statuses: ["declared" as const], query: "",
+        category: null, categories: [], generatedAt: GENERATED_AT, page: 1, limit: 24, total: 0,
+        items: [],
+      })),
+    };
+    await new ListMarketplaceAgents(repository([]), pageReader).execute({
+      view: "marketplace", page: 1, limit: 24,
+      statuses: ["declared", "hireable"],
+      categories: ["grid_trading", "yield_optimisation"],
+      protocols: ["a2a", "mcp"],
+      reachability: ["live"],
+      commerce: ["admitted"],
+      quote: ["verified"],
+      latestFailure: false,
+    });
+    expect(pageReader.execute).toHaveBeenCalledWith({
+      page: 1, limit: 24,
+      statuses: ["declared", "hireable"],
+      categories: ["grid_trading", "yield_optimisation"],
+      protocols: ["a2a", "mcp"],
+      reachability: ["live"],
+      commerce: ["admitted"],
+      quote: ["verified"],
+      latestFailure: false,
+      inventory: "operational",
+    });
+  });
+
   it("uses a catalog identity when trust8004 enrichment is temporarily unavailable", async () => {
     const reader: CatalogCandidateReader = { execute: vi.fn(async () => candidate("42", false)) };
     const source = repository([]);

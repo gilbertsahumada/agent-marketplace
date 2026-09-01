@@ -32,7 +32,7 @@ Local evidence captured on 2026-09-01:
   34 focused tests (`browser-endpoint-validation.test.ts`,
   `marketplace-controllers.test.ts`, `catalog-observation-sync.test.ts`,
   `catalog-validation-sync.test.ts` and `catalog-validation-route.test.ts`);
-- the complete application gate passes: typecheck, 561 tests across 64 files and
+- the complete application gate passes: typecheck, 565 tests across 64 files and
   the production CLI/Web build. The current checkout includes the concurrent
   frontend changes and the endpoint-scoped fallback tests;
   the BNB Agent SDK still emits its known dynamic dependency warning during

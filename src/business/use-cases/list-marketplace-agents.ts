@@ -13,6 +13,9 @@ import {
   type MarketplaceCategory,
 } from "../entities/marketplace-agent.ts";
 import {
+  type CatalogStatus,
+} from "../entities/catalog-candidate.ts";
+import {
   attachCatalogCandidate,
   catalogCandidateToMarketplaceAgentData,
   type CatalogCandidatePageReader,
@@ -27,6 +30,14 @@ export type MarketplaceSort = MarketplaceDataSort;
 
 export const MARKETPLACE_AVAILABILITIES = ["all", "hireable", "mcp_only"] as const;
 export type MarketplaceAvailability = (typeof MARKETPLACE_AVAILABILITIES)[number];
+export const MARKETPLACE_PROTOCOLS = ["a2a", "mcp", "erc8183_http"] as const;
+export type MarketplaceProtocol = (typeof MARKETPLACE_PROTOCOLS)[number];
+export const MARKETPLACE_REACHABILITY = ["live", "historical", "never", "browser_observed"] as const;
+export type MarketplaceReachability = (typeof MARKETPLACE_REACHABILITY)[number];
+export const MARKETPLACE_COMMERCE = ["declared", "candidate", "admitted", "suspended", "none"] as const;
+export type MarketplaceCommerce = (typeof MARKETPLACE_COMMERCE)[number];
+export const MARKETPLACE_QUOTES = ["verified", "expired", "missing"] as const;
+export type MarketplaceQuote = (typeof MARKETPLACE_QUOTES)[number];
 
 interface BaseListInput {
   q?: string;
@@ -40,7 +51,14 @@ export type ListMarketplaceAgentsInput =
   | (BaseListInput & {
     view: "marketplace";
     category?: MarketplaceCategory;
+    categories?: MarketplaceCategory[];
     availability?: MarketplaceAvailability;
+    statuses?: CatalogStatus[];
+    protocols?: MarketplaceProtocol[];
+    reachability?: MarketplaceReachability[];
+    commerce?: MarketplaceCommerce[];
+    quote?: MarketplaceQuote[];
+    latestFailure?: boolean;
   });
 
 function positiveInteger(value: number, name: string): number {
@@ -71,6 +89,18 @@ function sortAgents(agents: MarketplaceAgent[], sort: MarketplaceDataSort | unde
     }
     return (right.trustScore.total ?? -1) - (left.trustScore.total ?? -1);
   });
+}
+
+function hasAdvancedCatalogFilters(input: Extract<ListMarketplaceAgentsInput, { view: "marketplace" }>): boolean {
+  const categories = input.categories ?? (input.category ? [input.category] : []);
+  const statuses = input.statuses ?? [];
+  return categories.length > 1
+    || (statuses.length > 0 && !(statuses.length === 1 && statuses[0] === "declared"))
+    || (input.protocols?.length ?? 0) > 0
+    || (input.reachability?.length ?? 0) > 0
+    || (input.commerce?.length ?? 0) > 0
+    || (input.quote?.length ?? 0) > 0
+    || input.latestFailure !== undefined;
 }
 
 function categorySummaries(agents: MarketplaceAgent[]) {
@@ -117,13 +147,25 @@ export class ListMarketplaceAgents {
     }
 
     if (input.view === "marketplace" && this.catalogPageReader) {
+      const categoryValues = input.categories?.length
+        ? input.categories
+        : input.category ? [input.category] : undefined;
+      const statusValues = input.statuses?.length
+        ? input.statuses
+        : input.availability === "hireable" ? ["hireable" as const]
+          : input.availability === "mcp_only" ? ["mcp_only" as const] : undefined;
       const catalog = await this.catalogPageReader.execute({
         page: validated.page,
         limit: validated.limit,
         ...(validated.q ? { q: validated.q } : {}),
-        ...(input.category ? { category: input.category } : {}),
-        ...(input.availability === "hireable" ? { statuses: ["hireable"] } : {}),
-        ...(input.availability === "mcp_only" ? { statuses: ["mcp_only"] } : {}),
+        ...(categoryValues?.length === 1 ? { category: categoryValues[0] } : {}),
+        ...(categoryValues && categoryValues.length > 1 ? { categories: categoryValues } : {}),
+        ...(statusValues ? { statuses: statusValues } : {}),
+        ...(input.protocols?.length ? { protocols: input.protocols } : {}),
+        ...(input.reachability?.length ? { reachability: input.reachability } : {}),
+        ...(input.commerce?.length ? { commerce: input.commerce } : {}),
+        ...(input.quote?.length ? { quote: input.quote } : {}),
+        ...(input.latestFailure === undefined ? {} : { latestFailure: input.latestFailure }),
         inventory: "operational",
       });
       if (catalog) {
@@ -161,6 +203,12 @@ export class ListMarketplaceAgents {
       }
     }
 
+    if (hasAdvancedCatalogFilters(input)) {
+      throw new MarketplaceDataUnavailableError("list marketplace agents", {
+        cause: new Error("CATALOG_FILTERS_UNAVAILABLE"),
+      });
+    }
+
     const records = [];
     try {
       for (const entry of marketplaceInventoryEntries()) {
@@ -193,9 +241,12 @@ export class ListMarketplaceAgents {
     }
     sortAgents(agents, input.sort);
     const categories = categorySummaries(agents);
-    if (input.category) {
+    const categoryValues = input.categories?.length
+      ? input.categories
+      : input.category ? [input.category] : [];
+    if (categoryValues.length > 0) {
       agents = agents.filter((agent) =>
-        agent.categories.some((assignment) => assignment.category === input.category));
+        agent.categories.some((assignment) => categoryValues.includes(assignment.category)));
     }
 
     const total = agents.length;

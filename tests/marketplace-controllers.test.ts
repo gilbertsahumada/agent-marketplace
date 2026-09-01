@@ -60,6 +60,36 @@ describe("marketplace API controllers", () => {
     expect(executeList).toHaveBeenCalledWith({ view: "marketplace", page: 1, limit: 12, availability: "hireable" });
   });
 
+  it("delegates repeated catalog filters as one combined query", async () => {
+    executeList.mockResolvedValue({ items: [] });
+    await agentsRoute.GET(new Request(
+      "http://local/api/marketplace/agents?view=marketplace"
+      + "&status=declared&status=hireable"
+      + "&category=grid_trading&category=yield_optimisation"
+      + "&protocol=a2a&protocol=mcp&reachability=live"
+      + "&commerce=admitted&quote=verified&latestFailure=false",
+    ));
+    expect(executeList).toHaveBeenCalledWith({
+      view: "marketplace", page: 1, limit: 12,
+      statuses: ["declared", "hireable"],
+      categories: ["grid_trading", "yield_optimisation"],
+      protocols: ["a2a", "mcp"],
+      reachability: ["live"],
+      commerce: ["admitted"],
+      quote: ["verified"],
+      latestFailure: false,
+    });
+  });
+
+  it("rejects invalid combined catalog filters visibly", async () => {
+    const response = await agentsRoute.GET(new Request(
+      "http://local/api/marketplace/agents?view=marketplace&protocol=twitter",
+    ));
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ error: { code: "InvalidMarketplaceInputError" } });
+    expect(executeList).not.toHaveBeenCalled();
+  });
+
   it("rejects an unknown availability value visibly", async () => {
     const response = await agentsRoute.GET(new Request("http://local/api/marketplace/agents?view=marketplace&availability=sometimes"));
     expect(response.status).toBe(400);

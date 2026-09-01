@@ -71,7 +71,7 @@ Only these routes set `Cache-Control`; all others send none:
 | --- | --- |
 | `GET /agents/[agentId]/passport` | `public, max-age=60, must-revalidate` |
 | `GET /proofs/jobs/mainnet/[jobId]` | `public, max-age=60, stale-while-revalidate=300` |
-| `POST /validate`, `POST /demo/erc8183-mainnet/quote` | `no-store` |
+| `POST /validate`, `GET /validate/:requestId`, `POST /demo/erc8183-mainnet/quote` | `no-store` |
 
 ## Discover / Understand / Compare
 
@@ -86,8 +86,14 @@ Query parameters:
 | `limit` | positive integer ≤ 24 | 12 (`marketplace`) / 24 (`all`) | 400 |
 | `q` | free text ≤ 120 chars | — | 400 |
 | `sort` | one of `MARKETPLACE_DATA_SORTS` | — | 400 |
-| `category` | `rebalancing` \| `grid_trading` \| `yield_optimisation` \| `health_factor_monitoring` (marketplace view only) | — | 400 |
+| `category` | Repeatable: `rebalancing` \| `grid_trading` \| `yield_optimisation` \| `health_factor_monitoring` (marketplace view only) | — | 400 |
 | `availability` | `all` \| `hireable` \| `mcp_only` (marketplace view only) | — | 400 |
+| `status` | Repeatable catalog status: `declared` \| `pending` \| `a2a` \| `mcp` \| `mcp_only` \| `erc8183` \| `quote_capable` \| `hireable` \| `failed` (marketplace view only) | `declared` in the catalog | 400 |
+| `protocol` | Repeatable: `a2a` \| `mcp` \| `erc8183_http` (marketplace view only) | — | 400 |
+| `reachability` | Repeatable: `live` \| `historical` \| `never` \| `browser_observed` (marketplace view only) | — | 400 |
+| `commerce` | Repeatable: `declared` \| `candidate` \| `admitted` \| `suspended` \| `none` (marketplace view only) | — | 400 |
+| `quote` | Repeatable: `verified` \| `expired` \| `missing` (marketplace view only) | — | 400 |
+| `latestFailure` | `true` \| `false` (marketplace view only) | — | 400 |
 
 Response: `MarketplaceAgentPage` (`src/business/entities/marketplace-agent.ts`) —
 `{ view, items: MarketplaceAgent[], pagination: { page, pageSize, total, totalPages },
@@ -106,6 +112,11 @@ not_evaluated`.
 
 `availability=hireable` filters to `hireability.canHire === true`;
 `availability=mcp_only` filters to `hireability.status === "mcp_only"`.
+Repeated values within one filter dimension are ORed; different dimensions are
+ANDed. For example, `status=hireable&status=quote_capable&category=grid_trading`
+returns agents matching either status and the selected category. Advanced catalog
+filters fail closed with `503` if the catalog service is unavailable; the curated
+fallback is never used to fabricate an answer for them.
 
 ### `GET /api/marketplace/agents/[agentId]`
 

@@ -16,7 +16,10 @@ export interface CatalogCandidatePageReader {
     category?: "rebalancing" | "grid_trading" | "yield_optimisation" | "health_factor_monitoring";
     categories?: Array<"rebalancing" | "grid_trading" | "yield_optimisation" | "health_factor_monitoring">;
     protocols?: Array<"a2a" | "mcp" | "erc8183_http">;
+    reachability?: Array<"live" | "historical" | "never" | "browser_observed">;
     commerce?: Array<"declared" | "candidate" | "admitted" | "suspended" | "none">;
+    quote?: Array<"verified" | "expired" | "missing">;
+    latestFailure?: boolean;
     inventory?: "operational" | "registry";
     statuses?: Array<"declared" | "pending" | "a2a" | "mcp" | "mcp_only" | "erc8183" | "quote_capable" | "hireable" | "failed">;
   }): Promise<CatalogCandidatePage | null>;
