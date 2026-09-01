@@ -29,7 +29,7 @@ Local evidence captured on 2026-09-01:
   `bnb-agent-probe` (`vitest.config.ts` and `vitest.worker.config.ts`);
 - production, staging and validation dry-run bundles build successfully;
 - application-side endpoint policy, controller and observation-sync coverage passes
-  34 focused tests (`browser-endpoint-validation.test.ts`,
+  37 focused tests (`browser-endpoint-validation.test.ts`,
   `marketplace-controllers.test.ts`, `catalog-observation-sync.test.ts`,
   `catalog-validation-sync.test.ts` and `catalog-validation-route.test.ts`);
 - the complete application gate passes: typecheck, 566 tests across 64 files and
