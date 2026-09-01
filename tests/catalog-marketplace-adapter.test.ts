@@ -125,11 +125,22 @@ describe("public catalog application adapter", () => {
       eligibility: "eligible",
       representativeAgentKey: null,
     });
+    normalized.observations.push({
+      ...normalized.observations[0]!,
+      id: 100,
+      endpointKey: "c".repeat(64),
+      protocol: "web",
+      observedAt: GENERATED_AT + 20_000,
+    });
 
     const result = catalogCandidateToMarketplaceAgentData(normalized);
 
     expect(result.services).toHaveLength(1);
     expect(result.services[0]).toMatchObject({ name: "A2A", endpoint: "https://normalized.invalid/a2a" });
+    expect(result.endpointObservation).toMatchObject({
+      protocol: "a2a", endpoint: "https://normalized.invalid/a2a",
+      lastTestedAt: new Date(GENERATED_AT).toISOString(),
+    });
   });
 
   it("maps Worker v2 candidates into the public marketplace response", async () => {
