@@ -1,4 +1,7 @@
-import type { CatalogCandidate } from "@/src/business/entities/catalog-candidate";
+import {
+  isCatalogOperationalObservation,
+  type CatalogCandidate,
+} from "@/src/business/entities/catalog-candidate";
 import type { AgentCardViewModel, EvidenceStepViewModel } from "./presentation-types";
 
 const PLATFORM_SOURCES = new Set(["marketplace_probe", "worker_probe", "buyer_refresh", "migration"]);
@@ -13,16 +16,22 @@ export function catalogCandidateCard(
   now = Date.now(),
 ): AgentCardViewModel {
   const platform = candidate.observations
-    .filter((observation) => PLATFORM_SOURCES.has(observation.source))
+    .filter((observation) => PLATFORM_SOURCES.has(observation.source)
+      && isCatalogOperationalObservation(candidate, observation))
     .sort((left, right) => right.observedAt - left.observedAt || right.id - left.id);
   const browser = candidate.observations
     .filter((observation) => observation.source === "browser_reported")
     .sort((left, right) => right.observedAt - left.observedAt || right.id - left.id);
   const quote = candidate.observations
     .filter((observation) => (observation.validationKind === "quote"
-      && observation.verificationLevel === "cryptographic")
+      && observation.verificationLevel === "cryptographic"
+      && isCatalogOperationalObservation(candidate, observation)
+      && (candidate.admission?.endpointKey === null
+        || candidate.admission?.endpointKey === undefined
+        || observation.endpointKey === candidate.admission.endpointKey))
       || (observation.validationKind === undefined
         && PLATFORM_SOURCES.has(observation.source)
+        && isCatalogOperationalObservation(candidate, observation)
         && (observation.outcome === "quote_verified"
           || observation.outcome === "quote_rejected"
           || observation.protocol === "erc8183")))
