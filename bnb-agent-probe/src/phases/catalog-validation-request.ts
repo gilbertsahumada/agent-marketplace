@@ -108,6 +108,7 @@ export async function runCatalogValidationRequest(
     const observation = {
       ...await probeCatalogEndpoint(target, {
         timeoutMs: catalogProbeTimeoutMs(config, target.protocol),
+        maxResponseBytes: config.maxSellerResponseBytes,
         freshnessMs: catalogProbeFreshnessMs(config, target),
         fetchImpl,
         now,
