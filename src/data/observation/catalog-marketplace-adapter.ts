@@ -1,4 +1,10 @@
-import type { CatalogCandidate, CatalogCandidateObservation, CatalogCandidatePage } from "../../business/entities/catalog-candidate.ts";
+import {
+  isCatalogOperationalDeclaration,
+  isCatalogOperationalObservation,
+  type CatalogCandidate,
+  type CatalogCandidateObservation,
+  type CatalogCandidatePage,
+} from "../../business/entities/catalog-candidate.ts";
 import type { MarketplaceAgentData } from "../repositories/marketplace-agent-repository.ts";
 import type { EndpointObservation } from "../../trust8004/types.ts";
 
@@ -10,7 +16,10 @@ export interface CatalogCandidatePageReader {
     category?: "rebalancing" | "grid_trading" | "yield_optimisation" | "health_factor_monitoring";
     categories?: Array<"rebalancing" | "grid_trading" | "yield_optimisation" | "health_factor_monitoring">;
     protocols?: Array<"a2a" | "mcp" | "erc8183_http">;
+    reachability?: Array<"live" | "historical" | "never" | "browser_observed">;
     commerce?: Array<"declared" | "candidate" | "admitted" | "suspended" | "none">;
+    quote?: Array<"verified" | "expired" | "missing">;
+    latestFailure?: boolean;
     inventory?: "operational" | "registry";
     statuses?: Array<"declared" | "pending" | "a2a" | "mcp" | "mcp_only" | "erc8183" | "quote_capable" | "hireable" | "failed">;
   }): Promise<CatalogCandidatePage | null>;
@@ -26,7 +35,8 @@ function latestPlatformObservation(candidate: CatalogCandidate): CatalogCandidat
   const observations = candidate.observations
     .filter((observation) => PLATFORM_SOURCES.has(observation.source)
       && (observation.validationKind === "reachability" || observation.validationKind === "protocol")
-      && observation.verificationLevel === "platform_observed")
+      && observation.verificationLevel === "platform_observed"
+      && isCatalogOperationalObservation(candidate, observation))
     .sort((left, right) => right.observedAt - left.observedAt || right.id - left.id);
   const admittedEndpointKey = candidate.admission?.endpointKey;
   return (admittedEndpointKey === null || admittedEndpointKey === undefined
@@ -70,9 +80,10 @@ export function catalogCandidateToMarketplaceAgentData(
   fetchedAt = new Date().toISOString(),
 ): MarketplaceAgentData {
   const declarations = candidate.declarations
+    .filter(isCatalogOperationalDeclaration)
     .filter(({ endpoint }) => endpoint !== null)
-    .map(({ protocol, endpoint }) => ({
-      name: protocol.toUpperCase(),
+    .map(({ protocol, validationProtocol, endpoint }) => ({
+      name: (validationProtocol ?? protocol).toUpperCase(),
       endpoint: endpoint!,
       version: null,
       tools: [],
@@ -96,7 +107,8 @@ export function catalogCandidateToMarketplaceAgentData(
     trustScore: { total: null, tier: null, dimensions: {}, calculatedAt: null, expiresAt: null },
     freshness: {
       fetchedAt,
-      metadataUpdatedAt: candidate.registeredAt === null ? null : new Date(candidate.registeredAt).toISOString(),
+      metadataUpdatedAt: candidate.metadataObservedAt == null
+        ? null : new Date(candidate.metadataObservedAt).toISOString(),
       indexedUpdatedAt: fetchedAt,
     },
     catalogCandidate: candidate,

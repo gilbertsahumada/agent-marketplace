@@ -173,4 +173,27 @@ describe("catalog effective evidence policy", () => {
       observations: [], admission: null, nowMs: NOW,
     })).toMatchObject({ operationalStatus: "unsupported", canRequestInfrastructureValidation: false });
   });
+
+  it("does not promote an invalid ERC-8183 declaration alongside an eligible MCP endpoint", () => {
+    expect(deriveCatalogEvidenceState({
+      endpoints: [
+        { ...endpoint, endpointKey: "mcp" },
+        {
+          endpointKey: "social",
+          role: "operational",
+          eligibility: "invalid_declaration",
+          validationProtocol: "erc8183_http",
+        },
+      ],
+      observations: [],
+      admission: null,
+      nowMs: NOW,
+    })).toMatchObject({
+      commerceStatus: "none",
+      canRequestQuote: false,
+      canPrepareHire: false,
+      buyerAction: "check_availability",
+      blockingReasons: expect.arrayContaining(["COMMERCE_NOT_ADMITTED"]),
+    });
+  });
 });

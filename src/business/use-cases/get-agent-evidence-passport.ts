@@ -1,5 +1,11 @@
 import type { AgentEvidencePassport } from "../entities/evidence-passport.ts";
-import type { CatalogCandidate, CatalogCandidateObservation } from "../entities/catalog-candidate.ts";
+import {
+  isCatalogOperationalDeclaration,
+  isCatalogOperationalObservation,
+  isCatalogSellerDeclaration,
+  type CatalogCandidate,
+  type CatalogCandidateObservation,
+} from "../entities/catalog-candidate.ts";
 import type { MarketplaceAgent } from "../entities/marketplace-agent.ts";
 import type { MainnetJobProof } from "../entities/mainnet-job-proof.ts";
 import { buildEvidencePassport } from "../policies/evidence-passport-policy.ts";
@@ -26,8 +32,11 @@ const FAILURE_OUTCOMES = new Set([
 
 function newestPlatformObservation(candidate: CatalogCandidate): CatalogCandidateObservation[] {
   const observations = candidate.observations
-    .filter(({ source, validationKind }) => PLATFORM_SOURCES.has(source)
-      && (validationKind === undefined || validationKind === "reachability" || validationKind === "protocol"))
+    .filter((observation) => PLATFORM_SOURCES.has(observation.source)
+      && (observation.validationKind === undefined
+        || observation.validationKind === "reachability"
+        || observation.validationKind === "protocol")
+      && isCatalogOperationalObservation(candidate, observation))
     .sort((left, right) => right.observedAt - left.observedAt || right.id - left.id);
   const admittedEndpointKey = candidate.admission?.endpointKey;
   if (admittedEndpointKey === null || admittedEndpointKey === undefined) return observations;
@@ -96,8 +105,7 @@ export class GetAgentEvidencePassport {
       && endpointExpiresAt !== null && endpointExpiresAt > now;
     const endpointFailed = latestEndpoint !== undefined && FAILURE_OUTCOMES.has(latestEndpoint.outcome);
     const quoteIsFresh = quote !== undefined && quote.expiresAt !== null && quote.expiresAt > now;
-    const compatibleDeclaration = catalogCandidate?.declarations.some(({ protocol, endpoint, safety }) => safety === "safe"
-      && endpoint !== null && (protocol === "a2a" || protocol === "erc8183_http")) ?? false;
+    const compatibleDeclaration = catalogCandidate?.declarations.some(isCatalogSellerDeclaration) ?? false;
     // The normalized v2 state is the commerce authority.  Keep this fail-closed
     // during the compatibility window instead of promoting the legacy flag.
     // `canHire` means an admitted executable seller can negotiate a fresh
@@ -111,7 +119,8 @@ export class GetAgentEvidencePassport {
         ? "quote_stale" as const
         : compatibleDeclaration
           ? "protocol_discovered" as const
-          : catalogCandidate?.declarations.some(({ protocol }) => protocol === "mcp")
+          : catalogCandidate?.declarations.some((declaration) => isCatalogOperationalDeclaration(declaration)
+            && (declaration.validationProtocol ?? declaration.protocol) === "mcp")
             ? "mcp_only" as const
             : "not_evaluated" as const;
     const observedAt = latestEndpoint ? new Date(latestEndpoint.observedAt).toISOString() : null;

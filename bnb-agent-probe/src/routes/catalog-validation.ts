@@ -4,6 +4,7 @@ import { createDatabase } from "../db/orm";
 import {
   catalogAgentEndpoints,
   catalogEndpoints,
+  catalogObservations,
   catalogValidationRequests,
 } from "../db/schema";
 import type { D1Database, QueueProducer } from "../types";
@@ -11,9 +12,15 @@ import type { D1Database, QueueProducer } from "../types";
 const MAX_BODY_BYTES = 1_024;
 const AGENT_ID = /^[1-9]\d*$/;
 const ENDPOINT_KEY = /^[0-9a-f]{64}$/;
+const CALLER_KEY = /^[0-9a-f]{64}$/;
 const REQUEST_COOLDOWN_MS = 60_000;
 
 class InvalidValidationRequest extends Error {}
+
+function callerKey(request: Request): string | null {
+  const value = request.headers.get("x-marketplace-caller")?.trim().toLowerCase();
+  return value && CALLER_KEY.test(value) ? value : null;
+}
 
 async function input(request: Request): Promise<{ agentId: string; endpointKey: string; validationKind: "protocol" }> {
   if (request.headers.get("content-type")?.split(";", 1)[0]?.trim() !== "application/json") {
@@ -39,9 +46,14 @@ export async function createCatalogValidationResponse(
   queue: QueueProducer | undefined,
   nowMs: number,
   dailyLimit: number,
+  callerDailyLimit = dailyLimit,
 ): Promise<Response> {
   let parsed: Awaited<ReturnType<typeof input>>;
   try { parsed = await input(request); } catch {
+    return Response.json({ error: "invalid_request" }, { status: 400, headers: { "cache-control": "no-store" } });
+  }
+  const caller = callerKey(request);
+  if (caller === null) {
     return Response.json({ error: "invalid_request" }, { status: 400, headers: { "cache-control": "no-store" } });
   }
   if (!queue) return Response.json({ error: "queue_unavailable" }, { status: 503, headers: { "cache-control": "no-store" } });
@@ -64,8 +76,19 @@ export async function createCatalogValidationResponse(
     )).limit(1);
   const target = targets[0];
   if (!target) return Response.json({ error: "target_unavailable" }, { status: 409, headers: { "cache-control": "no-store" } });
-  if (target.lastAttemptOutcome === "protocol_valid"
-    && target.lastSuccessfulAt !== null && target.nextProbeAt !== null && target.nextProbeAt > nowMs) {
+  const latestPlatformObservation = await db.select({
+    outcome: catalogObservations.outcome,
+    expiresAt: catalogObservations.expiresAt,
+  }).from(catalogObservations).where(and(
+    eq(catalogObservations.agentKey, agentKey),
+    eq(catalogObservations.endpointKey, parsed.endpointKey),
+    inArray(catalogObservations.source, ["worker_probe", "buyer_refresh", "migration"]),
+    eq(catalogObservations.validationKind, "protocol"),
+    eq(catalogObservations.verificationLevel, "platform_observed"),
+  )).orderBy(desc(catalogObservations.observedAt), desc(catalogObservations.id)).limit(1);
+  if (latestPlatformObservation[0]?.outcome === "protocol_valid"
+    && latestPlatformObservation[0].expiresAt !== null
+    && latestPlatformObservation[0].expiresAt > nowMs) {
     return Response.json({ status: "completed", reused: true, validationId: null }, {
       status: 200,
       headers: { "cache-control": "no-store" },
@@ -106,12 +129,26 @@ export async function createCatalogValidationResponse(
       headers: { "cache-control": "no-store", "retry-after": String(Math.ceil(retryAfterMs / 1_000)) },
     });
   }
+  const callerRows = await db.select({ total: count() }).from(catalogValidationRequests).where(and(
+    eq(catalogValidationRequests.callerKey, caller),
+    eq(catalogValidationRequests.requestedBy, "browser_fallback"),
+    eq(catalogValidationRequests.validationKind, "protocol"),
+    gte(catalogValidationRequests.createdAt, dayStart),
+  ));
+  if ((callerRows[0]?.total ?? 0) >= callerDailyLimit) {
+    const retryAfterMs = dayStart + 86_400_000 - nowMs;
+    return Response.json({ error: "caller_daily_budget_exhausted", retryAfterMs }, {
+      status: 429,
+      headers: { "cache-control": "no-store", "retry-after": String(Math.ceil(retryAfterMs / 1_000)) },
+    });
+  }
   const inserted = await db.insert(catalogValidationRequests).values({
     dedupeKey,
     agentKey,
     endpointKey: parsed.endpointKey,
     validationKind: parsed.validationKind,
     requestedBy: "browser_fallback",
+    callerKey: caller,
     status: "queued",
     priority: 1_000,
     createdAt: nowMs,

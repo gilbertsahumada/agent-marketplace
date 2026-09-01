@@ -53,6 +53,49 @@ describe("catalog candidate card", () => {
     expect(card.monitoring).toMatchObject({ attemptCount: 17 });
   });
 
+  it("does not surface platform evidence from an external declaration", () => {
+    const value = candidate();
+    value.declarations[0] = {
+      ...value.declarations[0]!,
+      role: "operational",
+      validationProtocol: "a2a",
+      eligibility: "eligible",
+    };
+    value.declarations.push({
+      endpointKey: "c".repeat(64), protocol: "web", endpoint: "https://agent.example/site",
+      originKey: "d".repeat(64), safety: "safe", safetyReason: null, representativeAgentKey: null,
+      lastProbedAt: NOW, nextProbeAt: null, consecutiveFailures: 0, priority: 20,
+      role: "external", validationProtocol: null, eligibility: "unsupported",
+    });
+    value.observations.push({ id: 8, agentKey: value.agentKey, endpointKey: "c".repeat(64),
+      protocol: "web", source: "worker_probe", outcome: "protocol_valid", observedAt: NOW,
+      expiresAt: NOW + 900_000, httpStatus: 200, errorCode: null, durationMs: 20, details: {} });
+
+    const card = catalogCandidateCard(value, NOW);
+
+    expect(card.evidence.find(({ kind }) => kind === "reachable")).toMatchObject({
+      status: "unknown",
+      provenance: "not_probed",
+    });
+    expect(card.monitoring).toMatchObject({ state: "never_probed", attemptCount: 0 });
+  });
+
+  it("does not treat onchain evidence as a platform reachability attempt", () => {
+    const value = candidate();
+    value.observations.push({ id: 11, agentKey: value.agentKey, endpointKey: "a".repeat(64),
+      protocol: "erc8183", source: "chain_read", outcome: "protocol_valid", observedAt: NOW,
+      expiresAt: NOW + 900_000, httpStatus: null, errorCode: null, durationMs: 20, details: {},
+      validationKind: "chain", verificationLevel: "onchain" });
+
+    const card = catalogCandidateCard(value, NOW);
+
+    expect(card.evidence.find(({ kind }) => kind === "reachable")).toMatchObject({
+      status: "unknown",
+      provenance: "not_probed",
+    });
+    expect(card.monitoring).toMatchObject({ state: "never_probed", attemptCount: 0 });
+  });
+
   it("treats a fresh bridged A2A quote as both reachable and quote verified", () => {
     const value = candidate();
     value.marketplaceConfigured = true;
@@ -119,6 +162,19 @@ describe("catalog candidate card", () => {
       .toMatchObject({ status: "verified", provenance: "observed" });
   });
 
+  it("explains when the last successful platform probe is stale", () => {
+    const value = candidate();
+    value.observations.push({ id: 10, agentKey: value.agentKey, endpointKey: "a".repeat(64),
+      protocol: "a2a", source: "worker_probe", outcome: "protocol_valid", observedAt: NOW - 1_000_000,
+      expiresAt: NOW - 1, httpStatus: 200, errorCode: null, durationMs: 20, details: {} });
+
+    const reachable = catalogCandidateCard(value, NOW).evidence.find(({ kind }) => kind === "reachable");
+
+    expect(reachable).toMatchObject({ status: "unknown", provenance: "observed" });
+    expect(reachable?.detail).toMatch(/stale|older than/i);
+    expect(reachable?.timestamp).toBe(new Date(NOW - 1_000_000).toISOString());
+  });
+
   it("uses the latest quote outcome instead of reviving an older verified quote", () => {
     const value = candidate();
     value.state = {
@@ -144,6 +200,41 @@ describe("catalog candidate card", () => {
 
     const card = catalogCandidateCard(value, NOW);
     expect(card.evidence.find(({ kind }) => kind === "quote")).toMatchObject({ status: "failed" });
+    expect(card.hireability).toBe("quote_stale");
+  });
+
+  it("does not reuse quote evidence from a different admitted endpoint", () => {
+    const value = candidate();
+    const admittedEndpointKey = "b".repeat(64);
+    value.declarations.push({
+      endpointKey: admittedEndpointKey, protocol: "erc8183_http", endpoint: "https://agent.example/jobs",
+      originKey: "e".repeat(64), safety: "safe", safetyReason: null, representativeAgentKey: null,
+      lastProbedAt: null, nextProbeAt: NOW, consecutiveFailures: 0, priority: 80,
+      role: "operational", validationProtocol: "erc8183_http", eligibility: "eligible",
+    });
+    value.admission = { state: "admitted", endpointKey: admittedEndpointKey };
+    value.state = {
+      operationalStatus: "platform_reachable",
+      freshness: "live",
+      commerceStatus: "admitted",
+      quoteStatus: "not_requested",
+      buyerAction: "request_quote",
+      canRequestBrowserValidation: true,
+      canRequestInfrastructureValidation: true,
+      canRequestQuote: true,
+      canPrepareHire: false,
+      blockingReasons: ["FRESH_QUOTE_REQUIRED"],
+    };
+    value.observations.push({
+      id: 9, agentKey: value.agentKey, endpointKey: "a".repeat(64), protocol: "a2a",
+      source: "browser_reported", outcome: "quote_verified", observedAt: NOW,
+      expiresAt: NOW + 900_000, httpStatus: 200, errorCode: null, durationMs: 20, details: {},
+      validationKind: "quote", verificationLevel: "cryptographic", artifactHash: "a".repeat(64),
+    });
+
+    const card = catalogCandidateCard(value, NOW);
+
+    expect(card.evidence.find(({ kind }) => kind === "quote")).toMatchObject({ status: "unknown" });
     expect(card.hireability).toBe("quote_stale");
   });
 

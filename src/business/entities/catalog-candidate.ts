@@ -8,6 +8,12 @@ export type CatalogStatus = (typeof CATALOG_STATUSES)[number];
 export interface CatalogCandidateDeclaration {
   endpointKey: string;
   protocol: "a2a" | "mcp" | "web" | "erc8183_http";
+  /** Normalized v2 classification; absent only on legacy compatibility feeds. */
+  declaredProtocol?: "a2a" | "mcp" | "web" | "erc8183_http" | "x402" | "unknown";
+  role?: "operational" | "external";
+  validationProtocol?: "a2a" | "mcp" | "erc8183_http" | null;
+  externalKind?: "website" | "social" | "repository" | "documentation" | "other" | null;
+  eligibility?: "eligible" | "unsafe" | "invalid_declaration" | "unsupported";
   endpoint: string | null;
   originKey: string | null;
   safety: "safe" | "unsafe";
@@ -17,6 +23,27 @@ export interface CatalogCandidateDeclaration {
   nextProbeAt: number | null;
   consecutiveFailures: number;
   priority: number;
+}
+
+export function isCatalogOperationalDeclaration(declaration: CatalogCandidateDeclaration): boolean {
+  if (declaration.role !== undefined || declaration.eligibility !== undefined
+    || declaration.validationProtocol !== undefined) {
+    return declaration.role === "operational"
+      && declaration.eligibility === "eligible"
+      && declaration.validationProtocol !== null
+      && declaration.safety === "safe"
+      && declaration.endpoint !== null;
+  }
+  // Legacy schema v1 has no normalized classification fields.
+  return declaration.safety === "safe"
+    && declaration.endpoint !== null
+    && declaration.protocol !== "web";
+}
+
+export function isCatalogSellerDeclaration(declaration: CatalogCandidateDeclaration): boolean {
+  const protocol = declaration.validationProtocol ?? declaration.protocol;
+  return isCatalogOperationalDeclaration(declaration)
+    && (protocol === "a2a" || protocol === "erc8183_http");
 }
 
 export interface CatalogCandidateObservation {
@@ -53,6 +80,10 @@ export interface CatalogCandidate {
   categories: MarketplaceCategory[];
   marketplaceConfigured: boolean;
   metadataState: "ok" | "http_unreachable" | "other";
+  /** Hash/version of the metadata document used for this normalized row. */
+  metadataVersion?: string | null;
+  /** Timestamp at which the metadata document was observed by the indexer. */
+  metadataObservedAt?: number | null;
   registeredAt: number | null;
   blockNumber: string | null;
   priority: number;
@@ -76,6 +107,20 @@ export interface CatalogCandidate {
   };
   declarations: CatalogCandidateDeclaration[];
   observations: CatalogCandidateObservation[];
+}
+
+export function isCatalogOperationalObservation(
+  candidate: Pick<CatalogCandidate, "declarations">,
+  observation: Pick<CatalogCandidateObservation, "endpointKey">,
+): boolean {
+  // Legacy observations may not have an endpoint key. Keep them readable
+  // during the compatibility window; normalized v2 evidence is always scoped.
+  if (observation.endpointKey === null) {
+    return !candidate.declarations.some(({ role, eligibility, validationProtocol }) =>
+      role !== undefined || eligibility !== undefined || validationProtocol !== undefined);
+  }
+  const declaration = candidate.declarations.find(({ endpointKey }) => endpointKey === observation.endpointKey);
+  return declaration !== undefined && isCatalogOperationalDeclaration(declaration);
 }
 
 export interface CatalogCandidatePage {

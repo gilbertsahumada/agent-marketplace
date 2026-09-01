@@ -229,21 +229,39 @@ export async function readCatalogAgentEvidence(
       .limit(observationLimit),
     readEffectiveCatalogObservations(db, agentKey, endpointKeys),
     readEffectiveAgentObservations(db, [agentKey]),
-    db.select({ total: count() }).from(catalogObservations).where(and(
+    db.select({ total: count() }).from(catalogObservations)
+      .innerJoin(catalogAgentEndpoints, and(
+        eq(catalogAgentEndpoints.agentKey, catalogObservations.agentKey),
+        eq(catalogAgentEndpoints.endpointKey, catalogObservations.endpointKey),
+        eq(catalogAgentEndpoints.declarationState, "current"),
+      ))
+      .innerJoin(catalogEndpoints, eq(catalogEndpoints.endpointKey, catalogObservations.endpointKey))
+      .where(and(
       observationCondition,
       inArray(catalogObservations.source, ["worker_probe", "buyer_refresh", "migration"]),
       inArray(catalogObservations.validationKind, ["protocol", "reachability"]),
       eq(catalogObservations.verificationLevel, "platform_observed"),
+      eq(catalogEndpoints.role, "operational"),
+      eq(catalogEndpoints.eligibility, "eligible"),
     )),
     endpointKeys.length === 0 ? Promise.resolve([]) : db.select({
       endpointKey: catalogObservations.endpointKey,
       total: count(),
-    }).from(catalogObservations).where(and(
+    }).from(catalogObservations)
+      .innerJoin(catalogAgentEndpoints, and(
+        eq(catalogAgentEndpoints.agentKey, catalogObservations.agentKey),
+        eq(catalogAgentEndpoints.endpointKey, catalogObservations.endpointKey),
+        eq(catalogAgentEndpoints.declarationState, "current"),
+      ))
+      .innerJoin(catalogEndpoints, eq(catalogEndpoints.endpointKey, catalogObservations.endpointKey))
+      .where(and(
       observationCondition,
       inArray(catalogObservations.endpointKey, endpointKeys),
       inArray(catalogObservations.source, ["worker_probe", "buyer_refresh", "migration"]),
       inArray(catalogObservations.validationKind, ["protocol", "reachability"]),
       eq(catalogObservations.verificationLevel, "platform_observed"),
+      eq(catalogEndpoints.role, "operational"),
+      eq(catalogEndpoints.eligibility, "eligible"),
     )).groupBy(catalogObservations.endpointKey),
   ]);
   const observations = [...new Map([
@@ -287,25 +305,39 @@ export async function readCatalogProjectionMismatches(db: Database): Promise<Arr
   projectedSuccessAt: number | null;
   ledgerSuccessAt: number | null;
 }>> {
+  // Shared endpoint columns are owned by the representative declaration. A
+  // non-representative buyer refresh remains agent-scoped ledger evidence and
+  // must not make the shared projection look inconsistent.
   return db.all(sql`WITH ranked AS (
-    SELECT endpointKey, observedAt, outcome,
-      ROW_NUMBER() OVER (PARTITION BY endpointKey ORDER BY observedAt DESC, id DESC) AS position
-    FROM catalog_observations
-    WHERE endpointKey IS NOT NULL
-      AND source IN ('worker_probe', 'buyer_refresh', 'migration')
-      AND verificationLevel = 'platform_observed'
-      AND validationKind IN ('reachability', 'protocol')
+    SELECT observation.endpointKey, observation.observedAt, observation.outcome,
+      ROW_NUMBER() OVER (
+        PARTITION BY observation.endpointKey
+        ORDER BY observation.observedAt DESC, observation.id DESC
+      ) AS position
+    FROM catalog_observations observation
+    INNER JOIN catalog_endpoints scope
+      ON scope.endpointKey = observation.endpointKey
+      AND scope.representativeAgentKey IS NOT NULL
+      AND scope.representativeAgentKey = observation.agentKey
+    WHERE observation.endpointKey IS NOT NULL
+      AND observation.source IN ('worker_probe', 'buyer_refresh', 'migration')
+      AND observation.verificationLevel = 'platform_observed'
+      AND observation.validationKind IN ('reachability', 'protocol')
   ), latest AS (
     SELECT endpointKey, observedAt, outcome FROM ranked WHERE position = 1
   ), successes AS (
-    SELECT endpointKey, MAX(observedAt) AS observedAt
-    FROM catalog_observations
-    WHERE endpointKey IS NOT NULL
-      AND source IN ('worker_probe', 'buyer_refresh', 'migration')
-      AND verificationLevel = 'platform_observed'
-      AND outcome = 'protocol_valid'
-      AND validationKind IN ('reachability', 'protocol')
-    GROUP BY endpointKey
+    SELECT observation.endpointKey, MAX(observation.observedAt) AS observedAt
+    FROM catalog_observations observation
+    INNER JOIN catalog_endpoints scope
+      ON scope.endpointKey = observation.endpointKey
+      AND scope.representativeAgentKey IS NOT NULL
+      AND scope.representativeAgentKey = observation.agentKey
+    WHERE observation.endpointKey IS NOT NULL
+      AND observation.source IN ('worker_probe', 'buyer_refresh', 'migration')
+      AND observation.verificationLevel = 'platform_observed'
+      AND observation.outcome = 'protocol_valid'
+      AND observation.validationKind IN ('reachability', 'protocol')
+    GROUP BY observation.endpointKey
   )
   SELECT
     endpoint.endpointKey AS endpointKey,
@@ -319,6 +351,7 @@ export async function readCatalogProjectionMismatches(db: Database): Promise<Arr
   LEFT JOIN latest ON latest.endpointKey = endpoint.endpointKey
   LEFT JOIN successes ON successes.endpointKey = endpoint.endpointKey
   WHERE endpoint.role = 'operational'
+    AND endpoint.representativeAgentKey IS NOT NULL
     AND (
       endpoint.lastAttemptAt IS NOT latest.observedAt
       OR endpoint.lastAttemptOutcome IS NOT latest.outcome

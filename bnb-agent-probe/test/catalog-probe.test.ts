@@ -87,6 +87,20 @@ describe("catalog probe phase", () => {
     });
   });
 
+  it("rejects an Agent Card that points at another path on the same origin", async () => {
+    const endpoint = "https://seller.example.com/a2a";
+    const observation = await probeCatalogEndpoint({ ...target, protocol: "a2a", endpoint }, {
+      fetchImpl: vi.fn(async () => Response.json({
+        name: "Seller",
+        url: "https://seller.example.com/another-agent",
+        skills: [],
+      })),
+      timeoutMs: 5_000,
+      now: () => 1_000,
+    });
+    expect(observation).toMatchObject({ outcome: "invalid_response", errorCode: "CATALOG_INVALID_RESPONSE" });
+  });
+
   it("classifies network failures without calling them CORS or verified reachability", async () => {
     const observation = await probeCatalogEndpoint({ ...target, protocol: "a2a" }, {
       fetchImpl: vi.fn(async () => { throw new TypeError("failed"); }),
@@ -121,6 +135,22 @@ describe("catalog probe phase", () => {
       now: () => 1_000,
     });
     expect(malformed).toMatchObject({ outcome: "invalid_response", errorCode: "CATALOG_INVALID_RESPONSE" });
+  });
+
+  it("enforces the configured seller response limit while reading the body", async () => {
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({
+      name: "Seller",
+      url: "https://seller.example.com/a2a",
+      skills: [],
+      description: "x".repeat(256),
+    }), { headers: { "content-type": "application/json" } }));
+    const observation = await probeCatalogEndpoint({ ...target, protocol: "a2a", endpoint: "https://seller.example.com/a2a" }, {
+      fetchImpl,
+      timeoutMs: 5_000,
+      maxResponseBytes: 128,
+      now: () => 1_000,
+    });
+    expect(observation).toMatchObject({ outcome: "invalid_response", errorCode: "CATALOG_INVALID_RESPONSE" });
   });
 
   it("processes only the configured batch and commits every attempt", async () => {

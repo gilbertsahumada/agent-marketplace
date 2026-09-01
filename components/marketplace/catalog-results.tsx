@@ -12,6 +12,8 @@ import { AgentAvatar } from "./agent-avatar";
 import { AgentCard, marketplaceStatus, trust8004AgentHref } from "./agent-card";
 import { EvidenceRail } from "./evidence-rail";
 import type { AgentCardViewModel, MarketplaceCategory } from "./presentation-types";
+import { CatalogResultsSkeleton } from "./catalog-loading";
+import { useCatalogNavigation } from "./catalog-navigation";
 
 const categoryLabels: Record<MarketplaceCategory, string> = {
   rebalancing: "Rebalancing",
@@ -108,6 +110,7 @@ export function CatalogResults({ agents, registry = false, toolbar, emptyContent
   toolbar?: ReactNode;
   emptyContent?: ReactNode;
 }) {
+  const { pending } = useCatalogNavigation();
   const visibleAgents = useMemo(() => {
     return [...agents].sort((left, right) => Number(right.quoteRequestAvailable === true) - Number(left.quoteRequestAvailable === true));
   }, [agents]);
@@ -122,7 +125,9 @@ export function CatalogResults({ agents, registry = false, toolbar, emptyContent
         </TabsList>
       </div>
 
-      {visibleAgents.length > 0 ? (
+      {pending ? (
+        <CatalogResultsSkeleton />
+      ) : visibleAgents.length > 0 ? (
         <>
           <TabsContent value="cards">
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">

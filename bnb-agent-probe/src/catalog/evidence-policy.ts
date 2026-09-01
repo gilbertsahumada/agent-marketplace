@@ -103,10 +103,12 @@ export function deriveCatalogEvidenceState(input: {
   else if (input.endpoints.some(({ eligibility }) => eligibility === "unsafe")) operationalStatus = "unsafe";
   else operationalStatus = "unsupported";
 
+  const hasEligibleCommerceDeclaration = input.endpoints.some(({ role, eligibility, validationProtocol }) =>
+    role === "operational" && eligibility === "eligible" && validationProtocol === "erc8183_http");
   const commerceStatus: CommerceStatus = input.admission?.state === "admitted" ? "admitted"
     : input.admission?.state === "suspended" ? "suspended"
       : input.admission?.state === "candidate" ? "admission_pending"
-        : input.endpoints.some(({ validationProtocol }) => validationProtocol === "erc8183_http") ? "declared" : "none";
+        : hasEligibleCommerceDeclaration ? "declared" : "none";
   const commerceEndpointKey = input.admission?.endpointKey ?? null;
   const quoteEvidence = relevant.filter((observation) => observation.validationKind === "quote"
     && observation.verificationLevel === "cryptographic"

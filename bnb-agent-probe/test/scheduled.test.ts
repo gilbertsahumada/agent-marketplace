@@ -140,10 +140,14 @@ describe("WP2 scheduled runner", () => {
     let now = 1_000;
     const phases: SchedulerPhase[] = [];
     const logger = { info: vi.fn(), error: vi.fn() };
+    let phaseLogger: Pick<Console, "info" | "error"> | undefined;
     const runner = createWp2ScheduledRunner({
       now: () => now++,
       randomUUID: () => "run-a",
-      executePhase: async ({ phase }) => { phases.push(phase); },
+      executePhase: async ({ phase, logger: receivedLogger }) => {
+        phases.push(phase);
+        phaseLogger = receivedLogger;
+      },
       logger,
     });
 
@@ -153,6 +157,7 @@ describe("WP2 scheduled runner", () => {
     expect(db.releases).toBe(1);
     expect(db.lease).toEqual({ runId: null, expiresAt: 1_002 });
     expect(phases).toEqual(["header"]);
+    expect(phaseLogger).toBe(logger);
     expect(logger.info).toHaveBeenCalledWith("wp2.scheduler.attempt", expect.objectContaining({
       runId: "run-a",
       phase: "header",

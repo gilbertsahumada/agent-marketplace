@@ -39,6 +39,13 @@ export interface MarketplaceHireability {
   evidence: EvidenceRecord;
 }
 
+/** Catalog-owned targets that the browser may ask the infrastructure to validate. */
+export interface MarketplaceValidationTarget {
+  endpointKey: string;
+  protocol: "a2a" | "mcp" | "erc8183_http";
+  endpoint: string;
+}
+
 export interface MarketplaceAgent {
   chainId: 56;
   agentId: string;
@@ -72,6 +79,7 @@ export interface MarketplaceAgent {
   categories: MarketplaceCategoryAssignment[];
   services: NormalizedService[];
   endpoints: NormalizedEndpoint[];
+  validationTargets?: MarketplaceValidationTarget[];
   tools: string[];
   capabilities: string[];
   endpointObservation: EndpointObservation;

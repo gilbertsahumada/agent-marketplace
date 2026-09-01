@@ -45,6 +45,7 @@ export function catalogProbeCommitStatements(
   policy: CatalogProbeSchedulePolicy = DEFAULT_SCHEDULE_POLICY,
 ) {
   const succeeded = observation.outcome === "protocol_valid";
+  const updatesSharedProjection = target.isRepresentative !== false;
   return [
     db.insert(catalogObservations).values({
       agentKey: target.agentKey,
@@ -68,12 +69,14 @@ export function catalogProbeCommitStatements(
       verificationLevel: "platform_observed",
     }).returning({ id: catalogObservations.id }),
     db.update(catalogEndpoints).set({
-      lastProbedAt: observation.observedAt,
-      lastAttemptAt: observation.observedAt,
-      lastAttemptOutcome: observation.outcome,
-      ...(succeeded ? { lastSuccessfulAt: observation.observedAt } : {}),
-      nextProbeAt: nextProbeAt(target, observation, policy),
-      consecutiveFailures: succeeded ? 0 : target.consecutiveFailures + 1,
+      ...(updatesSharedProjection ? {
+        lastProbedAt: observation.observedAt,
+        lastAttemptAt: observation.observedAt,
+        lastAttemptOutcome: observation.outcome,
+        ...(succeeded ? { lastSuccessfulAt: observation.observedAt } : {}),
+        nextProbeAt: nextProbeAt(target, observation, policy),
+        consecutiveFailures: succeeded ? 0 : target.consecutiveFailures + 1,
+      } : {}),
       ...(target.leaseOwner === undefined ? {} : { leaseOwner: null, leaseExpiresAt: null }),
     }).where(and(
       eq(catalogEndpoints.endpointKey, target.endpointKey),

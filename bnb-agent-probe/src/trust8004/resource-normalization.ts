@@ -4,6 +4,7 @@ import type {
   CatalogEndpointEligibility,
   CatalogExternalKind,
   CatalogResourceRole,
+  CatalogSafetyReason,
   CatalogValidationProtocol,
 } from "./resource-classification";
 
@@ -16,7 +17,7 @@ export interface NormalizedCatalogResource {
   externalKind: CatalogExternalKind | null;
   eligibility: CatalogEndpointEligibility;
   safety: "safe" | "unsafe";
-  safetyReason: "invalid_url" | null;
+  safetyReason: CatalogSafetyReason | null;
   endpoint: string;
   originKey: string | null;
   rawServiceLabel: string | null;

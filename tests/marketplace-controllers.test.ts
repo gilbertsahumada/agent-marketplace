@@ -19,6 +19,13 @@ vi.mock("@/src/business/composition", () => ({
   validateMarketplaceAgent: { execute: executeValidate },
   getPublicMainnetJobProof: { execute: executeMainnetProof },
   recordCatalogObservation: syncCatalogObservation,
+  CatalogValidationRequestError: class CatalogValidationRequestError extends Error {
+    readonly code = "CATALOG_VALIDATION_UNAVAILABLE";
+    readonly httpStatus = 503;
+    readonly retryAfterSeconds = undefined;
+  },
+  requestCatalogValidation: vi.fn(),
+  issueCatalogValidationRequestToken: vi.fn(),
 }));
 
 const agentsRoute = await import("../app/api/marketplace/agents/route.ts");
@@ -51,6 +58,44 @@ describe("marketplace API controllers", () => {
     executeList.mockResolvedValue({ items: [] });
     await agentsRoute.GET(new Request("http://local/api/marketplace/agents?view=marketplace&availability=hireable"));
     expect(executeList).toHaveBeenCalledWith({ view: "marketplace", page: 1, limit: 12, availability: "hireable" });
+  });
+
+  it("delegates repeated catalog filters as one combined query", async () => {
+    executeList.mockResolvedValue({ items: [] });
+    await agentsRoute.GET(new Request(
+      "http://local/api/marketplace/agents?view=marketplace"
+      + "&status=declared&status=hireable"
+      + "&category=grid_trading&category=yield_optimisation"
+      + "&protocol=a2a&protocol=mcp&reachability=live"
+      + "&commerce=admitted&quote=verified&latestFailure=false",
+    ));
+    expect(executeList).toHaveBeenCalledWith({
+      view: "marketplace", page: 1, limit: 12,
+      statuses: ["declared", "hireable"],
+      categories: ["grid_trading", "yield_optimisation"],
+      protocols: ["a2a", "mcp"],
+      reachability: ["live"],
+      commerce: ["admitted"],
+      quote: ["verified"],
+      latestFailure: false,
+    });
+  });
+
+  it("rejects invalid combined catalog filters visibly", async () => {
+    const response = await agentsRoute.GET(new Request(
+      "http://local/api/marketplace/agents?view=marketplace&protocol=twitter",
+    ));
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ error: { code: "InvalidMarketplaceInputError" } });
+    expect(executeList).not.toHaveBeenCalled();
+  });
+
+  it("does not silently ignore marketplace filters in the registry view", async () => {
+    const response = await agentsRoute.GET(new Request(
+      "http://local/api/marketplace/agents?view=all&status=hireable",
+    ));
+    expect(response.status).toBe(400);
+    expect(executeList).not.toHaveBeenCalled();
   });
 
   it("rejects an unknown availability value visibly", async () => {

@@ -8,6 +8,7 @@ import { catalogProbeCommitStatements } from "./catalog-probe-d1";
 import { probeCatalogEndpoint, type CatalogProbeTarget } from "./catalog-probe";
 
 const LEASE_MS = 30_000;
+type CatalogValidationLogger = Pick<Console, "info" | "error">;
 
 export async function runCatalogValidationRequest(
   d1: D1DatabaseLike,
@@ -15,6 +16,7 @@ export async function runCatalogValidationRequest(
   config: WorkerConfig,
   now: () => number = Date.now,
   fetchImpl: typeof fetch = fetch,
+  logger: CatalogValidationLogger = console,
 ): Promise<"completed" | "duplicate"> {
   const db = createDatabase(d1);
   const nowMs = now();
@@ -48,6 +50,7 @@ export async function runCatalogValidationRequest(
     endpoint: catalogEndpoints.endpoint,
     priority: catalogAgentEndpoints.priority,
     consecutiveFailures: catalogEndpoints.consecutiveFailures,
+    representativeAgentKey: catalogEndpoints.representativeAgentKey,
   }).from(catalogAgentEndpoints)
     .innerJoin(catalogEndpoints, eq(catalogEndpoints.endpointKey, catalogAgentEndpoints.endpointKey))
     .where(and(
@@ -62,7 +65,10 @@ export async function runCatalogValidationRequest(
     await db.update(catalogValidationRequests).set({
       status: "failed", completedAt: now(), errorCode: "TARGET_UNAVAILABLE",
       leaseOwner: null, leaseExpiresAt: null,
-    }).where(eq(catalogValidationRequests.id, validationId));
+    }).where(and(
+      eq(catalogValidationRequests.id, validationId),
+      eq(catalogValidationRequests.leaseOwner, requestLeaseOwner),
+    ));
     return "completed";
   }
   const endpointLeaseOwner = `validation:${validationId}:${crypto.randomUUID()}`;
@@ -90,6 +96,10 @@ export async function runCatalogValidationRequest(
     endpoint: row.endpoint,
     priority: row.priority,
     consecutiveFailures: row.consecutiveFailures,
+    // A null representative is an unassigned/non-representative path. Buyer
+    // refreshes still append agent-scoped evidence, but must not mutate the
+    // shared projection owned by the selected representative.
+    isRepresentative: row.representativeAgentKey === row.agentKey,
     leaseOwner: endpointLeaseOwner,
     queueDelayMs: Math.max(0, nowMs - request.createdAt),
     leaseWaitMs: Math.max(0, Math.round(performance.now() - leaseStarted)),
@@ -98,6 +108,7 @@ export async function runCatalogValidationRequest(
     const observation = {
       ...await probeCatalogEndpoint(target, {
         timeoutMs: catalogProbeTimeoutMs(config, target.protocol),
+        maxResponseBytes: config.maxSellerResponseBytes,
         freshnessMs: catalogProbeFreshnessMs(config, target),
         fetchImpl,
         now,
@@ -118,11 +129,14 @@ export async function runCatalogValidationRequest(
         resultObservationId: sql`(SELECT ${catalogObservations.id} FROM ${catalogObservations}
           WHERE ${catalogObservations.attemptId} = ${observation.attemptId} LIMIT 1)`,
         leaseOwner: null, leaseExpiresAt: null,
-      }).where(eq(catalogValidationRequests.id, validationId)),
+      }).where(and(
+        eq(catalogValidationRequests.id, validationId),
+        eq(catalogValidationRequests.leaseOwner, requestLeaseOwner),
+      )),
     ] as unknown as Parameters<typeof db.batch>[0]);
     const inserted = results[0] as Array<{ id: number }>;
     if (!inserted[0]?.id) throw new Error("CATALOG_VALIDATION_RESULT_MISSING");
-    console.info("catalog.probe.attempt", {
+    logger.info("catalog.probe.attempt", {
       attemptId: observation.attemptId,
       validationId,
       agentKey: target.agentKey,
@@ -146,7 +160,7 @@ export async function runCatalogValidationRequest(
     }).where(and(
       eq(catalogEndpoints.endpointKey, row.endpointKey),
       eq(catalogEndpoints.leaseOwner, endpointLeaseOwner),
-    )).run();
+    ));
     const failRequest = () => db.update(catalogValidationRequests).set({
       status: "failed",
       completedAt: now(),
@@ -156,11 +170,11 @@ export async function runCatalogValidationRequest(
     }).where(and(
       eq(catalogValidationRequests.id, validationId),
       eq(catalogValidationRequests.leaseOwner, requestLeaseOwner),
-    )).run();
+    ));
     try {
       await db.batch([releaseEndpoint(), failRequest()] as unknown as Parameters<typeof db.batch>[0]);
     } catch {
-      await Promise.allSettled([releaseEndpoint(), failRequest()]);
+      await Promise.allSettled([releaseEndpoint().run(), failRequest().run()]);
     }
     throw error;
   }

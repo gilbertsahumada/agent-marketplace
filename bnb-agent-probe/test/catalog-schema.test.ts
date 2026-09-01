@@ -40,6 +40,14 @@ const validationDedupeMigration = readFileSync(
   new URL("../migrations/0015_agent_scoped_validation_dedupe.sql", import.meta.url),
   "utf8",
 );
+const quoteArtifactDedupeMigration = readFileSync(
+  new URL("../migrations/0016_scoped_quote_artifact_dedupe.sql", import.meta.url),
+  "utf8",
+);
+const callerRateLimitMigration = readFileSync(
+  new URL("../migrations/0017_catalog_validation_caller_rate_limit.sql", import.meta.url),
+  "utf8",
+);
 
 describe("catalog index schema", () => {
   it("models identity, declaration and append-only observation facts separately", () => {
@@ -58,7 +66,8 @@ describe("catalog index schema", () => {
         const addedLater = new RegExp(`ALTER TABLE ${name} ADD COLUMN ${column.name}\\s`, "m").test(normalizationMigration);
         const addedForLeases = new RegExp(`ALTER TABLE ${name} ADD COLUMN ${column.name}\\s`, "m").test(endpointLeaseMigration);
         const addedForIdentity = new RegExp(`ALTER TABLE ${name} ADD COLUMN ${column.name}\\s`, "m").test(identityMigration);
-        expect(declaredInBase || addedLater || addedForLeases || addedForIdentity, `missing migration column ${name}.${column.name}`).toBe(true);
+        const addedForCallerRateLimit = new RegExp(`ALTER TABLE ${name}\\s+ADD COLUMN ${column.name}\\s`, "m").test(callerRateLimitMigration);
+        expect(declaredInBase || addedLater || addedForLeases || addedForIdentity || addedForCallerRateLimit, `missing migration column ${name}.${column.name}`).toBe(true);
       }
     }
   });
@@ -69,7 +78,9 @@ describe("catalog index schema", () => {
       const migrationTable = normalizationMigration.match(new RegExp(`CREATE TABLE ${name} \\(([\\s\\S]*?)\\n\\);`))?.[1];
       expect(migrationTable, `missing migration table ${name}`).toBeDefined();
       for (const column of Object.values(getTableColumns(table))) {
-        expect(migrationTable).toMatch(new RegExp(`(^|\\n)\\s*${column.name}\\s`, "m"));
+        const declaredInNormalization = new RegExp(`(^|\\n)\\s*${column.name}\\s`, "m").test(migrationTable!);
+        const addedForCallerRateLimit = new RegExp(`ALTER TABLE ${name}\\s+ADD COLUMN ${column.name}\\s`, "m").test(callerRateLimitMigration);
+        expect(declaredInNormalization || addedForCallerRateLimit, `missing migration column ${name}.${column.name}`).toBe(true);
       }
     }
     expect(normalizationMigration).toContain("idx_catalog_validation_requests_active");
@@ -128,5 +139,23 @@ describe("catalog index schema", () => {
   it("migrates legacy validation dedupe keys to the declaring-agent scope", () => {
     expect(validationDedupeMigration).toContain("dedupeKey = agentKey || ':' || endpointKey || ':' || validationKind");
     expect(validationDedupeMigration).toContain("dedupeKey = endpointKey || ':' || validationKind");
+  });
+
+  it("scopes signed quote artifact deduplication to the declaring agent and endpoint", () => {
+    expect(quoteArtifactDedupeMigration).toContain("DROP INDEX IF EXISTS idx_catalog_observations_quote_artifact");
+    expect(quoteArtifactDedupeMigration).toContain(
+      "ON catalog_observations (agentKey, endpointKey, artifactHash)",
+    );
+    expect(quoteArtifactDedupeMigration).toContain("validationKind = 'quote'");
+  });
+
+  it("persists an opaque caller scope for distributed validation limits", () => {
+    expect(callerRateLimitMigration).toContain(
+      "ALTER TABLE catalog_validation_requests\n  ADD COLUMN callerKey TEXT NOT NULL DEFAULT 'anonymous'",
+    );
+    expect(callerRateLimitMigration).toContain(
+      "idx_catalog_validation_requests_caller_target",
+    );
+    expect(getTableColumns(catalogValidationRequests).callerKey).toBeDefined();
   });
 });

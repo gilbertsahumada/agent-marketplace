@@ -18,27 +18,104 @@ This specification describes the next infrastructure migration. The measured WP2
 
 Local evidence captured on 2026-09-01:
 
-- all additive migrations `0008` through `0015` apply successfully to the Wrangler local D1;
+- all additive migrations `0008` through `0017` apply successfully to the Wrangler local D1;
   migration `0014_catalog_agent_identity.sql` preserves the declared owner,
   metadata URI and registration block alongside the normalized catalog row, and
   `0015_agent_scoped_validation_dedupe.sql` scopes legacy validation keys by agent;
+  `0016_scoped_quote_artifact_dedupe.sql` scopes signed-quote artifact uniqueness
+  by declaring agent and exact endpoint; `0017_catalog_validation_caller_rate_limit.sql`
+  adds an opaque caller scope and indexed target dimensions for distributed
+  on-demand admission limits;
 - Worker typecheck and manifest validation pass;
-- 487 unit tests and 103 Miniflare integration tests pass in
+- 502 unit tests and 118 Miniflare integration tests pass in
   `bnb-agent-probe` (`vitest.config.ts` and `vitest.worker.config.ts`);
+- the versioned raw-SQL allowlist contains only the two normative runtime
+  exceptions (`src/db/query-budget.ts` and `src/lib/scheduler-lease.ts`); its
+  ORM/schema/query-budget gate passes 16 focused tests and reports no new or
+  stale callsites;
 - production, staging and validation dry-run bundles build successfully;
+- the Wrangler local runtime smoke test returns `200` for `/health` and
+  `/catalog-agents?limit=1`; the seeded local D1 currently contains 29,801
+  identities where `indexState='current'` and `metadataState='ok'`, 681
+  eligible operational endpoints, and one `catalog_agent_admission` candidate.
+  `npm run migrate:local` reports no migrations pending. The identity count is
+  explicitly based on `indexState`, not the metadata-state enum (whose valid
+  value is `ok`, not `current`).
+- With `CATALOG_V2_READS_ENABLED=1`, the same local Worker returns the v2
+  `/catalog-agents?limit=1` contract with HTTP `200`, `schemaVersion=2`, and
+  `total=29,314` operational candidates; the sample `303779` row is exposed as
+  `declared`/`pending` with `commerceStatus=admission_pending` until a current
+  commerce declaration is admitted.
+- A clean Wrangler tick was then run against an isolated copy of that seeded
+  D1 with v2 reads/writes, catalog probing and both kill switches temporarily
+  enabled. `GET /__scheduled?cron=*/5+*+*+*+*` returned `200`; the producer
+  enqueued one message and the consumer completed the `header` phase on attempt
+  1, persisted `nextPhase=sweep`, released its lease, and recorded 2 upstream
+  requests, 18 D1 queries, 47 rows read and 39 rows written. The copy was
+  discarded after the smoke; shared local and remote state were not modified.
 - application-side endpoint policy, controller and observation-sync coverage passes
-  25 focused tests (`browser-endpoint-validation.test.ts`,
-  `marketplace-controllers.test.ts` and `catalog-observation-sync.test.ts`);
-- the complete application gate passes: typecheck, 544 tests across 62 files and
-  the production CLI/Web build. The BNB Agent SDK still emits its known dynamic
-  dependency warning during bundling; the bundle completes successfully.
+  41 focused tests (`browser-endpoint-validation.test.ts`,
+  `marketplace-controllers.test.ts`, `catalog-observation-sync.test.ts`,
+  `catalog-validation-sync.test.ts` and `catalog-validation-route.test.ts`);
+- the complete application gate passes: typecheck, 593 tests across 64 files and
+  the production CLI/Web build. The current checkout includes the concurrent
+  frontend changes and the endpoint-scoped fallback tests;
+  the BNB Agent SDK still emits its known dynamic dependency warning during
+  bundling, but the bundle completes successfully.
+- the application catalog adapter preserves v2 `metadataVersion` and
+  `metadataObservedAt` provenance and no longer presents `registeredAt` as a
+  metadata freshness timestamp; focused feed/adapter regression tests cover
+  both fields.
+- the application catalog feed parser revalidates normalized image URLs and
+  drops credentials, query strings or other unsafe targets before exposing
+  them to UI consumers; the focused feed suite covers unsafe and safe URLs.
+- browser validation target policy coverage includes reserved IPv4 and IPv6
+  hosts, so loopback, link-local and private targets are rejected before fetch.
+- the catalog D1 seed generator now materializes normalized endpoint role,
+  validation protocol, eligibility and due-probe scheduling, creates
+  quote-verification admission candidates, and accepts legacy snapshots that
+  omit optional identity fields; the generated 29,801-agent snapshot seed
+  applies cleanly after migrations `0001` through `0017`.
+- seed reconciliation now suspends admissions that are absent from the complete
+  registry snapshot or no longer have an eligible commerce endpoint, while
+  leaving the append-only observation ledger untouched; non-transport
+  declarations (`x402` and unknown/custom labels) are retained as external
+  resources and are never scheduled for protocol probing.
 - `docs/API.md`, `docs/HIRE-SPEC.md`, `docs/MCP.md` and `docs/MARKETPLACE.md`
   are now integrated from `main` in PR #56; the frontend companion remains a
   separate concurrent change and is not included in this infrastructure commit.
+- The application exposes the endpoint-scoped infrastructure fallback through
+  `POST /api/marketplace/validate` and its opaque-token status route; the private
+  Worker `/catalog-validations` route remains server-only.
+- Local development E2E can point the mutation adapters at a Wrangler/Miniflare
+  Worker over HTTP on `localhost` or `127.0.0.1`; non-loopback HTTP and every
+  production/non-development destination remain rejected, and the private
+  origin/secret checks are unchanged.
+- The fallback derives a caller fingerprint from application request context,
+  HMACs it with `BUYER_OBSERVATION_SECRET`, and sends only the opaque key to the
+  Worker; D1 enforces both the global daily budget and the configured per-caller
+  daily budget without storing an IP or origin.
+- The Worker rejects missing or malformed caller fingerprints before any D1
+  lookup or Queue admission; accepted values are fixed-size opaque hex keys.
+- Registry inventory reads retain current ERC-8004 identities even when their
+  metadata has no endpoint declaration; the operational inventory remains
+  endpoint-gated by default.
+- Declared image metadata is normalized only to public HTTPS/IPFS URLs without
+  credentials, query strings or fragments; unsafe image targets are discarded
+  before they reach catalog/API consumers.
 - catalog evidence reads enforce cryptographic/on-chain verification levels,
   isolate shared-endpoint observations by declaring agent, and release Queue/D1
   leases after a failed result batch; these paths are covered by the integration
   suites above.
+- catalog protocol probes enforce the configured `MAX_SELLER_RESPONSE_BYTES`
+  limit while streaming seller responses, so Free/Paid response budgets are
+  applied consistently to scheduled and on-demand A2A/MCP/ERC-8183 checks.
+- the application card adapter accepts only platform reachability/protocol
+  evidence for the Reachable state and keeps on-chain/quote-only rows from
+  masquerading as transport probes, with legacy compatibility coverage.
+- The v2 catalog serializers tolerate malformed legacy `detailsJson` by exposing
+  an explicit `null` detail while preserving the surrounding evidence envelope;
+  the Worker integration suite covers the detail route regression.
 
 This is not the remote rollout gate. Staging migrations, shadow parity, bounded v2
 writes/reads, operational metrics and legacy-retirement evidence remain required
@@ -186,10 +263,13 @@ The Queue is transport, not the full worklist. D1 stores pending/due work and le
 ## 7. D1 normalized model
 
 Use additive migrations first. The implementation currently applies `0008` through
-`0015`; `0014_catalog_agent_identity.sql` adds the declared identity provenance
-columns without rewriting existing rows, and
-`0015_agent_scoped_validation_dedupe.sql` migrates legacy on-demand keys without
-touching the append-only observation ledger.
+`0017`; `0014_catalog_agent_identity.sql` adds the declared identity provenance
+columns without rewriting existing rows,
+`0015_agent_scoped_validation_dedupe.sql` migrates legacy on-demand keys,
+`0016_scoped_quote_artifact_dedupe.sql` scopes signed-quote artifact uniqueness,
+and `0017_catalog_validation_caller_rate_limit.sql` adds the opaque caller scope
+and indexed target dimensions for on-demand admission limits. None of these
+migrations rewrites or deletes the append-only observation ledger.
 
 ### 7.1 `catalog_agents`
 
@@ -233,6 +313,10 @@ Constraints:
 - `operational` requires non-null `validationProtocol`.
 - `external` requires null `validationProtocol` and `nextProbeAt`.
 - `eligible` is required before enqueue.
+- A null `representativeAgentKey` means that the declaration has no current
+  shared-projection owner. Buyer refresh may append agent-scoped evidence for
+  that declaration, but it must not update the endpoint's cached `last*` or
+  scheduling columns.
 - One origin representative can prove first-pass origin availability only. It cannot prove every path or every agent declaration.
 
 ### 7.3 `catalog_agent_endpoints`
@@ -275,7 +359,8 @@ Rules:
 
 - Append-only by application and D1 triggers.
 - `browser_reported` cannot use `platform_observed` verification level.
-- A quote observation is scoped to an agent, endpoint and signed artifact.
+- A quote observation is scoped to an agent, endpoint and signed artifact; the
+  dedupe key is `(agentKey, endpointKey, artifactHash)` rather than a global hash.
 - Never store secrets, authorization headers or private payloads.
 - Use monotonic/high-resolution timing in the Worker and record per-stage plus total duration.
 
@@ -383,7 +468,7 @@ This lane enables demos without bypassing trust8004 as the catalog source.
 
 ### 9.3 Reconciliation
 
-A slower lane re-reads metadata to detect removed or changed resources. It preserves prior declarations and observations while moving obsolete relations to `removed`.
+A slower lane re-reads metadata to detect removed or changed resources. It preserves prior declarations and observations while moving obsolete relations to `removed`. If a removed relation owned a shared endpoint, reconciliation deterministically reassigns that endpoint to the lowest-key remaining current declarer, or leaves it unassigned when none remains.
 
 ## 10. Scheduling, Queue and resource budgets
 
@@ -410,9 +495,9 @@ Initial safe profile:
 
 ```text
 Cron cadence:           5 minutes during staging, then 2 minutes after evidence
-Discovery page:         12 identities
-Ingest tasks/run:       2
-Declarations/task:      4
+Discovery page:         2 identities (measured Free row-safe maximum)
+Ingest tasks/run:       1
+Declarations/task:      1
 Batch size:             configurable 1 → 4
 Concurrency:            2
 Protocol timeouts:      A2A 5s / MCP 5s / ERC-8183 HTTP 5s
@@ -430,14 +515,31 @@ requests and an all-MCP four-target batch can require twelve more. Configuration
 validation fails closed when this worst case does not fit the declared ceiling,
 and the scheduler enforces the ceiling again at runtime.
 
-The Free discovery page is additionally constrained by its all-new
-header+sweep D1 projection (page 15 is the largest value compatible with the
-40-query ceiling and the scheduler's cleanup reserve). After discovery, the
-scheduler admits only whole ingest tasks whose conservative query ceiling fits
-the remaining invocation budget, reserving the final state write and any due
-probe work instead of entering a deterministic retry loop.
+The Free discovery page is additionally constrained by both D1 budgets. The
+initial twelve-identity page was measured in Miniflare at 88--91
+`rows_written` before cleanup and therefore cannot fit the 60-row invocation
+allowance. A two-identity page with one ingest operation and one declaration
+per task was measured at 39 rows for a new header and 54 rows for an all-new
+header+sweep fixture (including a four-declaration agent), leaving the required
+cleanup/telemetry reserve. `loadConfig` rejects larger Free values; Paid retains
+the larger configurable envelope. After discovery, the scheduler admits only
+whole ingest tasks whose conservative query ceiling fits the remaining
+invocation budget,
+reserving the final state write and any due probe work instead of entering a
+deterministic retry loop.
 
 One-minute Queue scheduling is not the initial default. It is allowed only after measured retries keep projected Queue operations within the Free allowance and the project's reserve. Nominal one-minute producer+consumer work can approach 4,320 operations/day and retry scenarios can approach the existing 8,000-operation reserve.
+
+This is a project-level safety choice, not a Cloudflare Cron restriction. Cloudflare
+supports `* * * * *` (one invocation every minute) on Workers Free and Paid; see
+the [Cron Trigger documentation](https://developers.cloudflare.com/workers/configuration/cron-triggers/).
+The Worker remains cadence-agnostic: a one-minute tick still publishes one small
+Queue message and the consumer claims only bounded due work. With the current
+Free defaults, `loadConfig` deliberately fails closed for a one-minute override
+because its worst-case retry projection plus the on-demand validation reserve
+exceeds the project's 80% Queue safety ceiling. A one-minute Free deployment
+therefore requires an explicitly measured budget profile; it does not require a
+schema or scheduler redesign.
 
 ### 10.4 Paid profile
 
@@ -534,6 +636,13 @@ Parsed browser claims without the signed artifact are rejected.
 - rate-limits by caller and target;
 - does not allow arbitrary URLs;
 - returns `202` with validation ID for asynchronous work.
+
+The application derives an opaque caller fingerprint from the request's
+normalized proxy/origin context and HMACs it with `BUYER_OBSERVATION_SECRET`. The Worker
+accepts only that fixed-size fingerprint, persists it as `callerKey`, and never
+stores the source IP or origin. A global daily cap and the configurable
+`CATALOG_VALIDATION_REQUESTS_PER_CALLER_DAY` cap are both enforced before Queue
+admission; target deduplication/cooldown remains independent of caller scope.
 
 ## 13. Internal Worker catalog API v2
 
@@ -696,6 +805,11 @@ After replacement tests pass, remove:
 - Obsolete bootstrap/rotation code once the Worker is the sole owner and tests prove no import remains.
 - Obsolete summary types that no longer describe actual phase output.
 
+The Worker test suite enforces the ORM boundary with a versioned file-and-count
+allowlist. Only the atomic query-budget wrapper and scheduler lease helper are
+currently exempt from the Drizzle runtime boundary; any new raw `.prepare()` call
+fails the standard check.
+
 Do not remove:
 
 - raw metadata/declarations;
@@ -720,7 +834,7 @@ Test migration from representative current rows, constraints, indexes, backfill 
 
 ### WP-B3 — Effective evidence projection
 
-Test success→failure, failure→success, stale success, browser-only success, shared origin/different path and metadata replacement.
+Test success→failure, failure→success, stale success, browser-only success, shared origin/different path, metadata replacement and representative reassignment after retirement.
 
 **Gate:** projection equals ledger-derived result and never overstates scope.
 
@@ -784,6 +898,7 @@ All capacity controls remain configurable:
 - freshness policy;
 - query/subrequest/Queue budgets;
 - daily on-demand validation admission budget;
+- per-caller daily on-demand validation admission budget;
 - API v2 read/write feature flags.
 
 The checked-in controls are `CRON_INTERVAL_MINUTES`,
@@ -792,7 +907,9 @@ The checked-in controls are `CRON_INTERVAL_MINUTES`,
 `CATALOG_PROBE_CONCURRENCY`, the three `CATALOG_*_TIMEOUT_MS` values, the
 four `CATALOG_*_REFRESH_MINUTES` values,
 `CATALOG_FAILURE_BACKOFF_MINUTES`, the D1/subrequest/Queue budgets and the v2
-read/write switches. `loadConfig` validates each value against the selected Free or
+read/write switches and `CATALOG_VALIDATION_REQUESTS_PER_CALLER_DAY`. The
+per-caller default is 10 on Free and 100 on Paid; it is capped by the global
+`CATALOG_VALIDATION_REQUESTS_PER_DAY` value. `loadConfig` validates each value against the selected Free or
 Paid profile and rejects a discovery+ingest request projection that exceeds
 `TRUST8004_REQUESTS_PER_RUN`.
 

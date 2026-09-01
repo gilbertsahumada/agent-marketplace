@@ -292,6 +292,29 @@ export async function processNextCatalogIngestTask(
           eq(catalogAgentEndpoints.agentKey, active.agentKey),
           inArray(catalogAgentEndpoints.endpointKey, old.map(({ endpointKey }) => endpointKey)),
         ))]),
+      ...(old.length === 0 ? [] : [db.update(catalogEndpoints).set({
+        // A shared endpoint must keep a live owner after its representative
+        // declaration is retired. Pick the stable lowest current declarer;
+        // leave it unassigned when no relation remains.
+        representativeAgentKey: sql`(
+          SELECT MIN(candidate.agentKey)
+          FROM catalog_agent_endpoints AS candidate
+          WHERE candidate.endpointKey = catalog_endpoints.endpointKey
+            AND candidate.declarationState = 'current'
+        )`,
+      }).where(and(
+        eq(catalogEndpoints.representativeAgentKey, active.agentKey),
+        inArray(catalogEndpoints.endpointKey, old.map(({ endpointKey }) => endpointKey)),
+      ))]),
+      ...(active.declarationCount === 0 ? [db.update(catalogAgentAdmission).set({
+        state: "suspended",
+        commerceTransport: null,
+        endpointKey: null,
+        provider: null,
+        validatedAt: null,
+        configurationVersion: `metadata:${active.metadataVersion}`,
+        reasonCode: "NO_COMMERCE_ENDPOINT",
+      }).where(eq(catalogAgentAdmission.agentKey, active.agentKey))] : []),
       db.update(catalogIngestTasks).set({
         status: complete ? "completed" : "retiring",
         updatedAt: input.nowMs,
@@ -313,7 +336,8 @@ export async function processNextCatalogIngestTask(
       declarationsProcessed: active.nextDeclarationIndex,
       declarationsTotal: active.declarationCount,
       declarationsRetired: old.length,
-      d1Queries: 4 + (old.length === 0 ? 0 : 1) + (complete ? 1 : 0),
+      d1Queries: 4 + (old.length === 0 ? 0 : 2) + (active.declarationCount === 0 ? 1 : 0)
+        + (complete ? 1 : 0),
       externalRequests: 0,
       errorCode: null,
     };
@@ -354,22 +378,30 @@ export async function processNextCatalogIngestTask(
   const selected = current.resources.slice(start, start + input.maxDeclarations);
   const next = start + selected.length;
   const declarationsComplete = next >= current.resources.length;
-  const existingOrigins = selected.length === 0 ? [] : await db.select({
+  const originKeys = [...new Set(selected
+    .map(({ originKey }) => originKey)
+    .filter((value): value is string => value !== null))];
+  const existingOrigins = originKeys.length === 0 ? [] : await db.select({
     originKey: catalogEndpoints.originKey,
     protocol: catalogEndpoints.validationProtocol,
     representativeAgentKey: catalogEndpoints.representativeAgentKey,
-  }).from(catalogEndpoints).where(inArray(
-    catalogEndpoints.endpointKey,
-    selected.map(({ endpointKey }) => endpointKey),
-  ));
-  const existingByKey = new Map(existingOrigins.map((entry) => [
-    `${entry.originKey ?? ""}:${entry.protocol ?? ""}`,
-    entry.representativeAgentKey,
-  ]));
+  }).from(catalogEndpoints).where(inArray(catalogEndpoints.originKey, originKeys))
+    .orderBy(desc(catalogEndpoints.representativeAgentKey));
+  const existingByKey = new Map<string, string>();
+  for (const entry of existingOrigins) {
+    if (!entry.originKey || !entry.protocol || !entry.representativeAgentKey) continue;
+    const key = `${entry.originKey}:${entry.protocol}`;
+    if (!existingByKey.has(key)) existingByKey.set(key, entry.representativeAgentKey);
+  }
   const endpointRows = selected.map((resource) => ({
     ...resource,
     representativeAgentKey: resource.eligibility === "eligible" && resource.originKey && resource.validationProtocol
-      ? existingByKey.get(`${resource.originKey}:${resource.validationProtocol}`) ?? active.agentKey
+      ? (() => {
+        const existingRepresentative = existingByKey.get(`${resource.originKey}:${resource.validationProtocol}`);
+        return existingRepresentative === undefined || existingRepresentative === active.agentKey
+          ? existingRepresentative ?? active.agentKey
+          : null;
+      })()
       : null,
     nextProbeAt: resource.eligibility === "eligible" ? input.nowMs : null,
   }));

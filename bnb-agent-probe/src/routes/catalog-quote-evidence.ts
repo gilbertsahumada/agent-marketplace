@@ -188,6 +188,8 @@ export async function catalogQuoteEvidenceResponse(
   const existing = await db.select({ id: catalogObservations.id })
     .from(catalogObservations)
     .where(and(
+      eq(catalogObservations.agentKey, agentKey),
+      eq(catalogObservations.endpointKey, input.endpointKey),
       eq(catalogObservations.validationKind, "quote"),
       eq(catalogObservations.artifactHash, hash),
     )).limit(1);
@@ -231,7 +233,7 @@ export async function catalogQuoteEvidenceResponse(
       return jsonResponse({ error: "quote_rejected", code: verdict.errorCode }, 422);
     }
     const durationMs = Math.max(0, Math.round(clock() - startedAt));
-    const attemptRoot = `quote:${hash}`;
+    const attemptRoot = `quote:${agentKey}:${input.endpointKey}:${hash}`;
     const results = await db.batch([
       db.insert(catalogObservations).values({
         agentKey,
@@ -304,6 +306,8 @@ export async function catalogQuoteEvidenceResponse(
     if (!quoteRows[0]) {
       const raced = await db.select({ id: catalogObservations.id }).from(catalogObservations)
         .where(and(
+          eq(catalogObservations.agentKey, agentKey),
+          eq(catalogObservations.endpointKey, input.endpointKey),
           eq(catalogObservations.validationKind, "quote"),
           eq(catalogObservations.artifactHash, hash),
         )).limit(1);

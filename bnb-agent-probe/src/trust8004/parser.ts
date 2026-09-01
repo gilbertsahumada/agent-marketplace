@@ -7,6 +7,7 @@ import {
   type CatalogPage,
   type CatalogTransport,
 } from "./types.ts";
+import { isSyntacticallyPublicHttpsUrl } from "./safe-url.ts";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -117,11 +118,12 @@ function normalizedImage(value: unknown): string | null {
   if (!candidate) return null;
   if (candidate.startsWith("ipfs://")) {
     const path = candidate.slice("ipfs://".length).replace(/^ipfs\//, "");
-    return path ? `https://ipfs.io/ipfs/${path}` : null;
+    const normalized = path ? `https://ipfs.io/ipfs/${path}` : null;
+    return normalized && isSyntacticallyPublicHttpsUrl(normalized) ? normalized : null;
   }
   try {
     const url = new URL(candidate);
-    return url.protocol === "https:" && !url.username && !url.password ? url.toString() : null;
+    return isSyntacticallyPublicHttpsUrl(url.toString()) ? url.toString() : null;
   } catch { return null; }
 }
 

@@ -67,6 +67,9 @@ describe("catalog-backed marketplace policy", () => {
       operator: "marketplace",
       categoryEvaluation: "evaluated",
       categories: [{ category: "grid_trading" }],
+      validationTargets: [{
+        endpointKey: "a".repeat(64), protocol: "a2a", endpoint: "https://normalized.example/a2a",
+      }],
       hireability: { status: "quote_verified", canHire: true },
       endpointObservation: {
         status: "observed_ok", protocol: "a2a", endpoint: "https://normalized.example/a2a",
@@ -102,6 +105,51 @@ describe("catalog-backed marketplace policy", () => {
 
     expect(agent.hireability).toMatchObject({ status: "protocol_discovered", canHire: true });
     expect(agent.hireability.reason).toContain("fresh quote");
+  });
+
+  it("does not treat an external or ineligible declaration as a seller transport", () => {
+    const normalized = candidate({
+      operationalStatus: "platform_reachable", freshness: "live", commerceStatus: "admitted",
+      quoteStatus: "not_requested", buyerAction: "request_quote", canRequestBrowserValidation: true,
+      canRequestInfrastructureValidation: true, canRequestQuote: true, canPrepareHire: false,
+      blockingReasons: ["COMMERCE_NOT_ADMITTED"],
+    });
+    normalized.declarations = [{
+      ...normalized.declarations[0]!,
+      protocol: "mcp",
+      declaredProtocol: "mcp",
+      role: "external",
+      validationProtocol: null,
+      externalKind: "social",
+      eligibility: "unsupported",
+    }];
+
+    const agent = toMarketplaceAgent({ ...baseData(), catalogCandidate: normalized }, { evaluateMarketplace: false });
+
+    expect(agent.hireability).toMatchObject({ status: "no_transport_declared", canHire: false });
+    expect(agent.validationTargets).toEqual([]);
+  });
+
+  it("does not admit a protocol declared on a social URL", () => {
+    const normalized = candidate({
+      operationalStatus: "platform_reachable", freshness: "live", commerceStatus: "admitted",
+      quoteStatus: "not_requested", buyerAction: "request_quote", canRequestBrowserValidation: true,
+      canRequestInfrastructureValidation: true, canRequestQuote: true, canPrepareHire: false,
+      blockingReasons: ["COMMERCE_NOT_ADMITTED"],
+    });
+    normalized.declarations = [{
+      ...normalized.declarations[0]!,
+      protocol: "a2a",
+      declaredProtocol: "a2a",
+      role: "operational",
+      validationProtocol: "a2a",
+      externalKind: "social",
+      eligibility: "invalid_declaration",
+    }];
+
+    const agent = toMarketplaceAgent({ ...baseData(), catalogCandidate: normalized }, { evaluateMarketplace: false });
+
+    expect(agent.hireability).toMatchObject({ status: "no_transport_declared", canHire: false });
   });
 
   it("shows evidence for the admitted endpoint when another declaration was probed later", () => {

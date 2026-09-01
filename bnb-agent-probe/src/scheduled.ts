@@ -44,6 +44,7 @@ const CURATED_ID_SET = new Set(CURATED_IDS);
 const GRID_AGENT_ID = "303779";
 const GRID_ENDPOINT = "https://bnb-agent-marketplace-ruby.vercel.app/grid";
 const GRID_MESSAGE_URL = "https://bnb-agent-marketplace-ruby.vercel.app/api/sellers/grid/a2a";
+type StructuredLogger = Pick<Console, "info" | "error">;
 
 export type SchedulerPhase = "header" | "sweep" | "probe";
 export type ScheduledRunResult = "completed" | "duplicate" | "locked";
@@ -63,6 +64,7 @@ interface PhaseExecution {
   readonly nowMs: number;
   readonly startedAtMs: number;
   readonly now: () => number;
+  readonly logger: StructuredLogger;
   readonly headerHighWater: string | null;
   readonly completedQueueScheduledTime?: number;
 }
@@ -267,6 +269,7 @@ export function createWp2ScheduledRunner(dependencies: ScheduledRuntimeDependenc
         nowMs: now(),
         startedAtMs: startedAt,
         now,
+        logger,
         headerHighWater: state.get("header_high_water")?.textValue ?? null,
         ...(controller.cron === "queue"
           ? { completedQueueScheduledTime: controller.scheduledTime }
@@ -356,9 +359,9 @@ async function executeWp2Phase(input: PhaseExecution, fetchImpl: typeof fetch): 
     try {
       const { syncCatalogHeaderCandidates } = await import("./phases/catalog-header-index");
       const catalogSummary = await syncCatalogHeaderCandidates(input.db, headerCatalogAgents, input.nowMs);
-      console.info("catalog.header.completed", catalogSummary);
+      input.logger.info("catalog.header.completed", catalogSummary);
     } catch (error) {
-      console.error("catalog.header.failed", { errorCode: catalogProbeErrorCode(error) });
+      input.logger.error("catalog.header.failed", { errorCode: catalogProbeErrorCode(error) });
     }
     return;
   }
@@ -533,22 +536,23 @@ async function executeWp2Phase(input: PhaseExecution, fetchImpl: typeof fetch): 
         timeoutMs: Math.min(5_000, input.config.probeTimeoutMs),
       }, {
         ...catalogPersistence,
-        onAttempt: (attempt) => console.info("catalog.probe.attempt", attempt),
+        onAttempt: (attempt) => input.logger.info("catalog.probe.attempt", attempt),
         probe: (target) => probeCatalogEndpoint(target, {
           fetchImpl: probeFetch,
           timeoutMs: catalogProbeTimeoutMs(input.config, target.protocol),
+          maxResponseBytes: input.config.maxSellerResponseBytes,
           freshnessMs: catalogProbeFreshnessMs(input.config, target),
           now: input.now,
         }),
       });
-      console.info("catalog.probe.completed", {
+      input.logger.info("catalog.probe.completed", {
         processedTargets: catalogSummary.processedTargets,
         outcomes: catalogSummary.outcomes,
       });
     } catch (error) {
       // The legacy seller probe remains the completion gate. Generic catalog
       // validation is best-effort and records its own attempt only on commit.
-      console.error("catalog.probe.failed", {
+      input.logger.error("catalog.probe.failed", {
         errorCode: catalogProbeErrorCode(error),
       });
     }
@@ -592,29 +596,24 @@ async function executeCatalogV2Phase(
     }));
   }
 
-  const discoveryWrites = discovery.reduce((total, summary) => total + summary.d1RowsWritten, 0);
   const ingestSummaries = [];
   const probeQueryReserve = input.phase === "probe" && input.config.catalogProbeEnabled
     ? 1 + (4 * input.config.catalogProbeBatchSize)
     : 0;
-  const ingestTaskLimit = discoveryWrites <= 20
-    ? catalogIngestTaskLimitForBudget({
-        remainingQueries: input.queryBudget.remaining,
-        maxDeclarations: input.config.catalogDeclarationsPerTask,
-        requestedTasks: input.config.catalogIngestTasksPerRun,
-        reserveQueries: 1 + probeQueryReserve,
-      })
-    : 0;
-  if (discoveryWrites <= 20) {
-    for (let index = 0; index < ingestTaskLimit; index += 1) {
-      const summary = await processNextCatalogIngestTask(input.db, {
-        nowMs: input.now(),
-        maxDeclarations: input.config.catalogDeclarationsPerTask,
-        fetchAgent: (agentId) => catalog.getAgent(agentId),
-      });
-      ingestSummaries.push(summary);
-      if (summary.status === "idle") break;
-    }
+  const ingestTaskLimit = catalogIngestTaskLimitForBudget({
+    remainingQueries: input.queryBudget.remaining,
+    maxDeclarations: input.config.catalogDeclarationsPerTask,
+    requestedTasks: input.config.catalogIngestTasksPerRun,
+    reserveQueries: 1 + probeQueryReserve,
+  });
+  for (let index = 0; index < ingestTaskLimit; index += 1) {
+    const summary = await processNextCatalogIngestTask(input.db, {
+      nowMs: input.now(),
+      maxDeclarations: input.config.catalogDeclarationsPerTask,
+      fetchAgent: (agentId) => catalog.getAgent(agentId),
+    });
+    ingestSummaries.push(summary);
+    if (summary.status === "idle") break;
   }
 
   let probeSummary: Awaited<ReturnType<typeof runCatalogProbePhase>> | null = null;
@@ -630,10 +629,11 @@ async function executeCatalogV2Phase(
       timeoutMs: Math.min(5_000, input.config.probeTimeoutMs),
     }, {
       ...persistence,
-      onAttempt: (attempt) => console.info("catalog.probe.attempt", attempt),
+      onAttempt: (attempt) => input.logger.info("catalog.probe.attempt", attempt),
       probe: (target) => probeCatalogEndpoint(target, {
         fetchImpl,
         timeoutMs: catalogProbeTimeoutMs(input.config, target.protocol),
+        maxResponseBytes: input.config.maxSellerResponseBytes,
         freshnessMs: catalogProbeFreshnessMs(input.config, target),
         now: input.now,
       }),
@@ -681,7 +681,7 @@ async function executeCatalogV2Phase(
       updatedAt: sql.raw("excluded.updatedAt"),
     },
   });
-  console.info("catalog.v2.phase.completed", summary);
+  input.logger.info("catalog.v2.phase.completed", summary);
 }
 
 function catalogHeaderHighWater(agents: readonly CatalogAgent[]): string | null {

@@ -38,8 +38,108 @@ describe("catalog D1 seed", () => {
     expect(result.sql).toContain("'eip155:56:2'");
     expect(result.sql).toContain("representativeAgentKey");
     expect(result.sql).toContain("metadataUri");
+    expect(result.sql).toContain("rawServiceLabel, rawSource, rawSourceIndex");
+    expect(result.sql).toContain("'MCP','services',0");
     expect(result.sql).not.toContain("BEGIN TRANSACTION");
     expect(result.sql).not.toMatch(/[\t ]+\n/);
+  });
+
+  it("materializes normalized endpoint eligibility and an immediately due probe schedule", () => {
+    const result = buildCatalogD1Seed(snapshot());
+
+    expect(result.sql).toContain(`endpointKey, protocol, endpoint, originKey, safety, safetyReason,
+  declaredProtocol, role, validationProtocol, externalKind, eligibility, representativeAgentKey, nextProbeAt`);
+    expect(result.sql).toContain("'mcp','operational','mcp',NULL,'eligible'");
+    expect(result.sql).toContain("nextProbeAt=excluded.nextProbeAt");
+    expect(result.sql).not.toContain("'unknown','external',NULL,NULL,'unsupported'");
+  });
+
+  it("seeds ERC-8183 commerce as a quote-verification candidate", () => {
+    const commerceAgent = normalizeCatalogAgent({
+      chainId: 56,
+      agentId: "303779",
+      name: "Grid seller",
+      metadataReasonCode: "ok",
+      services: [{ name: "ERC-8183", endpoint: "https://seller.example/grid" }],
+    });
+    const commerceSnapshot: CatalogSnapshotV2 = {
+      ...snapshot(),
+      candidates: [commerceAgent],
+      registeredAgentIds: ["303779"],
+      stats: {
+        registered: 1, candidates: 1, declarations: 1, safeDeclarations: 1,
+        unsafeDeclarations: 0, sharedOrigins: 0,
+      },
+    };
+    const result = buildCatalogD1Seed(commerceSnapshot, {
+      marketplaceAgentIds: ["303779"],
+    });
+
+    expect(result.sql).toContain("INSERT INTO catalog_agent_admission");
+    expect(result.sql).toContain("'eip155:56:303779','candidate','erc8183_http'");
+    expect(result.sql).toContain("'QUOTE_VERIFICATION_REQUIRED'");
+  });
+
+  it("accepts legacy snapshots that omit optional identity fields", () => {
+    const legacy = snapshot() as unknown as {
+      candidates: Array<Record<string, unknown>>;
+    };
+    delete legacy.candidates[0]!.owner;
+    delete legacy.candidates[0]!.metadataUri;
+
+    expect(() => buildCatalogD1Seed(legacy as unknown as CatalogSnapshotV2)).not.toThrow();
+  });
+
+  it("keeps social URLs declared as MCP but excludes them from probe eligibility", () => {
+    const socialAgent = normalizeCatalogAgent({
+      chainId: 56,
+      agentId: "77",
+      name: "Social profile",
+      metadataReasonCode: "ok",
+      services: [{ name: "MCP", endpoint: "https://x.com/agent" }],
+    });
+    const socialSnapshot: CatalogSnapshotV2 = {
+      ...snapshot(),
+      candidates: [socialAgent],
+      registeredAgentIds: ["77"],
+      stats: {
+        registered: 1, candidates: 1, declarations: 1, safeDeclarations: 1,
+        unsafeDeclarations: 0, sharedOrigins: 0,
+      },
+    };
+    const result = buildCatalogD1Seed(socialSnapshot);
+
+    expect(result.sql).toContain("'mcp','operational','mcp','social','invalid_declaration',NULL,NULL");
+    expect(result.stats.probeRepresentatives).toBe(0);
+  });
+
+  it("preserves non-transport declarations as external resources", () => {
+    const externalAgent = normalizeCatalogAgent({
+      chainId: 56,
+      agentId: "88",
+      name: "External payment agent",
+      metadataReasonCode: "ok",
+      services: [
+        { name: "x402", endpoint: "https://seller.example/pay" },
+        { name: "Custom settlement", endpoint: "https://seller.example/settle" },
+      ],
+    });
+    const externalSnapshot: CatalogSnapshotV2 = {
+      ...snapshot(),
+      candidates: [externalAgent],
+      registeredAgentIds: ["88"],
+      stats: {
+        registered: 1, candidates: 1, declarations: 2, safeDeclarations: 2,
+        unsafeDeclarations: 0, sharedOrigins: 0,
+      },
+    };
+    const result = buildCatalogD1Seed(externalSnapshot);
+
+    expect(result.sql).toMatch(/'web','https:\/\/seller\.example\/pay'.*'x402','external'/s);
+    expect(result.sql).toMatch(/'web','https:\/\/seller\.example\/settle'.*'unknown','external'/s);
+    expect(result.sql).toContain("'x402','external',NULL,'other','unsupported'");
+    expect(result.sql).toContain("'unknown','external',NULL,'other','unsupported'");
+    expect(result.stats.probeRepresentatives).toBe(0);
   });
 
   it("reconciles previous rows without deleting append-only observations", () => {
@@ -47,6 +147,17 @@ describe("catalog D1 seed", () => {
     expect(result.sql).toContain("UPDATE catalog_agents SET indexState = 'removed'");
     expect(result.sql).toContain("UPDATE catalog_agent_endpoints SET declarationState = 'removed'");
     expect(result.sql).not.toMatch(/DELETE\s+FROM/i);
+    expect(result.sql).not.toMatch(/UPDATE\s+catalog_observations/i);
+  });
+
+  it("suspends stale admissions while preserving the append-only evidence ledger", () => {
+    const result = buildCatalogD1Seed(snapshot());
+
+    expect(result.sql).toContain("UPDATE catalog_agent_admission");
+    expect(result.sql).toContain("reasonCode = 'AGENT_REMOVED_FROM_SNAPSHOT'");
+    expect(result.sql).toContain("reasonCode = 'NO_COMMERCE_ENDPOINT'");
+    expect(result.sql).toContain("state = 'suspended'");
+    expect(result.sql).not.toMatch(/DELETE\s+FROM\s+catalog_agent_admission/i);
     expect(result.sql).not.toMatch(/UPDATE\s+catalog_observations/i);
   });
 });

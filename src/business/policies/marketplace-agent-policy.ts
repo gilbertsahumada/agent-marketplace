@@ -1,12 +1,19 @@
 import { getMarketplaceInventoryEntry } from "../../data/inventory/marketplace-inventory.ts";
 import type { MarketplaceAgentData } from "../../data/repositories/marketplace-agent-repository.ts";
 import type { OnchainIdentityData } from "../../data/repositories/marketplace-agent-repository.ts";
-import type { CatalogCandidate, CatalogCandidateObservation } from "../entities/catalog-candidate.ts";
+import {
+  isCatalogOperationalDeclaration,
+  isCatalogOperationalObservation,
+  isCatalogSellerDeclaration,
+  type CatalogCandidate,
+  type CatalogCandidateObservation,
+} from "../entities/catalog-candidate.ts";
 import type {
   EvidenceRecord,
   MarketplaceAgent,
   MarketplaceCategory,
   MarketplaceHireability,
+  MarketplaceValidationTarget,
 } from "../entities/marketplace-agent.ts";
 import type { EndpointObservation } from "../../trust8004/types.ts";
 import { isReleaseQuoteCurrent } from "./release-qualification-policy.ts";
@@ -146,7 +153,8 @@ function newestCatalogPlatformObservation(candidate: CatalogCandidate): CatalogC
   const observations = candidate.observations
     .filter((observation) => CATALOG_PLATFORM_SOURCES.has(observation.source)
       && (observation.validationKind === "reachability" || observation.validationKind === "protocol")
-      && observation.verificationLevel === "platform_observed")
+      && observation.verificationLevel === "platform_observed"
+      && isCatalogOperationalObservation(candidate, observation))
     .sort((left, right) => right.observedAt - left.observedAt || right.id - left.id);
   const admittedEndpointKey = candidate.admission?.endpointKey;
   return (admittedEndpointKey === null || admittedEndpointKey === undefined
@@ -198,9 +206,7 @@ function catalogHireability(candidate: CatalogCandidate, now: number): Marketpla
     ?? candidate.registeredAt
     ?? now;
   const timestamp = new Date(observedAt).toISOString();
-  const sellerDeclared = candidate.declarations.some(({ protocol, endpoint, safety }) => safety === "safe"
-    && endpoint !== null
-    && (protocol === "a2a" || protocol === "erc8183_http"));
+  const sellerDeclared = candidate.declarations.some(isCatalogSellerDeclaration);
   const admitted = state.commerceStatus === "admitted"
     && state.canRequestQuote
     && sellerDeclared;
@@ -237,7 +243,8 @@ function catalogHireability(candidate: CatalogCandidate, now: number): Marketpla
       evidence: readinessEvidence("Protocol declaration and commerce admission are distinct from hireability."),
     };
   }
-  if (candidate.declarations.some(({ protocol }) => protocol === "mcp")) {
+  if (candidate.declarations.some((declaration) => isCatalogOperationalDeclaration(declaration)
+    && (declaration.validationProtocol ?? declaration.protocol) === "mcp")) {
     return {
       status: "mcp_only",
       canHire: false,
@@ -296,6 +303,17 @@ export function toMarketplaceAgent(
   const catalogHire = catalog ? catalogHireability(catalog, Date.now()) : null;
   const catalogObservation = catalog ? catalogEndpointObservation(catalog) : null;
   const catalogCategories = catalog ? catalogCategoryAssignments(catalog) : null;
+  const validationTargets: MarketplaceValidationTarget[] | undefined = catalog
+    ? catalog.declarations
+      .filter(isCatalogOperationalDeclaration)
+      .flatMap((declaration) => {
+        const protocol = declaration.validationProtocol ?? declaration.protocol;
+        return declaration.endpoint !== null
+          && (protocol === "a2a" || protocol === "mcp" || protocol === "erc8183_http")
+          ? [{ endpointKey: declaration.endpointKey, protocol, endpoint: declaration.endpoint }]
+          : [];
+      })
+    : undefined;
   return {
     chainId: data.chainId,
     agentId: data.agentId,
@@ -343,6 +361,7 @@ export function toMarketplaceAgent(
     })) : []),
     services: data.services,
     endpoints: data.endpoints,
+    ...(validationTargets === undefined ? {} : { validationTargets }),
     tools: data.tools,
     capabilities: data.capabilities,
     endpointObservation: catalogObservation ?? data.endpointObservation,

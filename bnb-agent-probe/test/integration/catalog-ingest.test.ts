@@ -46,6 +46,18 @@ function agent(agentId: string, endpoints = 1, version = 1): CatalogAgent {
   };
 }
 
+function sharedOriginAgent(agentId: string, endpoint: string): CatalogAgent {
+  const candidate = agent(agentId, 1);
+  candidate.indexEndpoints = [{
+    protocol: "a2a",
+    endpoint,
+    rawProtocol: "A2A",
+    source: "services",
+    sourceIndex: 0,
+  }];
+  return candidate;
+}
+
 beforeEach(async () => {
   await clearCatalogFixtures();
   await env.DB.prepare("DELETE FROM runtime_state").run();
@@ -103,6 +115,98 @@ describe("resumable catalog discovery ingest", () => {
     expect(summary.d1RowsWritten).toBe(3);
     expect(await env.DB.prepare("SELECT textValue, integerValue FROM runtime_state WHERE key = 'header_high_water'").first())
       .toEqual({ textValue: `${NOW + 8}:8`, integerValue: null });
+  });
+
+  it("does not assign an origin representative to a different declared path", async () => {
+    const first = sharedOriginAgent("100", "https://shared.example.com/first");
+    await enqueueCatalogDiscoveryPage(env.DB as unknown as D1DatabaseLike, [first], {
+      nowMs: NOW,
+      source: "header",
+    });
+    await processNextCatalogIngestTask(env.DB as unknown as D1DatabaseLike, {
+      nowMs: NOW + 1,
+      maxDeclarations: 4,
+      fetchAgent: async () => first,
+    });
+    await processNextCatalogIngestTask(env.DB as unknown as D1DatabaseLike, {
+      nowMs: NOW + 2,
+      maxDeclarations: 4,
+      fetchAgent: async () => first,
+    });
+
+    const second = sharedOriginAgent("101", "https://shared.example.com/second");
+    await enqueueCatalogDiscoveryPage(env.DB as unknown as D1DatabaseLike, [second], {
+      nowMs: NOW + 3,
+      source: "sweep",
+    });
+    await processNextCatalogIngestTask(env.DB as unknown as D1DatabaseLike, {
+      nowMs: NOW + 4,
+      maxDeclarations: 4,
+      fetchAgent: async () => second,
+    });
+
+    expect(await env.DB.prepare(`SELECT e.endpoint, e.representativeAgentKey
+      FROM catalog_endpoints e
+      WHERE e.endpoint IN ('https://shared.example.com/first', 'https://shared.example.com/second')
+      ORDER BY e.endpoint`).all()).toMatchObject({
+      results: [
+        { endpoint: "https://shared.example.com/first", representativeAgentKey: "eip155:56:100" },
+        { endpoint: "https://shared.example.com/second", representativeAgentKey: null },
+      ],
+    });
+  });
+
+  it("reassigns a shared endpoint when its representative declaration is retired", async () => {
+    const representative = sharedOriginAgent("100", "https://shared.example.com/agent-card");
+    const fallback = sharedOriginAgent("101", "https://shared.example.com/agent-card");
+    await enqueueCatalogDiscoveryPage(env.DB as unknown as D1DatabaseLike, [representative], {
+      nowMs: NOW,
+      source: "header",
+    });
+    await processNextCatalogIngestTask(env.DB as unknown as D1DatabaseLike, {
+      nowMs: NOW + 1,
+      maxDeclarations: 4,
+      fetchAgent: async () => representative,
+    });
+    await processNextCatalogIngestTask(env.DB as unknown as D1DatabaseLike, {
+      nowMs: NOW + 2,
+      maxDeclarations: 4,
+      fetchAgent: async () => representative,
+    });
+
+    await enqueueCatalogDiscoveryPage(env.DB as unknown as D1DatabaseLike, [fallback], {
+      nowMs: NOW + 3,
+      source: "sweep",
+    });
+    await processNextCatalogIngestTask(env.DB as unknown as D1DatabaseLike, {
+      nowMs: NOW + 4,
+      maxDeclarations: 4,
+      fetchAgent: async () => fallback,
+    });
+    await processNextCatalogIngestTask(env.DB as unknown as D1DatabaseLike, {
+      nowMs: NOW + 4.5,
+      maxDeclarations: 4,
+      fetchAgent: async () => fallback,
+    });
+
+    const retired = { ...representative, metadataUri: "ipfs://metadata/100/2", metadataUpdatedAt: NOW + 2, indexEndpoints: [] };
+    await enqueueCatalogDiscoveryPage(env.DB as unknown as D1DatabaseLike, [retired], {
+      nowMs: NOW + 5,
+      source: "reconciliation",
+    });
+    const retirement = await processNextCatalogIngestTask(env.DB as unknown as D1DatabaseLike, {
+      nowMs: NOW + 6,
+      maxDeclarations: 4,
+      fetchAgent: async () => retired,
+    });
+    expect(retirement).toMatchObject({ status: "completed", declarationsRetired: 1, d1Queries: 8 });
+
+    expect(await env.DB.prepare(`SELECT representativeAgentKey
+      FROM catalog_endpoints WHERE endpoint = 'https://shared.example.com/agent-card'`).first())
+      .toEqual({ representativeAgentKey: "eip155:56:101" });
+    expect(await env.DB.prepare(`SELECT declarationState
+      FROM catalog_agent_endpoints WHERE agentKey = 'eip155:56:100'`).first())
+      .toEqual({ declarationState: "removed" });
   });
 
   it("processes every declaration in bounded resumable batches and never schedules external links", async () => {
@@ -204,6 +308,41 @@ describe("resumable catalog discovery ingest", () => {
 
     expect(await env.DB.prepare(`SELECT state, endpointKey, reasonCode
       FROM catalog_agent_admission WHERE agentKey = 'eip155:56:77'`).first()).toEqual({
+      state: "suspended", endpointKey: null, reasonCode: "NO_COMMERCE_ENDPOINT",
+    });
+  });
+
+  it("suspends commerce admission when metadata removes every declaration", async () => {
+    const original: CatalogAgent = {
+      ...agent("78", 1, 1),
+      indexEndpoints: [{
+        protocol: "erc8183_http",
+        endpoint: "https://agent-78.example.com/commerce",
+        rawProtocol: "ERC-8183",
+        source: "services",
+        sourceIndex: 0,
+      }],
+    };
+    await enqueueCatalogDiscoveryPage(env.DB as unknown as D1DatabaseLike, [original], { nowMs: NOW, source: "header" });
+    await processNextCatalogIngestTask(env.DB as unknown as D1DatabaseLike, {
+      nowMs: NOW + 1, maxDeclarations: 4, fetchAgent: async () => original,
+    });
+    await processNextCatalogIngestTask(env.DB as unknown as D1DatabaseLike, {
+      nowMs: NOW + 2, maxDeclarations: 4, fetchAgent: async () => original,
+    });
+    expect(await env.DB.prepare("SELECT state FROM catalog_agent_admission WHERE agentKey = 'eip155:56:78'").first())
+      .toEqual({ state: "candidate" });
+
+    const replacement: CatalogAgent = { ...original, metadataUri: "ipfs://metadata/78/2", metadataUpdatedAt: NOW + 3, indexEndpoints: [] };
+    await enqueueCatalogDiscoveryPage(env.DB as unknown as D1DatabaseLike, [replacement], {
+      nowMs: NOW + 4, source: "reconciliation",
+    });
+    await processNextCatalogIngestTask(env.DB as unknown as D1DatabaseLike, {
+      nowMs: NOW + 5, maxDeclarations: 4, fetchAgent: async () => replacement,
+    });
+
+    expect(await env.DB.prepare(`SELECT state, endpointKey, reasonCode
+      FROM catalog_agent_admission WHERE agentKey = 'eip155:56:78'`).first()).toEqual({
       state: "suspended", endpointKey: null, reasonCode: "NO_COMMERCE_ENDPOINT",
     });
   });

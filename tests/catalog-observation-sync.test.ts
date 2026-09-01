@@ -50,11 +50,33 @@ describe("catalog observation sync", () => {
     expect(JSON.stringify(payload)).not.toContain(input.endpoint);
   });
 
+  it("allows a loopback Worker over HTTP during local development", async () => {
+    const fetchImpl = vi.fn(async (url: string | URL | Request) => {
+      expect(String(url)).toBe("http://127.0.0.1:8787/catalog-browser-observations");
+      return Response.json({ status: "recorded" }, { status: 201 });
+    });
+
+    await expect(syncCatalogObservation(input, {
+      env: {
+        NODE_ENV: "development",
+        OBSERVATIONS_URL: "http://127.0.0.1:8787/observations",
+        BUYER_OBSERVATION_ALLOWED_ORIGIN: "http://127.0.0.1:8787",
+        BUYER_OBSERVATION_SECRET: "private-secret",
+      },
+      fetchImpl,
+    })).resolves.toEqual({ status: "recorded" });
+  });
+
   it("fails closed for missing config, origin confusion or unsafe endpoints", async () => {
     expect(await syncCatalogObservation(input, { env: {} })).toEqual({ status: "not_configured" });
     expect(await syncCatalogObservation(input, { env: {
       OBSERVATIONS_URL: "https://attacker.example/observations",
       BUYER_OBSERVATION_ALLOWED_ORIGIN: "https://worker.example",
+      BUYER_OBSERVATION_SECRET: "secret",
+    } })).toEqual({ status: "not_configured" });
+    expect(await syncCatalogObservation(input, { env: {
+      OBSERVATIONS_URL: "http://127.0.0.1:8787/observations",
+      BUYER_OBSERVATION_ALLOWED_ORIGIN: "http://127.0.0.1:8787",
       BUYER_OBSERVATION_SECRET: "secret",
     } })).toEqual({ status: "not_configured" });
     expect(await syncCatalogObservation({ ...input, endpoint: "http://127.0.0.1" }, {

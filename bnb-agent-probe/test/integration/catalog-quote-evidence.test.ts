@@ -180,4 +180,40 @@ describe("catalog signed quote evidence", () => {
     expect(await env.DB.prepare("SELECT COUNT(*) AS count FROM catalog_observations").first())
       .toMatchObject({ count: 0 });
   });
+
+  it("does not deduplicate an identical artifact across declaring agents", async () => {
+    await env.DB.prepare(`INSERT INTO catalog_agents (
+      agentKey, agentId, chainId, categoriesJson, metadataState, indexState, firstSeenAt, lastSeenAt
+    ) VALUES ('eip155:56:43', '43', 56, '["grid_trading"]', 'ok', 'current', ?, ?)`).bind(NOW, NOW).run();
+    await env.DB.prepare(`INSERT INTO catalog_agent_endpoints (
+      agentKey, endpointKey, declarationState, firstSeenAt, lastSeenAt
+    ) VALUES ('eip155:56:43', ?, 'current', ?, ?)`).bind(ENDPOINT_KEY, NOW, NOW).run();
+    await env.DB.prepare(`INSERT INTO catalog_agent_admission (
+      agentKey, state, commerceTransport, endpointKey, chainId, provider, validatedAt, configurationVersion
+    ) VALUES ('eip155:56:43', 'candidate', 'a2a', ?, 56, NULL, NULL, 'test-v2')`)
+      .bind(ENDPOINT_KEY).run();
+
+    const verifyQuote = vi.fn(async () => ({ valid: true as const, method: "eip191" as const, signer: PROVIDER }));
+    const options = {
+      nowMs: NOW,
+      timeoutMs: 5_000,
+      dependencies: { readChainContext: vi.fn(async () => context), verifyQuote },
+    };
+    const first = await catalogQuoteEvidenceResponse(
+      request(acceptedEnvelope(), "42"), env.DB as unknown as D1Database, options,
+    );
+    const second = await catalogQuoteEvidenceResponse(
+      request(acceptedEnvelope(), "43"), env.DB as unknown as D1Database, options,
+    );
+
+    expect(first.status).toBe(201);
+    expect(second.status).toBe(201);
+    expect(await env.DB.prepare(`SELECT agentKey, COUNT(*) AS count
+      FROM catalog_observations WHERE validationKind = 'quote' GROUP BY agentKey ORDER BY agentKey`).all())
+      .toMatchObject({ results: [
+        { agentKey: "eip155:56:42", count: 1 },
+        { agentKey: "eip155:56:43", count: 1 },
+      ] });
+    expect(verifyQuote).toHaveBeenCalledTimes(2);
+  });
 });

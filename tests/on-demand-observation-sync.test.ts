@@ -59,6 +59,19 @@ describe("buyer-triggered observation sync", () => {
     );
   });
 
+  it("allows a loopback Worker over HTTP during local development", async () => {
+    vi.stubEnv("NODE_ENV", "development");
+    vi.stubEnv("OBSERVATIONS_URL", "http://127.0.0.1:8787/observations");
+    vi.stubEnv("BUYER_OBSERVATION_ALLOWED_ORIGIN", "http://127.0.0.1:8787");
+    vi.stubEnv("BUYER_OBSERVATION_SECRET", "buyer-secret");
+    const fetchImpl = vi.fn(async (url: string | URL | Request) => {
+      expect(String(url)).toBe("http://127.0.0.1:8787/catalog-quote-evidence");
+      return Response.json({ status: "verified" }, { status: 201 });
+    });
+
+    await expect(syncBuyerQuoteObservation(quote, { fetchImpl })).resolves.toEqual({ status: "synced" });
+  });
+
   it("returns the verified quote when sync fails and exposes only a safe sync status", async () => {
     const requestQuote = { execute: vi.fn(async () => quote) };
     const sync = vi.fn(async () => { throw new Error("secret internal D1 failure"); });
@@ -79,6 +92,7 @@ describe("buyer-triggered observation sync", () => {
 
   it.each([
     ["non-HTTPS URL", "http://worker.example/observations", "http://worker.example"],
+    ["loopback HTTP outside development", "http://127.0.0.1:8787/observations", "http://127.0.0.1:8787"],
     ["URL userinfo", "https://user:password@worker.example/observations", "https://worker.example"],
     ["origin not explicitly allowed", "https://worker.example/observations", "https://other.example"],
   ])("fails closed for %s before sending the buyer secret", async (_name, observationsUrl, allowedOrigin) => {

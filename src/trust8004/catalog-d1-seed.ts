@@ -20,8 +20,61 @@ export interface CatalogD1SeedOptions {
   chunkSize?: number;
 }
 
-function quote(value: string | null): string {
-  if (value === null) return "NULL";
+type SeedDeclaration = CatalogAgentIndexRecord["declarations"][number];
+type SeedValidationProtocol = "a2a" | "mcp" | "erc8183_http";
+type SeedEndpointProjection = {
+  declaredProtocol: SeedDeclaration["protocol"];
+  role: "operational" | "external";
+  validationProtocol: SeedValidationProtocol | null;
+  externalKind: "website" | "social" | "repository" | "documentation" | "other" | null;
+  eligibility: "eligible" | "unsafe" | "invalid_declaration" | "unsupported";
+};
+
+function isOperationalProtocol(protocol: SeedDeclaration["protocol"]): protocol is SeedValidationProtocol {
+  return protocol === "a2a" || protocol === "mcp" || protocol === "erc8183_http";
+}
+
+function projectDeclaration(declaration: SeedDeclaration): SeedEndpointProjection {
+  // Unsafe declarations intentionally retain their declared transport while
+  // remaining ineligible. The snapshot stores no raw unsafe URL, so classify
+  // the known protocol without attempting to reconstruct one.
+  if (declaration.safety === "unsafe" || declaration.url === null) {
+    const validationProtocol = isOperationalProtocol(declaration.protocol) ? declaration.protocol : null;
+    return {
+      declaredProtocol: declaration.protocol,
+      role: validationProtocol === null ? "external" : "operational",
+      validationProtocol,
+      externalKind: validationProtocol === null
+        ? declaration.protocol === "web" ? "website" : "other"
+        : null,
+      eligibility: "unsafe",
+    };
+  }
+
+  const hostname = new URL(declaration.url).hostname.toLowerCase().replace(/\.$/, "");
+  const matches = (expected: string) => hostname === expected || hostname.endsWith(`.${expected}`);
+  const externalKind = ["x.com", "twitter.com", "t.me", "telegram.me"].some((host) => matches(host))
+    ? "social"
+    : matches("github.com") || matches("gitlab.com")
+      ? "repository"
+      : hostname.startsWith("docs.") || /^\/(?:docs?|documentation)(?:\/|$)/i.test(new URL(declaration.url).pathname)
+        ? "documentation"
+        : null;
+  const validationProtocol = isOperationalProtocol(declaration.protocol) ? declaration.protocol : null;
+  const declaredExternalKind = declaration.protocol === "web" ? "website" : externalKind ?? "other";
+  return {
+    declaredProtocol: declaration.protocol,
+    role: validationProtocol === null ? "external" : "operational",
+    validationProtocol,
+    externalKind: validationProtocol !== null && externalKind !== null
+      ? externalKind : (validationProtocol !== null ? null : declaredExternalKind),
+    eligibility: validationProtocol !== null && externalKind === null
+      ? "eligible" : validationProtocol !== null ? "invalid_declaration" : "unsupported",
+  };
+}
+
+function quote(value: string | null | undefined): string {
+  if (value === null || value === undefined) return "NULL";
   const withoutLineEndWhitespace = value.replace(/[\t ]+(?=\r?\n|$)/g, "");
   return `'${withoutLineEndWhitespace.replaceAll("'", "''")}'`;
 }
@@ -71,10 +124,12 @@ export function buildCatalogD1Seed(
   ]));
 
   const endpointByKey = new Map<string, CatalogAgentIndexRecord["declarations"][number]>();
+  const projectionByEndpoint = new Map<string, SeedEndpointProjection>();
   const declaringAgentsByEndpoint = new Map<string, CatalogAgentIndexRecord[]>();
   for (const agent of snapshot.candidates) {
     for (const declaration of agent.declarations) {
       endpointByKey.set(declaration.endpointKey, declaration);
+      projectionByEndpoint.set(declaration.endpointKey, projectDeclaration(declaration));
       const agents = declaringAgentsByEndpoint.get(declaration.endpointKey) ?? [];
       agents.push(agent);
       declaringAgentsByEndpoint.set(declaration.endpointKey, agents);
@@ -84,7 +139,8 @@ export function buildCatalogD1Seed(
   const representativeByGroup = new Map<string, CatalogAgentIndexRecord>();
   for (const agent of snapshot.candidates) {
     for (const declaration of agent.declarations) {
-      if (declaration.safety !== "safe" || !declaration.originKey) continue;
+      if (projectionByEndpoint.get(declaration.endpointKey)?.eligibility !== "eligible"
+        || !declaration.originKey) continue;
       const group = `${declaration.originKey}:${declaration.protocol}`;
       const current = representativeByGroup.get(group);
       if (!current
@@ -122,50 +178,139 @@ export function buildCatalogD1Seed(
       marketplaceIds.has(agent.agentId) ? "1" : "0",
       quote(agent.metadataState), quote("current"), integer(agent.registeredAt),
       quote(agent.blockNumber), String(measuredAt), String(measuredAt), String(priorities.get(agent.agentKey)!),
+      String(measuredAt), "2",
     ].join(",")})`).join(",\n");
     statements.push(`INSERT INTO catalog_agents (
   agentKey, agentId, chainId, owner, metadataUri, name, description, imageUrl, categoriesJson, marketplaceConfigured,
   metadataState, indexState,
-  registeredAt, blockNumber, firstSeenAt, lastSeenAt, priority
+  registeredAt, blockNumber, firstSeenAt, lastSeenAt, priority, metadataObservedAt, policyVersion
 ) VALUES\n${values}
 ON CONFLICT(agentKey) DO UPDATE SET
   owner=excluded.owner, metadataUri=excluded.metadataUri, name=excluded.name, description=excluded.description, imageUrl=excluded.imageUrl,
   categoriesJson=excluded.categoriesJson, marketplaceConfigured=excluded.marketplaceConfigured,
   metadataState=excluded.metadataState, indexState='current', registeredAt=excluded.registeredAt,
-  blockNumber=excluded.blockNumber, lastSeenAt=excluded.lastSeenAt, priority=excluded.priority;`);
+  blockNumber=excluded.blockNumber, lastSeenAt=excluded.lastSeenAt, priority=excluded.priority,
+  metadataObservedAt=excluded.metadataObservedAt, policyVersion=excluded.policyVersion;`);
   }
 
   const endpoints = [...endpointByKey.entries()].sort(([left], [right]) => left.localeCompare(right));
   for (const group of chunks(endpoints, chunkSize)) {
-    const values = group.map(([endpointKey, declaration]) => `(${[
-      quote(endpointKey), quote(declaration.protocol), quote(declaration.url), quote(declaration.originKey),
+    const values = group.map(([endpointKey, declaration]) => {
+      const projection = projectionByEndpoint.get(endpointKey)!;
+      return `(${[
+      quote(endpointKey), quote(projection.validationProtocol ?? "web"), quote(declaration.url), quote(declaration.originKey),
       quote(declaration.safety), quote(declaration.safetyReason),
+      quote(projection.declaredProtocol), quote(projection.role), quote(projection.validationProtocol),
+      quote(projection.externalKind), quote(projection.eligibility),
       quote(representativeByEndpoint.get(endpointKey) ?? null),
-    ].join(",")})`).join(",\n");
+      integer(projection.eligibility === "eligible" ? measuredAt : null),
+      ].join(",")})`;
+    }).join(",\n");
     statements.push(`INSERT INTO catalog_endpoints (
-  endpointKey, protocol, endpoint, originKey, safety, safetyReason, representativeAgentKey
+  endpointKey, protocol, endpoint, originKey, safety, safetyReason,
+  declaredProtocol, role, validationProtocol, externalKind, eligibility, representativeAgentKey, nextProbeAt
 ) VALUES\n${values}
 ON CONFLICT(endpointKey) DO UPDATE SET
   protocol=excluded.protocol, endpoint=excluded.endpoint, originKey=excluded.originKey,
   safety=excluded.safety, safetyReason=excluded.safetyReason,
-  representativeAgentKey=excluded.representativeAgentKey;`);
+  declaredProtocol=excluded.declaredProtocol, role=excluded.role,
+  validationProtocol=excluded.validationProtocol, externalKind=excluded.externalKind,
+  eligibility=excluded.eligibility, representativeAgentKey=excluded.representativeAgentKey,
+  nextProbeAt=excluded.nextProbeAt;`);
   }
 
   const relations = snapshot.candidates.flatMap((agent) => agent.declarations.map((declaration) => ({
     agentKey: agent.agentKey,
     endpointKey: declaration.endpointKey,
     priority: priorities.get(agent.agentKey)!,
+    rawProtocol: declaration.rawProtocol ?? null,
+    rawSource: declaration.rawSource ?? null,
+    rawSourceIndex: declaration.rawSourceIndex ?? null,
   })));
   for (const group of chunks(relations, chunkSize)) {
     const values = group.map((relation) => `(${[
       quote(relation.agentKey), quote(relation.endpointKey), quote("current"),
       String(measuredAt), String(measuredAt), String(relation.priority),
+      quote(relation.rawProtocol), quote(relation.rawSource), integer(relation.rawSourceIndex),
     ].join(",")})`).join(",\n");
     statements.push(`INSERT INTO catalog_agent_endpoints (
-  agentKey, endpointKey, declarationState, firstSeenAt, lastSeenAt, priority
+  agentKey, endpointKey, declarationState, firstSeenAt, lastSeenAt, priority,
+  rawServiceLabel, rawSource, rawSourceIndex
 ) VALUES\n${values}
 ON CONFLICT(agentKey, endpointKey) DO UPDATE SET
-  declarationState='current', lastSeenAt=excluded.lastSeenAt, priority=excluded.priority;`);
+  declarationState='current', lastSeenAt=excluded.lastSeenAt, priority=excluded.priority,
+  rawServiceLabel=excluded.rawServiceLabel, rawSource=excluded.rawSource,
+  rawSourceIndex=excluded.rawSourceIndex;`);
+  }
+
+  const admissions = snapshot.candidates.flatMap((agent) => {
+    const declarations = agent.declarations;
+    const commerce = declarations.find((declaration) => (
+      declaration.protocol === "erc8183_http"
+      && projectionByEndpoint.get(declaration.endpointKey)?.eligibility === "eligible"
+    )) ?? (marketplaceIds.has(agent.agentId)
+      ? declarations.find((declaration) => (
+        declaration.protocol === "a2a"
+        && projectionByEndpoint.get(declaration.endpointKey)?.eligibility === "eligible"
+      ))
+      : undefined);
+    if (!commerce) return [];
+    return [{
+      agentKey: agent.agentKey,
+      commerceTransport: commerce.protocol as "a2a" | "erc8183_http",
+      endpointKey: commerce.endpointKey,
+    }];
+  });
+  for (const group of chunks(admissions, chunkSize)) {
+    const values = group.map((admission) => `(${[
+      quote(admission.agentKey), quote("candidate"), quote(admission.commerceTransport),
+      quote(admission.endpointKey), "56", "NULL", "NULL",
+      quote(`seed:${snapshot.sourceSha256}`), quote("QUOTE_VERIFICATION_REQUIRED"),
+    ].join(",")})`).join(",\n");
+    statements.push(`INSERT INTO catalog_agent_admission (
+  agentKey, state, commerceTransport, endpointKey, chainId, provider, validatedAt,
+  configurationVersion, reasonCode
+) VALUES\n${values}
+ON CONFLICT(agentKey) DO UPDATE SET
+  state=CASE WHEN catalog_agent_admission.state = 'admitted'
+    AND catalog_agent_admission.endpointKey = excluded.endpointKey THEN 'admitted' ELSE 'candidate' END,
+  commerceTransport=excluded.commerceTransport, endpointKey=excluded.endpointKey,
+  chainId=excluded.chainId,
+  provider=CASE WHEN catalog_agent_admission.state = 'admitted'
+    AND catalog_agent_admission.endpointKey = excluded.endpointKey
+    THEN catalog_agent_admission.provider ELSE NULL END,
+  validatedAt=CASE WHEN catalog_agent_admission.state = 'admitted'
+    AND catalog_agent_admission.endpointKey = excluded.endpointKey
+    THEN catalog_agent_admission.validatedAt ELSE NULL END,
+  configurationVersion=excluded.configurationVersion,
+  reasonCode=CASE WHEN catalog_agent_admission.state = 'admitted'
+    AND catalog_agent_admission.endpointKey = excluded.endpointKey
+    THEN NULL ELSE 'QUOTE_VERIFICATION_REQUIRED' END;`);
+  }
+
+  // Reconciliation must suspend old admission rows as well as marking the
+  // normalized catalog resources removed. Admissions are mutable projections;
+  // observations remain append-only and are deliberately untouched here.
+  const registeredAgentKeys = [...new Set(snapshot.registeredAgentIds.map((agentId) => `eip155:56:${agentId}`))];
+  const commerceAgentKeys = [...new Set(admissions.map((admission) => admission.agentKey))];
+  const seedConfiguration = quote(`seed:${snapshot.sourceSha256}`);
+  const suspensionFields = `state = 'suspended', commerceTransport = NULL, endpointKey = NULL,
+  provider = NULL, validatedAt = NULL, configurationVersion = ${seedConfiguration}`;
+  if (registeredAgentKeys.length === 0) {
+    statements.push(`UPDATE catalog_agent_admission SET
+  ${suspensionFields}, reasonCode = 'AGENT_REMOVED_FROM_SNAPSHOT'
+WHERE 1 = 1;`);
+  } else {
+    const registeredList = registeredAgentKeys.map(quote).join(",");
+    statements.push(`UPDATE catalog_agent_admission SET
+  ${suspensionFields}, reasonCode = 'AGENT_REMOVED_FROM_SNAPSHOT'
+WHERE agentKey NOT IN (${registeredList});`);
+    const commerceCondition = commerceAgentKeys.length === 0
+      ? "1 = 1"
+      : `agentKey NOT IN (${commerceAgentKeys.map(quote).join(",")})`;
+    statements.push(`UPDATE catalog_agent_admission SET
+  ${suspensionFields}, reasonCode = 'NO_COMMERCE_ENDPOINT'
+WHERE agentKey IN (${registeredList}) AND ${commerceCondition};`);
   }
 
   return {

@@ -17,9 +17,10 @@ describe("loadConfig", () => {
       catalogProbeBatchSize: 1,
       catalogProbeConcurrency: 2,
       catalogValidationRequestsPerDay: 100,
-      catalogDiscoveryPageSize: 12,
-      catalogIngestTasksPerRun: 2,
-      catalogDeclarationsPerTask: 4,
+      catalogValidationRequestsPerCallerDay: 10,
+      catalogDiscoveryPageSize: 2,
+      catalogIngestTasksPerRun: 1,
+      catalogDeclarationsPerTask: 1,
       catalogA2aTimeoutMs: 5_000,
       catalogMcpTimeoutMs: 5_000,
       catalogErc8183TimeoutMs: 5_000,
@@ -73,6 +74,7 @@ describe("loadConfig", () => {
       probeBatchSize: 10,
       catalogProbeBatchSize: 10,
       catalogProbeConcurrency: 4,
+      catalogValidationRequestsPerCallerDay: 100,
       catalogDiscoveryPageSize: 200,
       catalogIngestTasksPerRun: 10,
       catalogDeclarationsPerTask: 20,
@@ -91,6 +93,7 @@ describe("loadConfig", () => {
     [{ PROBE_BATCH_SIZE: "0" }, "PROBE_BATCH_SIZE"],
     [{ PROBE_TIMEOUT_MS: "0" }, "PROBE_TIMEOUT_MS"],
     [{ CATALOG_DISCOVERY_PAGE_SIZE: "0" }, "CATALOG_DISCOVERY_PAGE_SIZE"],
+    [{ CATALOG_VALIDATION_REQUESTS_PER_CALLER_DAY: "0" }, "CATALOG_VALIDATION_REQUESTS_PER_CALLER_DAY"],
     [{ CATALOG_INGEST_TASKS_PER_RUN: "0" }, "CATALOG_INGEST_TASKS_PER_RUN"],
     [{ CATALOG_DECLARATIONS_PER_TASK: "0" }, "CATALOG_DECLARATIONS_PER_TASK"],
     [{ CATALOG_A2A_TIMEOUT_MS: "0" }, "CATALOG_A2A_TIMEOUT_MS"],
@@ -170,8 +173,16 @@ describe("loadConfig", () => {
       .toThrow(/^CATALOG_VALIDATION_REQUESTS_PER_DAY:/);
   });
 
+  it("keeps the per-caller validation budget below the global budget", () => {
+    expect(loadConfig({ CATALOG_VALIDATION_REQUESTS_PER_CALLER_DAY: "7" }))
+      .toMatchObject({ catalogValidationRequestsPerCallerDay: 7 });
+    expect(() => loadConfig({ CATALOG_VALIDATION_REQUESTS_PER_DAY: "5", CATALOG_VALIDATION_REQUESTS_PER_CALLER_DAY: "6" }))
+      .toThrow(/^CATALOG_VALIDATION_REQUESTS_PER_CALLER_DAY:/);
+  });
+
   it("keeps ingest, protocol deadlines, freshness and backoff configurable", () => {
     expect(loadConfig({
+      CLOUDFLARE_WORKERS_PLAN: "paid",
       CATALOG_DISCOVERY_PAGE_SIZE: "10",
       CATALOG_INGEST_TASKS_PER_RUN: "1",
       CATALOG_DECLARATIONS_PER_TASK: "3",
@@ -218,9 +229,26 @@ describe("loadConfig", () => {
   });
 
   it("requires an all-new two-page discovery sweep to fit the D1 query budget", () => {
-    expect(loadConfig({ CATALOG_DISCOVERY_PAGE_SIZE: "15" }).catalogDiscoveryPageSize).toBe(15);
-    expect(() => loadConfig({ CATALOG_DISCOVERY_PAGE_SIZE: "16" }))
+    expect(loadConfig({
+      CLOUDFLARE_WORKERS_PLAN: "paid",
+      CATALOG_DISCOVERY_PAGE_SIZE: "15",
+    }).catalogDiscoveryPageSize).toBe(15);
+    expect(() => loadConfig({
+      CLOUDFLARE_WORKERS_PLAN: "paid",
+      CATALOG_DISCOVERY_PAGE_SIZE: "2000",
+    }))
       .toThrow(/^CATALOG_DISCOVERY_PAGE_SIZE:/);
+  });
+
+  it("keeps the Free catalog page and declaration chunk within the measured row envelope", () => {
+    expect(() => loadConfig({ CATALOG_DISCOVERY_PAGE_SIZE: "3" }))
+      .toThrow(/^CATALOG_DISCOVERY_PAGE_SIZE:/);
+    expect(() => loadConfig({ CATALOG_INGEST_TASKS_PER_RUN: "2" }))
+      .toThrow(/^CATALOG_INGEST_TASKS_PER_RUN:/);
+    expect(() => loadConfig({ CATALOG_DECLARATIONS_PER_TASK: "2" }))
+      .toThrow(/^CATALOG_DECLARATIONS_PER_TASK:/);
+    expect(loadConfig({ CLOUDFLARE_WORKERS_PLAN: "paid", CATALOG_DISCOVERY_PAGE_SIZE: "3" }))
+      .toMatchObject({ catalogDiscoveryPageSize: 3 });
   });
 
   it("keeps v2 writes behind an explicit rollout switch", () => {

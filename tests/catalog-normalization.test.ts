@@ -62,6 +62,16 @@ describe("catalog normalization", () => {
     expect(normalized.imageUrl).toBeNull();
   });
 
+  it.each([
+    "https://127.0.0.1/avatar.png",
+    "https://user:pass@cdn.example.com/avatar.png",
+    "https://cdn.example.com/avatar.png?token=secret",
+  ])("drops image URL that is not safe to render: %s", (imageUrl) => {
+    const normalized = normalizeCatalogAgent(agent({ imageUrl }));
+
+    expect(normalized.imageUrl).toBeNull();
+  });
+
   it("deduplicates equivalent declarations without collapsing different protocols", () => {
     const normalized = normalizeCatalogAgent(agent({
       a2aEndpoint: "https://seller.example/a2a",
@@ -129,5 +139,45 @@ describe("catalog normalization", () => {
 
     expect(normalized.transportProtocols).toEqual(["web"]);
     expect(normalized.declarations[0]).toMatchObject({ protocol: "web", safety: "safe" });
+  });
+
+  it("retains x402 and unknown declarations without treating them as probe transports", () => {
+    const normalized = normalizeCatalogAgent(agent({
+      services: [
+        { name: "x402", endpoint: "https://seller.example/pay" },
+        { name: "Custom settlement", endpoint: "https://seller.example/settle" },
+        { endpoint: "https://seller.example/unknown" },
+      ],
+    }));
+
+    expect(normalized.transportProtocols).toEqual([]);
+    expect(normalized.declarations.map(({ protocol, url }) => ({ protocol, url }))).toEqual([
+      { protocol: "unknown", url: "https://seller.example/settle" },
+      { protocol: "unknown", url: "https://seller.example/unknown" },
+      { protocol: "x402", url: "https://seller.example/pay" },
+    ]);
+    expect(normalized.candidate).toBe(true);
+  });
+
+  it("keeps declaration provenance for snapshot-to-D1 backfills", () => {
+    const normalized = normalizeCatalogAgent(agent({
+      a2aEndpoint: "https://seller.example/a2a",
+      services: [{ name: "MCP", endpoint: "https://seller.example/mcp" }],
+    }));
+
+    expect(normalized.declarations).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        protocol: "a2a",
+        rawProtocol: "a2a",
+        rawSource: "shortcut",
+        rawSourceIndex: 0,
+      }),
+      expect.objectContaining({
+        protocol: "mcp",
+        rawProtocol: "MCP",
+        rawSource: "services",
+        rawSourceIndex: 0,
+      }),
+    ]));
   });
 });

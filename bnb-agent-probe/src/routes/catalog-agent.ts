@@ -1,7 +1,7 @@
 import type { D1DatabaseLike } from "../db/client";
 import { createDatabase, readCatalogAgentEvidence } from "../db/orm";
 import { deriveCatalogEvidenceState } from "../catalog/evidence-policy";
-import { CATALOG_API_VERSION, publicCatalogObservation } from "../catalog/api-contract";
+import { CATALOG_API_VERSION, publicCatalogDetails, publicCatalogObservation } from "../catalog/api-contract";
 import type { D1Database } from "../types";
 
 const AGENT_ID = /^[1-9]\d*$/;
@@ -50,16 +50,33 @@ export async function catalogAgentResponse(
   const resources = evidence.declarations.flatMap((declaration) => {
     const endpoint = evidence.endpoints.find((candidate) => candidate.endpointKey === declaration.endpointKey);
     if (!endpoint) return [];
-    const endpointObservations = evidence.observations.filter((observation) => observation.endpointKey === endpoint.endpointKey);
+    const operational = endpoint.role === "operational" && endpoint.eligibility === "eligible";
+    const endpointObservations = operational
+      ? evidence.observations.filter((observation) => observation.endpointKey === endpoint.endpointKey)
+      : [];
     const platformEvidence = endpointObservations.filter((observation) => PLATFORM_SOURCES.has(observation.source)
       && (observation.validationKind === "protocol" || observation.validationKind === "reachability")
       && observation.verificationLevel === "platform_observed");
     const latestEvidence = platformEvidence[0] ?? null;
     const latestSuccess = platformEvidence.find((observation) => observation.outcome === "protocol_valid") ?? null;
     const latestBrowserEvidence = endpointObservations.find((observation) => observation.source === "browser_reported") ?? null;
+    // Endpoint projections are shared by declarations of the same exact URI.
+    // Only expose their schedule counters when the scoped ledger evidence
+    // belongs to this agent and still matches the shared projection.
+    const projectionMatches = latestEvidence !== null
+      && endpoint.representativeAgentKey === evidence.agent?.agentKey
+      && endpoint.lastAttemptAt === latestEvidence.observedAt
+      && endpoint.lastAttemptOutcome === latestEvidence.outcome;
+    const nextProbeAt = projectionMatches && endpoint.role === "operational" && endpoint.eligibility === "eligible"
+      ? endpoint.nextProbeAt : null;
     return [{
       ...endpoint,
-      nextProbeAt: endpoint.role === "external" || endpoint.eligibility !== "eligible" ? null : endpoint.nextProbeAt,
+      nextProbeAt,
+      lastProbedAt: latestEvidence?.observedAt ?? null,
+      lastAttemptAt: latestEvidence?.observedAt ?? null,
+      lastAttemptOutcome: latestEvidence?.outcome ?? null,
+      lastSuccessfulAt: latestSuccess?.observedAt ?? null,
+      consecutiveFailures: projectionMatches ? endpoint.consecutiveFailures : 0,
       declaration: {
         state: declaration.declarationState,
         priority: declaration.priority,
@@ -70,7 +87,7 @@ export async function catalogAgentResponse(
         firstSeenAt: declaration.firstSeenAt,
         lastSeenAt: declaration.lastSeenAt,
       },
-      attemptCount: evidence.platformAttemptCountByEndpoint.get(endpoint.endpointKey) ?? 0,
+      attemptCount: operational ? evidence.platformAttemptCountByEndpoint.get(endpoint.endpointKey) ?? 0 : 0,
       latestEvidence: latestEvidence ? serializeObservation(latestEvidence) : null,
       latestSuccess: latestSuccess ? serializeObservation(latestSuccess) : null,
       latestBrowserEvidence: latestBrowserEvidence ? serializeObservation(latestBrowserEvidence) : null,
@@ -128,7 +145,7 @@ export async function catalogAgentResponse(
       observationId: observation.id,
       observedAt: observation.observedAt,
       artifactHash: observation.artifactHash,
-      details: JSON.parse(observation.detailsJson) as unknown,
+      details: publicCatalogDetails(observation.detailsJson),
     })),
     declarations: evidence.declarations.map((declaration) => ({
       ...evidence.endpoints.find((endpoint) => endpoint.endpointKey === declaration.endpointKey),

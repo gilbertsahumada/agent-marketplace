@@ -17,15 +17,24 @@ function privateUrl(observationsUrl: string): string {
   return url.toString();
 }
 
-function allowedPrivateUrl(observationsUrl: string, allowedOrigin: string): string | null {
+function allowedPrivateUrl(
+  observationsUrl: string,
+  allowedOrigin: string,
+  allowLoopbackHttp: boolean,
+): string | null {
   try {
     const url = new URL(observationsUrl);
     const allowed = new URL(allowedOrigin);
+    const loopbackDevelopment = allowLoopbackHttp
+      && url.protocol === "http:"
+      && allowed.protocol === "http:"
+      && (url.hostname === "localhost" || url.hostname === "127.0.0.1")
+      && (allowed.hostname === "localhost" || allowed.hostname === "127.0.0.1");
     if (
-      url.protocol !== "https:"
+      (!loopbackDevelopment && url.protocol !== "https:")
       || url.username !== ""
       || url.password !== ""
-      || allowed.protocol !== "https:"
+      || (!loopbackDevelopment && allowed.protocol !== "https:")
       || allowed.username !== ""
       || allowed.password !== ""
       || allowed.pathname !== "/"
@@ -62,7 +71,11 @@ export async function syncBuyerQuoteObservation(
   const allowedOrigin = env.BUYER_OBSERVATION_ALLOWED_ORIGIN?.trim();
   const secret = env.BUYER_OBSERVATION_SECRET?.trim();
   if (!observationsUrl || !allowedOrigin || !secret) return { status: "not_configured" };
-  const destination = allowedPrivateUrl(observationsUrl, allowedOrigin);
+  const destination = allowedPrivateUrl(
+    observationsUrl,
+    allowedOrigin,
+    env.NODE_ENV === "development",
+  );
   if (destination === null) return { status: "failed" };
   if (quote.chainId !== 56) return { status: "failed" };
   let endpointKey: string;

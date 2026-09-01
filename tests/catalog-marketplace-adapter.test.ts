@@ -101,6 +101,70 @@ describe("public catalog application adapter", () => {
     });
   });
 
+  it("uses metadata observation time for freshness provenance", () => {
+    const normalized = candidate("42");
+    normalized.metadataVersion = "sha256:catalog-metadata-42";
+    normalized.metadataObservedAt = GENERATED_AT - 60_000;
+
+    expect(catalogCandidateToMarketplaceAgentData(normalized).freshness).toMatchObject({
+      metadataUpdatedAt: new Date(GENERATED_AT - 60_000).toISOString(),
+    });
+  });
+
+  it("does not expose external declarations as machine services", () => {
+    const normalized = candidate("42");
+    normalized.declarations.push({
+      ...normalized.declarations[0]!,
+      endpointKey: "c".repeat(64),
+      endpoint: "https://social.example/profile",
+      protocol: "web",
+      declaredProtocol: "mcp",
+      role: "external",
+      validationProtocol: null,
+      externalKind: "social",
+      eligibility: "unsupported",
+      representativeAgentKey: null,
+    });
+    normalized.declarations.push({
+      ...normalized.declarations[0]!,
+      endpointKey: "d".repeat(64),
+      endpoint: "https://social.example/profile",
+      role: "operational",
+      protocol: "mcp",
+      declaredProtocol: "mcp",
+      validationProtocol: "mcp",
+      externalKind: "social",
+      eligibility: "invalid_declaration",
+      representativeAgentKey: null,
+    });
+    normalized.declarations.push({
+      ...normalized.declarations[0]!,
+      endpointKey: "e".repeat(64),
+      endpoint: "https://unsafe.example/a2a",
+      safety: "unsafe",
+      role: "operational",
+      validationProtocol: "a2a",
+      eligibility: "eligible",
+      representativeAgentKey: null,
+    });
+    normalized.observations.push({
+      ...normalized.observations[0]!,
+      id: 100,
+      endpointKey: "c".repeat(64),
+      protocol: "web",
+      observedAt: GENERATED_AT + 20_000,
+    });
+
+    const result = catalogCandidateToMarketplaceAgentData(normalized);
+
+    expect(result.services).toHaveLength(1);
+    expect(result.services[0]).toMatchObject({ name: "A2A", endpoint: "https://normalized.invalid/a2a" });
+    expect(result.endpointObservation).toMatchObject({
+      protocol: "a2a", endpoint: "https://normalized.invalid/a2a",
+      lastTestedAt: new Date(GENERATED_AT).toISOString(),
+    });
+  });
+
   it("maps Worker v2 candidates into the public marketplace response", async () => {
     const pageReader: CatalogCandidatePageReader = {
       execute: vi.fn(async () => ({
@@ -138,7 +202,7 @@ describe("public catalog application adapter", () => {
     const pageReader: CatalogCandidatePageReader = {
       execute: vi.fn(async () => ({
         schemaVersion: 2, status: "declared" as const, statuses: ["declared" as const], query: "",
-        category: null, categories: [], generatedAt: GENERATED_AT, page: 1, limit: 24, total: 1,
+        category: null, categories: [], generatedAt: GENERATED_AT, page: 1, limit: 24, total: 3,
         items: [normalized],
       })),
     };
@@ -148,8 +212,40 @@ describe("public catalog application adapter", () => {
     });
 
     expect(result.items).toMatchObject([{ agentId: "42", hireability: { status: "mcp_only", canHire: false } }]);
+    expect(result.pagination).toMatchObject({ total: 3, totalPages: 1 });
     expect(pageReader.execute).toHaveBeenCalledWith({
       page: 1, limit: 24, statuses: ["mcp_only"], inventory: "operational",
+    });
+  });
+
+  it("propagates combined catalog filters without collapsing dimensions", async () => {
+    const pageReader: CatalogCandidatePageReader = {
+      execute: vi.fn(async () => ({
+        schemaVersion: 2, status: "declared" as const, statuses: ["declared" as const], query: "",
+        category: null, categories: [], generatedAt: GENERATED_AT, page: 1, limit: 24, total: 0,
+        items: [],
+      })),
+    };
+    await new ListMarketplaceAgents(repository([]), pageReader).execute({
+      view: "marketplace", page: 1, limit: 24,
+      statuses: ["declared", "hireable"],
+      categories: ["grid_trading", "yield_optimisation"],
+      protocols: ["a2a", "mcp"],
+      reachability: ["live"],
+      commerce: ["admitted"],
+      quote: ["verified"],
+      latestFailure: false,
+    });
+    expect(pageReader.execute).toHaveBeenCalledWith({
+      page: 1, limit: 24,
+      statuses: ["declared", "hireable"],
+      categories: ["grid_trading", "yield_optimisation"],
+      protocols: ["a2a", "mcp"],
+      reachability: ["live"],
+      commerce: ["admitted"],
+      quote: ["verified"],
+      latestFailure: false,
+      inventory: "operational",
     });
   });
 

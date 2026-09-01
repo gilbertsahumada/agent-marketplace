@@ -122,12 +122,6 @@ export async function catalogAgentsResponse(
   if (!(["operational", "registry"] as const).includes(inventory as "operational" | "registry")) return invalid();
 
   const db = createDatabase(d1 as unknown as D1DatabaseLike);
-  const declarationExists = exists(db.select({ value: sql`1` })
-    .from(catalogAgentEndpoints)
-    .where(and(
-      eq(catalogAgentEndpoints.agentKey, catalogAgents.agentKey),
-      eq(catalogAgentEndpoints.declarationState, "current"),
-    )));
   const operationalDeclarationExists = exists(db.select({ value: sql`1` })
     .from(catalogAgentEndpoints)
     .innerJoin(catalogEndpoints, eq(catalogEndpoints.endpointKey, catalogAgentEndpoints.endpointKey))
@@ -211,6 +205,9 @@ export async function catalogAgentsResponse(
       eq(catalogAgentEndpoints.agentKey, catalogAgents.agentKey),
       eq(catalogAgentEndpoints.declarationState, "current"),
       eq(catalogEndpoints.declaredProtocol, "erc8183_http"),
+      eq(catalogEndpoints.role, "operational"),
+      eq(catalogEndpoints.eligibility, "eligible"),
+      eq(catalogEndpoints.validationProtocol, "erc8183_http"),
     )));
   const admittedCommerce = exists(db.select({ value: sql`1` })
     .from(catalogAgentAdmission)
@@ -370,7 +367,10 @@ export async function catalogAgentsResponse(
     .where(and(eq(catalogAgentAdmission.agentKey, catalogAgents.agentKey), eq(catalogAgentAdmission.state, state))));
   const anyAdmission = exists(db.select({ value: sql`1` }).from(catalogAgentAdmission)
     .where(eq(catalogAgentAdmission.agentKey, catalogAgents.agentKey)));
-  const statusCondition = (status: string) => status === "declared" ? declarationExists
+  // Every current catalog row is an ERC-8004 identity declaration. Endpoint
+  // declarations are optional, so registry inventory must retain identities
+  // whose metadata has not yielded an operational resource yet.
+  const statusCondition = (status: string) => status === "declared" ? sql`1 = 1`
     : status === "pending" ? not(platformObservationExists)
       : status === "a2a" ? freshProtocol("a2a")
         : status === "mcp" ? freshProtocol("mcp")
@@ -441,7 +441,7 @@ export async function catalogAgentsResponse(
       eq(catalogAgentEndpoints.declarationState, "current"),
     ));
   const endpointKeys = declarations.map((entry) => entry.endpoint.endpointKey);
-  const [recentObservations, effectiveEndpointObservations, effectiveAgentObservations, admissions] = await Promise.all([
+  const [recentObservations, effectiveEndpointObservations, effectiveAgentObservations, admissions, platformAttemptCounts] = await Promise.all([
     agentKeys.length === 0 ? Promise.resolve([]) : db.select().from(catalogObservations)
       .where(inArray(catalogObservations.agentKey, agentKeys))
       .orderBy(desc(catalogObservations.observedAt), desc(catalogObservations.id))
@@ -450,7 +450,26 @@ export async function catalogAgentsResponse(
     readEffectiveAgentObservations(db, agentKeys),
     agentKeys.length === 0 ? Promise.resolve([]) : db.select().from(catalogAgentAdmission)
       .where(inArray(catalogAgentAdmission.agentKey, agentKeys)),
+    agentKeys.length === 0 ? Promise.resolve([]) : db.select({
+      agentKey: catalogObservations.agentKey,
+      total: count(),
+    }).from(catalogObservations)
+      .innerJoin(catalogAgentEndpoints, and(
+        eq(catalogAgentEndpoints.agentKey, catalogObservations.agentKey),
+        eq(catalogAgentEndpoints.endpointKey, catalogObservations.endpointKey),
+        eq(catalogAgentEndpoints.declarationState, "current"),
+      ))
+      .innerJoin(catalogEndpoints, eq(catalogEndpoints.endpointKey, catalogObservations.endpointKey))
+      .where(and(
+      inArray(catalogObservations.agentKey, agentKeys),
+      inArray(catalogObservations.source, [...PLATFORM_SOURCES]),
+      inArray(catalogObservations.validationKind, [...PLATFORM_VALIDATION_KINDS]),
+      eq(catalogObservations.verificationLevel, "platform_observed"),
+      eq(catalogEndpoints.role, "operational"),
+      eq(catalogEndpoints.eligibility, "eligible"),
+    )).groupBy(catalogObservations.agentKey),
   ]);
+  const platformAttemptCountByAgent = new Map(platformAttemptCounts.map((row) => [row.agentKey, row.total]));
   const observations = [...new Map([
     ...recentObservations,
     ...effectiveEndpointObservations,
@@ -465,6 +484,7 @@ export async function catalogAgentsResponse(
     return {
       ...agent,
       admission,
+      platformAttemptCount: platformAttemptCountByAgent.get(agent.agentKey) ?? 0,
       state: deriveCatalogEvidenceState({
         endpoints: agentDeclarations.map(({ endpoint }) => endpoint),
         observations: agentObservations,

@@ -1,10 +1,37 @@
-import type { CatalogCandidate } from "@/src/business/entities/catalog-candidate";
+import {
+  isCatalogOperationalObservation,
+  type CatalogCandidate,
+} from "@/src/business/entities/catalog-candidate";
 import type { AgentCardViewModel, EvidenceStepViewModel } from "./presentation-types";
 
 const PLATFORM_SOURCES = new Set(["marketplace_probe", "worker_probe", "buyer_refresh", "migration"]);
 const FAILURE_OUTCOMES = new Set([
   "http_error", "timeout", "network_error", "invalid_response", "unsafe_url", "quote_rejected", "unreachable", "error",
 ]);
+
+function isPlatformReachabilityObservation(
+  candidate: CatalogCandidate,
+  observation: CatalogCandidate["observations"][number],
+): boolean {
+  if (!PLATFORM_SOURCES.has(observation.source)
+    || !isCatalogOperationalObservation(candidate, observation)) return false;
+  if (observation.validationKind === "reachability" || observation.validationKind === "protocol") {
+    return observation.verificationLevel === "platform_observed";
+  }
+  // v1 compatibility rows predate the normalized validation fields. Keep the
+  // known platform sources readable, but never treat chain/quote rows as a
+  // reachability observation merely because their outcome is protocol_valid.
+  if (observation.validationKind !== undefined || observation.verificationLevel !== undefined) return false;
+  if (observation.source === "marketplace_probe") {
+    return observation.outcome === "protocol_valid"
+      || observation.outcome === "quote_verified"
+      || observation.outcome === "quote_rejected";
+  }
+  return (observation.source === "worker_probe"
+    || observation.source === "buyer_refresh"
+    || observation.source === "migration")
+    && (observation.outcome === "protocol_valid" || FAILURE_OUTCOMES.has(observation.outcome));
+}
 
 function time(value: number): string { return new Date(value).toISOString(); }
 
@@ -13,16 +40,21 @@ export function catalogCandidateCard(
   now = Date.now(),
 ): AgentCardViewModel {
   const platform = candidate.observations
-    .filter((observation) => PLATFORM_SOURCES.has(observation.source))
+    .filter((observation) => isPlatformReachabilityObservation(candidate, observation))
     .sort((left, right) => right.observedAt - left.observedAt || right.id - left.id);
   const browser = candidate.observations
     .filter((observation) => observation.source === "browser_reported")
     .sort((left, right) => right.observedAt - left.observedAt || right.id - left.id);
   const quote = candidate.observations
     .filter((observation) => (observation.validationKind === "quote"
-      && observation.verificationLevel === "cryptographic")
+      && observation.verificationLevel === "cryptographic"
+      && isCatalogOperationalObservation(candidate, observation)
+      && (candidate.admission?.endpointKey === null
+        || candidate.admission?.endpointKey === undefined
+        || observation.endpointKey === candidate.admission.endpointKey))
       || (observation.validationKind === undefined
         && PLATFORM_SOURCES.has(observation.source)
+        && isCatalogOperationalObservation(candidate, observation)
         && (observation.outcome === "quote_verified"
           || observation.outcome === "quote_rejected"
           || observation.protocol === "erc8183")))
@@ -33,6 +65,8 @@ export function catalogCandidateCard(
     ?? (quote?.validationKind === "quote" && quote.verificationLevel === "cryptographic" ? quote : undefined);
   const freshTransport = (transport?.outcome === "protocol_valid" || transport?.outcome === "quote_verified")
     && transport.expiresAt !== null && transport.expiresAt > now;
+  const staleTransport = (transport?.outcome === "protocol_valid" || transport?.outcome === "quote_verified")
+    && !freshTransport;
   const freshQuote = quote?.outcome === "quote_verified"
     && quote.expiresAt !== null && quote.expiresAt > now;
   // v2 state is the only commerce authority.  `marketplaceConfigured` is a
@@ -55,8 +89,12 @@ export function catalogCandidateCard(
       provenance: transport ? "observed" : browser.length > 0 ? "unavailable" : "not_probed",
       detail: freshTransport
         ? transport.outcome === "quote_verified"
-          ? `A platform quote request returned a verified response over ${transport.protocol.toUpperCase()}.`
+          ? transport.source === "browser_reported"
+            ? `A browser-submitted signed quote was verified over ${transport.protocol.toUpperCase()}.`
+            : `A platform quote request returned a verified response over ${transport.protocol.toUpperCase()}.`
           : `A platform probe returned a protocol-valid ${transport.protocol.toUpperCase()} response.`
+        : staleTransport
+          ? `The last platform probe returned a protocol-valid ${transport.protocol.toUpperCase()} response, but it is stale. Last checked ${time(transport.observedAt)}.`
         : transport && FAILURE_OUTCOMES.has(transport.outcome)
           ? `The latest platform attempt failed (${transport.errorCode ?? transport.outcome}).`
           : browser.length > 0

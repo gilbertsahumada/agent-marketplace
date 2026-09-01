@@ -8,6 +8,7 @@ import {
   type CatalogStatus,
 } from "../../business/entities/catalog-candidate.ts";
 import { MARKETPLACE_CATEGORIES, type MarketplaceCategory } from "../../business/entities/marketplace-agent.ts";
+import { isSafeImageUrl } from "../../trust8004/safe-url.ts";
 
 const cache = new AsyncTtlCache();
 const CACHE_TTL_MS = 30_000;
@@ -46,7 +47,23 @@ function declaration(value: unknown): CatalogCandidateDeclaration {
   if (!/^[a-f0-9]{64}$/.test(String(item.endpointKey))
     || !["a2a", "mcp", "web", "erc8183_http"].includes(String(item.protocol))
     || !["safe", "unsafe"].includes(String(item.safety))) throw new Error("CATALOG_FEED_INVALID");
-  return {
+  const declaredProtocol = item.declaredProtocol;
+  const role = item.role;
+  const validationProtocol = item.validationProtocol;
+  const externalKind = item.externalKind;
+  const eligibility = item.eligibility;
+  if ((declaredProtocol !== undefined
+      && !["a2a", "mcp", "web", "erc8183_http", "x402", "unknown"].includes(String(declaredProtocol)))
+    || (role !== undefined && !["operational", "external"].includes(String(role)))
+    || (validationProtocol !== undefined && validationProtocol !== null
+      && !["a2a", "mcp", "erc8183_http"].includes(String(validationProtocol)))
+    || (externalKind !== undefined && externalKind !== null
+      && !["website", "social", "repository", "documentation", "other"].includes(String(externalKind)))
+    || (eligibility !== undefined
+      && !["eligible", "unsafe", "invalid_declaration", "unsupported"].includes(String(eligibility)))) {
+    throw new Error("CATALOG_FEED_INVALID");
+  }
+  const result: CatalogCandidateDeclaration = {
     endpointKey: item.endpointKey as string,
     protocol: item.protocol as CatalogCandidateDeclaration["protocol"],
     endpoint: string(item.endpoint, true),
@@ -59,6 +76,20 @@ function declaration(value: unknown): CatalogCandidateDeclaration {
     consecutiveFailures: integer(item.consecutiveFailures)!,
     priority: integer(item.priority)!,
   };
+  if (declaredProtocol !== undefined) {
+    result.declaredProtocol = declaredProtocol as NonNullable<CatalogCandidateDeclaration["declaredProtocol"]>;
+  }
+  if (role !== undefined) result.role = role as NonNullable<CatalogCandidateDeclaration["role"]>;
+  if (validationProtocol !== undefined) {
+    result.validationProtocol = validationProtocol as Exclude<CatalogCandidateDeclaration["validationProtocol"], undefined>;
+  }
+  if (externalKind !== undefined) {
+    result.externalKind = externalKind as Exclude<CatalogCandidateDeclaration["externalKind"], undefined>;
+  }
+  if (eligibility !== undefined) {
+    result.eligibility = eligibility as NonNullable<CatalogCandidateDeclaration["eligibility"]>;
+  }
+  return result;
 }
 
 function observation(value: unknown, schemaVersion: 1 | 2): CatalogCandidateObservation {
@@ -116,6 +147,10 @@ function candidate(value: unknown, schemaVersion: 1 | 2): CatalogCandidate {
     throw new Error("CATALOG_FEED_INVALID");
   }
   if (!["ok", "http_unreachable", "other"].includes(String(item.metadataState))) throw new Error("CATALOG_FEED_INVALID");
+  const metadataVersion = item.metadataVersion === undefined
+    ? undefined : string(item.metadataVersion, true);
+  const metadataObservedAt = item.metadataObservedAt === undefined
+    ? undefined : integer(item.metadataObservedAt, true);
   const admissionValue = item.admission === undefined || item.admission === null ? null : record(item.admission);
   if (admissionValue && !["candidate", "admitted", "suspended"].includes(String(admissionValue.state))) {
     throw new Error("CATALOG_FEED_INVALID");
@@ -143,6 +178,7 @@ function candidate(value: unknown, schemaVersion: 1 | 2): CatalogCandidate {
       ? stateValue.blockingReasons.map((reason) => string(reason)!)
       : (() => { throw new Error("CATALOG_FEED_INVALID"); })(),
   };
+  const parsedImageUrl = string(item.imageUrl, true);
   return {
     agentKey: string(item.agentKey)!,
     agentId: item.agentId as string,
@@ -151,10 +187,12 @@ function candidate(value: unknown, schemaVersion: 1 | 2): CatalogCandidate {
     metadataUri: item.metadataUri === undefined ? null : string(item.metadataUri, true),
     name: string(item.name, true),
     description: string(item.description, true),
-    imageUrl: string(item.imageUrl, true),
+    imageUrl: parsedImageUrl && isSafeImageUrl(parsedImageUrl) ? parsedImageUrl : null,
     categories: categories as MarketplaceCategory[],
     marketplaceConfigured: item.marketplaceConfigured === 1,
     metadataState: item.metadataState as CatalogCandidate["metadataState"],
+    ...(metadataVersion === undefined ? {} : { metadataVersion }),
+    ...(metadataObservedAt === undefined ? {} : { metadataObservedAt }),
     registeredAt: integer(item.registeredAt, true),
     blockNumber: string(item.blockNumber, true),
     priority: integer(item.priority)!,

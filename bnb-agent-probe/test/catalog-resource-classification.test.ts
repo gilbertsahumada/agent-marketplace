@@ -36,11 +36,14 @@ describe("catalog resource classification", () => {
   });
 
   it.each([
-    ["mcp", "http://127.0.0.1/mcp", "operational", "mcp"],
-    ["web", "https://localhost/profile", "external", null],
-    ["a2a", "not-a-url", "operational", "a2a"],
-  ] satisfies ReadonlyArray<readonly [CatalogEndpointProtocol, string, string, string | null]>)
-  ("rejects unsafe %s resources before work selection", (protocol, endpoint, role, validationProtocol) => {
+    ["mcp", "http://127.0.0.1/mcp", "operational", "mcp", "https_required"],
+    ["web", "https://agent.example/profile?token=secret", "external", null, "query_not_allowed"],
+    ["a2a", "https://user:pass@agent.example/a2a", "operational", "a2a", "credentials_not_allowed"],
+    ["a2a", "https://agent.example/a2a#card", "operational", "a2a", "fragment_not_allowed"],
+    ["web", "https://localhost/profile", "external", null, "non_public_host"],
+    ["mcp", "not-a-url", "operational", "mcp", "invalid_url"],
+  ] satisfies ReadonlyArray<readonly [CatalogEndpointProtocol, string, string, string | null, string]>)
+  ("rejects unsafe %s resources before work selection", (protocol, endpoint, role, validationProtocol, safetyReason) => {
     expect(classifyCatalogResource(protocol, endpoint)).toEqual({
       declaredProtocol: protocol,
       role,
@@ -48,7 +51,7 @@ describe("catalog resource classification", () => {
       externalKind: null,
       eligibility: "unsafe",
       safety: "unsafe",
-      safetyReason: "invalid_url",
+      safetyReason,
     });
   });
 });

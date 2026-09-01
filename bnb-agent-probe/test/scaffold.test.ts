@@ -87,6 +87,8 @@ describe("WP1 Wrangler scaffold", () => {
         DEPLOYMENT_ENV: "staging",
         STAGING_MANUAL_RUN: "0",
         CLOUDFLARE_WORKERS_PLAN: "free",
+        CATALOG_V2_READS_ENABLED: "1",
+        CATALOG_V2_WRITES_ENABLED: "1",
         D1_QUERIES_PER_RUN: "40",
         D1_ROWS_READ_PER_RUN: "3000",
         D1_ROWS_WRITTEN_PER_RUN: "60",

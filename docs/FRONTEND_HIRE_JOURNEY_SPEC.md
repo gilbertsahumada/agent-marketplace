@@ -280,9 +280,13 @@ Successful unsigned browser checks do not remove scheduled backend validation. O
 When direct browser validation is impossible or inconclusive:
 
 1. User chooses `Verify with marketplace infrastructure`.
-2. Frontend requests validation for the catalog-provided endpoint key.
+2. Frontend submits the catalog-provided `agentId`, `endpointKey` and
+   `validationKind: "protocol"` to `POST /api/marketplace/validate`. It never sends
+   an arbitrary URL or calls the Worker directly.
 3. A fresh, running or queued validation is reused rather than duplicated.
-4. UI displays queued/running/completed state and polls with bounded backoff.
+4. UI displays queued/running/completed state and polls
+   `GET /api/marketplace/validate/:requestId` with bounded backoff. The returned
+   request ID is an opaque application token, not a Worker/D1 identifier.
 5. The final platform observation becomes visible to all users.
 
 ## 8. Hire-page state machine
@@ -335,7 +339,9 @@ Required public capabilities:
 - `GET /api/marketplace/agents/:agentId` and
   `GET /api/marketplace/agents/:agentId/passport` for detail, evidence and blockers.
 - `POST /api/marketplace/validate` as the bounded public request for a fresh
-  validation. Any internal validation-request ID remains an implementation detail.
+  endpoint-scoped validation, plus `GET /api/marketplace/validate/:requestId` for its
+  opaque status token. The legacy `{agentId}` compatibility body remains available
+  for the existing ad-hoc report, but it is not the infrastructure fallback.
 - The network-specific ERC-8183 quote, prepare, notify and tracking routes already
   defined in `docs/API.md` and `docs/HIRE-SPEC.md`.
 
