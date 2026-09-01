@@ -4,7 +4,7 @@ import { createElement, type AnchorHTMLAttributes } from "react";
 import { hydrateRoot } from "react-dom/client";
 import { renderToString } from "react-dom/server";
 import axe from "axe-core";
-import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AgentCard } from "../components/marketplace/agent-card.tsx";
@@ -35,12 +35,15 @@ import { ComparePage } from "../components/marketplace/compare-page.tsx";
 import ValidateAgentPage from "../app/validate/page.tsx";
 import { agentCardViewModel } from "../components/marketplace/view-models.ts";
 import { MarketplaceLanding } from "../components/marketplace/landing-page.tsx";
+import AgentsLoading from "../app/agents/loading.tsx";
 
 const walletState = vi.hoisted(() => ({
   address: null as `0x${string}` | null,
   chainId: 56,
   switchChainAsync: vi.fn(),
 }));
+const routerPush = vi.hoisted(() => vi.fn());
+const routerReplace = vi.hoisted(() => vi.fn());
 
 vi.mock("wagmi", async (importOriginal) => {
   const actual = await importOriginal<typeof import("wagmi")>();
@@ -58,7 +61,7 @@ vi.mock("wagmi", async (importOriginal) => {
 
 vi.mock("next/navigation", () => ({
   usePathname: () => "/agents",
-  useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
+  useRouter: () => ({ push: routerPush, replace: routerReplace, refresh: vi.fn() }),
 }));
 
 vi.mock("next/link", async () => {
@@ -349,6 +352,7 @@ function renderMainnetDemo() {
 }
 
 afterEach(() => {
+  vi.useRealTimers();
   cleanup();
   localStorage.clear();
   walletState.address = null;
@@ -720,7 +724,7 @@ describe("marketplace presentation rules", () => {
     expect(mobileFilterButton.querySelector(".lucide-list-filter")).not.toBeNull();
     expect(mobileFilterButton.closest("form")).toHaveClass("w-full", "lg:block");
     expect(searchInput.closest("label")).toHaveClass("w-full", "min-w-0");
-    expect(searchInput).toHaveClass("focus-visible:ring-inset");
+    expect(searchInput).toHaveClass("focus-visible:ring-0");
     expect(screen.getByRole("tablist", { name: "Catalog layout" }).parentElement).toHaveClass("min-[30rem]:grid-cols-[minmax(0,1fr)_auto]");
     await user.click(mobileFilterButton);
     expect(mobileFilterDetails).toHaveAttribute("open");
@@ -748,6 +752,112 @@ describe("marketplace presentation rules", () => {
     expect(screen.getByRole("link", { name: /View V3 Pools powered by HeyAnon on trust8004/i })).toHaveTextContent("Agent #45650");
     expect(screen.getByRole("link", { name: "View profile" })).toHaveAttribute("href", "/agents/45650");
     expect(screen.getByRole("button", { name: /Hire agent/i })).toBeDisabled();
+  });
+
+  it("renders combined filters, a clear action, and an agents-specific loading skeleton", () => {
+    const page: MarketplaceAgentPage = {
+      view: "marketplace",
+      items: [],
+      pagination: { page: 1, pageSize: 12, total: 0, totalPages: 0 },
+      categories: [],
+      catalogCoverage: "partial",
+      fetchedAt: "2026-08-17T00:00:00.000Z",
+    };
+
+    render(createElement(CatalogPage, {
+      data: page,
+      query: {
+        view: "marketplace",
+        statuses: ["declared", "a2a"],
+        categories: ["grid_trading", "rebalancing"],
+      },
+    }));
+
+    expect(screen.getAllByRole("checkbox", { name: "Declared endpoints" }).every((item) => item.getAttribute("data-state") === "checked")).toBe(true);
+    expect(screen.getAllByRole("checkbox", { name: "A2A reachable" }).every((item) => item.getAttribute("data-state") === "checked")).toBe(true);
+    expect(screen.getAllByRole("checkbox", { name: "Grid trading" }).every((item) => item.getAttribute("data-state") === "checked")).toBe(true);
+    expect(screen.getAllByRole("checkbox", { name: "Rebalancing" }).every((item) => item.getAttribute("data-state") === "checked")).toBe(true);
+    expect(screen.getAllByRole("button", { name: "Clear filters" })).toHaveLength(2);
+
+    cleanup();
+    render(createElement(AgentsLoading));
+    expect(screen.getByRole("status", { name: "Loading agents" })).toBeInTheDocument();
+    expect(screen.getByTestId("agents-loading-results")).toBeInTheDocument();
+  });
+
+  it("shows result skeletons while applying a second evidence filter", async () => {
+    const user = userEvent.setup();
+    const page: MarketplaceAgentPage = {
+      view: "marketplace",
+      items: [marketplaceAgent()],
+      pagination: { page: 1, pageSize: 12, total: 1, totalPages: 1 },
+      categories: [],
+      catalogCoverage: "partial",
+      fetchedAt: "2026-08-17T00:00:00.000Z",
+    };
+    routerPush.mockClear();
+    render(createElement(CatalogPage, { data: page, query: { view: "marketplace", statuses: ["declared"] } }));
+
+    await user.click(screen.getAllByRole("checkbox", { name: "A2A reachable" })[0]!);
+
+    expect(routerPush).toHaveBeenCalledWith("/agents?view=marketplace&status=declared&status=a2a");
+    expect(screen.getByRole("status", { name: "Loading agents" })).toBeInTheDocument();
+    expect(screen.queryByText("V3 Pools powered by HeyAnon")).not.toBeInTheDocument();
+  });
+
+  it("searches while typing with one focus border and preserves active filters", () => {
+    vi.useFakeTimers();
+    const page: MarketplaceAgentPage = {
+      view: "marketplace",
+      items: [marketplaceAgent()],
+      pagination: { page: 1, pageSize: 12, total: 1, totalPages: 1 },
+      categories: [],
+      catalogCoverage: "partial",
+      fetchedAt: "2026-08-17T00:00:00.000Z",
+    };
+    routerReplace.mockClear();
+    render(createElement(CatalogPage, {
+      data: page,
+      query: {
+        view: "marketplace",
+        statuses: ["declared", "a2a"],
+        categories: ["grid_trading"],
+      },
+    }));
+    const search = screen.getByRole("textbox", { name: "Search agents" });
+
+    expect(search).toHaveClass("catalog-search-input", "focus-visible:ring-0");
+    expect(search).not.toHaveClass("focus-visible:ring-inset");
+    fireEvent.change(search, { target: { value: "grid" } });
+    expect(routerReplace).not.toHaveBeenCalled();
+    act(() => vi.advanceTimersByTime(300));
+
+    expect(routerReplace).toHaveBeenCalledWith("/agents?view=marketplace&status=declared&status=a2a&category=grid_trading&q=grid");
+    expect(screen.getByRole("status", { name: "Loading agents" })).toBeInTheDocument();
+    vi.useRealTimers();
+  });
+
+  it("resets the reactive search when the server query is cleared", () => {
+    const page: MarketplaceAgentPage = {
+      view: "marketplace",
+      items: [],
+      pagination: { page: 1, pageSize: 12, total: 0, totalPages: 0 },
+      categories: [],
+      catalogCoverage: "partial",
+      fetchedAt: "2026-08-17T00:00:00.000Z",
+    };
+    const { rerender } = render(createElement(CatalogPage, {
+      data: page,
+      query: { view: "marketplace", statuses: ["declared"], q: "grid" },
+    }));
+    expect(screen.getByRole("textbox", { name: "Search agents" })).toHaveValue("grid");
+
+    rerender(createElement(CatalogPage, {
+      data: page,
+      query: { view: "marketplace", statuses: ["declared"] },
+    }));
+
+    expect(screen.getByRole("textbox", { name: "Search agents" })).toHaveValue("");
   });
 
   it("does not promote indexed reachability in the all-agents view when Worker observations are unavailable", () => {
