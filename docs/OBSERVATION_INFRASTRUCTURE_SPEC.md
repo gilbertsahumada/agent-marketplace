@@ -575,8 +575,8 @@ Parsed browser claims without the signed artifact are rejected.
 - does not allow arbitrary URLs;
 - returns `202` with validation ID for asynchronous work.
 
-The application derives an opaque caller fingerprint from the request's trusted
-proxy/origin context and HMACs it with `BUYER_OBSERVATION_SECRET`. The Worker
+The application derives an opaque caller fingerprint from the request's
+normalized proxy/origin context and HMACs it with `BUYER_OBSERVATION_SECRET`. The Worker
 accepts only that fixed-size fingerprint, persists it as `callerKey`, and never
 stores the source IP or origin. A global daily cap and the configurable
 `CATALOG_VALIDATION_REQUESTS_PER_CALLER_DAY` cap are both enforced before Queue
