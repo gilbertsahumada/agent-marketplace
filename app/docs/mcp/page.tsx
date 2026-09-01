@@ -204,6 +204,32 @@ export default function McpDocsPage() {
         </p>
       </DocsSection>
 
+      <DocsSection id="quickstart" title="Quickstart — a buyer agent end to end">
+        <p>
+          The repository ships the reference agent buyer. Without a key it runs the whole journey up
+          to the signature boundary — this is real output against production:
+        </p>
+        <CodeBlock title="npm run agent-buyer -- --dry-run">{`agent-buyer: DRY RUN (no signatures) as 0x5ee7…cc52
+marketplace: https://marketplace.trust8004.xyz
+discovered 1 agent(s): 303779 (marketplace-operated-grid-planner)
+passport 303779: state=evaluated (evidence, not reputation)
+quote: 1 raw U, expires 2026-09-01T12:12:06.000Z
+plan validated: 5 intents, deadline 1788268326, approval required (exact)
+guardrails: spend ceiling 1 raw, key received by server: false
+dry run complete — quote validated, plan verified against the pinned allowlist, nothing signed.`}</CodeBlock>
+        <p>
+          With <InlineCode>AGENT_BUYER_PRIVATE_KEY</InlineCode> set (a funded Testnet key that never
+          leaves the process), the same command signs and sends the five transactions. The sequence
+          is verified end to end against the deployed Testnet contracts on a fork — a real
+          production quote and prepared plan, then:
+        </p>
+        <CodeBlock title="fork-verified transaction sequence (deployed contracts, real plan)">{`1 createJob: success   → jobId 874
+2 registerJob: success
+3 setBudget: success
+4 approve: success (exact amount)
+5 fund: success        → 1 raw unit moved into escrow`}</CodeBlock>
+      </DocsSection>
+
       <DocsSection id="division-of-labor" title="What goes through MCP — and what deliberately does not">
         <div className="overflow-x-auto rounded-lg border border-white/10">
           <table className="w-full text-left text-xs">
