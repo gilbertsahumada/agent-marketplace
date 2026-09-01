@@ -27,7 +27,7 @@ Local evidence captured on 2026-09-01:
   adds an opaque caller scope and indexed target dimensions for distributed
   on-demand admission limits;
 - Worker typecheck and manifest validation pass;
-- 501 unit tests and 118 Miniflare integration tests pass in
+- 502 unit tests and 118 Miniflare integration tests pass in
   `bnb-agent-probe` (`vitest.config.ts` and `vitest.worker.config.ts`);
 - production, staging and validation dry-run bundles build successfully;
 - the Wrangler local runtime smoke test returns `200` for `/health` and
@@ -87,6 +87,9 @@ Local evidence captured on 2026-09-01:
   isolate shared-endpoint observations by declaring agent, and release Queue/D1
   leases after a failed result batch; these paths are covered by the integration
   suites above.
+- catalog protocol probes enforce the configured `MAX_SELLER_RESPONSE_BYTES`
+  limit while streaming seller responses, so Free/Paid response budgets are
+  applied consistently to scheduled and on-demand A2A/MCP/ERC-8183 checks.
 - The v2 catalog serializers tolerate malformed legacy `detailsJson` by exposing
   an explicit `null` detail while preserving the surrounding evidence envelope;
   the Worker integration suite covers the detail route regression.
