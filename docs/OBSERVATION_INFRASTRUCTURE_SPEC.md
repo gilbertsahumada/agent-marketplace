@@ -27,14 +27,14 @@ Local evidence captured on 2026-09-01:
   adds an opaque caller scope and indexed target dimensions for distributed
   on-demand admission limits;
 - Worker typecheck and manifest validation pass;
-- 498 unit tests and 118 Miniflare integration tests pass in
+- 501 unit tests and 118 Miniflare integration tests pass in
   `bnb-agent-probe` (`vitest.config.ts` and `vitest.worker.config.ts`);
 - production, staging and validation dry-run bundles build successfully;
 - application-side endpoint policy, controller and observation-sync coverage passes
   41 focused tests (`browser-endpoint-validation.test.ts`,
   `marketplace-controllers.test.ts`, `catalog-observation-sync.test.ts`,
   `catalog-validation-sync.test.ts` and `catalog-validation-route.test.ts`);
-- the complete application gate passes: typecheck, 582 tests across 64 files and
+- the complete application gate passes: typecheck, 585 tests across 64 files and
   the production CLI/Web build. The current checkout includes the concurrent
   frontend changes and the endpoint-scoped fallback tests;
   the BNB Agent SDK still emits its known dynamic dependency warning during
