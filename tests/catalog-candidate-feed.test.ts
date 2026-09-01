@@ -70,6 +70,23 @@ describe("catalog candidate feed", () => {
     });
   });
 
+  it("does not expose unsafe image targets from a catalog response", () => {
+    const fixtures = JSON.parse(readFileSync(
+      new URL("../contracts/catalog-api-v2.fixtures.json", import.meta.url), "utf8"),
+    ) as { list: Record<string, unknown> };
+    const list = structuredClone(fixtures.list) as Record<string, unknown>;
+    const item = (list.items as Array<Record<string, unknown>>)[0]!;
+
+    item.imageUrl = "https://user:secret@cdn.example.net/avatar.png";
+    expect(parseCatalogCandidatePage(list).items[0]?.imageUrl).toBeNull();
+
+    item.imageUrl = "https://cdn.example.net/avatar.png?token=secret";
+    expect(parseCatalogCandidatePage(list).items[0]?.imageUrl).toBeNull();
+
+    item.imageUrl = "https://cdn.example.net/avatar.png";
+    expect(parseCatalogCandidatePage(list).items[0]?.imageUrl).toBe("https://cdn.example.net/avatar.png");
+  });
+
   it("rejects legacy provenance in v2 while retaining schema v1 compatibility", () => {
     const fixtures = JSON.parse(readFileSync(
       new URL("../contracts/catalog-api-v2.fixtures.json", import.meta.url), "utf8",

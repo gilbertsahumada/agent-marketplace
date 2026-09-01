@@ -8,6 +8,7 @@ import {
   type CatalogStatus,
 } from "../../business/entities/catalog-candidate.ts";
 import { MARKETPLACE_CATEGORIES, type MarketplaceCategory } from "../../business/entities/marketplace-agent.ts";
+import { isSafeImageUrl } from "../../trust8004/safe-url.ts";
 
 const cache = new AsyncTtlCache();
 const CACHE_TTL_MS = 30_000;
@@ -177,6 +178,7 @@ function candidate(value: unknown, schemaVersion: 1 | 2): CatalogCandidate {
       ? stateValue.blockingReasons.map((reason) => string(reason)!)
       : (() => { throw new Error("CATALOG_FEED_INVALID"); })(),
   };
+  const parsedImageUrl = string(item.imageUrl, true);
   return {
     agentKey: string(item.agentKey)!,
     agentId: item.agentId as string,
@@ -185,7 +187,7 @@ function candidate(value: unknown, schemaVersion: 1 | 2): CatalogCandidate {
     metadataUri: item.metadataUri === undefined ? null : string(item.metadataUri, true),
     name: string(item.name, true),
     description: string(item.description, true),
-    imageUrl: string(item.imageUrl, true),
+    imageUrl: parsedImageUrl && isSafeImageUrl(parsedImageUrl) ? parsedImageUrl : null,
     categories: categories as MarketplaceCategory[],
     marketplaceConfigured: item.marketplaceConfigured === 1,
     metadataState: item.metadataState as CatalogCandidate["metadataState"],
