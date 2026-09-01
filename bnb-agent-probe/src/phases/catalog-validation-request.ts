@@ -65,7 +65,10 @@ export async function runCatalogValidationRequest(
     await db.update(catalogValidationRequests).set({
       status: "failed", completedAt: now(), errorCode: "TARGET_UNAVAILABLE",
       leaseOwner: null, leaseExpiresAt: null,
-    }).where(eq(catalogValidationRequests.id, validationId));
+    }).where(and(
+      eq(catalogValidationRequests.id, validationId),
+      eq(catalogValidationRequests.leaseOwner, requestLeaseOwner),
+    ));
     return "completed";
   }
   const endpointLeaseOwner = `validation:${validationId}:${crypto.randomUUID()}`;
@@ -125,7 +128,10 @@ export async function runCatalogValidationRequest(
         resultObservationId: sql`(SELECT ${catalogObservations.id} FROM ${catalogObservations}
           WHERE ${catalogObservations.attemptId} = ${observation.attemptId} LIMIT 1)`,
         leaseOwner: null, leaseExpiresAt: null,
-      }).where(eq(catalogValidationRequests.id, validationId)),
+      }).where(and(
+        eq(catalogValidationRequests.id, validationId),
+        eq(catalogValidationRequests.leaseOwner, requestLeaseOwner),
+      )),
     ] as unknown as Parameters<typeof db.batch>[0]);
     const inserted = results[0] as Array<{ id: number }>;
     if (!inserted[0]?.id) throw new Error("CATALOG_VALIDATION_RESULT_MISSING");

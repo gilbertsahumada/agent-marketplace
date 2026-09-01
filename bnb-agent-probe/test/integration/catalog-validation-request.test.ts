@@ -223,6 +223,62 @@ describe("catalog validation Queue work", () => {
     )).toEqual([]);
   });
 
+  it("does not overwrite a request or endpoint leased by a newer consumer", async () => {
+    const previousAttemptAt = NOW - 10_000;
+    await env.DB.prepare(`UPDATE catalog_endpoints SET
+      lastAttemptAt = ?, lastAttemptOutcome = 'protocol_valid',
+      lastSuccessfulAt = ?, nextProbeAt = ?, consecutiveFailures = 0
+      WHERE endpointKey = ?`)
+      .bind(previousAttemptAt, previousAttemptAt, NOW + 60_000, ENDPOINT_KEY).run();
+    const request = await env.DB.prepare("SELECT id FROM catalog_validation_requests").first<{ id: number }>();
+    let leaseReplaced = false;
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (!leaseReplaced) {
+        leaseReplaced = true;
+        await env.DB.prepare(`UPDATE catalog_validation_requests
+          SET status = 'running', leaseOwner = 'new-consumer', leaseExpiresAt = ?
+          WHERE id = ?`).bind(NOW + 60_000, request!.id).run();
+        await env.DB.prepare(`UPDATE catalog_endpoints
+          SET leaseOwner = 'new-endpoint-consumer', leaseExpiresAt = ?
+          WHERE endpointKey = ?`).bind(NOW + 60_000, ENDPOINT_KEY).run();
+      }
+      if (init?.method === "POST" && typeof input === "string" && input.endsWith("/mcp")) {
+        const body = typeof init.body === "string" ? JSON.parse(init.body) as { id?: number } : {};
+        if (body.id === 1) return Response.json({
+          jsonrpc: "2.0", id: 1, result: { protocolVersion: "2025-06-18" },
+        }, { headers: { "mcp-session-id": "session" } });
+        return Response.json({ jsonrpc: "2.0", id: body.id, result: { tools: [] } });
+      }
+      return new Response(null, { status: 202 });
+    });
+
+    await expect(runCatalogValidationRequest(
+      env.DB as unknown as D1DatabaseLike,
+      request!.id,
+      loadConfig({ KILL_SWITCH: "0", PROBE_GENERAL_EGRESS_APPROVED: "1" }),
+      () => NOW,
+      fetchImpl,
+    )).resolves.toBe("completed");
+
+    expect(await env.DB.prepare(`SELECT status, leaseOwner, leaseExpiresAt, resultObservationId
+      FROM catalog_validation_requests WHERE id = ?`).bind(request!.id).first()).toMatchObject({
+      status: "running", leaseOwner: "new-consumer", leaseExpiresAt: NOW + 60_000,
+      resultObservationId: null,
+    });
+    expect(await env.DB.prepare(`SELECT lastAttemptAt, lastAttemptOutcome,
+      lastSuccessfulAt, nextProbeAt, consecutiveFailures, leaseOwner
+      FROM catalog_endpoints WHERE endpointKey = ?`).bind(ENDPOINT_KEY).first()).toMatchObject({
+      lastAttemptAt: previousAttemptAt,
+      lastAttemptOutcome: "protocol_valid",
+      lastSuccessfulAt: previousAttemptAt,
+      nextProbeAt: NOW + 60_000,
+      consecutiveFailures: 0,
+      leaseOwner: "new-endpoint-consumer",
+    });
+    expect(await env.DB.prepare(`SELECT COUNT(*) AS count FROM catalog_observations
+      WHERE source = 'buyer_refresh'`).first()).toMatchObject({ count: 1 });
+  });
+
   it("releases leases and leaves the request retryable when the result batch fails", async () => {
     const request = await env.DB.prepare("SELECT id FROM catalog_validation_requests").first<{ id: number }>();
     const raw = env.DB as unknown as D1DatabaseLike;
