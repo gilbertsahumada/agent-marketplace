@@ -16,9 +16,9 @@ beforeEach(async () => {
   ) VALUES ('eip155:56:42', '42', 56, 'ok', 'current', ?, ?)`)
     .bind(NOW, NOW).run();
   await env.DB.prepare(`INSERT INTO catalog_endpoints (
-    endpointKey, protocol, endpoint, safety, nextProbeAt, declaredProtocol,
+    endpointKey, protocol, endpoint, safety, nextProbeAt, declaredProtocol, representativeAgentKey,
     role, validationProtocol, eligibility
-  ) VALUES (?, 'mcp', 'https://seller.example.com/mcp', 'safe', 0, 'mcp',
+  ) VALUES (?, 'mcp', 'https://seller.example.com/mcp', 'safe', 0, 'mcp', 'eip155:56:42',
     'operational', 'mcp', 'eligible')`).bind(ENDPOINT_KEY).run();
   await env.DB.prepare(`INSERT INTO catalog_agent_endpoints (
     agentKey, endpointKey, declarationState, firstSeenAt, lastSeenAt, priority
@@ -171,6 +171,48 @@ describe("catalog validation Queue work", () => {
     expect(await env.DB.prepare(`SELECT source, outcome, agentKey FROM catalog_observations
       WHERE attemptId = 'representative-observation'`).first()).toMatchObject({
       source: "worker_probe", outcome: "protocol_valid", agentKey: representativeKey,
+    });
+    expect(await env.DB.prepare(`SELECT source, outcome, agentKey FROM catalog_observations
+      WHERE source = 'buyer_refresh'`).first()).toMatchObject({
+      source: "buyer_refresh", outcome: "protocol_valid", agentKey: "eip155:56:42",
+    });
+    expect(await readCatalogProjectionMismatches(
+      createDatabase(env.DB as unknown as D1DatabaseLike),
+    )).toEqual([]);
+  });
+
+  it("keeps an unassigned shared endpoint projection unchanged for buyer refresh", async () => {
+    const previousAttemptAt = NOW - 10_000;
+    await env.DB.prepare(`UPDATE catalog_endpoints SET
+      originKey = 'shared-origin', representativeAgentKey = NULL,
+      lastAttemptAt = ?, lastAttemptOutcome = 'protocol_valid',
+      lastSuccessfulAt = ?, nextProbeAt = ?, consecutiveFailures = 0
+      WHERE endpointKey = ?`)
+      .bind(previousAttemptAt, previousAttemptAt, NOW + 60_000, ENDPOINT_KEY).run();
+    const fetchImpl = vi.fn()
+      .mockResolvedValueOnce(Response.json({ jsonrpc: "2.0", id: 1, result: { protocolVersion: "2025-06-18" } }, {
+        headers: { "mcp-session-id": "session" },
+      }))
+      .mockResolvedValueOnce(new Response(null, { status: 202 }))
+      .mockResolvedValueOnce(Response.json({ jsonrpc: "2.0", id: 2, result: { tools: [] } }));
+    const request = await env.DB.prepare("SELECT id FROM catalog_validation_requests").first<{ id: number }>();
+
+    await expect(runCatalogValidationRequest(
+      env.DB as unknown as D1DatabaseLike,
+      request!.id,
+      loadConfig({ KILL_SWITCH: "0", PROBE_GENERAL_EGRESS_APPROVED: "1" }),
+      () => NOW,
+      fetchImpl,
+    )).resolves.toBe("completed");
+
+    expect(await env.DB.prepare(`SELECT lastAttemptAt, lastAttemptOutcome, lastSuccessfulAt,
+      nextProbeAt, consecutiveFailures FROM catalog_endpoints WHERE endpointKey = ?`)
+      .bind(ENDPOINT_KEY).first()).toMatchObject({
+      lastAttemptAt: previousAttemptAt,
+      lastAttemptOutcome: "protocol_valid",
+      lastSuccessfulAt: previousAttemptAt,
+      nextProbeAt: NOW + 60_000,
+      consecutiveFailures: 0,
     });
     expect(await env.DB.prepare(`SELECT source, outcome, agentKey FROM catalog_observations
       WHERE source = 'buyer_refresh'`).first()).toMatchObject({

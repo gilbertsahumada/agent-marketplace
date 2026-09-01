@@ -25,7 +25,7 @@ Local evidence captured on 2026-09-01:
   `0016_scoped_quote_artifact_dedupe.sql` scopes signed-quote artifact uniqueness
   by declaring agent and exact endpoint;
 - Worker typecheck and manifest validation pass;
-- 490 unit tests and 107 Miniflare integration tests pass in
+- 490 unit tests and 108 Miniflare integration tests pass in
   `bnb-agent-probe` (`vitest.config.ts` and `vitest.worker.config.ts`);
 - production, staging and validation dry-run bundles build successfully;
 - application-side endpoint policy, controller and observation-sync coverage passes

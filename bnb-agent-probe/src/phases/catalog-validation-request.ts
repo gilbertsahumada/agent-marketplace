@@ -93,7 +93,10 @@ export async function runCatalogValidationRequest(
     endpoint: row.endpoint,
     priority: row.priority,
     consecutiveFailures: row.consecutiveFailures,
-    isRepresentative: row.representativeAgentKey === null || row.representativeAgentKey === row.agentKey,
+    // A null representative is an unassigned/non-representative path. Buyer
+    // refreshes still append agent-scoped evidence, but must not mutate the
+    // shared projection owned by the selected representative.
+    isRepresentative: row.representativeAgentKey === row.agentKey,
     leaseOwner: endpointLeaseOwner,
     queueDelayMs: Math.max(0, nowMs - request.createdAt),
     leaseWaitMs: Math.max(0, Math.round(performance.now() - leaseStarted)),

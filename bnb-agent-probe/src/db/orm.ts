@@ -317,8 +317,8 @@ export async function readCatalogProjectionMismatches(db: Database): Promise<Arr
     FROM catalog_observations observation
     INNER JOIN catalog_endpoints scope
       ON scope.endpointKey = observation.endpointKey
-      AND (scope.representativeAgentKey IS NULL
-        OR scope.representativeAgentKey = observation.agentKey)
+      AND scope.representativeAgentKey IS NOT NULL
+      AND scope.representativeAgentKey = observation.agentKey
     WHERE observation.endpointKey IS NOT NULL
       AND observation.source IN ('worker_probe', 'buyer_refresh', 'migration')
       AND observation.verificationLevel = 'platform_observed'
@@ -330,8 +330,8 @@ export async function readCatalogProjectionMismatches(db: Database): Promise<Arr
     FROM catalog_observations observation
     INNER JOIN catalog_endpoints scope
       ON scope.endpointKey = observation.endpointKey
-      AND (scope.representativeAgentKey IS NULL
-        OR scope.representativeAgentKey = observation.agentKey)
+      AND scope.representativeAgentKey IS NOT NULL
+      AND scope.representativeAgentKey = observation.agentKey
     WHERE observation.endpointKey IS NOT NULL
       AND observation.source IN ('worker_probe', 'buyer_refresh', 'migration')
       AND observation.verificationLevel = 'platform_observed'
@@ -351,6 +351,7 @@ export async function readCatalogProjectionMismatches(db: Database): Promise<Arr
   LEFT JOIN latest ON latest.endpointKey = endpoint.endpointKey
   LEFT JOIN successes ON successes.endpointKey = endpoint.endpointKey
   WHERE endpoint.role = 'operational'
+    AND endpoint.representativeAgentKey IS NOT NULL
     AND (
       endpoint.lastAttemptAt IS NOT latest.observedAt
       OR endpoint.lastAttemptOutcome IS NOT latest.outcome
