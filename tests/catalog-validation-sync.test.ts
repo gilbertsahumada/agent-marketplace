@@ -24,7 +24,10 @@ describe("catalog validation sync", () => {
   it("enqueues an endpoint-scoped request without exposing the endpoint or secret", async () => {
     const fetchImpl = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
       expect(String(url)).toBe("https://worker.example/catalog-validations");
-      expect(init?.headers).toMatchObject({ authorization: "Bearer buyer-secret" });
+      expect(init?.headers).toMatchObject({
+        authorization: "Bearer buyer-secret",
+        "x-marketplace-caller": expect.stringMatching(/^[0-9a-f]{64}$/),
+      });
       const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
       expect(body).toEqual({ schemaVersion: 2, ...input });
       expect(JSON.stringify(body)).not.toContain("buyer-secret");
@@ -36,6 +39,20 @@ describe("catalog validation sync", () => {
       reused: false,
       validationId: 17,
     });
+  });
+
+  it("uses a different opaque caller fingerprint for a different request origin", async () => {
+    const callerHeaders: string[] = [];
+    const fetchImpl = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+      const headers = init?.headers as Record<string, string>;
+      callerHeaders.push(headers["x-marketplace-caller"]!);
+      return Response.json({ status: "queued", reused: false, validationId: callerHeaders.length }, { status: 202 });
+    });
+    await requestCatalogValidation(input, { env, caller: "ip=198.51.100.10|origin=https://marketplace.example", fetchImpl });
+    await requestCatalogValidation(input, { env, caller: "ip=198.51.100.11|origin=https://marketplace.example", fetchImpl });
+    expect(callerHeaders[0]).toMatch(/^[0-9a-f]{64}$/);
+    expect(callerHeaders[1]).toMatch(/^[0-9a-f]{64}$/);
+    expect(callerHeaders[0]).not.toBe(callerHeaders[1]);
   });
 
   it("maps Worker admission errors and fails closed before network dispatch", async () => {

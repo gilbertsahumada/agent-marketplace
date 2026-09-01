@@ -483,6 +483,7 @@ export const catalogValidationRequests = sqliteTable(
     endpointKey: text().notNull(),
     validationKind: text().notNull(),
     requestedBy: text().notNull(),
+    callerKey: text().notNull().default("anonymous"),
     status: text().notNull(),
     priority: integer().notNull().default(0),
     createdAt: integer().notNull(),
@@ -504,6 +505,14 @@ export const catalogValidationRequests = sqliteTable(
       table.createdAt,
       table.id,
     ),
+    index("idx_catalog_validation_requests_caller_target").on(
+      table.callerKey,
+      table.agentKey,
+      table.endpointKey,
+      table.validationKind,
+      desc(table.createdAt),
+      desc(table.id),
+    ),
     check(
       "catalog_validation_requests_kind",
       sql`${table.validationKind} IN ('reachability', 'protocol', 'quote', 'chain')`,
@@ -511,6 +520,10 @@ export const catalogValidationRequests = sqliteTable(
     check(
       "catalog_validation_requests_requested_by",
       sql`${table.requestedBy} IN ('system', 'browser_fallback', 'admission')`,
+    ),
+    check(
+      "catalog_validation_requests_caller_key",
+      sql`length(${table.callerKey}) BETWEEN 1 AND 128`,
     ),
     check(
       "catalog_validation_requests_status",

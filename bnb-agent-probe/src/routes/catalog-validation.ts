@@ -12,9 +12,15 @@ import type { D1Database, QueueProducer } from "../types";
 const MAX_BODY_BYTES = 1_024;
 const AGENT_ID = /^[1-9]\d*$/;
 const ENDPOINT_KEY = /^[0-9a-f]{64}$/;
+const CALLER_KEY = /^[0-9a-f]{64}$/;
 const REQUEST_COOLDOWN_MS = 60_000;
 
 class InvalidValidationRequest extends Error {}
+
+function callerKey(request: Request): string {
+  const value = request.headers.get("x-marketplace-caller")?.trim().toLowerCase();
+  return value && CALLER_KEY.test(value) ? value : "anonymous";
+}
 
 async function input(request: Request): Promise<{ agentId: string; endpointKey: string; validationKind: "protocol" }> {
   if (request.headers.get("content-type")?.split(";", 1)[0]?.trim() !== "application/json") {
@@ -40,6 +46,7 @@ export async function createCatalogValidationResponse(
   queue: QueueProducer | undefined,
   nowMs: number,
   dailyLimit: number,
+  callerDailyLimit = dailyLimit,
 ): Promise<Response> {
   let parsed: Awaited<ReturnType<typeof input>>;
   try { parsed = await input(request); } catch {
@@ -118,12 +125,27 @@ export async function createCatalogValidationResponse(
       headers: { "cache-control": "no-store", "retry-after": String(Math.ceil(retryAfterMs / 1_000)) },
     });
   }
+  const caller = callerKey(request);
+  const callerRows = await db.select({ total: count() }).from(catalogValidationRequests).where(and(
+    eq(catalogValidationRequests.callerKey, caller),
+    eq(catalogValidationRequests.requestedBy, "browser_fallback"),
+    eq(catalogValidationRequests.validationKind, "protocol"),
+    gte(catalogValidationRequests.createdAt, dayStart),
+  ));
+  if ((callerRows[0]?.total ?? 0) >= callerDailyLimit) {
+    const retryAfterMs = dayStart + 86_400_000 - nowMs;
+    return Response.json({ error: "caller_daily_budget_exhausted", retryAfterMs }, {
+      status: 429,
+      headers: { "cache-control": "no-store", "retry-after": String(Math.ceil(retryAfterMs / 1_000)) },
+    });
+  }
   const inserted = await db.insert(catalogValidationRequests).values({
     dedupeKey,
     agentKey,
     endpointKey: parsed.endpointKey,
     validationKind: parsed.validationKind,
     requestedBy: "browser_fallback",
+    callerKey: caller,
     status: "queued",
     priority: 1_000,
     createdAt: nowMs,

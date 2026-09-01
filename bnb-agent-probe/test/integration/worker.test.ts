@@ -1164,6 +1164,62 @@ describe("WP1 in the Workers runtime", () => {
     expect(send).not.toHaveBeenCalled();
   });
 
+  it("enforces a distributed per-caller validation budget across distinct targets", async () => {
+    const now = 1_788_000_000_000;
+    const firstEndpointKey = "1".repeat(64);
+    const secondEndpointKey = "2".repeat(64);
+    await env.DB.prepare(`INSERT INTO catalog_agents (
+      agentKey, agentId, chainId, metadataState, indexState, firstSeenAt, lastSeenAt
+    ) VALUES ('eip155:56:90', '90', 56, 'ok', 'current', ?, ?)`)
+      .bind(now, now).run();
+    await env.DB.prepare(`INSERT INTO catalog_endpoints (
+      endpointKey, protocol, endpoint, safety, nextProbeAt, declaredProtocol,
+      role, validationProtocol, eligibility
+    ) VALUES
+      (?, 'a2a', 'https://caller-limit.example/one', 'safe', 0, 'a2a', 'operational', 'a2a', 'eligible'),
+      (?, 'a2a', 'https://caller-limit.example/two', 'safe', 0, 'a2a', 'operational', 'a2a', 'eligible')`)
+      .bind(firstEndpointKey, secondEndpointKey).run();
+    await env.DB.prepare(`INSERT INTO catalog_agent_endpoints (
+      agentKey, endpointKey, declarationState, firstSeenAt, lastSeenAt
+    ) VALUES
+      ('eip155:56:90', ?, 'current', ?, ?),
+      ('eip155:56:90', ?, 'current', ?, ?)`)
+      .bind(firstEndpointKey, now, now, secondEndpointKey, now, now).run();
+    const send = vi.fn(async () => undefined);
+    const privateEnv = {
+      ...env,
+      BUYER_OBSERVATION_SECRET: "catalog-secret",
+      CATALOG_VALIDATION_REQUESTS_PER_DAY: "10",
+      CATALOG_VALIDATION_REQUESTS_PER_CALLER_DAY: "1",
+      WP2_QUEUE: { send },
+    } as unknown as Env;
+    const app = createWorker({ now: () => now });
+    const post = (endpointKey: string, caller: string) => app.fetch(new Request(
+      "https://worker.test/catalog-validations",
+      {
+        method: "POST",
+        headers: {
+          authorization: "Bearer catalog-secret",
+          "content-type": "application/json",
+          "x-marketplace-caller": caller,
+        },
+        body: JSON.stringify({ schemaVersion: 2, agentId: "90", endpointKey, validationKind: "protocol" }),
+      },
+    ), privateEnv, createExecutionContext());
+
+    const first = await post(firstEndpointKey, "a".repeat(64));
+    expect(first.status).toBe(202);
+    const second = await post(secondEndpointKey, "a".repeat(64));
+    expect(second.status).toBe(429);
+    expect(await second.json()).toMatchObject({ error: "caller_daily_budget_exhausted" });
+    const otherCaller = await post(secondEndpointKey, "b".repeat(64));
+    expect(otherCaller.status).toBe(202);
+    expect(send).toHaveBeenCalledTimes(2);
+    expect(await env.DB.prepare(
+      "SELECT callerKey FROM catalog_validation_requests ORDER BY id",
+    ).all()).toMatchObject({ results: [{ callerKey: "a".repeat(64) }, { callerKey: "b".repeat(64) }] });
+  });
+
   it("accepts an authenticated sanitized buyer refresh and persists it idempotently", async () => {
     const now = 1_788_000_000_000;
     const privateEnv = { ...env, BUYER_OBSERVATION_SECRET: "buyer-observation-test-secret" } as unknown as Env;

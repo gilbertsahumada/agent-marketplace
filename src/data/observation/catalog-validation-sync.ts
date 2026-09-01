@@ -18,6 +18,13 @@ export interface CatalogValidationRequestInput {
   readonly validationKind: "protocol";
 }
 
+export interface CatalogValidationRequestOptions {
+  readonly env?: Environment;
+  readonly fetchImpl?: typeof fetch;
+  /** Untrusted request context; it is HMAC'd before crossing the Worker boundary. */
+  readonly caller?: string;
+}
+
 export interface CatalogValidationRequestResult {
   readonly status: "queued" | "running" | "completed";
   readonly reused: boolean;
@@ -202,7 +209,7 @@ function configuredDestination(
 
 export async function requestCatalogValidation(
   input: CatalogValidationRequestInput,
-  options: { readonly env?: Environment; readonly fetchImpl?: typeof fetch } = {},
+  options: CatalogValidationRequestOptions = {},
 ): Promise<CatalogValidationRequestResult> {
   validateInput(input);
   const env = options.env ?? process.env;
@@ -225,6 +232,7 @@ export async function requestCatalogValidation(
         accept: "application/json",
         authorization: `Bearer ${secret}`,
         "content-type": "application/json",
+        "x-marketplace-caller": callerFingerprint(options.caller, secret),
       },
       body,
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
@@ -315,6 +323,14 @@ function encoded(value: string): string {
 
 function signature(value: string, secret: string): string {
   return createHmac("sha256", secret).update(value).digest("base64url");
+}
+
+function callerFingerprint(caller: string | undefined, secret: string): string {
+  const context = caller?.trim().slice(0, 512) || "anonymous";
+  return createHmac("sha256", secret)
+    .update("catalog-validation-caller\0")
+    .update(context)
+    .digest("hex");
 }
 
 export function issueCatalogValidationRequestToken(

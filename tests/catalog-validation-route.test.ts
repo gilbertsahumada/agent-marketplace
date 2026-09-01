@@ -51,7 +51,7 @@ describe("public catalog validation controllers", () => {
       agentId: "303779",
       endpointKey: "a".repeat(64),
       validationKind: "protocol",
-    });
+    }, { caller: "anonymous" });
     expect(executeLegacy).not.toHaveBeenCalled();
   });
 

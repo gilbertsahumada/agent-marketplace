@@ -191,6 +191,7 @@ export function createWorker(dependencies: WorkerDependencies = {}): WorkerEntry
           env.WP2_QUEUE,
           now(),
           config.catalogValidationRequestsPerDay,
+          config.catalogValidationRequestsPerCallerDay,
         );
       }
       if (request.method === "POST" && url.pathname === "/catalog-quote-evidence" && url.search === "") {

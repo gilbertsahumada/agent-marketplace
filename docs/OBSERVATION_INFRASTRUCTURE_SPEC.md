@@ -18,21 +18,23 @@ This specification describes the next infrastructure migration. The measured WP2
 
 Local evidence captured on 2026-09-01:
 
-- all additive migrations `0008` through `0016` apply successfully to the Wrangler local D1;
+- all additive migrations `0008` through `0017` apply successfully to the Wrangler local D1;
   migration `0014_catalog_agent_identity.sql` preserves the declared owner,
   metadata URI and registration block alongside the normalized catalog row, and
   `0015_agent_scoped_validation_dedupe.sql` scopes legacy validation keys by agent;
   `0016_scoped_quote_artifact_dedupe.sql` scopes signed-quote artifact uniqueness
-  by declaring agent and exact endpoint;
+  by declaring agent and exact endpoint; `0017_catalog_validation_caller_rate_limit.sql`
+  adds an opaque caller scope and indexed target dimensions for distributed
+  on-demand admission limits;
 - Worker typecheck and manifest validation pass;
-- 495 unit tests and 114 Miniflare integration tests pass in
+- 498 unit tests and 115 Miniflare integration tests pass in
   `bnb-agent-probe` (`vitest.config.ts` and `vitest.worker.config.ts`);
 - production, staging and validation dry-run bundles build successfully;
 - application-side endpoint policy, controller and observation-sync coverage passes
-  37 focused tests (`browser-endpoint-validation.test.ts`,
+  38 focused tests (`browser-endpoint-validation.test.ts`,
   `marketplace-controllers.test.ts`, `catalog-observation-sync.test.ts`,
   `catalog-validation-sync.test.ts` and `catalog-validation-route.test.ts`);
-- the complete application gate passes: typecheck, 576 tests across 64 files and
+- the complete application gate passes: typecheck, 577 tests across 64 files and
   the production CLI/Web build. The current checkout includes the concurrent
   frontend changes and the endpoint-scoped fallback tests;
   the BNB Agent SDK still emits its known dynamic dependency warning during
@@ -45,7 +47,7 @@ Local evidence captured on 2026-09-01:
   validation protocol, eligibility and due-probe scheduling, creates
   quote-verification admission candidates, and accepts legacy snapshots that
   omit optional identity fields; the generated 29,801-agent snapshot seed
-  applies cleanly after migrations `0001` through `0016`.
+  applies cleanly after migrations `0001` through `0017`.
 - seed reconciliation now suspends admissions that are absent from the complete
   registry snapshot or no longer have an eligible commerce endpoint, while
   leaving the append-only observation ledger untouched; non-transport
@@ -57,6 +59,10 @@ Local evidence captured on 2026-09-01:
 - The application exposes the endpoint-scoped infrastructure fallback through
   `POST /api/marketplace/validate` and its opaque-token status route; the private
   Worker `/catalog-validations` route remains server-only.
+- The fallback derives a caller fingerprint from application request context,
+  HMACs it with `BUYER_OBSERVATION_SECRET`, and sends only the opaque key to the
+  Worker; D1 enforces both the global daily budget and the configured per-caller
+  daily budget without storing an IP or origin.
 - catalog evidence reads enforce cryptographic/on-chain verification levels,
   isolate shared-endpoint observations by declaring agent, and release Queue/D1
   leases after a failed result batch; these paths are covered by the integration
@@ -569,6 +575,13 @@ Parsed browser claims without the signed artifact are rejected.
 - does not allow arbitrary URLs;
 - returns `202` with validation ID for asynchronous work.
 
+The application derives an opaque caller fingerprint from the request's trusted
+proxy/origin context and HMACs it with `BUYER_OBSERVATION_SECRET`. The Worker
+accepts only that fixed-size fingerprint, persists it as `callerKey`, and never
+stores the source IP or origin. A global daily cap and the configurable
+`CATALOG_VALIDATION_REQUESTS_PER_CALLER_DAY` cap are both enforced before Queue
+admission; target deduplication/cooldown remains independent of caller scope.
+
 ## 13. Internal Worker catalog API v2
 
 These `/catalog-*` routes are the versioned server-to-Worker data plane. They are
@@ -823,6 +836,7 @@ All capacity controls remain configurable:
 - freshness policy;
 - query/subrequest/Queue budgets;
 - daily on-demand validation admission budget;
+- per-caller daily on-demand validation admission budget;
 - API v2 read/write feature flags.
 
 The checked-in controls are `CRON_INTERVAL_MINUTES`,
@@ -831,7 +845,9 @@ The checked-in controls are `CRON_INTERVAL_MINUTES`,
 `CATALOG_PROBE_CONCURRENCY`, the three `CATALOG_*_TIMEOUT_MS` values, the
 four `CATALOG_*_REFRESH_MINUTES` values,
 `CATALOG_FAILURE_BACKOFF_MINUTES`, the D1/subrequest/Queue budgets and the v2
-read/write switches. `loadConfig` validates each value against the selected Free or
+read/write switches and `CATALOG_VALIDATION_REQUESTS_PER_CALLER_DAY`. The
+per-caller default is 10 on Free and 100 on Paid; it is capped by the global
+`CATALOG_VALIDATION_REQUESTS_PER_DAY` value. `loadConfig` validates each value against the selected Free or
 Paid profile and rejects a discovery+ingest request projection that exceeds
 `TRUST8004_REQUESTS_PER_RUN`.
 

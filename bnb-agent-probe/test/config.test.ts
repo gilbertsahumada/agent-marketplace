@@ -17,6 +17,7 @@ describe("loadConfig", () => {
       catalogProbeBatchSize: 1,
       catalogProbeConcurrency: 2,
       catalogValidationRequestsPerDay: 100,
+      catalogValidationRequestsPerCallerDay: 10,
       catalogDiscoveryPageSize: 2,
       catalogIngestTasksPerRun: 1,
       catalogDeclarationsPerTask: 1,
@@ -73,6 +74,7 @@ describe("loadConfig", () => {
       probeBatchSize: 10,
       catalogProbeBatchSize: 10,
       catalogProbeConcurrency: 4,
+      catalogValidationRequestsPerCallerDay: 100,
       catalogDiscoveryPageSize: 200,
       catalogIngestTasksPerRun: 10,
       catalogDeclarationsPerTask: 20,
@@ -91,6 +93,7 @@ describe("loadConfig", () => {
     [{ PROBE_BATCH_SIZE: "0" }, "PROBE_BATCH_SIZE"],
     [{ PROBE_TIMEOUT_MS: "0" }, "PROBE_TIMEOUT_MS"],
     [{ CATALOG_DISCOVERY_PAGE_SIZE: "0" }, "CATALOG_DISCOVERY_PAGE_SIZE"],
+    [{ CATALOG_VALIDATION_REQUESTS_PER_CALLER_DAY: "0" }, "CATALOG_VALIDATION_REQUESTS_PER_CALLER_DAY"],
     [{ CATALOG_INGEST_TASKS_PER_RUN: "0" }, "CATALOG_INGEST_TASKS_PER_RUN"],
     [{ CATALOG_DECLARATIONS_PER_TASK: "0" }, "CATALOG_DECLARATIONS_PER_TASK"],
     [{ CATALOG_A2A_TIMEOUT_MS: "0" }, "CATALOG_A2A_TIMEOUT_MS"],
@@ -168,6 +171,13 @@ describe("loadConfig", () => {
     });
     expect(() => loadConfig({ CATALOG_VALIDATION_REQUESTS_PER_DAY: "501" }))
       .toThrow(/^CATALOG_VALIDATION_REQUESTS_PER_DAY:/);
+  });
+
+  it("keeps the per-caller validation budget below the global budget", () => {
+    expect(loadConfig({ CATALOG_VALIDATION_REQUESTS_PER_CALLER_DAY: "7" }))
+      .toMatchObject({ catalogValidationRequestsPerCallerDay: 7 });
+    expect(() => loadConfig({ CATALOG_VALIDATION_REQUESTS_PER_DAY: "5", CATALOG_VALIDATION_REQUESTS_PER_CALLER_DAY: "6" }))
+      .toThrow(/^CATALOG_VALIDATION_REQUESTS_PER_CALLER_DAY:/);
   });
 
   it("keeps ingest, protocol deadlines, freshness and backoff configurable", () => {

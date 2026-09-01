@@ -20,6 +20,7 @@ export interface WorkerConfig {
   catalogProbeBatchSize: number;
   catalogProbeConcurrency: number;
   catalogValidationRequestsPerDay: number;
+  catalogValidationRequestsPerCallerDay: number;
   catalogDiscoveryPageSize: number;
   catalogIngestTasksPerRun: number;
   catalogDeclarationsPerTask: number;
@@ -115,6 +116,7 @@ const FREE_PROFILE: Profile = {
     catalogProbeBatchSize: 1,
     catalogProbeConcurrency: 2,
     catalogValidationRequestsPerDay: 100,
+    catalogValidationRequestsPerCallerDay: 10,
     // A full all-new page of twelve identities exceeds the 60-row Free
     // invocation budget once the resumable ingest work is admitted. Keep the
     // default at the largest measured safe page and let Paid scale it up.
@@ -146,6 +148,7 @@ const FREE_PROFILE: Profile = {
     catalogProbeBatchSize: 4,
     catalogProbeConcurrency: 2,
     catalogValidationRequestsPerDay: 500,
+    catalogValidationRequestsPerCallerDay: 500,
     catalogDiscoveryPageSize: 2,
     catalogIngestTasksPerRun: 1,
     catalogDeclarationsPerTask: 1,
@@ -180,6 +183,7 @@ const PAID_PROFILE: Profile = {
     catalogProbeBatchSize: 10,
     catalogProbeConcurrency: 4,
     catalogValidationRequestsPerDay: 1_000,
+    catalogValidationRequestsPerCallerDay: 100,
     catalogDiscoveryPageSize: 200,
     catalogIngestTasksPerRun: 10,
     catalogDeclarationsPerTask: 20,
@@ -208,6 +212,7 @@ const PAID_PROFILE: Profile = {
     catalogProbeBatchSize: 100,
     catalogProbeConcurrency: 4,
     catalogValidationRequestsPerDay: 10_000,
+    catalogValidationRequestsPerCallerDay: 1_000,
     catalogDiscoveryPageSize: 2_000,
     catalogIngestTasksPerRun: 50,
     catalogDeclarationsPerTask: 24,
@@ -240,6 +245,7 @@ const NUMERIC_FIELDS = {
   CATALOG_PROBE_BATCH_SIZE: "catalogProbeBatchSize",
   CATALOG_PROBE_CONCURRENCY: "catalogProbeConcurrency",
   CATALOG_VALIDATION_REQUESTS_PER_DAY: "catalogValidationRequestsPerDay",
+  CATALOG_VALIDATION_REQUESTS_PER_CALLER_DAY: "catalogValidationRequestsPerCallerDay",
   CATALOG_DISCOVERY_PAGE_SIZE: "catalogDiscoveryPageSize",
   CATALOG_INGEST_TASKS_PER_RUN: "catalogIngestTasksPerRun",
   CATALOG_DECLARATIONS_PER_TASK: "catalogDeclarationsPerTask",
@@ -301,6 +307,7 @@ function parseInteger(field: keyof typeof NUMERIC_FIELDS, raw: string, maximum: 
     "CATALOG_PROBE_BATCH_SIZE",
     "CATALOG_PROBE_CONCURRENCY",
     "CATALOG_VALIDATION_REQUESTS_PER_DAY",
+    "CATALOG_VALIDATION_REQUESTS_PER_CALLER_DAY",
     "CATALOG_DISCOVERY_PAGE_SIZE",
     "CATALOG_INGEST_TASKS_PER_RUN",
     "CATALOG_DECLARATIONS_PER_TASK",
@@ -464,6 +471,13 @@ export function loadConfig(env: Partial<Env>): WorkerConfig {
     if (raw !== undefined) values[property] = parseInteger(field, raw, profile.maximums[property]);
   }
 
+  if (source.CATALOG_VALIDATION_REQUESTS_PER_CALLER_DAY === undefined) {
+    values.catalogValidationRequestsPerCallerDay = Math.min(
+      values.catalogValidationRequestsPerCallerDay,
+      values.catalogValidationRequestsPerDay,
+    );
+  }
+
   if (values.trust8004RequestsPerRun > values.externalSubrequestsPerRun) {
     throw new ConfigError(
       "TRUST8004_REQUESTS_PER_RUN",
@@ -475,6 +489,13 @@ export function loadConfig(env: Partial<Env>): WorkerConfig {
     throw new ConfigError(
       "SWEEP_LIMIT",
       "must not exceed TRUST8004_REQUESTS_PER_RUN on Free",
+    );
+  }
+
+  if (values.catalogValidationRequestsPerCallerDay > values.catalogValidationRequestsPerDay) {
+    throw new ConfigError(
+      "CATALOG_VALIDATION_REQUESTS_PER_CALLER_DAY",
+      "must not exceed CATALOG_VALIDATION_REQUESTS_PER_DAY",
     );
   }
 

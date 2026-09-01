@@ -71,8 +71,19 @@ function validationInput(raw: string): ValidationInput {
   throw new InvalidMarketplaceInputError("Validation accepts agentId, or an agentId, endpointKey and protocol validation kind");
 }
 
-async function infrastructureResponse(input: Extract<ValidationInput, { mode: "infrastructure" }>): Promise<NextResponse> {
-  const result = await requestCatalogValidation(input);
+function callerContext(request: Request): string {
+  const forwarded = request.headers.get("x-forwarded-for")?.split(",", 1)[0]?.trim();
+  const real = request.headers.get("x-real-ip")?.trim();
+  const origin = request.headers.get("origin")?.trim();
+  if (!forwarded && !real && !origin) return "anonymous";
+  return [forwarded || real || "unknown", origin || "same-origin"].join("|");
+}
+
+async function infrastructureResponse(
+  input: Extract<ValidationInput, { mode: "infrastructure" }>,
+  request: Request,
+): Promise<NextResponse> {
+  const result = await requestCatalogValidation(input, { caller: callerContext(request) });
   if (result.status === "completed") {
     return NextResponse.json({
       schemaVersion: 2,
@@ -107,7 +118,7 @@ export async function POST(request: Request) {
       throw new InvalidMarketplaceInputError("Content-Type must be application/json");
     }
     const input = validationInput(await boundedBody(request));
-    if (input.mode === "infrastructure") return await infrastructureResponse(input);
+    if (input.mode === "infrastructure") return await infrastructureResponse(input, request);
     const result = await validateMarketplaceAgent.execute({ agentId: input.agentId });
     return NextResponse.json(result, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
