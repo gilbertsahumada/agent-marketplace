@@ -21,6 +21,9 @@ import { integerParameter, marketplaceErrorResponse } from "@/src/presentation/h
 
 const SORTS = new Set<MarketplaceSort>(MARKETPLACE_DATA_SORTS);
 const AVAILABILITIES = new Set<MarketplaceAvailability>(MARKETPLACE_AVAILABILITIES);
+const MARKETPLACE_ONLY_QUERY_KEYS = new Set([
+  "availability", "category", "status", "protocol", "reachability", "commerce", "quote", "latestFailure",
+]);
 
 function parseValues<const T extends readonly string[]>(
   values: string[],
@@ -57,6 +60,9 @@ export async function GET(request: Request) {
     const params = new URL(request.url).searchParams;
     const view = params.get("view") ?? "marketplace";
     if (view !== "all" && view !== "marketplace") throw new InvalidMarketplaceInputError("view must be all or marketplace");
+    if (view === "all" && [...params.keys()].some((key) => MARKETPLACE_ONLY_QUERY_KEYS.has(key))) {
+      throw new InvalidMarketplaceInputError("catalog filters require view=marketplace");
+    }
     const sortValue = params.get("sort");
     if (sortValue && !SORTS.has(sortValue as MarketplaceSort)) {
       throw new InvalidMarketplaceInputError("Unsupported sort value");
