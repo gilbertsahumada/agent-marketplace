@@ -1,5 +1,5 @@
 import { readFileSync, readdirSync, statSync } from "node:fs";
-import { resolve } from "node:path";
+import { relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { getTableColumns, getTableName } from "drizzle-orm";
@@ -107,5 +107,31 @@ describe("D1 schema", () => {
     for (const table of ["probe_observations", "funnel_snapshots", "hire_events"]) {
       expect(applicationSource).not.toMatch(new RegExp(`(?:UPDATE|DELETE\\s+FROM)\\s+${table}`, "i"));
     }
+  });
+
+  it("keeps raw D1 prepare calls behind the versioned ORM boundary", () => {
+    const projectRoot = resolve(fileURLToPath(new URL("..", import.meta.url)));
+    const sourceRoot = resolve(projectRoot, "src");
+    const allowlist = new Map([
+      ["src/db/query-budget.ts", 1],
+      ["src/lib/scheduler-lease.ts", 2],
+    ]);
+    const actual = new Map<string, number>();
+    const visit = (directory: string) => {
+      for (const entry of readdirSync(directory)) {
+        const path = resolve(directory, entry);
+        if (statSync(path).isDirectory()) visit(path);
+        else if (path.endsWith(".ts")) {
+          const count = (readFileSync(path, "utf8").match(/\.prepare\s*\(/g) ?? []).length;
+          if (count > 0) actual.set(relative(projectRoot, path), count);
+        }
+      }
+    };
+    visit(sourceRoot);
+
+    const violations = [...actual.entries()]
+      .filter(([path, count]) => allowlist.get(path) !== count);
+    const missing = [...allowlist.keys()].filter((path) => !actual.has(path));
+    expect({ violations, missing }).toEqual({ violations: [], missing: [] });
   });
 });
