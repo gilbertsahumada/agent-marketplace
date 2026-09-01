@@ -1,5 +1,6 @@
 import {
   isCatalogOperationalDeclaration,
+  isCatalogOperationalObservation,
   type CatalogCandidate,
   type CatalogCandidateObservation,
   type CatalogCandidatePage,
@@ -31,7 +32,8 @@ function latestPlatformObservation(candidate: CatalogCandidate): CatalogCandidat
   const observations = candidate.observations
     .filter((observation) => PLATFORM_SOURCES.has(observation.source)
       && (observation.validationKind === "reachability" || observation.validationKind === "protocol")
-      && observation.verificationLevel === "platform_observed")
+      && observation.verificationLevel === "platform_observed"
+      && isCatalogOperationalObservation(candidate, observation))
     .sort((left, right) => right.observedAt - left.observedAt || right.id - left.id);
   const admittedEndpointKey = candidate.admission?.endpointKey;
   return (admittedEndpointKey === null || admittedEndpointKey === undefined
