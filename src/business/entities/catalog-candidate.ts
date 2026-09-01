@@ -111,7 +111,10 @@ export function isCatalogOperationalObservation(
 ): boolean {
   // Legacy observations may not have an endpoint key. Keep them readable
   // during the compatibility window; normalized v2 evidence is always scoped.
-  if (observation.endpointKey === null) return true;
+  if (observation.endpointKey === null) {
+    return !candidate.declarations.some(({ role, eligibility, validationProtocol }) =>
+      role !== undefined || eligibility !== undefined || validationProtocol !== undefined);
+  }
   const declaration = candidate.declarations.find(({ endpointKey }) => endpointKey === observation.endpointKey);
   return declaration !== undefined && isCatalogOperationalDeclaration(declaration);
 }
