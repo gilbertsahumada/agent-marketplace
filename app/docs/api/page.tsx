@@ -6,15 +6,15 @@ import { PageActions } from "../page-actions";
 
 export const metadata: Metadata = { title: "HTTP API documentation" };
 
-const ROUTES: { journey: string; route: string; purpose: string }[] = [
-  { journey: "Discover", route: "GET /api/marketplace/agents?view=marketplace", purpose: "Search the catalogue: q, category, availability, page, limit." },
-  { journey: "Understand", route: "GET /api/marketplace/agents/{agentId}/passport", purpose: "The agent's Evidence Passport." },
-  { journey: "Compare", route: "GET /api/marketplace/compare?agentId=…&agentId=…", purpose: "2–3 agents side by side (repeated agentId params)." },
-  { journey: "Hire — quote", route: "POST /api/marketplace/demo/erc8183[-mainnet]/quote", purpose: "A fresh allowlist-validated signed quote. No body." },
-  { journey: "Hire — prepare", route: "POST …/prepare", purpose: "{ buyer, quote } → the ordered transaction plan with guardrails." },
-  { journey: "Hire — notify", route: "POST …/notify", purpose: "{ buyer, jobId } once the job is FUNDED." },
-  { journey: "Track / Result", route: "GET /api/marketplace/jobs/{network}/{jobId}", purpose: "Chain-resolved job state and hash-verified deliverable." },
-  { journey: "Agents (MCP)", route: "POST /api/mcp", purpose: "The five MCP tools over stateless Streamable HTTP." },
+const ROUTES: { journey: string; method: string; path: string; purpose: string }[] = [
+  { journey: "Discover", method: "GET", path: "/api/marketplace/agents?view=marketplace", purpose: "Search the catalogue: q, category, availability, page, limit." },
+  { journey: "Understand", method: "GET", path: "/api/marketplace/agents/{agentId}/passport", purpose: "The agent's Evidence Passport." },
+  { journey: "Compare", method: "GET", path: "/api/marketplace/compare?agentId=…&agentId=…", purpose: "2–3 agents side by side (repeated agentId params)." },
+  { journey: "Hire — quote", method: "POST", path: "/api/marketplace/demo/erc8183[-mainnet]/quote", purpose: "A fresh allowlist-validated signed quote. No body." },
+  { journey: "Hire — prepare", method: "POST", path: "/api/marketplace/demo/erc8183[-mainnet]/prepare", purpose: "{ buyer, quote } → the ordered transaction plan with guardrails." },
+  { journey: "Hire — notify", method: "POST", path: "/api/marketplace/demo/erc8183[-mainnet]/notify", purpose: "{ buyer, jobId } once the job is FUNDED." },
+  { journey: "Track / Result", method: "GET", path: "/api/marketplace/jobs/{network}/{jobId}", purpose: "Chain-resolved job state and hash-verified deliverable." },
+  { journey: "Agents (MCP)", method: "POST", path: "/api/mcp", purpose: "The five MCP tools over stateless Streamable HTTP." },
 ];
 
 const ERROR_ROWS: { code: string; status: string; meaning: string }[] = [
@@ -46,15 +46,17 @@ export default function ApiDocsPage() {
             <thead>
               <tr className="border-b border-white/10 bg-white/[0.03] text-zinc-500">
                 <th className="px-3 py-2 font-medium">Journey step</th>
-                <th className="px-3 py-2 font-medium">Route</th>
+                <th className="px-3 py-2 font-medium">Method</th>
+                <th className="px-3 py-2 font-medium">Path</th>
                 <th className="px-3 py-2 font-medium">Purpose</th>
               </tr>
             </thead>
             <tbody>
               {ROUTES.map((row) => (
-                <tr className="border-b border-white/[0.06] last:border-b-0" key={row.route}>
+                <tr className="border-b border-white/[0.06] last:border-b-0" key={row.path}>
                   <td className="whitespace-nowrap px-3 py-2 text-zinc-400">{row.journey}</td>
-                  <td className="px-3 py-2 font-mono text-zinc-200">{row.route}</td>
+                  <td className="px-3 py-2 font-mono font-medium text-primary">{row.method}</td>
+                  <td className="px-3 py-2 font-mono text-zinc-200">{row.path}</td>
                   <td className="px-3 py-2 text-zinc-400">{row.purpose}</td>
                 </tr>
               ))}

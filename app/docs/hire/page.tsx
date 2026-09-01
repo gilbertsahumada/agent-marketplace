@@ -32,7 +32,7 @@ export default function HireDocsPage() {
         <FlowDiagram steps={["request_quote", "verify locally", "prepare", "5 transactions", "notify", "track"]} />
         <SubHeading id="quote">1 · Request a quote</SubHeading>
         <p>
-          <InlineCode>POST …/quote</InlineCode> (or the <InlineCode>request_quote</InlineCode> MCP
+          <InlineCode>POST /api/marketplace/demo/erc8183[-mainnet]/quote</InlineCode> (or the <InlineCode>request_quote</InlineCode> MCP
           tool). The server validates seller, contracts, token, budget ceiling and expiry against its
           allowlist before returning the seller-signed envelope. Free; nothing is signed by the buyer.
         </p>
@@ -45,8 +45,7 @@ export default function HireDocsPage() {
           ceiling, and <InlineCode>quoteExpiresAt</InlineCode> is in the future.
         </p>
         <SubHeading id="prepare">3 · Prepare</SubHeading>
-        <CodeBlock lang="json" title="request">{`POST …/prepare
-{ "buyer": "0xYourCheckSummedAddress", "quote": <the envelope, byte-identical> }`}</CodeBlock>
+        <CodeBlock lang="json" title="POST /api/marketplace/demo/erc8183[-mainnet]/prepare">{`{ "buyer": "0xYourCheckSummedAddress", "quote": <the envelope, byte-identical> }`}</CodeBlock>
         <p>
           The response is the ordered transaction plan: intents, <InlineCode>deadline</InlineCode>,{" "}
           <InlineCode>executeBefore</InlineCode> (= the quote expiry — all transactions must land
@@ -92,8 +91,7 @@ export default function HireDocsPage() {
           </p>
         </Callout>
         <SubHeading id="notify">5 · Notify the seller</SubHeading>
-        <CodeBlock lang="json" title="request">{`POST …/notify
-{ "buyer": "0xYourAddress", "jobId": "552" }`}</CodeBlock>
+        <CodeBlock lang="json" title="POST /api/marketplace/demo/erc8183[-mainnet]/notify">{`{ "buyer": "0xYourAddress", "jobId": "552" }`}</CodeBlock>
         <p>The job must be <InlineCode>FUNDED</InlineCode>; the seller then submits its deliverable onchain.</p>
         <SubHeading id="track">6 · Track and verify the result</SubHeading>
         <p>
