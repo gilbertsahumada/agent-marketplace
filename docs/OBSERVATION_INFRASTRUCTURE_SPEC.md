@@ -37,6 +37,11 @@ Local evidence captured on 2026-09-01:
   `npm run migrate:local` reports no migrations pending. The identity count is
   explicitly based on `indexState`, not the metadata-state enum (whose valid
   value is `ok`, not `current`).
+- With `CATALOG_V2_READS_ENABLED=1`, the same local Worker returns the v2
+  `/catalog-agents?limit=1` contract with HTTP `200`, `schemaVersion=2`, and
+  `total=29,314` operational candidates; the sample `303779` row is exposed as
+  `declared`/`pending` with `commerceStatus=admission_pending` until a current
+  commerce declaration is admitted.
 - application-side endpoint policy, controller and observation-sync coverage passes
   41 focused tests (`browser-endpoint-validation.test.ts`,
   `marketplace-controllers.test.ts`, `catalog-observation-sync.test.ts`,
