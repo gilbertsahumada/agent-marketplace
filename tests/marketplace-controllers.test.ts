@@ -19,6 +19,13 @@ vi.mock("@/src/business/composition", () => ({
   validateMarketplaceAgent: { execute: executeValidate },
   getPublicMainnetJobProof: { execute: executeMainnetProof },
   recordCatalogObservation: syncCatalogObservation,
+  CatalogValidationRequestError: class CatalogValidationRequestError extends Error {
+    readonly code = "CATALOG_VALIDATION_UNAVAILABLE";
+    readonly httpStatus = 503;
+    readonly retryAfterSeconds = undefined;
+  },
+  requestCatalogValidation: vi.fn(),
+  issueCatalogValidationRequestToken: vi.fn(),
 }));
 
 const agentsRoute = await import("../app/api/marketplace/agents/route.ts");

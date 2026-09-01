@@ -29,16 +29,20 @@ Local evidence captured on 2026-09-01:
   `bnb-agent-probe` (`vitest.config.ts` and `vitest.worker.config.ts`);
 - production, staging and validation dry-run bundles build successfully;
 - application-side endpoint policy, controller and observation-sync coverage passes
-  25 focused tests (`browser-endpoint-validation.test.ts`,
-  `marketplace-controllers.test.ts` and `catalog-observation-sync.test.ts`);
-- the complete application gate passes: typecheck, 548 tests across 62 files and
-  the production CLI/Web build. The current checkout also passes 552 tests because
-  it contains four concurrent frontend tests outside this infrastructure commit;
+  34 focused tests (`browser-endpoint-validation.test.ts`,
+  `marketplace-controllers.test.ts`, `catalog-observation-sync.test.ts`,
+  `catalog-validation-sync.test.ts` and `catalog-validation-route.test.ts`);
+- the complete application gate passes: typecheck, 561 tests across 64 files and
+  the production CLI/Web build. The current checkout includes the concurrent
+  frontend changes and the endpoint-scoped fallback tests;
   the BNB Agent SDK still emits its known dynamic dependency warning during
   bundling, but the bundle completes successfully.
 - `docs/API.md`, `docs/HIRE-SPEC.md`, `docs/MCP.md` and `docs/MARKETPLACE.md`
   are now integrated from `main` in PR #56; the frontend companion remains a
   separate concurrent change and is not included in this infrastructure commit.
+- The application exposes the endpoint-scoped infrastructure fallback through
+  `POST /api/marketplace/validate` and its opaque-token status route; the private
+  Worker `/catalog-validations` route remains server-only.
 - catalog evidence reads enforce cryptographic/on-chain verification levels,
   isolate shared-endpoint observations by declaring agent, and release Queue/D1
   leases after a failed result batch; these paths are covered by the integration

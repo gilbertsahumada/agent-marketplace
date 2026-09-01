@@ -1,5 +1,10 @@
 import { NextResponse } from "next/server";
-import { validateMarketplaceAgent } from "@/src/business/composition";
+import {
+  CatalogValidationRequestError,
+  issueCatalogValidationRequestToken,
+  requestCatalogValidation,
+  validateMarketplaceAgent,
+} from "@/src/business/composition";
 import {
   InvalidMarketplaceInputError,
   MarketplacePayloadTooLargeError,
@@ -7,6 +12,10 @@ import {
 import { marketplaceErrorResponse } from "@/src/presentation/http/marketplace-http";
 
 const MAX_VALIDATION_BODY_BYTES = 256;
+
+type ValidationInput =
+  | { readonly mode: "legacy"; readonly agentId: string }
+  | { readonly mode: "infrastructure"; readonly agentId: string; readonly endpointKey: string; readonly validationKind: "protocol" };
 
 async function boundedBody(request: Request): Promise<string> {
   const declaredLength = request.headers.get("content-length");
@@ -31,7 +40,7 @@ async function boundedBody(request: Request): Promise<string> {
   return body + decoder.decode();
 }
 
-function validationInput(raw: string): { agentId: string } {
+function validationInput(raw: string): ValidationInput {
   if (raw.length > 256) throw new InvalidMarketplaceInputError("Validation input is too large");
   let value: unknown;
   try {
@@ -43,10 +52,53 @@ function validationInput(raw: string): { agentId: string } {
     throw new InvalidMarketplaceInputError("Validation input must be an object");
   }
   const entries = Object.entries(value);
-  if (entries.length !== 1 || entries[0]?.[0] !== "agentId" || typeof entries[0][1] !== "string") {
-    throw new InvalidMarketplaceInputError("Validation accepts only agentId");
+  const fields = value as Record<string, unknown>;
+  if (entries.length === 1 && entries[0]?.[0] === "agentId" && typeof entries[0][1] === "string") {
+    return { mode: "legacy", agentId: entries[0][1] };
   }
-  return { agentId: entries[0][1] };
+  if (entries.length === 3
+    && Object.keys(fields).sort().join(",") === "agentId,endpointKey,validationKind"
+    && typeof fields.agentId === "string"
+    && typeof fields.endpointKey === "string"
+    && fields.validationKind === "protocol") {
+    return {
+      mode: "infrastructure",
+      agentId: fields.agentId,
+      endpointKey: fields.endpointKey,
+      validationKind: "protocol",
+    };
+  }
+  throw new InvalidMarketplaceInputError("Validation accepts agentId, or an agentId, endpointKey and protocol validation kind");
+}
+
+async function infrastructureResponse(input: Extract<ValidationInput, { mode: "infrastructure" }>): Promise<NextResponse> {
+  const result = await requestCatalogValidation(input);
+  if (result.status === "completed") {
+    return NextResponse.json({
+      schemaVersion: 2,
+      status: result.status,
+      reused: result.reused,
+      requestId: null,
+    }, { status: 200, headers: { "cache-control": "no-store" } });
+  }
+  if (result.validationId === null) {
+    throw new CatalogValidationRequestError("CATALOG_VALIDATION_INVALID_RESPONSE", 502);
+  }
+  const requestId = issueCatalogValidationRequestToken({
+    agentId: input.agentId,
+    endpointKey: input.endpointKey,
+    validationId: result.validationId,
+  });
+  if (!requestId) {
+    throw new CatalogValidationRequestError("CATALOG_VALIDATION_NOT_CONFIGURED", 503);
+  }
+  return NextResponse.json({
+    schemaVersion: 2,
+    status: result.status,
+    reused: result.reused,
+    requestId,
+    pollAfterMs: result.status === "running" ? 1_000 : 1_500,
+  }, { status: 202, headers: { "cache-control": "no-store" } });
 }
 
 export async function POST(request: Request) {
@@ -54,9 +106,22 @@ export async function POST(request: Request) {
     if (!request.headers.get("content-type")?.toLowerCase().startsWith("application/json")) {
       throw new InvalidMarketplaceInputError("Content-Type must be application/json");
     }
-    const result = await validateMarketplaceAgent.execute(validationInput(await boundedBody(request)));
+    const input = validationInput(await boundedBody(request));
+    if (input.mode === "infrastructure") return await infrastructureResponse(input);
+    const result = await validateMarketplaceAgent.execute({ agentId: input.agentId });
     return NextResponse.json(result, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
+    if (error instanceof CatalogValidationRequestError) {
+      return NextResponse.json(
+        { error: { code: error.code, message: error.message } },
+        {
+          status: error.httpStatus,
+          headers: error.retryAfterSeconds === undefined
+            ? { "cache-control": "no-store" }
+            : { "cache-control": "no-store", "retry-after": String(error.retryAfterSeconds) },
+        },
+      );
+    }
     return marketplaceErrorResponse(error);
   }
 }

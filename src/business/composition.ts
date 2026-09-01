@@ -34,6 +34,13 @@ import {
   getCatalogCandidatePage as loadCatalogCandidatePage,
 } from "../data/observation/catalog-candidate-feed.ts";
 import { syncCatalogObservation } from "../data/observation/catalog-observation-sync.ts";
+import {
+  CatalogValidationRequestError,
+  getCatalogValidationStatus as loadCatalogValidationStatus,
+  issueCatalogValidationRequestToken as createCatalogValidationRequestToken,
+  readCatalogValidationRequestToken as parseCatalogValidationRequestToken,
+  requestCatalogValidation as enqueueCatalogValidation,
+} from "../data/observation/catalog-validation-sync.ts";
 
 const catalogPageReader = { execute: loadCatalogCandidatePage };
 const catalogReader = { execute: loadCatalogCandidate };
@@ -90,3 +97,10 @@ export const getWorkerObservations = workerObservationFeed;
 export const getCatalogCandidate = loadCatalogCandidate;
 export const getCatalogCandidatePage = loadCatalogCandidatePage;
 export const recordCatalogObservation = syncCatalogObservation;
+export {
+  CatalogValidationRequestError,
+  loadCatalogValidationStatus as getCatalogValidationStatus,
+  createCatalogValidationRequestToken as issueCatalogValidationRequestToken,
+  parseCatalogValidationRequestToken as readCatalogValidationRequestToken,
+  enqueueCatalogValidation as requestCatalogValidation,
+};
