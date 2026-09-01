@@ -234,6 +234,26 @@ describe("WP1 in the Workers runtime", () => {
     expect(await hireable.json()).toMatchObject({ total: 1, items: [{ agentId: "1" }] });
   });
 
+  it("keeps registry-only identities accessible without an endpoint declaration", async () => {
+    const now = 1_788_000_000_000;
+    await env.DB.prepare(`INSERT INTO catalog_agents (
+      agentKey, agentId, chainId, name, categoriesJson, metadataState, indexState,
+      firstSeenAt, lastSeenAt, priority
+    ) VALUES ('eip155:56:9010', '9010', 56, 'Registry-only identity', '[]', 'ok', 'current', ?, ?, 1)`)
+      .bind(now, now).run();
+
+    const app = createWorker({ now: () => now });
+    const response = await app.fetch(new Request(
+      "https://worker.test/catalog-agents?inventory=registry",
+    ), env, createExecutionContext());
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      total: 1,
+      items: [{ agentId: "9010", declarations: [], state: { operationalStatus: "unsupported" } }],
+    });
+  });
+
   it("does not call an externally declared resource hireable", async () => {
     const now = 1_788_000_000_000;
     const agentKey = "eip155:56:9001";

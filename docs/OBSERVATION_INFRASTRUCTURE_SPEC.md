@@ -69,6 +69,9 @@ Local evidence captured on 2026-09-01:
   daily budget without storing an IP or origin.
 - The Worker rejects missing or malformed caller fingerprints before any D1
   lookup or Queue admission; accepted values are fixed-size opaque hex keys.
+- Registry inventory reads retain current ERC-8004 identities even when their
+  metadata has no endpoint declaration; the operational inventory remains
+  endpoint-gated by default.
 - catalog evidence reads enforce cryptographic/on-chain verification levels,
   isolate shared-endpoint observations by declaring agent, and release Queue/D1
   leases after a failed result batch; these paths are covered by the integration

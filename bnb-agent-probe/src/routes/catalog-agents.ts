@@ -122,12 +122,6 @@ export async function catalogAgentsResponse(
   if (!(["operational", "registry"] as const).includes(inventory as "operational" | "registry")) return invalid();
 
   const db = createDatabase(d1 as unknown as D1DatabaseLike);
-  const declarationExists = exists(db.select({ value: sql`1` })
-    .from(catalogAgentEndpoints)
-    .where(and(
-      eq(catalogAgentEndpoints.agentKey, catalogAgents.agentKey),
-      eq(catalogAgentEndpoints.declarationState, "current"),
-    )));
   const operationalDeclarationExists = exists(db.select({ value: sql`1` })
     .from(catalogAgentEndpoints)
     .innerJoin(catalogEndpoints, eq(catalogEndpoints.endpointKey, catalogAgentEndpoints.endpointKey))
@@ -373,7 +367,10 @@ export async function catalogAgentsResponse(
     .where(and(eq(catalogAgentAdmission.agentKey, catalogAgents.agentKey), eq(catalogAgentAdmission.state, state))));
   const anyAdmission = exists(db.select({ value: sql`1` }).from(catalogAgentAdmission)
     .where(eq(catalogAgentAdmission.agentKey, catalogAgents.agentKey)));
-  const statusCondition = (status: string) => status === "declared" ? declarationExists
+  // Every current catalog row is an ERC-8004 identity declaration. Endpoint
+  // declarations are optional, so registry inventory must retain identities
+  // whose metadata has not yielded an operational resource yet.
+  const statusCondition = (status: string) => status === "declared" ? sql`1 = 1`
     : status === "pending" ? not(platformObservationExists)
       : status === "a2a" ? freshProtocol("a2a")
         : status === "mcp" ? freshProtocol("mcp")
