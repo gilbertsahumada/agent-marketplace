@@ -6,6 +6,7 @@ type JsonRecord = Record<string, unknown>;
 
 export type CatalogTransportProtocol = "a2a" | "mcp" | "web";
 export type CatalogEndpointProtocol = CatalogTransportProtocol | "erc8183_http" | "x402" | "unknown";
+export type CatalogEndpointSource = "services" | "endpoints" | "shortcut";
 export type CatalogCommerceProtocol = "erc8183";
 export type CatalogMetadataState = "ok" | "http_unreachable" | "other";
 export type CatalogEndpointSafetyReason =
@@ -48,6 +49,9 @@ export interface CatalogEndpointDeclaration {
   originKey: string | null;
   safety: "safe" | "unsafe";
   safetyReason: CatalogEndpointSafetyReason | null;
+  rawProtocol?: string | null;
+  rawSource?: CatalogEndpointSource | null;
+  rawSourceIndex?: number | null;
 }
 
 export interface CatalogAgentIndexRecord {
@@ -134,7 +138,7 @@ function metadataState(input: CatalogAgentInput): CatalogMetadataState {
   return "other";
 }
 
-function protocol(value: unknown): CatalogEndpointProtocol | null {
+function protocol(value: unknown): CatalogEndpointProtocol {
   if (typeof value !== "string") return "unknown";
   const normalized = value.toLowerCase().replace(/[^a-z0-9]/g, "");
   if (normalized === "a2a") return "a2a";
@@ -149,6 +153,7 @@ function unsafeDeclaration(
   endpointProtocol: CatalogEndpointProtocol,
   rawEndpoint: string,
   reason: CatalogEndpointSafetyReason,
+  provenance: { rawProtocol: string | null; rawSource: CatalogEndpointSource; rawSourceIndex: number },
 ): CatalogEndpointDeclaration {
   return {
     protocol: endpointProtocol,
@@ -157,30 +162,32 @@ function unsafeDeclaration(
     originKey: null,
     safety: "unsafe",
     safetyReason: reason,
+    ...provenance,
   };
 }
 
 function declaration(
   endpointProtocol: CatalogEndpointProtocol,
   rawEndpoint: string,
+  provenance: { rawProtocol: string | null; rawSource: CatalogEndpointSource; rawSourceIndex: number },
 ): CatalogEndpointDeclaration {
   let url: URL;
   try {
     url = new URL(rawEndpoint.trim());
   } catch {
-    return unsafeDeclaration(endpointProtocol, rawEndpoint, "invalid_url");
+    return unsafeDeclaration(endpointProtocol, rawEndpoint, "invalid_url", provenance);
   }
   if (url.protocol !== "https:") {
-    return unsafeDeclaration(endpointProtocol, rawEndpoint, "https_required");
+    return unsafeDeclaration(endpointProtocol, rawEndpoint, "https_required", provenance);
   }
   if (url.username || url.password) {
-    return unsafeDeclaration(endpointProtocol, rawEndpoint, "credentials_not_allowed");
+    return unsafeDeclaration(endpointProtocol, rawEndpoint, "credentials_not_allowed", provenance);
   }
   if (url.search) {
-    return unsafeDeclaration(endpointProtocol, rawEndpoint, "query_not_allowed");
+    return unsafeDeclaration(endpointProtocol, rawEndpoint, "query_not_allowed", provenance);
   }
   if (url.hash) {
-    return unsafeDeclaration(endpointProtocol, rawEndpoint, "fragment_not_allowed");
+    return unsafeDeclaration(endpointProtocol, rawEndpoint, "fragment_not_allowed", provenance);
   }
   const hostname = url.hostname.toLowerCase().replace(/^\[|\]$/g, "").replace(/\.$/, "");
   if (!hostname
@@ -188,7 +195,7 @@ function declaration(
     || hostname.endsWith(".localhost")
     || hostname.endsWith(".local")
     || (isIP(hostname) !== 0 && !isPublicIpAddress(hostname))) {
-    return unsafeDeclaration(endpointProtocol, rawEndpoint, "non_public_host");
+    return unsafeDeclaration(endpointProtocol, rawEndpoint, "non_public_host", provenance);
   }
 
   url.hostname = hostname;
@@ -201,24 +208,38 @@ function declaration(
     originKey: digest(url.origin),
     safety: "safe",
     safetyReason: null,
+    ...provenance,
   };
 }
 
 function candidateDeclarations(input: CatalogAgentInput): CatalogEndpointDeclaration[] {
   const declarations: CatalogEndpointDeclaration[] = [];
-  const add = (endpointProtocol: CatalogEndpointProtocol, endpoint: unknown) => {
+  const add = (
+    endpointProtocol: CatalogEndpointProtocol,
+    endpoint: unknown,
+    provenance: { rawProtocol: string | null; rawSource: CatalogEndpointSource; rawSourceIndex: number },
+  ) => {
     if (typeof endpoint !== "string" || endpoint.trim().length === 0) return;
-    declarations.push(declaration(endpointProtocol, endpoint));
+    declarations.push(declaration(endpointProtocol, endpoint, provenance));
   };
 
-  add("a2a", input.a2aEndpoint);
-  add("mcp", input.mcpEndpoint);
-  for (const entry of [...jsonArray(input.services), ...jsonArray(input.endpoints)]) {
-    if (!entry || typeof entry !== "object" || Array.isArray(entry)) continue;
-    const item = entry as JsonRecord;
-    const endpointProtocol = protocol(item.name ?? item.type ?? item.protocol);
-    if (!endpointProtocol) continue;
-    add(endpointProtocol, item.endpoint ?? item.url);
+  add("a2a", input.a2aEndpoint, { rawProtocol: "a2a", rawSource: "shortcut", rawSourceIndex: 0 });
+  add("mcp", input.mcpEndpoint, { rawProtocol: "mcp", rawSource: "shortcut", rawSourceIndex: 0 });
+  for (const [source, entries] of [
+    ["services", jsonArray(input.services)],
+    ["endpoints", jsonArray(input.endpoints)],
+  ] as const) {
+    for (const [sourceIndex, entry] of entries.entries()) {
+      if (!entry || typeof entry !== "object" || Array.isArray(entry)) continue;
+      const item = entry as JsonRecord;
+      const rawProtocol = item.name ?? item.type ?? item.protocol;
+      const endpointProtocol = protocol(rawProtocol);
+      add(endpointProtocol, item.endpoint ?? item.url, {
+        rawProtocol: boundedText(rawProtocol, 256),
+        rawSource: source,
+        rawSourceIndex: sourceIndex,
+      });
+    }
   }
 
   const unique = new Map<string, CatalogEndpointDeclaration>();

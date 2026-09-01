@@ -38,6 +38,8 @@ describe("catalog D1 seed", () => {
     expect(result.sql).toContain("'eip155:56:2'");
     expect(result.sql).toContain("representativeAgentKey");
     expect(result.sql).toContain("metadataUri");
+    expect(result.sql).toContain("rawServiceLabel, rawSource, rawSourceIndex");
+    expect(result.sql).toContain("'MCP','services',0");
     expect(result.sql).not.toContain("BEGIN TRANSACTION");
     expect(result.sql).not.toMatch(/[\t ]+\n/);
   });
@@ -133,6 +135,8 @@ describe("catalog D1 seed", () => {
     };
     const result = buildCatalogD1Seed(externalSnapshot);
 
+    expect(result.sql).toMatch(/'web','https:\/\/seller\.example\/pay'.*'x402','external'/s);
+    expect(result.sql).toMatch(/'web','https:\/\/seller\.example\/settle'.*'unknown','external'/s);
     expect(result.sql).toContain("'x402','external',NULL,'other','unsupported'");
     expect(result.sql).toContain("'unknown','external',NULL,'other','unsupported'");
     expect(result.stats.probeRepresentatives).toBe(0);

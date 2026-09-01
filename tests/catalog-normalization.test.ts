@@ -148,4 +148,26 @@ describe("catalog normalization", () => {
     ]);
     expect(normalized.candidate).toBe(true);
   });
+
+  it("keeps declaration provenance for snapshot-to-D1 backfills", () => {
+    const normalized = normalizeCatalogAgent(agent({
+      a2aEndpoint: "https://seller.example/a2a",
+      services: [{ name: "MCP", endpoint: "https://seller.example/mcp" }],
+    }));
+
+    expect(normalized.declarations).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        protocol: "a2a",
+        rawProtocol: "a2a",
+        rawSource: "shortcut",
+        rawSourceIndex: 0,
+      }),
+      expect.objectContaining({
+        protocol: "mcp",
+        rawProtocol: "MCP",
+        rawSource: "services",
+        rawSourceIndex: 0,
+      }),
+    ]));
+  });
 });

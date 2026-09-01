@@ -306,6 +306,15 @@ export async function processNextCatalogIngestTask(
         eq(catalogEndpoints.representativeAgentKey, active.agentKey),
         inArray(catalogEndpoints.endpointKey, old.map(({ endpointKey }) => endpointKey)),
       ))]),
+      ...(active.declarationCount === 0 ? [db.update(catalogAgentAdmission).set({
+        state: "suspended",
+        commerceTransport: null,
+        endpointKey: null,
+        provider: null,
+        validatedAt: null,
+        configurationVersion: `metadata:${active.metadataVersion}`,
+        reasonCode: "NO_COMMERCE_ENDPOINT",
+      }).where(eq(catalogAgentAdmission.agentKey, active.agentKey))] : []),
       db.update(catalogIngestTasks).set({
         status: complete ? "completed" : "retiring",
         updatedAt: input.nowMs,
@@ -327,7 +336,8 @@ export async function processNextCatalogIngestTask(
       declarationsProcessed: active.nextDeclarationIndex,
       declarationsTotal: active.declarationCount,
       declarationsRetired: old.length,
-      d1Queries: 4 + (old.length === 0 ? 0 : 2) + (complete ? 1 : 0),
+      d1Queries: 4 + (old.length === 0 ? 0 : 2) + (active.declarationCount === 0 ? 1 : 0)
+        + (complete ? 1 : 0),
       externalRequests: 0,
       errorCode: null,
     };

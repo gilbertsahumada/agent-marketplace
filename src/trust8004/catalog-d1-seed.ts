@@ -198,7 +198,7 @@ ON CONFLICT(agentKey) DO UPDATE SET
     const values = group.map(([endpointKey, declaration]) => {
       const projection = projectionByEndpoint.get(endpointKey)!;
       return `(${[
-      quote(endpointKey), quote(declaration.protocol), quote(declaration.url), quote(declaration.originKey),
+      quote(endpointKey), quote(projection.validationProtocol ?? "web"), quote(declaration.url), quote(declaration.originKey),
       quote(declaration.safety), quote(declaration.safetyReason),
       quote(projection.declaredProtocol), quote(projection.role), quote(projection.validationProtocol),
       quote(projection.externalKind), quote(projection.eligibility),
@@ -223,17 +223,24 @@ ON CONFLICT(endpointKey) DO UPDATE SET
     agentKey: agent.agentKey,
     endpointKey: declaration.endpointKey,
     priority: priorities.get(agent.agentKey)!,
+    rawProtocol: declaration.rawProtocol ?? null,
+    rawSource: declaration.rawSource ?? null,
+    rawSourceIndex: declaration.rawSourceIndex ?? null,
   })));
   for (const group of chunks(relations, chunkSize)) {
     const values = group.map((relation) => `(${[
       quote(relation.agentKey), quote(relation.endpointKey), quote("current"),
       String(measuredAt), String(measuredAt), String(relation.priority),
+      quote(relation.rawProtocol), quote(relation.rawSource), integer(relation.rawSourceIndex),
     ].join(",")})`).join(",\n");
     statements.push(`INSERT INTO catalog_agent_endpoints (
-  agentKey, endpointKey, declarationState, firstSeenAt, lastSeenAt, priority
+  agentKey, endpointKey, declarationState, firstSeenAt, lastSeenAt, priority,
+  rawServiceLabel, rawSource, rawSourceIndex
 ) VALUES\n${values}
 ON CONFLICT(agentKey, endpointKey) DO UPDATE SET
-  declarationState='current', lastSeenAt=excluded.lastSeenAt, priority=excluded.priority;`);
+  declarationState='current', lastSeenAt=excluded.lastSeenAt, priority=excluded.priority,
+  rawServiceLabel=excluded.rawServiceLabel, rawSource=excluded.rawSource,
+  rawSourceIndex=excluded.rawSourceIndex;`);
   }
 
   const admissions = snapshot.candidates.flatMap((agent) => {
