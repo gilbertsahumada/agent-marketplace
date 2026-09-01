@@ -40,6 +40,10 @@ const validationDedupeMigration = readFileSync(
   new URL("../migrations/0015_agent_scoped_validation_dedupe.sql", import.meta.url),
   "utf8",
 );
+const quoteArtifactDedupeMigration = readFileSync(
+  new URL("../migrations/0016_scoped_quote_artifact_dedupe.sql", import.meta.url),
+  "utf8",
+);
 
 describe("catalog index schema", () => {
   it("models identity, declaration and append-only observation facts separately", () => {
@@ -128,5 +132,13 @@ describe("catalog index schema", () => {
   it("migrates legacy validation dedupe keys to the declaring-agent scope", () => {
     expect(validationDedupeMigration).toContain("dedupeKey = agentKey || ':' || endpointKey || ':' || validationKind");
     expect(validationDedupeMigration).toContain("dedupeKey = endpointKey || ':' || validationKind");
+  });
+
+  it("scopes signed quote artifact deduplication to the declaring agent and endpoint", () => {
+    expect(quoteArtifactDedupeMigration).toContain("DROP INDEX IF EXISTS idx_catalog_observations_quote_artifact");
+    expect(quoteArtifactDedupeMigration).toContain(
+      "ON catalog_observations (agentKey, endpointKey, artifactHash)",
+    );
+    expect(quoteArtifactDedupeMigration).toContain("validationKind = 'quote'");
   });
 });

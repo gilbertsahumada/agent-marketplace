@@ -18,12 +18,14 @@ This specification describes the next infrastructure migration. The measured WP2
 
 Local evidence captured on 2026-09-01:
 
-- all additive migrations `0008` through `0015` apply successfully to the Wrangler local D1;
+- all additive migrations `0008` through `0016` apply successfully to the Wrangler local D1;
   migration `0014_catalog_agent_identity.sql` preserves the declared owner,
   metadata URI and registration block alongside the normalized catalog row, and
   `0015_agent_scoped_validation_dedupe.sql` scopes legacy validation keys by agent;
+  `0016_scoped_quote_artifact_dedupe.sql` scopes signed-quote artifact uniqueness
+  by declaring agent and exact endpoint;
 - Worker typecheck and manifest validation pass;
-- 489 unit tests and 105 Miniflare integration tests pass in
+- 490 unit tests and 106 Miniflare integration tests pass in
   `bnb-agent-probe` (`vitest.config.ts` and `vitest.worker.config.ts`);
 - production, staging and validation dry-run bundles build successfully;
 - application-side endpoint policy, controller and observation-sync coverage passes
@@ -277,7 +279,8 @@ Rules:
 
 - Append-only by application and D1 triggers.
 - `browser_reported` cannot use `platform_observed` verification level.
-- A quote observation is scoped to an agent, endpoint and signed artifact.
+- A quote observation is scoped to an agent, endpoint and signed artifact; the
+  dedupe key is `(agentKey, endpointKey, artifactHash)` rather than a global hash.
 - Never store secrets, authorization headers or private payloads.
 - Use monotonic/high-resolution timing in the Worker and record per-stage plus total duration.
 

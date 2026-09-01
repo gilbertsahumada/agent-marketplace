@@ -428,7 +428,7 @@ export const catalogObservations = sqliteTable(
       .on(table.attemptId)
       .where(sql`${table.attemptId} IS NOT NULL`),
     uniqueIndex("idx_catalog_observations_quote_artifact")
-      .on(table.artifactHash)
+      .on(table.agentKey, table.endpointKey, table.artifactHash)
       .where(sql`${table.validationKind} = 'quote' AND ${table.artifactHash} IS NOT NULL`),
     check(
       "catalog_observations_protocol",
