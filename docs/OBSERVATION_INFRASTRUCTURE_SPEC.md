@@ -25,7 +25,7 @@ Local evidence captured on 2026-09-01:
   `0016_scoped_quote_artifact_dedupe.sql` scopes signed-quote artifact uniqueness
   by declaring agent and exact endpoint;
 - Worker typecheck and manifest validation pass;
-- 491 unit tests and 111 Miniflare integration tests pass in
+- 491 unit tests and 112 Miniflare integration tests pass in
   `bnb-agent-probe` (`vitest.config.ts` and `vitest.worker.config.ts`);
 - production, staging and validation dry-run bundles build successfully;
 - application-side endpoint policy, controller and observation-sync coverage passes
@@ -397,7 +397,7 @@ This lane enables demos without bypassing trust8004 as the catalog source.
 
 ### 9.3 Reconciliation
 
-A slower lane re-reads metadata to detect removed or changed resources. It preserves prior declarations and observations while moving obsolete relations to `removed`.
+A slower lane re-reads metadata to detect removed or changed resources. It preserves prior declarations and observations while moving obsolete relations to `removed`. If a removed relation owned a shared endpoint, reconciliation deterministically reassigns that endpoint to the lowest-key remaining current declarer, or leaves it unassigned when none remains.
 
 ## 10. Scheduling, Queue and resource budgets
 
@@ -745,7 +745,7 @@ Test migration from representative current rows, constraints, indexes, backfill 
 
 ### WP-B3 — Effective evidence projection
 
-Test success→failure, failure→success, stale success, browser-only success, shared origin/different path and metadata replacement.
+Test success→failure, failure→success, stale success, browser-only success, shared origin/different path, metadata replacement and representative reassignment after retirement.
 
 **Gate:** projection equals ledger-derived result and never overstates scope.
 

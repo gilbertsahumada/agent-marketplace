@@ -292,6 +292,20 @@ export async function processNextCatalogIngestTask(
           eq(catalogAgentEndpoints.agentKey, active.agentKey),
           inArray(catalogAgentEndpoints.endpointKey, old.map(({ endpointKey }) => endpointKey)),
         ))]),
+      ...(old.length === 0 ? [] : [db.update(catalogEndpoints).set({
+        // A shared endpoint must keep a live owner after its representative
+        // declaration is retired. Pick the stable lowest current declarer;
+        // leave it unassigned when no relation remains.
+        representativeAgentKey: sql`(
+          SELECT MIN(candidate.agentKey)
+          FROM catalog_agent_endpoints AS candidate
+          WHERE candidate.endpointKey = catalog_endpoints.endpointKey
+            AND candidate.declarationState = 'current'
+        )`,
+      }).where(and(
+        eq(catalogEndpoints.representativeAgentKey, active.agentKey),
+        inArray(catalogEndpoints.endpointKey, old.map(({ endpointKey }) => endpointKey)),
+      ))]),
       db.update(catalogIngestTasks).set({
         status: complete ? "completed" : "retiring",
         updatedAt: input.nowMs,
@@ -313,7 +327,7 @@ export async function processNextCatalogIngestTask(
       declarationsProcessed: active.nextDeclarationIndex,
       declarationsTotal: active.declarationCount,
       declarationsRetired: old.length,
-      d1Queries: 4 + (old.length === 0 ? 0 : 1) + (complete ? 1 : 0),
+      d1Queries: 4 + (old.length === 0 ? 0 : 2) + (complete ? 1 : 0),
       externalRequests: 0,
       errorCode: null,
     };
