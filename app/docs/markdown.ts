@@ -61,6 +61,16 @@ curl -X POST https://marketplace.trust8004.xyz/api/mcp \\
 Local (stdio): \`npm run mcp\` from a clone of the repo; \`MARKETPLACE_ORIGIN\` targets
 another deployment (HTTPS only, except localhost).
 
+## Quickstart — a buyer agent end to end
+
+The repository ships the reference agent buyer. \`npm run agent-buyer -- --dry-run\`
+runs the whole journey up to the signature boundary (real output against production):
+discovery via MCP, passport read, live signed quote, prepare, plan validated against
+the pinned allowlist — nothing signed. With AGENT_BUYER_PRIVATE_KEY set (a funded
+Testnet key that never leaves the process) the same command signs and sends the five
+transactions; the sequence is fork-verified against the deployed Testnet contracts
+(createJob → registerJob → setBudget → exact approve → fund, escrow confirmed).
+
 ## What goes through MCP — and what deliberately does not
 
 | Step | Surface | Why |

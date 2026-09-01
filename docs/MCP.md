@@ -31,6 +31,18 @@ Claude Code picks it up automatically via the checked-in `.mcp.json`. Set
 `MARKETPLACE_ORIGIN` to target another deployment (HTTPS only, except
 `localhost` — useful against `npm run dev`).
 
+## Quickstart — a buyer agent end to end
+
+The repository ships the reference agent buyer (`src/demo/agent-buyer-cli.ts`).
+`npm run agent-buyer -- --dry-run` runs the whole journey up to the signature
+boundary — discovery via MCP, passport read, live signed quote, prepare, plan
+validated against the pinned allowlist — signing nothing. With
+`AGENT_BUYER_PRIVATE_KEY` set (a funded Testnet key that never leaves the process)
+the same command signs and sends the five transactions. The sequence is verified
+end to end against the deployed Testnet contracts on an anvil fork with a real
+production quote and plan: createJob → registerJob → setBudget → exact approve →
+fund, with the payment moving into escrow.
+
 ## What goes through MCP — and what deliberately does not
 
 | Step | Surface | Why |
