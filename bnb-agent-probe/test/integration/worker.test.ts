@@ -222,6 +222,43 @@ describe("WP1 in the Workers runtime", () => {
     expect(await response.json()).toMatchObject({ total: 0, items: [] });
   });
 
+  it("does not treat an invalid ERC-8183 social declaration as commerce", async () => {
+    const now = 1_788_000_000_000;
+    const agentKey = "eip155:56:9005";
+    const mcpEndpoint = "5".repeat(64);
+    const invalidCommerceEndpoint = "6".repeat(64);
+    await env.DB.prepare(`INSERT INTO catalog_agents (
+      agentKey, agentId, chainId, name, categoriesJson, metadataState, indexState, firstSeenAt, lastSeenAt
+    ) VALUES (?, '9005', 56, 'Invalid commerce declaration', '[]', 'ok', 'current', ?, ?)`)
+      .bind(agentKey, now, now).run();
+    await env.DB.prepare(`INSERT INTO catalog_endpoints (
+      endpointKey, protocol, endpoint, originKey, safety, representativeAgentKey,
+      nextProbeAt, consecutiveFailures, declaredProtocol, role, validationProtocol, eligibility
+    ) VALUES
+      (?, 'mcp', 'https://valid.example/mcp', 'valid-origin', 'safe', ?, 0, 0,
+        'mcp', 'operational', 'mcp', 'eligible'),
+      (?, 'erc8183_http', 'https://x.com/agent/jobs', 'social-origin', 'safe', NULL, 0, 0,
+        'erc8183_http', 'operational', 'erc8183_http', 'invalid_declaration')`)
+      .bind(mcpEndpoint, agentKey, invalidCommerceEndpoint).run();
+    await env.DB.prepare(`INSERT INTO catalog_agent_endpoints (
+      agentKey, endpointKey, declarationState, firstSeenAt, lastSeenAt
+    ) VALUES (?, ?, 'current', ?, ?), (?, ?, 'current', ?, ?)`)
+      .bind(agentKey, mcpEndpoint, now, now, agentKey, invalidCommerceEndpoint, now, now).run();
+
+    const app = createWorker({ now: () => now });
+    const response = await app.fetch(new Request(
+      "https://worker.test/catalog-agents?commerce=declared&inventory=registry",
+    ), env, createExecutionContext());
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ total: 0, items: [] });
+
+    const statusResponse = await app.fetch(new Request(
+      "https://worker.test/catalog-agents?status=erc8183&inventory=registry",
+    ), env, createExecutionContext());
+    expect(statusResponse.status).toBe(200);
+    expect(await statusResponse.json()).toMatchObject({ total: 0, items: [] });
+  });
+
   it("excludes agents with a seller declaration from the MCP-only filter", async () => {
     const now = 1_788_000_000_000;
     const agentKey = "eip155:56:9004";

@@ -211,6 +211,9 @@ export async function catalogAgentsResponse(
       eq(catalogAgentEndpoints.agentKey, catalogAgents.agentKey),
       eq(catalogAgentEndpoints.declarationState, "current"),
       eq(catalogEndpoints.declaredProtocol, "erc8183_http"),
+      eq(catalogEndpoints.role, "operational"),
+      eq(catalogEndpoints.eligibility, "eligible"),
+      eq(catalogEndpoints.validationProtocol, "erc8183_http"),
     )));
   const admittedCommerce = exists(db.select({ value: sql`1` })
     .from(catalogAgentAdmission)
