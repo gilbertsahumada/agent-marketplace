@@ -42,6 +42,8 @@ export function catalogCandidateCard(
     ?? (quote?.validationKind === "quote" && quote.verificationLevel === "cryptographic" ? quote : undefined);
   const freshTransport = (transport?.outcome === "protocol_valid" || transport?.outcome === "quote_verified")
     && transport.expiresAt !== null && transport.expiresAt > now;
+  const staleTransport = (transport?.outcome === "protocol_valid" || transport?.outcome === "quote_verified")
+    && !freshTransport;
   const freshQuote = quote?.outcome === "quote_verified"
     && quote.expiresAt !== null && quote.expiresAt > now;
   // v2 state is the only commerce authority.  `marketplaceConfigured` is a
@@ -64,8 +66,12 @@ export function catalogCandidateCard(
       provenance: transport ? "observed" : browser.length > 0 ? "unavailable" : "not_probed",
       detail: freshTransport
         ? transport.outcome === "quote_verified"
-          ? `A platform quote request returned a verified response over ${transport.protocol.toUpperCase()}.`
+          ? transport.source === "browser_reported"
+            ? `A browser-submitted signed quote was verified over ${transport.protocol.toUpperCase()}.`
+            : `A platform quote request returned a verified response over ${transport.protocol.toUpperCase()}.`
           : `A platform probe returned a protocol-valid ${transport.protocol.toUpperCase()} response.`
+        : staleTransport
+          ? `The last platform probe returned a protocol-valid ${transport.protocol.toUpperCase()} response, but it is stale. Last checked ${time(transport.observedAt)}.`
         : transport && FAILURE_OUTCOMES.has(transport.outcome)
           ? `The latest platform attempt failed (${transport.errorCode ?? transport.outcome}).`
           : browser.length > 0

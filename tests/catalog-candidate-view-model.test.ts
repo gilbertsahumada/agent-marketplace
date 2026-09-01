@@ -146,6 +146,19 @@ describe("catalog candidate card", () => {
       .toMatchObject({ status: "verified", provenance: "observed" });
   });
 
+  it("explains when the last successful platform probe is stale", () => {
+    const value = candidate();
+    value.observations.push({ id: 10, agentKey: value.agentKey, endpointKey: "a".repeat(64),
+      protocol: "a2a", source: "worker_probe", outcome: "protocol_valid", observedAt: NOW - 1_000_000,
+      expiresAt: NOW - 1, httpStatus: 200, errorCode: null, durationMs: 20, details: {} });
+
+    const reachable = catalogCandidateCard(value, NOW).evidence.find(({ kind }) => kind === "reachable");
+
+    expect(reachable).toMatchObject({ status: "unknown", provenance: "observed" });
+    expect(reachable?.detail).toMatch(/stale|older than/i);
+    expect(reachable?.timestamp).toBe(new Date(NOW - 1_000_000).toISOString());
+  });
+
   it("uses the latest quote outcome instead of reviving an older verified quote", () => {
     const value = candidate();
     value.state = {
