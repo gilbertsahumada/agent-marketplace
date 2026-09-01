@@ -242,6 +242,10 @@ Constraints:
 - `operational` requires non-null `validationProtocol`.
 - `external` requires null `validationProtocol` and `nextProbeAt`.
 - `eligible` is required before enqueue.
+- A null `representativeAgentKey` means that the declaration has no current
+  shared-projection owner. Buyer refresh may append agent-scoped evidence for
+  that declaration, but it must not update the endpoint's cached `last*` or
+  scheduling columns.
 - One origin representative can prove first-pass origin availability only. It cannot prove every path or every agent declaration.
 
 ### 7.3 `catalog_agent_endpoints`
