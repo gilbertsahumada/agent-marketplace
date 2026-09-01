@@ -32,11 +32,16 @@ Local evidence captured on 2026-09-01:
   37 focused tests (`browser-endpoint-validation.test.ts`,
   `marketplace-controllers.test.ts`, `catalog-observation-sync.test.ts`,
   `catalog-validation-sync.test.ts` and `catalog-validation-route.test.ts`);
-- the complete application gate passes: typecheck, 566 tests across 64 files and
+- the complete application gate passes: typecheck, 569 tests across 64 files and
   the production CLI/Web build. The current checkout includes the concurrent
   frontend changes and the endpoint-scoped fallback tests;
   the BNB Agent SDK still emits its known dynamic dependency warning during
   bundling, but the bundle completes successfully.
+- the catalog D1 seed generator now materializes normalized endpoint role,
+  validation protocol, eligibility and due-probe scheduling, creates
+  quote-verification admission candidates, and accepts legacy snapshots that
+  omit optional identity fields; the generated 29,801-agent snapshot seed
+  applies cleanly after migrations `0001` through `0016`.
 - `docs/API.md`, `docs/HIRE-SPEC.md`, `docs/MCP.md` and `docs/MARKETPLACE.md`
   are now integrated from `main` in PR #56; the frontend companion remains a
   separate concurrent change and is not included in this infrastructure commit.

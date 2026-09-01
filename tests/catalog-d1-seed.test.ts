@@ -42,6 +42,75 @@ describe("catalog D1 seed", () => {
     expect(result.sql).not.toMatch(/[\t ]+\n/);
   });
 
+  it("materializes normalized endpoint eligibility and an immediately due probe schedule", () => {
+    const result = buildCatalogD1Seed(snapshot());
+
+    expect(result.sql).toContain(`endpointKey, protocol, endpoint, originKey, safety, safetyReason,
+  declaredProtocol, role, validationProtocol, externalKind, eligibility, representativeAgentKey, nextProbeAt`);
+    expect(result.sql).toContain("'mcp','operational','mcp',NULL,'eligible'");
+    expect(result.sql).toContain("nextProbeAt=excluded.nextProbeAt");
+    expect(result.sql).not.toContain("'unknown','external',NULL,NULL,'unsupported'");
+  });
+
+  it("seeds ERC-8183 commerce as a quote-verification candidate", () => {
+    const commerceAgent = normalizeCatalogAgent({
+      chainId: 56,
+      agentId: "303779",
+      name: "Grid seller",
+      metadataReasonCode: "ok",
+      services: [{ name: "ERC-8183", endpoint: "https://seller.example/grid" }],
+    });
+    const commerceSnapshot: CatalogSnapshotV2 = {
+      ...snapshot(),
+      candidates: [commerceAgent],
+      registeredAgentIds: ["303779"],
+      stats: {
+        registered: 1, candidates: 1, declarations: 1, safeDeclarations: 1,
+        unsafeDeclarations: 0, sharedOrigins: 0,
+      },
+    };
+    const result = buildCatalogD1Seed(commerceSnapshot, {
+      marketplaceAgentIds: ["303779"],
+    });
+
+    expect(result.sql).toContain("INSERT INTO catalog_agent_admission");
+    expect(result.sql).toContain("'eip155:56:303779','candidate','erc8183_http'");
+    expect(result.sql).toContain("'QUOTE_VERIFICATION_REQUIRED'");
+  });
+
+  it("accepts legacy snapshots that omit optional identity fields", () => {
+    const legacy = snapshot() as unknown as {
+      candidates: Array<Record<string, unknown>>;
+    };
+    delete legacy.candidates[0]!.owner;
+    delete legacy.candidates[0]!.metadataUri;
+
+    expect(() => buildCatalogD1Seed(legacy as unknown as CatalogSnapshotV2)).not.toThrow();
+  });
+
+  it("keeps social URLs declared as MCP but excludes them from probe eligibility", () => {
+    const socialAgent = normalizeCatalogAgent({
+      chainId: 56,
+      agentId: "77",
+      name: "Social profile",
+      metadataReasonCode: "ok",
+      services: [{ name: "MCP", endpoint: "https://x.com/agent" }],
+    });
+    const socialSnapshot: CatalogSnapshotV2 = {
+      ...snapshot(),
+      candidates: [socialAgent],
+      registeredAgentIds: ["77"],
+      stats: {
+        registered: 1, candidates: 1, declarations: 1, safeDeclarations: 1,
+        unsafeDeclarations: 0, sharedOrigins: 0,
+      },
+    };
+    const result = buildCatalogD1Seed(socialSnapshot);
+
+    expect(result.sql).toContain("'mcp','operational','mcp','social','invalid_declaration',NULL,NULL");
+    expect(result.stats.probeRepresentatives).toBe(0);
+  });
+
   it("reconciles previous rows without deleting append-only observations", () => {
     const result = buildCatalogD1Seed(snapshot());
     expect(result.sql).toContain("UPDATE catalog_agents SET indexState = 'removed'");
