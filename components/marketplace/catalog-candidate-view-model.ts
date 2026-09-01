@@ -9,6 +9,30 @@ const FAILURE_OUTCOMES = new Set([
   "http_error", "timeout", "network_error", "invalid_response", "unsafe_url", "quote_rejected", "unreachable", "error",
 ]);
 
+function isPlatformReachabilityObservation(
+  candidate: CatalogCandidate,
+  observation: CatalogCandidate["observations"][number],
+): boolean {
+  if (!PLATFORM_SOURCES.has(observation.source)
+    || !isCatalogOperationalObservation(candidate, observation)) return false;
+  if (observation.validationKind === "reachability" || observation.validationKind === "protocol") {
+    return observation.verificationLevel === "platform_observed";
+  }
+  // v1 compatibility rows predate the normalized validation fields. Keep the
+  // known platform sources readable, but never treat chain/quote rows as a
+  // reachability observation merely because their outcome is protocol_valid.
+  if (observation.validationKind !== undefined || observation.verificationLevel !== undefined) return false;
+  if (observation.source === "marketplace_probe") {
+    return observation.outcome === "protocol_valid"
+      || observation.outcome === "quote_verified"
+      || observation.outcome === "quote_rejected";
+  }
+  return (observation.source === "worker_probe"
+    || observation.source === "buyer_refresh"
+    || observation.source === "migration")
+    && (observation.outcome === "protocol_valid" || FAILURE_OUTCOMES.has(observation.outcome));
+}
+
 function time(value: number): string { return new Date(value).toISOString(); }
 
 export function catalogCandidateCard(
@@ -16,8 +40,7 @@ export function catalogCandidateCard(
   now = Date.now(),
 ): AgentCardViewModel {
   const platform = candidate.observations
-    .filter((observation) => PLATFORM_SOURCES.has(observation.source)
-      && isCatalogOperationalObservation(candidate, observation))
+    .filter((observation) => isPlatformReachabilityObservation(candidate, observation))
     .sort((left, right) => right.observedAt - left.observedAt || right.id - left.id);
   const browser = candidate.observations
     .filter((observation) => observation.source === "browser_reported")
