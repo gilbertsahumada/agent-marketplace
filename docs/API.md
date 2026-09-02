@@ -71,7 +71,7 @@ Only these routes set `Cache-Control`; all others send none:
 | --- | --- |
 | `GET /agents/[agentId]/passport` | `public, max-age=60, must-revalidate` |
 | `GET /proofs/jobs/mainnet/[jobId]` | `public, max-age=60, stale-while-revalidate=300` |
-| `POST /validate`, `GET /validate/:requestId`, `POST /demo/erc8183-mainnet/quote` | `no-store` |
+| `POST /validate`, `GET /validate/:requestId`, `POST /demo/erc8183-mainnet/quote`, `POST /hire-events` | `no-store` |
 
 ## Discover / Understand / Compare
 
@@ -230,6 +230,20 @@ allowlisted, insufficient token balance, no native gas) → 409 `ERC8183_JOB_NOT
 Body: `{ "buyer": "<EVM address>", "jobId": "<positive integer string>" }`. Tells the
 seller the job is funded. Response: `{ acknowledged: true, alreadySubmitted,
 sellerTransactionHash?, job: Erc8183JobFacts }`. Job not in FUNDED state → 409.
+
+### `POST /api/marketplace/hire-events`
+
+Same-origin evidence route used by the browser hire flow; it is not a hiring step and
+authorizes nothing. Body: `{ agentId, chainId: 56 | 97, phase, jobId, txHash }` where
+`phase` is `clicked` (with `jobId` and `txHash` `null`) or `created`, `funded`,
+`submitted` (both required). The route validates the closed contract, drops every
+request context (no IP, session or headers reach storage) and forwards the event to
+the observation Worker, which verifies chain phases by RPC — receipt, Commerce event
+for that job, current job state and the agent's registry wallet — before storing them
+under the idempotent key `chainId:txHash:phase`. Response: `{ persistence }` with
+`recorded` (201), `duplicate` (200), `rejected` (409, the chain does not support the
+claim), or `failed` / `not_configured` (202, nothing stored). Track and Result keep
+reading BSC directly; this route never becomes their source.
 
 ## Track / Result
 
