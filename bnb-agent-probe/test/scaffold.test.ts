@@ -86,12 +86,17 @@ describe("WP1 Wrangler scaffold", () => {
       vars: {
         DEPLOYMENT_ENV: "staging",
         STAGING_MANUAL_RUN: "0",
-        CLOUDFLARE_WORKERS_PLAN: "free",
+        CLOUDFLARE_WORKERS_PLAN: "paid",
+        CRON_INTERVAL_MINUTES: "1",
+        CATALOG_PROBE_BATCH_SIZE: "4",
+        CATALOG_PROBE_CONCURRENCY: "2",
+        CATALOG_DISCOVERY_PAGE_SIZE: "15",
+        EXTERNAL_SUBREQUESTS_PER_RUN: "15",
         CATALOG_V2_READS_ENABLED: "1",
         CATALOG_V2_WRITES_ENABLED: "1",
         D1_QUERIES_PER_RUN: "40",
         D1_ROWS_READ_PER_RUN: "3000",
-        D1_ROWS_WRITTEN_PER_RUN: "60",
+        D1_ROWS_WRITTEN_PER_RUN: "200",
         PROBE_TIMEOUT_MS: "10000",
         MAX_CATALOG_RESPONSE_BYTES: "16777216",
       },
@@ -105,7 +110,7 @@ describe("WP1 Wrangler scaffold", () => {
     });
     expect(staging?.vars?.KILL_SWITCH).toBe("0");
     expect(staging?.vars?.PRODUCER_KILL_SWITCH).toBe("0");
-    expect(staging?.triggers).toEqual({ crons: ["*/5 * * * *"] });
+    expect(staging?.triggers).toEqual({ crons: ["* * * * *"] });
     expect(staging?.queues).toEqual({
       producers: [{ binding: "WP2_QUEUE", queue: "bnb-agent-probe-staging" }],
       consumers: [{

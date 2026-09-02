@@ -675,4 +675,68 @@ Cross-session reconciliation between the observation/D1 migration (per `docs/OBS
 - Root causes, both in `GET /catalog-agents`: (1) the correlated `EXISTS` filters over `catalog_observations` (`a2a`, `mcp`, `live`, latest failure, verified quote) had no index starting with `agentKey` that also carried `outcome`/`verificationLevel`/`protocol`, so SQLite drove them from `idx_catalog_observations_outcome` and scanned every `protocol_valid` row once per agent — 51,243,200 rows for one `status=a2a` count; (2) the per-page attempt count joined `catalog_endpoints` first and read every eligible endpoint's observations for each page — 80,767 rows per default list.
 - Fixes: migration `0019_catalog_observations_agent_evidence.sql` adds `(agentKey, outcome, verificationLevel, protocol, observedAt DESC, id DESC)`; the attempt count is now grouped per `(agentKey, endpointKey)` off the agent index and joined to the page's current operational declarations in memory. Measured at the same scale: default list 97,270 → 17,319 rows, `hireable` 103,486 → 23,535, `a2a` 51,434,214 → 53,439, detail unchanged at 284. The harness stays as a regression guard with per-route ceilings.
 - What remains is structural: the list `count(*)` costs about three index rows per current agent, and every `force-dynamic` page view hits the Worker live. So public catalogue reads can now be served from the Workers Cache for `CATALOG_RESPONSE_CACHE_SECONDS` (default 0, staging 300); the response advertises the same window in `Cache-Control`, and the payload's own timestamps keep freshness visible. The marketplace-side `no-store` fetch and in-memory memo are unchanged.
-- Consequence for WP2: its 24-hour gate (`<4,000,000` rows read) was unachievable under the old profile and is now plausible; the canonical window should be scheduled only after this deploy and a fresh `d1 info` read.
+- Historical consequence for WP2: its 24-hour Free gate (`<4,000,000` rows read)
+  was unachievable under the old profile. That proposed window was not executed;
+  the Paid release decision below supersedes it as a current release blocker.
+
+## 2026-09-02 — Promote the bounded catalogue scheduler to Paid staging
+
+- Staging now runs `* * * * *` with the Paid profile, a four-target catalogue
+  batch, concurrency two, 15 external subrequests, at most 40 D1 statements,
+  3,000 rows read and a 200-row phase/pre-ledger write envelope. Paid HEADER
+  reads 15 newest identities per minute, versus the former two, to cover more
+  than three times the observed approximately 4.5 registrations/minute.
+  Production and validation retain their existing safe-off Free configurations.
+- The initial 60-row write ceiling failed closed on the first four-target PROBE
+  tick after 68 observed writes. With the 100-row ceiling, nine consecutive
+  first deliveries completed `PROBE → HEADER → SWEEP` three times. Their maxima
+  were 31 queries, 670 reads, 87 writes, six upstream requests and 3,066 ms.
+- The generic A2A validator now accepts at most one same-origin, public-HTTPS
+  redirect and still rejects cross-origin redirects. This was required because
+  Cloudflare observed a redirect for the Vercel-hosted Agent Card while ordinary
+  clients received the final `200`; following arbitrary redirects would weaken
+  the existing SSRF boundary.
+- Buyer-triggered validation binds Cloudflare's global `fetch` explicitly, and
+  the seller/RPC clients invoke injected fetch functions without an object
+  receiver. Regression tests reproduce the former `Illegal invocation` failure.
+- BNB Chain documents several public Mainnet RPCs with a 10,000 requests per
+  five-minute limit. `bsc-dataseed-public.bnbchain.org` answered locally but
+  returned HTTP failure from the Worker; staging therefore uses the also-listed
+  `https://bsc-dataseed.nariox.org`, which passed the same Worker chain reads.
+  Source: [BNB Chain JSON-RPC endpoints](https://docs.bnbchain.org/bnb-smart-chain/developers/json_rpc/json-rpc-endpoint/).
+- Initial Paid traffic version `10d10603-89fa-4713-bf02-c89099649eac` served staging.
+  Vercel preview `dpl_9DhjZ9bAqAWTzcfeX6SD5aAGBUzN` returned a Mainnet quote
+  with `observationSync.status=synced`. D1 then contained, for agent `303779`,
+  current `protocol_valid` evidence, a cryptographic `quote_verified` artifact,
+  an onchain `erc8183_detected` artifact and admission state `admitted`.
+  `GET /catalog-agents?status=hireable&limit=24` returned exactly that agent with
+  `canPrepareHire=true`.
+- The final reviewed candidate `355f7b66-7b41-4021-9b49-ab17f83107ce` closes the
+  review findings. HEADER reads a second descending page when the first does not
+  reach the previous watermark, prioritizes that catch-up over rolling SWEEP,
+  advances its high-water mark only after the catch-up batch commits, and emits
+  `headerSaturated=true` if 30 identities still do not close the gap. Its config
+  validator also reserves both HEADER reads in the external-subrequest budget.
+  The profile UI posts the exact normalized endpoint key, polls an encrypted
+  authenticated token with bounded backoff, preserves a non-terminal running
+  or interrupted-status state, and refreshes only after `hasResult=true`. Its
+  first complete staging rotation stayed at 33 queries, 693 reads, 132
+  pre-ledger writes, six upstream requests and 5,385 ms. Preview
+  `dpl_DJWxu1Xc2KeWizSnskAsw5kcHwja` submitted validation `7` for Agent `303779`;
+  D1 completed it once with observation `642`
+  and HTTP 200.
+- Paying for Workers deliberately supersedes the old 24-hour Free-quota window
+  as a release blocker. Historical WP2 artifacts remain immutable, but each new
+  candidate is gated by local budgets, a remote phase rotation and an exact
+  endpoint-scoped E2E artifact (`evidence/catalog-paid-staging-2026-09-02.json`).
+- Cloudflare intentionally has one live observation data plane: the Paid staging
+  Worker and its D1. The production marketplace reaches it only through the
+  server-side `OBSERVATIONS_URL` adapter. A remote parity check returned `29,844`
+  declared agents from both surfaces and the same Agent `303779` observation
+  (`642`, observed at `2026-09-02T12:54:01.683Z`). Creating a duplicate production
+  D1 would add synchronization work without adding product value.
+- Quote synchronization remains intentionally limited to the marketplace Grid
+  seller (`303779`, `a2a`, `grid_trading`) in this release. General quote
+  verification requires the hiring contract to transport the selected
+  `endpointKey`; protocol validation is already general and must not imply that
+  every reachable agent has a verified ERC-8183 quote.

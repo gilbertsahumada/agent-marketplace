@@ -58,6 +58,26 @@ function reply(data: Record<string, unknown>, id = "response"): Response {
 }
 
 describe("Workers A2A seller probe", () => {
+  it("invokes a Worker fetch dependency without using its input object as the receiver", async () => {
+    const input = {
+      endpoint: ENDPOINT,
+      request: REQUEST,
+      timeoutMs: 5_000,
+      maxResponseBytes: 32_768,
+      fetch(this: unknown, request: RequestInfo | URL, init?: RequestInit) {
+        expect(this).toBeUndefined();
+        const destination = request.toString();
+        return Promise.resolve(destination.endsWith("/.well-known/agent-card.json")
+          ? json(card())
+          : reply({ request_hash: "0x01" }, JSON.parse(String(init?.body)).id as string));
+      },
+    };
+
+    await expect(probeA2aSeller(input)).resolves.toMatchObject({
+      quote: { request_hash: "0x01" },
+    });
+  });
+
   it.each([
     [["negotiate-erc8183-job", "notify_funded"], "negotiate-erc8183-job"],
     [["negotiate", "notify_funded"], "negotiate"],

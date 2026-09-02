@@ -173,7 +173,8 @@ describe("public catalog application adapter", () => {
         items: [candidate("42")],
       })),
     };
-    const result = await new ListMarketplaceAgents(repository([data("42")]), pageReader).execute({
+    const source = repository([data("42")]);
+    const result = await new ListMarketplaceAgents(source, pageReader).execute({
       view: "marketplace", page: 1, limit: 24,
     });
 
@@ -182,6 +183,7 @@ describe("public catalog application adapter", () => {
       items: [{ agentId: "42", hireability: { status: "quote_verified", canHire: true }, operator: "marketplace" }],
     });
     expect(pageReader.execute).toHaveBeenCalledWith({ page: 1, limit: 24, inventory: "operational" });
+    expect(source.getById).not.toHaveBeenCalled();
   });
 
   it("uses server-side protocol and commerce filters for the MCP-only view", async () => {

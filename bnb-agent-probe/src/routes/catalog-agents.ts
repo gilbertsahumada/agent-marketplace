@@ -6,6 +6,8 @@ import {
   exists,
   gt,
   inArray,
+  isNull,
+  lt,
   not,
   or,
   sql,
@@ -16,6 +18,7 @@ import {
   createDatabase,
   readEffectiveAgentObservations,
   readEffectiveCatalogObservationsForAgents,
+  readLatestBrowserObservationsForAgents,
 } from "../db/orm";
 import { deriveCatalogEvidenceState } from "../catalog/evidence-policy";
 import { CATALOG_API_VERSION, publicCatalogObservation } from "../catalog/api-contract";
@@ -42,6 +45,9 @@ const PROTOCOLS = ["a2a", "mcp", "erc8183_http"] as const;
 const REACHABILITY = ["live", "historical", "never", "browser_observed"] as const;
 const COMMERCE = ["declared", "candidate", "admitted", "suspended", "none"] as const;
 const QUOTE = ["verified", "expired", "missing"] as const;
+const OPERATIONAL_STATUSES = new Set<CatalogStatus>([
+  "a2a", "mcp", "mcp_only", "erc8183", "quote_capable", "hireable", "failed",
+]);
 
 const newerObservation = aliasedTable(catalogObservations, "newer_catalog_observation");
 const newerQuoteObservation = aliasedTable(catalogObservations, "newer_catalog_quote_observation");
@@ -67,18 +73,31 @@ function values<const T extends readonly string[]>(url: URL, key: string, allowe
     : null;
 }
 
-function decodeCursor(value: string | null): number | null {
-  if (value === null) return 0;
+type CatalogCursor = {
+  priority: number;
+  registeredAt: number | null;
+  agentId: string;
+};
+
+function decodeCursor(value: string | null): CatalogCursor | null | undefined {
+  if (value === null) return undefined;
   try {
     const decoded = atob(value.replaceAll("-", "+").replaceAll("_", "/"));
-    return /^\d+$/.test(decoded) && Number.isSafeInteger(Number(decoded)) ? Number(decoded) : null;
+    const parsed = JSON.parse(decoded) as Partial<CatalogCursor>;
+    return Number.isSafeInteger(parsed.priority)
+      && (parsed.registeredAt === null || Number.isSafeInteger(parsed.registeredAt))
+      && typeof parsed.agentId === "string"
+      && parsed.agentId.length >= 1
+      && parsed.agentId.length <= 120
+      ? parsed as CatalogCursor
+      : null;
   } catch {
     return null;
   }
 }
 
-function encodeCursor(offset: number): string {
-  return btoa(String(offset)).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "");
+function encodeCursor(cursor: CatalogCursor): string {
+  return btoa(JSON.stringify(cursor)).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "");
 }
 
 export async function catalogAgentsResponse(
@@ -132,12 +151,11 @@ export async function catalogAgentsResponse(
       eq(catalogEndpoints.eligibility, "eligible"),
     )));
   const observationBelongsToAgent = and(
-    eq(catalogObservations.agentKey, catalogAgents.agentKey),
     exists(db.select({ value: sql`1` })
       .from(catalogAgentEndpoints)
       .innerJoin(catalogEndpoints, eq(catalogEndpoints.endpointKey, catalogAgentEndpoints.endpointKey))
       .where(and(
-        eq(catalogAgentEndpoints.agentKey, catalogAgents.agentKey),
+        eq(catalogAgentEndpoints.agentKey, catalogObservations.agentKey),
         eq(catalogAgentEndpoints.endpointKey, catalogObservations.endpointKey),
         eq(catalogAgentEndpoints.declarationState, "current"),
         eq(catalogEndpoints.role, "operational"),
@@ -147,6 +165,7 @@ export async function catalogAgentsResponse(
   const platformObservationExists = exists(db.select({ value: sql`1` })
     .from(catalogObservations)
     .where(and(
+      eq(catalogObservations.agentKey, catalogAgents.agentKey),
       inArray(catalogObservations.source, [...PLATFORM_SOURCES]),
       inArray(catalogObservations.validationKind, [...PLATFORM_VALIDATION_KINDS]),
       eq(catalogObservations.verificationLevel, "platform_observed"),
@@ -155,6 +174,7 @@ export async function catalogAgentsResponse(
   const freshProtocol = (protocol: "a2a" | "mcp" | "erc8183_http") => exists(db.select({ value: sql`1` })
     .from(catalogObservations)
     .where(and(
+      eq(catalogObservations.agentKey, catalogAgents.agentKey),
       inArray(catalogObservations.source, [...PLATFORM_SOURCES]),
       inArray(catalogObservations.validationKind, [...PLATFORM_VALIDATION_KINDS]),
       eq(catalogObservations.verificationLevel, "platform_observed"),
@@ -185,6 +205,7 @@ export async function catalogAgentsResponse(
   const anyPlatformSuccess = exists(db.select({ value: sql`1` })
     .from(catalogObservations)
     .where(and(
+      eq(catalogObservations.agentKey, catalogAgents.agentKey),
       inArray(catalogObservations.source, [...PLATFORM_SOURCES]),
       inArray(catalogObservations.validationKind, [...PLATFORM_VALIDATION_KINDS]),
       eq(catalogObservations.verificationLevel, "platform_observed"),
@@ -194,6 +215,7 @@ export async function catalogAgentsResponse(
   const browserSuccess = exists(db.select({ value: sql`1` })
     .from(catalogObservations)
     .where(and(
+      eq(catalogObservations.agentKey, catalogAgents.agentKey),
       eq(catalogObservations.source, "browser_reported"),
       eq(catalogObservations.outcome, "protocol_valid"),
       observationBelongsToAgent,
@@ -211,18 +233,20 @@ export async function catalogAgentsResponse(
     )));
   const admittedCommerce = exists(db.select({ value: sql`1` })
     .from(catalogAgentAdmission)
-    .innerJoin(catalogAgentEndpoints, and(
-      eq(catalogAgentEndpoints.agentKey, catalogAgentAdmission.agentKey),
-      eq(catalogAgentEndpoints.endpointKey, catalogAgentAdmission.endpointKey),
-      eq(catalogAgentEndpoints.declarationState, "current"),
-    ))
-    .innerJoin(catalogEndpoints, eq(catalogEndpoints.endpointKey, catalogAgentEndpoints.endpointKey))
     .where(and(
       eq(catalogAgentAdmission.agentKey, catalogAgents.agentKey),
       eq(catalogAgentAdmission.state, "admitted"),
-      eq(catalogEndpoints.role, "operational"),
-      eq(catalogEndpoints.eligibility, "eligible"),
-      inArray(catalogEndpoints.validationProtocol, ["a2a", "erc8183_http"]),
+      exists(db.select({ value: sql`1` })
+        .from(catalogAgentEndpoints)
+        .innerJoin(catalogEndpoints, eq(catalogEndpoints.endpointKey, catalogAgentEndpoints.endpointKey))
+        .where(and(
+          eq(catalogAgentEndpoints.agentKey, catalogAgentAdmission.agentKey),
+          eq(catalogAgentEndpoints.endpointKey, catalogAgentAdmission.endpointKey),
+          eq(catalogAgentEndpoints.declarationState, "current"),
+          eq(catalogEndpoints.role, "operational"),
+          eq(catalogEndpoints.eligibility, "eligible"),
+          inArray(catalogEndpoints.validationProtocol, ["a2a", "erc8183_http"]),
+        ))),
     )));
   const mcpDeclarationExists = exists(db.select({ value: sql`1` })
     .from(catalogAgentEndpoints)
@@ -263,6 +287,7 @@ export async function catalogAgentsResponse(
   const freshQuote = exists(db.select({ value: sql`1` })
     .from(catalogObservations)
     .where(and(
+      eq(catalogObservations.agentKey, catalogAgents.agentKey),
       observationBelongsToAgent,
       admittedCommerceObservation,
       eq(catalogObservations.validationKind, "quote"),
@@ -286,6 +311,7 @@ export async function catalogAgentsResponse(
   const anyQuote = exists(db.select({ value: sql`1` })
     .from(catalogObservations)
     .where(and(
+      eq(catalogObservations.agentKey, catalogAgents.agentKey),
       observationBelongsToAgent,
       admittedCommerceObservation,
       eq(catalogObservations.validationKind, "quote"),
@@ -295,6 +321,7 @@ export async function catalogAgentsResponse(
   const freshValid = exists(db.select({ value: sql`1` })
     .from(catalogObservations)
     .where(and(
+      eq(catalogObservations.agentKey, catalogAgents.agentKey),
       inArray(catalogObservations.source, [...PLATFORM_SOURCES]),
       inArray(catalogObservations.validationKind, [...PLATFORM_VALIDATION_KINDS]),
       eq(catalogObservations.verificationLevel, "platform_observed"),
@@ -319,6 +346,7 @@ export async function catalogAgentsResponse(
   const failureExists = exists(db.select({ value: sql`1` })
     .from(catalogObservations)
     .where(and(
+      eq(catalogObservations.agentKey, catalogAgents.agentKey),
       inArray(catalogObservations.source, [...PLATFORM_SOURCES]),
       inArray(catalogObservations.validationKind, [...PLATFORM_VALIDATION_KINDS]),
       eq(catalogObservations.verificationLevel, "platform_observed"),
@@ -342,6 +370,7 @@ export async function catalogAgentsResponse(
   const latestReachableExists = exists(db.select({ value: sql`1` })
     .from(catalogObservations)
     .where(and(
+      eq(catalogObservations.agentKey, catalogAgents.agentKey),
       inArray(catalogObservations.source, [...PLATFORM_SOURCES]),
       inArray(catalogObservations.validationKind, [...PLATFORM_VALIDATION_KINDS]),
       eq(catalogObservations.verificationLevel, "platform_observed"),
@@ -411,7 +440,9 @@ export async function catalogAgentsResponse(
       : not(anyQuote)));
   const where = and(
     eq(catalogAgents.indexState, "current"),
-    inventory === "operational" ? operationalDeclarationExists : undefined,
+    inventory === "operational" && !statuses.some((status) => OPERATIONAL_STATUSES.has(status as CatalogStatus))
+      ? operationalDeclarationExists
+      : undefined,
     ...statuses.map(statusCondition),
     searchCondition,
     categoryCondition,
@@ -422,13 +453,31 @@ export async function catalogAgentsResponse(
     latestFailure === null ? undefined : latestFailure ? failureExists : not(failureExists),
     rawChain === null ? undefined : eq(catalogAgents.chainId, 56),
   );
-  const offset = url.searchParams.has("cursor") ? cursor : (page - 1) * limit;
-  const [totals, agents] = await Promise.all([
+  const cursorCondition = cursor === undefined ? undefined : or(
+    lt(catalogAgents.priority, cursor.priority),
+    and(
+      eq(catalogAgents.priority, cursor.priority),
+      cursor.registeredAt === null
+        ? and(isNull(catalogAgents.registeredAt), gt(catalogAgents.agentId, cursor.agentId))
+        : or(
+          lt(catalogAgents.registeredAt, cursor.registeredAt),
+          isNull(catalogAgents.registeredAt),
+          and(
+            eq(catalogAgents.registeredAt, cursor.registeredAt),
+            gt(catalogAgents.agentId, cursor.agentId),
+          ),
+        ),
+    ),
+  );
+  const offset = (page - 1) * limit;
+  const [totals, pageRows] = await Promise.all([
     db.select({ count: count() }).from(catalogAgents).where(where),
-    db.select().from(catalogAgents).where(where)
+    db.select().from(catalogAgents).where(and(where, cursorCondition))
       .orderBy(desc(catalogAgents.priority), desc(catalogAgents.registeredAt), catalogAgents.agentId)
-      .limit(limit).offset(offset),
+      .limit(limit + 1).offset(cursor === undefined ? offset : 0),
   ]);
+  const hasNextPage = pageRows.length > limit;
+  const agents = pageRows.slice(0, limit);
   const agentKeys = agents.map((agent) => agent.agentKey);
   const declarations = agentKeys.length === 0 ? [] : await db.select({
     agentKey: catalogAgentEndpoints.agentKey,
@@ -440,12 +489,11 @@ export async function catalogAgentsResponse(
       inArray(catalogAgentEndpoints.agentKey, agentKeys),
       eq(catalogAgentEndpoints.declarationState, "current"),
     ));
-  const endpointKeys = declarations.map((entry) => entry.endpoint.endpointKey);
-  const [recentObservations, effectiveEndpointObservations, effectiveAgentObservations, admissions, platformAttemptCounts] = await Promise.all([
-    agentKeys.length === 0 ? Promise.resolve([]) : db.select().from(catalogObservations)
-      .where(inArray(catalogObservations.agentKey, agentKeys))
-      .orderBy(desc(catalogObservations.observedAt), desc(catalogObservations.id))
-      .limit(Math.min(1_000, limit * 20)),
+  const endpointKeys = declarations
+    .filter(({ endpoint }) => endpoint.role === "operational" && endpoint.eligibility === "eligible")
+    .map((entry) => entry.endpoint.endpointKey);
+  const [browserObservations, effectiveEndpointObservations, effectiveAgentObservations, admissions, platformAttemptCounts] = await Promise.all([
+    readLatestBrowserObservationsForAgents(db, agentKeys),
     readEffectiveCatalogObservationsForAgents(db, agentKeys, endpointKeys),
     readEffectiveAgentObservations(db, agentKeys),
     agentKeys.length === 0 ? Promise.resolve([]) : db.select().from(catalogAgentAdmission)
@@ -475,7 +523,7 @@ export async function catalogAgentsResponse(
     platformAttemptCountByAgent.set(row.agentKey, (platformAttemptCountByAgent.get(row.agentKey) ?? 0) + row.total);
   }
   const observations = [...new Map([
-    ...recentObservations,
+    ...browserObservations,
     ...effectiveEndpointObservations,
     ...effectiveAgentObservations,
   ].map((observation) => [observation.id, observation])).values()]
@@ -536,7 +584,11 @@ export async function catalogAgentsResponse(
     },
     generatedAt: nowMs,
     total: totals[0]?.count ?? 0,
-    nextCursor: offset + agents.length < (totals[0]?.count ?? 0) ? encodeCursor(offset + agents.length) : null,
+    nextCursor: hasNextPage && agents.length > 0 ? encodeCursor({
+      priority: agents.at(-1)!.priority,
+      registeredAt: agents.at(-1)!.registeredAt,
+      agentId: agents.at(-1)!.agentId,
+    }) : null,
     items,
   };
   return Response.json(body, {

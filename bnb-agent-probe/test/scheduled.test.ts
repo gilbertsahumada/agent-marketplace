@@ -19,6 +19,7 @@ class LeaseDatabase implements D1DatabaseLike {
   failLedger = false;
   queries = 0;
   leaseRowsWritten = 1;
+  acquiredLeaseExpiries: number[] = [];
 
   prepare(query: string): D1PreparedStatementLike {
     // Drizzle renders lowercase SQL with quoted identifiers; raw callsites use
@@ -42,6 +43,7 @@ class LeaseDatabase implements D1DatabaseLike {
             return { success: true, meta: { rows_read: 1, rows_written: 0 }, results: [] };
           }
           thisDb.acquisitions += 1;
+          thisDb.acquiredLeaseExpiries.push(expiresAt);
           thisDb.lease = { runId, expiresAt };
           return {
             success: true,
@@ -168,6 +170,29 @@ describe("WP2 scheduled runner", () => {
       rowsWritten: expect.any(Number),
       configurationVersion: "wp2_legacy",
     }));
+  });
+
+  it("expires a Paid lease before the first locked Queue retry", async () => {
+    const db = new LeaseDatabase();
+    const phases: SchedulerPhase[] = [];
+    const runner = createWp2ScheduledRunner({
+      now: () => 1_000,
+      randomUUID: () => "run-paid-v2",
+      executePhase: async ({ phase }) => { phases.push(phase); },
+    });
+
+    await runner(
+      { ...controller, cron: "queue", attempt: 1, messageId: "paid-v2" },
+      { DB: db } as unknown as Env,
+      context,
+      loadConfig({
+        CLOUDFLARE_WORKERS_PLAN: "paid",
+        CATALOG_V2_WRITES_ENABLED: "1",
+      }),
+    );
+
+    expect(phases).toEqual(["header"]);
+    expect(db.acquiredLeaseExpiries[0]).toBeLessThanOrEqual(61_000);
   });
 
   it("does not release a lease held by another invocation", async () => {

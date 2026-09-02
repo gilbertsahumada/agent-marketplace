@@ -1,8 +1,8 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { CheckCircle2, CircleAlert, LoaderCircle, ShieldCheck, WifiOff } from "lucide-react";
-import type { AgentValidationReport } from "@/src/business/entities/agent-validation";
 import {
   validateEndpointInBrowser,
   type BrowserValidationResult,
@@ -14,6 +14,9 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 type PersistenceStatus = "recorded" | "failed" | "not_configured" | "pending";
+type ValidationTarget = BrowserValidationTarget & { endpointKey?: string };
+type InfrastructureState = "pending" | "deferred" | "completed" | "failed";
+const POLL_DELAYS_MS = [1_000, 2_000, 4_000, 5_000, 5_000, 5_000] as const;
 
 interface ResultState {
   result: BrowserValidationResult;
@@ -39,29 +42,17 @@ function resultClass(outcome: BrowserValidationResult["outcome"]): string {
   return "border-red-400/30 bg-red-400/10 text-red-200";
 }
 
-function observationSyncMessage(sync: AgentValidationReport["evidence"]["observationSync"]): string {
-  if (sync.status === "recorded") return "Evidence saved to the monitoring index.";
-  if (sync.status === "partial") {
-    return `Only ${sync.recorded} of ${sync.attempted} observations were saved to the monitoring index.`;
-  }
-  if (sync.status === "not_configured") {
-    return "Validation completed, but observation publishing is not configured; the result was not added to shared monitoring.";
-  }
-  if (sync.status === "failed") {
-    return "Validation completed, but the monitoring index could not be updated.";
-  }
-  return "No endpoint observation was produced for shared monitoring.";
-}
-
 export function AgentValidationActions({ agentId, targets }: {
   agentId: string;
-  targets: BrowserValidationTarget[];
+  targets: ValidationTarget[];
 }) {
+  const router = useRouter();
   const [pending, setPending] = useState<string | null>(null);
   const [results, setResults] = useState<Record<string, ResultState>>({});
-  const [fallbackPending, setFallbackPending] = useState(false);
-  const [fallback, setFallback] = useState<AgentValidationReport | null>(null);
-  const [fallbackError, setFallbackError] = useState<string | null>(null);
+  const [infrastructure, setInfrastructure] = useState<Record<string, {
+    state: InfrastructureState;
+    message: string;
+  }>>({});
 
   async function validate(target: BrowserValidationTarget) {
     const key = targetKey(target);
@@ -84,27 +75,109 @@ export function AgentValidationActions({ agentId, targets }: {
     setPending(null);
   }
 
-  async function validateThroughMarketplace() {
-    setFallbackPending(true);
-    setFallback(null);
-    setFallbackError(null);
+  async function validateThroughMarketplace(target: ValidationTarget) {
+    if (!target.endpointKey) return;
+    const key = targetKey(target);
+    setInfrastructure((current) => ({
+      ...current,
+      [key]: { state: "pending", message: "The marketplace queued this endpoint for validation." },
+    }));
     try {
       const response = await fetch("/api/marketplace/validate", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ agentId }),
+        body: JSON.stringify({ agentId, endpointKey: target.endpointKey, validationKind: "protocol" }),
       });
-      const payload = await response.json() as AgentValidationReport | { error?: { message?: string } };
-      if (!response.ok || !("evidence" in payload)) {
-        throw new Error("error" in payload ? payload.error?.message : undefined);
+      const payload = await response.json() as {
+        status?: string;
+        requestId?: string | null;
+        pollAfterMs?: number;
+        error?: { message?: string };
+      };
+      if (!response.ok) throw new Error(payload.error?.message || "Marketplace validation could not be queued.");
+      if (payload.status === "completed") {
+        setInfrastructure((current) => ({
+          ...current,
+          [key]: { state: "completed", message: "Marketplace check completed and shared evidence was updated." },
+        }));
+        router.refresh();
+        return;
       }
-      setFallback(payload);
+      if (!payload.requestId) throw new Error("Marketplace validation returned no request identifier.");
+
+      for (let attempt = 0; attempt < POLL_DELAYS_MS.length; attempt += 1) {
+        const delayMs = attempt === 0 && typeof payload.pollAfterMs === "number"
+          ? Math.max(0, Math.min(5_000, payload.pollAfterMs))
+          : POLL_DELAYS_MS[attempt] ?? 5_000;
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+        let statusResponse: Response;
+        let statusPayload: {
+          status?: string;
+          hasResult?: boolean;
+          errorCode?: string | null;
+          error?: { message?: string };
+        };
+        try {
+          statusResponse = await fetch(`/api/marketplace/validate/${encodeURIComponent(payload.requestId)}`, {
+            cache: "no-store",
+          });
+          statusPayload = await statusResponse.json();
+        } catch {
+          setInfrastructure((current) => ({
+            ...current,
+            [key]: {
+              state: "deferred",
+              message: "The status check was interrupted. The marketplace validation may still be running; continue checking shortly.",
+            },
+          }));
+          return;
+        }
+        if (!statusResponse.ok) {
+          setInfrastructure((current) => ({
+            ...current,
+            [key]: {
+              state: "deferred",
+              message: statusPayload.error?.message
+                ? `${statusPayload.error.message} The marketplace validation may still be running.`
+                : "The status check was interrupted. The marketplace validation may still be running; continue checking shortly.",
+            },
+          }));
+          return;
+        }
+        if (statusPayload.status === "completed") {
+          if (statusPayload.hasResult !== true) {
+            throw new Error("Marketplace validation completed but did not produce shared evidence.");
+          }
+          setInfrastructure((current) => ({
+            ...current,
+            [key]: { state: "completed", message: "Marketplace check completed and shared evidence was updated." },
+          }));
+          router.refresh();
+          return;
+        }
+        if (statusPayload.status === "failed" || statusPayload.status === "cancelled") {
+          throw new Error(statusPayload.errorCode
+            ? `Marketplace validation stopped (${statusPayload.errorCode}).`
+            : "Marketplace validation stopped before producing evidence.");
+        }
+      }
+      setInfrastructure((current) => ({
+        ...current,
+        [key]: {
+          state: "deferred",
+          message: "Marketplace validation is still running. Continue checking shortly to read the shared result.",
+        },
+      }));
     } catch (error) {
-      setFallbackError(error instanceof Error && error.message
-        ? error.message
-        : "Marketplace validation could not be completed.");
-    } finally {
-      setFallbackPending(false);
+      setInfrastructure((current) => ({
+        ...current,
+        [key]: {
+          state: "failed",
+          message: error instanceof Error && error.message
+            ? error.message
+            : "Marketplace validation could not be completed.",
+        },
+      }));
     }
   }
 
@@ -124,6 +197,7 @@ export function AgentValidationActions({ agentId, targets }: {
             {targets.map((target) => {
               const key = targetKey(target);
               const state = results[key];
+              const infrastructureState = infrastructure[key];
               return (
                 <li className="rounded-xl border border-white/10 bg-white/[0.02] p-4" key={key}>
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -134,16 +208,31 @@ export function AgentValidationActions({ agentId, targets }: {
                       </div>
                       <p className="mt-2 text-xs text-zinc-500">Declared by the agent · not yet trusted</p>
                     </div>
-                    <Button
-                      className="cursor-pointer"
-                      disabled={pending !== null}
-                      onClick={() => void validate(target)}
-                      type="button"
-                      variant="outline"
-                    >
-                      {pending === key ? <LoaderCircle aria-hidden="true" className="animate-spin" /> : <ShieldCheck aria-hidden="true" />}
-                      Validate from browser
-                    </Button>
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        className="cursor-pointer"
+                        disabled={pending !== null}
+                        onClick={() => void validate(target)}
+                        type="button"
+                        variant="outline"
+                      >
+                        {pending === key ? <LoaderCircle aria-hidden="true" className="animate-spin" /> : <ShieldCheck aria-hidden="true" />}
+                        Validate from browser
+                      </Button>
+                      {target.endpointKey && (
+                        <Button
+                          className="cursor-pointer"
+                          disabled={infrastructureState?.state === "pending"}
+                          onClick={() => void validateThroughMarketplace(target)}
+                          type="button"
+                        >
+                          {infrastructureState?.state === "pending"
+                            ? <LoaderCircle aria-hidden="true" className="animate-spin" />
+                            : <ShieldCheck aria-hidden="true" />}
+                          Validate through marketplace
+                        </Button>
+                      )}
+                    </div>
                   </div>
                   {state && (
                     <div aria-live="polite" className={`mt-3 rounded-lg border p-3 text-sm ${resultClass(state.result.outcome)}`}>
@@ -163,38 +252,23 @@ export function AgentValidationActions({ agentId, targets }: {
                       </p>
                     </div>
                   )}
+                  {infrastructureState && (
+                    <Alert className="mt-3" variant={infrastructureState.state === "failed" ? "destructive" : "default"}>
+                      {infrastructureState.state === "failed"
+                        ? <CircleAlert aria-hidden="true" />
+                        : <ShieldCheck aria-hidden="true" />}
+                      <AlertTitle>{infrastructureState.state === "completed"
+                        ? "Marketplace check completed"
+                        : infrastructureState.state === "pending" ? "Marketplace check queued"
+                          : infrastructureState.state === "deferred" ? "Marketplace check still running"
+                            : "Validation stopped"}</AlertTitle>
+                      <AlertDescription>{infrastructureState.message}</AlertDescription>
+                    </Alert>
+                  )}
                 </li>
               );
             })}
           </ul>
-        )}
-
-        <div className="flex flex-col gap-3 border-t border-white/10 pt-4 sm:flex-row sm:items-center sm:justify-between">
-          <p className="max-w-2xl text-xs leading-relaxed text-zinc-500">
-            If CORS blocks your browser, the marketplace can repeat the check from its protected server. This performs no wallet transaction; a quote, when supported, is requested only to verify current ERC-8183 terms.
-          </p>
-          <Button
-            className="shrink-0 cursor-pointer"
-            disabled={fallbackPending}
-            onClick={() => void validateThroughMarketplace()}
-            type="button"
-          >
-            {fallbackPending ? <LoaderCircle aria-hidden="true" className="animate-spin" /> : <ShieldCheck aria-hidden="true" />}
-            Validate through marketplace
-          </Button>
-        </div>
-
-        {fallbackError && (
-          <Alert variant="destructive"><CircleAlert aria-hidden="true" /><AlertTitle>Validation stopped</AlertTitle><AlertDescription>{fallbackError}</AlertDescription></Alert>
-        )}
-        {fallback && (
-          <Alert>
-            <ShieldCheck aria-hidden="true" />
-            <AlertTitle>Marketplace check completed</AlertTitle>
-            <AlertDescription>
-              {fallback.evidence.endpointChecks.filter((check) => check.status === "verified").length} endpoint checks passed. ERC-8183 quote: {fallback.evidence.quote.status.replaceAll("_", " ")}. {fallback.qualification.note} {observationSyncMessage(fallback.evidence.observationSync)}
-            </AlertDescription>
-          </Alert>
         )}
       </CardContent>
     </Card>

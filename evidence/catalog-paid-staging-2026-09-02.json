@@ -1,0 +1,113 @@
+{
+  "schemaVersion": 1,
+  "environment": "staging",
+  "capturedAt": "2026-09-02T13:10:45.000Z",
+  "candidate": {
+    "baseCommit": "305a3ef722bdccbfa9deada5309cdfe12492d140",
+    "implementationCommit": "65d461f2960f0f03c18621657215bb5920fd28d8",
+    "integrationCommit": "b92721fe1db4131a2b1b9af1c1592bdbd7e3a044",
+    "trackedWorkingTreeDiffSha256": "93f386e0ff28e09233094c8b2ab48d3c6e0b6157494fa0c09b6100da7f858a06",
+    "migrationSha256": {
+      "0018_catalog_query_indexes.sql": "49191c973540a67b1a6103564f80d80e6c8d93f843ff826a7841bac3796a50ed",
+      "0019_repair_legacy_catalog_admission.sql": "79177040bbe8d41fa2ebc5057e6f89f99aab84798526ce82a915c1a04eaf47e9"
+    },
+    "workerVersionId": "355f7b66-7b41-4021-9b49-ab17f83107ce",
+    "vercelPreviewDeploymentId": "dpl_DJWxu1Xc2KeWizSnskAsw5kcHwja",
+    "vercelPreviewUrl": "https://bnb-agent-marketplace-dyco8b30b-teterabobs-projects.vercel.app"
+  },
+  "configuration": {
+    "plan": "paid",
+    "cron": "* * * * *",
+    "catalogDiscoveryPageSize": 15,
+    "catalogProbeBatchSize": 4,
+    "catalogProbeConcurrency": 2,
+    "catalogIngestTasksPerRun": 1,
+    "catalogDeclarationsPerTask": 1,
+    "d1QueriesPerPhase": 40,
+    "d1RowsReadPerPhase": 3000,
+    "d1RowsWrittenObservedBeforeLedgerPerPhase": 200,
+    "externalSubrequestsPerPhase": 15
+  },
+  "schedulerRotation": [
+    {
+      "scheduledTime": "2026-09-02T12:53:22.000Z",
+      "phase": "header",
+      "attempt": 1,
+      "outcome": "completed",
+      "upstreamRequests": 2,
+      "d1Queries": 18,
+      "rowsReadObservedBeforeLedger": 308,
+      "rowsWrittenObservedBeforeLedger": 27,
+      "wallTimeMs": 1966
+    },
+    {
+      "scheduledTime": "2026-09-02T12:54:22.000Z",
+      "phase": "sweep",
+      "attempt": 1,
+      "outcome": "completed",
+      "upstreamRequests": 2,
+      "d1Queries": 33,
+      "rowsReadObservedBeforeLedger": 398,
+      "rowsWrittenObservedBeforeLedger": 132,
+      "wallTimeMs": 2400
+    },
+    {
+      "scheduledTime": "2026-09-02T12:55:22.000Z",
+      "phase": "probe",
+      "attempt": 1,
+      "outcome": "completed",
+      "upstreamRequests": 6,
+      "d1Queries": 28,
+      "rowsReadObservedBeforeLedger": 693,
+      "rowsWrittenObservedBeforeLedger": 98,
+      "wallTimeMs": 5385
+    }
+  ],
+  "onDemandValidation": {
+    "agentId": "303779",
+    "endpointKey": "fa19c2da6083ae5d5b3828f270706ff28e041bb94e773ff94b8fa6de213b9b05",
+    "validationId": 7,
+    "status": "completed",
+    "attemptCount": 1,
+    "createdAt": "2026-09-02T12:53:57.197Z",
+    "completedAt": "2026-09-02T12:54:02.029Z",
+    "resultObservationId": 642,
+    "result": {
+      "outcome": "protocol_valid",
+      "verificationLevel": "platform_observed",
+      "httpStatus": 200,
+      "durationMs": 346
+    }
+  },
+  "remoteObservationWindow": {
+    "fromScheduledTime": "2026-09-02T12:53:22.000Z",
+    "throughScheduledTime": "2026-09-02T13:09:22.000Z",
+    "lastFinishedAt": "2026-09-02T13:09:27.726Z",
+    "completedAttempts": 17,
+    "unexplainedErrors": 0,
+    "byPhase": {
+      "header": { "attempts": 6, "maxQueries": 22, "maxRowsRead": 405, "maxRowsWritten": 55, "maxUpstream": 2, "maxWallMs": 3011 },
+      "sweep": { "attempts": 6, "maxQueries": 34, "maxRowsRead": 454, "maxRowsWritten": 132, "maxUpstream": 3, "maxWallMs": 6693 },
+      "probe": { "attempts": 5, "maxQueries": 30, "maxRowsRead": 976, "maxRowsWritten": 98, "maxUpstream": 6, "maxWallMs": 7894 }
+    }
+  },
+  "productionParity": {
+    "architecture": "The production marketplace consumes the single Paid staging observation data plane through its server-side adapter; there is no separate production D1.",
+    "declaredOperationalAgents": { "publicMarketplace": 29844, "workerDataPlane": 29844 },
+    "sampleAgent": {
+      "agentId": "303779",
+      "endpointKey": "fa19c2da6083ae5d5b3828f270706ff28e041bb94e773ff94b8fa6de213b9b05",
+      "observationId": 642,
+      "observedAt": "2026-09-02T12:54:01.683Z",
+      "outcome": "protocol_valid"
+    }
+  },
+  "verification": {
+    "applicationTests": { "files": 67, "tests": 609, "status": "passed" },
+    "workerUnitTests": { "files": 41, "tests": 515, "status": "passed" },
+    "workerIntegrationTests": { "files": 13, "tests": 132, "status": "passed" },
+    "applicationProductionBuild": "passed_with_known_bnb_sdk_dynamic_dependency_warning",
+    "workerDryRuns": ["production", "staging", "validation"]
+  },
+  "scope": "Bounded Paid staging smoke evidence. This is not the historical WP2 24-hour Free-profile artifact."
+}

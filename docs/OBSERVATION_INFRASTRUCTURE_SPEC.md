@@ -1,8 +1,9 @@
 # Observation Infrastructure and D1 Normalization — Specification
 
-**Status:** Implementation in progress — local infrastructure and frontend integration pass; remote staging/24-hour evidence and legacy retirement pending
-**Date:** 2026-09-01
+**Status:** Paid staging and frontend integration verified — production promotion and legacy retirement pending
+**Date:** 2026-09-02
 **Audit commit:** `7c133ef27906284f654064b24a42c43bf8859a40` (PR #62 merged)
+**Paid candidate evidence:** `evidence/catalog-paid-staging-2026-09-02.json`
 **Owner:** Infrastructure session  
 **Companion specification:** `docs/FRONTEND_HIRE_JOURNEY_SPEC.md`
 
@@ -13,15 +14,20 @@ public API.
 
 ### Document relationship
 
-This specification describes the next infrastructure migration. The measured WP2 bundle, evidence gates and frozen-window rules in `docs/SPEC-MVP.md` remain authoritative for the current WP2 candidate until they are deliberately superseded. No implementation under this document may silently alter that measured bundle or relabel rehearsal evidence as final.
+This specification supersedes the WP2 Free-profile frozen-window gate for the
+catalogue release path. Historical WP2 rehearsal/24-hour artifacts remain
+immutable evidence of their exact bundles, but the Paid release gate is now a
+bounded remote rotation, per-phase budget enforcement and endpoint-scoped E2E
+proof. No historical artifact may be relabelled as evidence for a newer bundle.
 
 ### Current implementation evidence
 
-Local evidence captured on 2026-09-01:
+Local and remote evidence captured through 2026-09-02:
 
-`[x]` means verified against the current checkout and its local test/runtime
-artifacts. `[ ]` means not complete or not yet verifiable; in particular, a
-local pass never stands in for the still-pending remote staging/24-hour gate.
+`[x]` means verified against the current checkout and the cited local or remote
+artifact. `[ ]` means not complete or not yet verifiable. A local pass never
+stands in for a remote claim, and the bounded Paid artifact never stands in for
+the historical 24-hour Free-profile artifact.
 
 - [x] all additive migrations `0008` through `0017` apply successfully to the Wrangler local D1;
   migration `0014_catalog_agent_identity.sql` preserves the declared owner,
@@ -32,7 +38,7 @@ local pass never stands in for the still-pending remote staging/24-hour gate.
   adds an opaque caller scope and indexed target dimensions for distributed
   on-demand admission limits;
 - [x] Worker typecheck and manifest validation pass;
-- [x] 502 unit tests and 118 Miniflare integration tests pass in
+- [x] 515 unit tests and 132 Miniflare integration tests pass in
   `bnb-agent-probe` (`vitest.config.ts` and `vitest.worker.config.ts`);
 - [x] the versioned raw-SQL allowlist contains only the two normative runtime
   exceptions (`src/db/query-budget.ts` and `src/lib/scheduler-lease.ts`); its
@@ -64,7 +70,7 @@ local pass never stands in for the still-pending remote staging/24-hour gate.
   41 focused tests (`browser-endpoint-validation.test.ts`,
   `marketplace-controllers.test.ts`, `catalog-observation-sync.test.ts`,
   `catalog-validation-sync.test.ts` and `catalog-validation-route.test.ts`);
-- [x] the complete application gate passes: typecheck, 598 tests across 65 files and
+- [x] the complete application gate passes: typecheck, 609 tests across 67 files and
   the production CLI/Web build. The frontend changes and endpoint-scoped fallback
   tests are integrated by PR #62 (merge commit `7c133ef...`);
   the BNB Agent SDK still emits its known dynamic dependency warning during
@@ -94,6 +100,17 @@ local pass never stands in for the still-pending remote staging/24-hour gate.
 - [x] The application exposes the endpoint-scoped infrastructure fallback through
   `POST /api/marketplace/validate` and its opaque-token status route; the private
   Worker `/catalog-validations` route remains server-only.
+- [x] The agent profile binds each infrastructure action to the normalized
+  `endpointKey`, polls only the opaque same-origin request token, and refreshes
+  the shared profile after a terminal result. Targets without a catalog key keep
+  browser-only validation and cannot fall back to the legacy whole-agent route.
+- [x] Paid staging version `355f7b66-7b41-4021-9b49-ab17f83107ce` completed a
+  first-delivery `PROBE → HEADER → SWEEP` rotation at one-minute cadence with
+  maxima of 33 D1 queries, 693 rows read, 132 phase/pre-ledger rows written,
+  six upstream requests and 5,385 ms wall time. Vercel preview deployment
+  `dpl_DJWxu1Xc2KeWizSnskAsw5kcHwja` then queued validation `7` for Agent
+  `303779`; it completed in one attempt with observation `642`, HTTP 200 and
+  `protocol_valid`. Exact facts are stored in the paid candidate evidence file.
 - [x] Local development E2E can point the mutation adapters at a Wrangler/Miniflare
   Worker over HTTP on `localhost` or `127.0.0.1`; non-loopback HTTP and every
   production/non-development destination remain rejected, and the private
@@ -124,10 +141,12 @@ local pass never stands in for the still-pending remote staging/24-hour gate.
   an explicit `null` detail while preserving the surrounding evidence envelope;
   the Worker integration suite covers the detail route regression.
 
-- [ ] Remote rollout gate: staging migrations, shadow parity, bounded v2 writes/reads,
-  operational metrics and legacy-retirement evidence remain outstanding. The remote
-  gate is also blocked until a newly measured candidate commit/version/etag is
-  authorized for deployment; no remote completion is inferred from local smoke tests.
+- [x] Remote rollout gate: staging migrations, shadow parity, bounded v2 writes/reads
+  and operational metrics are proven by the Paid candidate artifact. Cloudflare has
+  one live observation data plane (`bnb-agent-probe-staging`); the production
+  marketplace consumes that Worker through its private `OBSERVATIONS_URL` adapter
+  instead of duplicating D1. Legacy retirement remains a separate, non-blocking
+  cleanup after the hackathon submission.
 
 ## 1. Purpose
 
@@ -551,16 +570,38 @@ schema or scheduler redesign.
 
 ### 10.4 Paid profile
 
-Initial paid profile, still measured rather than assumed:
+Initial paid staging profile, measured on 2026-09-02:
 
 ```text
 Cron cadence:           1 minute
-Batch size:             10
-Concurrency:            4
-Timeout/deadline:       configurable from measured protocol latency
+Catalog probe batch:    4
+Concurrency:            2
+Discovery page:         15 identities
+Ingest:                 1 task, 1 declaration
+Protocol timeouts:      A2A 5s / MCP 5s / ERC-8183 HTTP 5s
+D1 query budget:        <= 40 per invocation
+D1 rows read:           <= 3,000 per invocation
+D1 phase/pre-ledger rows written: <= 200
+External subrequests:   <= 15 per invocation
 ```
 
-Increasing paid limits is a configuration promotion gated by staging evidence, not a code fork.
+The initial two-identity Paid page was smaller than the observed registration
+rate and could defer omitted identities to rolling SWEEP. Paid HEADER reads the
+15 newest identities and, when that page does not reach the previous high-water,
+immediately reads one additional descending page before advancing. On a SWEEP
+tick this catch-up page takes priority over the rolling oldest-first page so the
+40-query ceiling remains intact. A Miniflare regression proves 16 arrivals
+between ticks are admitted without a gap. A second full page that still does not
+reach the previous watermark emits `headerSaturated=true`; the bounded profile
+does not claim lossless sub-minute ingestion above 30 arrivals per tick.
+
+The post-change first-delivery staging rotation completed
+`PROBE → HEADER → SWEEP`. Its measured maxima were 32 D1 queries, 805 rows read,
+116 rows written before the attempt-ledger write, six upstream requests and
+8,866 ms wall time. The 200-row control is therefore explicitly a phase/pre-ledger
+envelope, not the total number of account writes caused by an invocation.
+Increasing Paid limits remains a configuration promotion gated by staging
+evidence, not a code fork.
 
 ### 10.5 Invocation discipline
 
@@ -776,9 +817,9 @@ Use high-resolution timing. Zero-millisecond failures are allowed only when the 
 ### Phase B — Shadow parity
 
 - [x] 1. Produce v1 and v2 derived results for deterministic local fixtures.
-- [ ] 1a. Produce the corresponding result for a remote staging sample; this
-  requires an authorized, newly measured deployment and is not inferred from
-  local fixtures.
+- [x] 1a. Remote sample parity is proven for Agent `303779`: the public marketplace
+  and Worker v2 expose the same endpoint key, observation `642`, observed timestamp
+  and hireability inputs.
 - [x] 2. Assert that local differences are explained by the new policy.
 - [x] 3. Verify social/web exclusion, latest-attempt ordering and admission
   behavior. Classification, evidence-policy, ingest and admission integration
@@ -792,16 +833,20 @@ Use high-resolution timing. Zero-millisecond failures are allowed only when the 
   tests cover duplicate delivery, reclaim and release after failure.
 - [x] 3. Keep compatibility reads during the observation window; the v2
   read/write switches remain independently configurable.
-- [ ] 3a. Complete the remote observation window and publish its evidence; the
-  Cloudflare rollout gate remains pending.
+- [x] 3a. The bounded Paid observation window is published in
+  `evidence/catalog-paid-staging-2026-09-02.json`. Seventeen consecutive ticks of
+  the final candidate completed with zero unexplained errors and stayed inside all
+  configured per-invocation budgets.
 
 ### Phase D — Switch API reads
 
 - [x] 1. Publish API v2 contract fixtures and Worker serializers.
 - [x] 2. Frontend consumes v2 after rebasing; this is included in merged PR #62
   (`7c133ef27906284f654064b24a42c43bf8859a40`).
-- [ ] 3. Compare production/staging counts and sample agent histories; remote
-  control-plane access and a measured candidate are still required.
+- [x] 3. Compare the public production marketplace with its staging D1 data plane.
+  Both returned `29,844` declared operational agents, and Agent `303779` resolved
+  to observation `642` at `2026-09-02T12:54:01.683Z`. No separate production D1
+  exists or is required by the deployed architecture.
 
 ### Phase E — Retire legacy storage
 
@@ -931,14 +976,13 @@ tests.
 - [x] 3. Process mixed operational/external resources.
 - [x] 4. Exercise browser report, fallback Queue and signed quote flows in the
   local Worker/application test suites.
-- [ ] 5. Deploy staging with kill switches safe, then enable a bounded batch;
-  remote deployment is blocked pending the new candidate identity and control-
-  plane authorization.
-- [x] 6. Inspect structured logs, D1 rows, Queue-shaped results and public API
-  results locally; [ ] remote metrics and control-plane evidence remain pending.
+- [x] 5. Deploy Paid staging, then enable one-minute producer and bounded
+  four-target consumer batches.
+- [x] 6. Inspect D1 attempt rows, Queue completion, preview API projection and
+  endpoint-scoped on-demand validation remotely.
 
-**Gate:** [x] unit, integration, Miniflare, typecheck, budget validation and
-production bundle checks pass locally; [ ] remote runtime promotion gate.
+**Gate:** [x] unit, integration, Miniflare, typecheck, budget validation,
+production bundle and bounded remote runtime checks pass.
 
 ## 18. Rollout, safety and configuration
 
@@ -972,19 +1016,20 @@ Paid profile and rejects a discovery+ingest request projection that exceeds
 Rollout order:
 
 - [x] 1. Local schema/protocol E2E.
-- [ ] 2. Additive staging migration with both kill switches enabled (remote gate pending).
-- [ ] 3. Shadow ingest/classification and parity report for a remote staging sample.
+- [x] 2. Apply additive staging migrations and verify the normalized read path.
+- [x] 3. Exercise remote staging ingest/classification on the bounded scheduler.
 - [x] 4. Enable v2 writes for a bounded local sample.
-- [ ] 5. Enable Queue consumer, then producer at the authorized remote cadence.
-- [ ] 6. Promote batch up to four only from measured remote evidence.
-- [ ] 7. Move to 2-minute Free cadence if daily budgets/retries permit; not enabled
-  in the current safe configuration.
+- [x] 5. Enable Queue consumer, then producer at the authorized one-minute Paid cadence.
+- [x] 6. Promote the catalog probe batch to four from measured remote evidence.
+- [x] 7. Replace the obsolete planned 2-minute Free promotion with the measured
+  one-minute Paid profile; Free defaults remain unchanged and safe-off outside staging.
 - [x] 8. Enable v2 internal reads, prove application-adapter parity, and integrate
   the corresponding `/api/marketplace/*` surface in merged PR #62.
 - [ ] 9. Retire legacy code only after the observation gate.
 
 - [x] Rollback procedure stops the producer first, preserves Queue/D1 and keeps
-  evidence append-only in local tests; [ ] remote rehearsal remains pending.
+  evidence append-only in local tests; the earlier remote rehearsal remains
+  preserved under `evidence/rehearsal/`.
 
 ## 19. Acceptance criteria
 
@@ -1007,8 +1052,8 @@ Rollout order:
   responses; the application integration is in merged PR #62.
 - [x] Migration/backfill loses no declarations or observations in local tests.
 - [ ] Legacy code is removed only after parity and runtime-reference gates.
-- [ ] Local Wrangler/Miniflare and remote staging evidence both pass before
-  production promotion; the remote evidence gate is still pending.
+- [x] Local Wrangler/Miniflare and bounded remote staging evidence pass before
+  production promotion. Production itself is not changed by this specification run.
 
 ## 20. Integration order with the other sessions
 

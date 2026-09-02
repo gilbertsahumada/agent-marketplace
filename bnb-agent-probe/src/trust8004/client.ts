@@ -66,7 +66,11 @@ export class Trust8004CatalogClient {
   }
 
   listHeader(limit: number): Promise<CatalogPage> {
-    return this.list({ limit, offset: 0, sortOrder: "desc" });
+    return this.listHeaderPage(limit, 0);
+  }
+
+  listHeaderPage(limit: number, offset: number): Promise<CatalogPage> {
+    return this.list({ limit, offset, sortOrder: "desc" });
   }
 
   listSweepPage(limit: number, offset: number): Promise<CatalogPage> {

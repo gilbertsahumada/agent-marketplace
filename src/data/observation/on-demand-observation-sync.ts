@@ -6,6 +6,8 @@ import { catalogEndpointKey } from "./catalog-observation-sync.ts";
 export type ObservationSyncStatus = "synced" | "duplicate" | "failed" | "not_configured";
 export interface ObservationSyncResult { readonly status: ObservationSyncStatus }
 
+const QUOTE_OBSERVATION_TIMEOUT_MS = 12_000;
+
 type RequestQuote = { execute(): Promise<NormalizedErc8183Quote> };
 type Environment = Readonly<Record<string, string | undefined>>;
 
@@ -50,11 +52,15 @@ function observationEndpoint(endpoint: string): string {
   const url = new URL(endpoint);
   // This route is currently the controlled Grid seller. The normalized browser
   // quote intentionally exposes only its origin, while D1 keys the declared A2A
-  // target by its /grid path.
-  url.pathname = "/grid";
+  // resource by the agent-card URL published in ERC-8004 metadata.
+  url.pathname = "/grid/.well-known/agent-card.json";
   url.search = "";
   url.hash = "";
   return url.toString();
+}
+
+function safeDiagnostic(value: unknown): string | undefined {
+  return typeof value === "string" && value.length > 0 && value.length <= 64 ? value : undefined;
 }
 
 export async function syncBuyerQuoteObservation(
@@ -99,11 +105,22 @@ export async function syncBuyerQuoteObservation(
         "content-type": "application/json",
       },
       body: raw,
-      signal: AbortSignal.timeout(5_000),
+      signal: AbortSignal.timeout(QUOTE_OBSERVATION_TIMEOUT_MS),
     });
-    if (!response.ok) return { status: "failed" };
-    const body = await response.json() as { status?: unknown };
-    return body.status === "duplicate" ? { status: "duplicate" } : body.status === "verified" ? { status: "synced" } : { status: "failed" };
+    const body = await response.json().catch(() => null) as {
+      status?: unknown;
+      error?: unknown;
+      code?: unknown;
+    } | null;
+    if (!response.ok) {
+      console.warn("buyer_quote_observation_sync_rejected", {
+        status: response.status,
+        ...(safeDiagnostic(body?.error) ? { error: safeDiagnostic(body?.error) } : {}),
+        ...(safeDiagnostic(body?.code) ? { code: safeDiagnostic(body?.code) } : {}),
+      });
+      return { status: "failed" };
+    }
+    return body?.status === "duplicate" ? { status: "duplicate" } : body?.status === "verified" ? { status: "synced" } : { status: "failed" };
   } catch { return { status: "failed" }; }
 }
 

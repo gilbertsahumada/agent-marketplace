@@ -69,4 +69,20 @@ describe("WP2 controlled 24-hour Cron", () => {
 
     expect(env.WP2_QUEUE.send).toHaveBeenCalledOnce();
   });
+
+  it("accepts Cloudflare's canonical one-minute Cron expression", async () => {
+    const worker = createWorker();
+    const env = {
+      ...activeEnv("1"),
+      CLOUDFLARE_WORKERS_PLAN: "paid",
+    } as Env & { WP2_QUEUE: { send: ReturnType<typeof vi.fn> } };
+
+    await worker.scheduled(
+      { scheduledTime: 1_800_000_000_000, cron: "* * * * *" },
+      env,
+      context,
+    );
+
+    expect(env.WP2_QUEUE.send).toHaveBeenCalledOnce();
+  });
 });

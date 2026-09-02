@@ -38,7 +38,7 @@ import type { CatalogAgent } from "./trust8004/types";
 import type { Env, ExecutionContext, ScheduledController } from "./types";
 
 const FREE_LEASE_MS = 4 * 60_000;
-const PAID_LEASE_MS = 14 * 60_000;
+const PAID_LEASE_MS = 60_000;
 const CURATED_IDS = CURATED_INVENTORY.entries.map(({ agentId }) => agentId);
 const CURATED_ID_SET = new Set(CURATED_IDS);
 const GRID_AGENT_ID = "303779";
@@ -577,13 +577,29 @@ async function executeCatalogV2Phase(
   const newest = await catalog.listHeader(pageSize);
   const pageHighWater = catalogHeaderHighWater(newest.items);
   const headerHighWater = maximumCatalogHighWater(input.headerHighWater, pageHighWater);
-  const discovery = [await enqueueCatalogDiscoveryPage(input.db, newest.items, {
+  const discovery = [];
+  let headerCatchupPage: Awaited<ReturnType<Trust8004CatalogClient["listHeaderPage"]>> | null = null;
+  let headerCaughtUp = input.headerHighWater === null
+    || catalogPageReachedHighWater(newest.items, input.headerHighWater)
+    || newest.items.length < pageSize;
+  discovery.push(await enqueueCatalogDiscoveryPage(input.db, newest.items, {
     nowMs: input.nowMs,
     source: "header",
-    ...(headerHighWater === null ? {} : { headerHighWater }),
-  })];
+    ...(headerCaughtUp && headerHighWater !== null ? { headerHighWater } : {}),
+  }));
+  if (!headerCaughtUp) {
+    headerCatchupPage = await catalog.listHeaderPage(pageSize, pageSize);
+    discovery.push(await enqueueCatalogDiscoveryPage(input.db, headerCatchupPage.items, {
+      nowMs: input.nowMs,
+      source: "header",
+      ...(headerHighWater === null ? {} : { headerHighWater }),
+    }));
+    headerCaughtUp = catalogPageReachedHighWater(headerCatchupPage.items, input.headerHighWater!)
+      || headerCatchupPage.items.length < pageSize;
+  }
+  const headerSaturated = !headerCaughtUp;
 
-  if (input.phase === "sweep") {
+  if (input.phase === "sweep" && headerCatchupPage === null) {
     const rows = await readRuntimeStates(createDatabase(input.db), ["catalog_sweep_offset"]);
     const offset = rows[0]?.integerValue ?? 0;
     const page = await catalog.listSweepPage(pageSize, offset);
@@ -648,6 +664,8 @@ async function executeCatalogV2Phase(
     status: "ok",
     mode: "catalog_v2",
     discovery,
+    headerCaughtUp,
+    headerSaturated,
     ingest: ingestSummaries,
     ingestBudgetDeferred: ingestTaskLimit < input.config.catalogIngestTasksPerRun,
     probe: probeSummary,
@@ -682,6 +700,12 @@ async function executeCatalogV2Phase(
     },
   });
   input.logger.info("catalog.v2.phase.completed", summary);
+}
+
+function catalogPageReachedHighWater(agents: readonly CatalogAgent[], previousHighWater: string): boolean {
+  const previous = parseCatalogHighWater(previousHighWater);
+  return agents.some((agent) => agent.registeredAt !== null
+    && compareCatalogHighWater({ registeredAt: agent.registeredAt, agentId: agent.agentId }, previous) <= 0);
 }
 
 function catalogHeaderHighWater(agents: readonly CatalogAgent[]): string | null {

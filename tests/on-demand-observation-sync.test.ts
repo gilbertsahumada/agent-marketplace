@@ -44,7 +44,7 @@ describe("buyer-triggered observation sync", () => {
       expect(JSON.parse(raw)).toMatchObject({
         schemaVersion: 2,
         agentId: "303779",
-        endpointKey: expect.stringMatching(/^[0-9a-f]{64}$/),
+        endpointKey: "adf25b0eb2ea3b7a8711f863ffe18f22be046448c6c0220c4c947b42b8ca0b8b",
         probeCategory: "grid_trading",
         envelope: quote.envelope,
       });
@@ -78,6 +78,24 @@ describe("buyer-triggered observation sync", () => {
 
     await expect(requestQuoteWithObservationSync(requestQuote, sync, () => 1_788_000_125_000))
       .resolves.toEqual({ ...quote, observationSync: { status: "failed" } });
+  });
+
+  it("logs only the Worker status and error code when independent verification rejects a quote", async () => {
+    vi.stubEnv("OBSERVATIONS_URL", "https://worker.example/observations");
+    vi.stubEnv("BUYER_OBSERVATION_ALLOWED_ORIGIN", "https://worker.example");
+    vi.stubEnv("BUYER_OBSERVATION_SECRET", "buyer-secret");
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const fetchImpl = vi.fn(async () => Response.json(
+      { error: "quote_invalid", code: "QUOTE_EXPIRED", detail: "must-never-log" },
+      { status: 422 },
+    ));
+
+    await expect(syncBuyerQuoteObservation(quote, { fetchImpl })).resolves.toEqual({ status: "failed" });
+    expect(warning).toHaveBeenCalledWith("buyer_quote_observation_sync_rejected", {
+      status: 422,
+      error: "quote_invalid",
+      code: "QUOTE_EXPIRED",
+    });
   });
 
   it("does not call the network when sync is not configured", async () => {

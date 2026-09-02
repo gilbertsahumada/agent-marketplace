@@ -7,6 +7,7 @@ import {
   BSC_POLICY,
   BSC_REGISTRY,
   BSC_ROUTER,
+  BscProbeError,
   createCountedBscClient,
   readProbeChainContext,
 } from "../src/lib/chain";
@@ -100,9 +101,39 @@ describe("WP3 fixed-block chain context", () => {
       nowSeconds: NOW,
     })).rejects.toMatchObject({ code, message: code });
   });
+
+  it("preserves the sanitized transport failure category", async () => {
+    await expect(readProbeChainContext(reader({
+      getChainId: vi.fn(async () => { throw new BscProbeError("BSC_RPC_HTTP"); }),
+    }) as never, {
+      agentId: "303779",
+      nowSeconds: NOW,
+    })).rejects.toMatchObject({ code: "BSC_RPC_HTTP", message: "BSC_RPC_HTTP" });
+  });
 });
 
 describe("counted BSC RPC transport", () => {
+  it("invokes the Worker fetch binding without a configuration-object receiver", async () => {
+    const receivers: unknown[] = [];
+    const fetchImpl = vi.fn(function (this: unknown) {
+      receivers.push(this);
+      return Promise.resolve(new Response(JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        result: "0x38",
+      }), { headers: { "content-type": "application/json" } }));
+    }) as unknown as typeof fetch;
+    const client = createCountedBscClient({
+      rpcUrl: "https://rpc.example.com/bsc",
+      fetch: fetchImpl,
+      deadlineMs: Date.now() + 5_000,
+      now: Date.now,
+    });
+
+    await expect(client.getChainId()).resolves.toBe(56);
+    expect(receivers).toEqual([undefined]);
+  });
+
   it("allows read-only RPC and rejects transaction methods before fetch", async () => {
     const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({
       jsonrpc: "2.0",
@@ -146,6 +177,34 @@ describe("counted BSC RPC transport", () => {
     await expect(readProbeChainContext(client as never, {
       agentId: "303779",
       nowSeconds: NOW,
-    })).rejects.toMatchObject({ code: "BSC_CHAIN_RPC", message: "BSC_CHAIN_RPC" });
+    })).rejects.toMatchObject({ code: "BSC_RPC_TIMEOUT", message: "BSC_RPC_TIMEOUT" });
+  });
+
+  it("preserves a sanitized HTTP failure wrapped by viem", async () => {
+    const client = createCountedBscClient({
+      rpcUrl: "https://rpc.example.com/bsc",
+      fetch: vi.fn<typeof fetch>().mockResolvedValue(new Response(null, { status: 503 })),
+      deadlineMs: Date.now() + 5_000,
+      now: Date.now,
+    });
+
+    await expect(readProbeChainContext(client as never, {
+      agentId: "303779",
+      nowSeconds: NOW,
+    })).rejects.toMatchObject({ code: "BSC_RPC_HTTP", message: "BSC_RPC_HTTP" });
+  });
+
+  it("distinguishes an RPC fetch timeout from an unreachable host", async () => {
+    const client = createCountedBscClient({
+      rpcUrl: "https://rpc.example.com/bsc",
+      fetch: vi.fn<typeof fetch>().mockRejectedValue(new DOMException("timed out", "TimeoutError")),
+      deadlineMs: Date.now() + 5_000,
+      now: Date.now,
+    });
+
+    await expect(readProbeChainContext(client as never, {
+      agentId: "303779",
+      nowSeconds: NOW,
+    })).rejects.toMatchObject({ code: "BSC_RPC_TIMEOUT", message: "BSC_RPC_TIMEOUT" });
   });
 });

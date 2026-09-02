@@ -152,8 +152,9 @@ async function fetchJson(
   const remainingMs = Math.floor(deadline - (input.now ?? performance.now.bind(performance))());
   if (remainingMs <= 0) throw new SellerProbeError("SELLER_TIMEOUT");
   let response: Response;
+  const fetchImpl = input.fetch;
   try {
-    response = await input.fetch(url, {
+    response = await fetchImpl(url, {
       ...init,
       redirect: "manual",
       signal: AbortSignal.timeout(remainingMs),
