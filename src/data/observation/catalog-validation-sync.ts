@@ -1,6 +1,6 @@
 import "server-only";
 
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes } from "node:crypto";
 
 type Environment = Readonly<Record<string, string | undefined>>;
 
@@ -11,6 +11,9 @@ const MAX_RESPONSE_BODY_BYTES = 8 * 1_024;
 const REQUEST_TIMEOUT_MS = 5_000;
 const TOKEN_TTL_MS = 24 * 60 * 60_000;
 const TOKEN_VERSION = 1;
+const TOKEN_IV_BYTES = 12;
+const TOKEN_TAG_BYTES = 16;
+const TOKEN_AAD = Buffer.from("catalog-validation-request-v1", "utf8");
 
 export interface CatalogValidationRequestInput {
   readonly agentId: string;
@@ -323,12 +326,8 @@ export async function getCatalogValidationStatus(
   };
 }
 
-function encoded(value: string): string {
-  return Buffer.from(value, "utf8").toString("base64url");
-}
-
-function signature(value: string, secret: string): string {
-  return createHmac("sha256", secret).update(value).digest("base64url");
+function tokenKey(secret: string): Buffer {
+  return createHash("sha256").update("catalog-validation-token\0").update(secret).digest();
 }
 
 function callerFingerprint(caller: string | undefined, secret: string): string {
@@ -354,8 +353,11 @@ export function issueCatalogValidationRequestToken(
     validationId: input.validationId,
     expiresAt,
   });
-  const encodedPayload = encoded(payload);
-  return `${encodedPayload}.${signature(encodedPayload, secret)}`;
+  const iv = randomBytes(TOKEN_IV_BYTES);
+  const cipher = createCipheriv("aes-256-gcm", tokenKey(secret), iv);
+  cipher.setAAD(TOKEN_AAD);
+  const ciphertext = Buffer.concat([cipher.update(payload, "utf8"), cipher.final()]);
+  return Buffer.concat([iv, cipher.getAuthTag(), ciphertext]).toString("base64url");
 }
 
 export function readCatalogValidationRequestToken(
@@ -363,15 +365,21 @@ export function readCatalogValidationRequestToken(
   options: { readonly env?: Environment; readonly now?: () => number } = {},
 ): CatalogValidationRequestToken | null {
   const secret = (options.env ?? process.env).BUYER_OBSERVATION_SECRET?.trim();
-  if (!secret || token.length > 512 || !/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(token)) return null;
-  const [encodedPayload, suppliedSignature] = token.split(".");
-  if (!encodedPayload || !suppliedSignature) return null;
-  const expected = signature(encodedPayload, secret);
-  const supplied = Buffer.from(suppliedSignature, "base64url");
-  const expectedBytes = Buffer.from(expected, "base64url");
-  if (supplied.length !== expectedBytes.length || !timingSafeEqual(supplied, expectedBytes)) return null;
+  if (!secret || token.length > 512 || !/^[A-Za-z0-9_-]+$/.test(token)) return null;
+  let payload: string;
+  try {
+    const encrypted = Buffer.from(token, "base64url");
+    if (encrypted.length <= TOKEN_IV_BYTES + TOKEN_TAG_BYTES) return null;
+    const iv = encrypted.subarray(0, TOKEN_IV_BYTES);
+    const tag = encrypted.subarray(TOKEN_IV_BYTES, TOKEN_IV_BYTES + TOKEN_TAG_BYTES);
+    const ciphertext = encrypted.subarray(TOKEN_IV_BYTES + TOKEN_TAG_BYTES);
+    const decipher = createDecipheriv("aes-256-gcm", tokenKey(secret), iv);
+    decipher.setAAD(TOKEN_AAD);
+    decipher.setAuthTag(tag);
+    payload = Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString("utf8");
+  } catch { return null; }
   let value: unknown;
-  try { value = JSON.parse(Buffer.from(encodedPayload, "base64url").toString("utf8")) as unknown; } catch { return null; }
+  try { value = JSON.parse(payload) as unknown; } catch { return null; }
   const recordValue = record(value);
   if (!recordValue
     || recordValue.v !== TOKEN_VERSION

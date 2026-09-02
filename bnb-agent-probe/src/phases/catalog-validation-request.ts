@@ -15,9 +15,10 @@ export async function runCatalogValidationRequest(
   validationId: number,
   config: WorkerConfig,
   now: () => number = Date.now,
-  fetchImpl: typeof fetch = fetch,
+  fetchImpl?: typeof fetch,
   logger: CatalogValidationLogger = console,
 ): Promise<"completed" | "duplicate"> {
+  const requestFetch = fetchImpl ?? globalThis.fetch.bind(globalThis);
   const db = createDatabase(d1);
   const nowMs = now();
   const requests = await db.select().from(catalogValidationRequests)
@@ -110,7 +111,7 @@ export async function runCatalogValidationRequest(
         timeoutMs: catalogProbeTimeoutMs(config, target.protocol),
         maxResponseBytes: config.maxSellerResponseBytes,
         freshnessMs: catalogProbeFreshnessMs(config, target),
-        fetchImpl,
+        fetchImpl: requestFetch,
         now,
       }),
       attemptId: crypto.randomUUID(),

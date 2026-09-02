@@ -48,6 +48,18 @@ export class BscProbeError extends Error {
   }
 }
 
+function nestedBscProbeError(error: unknown): BscProbeError | null {
+  let current = error;
+  const seen = new Set<unknown>();
+  for (let depth = 0; depth < 8 && current !== null && typeof current === "object"; depth += 1) {
+    if (current instanceof BscProbeError) return current;
+    if (seen.has(current)) return null;
+    seen.add(current);
+    current = "cause" in current ? current.cause : null;
+  }
+  return null;
+}
+
 export interface CountedBscClientInput {
   readonly rpcUrl: string;
   readonly fetch: typeof fetch;
@@ -58,6 +70,7 @@ export interface CountedBscClientInput {
 
 export function createCountedBscClient(input: CountedBscClientInput): PublicClient {
   const rpcUrl = parseRpcUrl(input.rpcUrl);
+  const fetchImpl = input.fetch;
   let id = 0;
   return createPublicClient({
     chain: input.chain ?? bsc,
@@ -68,7 +81,7 @@ export function createCountedBscClient(input: CountedBscClientInput): PublicClie
         if (remainingMs <= 0) throw new BscProbeError("BSC_RPC_TIMEOUT");
         let response: Response;
         try {
-          response = await input.fetch(rpcUrl, {
+          response = await fetchImpl(rpcUrl, {
             method: "POST",
             headers: {
               accept: "application/json",
@@ -78,7 +91,11 @@ export function createCountedBscClient(input: CountedBscClientInput): PublicClie
             signal: AbortSignal.timeout(remainingMs),
             body: JSON.stringify({ jsonrpc: "2.0", id: ++id, method, params }),
           });
-        } catch {
+        } catch (error) {
+          if (error instanceof DOMException
+            && (error.name === "TimeoutError" || error.name === "AbortError")) {
+            throw new BscProbeError("BSC_RPC_TIMEOUT");
+          }
           throw new BscProbeError("BSC_RPC_UNREACHABLE");
         }
         if (response.type === "opaqueredirect" || (response.status >= 300 && response.status < 400)) {
@@ -126,14 +143,18 @@ export async function readProbeChainContext(
   let chainId: number;
   try {
     chainId = await client.getChainId();
-  } catch {
+  } catch (error) {
+    const transportError = nestedBscProbeError(error);
+    if (transportError) throw transportError;
     throw new BscProbeError("BSC_CHAIN_RPC");
   }
   if (chainId !== 56) throw new BscProbeError("BSC_CHAIN_ID");
   let block: Awaited<ReturnType<ProbeChainReader["getBlock"]>>;
   try {
     block = await client.getBlock();
-  } catch {
+  } catch (error) {
+    const transportError = nestedBscProbeError(error);
+    if (transportError) throw transportError;
     throw new BscProbeError("BSC_BLOCK_RPC");
   }
   if (block.number === null) throw new BscProbeError("BSC_BLOCK");
@@ -152,7 +173,9 @@ export async function readProbeChainContext(
   let values: readonly unknown[];
   try {
     values = await client.multicall({ contracts, blockNumber: block.number, allowFailure: false });
-  } catch {
+  } catch (error) {
+    const transportError = nestedBscProbeError(error);
+    if (transportError) throw transportError;
     throw new BscProbeError("BSC_READS");
   }
   const [agentWallet, owner, paymentToken, policyAllowlisted, tokenDecimals] = values;

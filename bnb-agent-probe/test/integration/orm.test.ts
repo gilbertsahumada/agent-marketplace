@@ -4,6 +4,7 @@ import { probeTargets } from "../../src/db/schema";
 import {
   countTargetsByDeclarationState,
   createDatabase,
+  readEffectiveCatalogObservationsForAgents,
   readRuntimeState,
   readRuntimeStates,
   writeRuntimeState,
@@ -99,5 +100,19 @@ describe("drizzle runtime layer", () => {
     await expect(
       writeRuntimeState(db, { key: "sweep_offset", textValue: null, integerValue: null, updatedAt: -1 }),
     ).rejects.toThrow("non-negative");
+  });
+
+  it("rejects catalog observation pages that would exceed the bounded query envelope", async () => {
+    const db = createDatabase(env.DB as unknown as D1DatabaseLike);
+    await expect(readEffectiveCatalogObservationsForAgents(
+      db,
+      Array.from({ length: 61 }, (_, index) => `agent-${index}`),
+      ["endpoint"],
+    )).rejects.toThrow("at most 60 agents");
+    await expect(readEffectiveCatalogObservationsForAgents(
+      db,
+      ["agent"],
+      Array.from({ length: 1_201 }, (_, index) => `endpoint-${index}`),
+    )).rejects.toThrow("at most 1200 endpoints");
   });
 });

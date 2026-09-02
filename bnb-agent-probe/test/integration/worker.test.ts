@@ -234,6 +234,46 @@ describe("WP1 in the Workers runtime", () => {
     expect(await hireable.json()).toMatchObject({ total: 1, items: [{ agentId: "1" }] });
   });
 
+  it("keeps browser protocol evidence when a newer browser quote exists", async () => {
+    const now = 1_788_000_000_000;
+    const agentKey = "eip155:56:browser-evidence";
+    const endpointKey = "f".repeat(64);
+    await env.DB.prepare(`INSERT INTO catalog_agents (
+      agentKey, agentId, chainId, name, categoriesJson, metadataState, indexState,
+      firstSeenAt, lastSeenAt, priority
+    ) VALUES (?, 'browser-evidence', 56, 'Browser evidence', '[]', 'ok', 'current', ?, ?, 10)`)
+      .bind(agentKey, now, now).run();
+    await env.DB.prepare(`INSERT INTO catalog_endpoints (
+      endpointKey, protocol, endpoint, originKey, safety, representativeAgentKey,
+      nextProbeAt, consecutiveFailures, declaredProtocol, role, validationProtocol, eligibility
+    ) VALUES (?, 'a2a', 'https://browser.example/a2a', 'browser', 'safe', ?, 0, 0,
+      'a2a', 'operational', 'a2a', 'eligible')`).bind(endpointKey, agentKey).run();
+    await env.DB.prepare(`INSERT INTO catalog_agent_endpoints (
+      agentKey, endpointKey, declarationState, firstSeenAt, lastSeenAt, priority
+    ) VALUES (?, ?, 'current', ?, ?, 10)`).bind(agentKey, endpointKey, now, now).run();
+    await env.DB.prepare(`INSERT INTO catalog_observations (
+      agentKey, endpointKey, protocol, source, outcome, observedAt, expiresAt,
+      durationMs, detailsJson, validationKind, verificationLevel
+    ) VALUES
+      (?, ?, 'a2a', 'browser_reported', 'protocol_valid', ?, ?, 20, '{}', 'protocol', 'user_observed'),
+      (?, ?, 'a2a', 'browser_reported', 'quote_verified', ?, ?, 30, '{}', 'quote', 'cryptographic')`)
+      .bind(agentKey, endpointKey, now, now + 900_000, agentKey, endpointKey, now + 1, now + 900_000).run();
+
+    const response = await createWorker({ now: () => now + 1 }).fetch(
+      new Request("https://worker.test/catalog-agents?status=declared&q=browser-evidence"),
+      env,
+      createExecutionContext(),
+    );
+    expect(response.status).toBe(200);
+    const body = await response.json() as {
+      items: Array<{ observations: Array<{ validationKind: string; outcome: string }> }>;
+    };
+    expect(body.items[0]?.observations).toEqual(expect.arrayContaining([
+      expect.objectContaining({ validationKind: "protocol", outcome: "protocol_valid" }),
+      expect.objectContaining({ validationKind: "quote", outcome: "quote_verified" }),
+    ]));
+  });
+
   it("keeps registry-only identities accessible without an endpoint declaration", async () => {
     const now = 1_788_000_000_000;
     await env.DB.prepare(`INSERT INTO catalog_agents (
@@ -638,7 +678,10 @@ describe("WP1 in the Workers runtime", () => {
       "https://worker.test/catalog-agents?protocol=mcp&reachability=live&commerce=admitted&chain=56&category=grid_trading&limit=1",
     ), env, context);
     expect(filtered.status).toBe(200);
-    expect(await filtered.json()).toMatchObject({
+    const filteredBody = await filtered.json() as {
+      items: Array<{ observations: unknown[] }>;
+    };
+    expect(filteredBody).toMatchObject({
       schemaVersion: 2,
       apiVersion: 2,
       filters: {
@@ -652,6 +695,7 @@ describe("WP1 in the Workers runtime", () => {
         state: { operationalStatus: "platform_reachable", commerceStatus: "admitted" },
       }],
     });
+    expect(filteredBody.items[0]?.observations).toHaveLength(1);
 
     const failed = await app.fetch(new Request(
       "https://worker.test/catalog-agents?latestFailure=true&protocol=a2a",
@@ -679,6 +723,69 @@ describe("WP1 in the Workers runtime", () => {
       state: { canRequestInfrastructureValidation: true },
       policyVersion: 2,
     });
+  });
+
+  it("keeps cursor pagination stable when a newer agent is indexed between pages", async () => {
+    const now = 1_788_000_000_000;
+    await env.DB.prepare(`INSERT INTO catalog_agents (
+      agentKey, agentId, chainId, name, categoriesJson, metadataState, indexState,
+      registeredAt, firstSeenAt, lastSeenAt, priority
+    ) VALUES
+      ('eip155:56:cursor-1', 'cursor-1', 56, 'Cursor one', '[]', 'ok', 'current', ?, ?, ?, 30),
+      ('eip155:56:cursor-2', 'cursor-2', 56, 'Cursor two', '[]', 'ok', 'current', ?, ?, ?, 20),
+      ('eip155:56:cursor-3', 'cursor-3', 56, 'Cursor three', '[]', 'ok', 'current', ?, ?, ?, 10)`)
+      .bind(now, now, now, now, now, now, now, now, now).run();
+    await env.DB.prepare(`INSERT INTO catalog_endpoints (
+      endpointKey, protocol, endpoint, originKey, safety, representativeAgentKey,
+      nextProbeAt, consecutiveFailures, declaredProtocol, role, validationProtocol, eligibility
+    ) VALUES
+      (?, 'a2a', 'https://cursor-1.example/a2a', 'cursor-1', 'safe', 'eip155:56:cursor-1', ?, 0, 'a2a', 'operational', 'a2a', 'eligible'),
+      (?, 'a2a', 'https://cursor-2.example/a2a', 'cursor-2', 'safe', 'eip155:56:cursor-2', ?, 0, 'a2a', 'operational', 'a2a', 'eligible'),
+      (?, 'a2a', 'https://cursor-3.example/a2a', 'cursor-3', 'safe', 'eip155:56:cursor-3', ?, 0, 'a2a', 'operational', 'a2a', 'eligible')`)
+      .bind("1".repeat(64), now, "2".repeat(64), now, "3".repeat(64), now).run();
+    await env.DB.prepare(`INSERT INTO catalog_agent_endpoints (
+      agentKey, endpointKey, declarationState, firstSeenAt, lastSeenAt, priority
+    ) VALUES
+      ('eip155:56:cursor-1', ?, 'current', ?, ?, 30),
+      ('eip155:56:cursor-2', ?, 'current', ?, ?, 20),
+      ('eip155:56:cursor-3', ?, 'current', ?, ?, 10)`)
+      .bind("1".repeat(64), now, now, "2".repeat(64), now, now, "3".repeat(64), now, now).run();
+
+    const app = createWorker({ now: () => now });
+    const first = await app.fetch(
+      new Request("https://worker.test/catalog-agents?status=declared&limit=2"),
+      env,
+      createExecutionContext(),
+    );
+    expect(first.status).toBe(200);
+    const firstBody = await first.json() as { nextCursor: string | null; items: Array<{ agentId: string }> };
+    expect(firstBody.items.map((item) => item.agentId)).toEqual(["cursor-1", "cursor-2"]);
+    expect(firstBody.nextCursor).not.toBeNull();
+
+    await env.DB.prepare(`INSERT INTO catalog_agents (
+      agentKey, agentId, chainId, name, categoriesJson, metadataState, indexState,
+      registeredAt, firstSeenAt, lastSeenAt, priority
+    ) VALUES ('eip155:56:cursor-new', 'cursor-new', 56, 'Cursor new', '[]', 'ok', 'current', ?, ?, ?, 40)`)
+      .bind(now, now, now).run();
+    await env.DB.prepare(`INSERT INTO catalog_endpoints (
+      endpointKey, protocol, endpoint, originKey, safety, representativeAgentKey,
+      nextProbeAt, consecutiveFailures, declaredProtocol, role, validationProtocol, eligibility
+    ) VALUES (?, 'a2a', 'https://cursor-new.example/a2a', 'cursor-new', 'safe',
+      'eip155:56:cursor-new', ?, 0, 'a2a', 'operational', 'a2a', 'eligible')`)
+      .bind("4".repeat(64), now).run();
+    await env.DB.prepare(`INSERT INTO catalog_agent_endpoints (
+      agentKey, endpointKey, declarationState, firstSeenAt, lastSeenAt, priority
+    ) VALUES ('eip155:56:cursor-new', ?, 'current', ?, ?, 40)`)
+      .bind("4".repeat(64), now, now).run();
+
+    const second = await app.fetch(
+      new Request(`https://worker.test/catalog-agents?status=declared&limit=2&cursor=${firstBody.nextCursor}`),
+      env,
+      createExecutionContext(),
+    );
+    expect(second.status).toBe(200);
+    const secondBody = await second.json() as { items: Array<{ agentId: string }> };
+    expect(secondBody.items.map((item) => item.agentId)).toEqual(["cursor-3"]);
   });
 
   it("treats a fresh ERC-8183 HTTP health observation as live reachability", async () => {
@@ -2177,7 +2284,7 @@ describe("WP1 in the Workers runtime", () => {
     expect(summary).toMatchObject({ requests: 4, removedTargets: 1 });
   });
 
-  it("runs the v2 discovery worklist without the legacy allowlist", async () => {
+  it("runs the Paid v2 phase rotation with the conservative query budget", async () => {
     const catalogAgent = {
       chainId: 56,
       agentId: "987654",
@@ -2211,6 +2318,7 @@ describe("WP1 in the Workers runtime", () => {
       fetch: fetchCatalog as typeof fetch,
     });
     const config = loadConfig({
+      CLOUDFLARE_WORKERS_PLAN: "paid",
       KILL_SWITCH: "0",
       PRODUCER_KILL_SWITCH: "0",
       CATALOG_V2_WRITES_ENABLED: "1",
@@ -2220,6 +2328,14 @@ describe("WP1 in the Workers runtime", () => {
       PROBE_GENERAL_EGRESS_APPROVED: "1",
       PROBE_AGENT_ALLOWLIST: "*",
       PROBE_ENDPOINT_ALLOWLIST: "*",
+    });
+    expect(config).toMatchObject({
+      plan: "paid",
+      cronIntervalMinutes: 1,
+      catalogProbeBatchSize: 4,
+      catalogProbeConcurrency: 2,
+      externalSubrequestsPerRun: 15,
+      d1QueriesPerRun: 40,
     });
     const context = createExecutionContext();
 
@@ -2314,6 +2430,137 @@ describe("WP1 in the Workers runtime", () => {
       .toEqual({ count: 1 });
     expect(await env.DB.prepare("SELECT COUNT(*) AS count FROM catalog_ingest_tasks WHERE status = 'pending'").first())
       .toEqual({ count: 2 });
+  });
+
+  it("paginates a Paid HEADER burst beyond one page before advancing past it", async () => {
+    const initial = {
+      chainId: 56,
+      agentId: "799999",
+      name: "Previous high water",
+      registeredAt: 49_000,
+      metadataUpdatedAt: 48_000,
+      metadataReasonCode: "ok",
+      services: [],
+      endpoints: [],
+    };
+    const burst = Array.from({ length: 16 }, (_, index) => ({
+      chainId: 56,
+      agentId: String(800_000 + index),
+      name: `Burst agent ${index}`,
+      registeredAt: 50_000 + index,
+      metadataUpdatedAt: 49_000 + index,
+      metadataReasonCode: "ok",
+      services: [],
+      endpoints: [],
+    }));
+    let agents = [initial];
+    const fetchCatalog = vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input));
+      if (!url.pathname.endsWith("/agents")) return new Response(null, { status: 404 });
+      const offset = Number(url.searchParams.get("offset"));
+      const limit = Number(url.searchParams.get("limit"));
+      const ordered = url.searchParams.get("sortOrder") === "desc" ? [...agents].reverse() : agents;
+      return Response.json({ items: ordered.slice(offset, offset + limit), total: agents.length, limit, offset });
+    });
+    const runner = createWp2ScheduledRunner({
+      now: () => 60_000,
+      randomUUID: () => "paid-header-burst",
+      fetch: fetchCatalog as typeof fetch,
+    });
+    const config = loadConfig({
+      CLOUDFLARE_WORKERS_PLAN: "paid",
+      KILL_SWITCH: "0",
+      PRODUCER_KILL_SWITCH: "0",
+      CATALOG_V2_WRITES_ENABLED: "1",
+      CATALOG_PROBE_ENABLED: "0",
+      PROBE_GENERAL_EGRESS_APPROVED: "1",
+      PROBE_AGENT_ALLOWLIST: "*",
+      PROBE_ENDPOINT_ALLOWLIST: "*",
+    });
+
+    await runner({ scheduledTime: 60_000, cron: "* * * * *" }, env, createExecutionContext(), config);
+    agents = [initial, ...burst];
+    await runner({ scheduledTime: 61_000, cron: "* * * * *" }, env, createExecutionContext(), config);
+
+    expect(fetchCatalog.mock.calls.some(([url]) => String(url).includes("limit=15"))).toBe(true);
+    expect(fetchCatalog.mock.calls.some(([url]) => String(url).includes("offset=15")
+      && String(url).includes("sortOrder=desc"))).toBe(true);
+    expect(await env.DB.prepare("SELECT COUNT(*) AS count FROM catalog_agents").first())
+      .toEqual({ count: 17 });
+    expect(await env.DB.prepare("SELECT COUNT(*) AS count FROM catalog_ingest_tasks").first())
+      .toEqual({ count: 17 });
+  });
+
+  it("retries a failed Paid HEADER catch-up page before advancing its high-water mark", async () => {
+    const initial = {
+      chainId: 56,
+      agentId: "899999",
+      name: "Previous high water",
+      registeredAt: 69_000,
+      metadataUpdatedAt: 68_000,
+      metadataReasonCode: "ok",
+      services: [],
+      endpoints: [],
+    };
+    const burst = Array.from({ length: 16 }, (_, index) => ({
+      chainId: 56,
+      agentId: String(900_000 + index),
+      name: `Retry burst agent ${index}`,
+      registeredAt: 70_000 + index,
+      metadataUpdatedAt: 69_000 + index,
+      metadataReasonCode: "ok",
+      services: [],
+      endpoints: [],
+    }));
+    let agents = [initial];
+    let catchupFailures = 1;
+    const fetchCatalog = vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input));
+      if (!url.pathname.endsWith("/agents")) return new Response(null, { status: 404 });
+      const offset = Number(url.searchParams.get("offset"));
+      const limit = Number(url.searchParams.get("limit"));
+      if (offset === 15 && catchupFailures > 0) {
+        catchupFailures -= 1;
+        return new Response(null, { status: 503 });
+      }
+      const ordered = url.searchParams.get("sortOrder") === "desc" ? [...agents].reverse() : agents;
+      return Response.json({ items: ordered.slice(offset, offset + limit), total: agents.length, limit, offset });
+    });
+    const runner = createWp2ScheduledRunner({
+      now: () => 80_000,
+      randomUUID: () => "paid-header-retry",
+      fetch: fetchCatalog as typeof fetch,
+    });
+    const config = loadConfig({
+      CLOUDFLARE_WORKERS_PLAN: "paid",
+      KILL_SWITCH: "0",
+      PRODUCER_KILL_SWITCH: "0",
+      CATALOG_V2_WRITES_ENABLED: "1",
+      CATALOG_PROBE_ENABLED: "0",
+      PROBE_GENERAL_EGRESS_APPROVED: "1",
+      PROBE_AGENT_ALLOWLIST: "*",
+      PROBE_ENDPOINT_ALLOWLIST: "*",
+    });
+
+    await runner({ scheduledTime: 80_000, cron: "* * * * *" }, env, createExecutionContext(), config);
+    agents = [initial, ...burst];
+    await expect(runner(
+      { scheduledTime: 81_000, cron: "* * * * *" },
+      env,
+      createExecutionContext(),
+      config,
+    )).rejects.toThrow("HTTP 503");
+
+    expect(await env.DB.prepare("SELECT textValue FROM runtime_state WHERE key = 'header_high_water'").first())
+      .toEqual({ textValue: "69000:899999" });
+
+    await runner({ scheduledTime: 81_000, cron: "* * * * *" }, env, createExecutionContext(), config);
+
+    expect(catchupFailures).toBe(0);
+    expect(await env.DB.prepare("SELECT COUNT(*) AS count FROM catalog_agents").first())
+      .toEqual({ count: 17 });
+    expect(await env.DB.prepare("SELECT COUNT(*) AS count FROM catalog_ingest_tasks").first())
+      .toEqual({ count: 17 });
   });
 
   it("keeps an all-new Free sweep page inside the row budget", async () => {

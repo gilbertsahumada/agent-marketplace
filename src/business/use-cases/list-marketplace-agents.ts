@@ -16,7 +16,6 @@ import {
   type CatalogStatus,
 } from "../entities/catalog-candidate.ts";
 import {
-  attachCatalogCandidate,
   catalogCandidateToMarketplaceAgentData,
   type CatalogCandidatePageReader,
 } from "../../data/observation/catalog-marketplace-adapter.ts";
@@ -170,16 +169,8 @@ export class ListMarketplaceAgents {
       });
       if (catalog) {
         const fetchedAt = new Date(catalog.generatedAt).toISOString();
-        const records = await Promise.all(catalog.items.map(async (candidate) => {
-          try {
-            const source = await this.repository.getById(candidate.agentId);
-            return source
-              ? attachCatalogCandidate(source, candidate)
-              : catalogCandidateToMarketplaceAgentData(candidate, fetchedAt);
-          } catch {
-            return catalogCandidateToMarketplaceAgentData(candidate, fetchedAt);
-          }
-        }));
+        const records = catalog.items.map((candidate) =>
+          catalogCandidateToMarketplaceAgentData(candidate, fetchedAt));
         let agents = records.map((record) => toMarketplaceAgent(record, { evaluateMarketplace: true }));
         if (input.availability === "hireable") agents = agents.filter((agent) => agent.hireability.canHire);
         if (input.availability === "mcp_only") {

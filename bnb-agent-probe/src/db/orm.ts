@@ -365,6 +365,10 @@ function chunks<T>(values: readonly T[], size: number): T[][] {
   return result;
 }
 
+const CATALOG_PAGE_AGENT_LIMIT = 60;
+const CATALOG_PAGE_ENDPOINT_LIMIT = 1_200;
+const CATALOG_ENDPOINT_QUERY_CHUNK = 40;
+
 export async function readEffectiveCatalogObservations(
   db: Database,
   agentKey: string,
@@ -381,10 +385,15 @@ export async function readEffectiveCatalogObservationsForAgents(
   const rows: CatalogObservationRow[] = [];
   const uniqueAgents = [...new Set(agentKeys)];
   const uniqueEndpoints = [...new Set(endpointKeys)];
-  for (const agentChunk of chunks(uniqueAgents, 40)) {
-    for (const endpointChunk of chunks(uniqueEndpoints, 40)) {
-      if (agentChunk.length === 0 || endpointChunk.length === 0) continue;
-      rows.push(...await db.all<CatalogObservationRow>(sql`SELECT
+  if (uniqueAgents.length > CATALOG_PAGE_AGENT_LIMIT) {
+    throw new RangeError(`catalog observation read accepts at most ${CATALOG_PAGE_AGENT_LIMIT} agents`);
+  }
+  if (uniqueEndpoints.length > CATALOG_PAGE_ENDPOINT_LIMIT) {
+    throw new RangeError(`catalog observation read accepts at most ${CATALOG_PAGE_ENDPOINT_LIMIT} endpoints`);
+  }
+  if (uniqueAgents.length === 0 || uniqueEndpoints.length === 0) return rows;
+  for (const endpointChunk of chunks(uniqueEndpoints, CATALOG_ENDPOINT_QUERY_CHUNK)) {
+    rows.push(...await db.all<CatalogObservationRow>(sql`SELECT
         id, agentKey, endpointKey, protocol, source, outcome, observedAt, expiresAt,
         httpStatus, errorCode, durationMs, detailsJson, attemptId, validationKind,
         verificationLevel, artifactHash
@@ -398,7 +407,7 @@ export async function readEffectiveCatalogObservationsForAgents(
             ORDER BY observedAt DESC, id DESC
           ) AS outcomePosition
         FROM catalog_observations observation
-        WHERE agentKey IN (${sql.join(agentChunk.map((key) => sql`${key}`), sql`, `)})
+        WHERE agentKey IN (${sql.join(uniqueAgents.map((key) => sql`${key}`), sql`, `)})
           AND endpointKey IN (${sql.join(endpointChunk.map((key) => sql`${key}`), sql`, `)})
           AND source IN ('worker_probe', 'buyer_refresh', 'migration')
           AND verificationLevel = 'platform_observed'
@@ -406,7 +415,6 @@ export async function readEffectiveCatalogObservationsForAgents(
       ) effective
       WHERE attemptPosition = 1 OR (outcome = 'protocol_valid' AND outcomePosition = 1)
       ORDER BY observedAt DESC, id DESC`));
-    }
   }
   return rows;
 }
@@ -416,7 +424,7 @@ export async function readEffectiveAgentObservations(
   agentKeys: readonly string[],
 ): Promise<CatalogObservationRow[]> {
   const rows: CatalogObservationRow[] = [];
-  for (const agentChunk of chunks([...new Set(agentKeys)], 40)) {
+  for (const agentChunk of chunks([...new Set(agentKeys)], CATALOG_PAGE_AGENT_LIMIT)) {
     if (agentChunk.length === 0) continue;
     rows.push(...await db.all<CatalogObservationRow>(sql`SELECT
       id, agentKey, endpointKey, protocol, source, outcome, observedAt, expiresAt,
@@ -433,6 +441,32 @@ export async function readEffectiveAgentObservations(
           (validationKind = 'quote' AND verificationLevel = 'cryptographic')
           OR (validationKind = 'chain' AND verificationLevel = 'onchain')
         )
+    ) effective
+    WHERE evidencePosition = 1
+    ORDER BY observedAt DESC, id DESC`));
+  }
+  return rows;
+}
+
+export async function readLatestBrowserObservationsForAgents(
+  db: Database,
+  agentKeys: readonly string[],
+): Promise<CatalogObservationRow[]> {
+  const rows: CatalogObservationRow[] = [];
+  for (const agentChunk of chunks([...new Set(agentKeys)], CATALOG_PAGE_AGENT_LIMIT)) {
+    if (agentChunk.length === 0) continue;
+    rows.push(...await db.all<CatalogObservationRow>(sql`SELECT
+      id, agentKey, endpointKey, protocol, source, outcome, observedAt, expiresAt,
+      httpStatus, errorCode, durationMs, detailsJson, attemptId, validationKind,
+      verificationLevel, artifactHash
+    FROM (
+      SELECT observation.*,
+        ROW_NUMBER() OVER (
+          PARTITION BY agentKey, endpointKey, validationKind ORDER BY observedAt DESC, id DESC
+        ) AS evidencePosition
+      FROM catalog_observations observation
+      WHERE agentKey IN (${sql.join(agentChunk.map((key) => sql`${key}`), sql`, `)})
+        AND source = 'browser_reported'
     ) effective
     WHERE evidencePosition = 1
     ORDER BY observedAt DESC, id DESC`));

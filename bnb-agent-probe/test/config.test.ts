@@ -73,14 +73,21 @@ describe("loadConfig", () => {
       sweepLimit: 2_000,
       sweepPagesPerRun: 2,
       probeBatchSize: 10,
-      catalogProbeBatchSize: 10,
-      catalogProbeConcurrency: 4,
+      catalogProbeBatchSize: 4,
+      catalogProbeConcurrency: 2,
       catalogValidationRequestsPerCallerDay: 100,
-      catalogDiscoveryPageSize: 200,
-      catalogIngestTasksPerRun: 10,
-      catalogDeclarationsPerTask: 20,
-      d1QueriesPerRun: 800,
+      catalogDiscoveryPageSize: 15,
+      catalogIngestTasksPerRun: 1,
+      catalogDeclarationsPerTask: 1,
+      trust8004RequestsPerRun: 4,
+      externalSubrequestsPerRun: 15,
+      d1QueriesPerRun: 40,
+      d1RowsWrittenPerRun: 200,
     });
+    expect(() => loadConfig({
+      CLOUDFLARE_WORKERS_PLAN: "paid",
+      D1_QUERIES_PER_RUN: "41",
+    })).toThrow(/^D1_QUERIES_PER_RUN:/);
   });
 
   it.each([
@@ -163,6 +170,14 @@ describe("loadConfig", () => {
     });
     expect(() => loadConfig({ CATALOG_PROBE_BATCH_SIZE: "5" })).toThrow(/^CATALOG_PROBE_BATCH_SIZE:/);
     expect(() => loadConfig({ CATALOG_PROBE_CONCURRENCY: "3" })).toThrow(/^CATALOG_PROBE_CONCURRENCY:/);
+    expect(() => loadConfig({
+      CLOUDFLARE_WORKERS_PLAN: "paid",
+      EXTERNAL_SUBREQUESTS_PER_RUN: "14",
+    })).toThrow(/^CATALOG_PROBE_BATCH_SIZE:/);
+    expect(loadConfig({
+      CLOUDFLARE_WORKERS_PLAN: "paid",
+      EXTERNAL_SUBREQUESTS_PER_RUN: "15",
+    }).externalSubrequestsPerRun).toBe(15);
   });
 
   it("reserves Free Queue capacity for bounded on-demand validations", () => {
@@ -239,6 +254,13 @@ describe("loadConfig", () => {
       CATALOG_DISCOVERY_PAGE_SIZE: "2000",
     }))
       .toThrow(/^CATALOG_DISCOVERY_PAGE_SIZE:/);
+  });
+
+  it("gives Paid HEADER enough default capacity for the observed registration rate", () => {
+    expect(loadConfig({ CLOUDFLARE_WORKERS_PLAN: "paid" })).toMatchObject({
+      catalogDiscoveryPageSize: 15,
+      d1RowsWrittenPerRun: 200,
+    });
   });
 
   it("keeps the Free catalog page and declaration chunk within the measured row envelope", () => {

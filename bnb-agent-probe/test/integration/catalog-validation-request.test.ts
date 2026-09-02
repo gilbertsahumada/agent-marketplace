@@ -31,6 +31,36 @@ beforeEach(async () => {
 });
 
 describe("catalog validation Queue work", () => {
+  it("binds the Worker global fetch for an on-demand validation", async () => {
+    const globalFetch = vi.fn(function (this: unknown, _input: RequestInfo | URL, init?: RequestInit) {
+      if (this !== globalThis) throw new TypeError("Illegal invocation");
+      const body = typeof init?.body === "string" ? JSON.parse(init.body) as { id?: number } : {};
+      if (body.id === 1) return Promise.resolve(Response.json({
+        jsonrpc: "2.0", id: 1, result: { protocolVersion: "2025-06-18" },
+      }, { headers: { "mcp-session-id": "session" } }));
+      if (body.id === 2) return Promise.resolve(Response.json({
+        jsonrpc: "2.0", id: 2, result: { tools: [] },
+      }));
+      return Promise.resolve(new Response(null, { status: 202 }));
+    });
+    vi.stubGlobal("fetch", globalFetch);
+    const request = await env.DB.prepare("SELECT id FROM catalog_validation_requests").first<{ id: number }>();
+    try {
+      await expect(runCatalogValidationRequest(
+        env.DB as unknown as D1DatabaseLike,
+        request!.id,
+        loadConfig({ KILL_SWITCH: "0", PROBE_GENERAL_EGRESS_APPROVED: "1" }),
+        () => NOW,
+      )).resolves.toBe("completed");
+    } finally {
+      vi.unstubAllGlobals();
+    }
+
+    expect(globalFetch).toHaveBeenCalledTimes(3);
+    expect(await env.DB.prepare(`SELECT outcome FROM catalog_observations
+      WHERE endpointKey = ?`).bind(ENDPOINT_KEY).first()).toMatchObject({ outcome: "protocol_valid" });
+  });
+
   it("runs the exact declared endpoint and completes the request with platform evidence", async () => {
     const logger = { info: vi.fn(), error: vi.fn() };
     const fetchImpl = vi.fn()

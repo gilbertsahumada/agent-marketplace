@@ -124,17 +124,31 @@ function routeUrl(endpoint: string, route: string): string {
   return url.toString();
 }
 
-function canonicalPath(pathname: string): string {
-  const trimmed = pathname.replace(/\/+$/, "");
-  return trimmed.length === 0 ? "/" : trimmed;
-}
-
 function mcpHeaders(sessionId?: string): Record<string, string> {
   return {
     accept: "application/json, text/event-stream",
     "content-type": "application/json",
     ...(sessionId ? { "mcp-session-id": sessionId } : {}),
   };
+}
+
+function catalogNetworkErrorCode(error: TypeError): string {
+  const message = error.message.toLowerCase();
+  if (message.includes("illegal invocation") || message.includes("context object")) {
+    return "CATALOG_FETCH_INVOCATION";
+  }
+  if (message.includes("redirect")) return "CATALOG_NETWORK_REDIRECT";
+  if (message.includes("certificate") || message.includes("tls") || message.includes("ssl")) {
+    return "CATALOG_NETWORK_TLS";
+  }
+  if (message.includes("dns") || message.includes("resolve") || message.includes("hostname")) {
+    return "CATALOG_NETWORK_DNS";
+  }
+  if (message.includes("connect") || message.includes("network")
+    || message.includes("fetch failed") || message.includes("failed to fetch")) {
+    return "CATALOG_NETWORK_CONNECTION";
+  }
+  return "CATALOG_NETWORK_TYPE_ERROR";
 }
 
 async function mcpProbe(
@@ -209,12 +223,26 @@ async function getProbe(
       ? routeUrl(target.endpoint, "health")
       : target.endpoint;
   const requestStarted = clock();
-  const response = await fetchImpl(destination, {
+  const request = (url: string) => fetchImpl(url, {
     method: "GET",
-    redirect: "error",
+    redirect: "manual",
     headers: { accept: "application/json" },
     signal,
   });
+  let response = await request(destination);
+  if (response.status >= 300 && response.status < 400) {
+    const location = response.headers.get("location");
+    let redirected: URL | null = null;
+    try { redirected = location === null ? null : new URL(location, destination); } catch { /* invalid redirect */ }
+    if (redirected === null || !isSyntacticallyPublicHttpsUrl(redirected.toString())
+      || redirected.origin !== new URL(destination).origin) {
+      throw Object.assign(new Error("HTTP_ERROR"), {
+        status: response.status,
+        errorCode: "CATALOG_REDIRECT_REJECTED",
+      });
+    }
+    response = await request(redirected.toString());
+  }
   const requestDuration = Math.max(0, Math.round(clock() - requestStarted));
   if (!response.ok) throw Object.assign(new Error("HTTP_ERROR"), { status: response.status });
   const value = record(await boundedJson(response, maxResponseBytes));
@@ -223,8 +251,7 @@ async function getProbe(
       || !isSyntacticallyPublicHttpsUrl(value.url)) throw new Error("INVALID_RESPONSE");
     const declaredUrl = new URL(target.endpoint);
     const cardUrl = new URL(value.url);
-    if (cardUrl.origin !== declaredUrl.origin
-      || canonicalPath(cardUrl.pathname) !== canonicalPath(declaredUrl.pathname)) {
+    if (cardUrl.origin !== declaredUrl.origin) {
       throw new Error("INVALID_RESPONSE");
     }
     const skillIds = value.skills.map((skill) => record(skill).id);
@@ -283,6 +310,9 @@ export async function probeCatalogEndpoint(
     const name = error instanceof Error ? error.name : "";
     const status = error && typeof error === "object" && "status" in error && typeof error.status === "number"
       ? error.status : null;
+    const explicitErrorCode = error && typeof error === "object" && "errorCode" in error
+      && typeof error.errorCode === "string" && /^CATALOG_[A-Z0-9_]+$/.test(error.errorCode)
+      ? error.errorCode : null;
     const outcome: CatalogProbeOutcome = name === "AbortError" || name === "TimeoutError"
       ? "timeout"
       : error instanceof TypeError
@@ -293,9 +323,9 @@ export async function probeCatalogEndpoint(
       observedAt,
       expiresAt: null,
       httpStatus: status,
-      errorCode: outcome === "timeout" ? "CATALOG_TIMEOUT"
-        : outcome === "network_error" ? "CATALOG_NETWORK_ERROR"
-          : outcome === "http_error" ? `CATALOG_HTTP_${status}` : "CATALOG_INVALID_RESPONSE",
+      errorCode: explicitErrorCode ?? (outcome === "timeout" ? "CATALOG_TIMEOUT"
+        : outcome === "network_error" && error instanceof TypeError ? catalogNetworkErrorCode(error)
+          : outcome === "http_error" ? `CATALOG_HTTP_${status}` : "CATALOG_INVALID_RESPONSE"),
       durationMs: Math.max(0, Math.round(clock() - startedAt)),
       capabilityCount: 0,
       method,

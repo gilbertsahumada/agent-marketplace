@@ -70,11 +70,11 @@ describe("catalog probe phase", () => {
   });
 
   it("recognizes an ERC-8183 commerce path only from the complete A2A skill pair", async () => {
-    const endpoint = "https://seller.example.com/a2a";
+    const endpoint = "https://seller.example.com/grid/.well-known/agent-card.json";
     const observation = await probeCatalogEndpoint({ ...target, protocol: "a2a", endpoint }, {
       fetchImpl: vi.fn(async () => Response.json({
         name: "Seller",
-        url: endpoint,
+        url: "https://seller.example.com/api/sellers/grid/a2a",
         skills: [{ id: "negotiate-erc8183-job" }, { id: "notify_funded" }],
       })),
       timeoutMs: 5_000,
@@ -87,12 +87,33 @@ describe("catalog probe phase", () => {
     });
   });
 
-  it("rejects an Agent Card that points at another path on the same origin", async () => {
+  it("follows one safe same-origin redirect to an A2A Agent Card", async () => {
+    const endpoint = "https://seller.example.com/grid/.well-known/agent-card.json";
+    const fetchImpl = vi.fn()
+      .mockResolvedValueOnce(new Response(null, {
+        status: 307,
+        headers: { location: "/canonical/.well-known/agent-card.json" },
+      }))
+      .mockResolvedValueOnce(Response.json({
+        name: "Seller",
+        url: "https://seller.example.com/api/sellers/grid/a2a",
+        skills: [],
+      }));
+
+    await expect(probeCatalogEndpoint({ ...target, protocol: "a2a", endpoint }, {
+      fetchImpl,
+      timeoutMs: 5_000,
+      now: () => 1_000,
+    })).resolves.toMatchObject({ outcome: "protocol_valid" });
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
+  it("rejects an Agent Card that points at another origin", async () => {
     const endpoint = "https://seller.example.com/a2a";
     const observation = await probeCatalogEndpoint({ ...target, protocol: "a2a", endpoint }, {
       fetchImpl: vi.fn(async () => Response.json({
         name: "Seller",
-        url: "https://seller.example.com/another-agent",
+        url: "https://other.example.com/another-agent",
         skills: [],
       })),
       timeoutMs: 5_000,
@@ -101,13 +122,17 @@ describe("catalog probe phase", () => {
     expect(observation).toMatchObject({ outcome: "invalid_response", errorCode: "CATALOG_INVALID_RESPONSE" });
   });
 
-  it("classifies network failures without calling them CORS or verified reachability", async () => {
+  it.each([
+    ["Failed to fetch", "CATALOG_NETWORK_CONNECTION"],
+    ["Illegal invocation", "CATALOG_FETCH_INVOCATION"],
+    ["Redirect mode is set to error", "CATALOG_NETWORK_REDIRECT"],
+  ])("classifies network failure %s without calling it CORS or reachability", async (message, errorCode) => {
     const observation = await probeCatalogEndpoint({ ...target, protocol: "a2a" }, {
-      fetchImpl: vi.fn(async () => { throw new TypeError("failed"); }),
+      fetchImpl: vi.fn(async () => { throw new TypeError(message); }),
       timeoutMs: 5_000,
       now: () => 1_000,
     });
-    expect(observation).toMatchObject({ outcome: "network_error", errorCode: "CATALOG_NETWORK_ERROR" });
+    expect(observation).toMatchObject({ outcome: "network_error", errorCode });
   });
 
   it("classifies a shared-deadline timeout without overstating reachability", async () => {
@@ -119,15 +144,20 @@ describe("catalog probe phase", () => {
     expect(observation).toMatchObject({ outcome: "timeout", errorCode: "CATALOG_TIMEOUT", expiresAt: null });
   });
 
-  it("blocks redirects and rejects malformed protocol payloads", async () => {
-    const redirectedFetch = vi.fn(async () => new Response(null, { status: 302 }));
+  it("blocks cross-origin redirects and rejects malformed protocol payloads", async () => {
+    const redirectedFetch = vi.fn(async () => new Response(null, {
+      status: 302,
+      headers: { location: "https://other.example.com/card.json" },
+    }));
     const redirected = await probeCatalogEndpoint({ ...target, protocol: "a2a" }, {
       fetchImpl: redirectedFetch,
       timeoutMs: 5_000,
       now: () => 1_000,
     });
-    expect(redirectedFetch).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ redirect: "error" }));
-    expect(redirected).toMatchObject({ outcome: "http_error", httpStatus: 302, expiresAt: null });
+    expect(redirectedFetch).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ redirect: "manual" }));
+    expect(redirected).toMatchObject({
+      outcome: "http_error", httpStatus: 302, errorCode: "CATALOG_REDIRECT_REJECTED", expiresAt: null,
+    });
 
     const malformed = await probeCatalogEndpoint({ ...target, protocol: "a2a" }, {
       fetchImpl: vi.fn(async () => Response.json({ name: "missing URL and skills" })),

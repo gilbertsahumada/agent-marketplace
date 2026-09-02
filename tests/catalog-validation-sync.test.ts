@@ -144,7 +144,11 @@ describe("catalog validation sync", () => {
       { ...input, validationId: 17 },
       { env, now: () => 1_000_000 },
     );
-    expect(token).toEqual(expect.stringMatching(/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/));
+    expect(token).toEqual(expect.stringMatching(/^[A-Za-z0-9_-]+$/));
+    const decodedToken = Buffer.from(token!, "base64url").toString("utf8");
+    expect(decodedToken).not.toContain(input.agentId);
+    expect(decodedToken).not.toContain(endpointKey);
+    expect(decodedToken).not.toContain("17");
     expect(readCatalogValidationRequestToken(token!, { env, now: () => 1_000_001 })).toMatchObject({
       agentId: input.agentId,
       endpointKey,

@@ -48,6 +48,14 @@ const callerRateLimitMigration = readFileSync(
   new URL("../migrations/0017_catalog_validation_caller_rate_limit.sql", import.meta.url),
   "utf8",
 );
+const queryIndexesMigration = readFileSync(
+  new URL("../migrations/0018_catalog_query_indexes.sql", import.meta.url),
+  "utf8",
+);
+const legacyAdmissionRepairMigration = readFileSync(
+  new URL("../migrations/0019_repair_legacy_catalog_admission.sql", import.meta.url),
+  "utf8",
+);
 
 describe("catalog index schema", () => {
   it("models identity, declaration and append-only observation facts separately", () => {
@@ -157,5 +165,24 @@ describe("catalog index schema", () => {
       "idx_catalog_validation_requests_caller_target",
     );
     expect(getTableColumns(catalogValidationRequests).callerKey).toBeDefined();
+  });
+
+  it("indexes the set-based catalog filters and refreshes planner statistics", () => {
+    expect(queryIndexesMigration).toContain("idx_catalog_agent_endpoints_current_agent");
+    expect(queryIndexesMigration).toContain("idx_catalog_endpoints_operational_protocol");
+    expect(queryIndexesMigration).toContain("idx_catalog_observations_platform_latest");
+    expect(queryIndexesMigration).toContain("idx_catalog_observations_quote_latest");
+    expect(queryIndexesMigration).toContain("idx_catalog_agent_admission_state");
+    expect(queryIndexesMigration).toContain("PRAGMA optimize");
+  });
+
+  it("repairs legacy commerce targets without admitting unverified agents", () => {
+    expect(legacyAdmissionRepairMigration).toContain("state = 'candidate'");
+    expect(legacyAdmissionRepairMigration).toContain("endpointKey IS NULL");
+    expect(legacyAdmissionRepairMigration).toContain("e.role = 'operational'");
+    expect(legacyAdmissionRepairMigration).toContain("e.eligibility = 'eligible'");
+    expect(legacyAdmissionRepairMigration).toContain("e.validationProtocol IN ('erc8183_http', 'a2a')");
+    expect(legacyAdmissionRepairMigration).toContain("QUOTE_VERIFICATION_REQUIRED");
+    expect(legacyAdmissionRepairMigration).not.toMatch(/state\s*=\s*'admitted'/);
   });
 });

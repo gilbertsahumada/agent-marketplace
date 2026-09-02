@@ -182,13 +182,13 @@ const PAID_PROFILE: Profile = {
     sweepLimit: 2_000,
     sweepPagesPerRun: 2,
     probeBatchSize: 10,
-    catalogProbeBatchSize: 10,
-    catalogProbeConcurrency: 4,
+    catalogProbeBatchSize: 4,
+    catalogProbeConcurrency: 2,
     catalogValidationRequestsPerDay: 1_000,
     catalogValidationRequestsPerCallerDay: 100,
-    catalogDiscoveryPageSize: 200,
-    catalogIngestTasksPerRun: 10,
-    catalogDeclarationsPerTask: 20,
+    catalogDiscoveryPageSize: 15,
+    catalogIngestTasksPerRun: 1,
+    catalogDeclarationsPerTask: 1,
     catalogA2aTimeoutMs: 10_000,
     catalogMcpTimeoutMs: 10_000,
     catalogErc8183TimeoutMs: 10_000,
@@ -196,11 +196,13 @@ const PAID_PROFILE: Profile = {
     catalogA2aRefreshMinutes: 720,
     catalogMcpRefreshMinutes: 1_440,
     catalogErc8183RefreshMinutes: 360,
-    trust8004RequestsPerRun: 20,
-    externalSubrequestsPerRun: 55,
-    d1QueriesPerRun: 800,
+    trust8004RequestsPerRun: 4,
+    externalSubrequestsPerRun: 15,
+    d1QueriesPerRun: 40,
     d1RowsReadPerRun: 100_000,
-    d1RowsWrittenPerRun: 10_000,
+    // This is the phase/pre-ledger envelope, not total account writes. It
+    // covers a full 15-identity discovery burst plus bounded ingest/probe work.
+    d1RowsWrittenPerRun: 200,
     probeTimeoutMs: 10_000,
     maxCatalogResponseBytes: 16 * 1_024 * 1_024,
     maxSellerResponseBytes: 65_536,
@@ -215,7 +217,7 @@ const PAID_PROFILE: Profile = {
     catalogProbeConcurrency: 4,
     catalogValidationRequestsPerDay: 10_000,
     catalogValidationRequestsPerCallerDay: 1_000,
-    catalogDiscoveryPageSize: 2_000,
+    catalogDiscoveryPageSize: 15,
     catalogIngestTasksPerRun: 50,
     catalogDeclarationsPerTask: 24,
     catalogA2aTimeoutMs: 30_000,
@@ -227,7 +229,7 @@ const PAID_PROFILE: Profile = {
     catalogErc8183RefreshMinutes: 43_200,
     trust8004RequestsPerRun: 55,
     externalSubrequestsPerRun: 1_000,
-    d1QueriesPerRun: 800,
+    d1QueriesPerRun: 40,
     d1RowsReadPerRun: 25_000_000,
     d1RowsWrittenPerRun: 1_000_000,
     probeTimeoutMs: 30_000,
@@ -519,7 +521,7 @@ export function loadConfig(env: Partial<Env>): WorkerConfig {
 
   const worstCaseCatalogExternalRequests = Math.max(
     discoveryRequestsPerSweep + values.catalogIngestTasksPerRun,
-    1 + values.catalogIngestTasksPerRun + (3 * values.catalogProbeBatchSize),
+    discoveryRequestsPerSweep + values.catalogIngestTasksPerRun + (3 * values.catalogProbeBatchSize),
   );
   if (worstCaseCatalogExternalRequests > values.externalSubrequestsPerRun) {
     throw new ConfigError(

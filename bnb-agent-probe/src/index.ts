@@ -318,7 +318,9 @@ export function createWorker(dependencies: WorkerDependencies = {}): WorkerEntry
         cron: controller.cron,
         scheduledTime: controller.scheduledTime,
       });
-      const expectedCron = `*/${config.cronIntervalMinutes} * * * *`;
+      const expectedCron = config.cronIntervalMinutes === 1
+        ? "* * * * *"
+        : `*/${config.cronIntervalMinutes} * * * *`;
       if (controller.cron !== expectedCron) throw new Error("WP2_CRON_MISMATCH");
       if (env.WP2_QUEUE === undefined) throw new Error("WP2_QUEUE_BINDING_REQUIRED");
       await env.WP2_QUEUE.send({ schemaVersion: 1, scheduledTime: controller.scheduledTime });

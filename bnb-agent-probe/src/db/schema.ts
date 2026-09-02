@@ -320,6 +320,9 @@ export const catalogEndpoints = sqliteTable(
     index("idx_catalog_endpoints_lease").on(
       table.role, table.eligibility, table.nextProbeAt, table.leaseExpiresAt, table.endpointKey,
     ),
+    index("idx_catalog_endpoints_operational_protocol")
+      .on(table.validationProtocol, table.endpointKey)
+      .where(sql`${table.role} = 'operational' AND ${table.eligibility} = 'eligible'`),
     check(
       "catalog_endpoints_protocol",
       sql`${table.protocol} IN ('a2a', 'mcp', 'web', 'erc8183_http')`,
@@ -385,6 +388,12 @@ export const catalogAgentEndpoints = sqliteTable(
       desc(table.priority),
       table.agentKey,
     ),
+    index("idx_catalog_agent_endpoints_current_agent")
+      .on(table.agentKey, table.endpointKey)
+      .where(sql`${table.declarationState} = 'current'`),
+    index("idx_catalog_agent_endpoints_current_endpoint")
+      .on(table.endpointKey, table.agentKey)
+      .where(sql`${table.declarationState} = 'current'`),
     check(
       "catalog_agent_endpoints_declaration_state",
       sql`${table.declarationState} IN ('current', 'removed')`,
@@ -427,6 +436,14 @@ export const catalogObservations = sqliteTable(
     index("idx_catalog_observations_agent_evidence").on(
       table.agentKey, table.outcome, table.verificationLevel, table.protocol, desc(table.observedAt), desc(table.id),
     ),
+    index("idx_catalog_observations_platform_latest")
+      .on(table.agentKey, table.endpointKey, desc(table.observedAt), desc(table.id))
+      .where(sql`${table.verificationLevel} = 'platform_observed'
+        AND ${table.source} IN ('worker_probe', 'buyer_refresh', 'migration')
+        AND ${table.validationKind} IN ('reachability', 'protocol')`),
+    index("idx_catalog_observations_quote_latest")
+      .on(table.agentKey, table.endpointKey, desc(table.observedAt), desc(table.id))
+      .where(sql`${table.validationKind} = 'quote' AND ${table.verificationLevel} = 'cryptographic'`),
     uniqueIndex("idx_catalog_observations_attempt")
       .on(table.attemptId)
       .where(sql`${table.attemptId} IS NOT NULL`),
@@ -550,6 +567,7 @@ export const catalogAgentAdmission = sqliteTable(
     reasonCode: text(),
   },
   (table) => [
+    index("idx_catalog_agent_admission_state").on(table.state, table.agentKey, table.endpointKey),
     check(
       "catalog_agent_admission_state",
       sql`${table.state} IN ('candidate', 'admitted', 'suspended')`,

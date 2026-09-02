@@ -43,7 +43,14 @@ export function AgentProfile({ agent, observationTargets = [], observationsAvail
     ? catalogCandidateCard(catalogCandidate)
     : agentCardWithObservations(agent, observationTargets, observationsAvailable);
   const reachability = current.evidence.find((step) => step.kind === "reachable")!;
-  const validationTargets = declaredBrowserValidationTargets(agent);
+  const validationTargetMap = new Map(declaredBrowserValidationTargets(agent).map((target) => [
+    `${target.protocol}\u0000${target.endpoint}`,
+    target,
+  ]));
+  for (const target of agent.validationTargets ?? []) {
+    validationTargetMap.set(`${target.protocol}\u0000${target.endpoint}`, target);
+  }
+  const validationTargets = [...validationTargetMap.values()];
   return (
     <main id="main-content" className="mx-auto w-full max-w-7xl flex-1 px-4 py-12 sm:px-6 lg:px-8">
       <Breadcrumb current={agent.name} trail={[{ href: "/agents", label: "Agents" }]} />
