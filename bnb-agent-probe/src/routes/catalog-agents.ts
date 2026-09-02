@@ -109,7 +109,7 @@ export async function catalogAgentsResponse(
   const url = new URL(request.url);
   const allowedKeys = [
     "status", "page", "cursor", "limit", "q", "category", "protocol", "reachability",
-    "commerce", "quote", "latestFailure", "chain", "inventory",
+    "commerce", "quote", "latestFailure", "chain", "inventory", "facets",
   ];
   if ([...url.searchParams.keys()].some((key) => !allowedKeys.includes(key))) return invalid();
   const rawStatuses = url.searchParams.getAll("status");
@@ -139,6 +139,9 @@ export async function catalogAgentsResponse(
   if (rawChain !== null && rawChain !== "56") return invalid();
   const inventory = url.searchParams.get("inventory") ?? (responseVersion === 2 ? "operational" : "registry");
   if (!(["operational", "registry"] as const).includes(inventory as "operational" | "registry")) return invalid();
+  const rawFacets = url.searchParams.get("facets");
+  if (rawFacets !== null && rawFacets !== "true") return invalid();
+  const includeFacets = responseVersion === 2 && rawFacets === "true";
 
   const db = createDatabase(d1 as unknown as D1DatabaseLike);
   const operationalDeclarationExists = exists(db.select({ value: sql`1` })
@@ -453,6 +456,94 @@ export async function catalogAgentsResponse(
     latestFailure === null ? undefined : latestFailure ? failureExists : not(failureExists),
     rawChain === null ? undefined : eq(catalogAgents.chainId, 56),
   );
+  const facetCount = (condition: ReturnType<typeof statusCondition>) =>
+    sql<number>`COALESCE(SUM(CASE WHEN ${condition} THEN 1 ELSE 0 END), 0)`;
+  const categoryFacetCount = (category: (typeof CATEGORIES)[number]) =>
+    sql<number>`COALESCE(SUM(CASE WHEN EXISTS (
+      SELECT 1 FROM json_each(${catalogAgents.categoriesJson}) WHERE value = ${category}
+    ) THEN 1 ELSE 0 END), 0)`;
+  const operationalBase = and(
+    eq(catalogAgents.indexState, "current"),
+    operationalDeclarationExists,
+  );
+  const countFacet = (status: CatalogStatus) => db.select({ count: count() })
+    .from(catalogAgents).where(and(operationalBase, statusCondition(status)));
+  // D1's production planner aborts the equivalent correlated quote-count query
+  // at catalogue scale. Both inputs are small and indexed, so reconcile the
+  // current admitted endpoints with their latest quote observations in memory.
+  const quoteCapableFacet = (async () => {
+    const admitted = await db.select({
+      agentKey: catalogAgentAdmission.agentKey,
+      endpointKey: catalogAgentAdmission.endpointKey,
+    }).from(catalogAgentAdmission)
+      .innerJoin(catalogAgents, eq(catalogAgents.agentKey, catalogAgentAdmission.agentKey))
+      .innerJoin(catalogAgentEndpoints, and(
+        eq(catalogAgentEndpoints.agentKey, catalogAgentAdmission.agentKey),
+        eq(catalogAgentEndpoints.endpointKey, catalogAgentAdmission.endpointKey),
+      ))
+      .innerJoin(catalogEndpoints, eq(catalogEndpoints.endpointKey, catalogAgentAdmission.endpointKey))
+      .where(and(
+        eq(catalogAgents.indexState, "current"),
+        eq(catalogAgentAdmission.state, "admitted"),
+        eq(catalogAgentEndpoints.declarationState, "current"),
+        eq(catalogEndpoints.role, "operational"),
+        eq(catalogEndpoints.eligibility, "eligible"),
+        inArray(catalogEndpoints.validationProtocol, ["a2a", "erc8183_http"]),
+      ));
+    const admittedPairs = new Set(admitted
+      .filter((row): row is { agentKey: string; endpointKey: string } => row.endpointKey !== null)
+      .map((row) => `${row.agentKey}\n${row.endpointKey}`));
+    if (admittedPairs.size === 0) return [{ count: 0 }];
+    const quotes = await db.select({
+      id: catalogObservations.id,
+      agentKey: catalogObservations.agentKey,
+      endpointKey: catalogObservations.endpointKey,
+      outcome: catalogObservations.outcome,
+      observedAt: catalogObservations.observedAt,
+      expiresAt: catalogObservations.expiresAt,
+    }).from(catalogObservations).where(and(
+      eq(catalogObservations.validationKind, "quote"),
+      eq(catalogObservations.verificationLevel, "cryptographic"),
+    )).orderBy(desc(catalogObservations.observedAt), desc(catalogObservations.id));
+    const seenPairs = new Set<string>();
+    const capableAgents = new Set<string>();
+    for (const quote of quotes) {
+      if (quote.endpointKey === null) continue;
+      const pair = `${quote.agentKey}\n${quote.endpointKey}`;
+      if (!admittedPairs.has(pair) || seenPairs.has(pair)) continue;
+      seenPairs.add(pair);
+      if (quote.outcome === "quote_verified" && quote.expiresAt !== null && quote.expiresAt > nowMs) {
+        capableAgents.add(quote.agentKey);
+      }
+    }
+    return [{ count: capableAgents.size }];
+  })();
+  const facetRowsPromise = includeFacets
+    ? Promise.all([
+      db.select({
+        declared: count(),
+        mcpOnly: facetCount(statusCondition("mcp_only")),
+        erc8183: facetCount(statusCondition("erc8183")),
+        hireable: facetCount(statusCondition("hireable")),
+        rebalancing: categoryFacetCount("rebalancing"),
+        gridTrading: categoryFacetCount("grid_trading"),
+        yieldOptimisation: categoryFacetCount("yield_optimisation"),
+        healthFactorMonitoring: categoryFacetCount("health_factor_monitoring"),
+      }).from(catalogAgents).where(operationalBase),
+      countFacet("pending"),
+      countFacet("a2a"),
+      countFacet("mcp"),
+      quoteCapableFacet,
+      countFacet("failed"),
+    ]).then(([simple, pending, a2a, mcp, quoteCapable, failed]) => [{
+      ...simple[0]!,
+      pending: pending[0]?.count ?? 0,
+      a2a: a2a[0]?.count ?? 0,
+      mcp: mcp[0]?.count ?? 0,
+      quoteCapable: quoteCapable[0]?.count ?? 0,
+      failed: failed[0]?.count ?? 0,
+    }])
+    : Promise.resolve([]);
   const cursorCondition = cursor === undefined ? undefined : or(
     lt(catalogAgents.priority, cursor.priority),
     and(
@@ -470,11 +561,12 @@ export async function catalogAgentsResponse(
     ),
   );
   const offset = (page - 1) * limit;
-  const [totals, pageRows] = await Promise.all([
+  const [totals, pageRows, facetRows] = await Promise.all([
     db.select({ count: count() }).from(catalogAgents).where(where),
     db.select().from(catalogAgents).where(and(where, cursorCondition))
       .orderBy(desc(catalogAgents.priority), desc(catalogAgents.registeredAt), catalogAgents.agentId)
       .limit(limit + 1).offset(cursor === undefined ? offset : 0),
+    facetRowsPromise,
   ]);
   const hasNextPage = pageRows.length > limit;
   const agents = pageRows.slice(0, limit);
@@ -551,6 +643,26 @@ export async function catalogAgentsResponse(
     };
   });
   const compatibilityItems = items.map(({ admission: _admission, state: _state, ...item }) => item);
+  const facetRow = facetRows[0];
+  const facets = facetRow ? {
+    statuses: {
+      declared: Number(facetRow.declared),
+      pending: Number(facetRow.pending),
+      a2a: Number(facetRow.a2a),
+      mcp: Number(facetRow.mcp),
+      mcp_only: Number(facetRow.mcpOnly),
+      erc8183: Number(facetRow.erc8183),
+      quote_capable: Number(facetRow.quoteCapable),
+      hireable: Number(facetRow.hireable),
+      failed: Number(facetRow.failed),
+    },
+    categories: {
+      rebalancing: Number(facetRow.rebalancing),
+      grid_trading: Number(facetRow.gridTrading),
+      yield_optimisation: Number(facetRow.yieldOptimisation),
+      health_factor_monitoring: Number(facetRow.healthFactorMonitoring),
+    },
+  } : undefined;
   const body = responseVersion === 1 ? {
     schemaVersion: 1,
     chainId: 56,
@@ -584,6 +696,7 @@ export async function catalogAgentsResponse(
     },
     generatedAt: nowMs,
     total: totals[0]?.count ?? 0,
+    ...(facets ? { facets } : {}),
     nextCursor: hasNextPage && agents.length > 0 ? encodeCursor({
       priority: agents.at(-1)!.priority,
       registeredAt: agents.at(-1)!.registeredAt,

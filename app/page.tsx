@@ -1,9 +1,8 @@
 import { MarketplaceLanding } from "@/components/marketplace/landing-page";
 import type { CategoryCardViewModel, EvidenceStepViewModel, FunnelSectionViewModel } from "@/components/marketplace/presentation-types";
-import { agentCardWithObservations } from "@/components/marketplace/view-models";
-import { getFunnelEvidence, getMainnetJobProof, getPublicJobProof, getWorkerObservations, listMarketplaceAgents } from "@/src/business/composition";
+import { catalogCandidateCard } from "@/components/marketplace/catalog-candidate-view-model";
+import { getCatalogCandidatePage, getFunnelEvidence, getMainnetJobProof, getPublicJobProof, listMarketplaceAgents } from "@/src/business/composition";
 import type { FunnelEvidence } from "@/src/business/entities/funnel-evidence";
-import { observationTargetsByAgentId } from "@/src/business/entities/worker-observations";
 
 export const dynamic = "force-dynamic";
 
@@ -80,9 +79,9 @@ function funnelSectionViewModel(evidence: FunnelEvidence | null): FunnelSectionV
 }
 
 export default async function HomePage() {
-  const [catalog, observations, proof] = await Promise.all([
+  const [catalog, normalizedCatalog, proof] = await Promise.all([
     listMarketplaceAgents.execute({ view: "marketplace", page: 1, limit: 12 }),
-    getWorkerObservations(),
+    getCatalogCandidatePage({ status: "declared", page: 1, limit: 12 }),
     getPublicJobProof.execute({ jobId: "551" }),
   ]);
   const mainnetProof = getMainnetJobProof.execute();
@@ -109,14 +108,7 @@ export default async function HomePage() {
     { kind: "job", label: "Job proven", status: "verified", provenance: "onchain", detail: `Job #${mainnetProof.jobId} reached ${mainnetProof.finalState} on BSC Mainnet.`, timestamp: (mainnetProof.transactions.settle ?? mainnetProof.transactions.submit)?.timestamp ?? mainnetProof.capturedAt, ...txLink(mainnetProof.transactions.settle ?? mainnetProof.transactions.submit) },
   ] : null;
   const now = Date.now();
-  const targets = observationTargetsByAgentId(observations.feed);
-  const featuredAgents = catalog.items.map((agent) => agentCardWithObservations(
-    agent,
-    targets.get(agent.agentId) ?? [],
-    observations.status === "available",
-    now,
-    mainnetProof?.agentId,
-  ));
+  const featuredAgents = normalizedCatalog?.items.map((agent) => catalogCandidateCard(agent, now)) ?? [];
   const qualified = featuredAgents.find((agent) => agent.hireability === "hireable") ?? null;
   return (
     <MarketplaceLanding

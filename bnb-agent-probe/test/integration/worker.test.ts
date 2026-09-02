@@ -213,6 +213,14 @@ describe("WP1 in the Workers runtime", () => {
       items: [{ agentId: "1" }],
     });
 
+    const facets = await app.fetch(new Request("https://worker.test/catalog-agents?status=declared&facets=true"), env, context);
+    expect(await facets.json()).toMatchObject({
+      facets: {
+        statuses: { declared: 2, pending: 1, a2a: 1, mcp: 0, mcp_only: 1 },
+        categories: { grid_trading: 1, yield_optimisation: 1 },
+      },
+    });
+
     const outcomes = await app.fetch(new Request("https://worker.test/catalog-agents?status=declared&category=grid_trading&category=yield_optimisation"), env, context);
     expect(await outcomes.json()).toMatchObject({
       categories: ["grid_trading", "yield_optimisation"],
@@ -232,6 +240,32 @@ describe("WP1 in the Workers runtime", () => {
       .bind("a".repeat(64), now).run();
     const hireable = await app.fetch(new Request("https://worker.test/catalog-agents?status=hireable"), env, context);
     expect(await hireable.json()).toMatchObject({ total: 1, items: [{ agentId: "1" }] });
+
+    await env.DB.prepare(`INSERT INTO catalog_observations (
+      agentKey, endpointKey, protocol, source, outcome, observedAt, expiresAt, durationMs, detailsJson,
+      validationKind, verificationLevel
+    ) VALUES
+      ('eip155:56:1', ?, 'a2a', 'buyer_refresh', 'quote_verified', ?, ?, 20, '{}', 'quote', 'cryptographic'),
+      ('eip155:56:1', ?, 'a2a', 'buyer_refresh', 'quote_rejected', ?, NULL, 20, '{}', 'quote', 'cryptographic')`)
+      .bind("a".repeat(64), now - 1_000, now + 900_000, "a".repeat(64), now).run();
+    const rejectedQuoteFacets = await app.fetch(
+      new Request("https://worker.test/catalog-agents?status=declared&facets=true"), env, context,
+    );
+    expect(await rejectedQuoteFacets.json()).toMatchObject({
+      facets: { statuses: { quote_capable: 0 } },
+    });
+
+    await env.DB.prepare(`INSERT INTO catalog_observations (
+      agentKey, endpointKey, protocol, source, outcome, observedAt, expiresAt, durationMs, detailsJson,
+      validationKind, verificationLevel
+    ) VALUES ('eip155:56:1', ?, 'a2a', 'buyer_refresh', 'quote_verified', ?, ?, 20, '{}', 'quote', 'cryptographic')`)
+      .bind("a".repeat(64), now + 1, now + 900_000).run();
+    const verifiedQuoteFacets = await app.fetch(
+      new Request("https://worker.test/catalog-agents?status=declared&facets=true"), env, context,
+    );
+    expect(await verifiedQuoteFacets.json()).toMatchObject({
+      facets: { statuses: { quote_capable: 1 } },
+    });
   });
 
   it("keeps browser protocol evidence when a newer browser quote exists", async () => {

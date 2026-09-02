@@ -5,6 +5,11 @@ export const CATALOG_STATUSES = [
 ] as const;
 export type CatalogStatus = (typeof CATALOG_STATUSES)[number];
 
+export interface CatalogFacetCounts {
+  statuses: Record<CatalogStatus, number>;
+  categories: Record<MarketplaceCategory, number>;
+}
+
 export interface CatalogCandidateDeclaration {
   endpointKey: string;
   protocol: "a2a" | "mcp" | "web" | "erc8183_http";
@@ -133,6 +138,7 @@ export interface CatalogCandidatePage {
   page: number;
   limit: number;
   total: number;
+  facets?: CatalogFacetCounts;
   nextCursor?: string | null;
   items: CatalogCandidate[];
 }

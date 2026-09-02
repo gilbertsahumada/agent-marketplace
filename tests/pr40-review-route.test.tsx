@@ -95,7 +95,7 @@ describe("agents page category handling", () => {
     expect(queryCategories(el.props.query)).toEqual(["grid_trading"]);
     const catalogCalls = catalogDataCalls();
     expect(catalogCalls).toHaveLength(1);
-    expect(catalogFilter(catalogCalls[0]!)).toEqual({ categories: ["grid_trading"], statuses: ["declared"] });
+    expect(catalogFilter(catalogCalls[0]!)).toEqual({ categories: ["grid_trading"], statuses: [] });
     expect(listDataCalls()).toEqual([
       expect.objectContaining({ view: "marketplace", page: 1, limit: 12, category: "grid_trading" }),
     ]);

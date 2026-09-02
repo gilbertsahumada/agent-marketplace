@@ -30,7 +30,7 @@ export default async function AgentsPage({ searchParams }: { searchParams: Promi
   const rawStatuses = Array.isArray(params.status) ? params.status : typeof params.status === "string" ? [params.status] : [];
   const validStatuses = rawStatuses.filter((status): status is CatalogStatus => CATALOG_STATUSES.includes(status as CatalogStatus));
   if (validStatuses.length !== rawStatuses.length) notFound();
-  const statuses: CatalogStatus[] = rawStatuses.length === 0 ? ["declared"] : [...new Set(validStatuses)];
+  const statuses: CatalogStatus[] = [...new Set(validStatuses)];
   const sort = typeof params.sort === "string" && SUPPORTED_SORTS.has(params.sort as MarketplaceSort)
     ? params.sort as MarketplaceSort
     : view === "all" ? DEFAULT_REGISTERED_AGENT_SORT : undefined;
@@ -48,14 +48,15 @@ export default async function AgentsPage({ searchParams }: { searchParams: Promi
       limit: 1,
       sort: DEFAULT_REGISTERED_AGENT_SORT,
     }).catch(() => null),
-    getCatalogCandidatePage({ status: "declared", page: 1, limit: 1 }).catch(() => null),
+    getCatalogCandidatePage({ status: "declared", page: 1, limit: 1, includeFacets: true }).catch(() => null),
   ]);
   const catalog = view === "marketplace" ? await getCatalogCandidatePage({
     statuses, categories, page, limit: 24, ...optional,
   }) : null;
   let data;
   if (!catalog) {
-    if (view === "marketplace" && (statuses.length !== 1 || statuses[0] !== "declared" || categories.length > 1)) {
+    const baselineStatuses = statuses.length === 0 || (statuses.length === 1 && statuses[0] === "declared");
+    if (view === "marketplace" && (!baselineStatuses || categories.length > 1)) {
       return <CatalogUnavailable retryHref={`/agents?${retryParams.toString()}`} />;
     }
     try {
@@ -75,7 +76,7 @@ export default async function AgentsPage({ searchParams }: { searchParams: Promi
   const registryTotal = registryMetric?.pagination.total
     ?? (view === "all" && !q ? data?.pagination.total : undefined);
   const operationalTotal = operationalMetric?.total
-    ?? (statuses.length === 1 && statuses[0] === "declared" && !q && categories.length === 0 ? catalog?.total : undefined);
+    ?? ((statuses.length === 0 || (statuses.length === 1 && statuses[0] === "declared")) && !q && categories.length === 0 ? catalog?.total : undefined);
   return <CatalogPage
     {...(data ? { data } : {})}
     {...(catalog ? { catalog } : {})}
@@ -84,5 +85,6 @@ export default async function AgentsPage({ searchParams }: { searchParams: Promi
     {...(mainnetProof ? { provenAgentId: mainnetProof.agentId } : {})}
     {...(typeof registryTotal === "number" ? { registryTotal } : {})}
     {...(typeof operationalTotal === "number" ? { operationalTotal } : {})}
+    {...(operationalMetric?.facets ? { filterCounts: operationalMetric.facets } : {})}
   />;
 }

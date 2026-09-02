@@ -734,7 +734,7 @@ describe("marketplace presentation rules", () => {
     expect(screen.getByRole("region", { name: "Agent results" })).toHaveClass("lg:h-full", "lg:overflow-y-auto");
     expect(container.querySelector(".lucide-search")).toHaveClass("top-1/2", "-translate-y-1/2");
     expect(screen.getAllByRole("checkbox", { name: "Declared endpoints" })).toHaveLength(2);
-    expect(screen.getAllByRole("checkbox", { name: "Declared endpoints" }).every((checkbox) => checkbox.getAttribute("data-state") === "checked")).toBe(true);
+    expect(screen.getAllByRole("checkbox", { name: "Declared endpoints" }).every((checkbox) => checkbox.getAttribute("data-state") === "unchecked")).toBe(true);
     expect(screen.getAllByRole("checkbox", { name: "Quote verified" }).every((checkbox) => checkbox.getAttribute("data-state") === "unchecked")).toBe(true);
     expect(screen.getAllByRole("checkbox", { name: "Grid trading" }).every((checkbox) => checkbox.getAttribute("data-state") === "unchecked")).toBe(true);
     expect(screen.getByRole("tab", { name: "Cards" })).toHaveAttribute("data-state", "active");
@@ -783,6 +783,47 @@ describe("marketplace presentation rules", () => {
     render(createElement(AgentsLoading));
     expect(screen.getByRole("status", { name: "Loading agents" })).toBeInTheDocument();
     expect(screen.getByTestId("agents-loading-results")).toBeInTheDocument();
+  });
+
+  it("allows clearing the last evidence filter and shows global counts beside every filter", async () => {
+    const user = userEvent.setup();
+    const page: MarketplaceAgentPage = {
+      view: "marketplace",
+      items: [marketplaceAgent()],
+      pagination: { page: 1, pageSize: 12, total: 1, totalPages: 1 },
+      categories: [],
+      catalogCoverage: "partial",
+      fetchedAt: "2026-08-17T00:00:00.000Z",
+    };
+    routerPush.mockClear();
+    render(createElement(CatalogPage, {
+      data: page,
+      filterCounts: {
+        statuses: {
+          declared: 30_024,
+          pending: 29_998,
+          a2a: 4,
+          mcp: 2,
+          mcp_only: 1,
+          erc8183: 13,
+          quote_capable: 1,
+          hireable: 1,
+          failed: 3,
+        },
+        categories: {
+          rebalancing: 5,
+          grid_trading: 7,
+          yield_optimisation: 3,
+          health_factor_monitoring: 2,
+        },
+      },
+      query: { view: "marketplace", statuses: ["declared"] },
+    }));
+
+    expect(screen.getAllByText("30,024")).toHaveLength(2);
+    expect(screen.getAllByText("7")).toHaveLength(2);
+    await user.click(screen.getAllByRole("checkbox", { name: "Declared endpoints" })[0]!);
+    expect(routerPush).toHaveBeenCalledWith("/agents?view=marketplace");
   });
 
   it("shows result skeletons while applying a second evidence filter", async () => {

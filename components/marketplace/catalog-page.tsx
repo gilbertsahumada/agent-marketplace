@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { ListFilter } from "lucide-react";
 import type { MarketplaceAgentPage, MarketplaceCategory } from "@/src/business/entities/marketplace-agent";
-import type { CatalogCandidatePage, CatalogStatus } from "@/src/business/entities/catalog-candidate";
+import type { CatalogCandidatePage, CatalogFacetCounts, CatalogStatus } from "@/src/business/entities/catalog-candidate";
 import {
   DEFAULT_REGISTERED_AGENT_SORT,
   type MarketplaceSort,
@@ -36,6 +36,7 @@ export function CatalogPage({
   provenAgentId,
   registryTotal: providedRegistryTotal,
   operationalTotal: providedOperationalTotal,
+  filterCounts,
 }: {
   data?: MarketplaceAgentPage;
   catalog?: CatalogCandidatePage;
@@ -52,10 +53,11 @@ export function CatalogPage({
   provenAgentId?: string;
   registryTotal?: number;
   operationalTotal?: number;
+  filterCounts?: CatalogFacetCounts;
 }) {
   if (!data && !catalog) throw new Error("CATALOG_PAGE_DATA_REQUIRED");
   const allView = query.view === "all";
-  const selectedStatuses = query.statuses ?? [query.status ?? "declared"];
+  const selectedStatuses = query.statuses ?? (query.status ? [query.status] : []);
   const selectedCategories = query.categories ?? (query.category ? [query.category] : []);
   const targets = observationTargetsByAgentId(observations.feed);
   const now = Date.now();
@@ -72,7 +74,9 @@ export function CatalogPage({
   const total = catalog?.total ?? data!.pagination.total;
   const registryTotal = providedRegistryTotal ?? (allView ? total : undefined);
   const operationalTotal = providedOperationalTotal
-    ?? (!allView && selectedStatuses.length === 1 && selectedStatuses[0] === "declared" && selectedCategories.length === 0 && !query.q ? total : undefined);
+    ?? (!allView
+      && (selectedStatuses.length === 0 || (selectedStatuses.length === 1 && selectedStatuses[0] === "declared"))
+      && selectedCategories.length === 0 && !query.q ? total : undefined);
   const currentPage = catalog?.page ?? data!.pagination.page;
   const totalPages = total === 0 ? 0 : Math.ceil(total / (catalog?.limit ?? data!.pagination.pageSize));
   const hrefForPage = (page: number) => {
@@ -103,6 +107,7 @@ export function CatalogPage({
             <CatalogFilters
               idPrefix="catalog-mobile"
               categories={selectedCategories}
+              {...(filterCounts ? { counts: filterCounts } : {})}
               statuses={selectedStatuses}
               {...(query.q ? { q: query.q } : {})}
             />
@@ -168,6 +173,7 @@ export function CatalogPage({
               <CatalogFilters
                 idPrefix="catalog-desktop"
                 categories={selectedCategories}
+                {...(filterCounts ? { counts: filterCounts } : {})}
                 statuses={selectedStatuses}
                 {...(query.q ? { q: query.q } : {})}
               />

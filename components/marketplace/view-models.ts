@@ -254,7 +254,7 @@ export function agentCardWithObservation(
       };
       if (step.kind === "quote") return {
         ...step,
-        status: quoteObserved ? "verified" : quoteFailed ? "failed" : latest ? "unknown" : "unavailable",
+        status: quoteCurrent ? "verified" : quoteFailed ? "failed" : latest ? "unknown" : "unavailable",
         provenance: latest ? "observed" : "not_probed",
         detail: quoteCurrent
           ? "A signed ERC-8183 quote is inside the 60-second observation window; Hire still requests a new quote."
