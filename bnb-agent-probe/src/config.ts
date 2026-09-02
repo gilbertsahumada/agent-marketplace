@@ -17,6 +17,7 @@ export interface WorkerConfig {
   catalogProbeEnabled: boolean;
   catalogV2ReadsEnabled: boolean;
   catalogV2WritesEnabled: boolean;
+  catalogResponseCacheSeconds: number;
   catalogProbeBatchSize: number;
   catalogProbeConcurrency: number;
   catalogValidationRequestsPerDay: number;
@@ -80,6 +81,7 @@ type NumericConfig = Omit<
   | "catalogProbeEnabled"
   | "catalogV2ReadsEnabled"
   | "catalogV2WritesEnabled"
+  | "catalogResponseCacheSeconds"
   | "catalogFailureBackoffMinutes"
   | "platformLimits"
   | "projectedDailyBudget"
@@ -463,6 +465,14 @@ export function loadConfig(env: Partial<Env>): WorkerConfig {
     && source.CATALOG_V2_READS_ENABLED !== "1") {
     throw new ConfigError("CATALOG_V2_READS_ENABLED", "must be 0 or 1");
   }
+  // Public catalogue responses may be served from the Workers Cache for this
+  // long. 0 keeps every read live; staging enables it because each uncached
+  // list request costs O(agents) D1 rows against the account-wide Free quota.
+  const rawCacheSeconds = source.CATALOG_RESPONSE_CACHE_SECONDS;
+  if (rawCacheSeconds !== undefined && (!/^\d{1,4}$/.test(rawCacheSeconds) || Number(rawCacheSeconds) > 3_600)) {
+    throw new ConfigError("CATALOG_RESPONSE_CACHE_SECONDS", "must be an integer between 0 and 3600");
+  }
+  const catalogResponseCacheSeconds = rawCacheSeconds === undefined ? 0 : Number(rawCacheSeconds);
 
   for (const [field, property] of Object.entries(NUMERIC_FIELDS) as Array<
     [keyof typeof NUMERIC_FIELDS, keyof NumericConfig]
@@ -592,6 +602,7 @@ export function loadConfig(env: Partial<Env>): WorkerConfig {
     schedulerMode: profile.schedulerMode,
     catalogProbeEnabled,
     catalogV2ReadsEnabled,
+    catalogResponseCacheSeconds,
     catalogV2WritesEnabled,
     catalogFailureBackoffMinutes: parseFailureBackoff(source.CATALOG_FAILURE_BACKOFF_MINUTES, profile),
     probeAgentAllowlist: parseAgentAllowlist(source.PROBE_AGENT_ALLOWLIST, plan, generalEgressApproved),

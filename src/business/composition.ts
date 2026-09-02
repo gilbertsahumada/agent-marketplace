@@ -34,6 +34,7 @@ import {
   getCatalogCandidatePage as loadCatalogCandidatePage,
 } from "../data/observation/catalog-candidate-feed.ts";
 import { syncCatalogObservation } from "../data/observation/catalog-observation-sync.ts";
+import { syncHireEvent } from "../data/observation/hire-event-sync.ts";
 import {
   CatalogValidationRequestError,
   getCatalogValidationStatus as loadCatalogValidationStatus,
@@ -97,6 +98,7 @@ export const getWorkerObservations = workerObservationFeed;
 export const getCatalogCandidate = loadCatalogCandidate;
 export const getCatalogCandidatePage = loadCatalogCandidatePage;
 export const recordCatalogObservation = syncCatalogObservation;
+export const recordHireEvent = syncHireEvent;
 export {
   CatalogValidationRequestError,
   loadCatalogValidationStatus as getCatalogValidationStatus,

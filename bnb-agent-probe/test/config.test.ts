@@ -31,6 +31,7 @@ describe("loadConfig", () => {
       catalogFailureBackoffMinutes: [60, 360, 1_440, 10_080],
       catalogV2ReadsEnabled: false,
       catalogV2WritesEnabled: false,
+      catalogResponseCacheSeconds: 0,
       probeAgentAllowlist: ["303779"],
       probeEndpointAllowlist: ["https://bnb-agent-marketplace-ruby.vercel.app/grid"],
       trust8004RequestsPerRun: 4,
@@ -262,6 +263,11 @@ describe("loadConfig", () => {
     expect(loadConfig({ CATALOG_V2_READS_ENABLED: "1" }).catalogV2ReadsEnabled).toBe(true);
     expect(() => loadConfig({ CATALOG_V2_READS_ENABLED: "yes" }))
       .toThrow(/^CATALOG_V2_READS_ENABLED:/);
+    expect(loadConfig({ CATALOG_RESPONSE_CACHE_SECONDS: "300" }).catalogResponseCacheSeconds).toBe(300);
+    expect(() => loadConfig({ CATALOG_RESPONSE_CACHE_SECONDS: "3601" }))
+      .toThrow(/^CATALOG_RESPONSE_CACHE_SECONDS:/);
+    expect(() => loadConfig({ CATALOG_RESPONSE_CACHE_SECONDS: "30s" }))
+      .toThrow(/^CATALOG_RESPONSE_CACHE_SECONDS:/);
   });
 
   it.each([

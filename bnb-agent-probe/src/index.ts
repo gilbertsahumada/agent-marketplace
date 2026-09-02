@@ -68,6 +68,28 @@ async function bearerMatches(header: string | null, secret: string): Promise<boo
   return difference === 0 && candidate.length > 0;
 }
 
+// Serves public catalogue reads from the Workers Cache for the configured
+// window. Every uncached list request costs O(agents) D1 rows, so this is the
+// lever that keeps the account-wide Free read quota inside its daily budget.
+async function cachedCatalogResponse(
+  request: Request,
+  seconds: number,
+  produce: () => Promise<Response>,
+): Promise<Response> {
+  if (seconds <= 0) return produce();
+  const cache = (caches as unknown as { default: Cache }).default;
+  const key = new Request(request.url, { method: "GET" });
+  const hit = await cache.match(key);
+  if (hit) return hit;
+  const response = await produce();
+  if (!response.ok) return response;
+  const headers = new Headers(response.headers);
+  headers.set("cache-control", `public, max-age=${seconds}, stale-while-revalidate=${seconds}`);
+  const cacheable = new Response(response.body, { status: response.status, headers });
+  await cache.put(key, cacheable.clone());
+  return cacheable;
+}
+
 type QueueWork =
   | { kind: "scheduled"; scheduledTime: number }
   | { kind: "catalog_validation"; validationId: number; enqueuedAt: number };
@@ -146,11 +168,15 @@ export function createWorker(dependencies: WorkerDependencies = {}): WorkerEntry
       }
       if (request.method === "GET" && (url.pathname === "/catalog-agent" || /^\/catalog-agent\/[1-9]\d*$/.test(url.pathname))) {
         const { catalogAgentResponse } = await import("./routes/catalog-agent");
-        return catalogAgentResponse(request, env.DB, now(), config.catalogV2ReadsEnabled ? 2 : 1);
+        return cachedCatalogResponse(request, config.catalogResponseCacheSeconds, () => (
+          catalogAgentResponse(request, env.DB, now(), config.catalogV2ReadsEnabled ? 2 : 1)
+        ));
       }
       if (request.method === "GET" && url.pathname === "/catalog-agents") {
         const { catalogAgentsResponse } = await import("./routes/catalog-agents");
-        return catalogAgentsResponse(request, env.DB, now(), config.catalogV2ReadsEnabled ? 2 : 1);
+        return cachedCatalogResponse(request, config.catalogResponseCacheSeconds, () => (
+          catalogAgentsResponse(request, env.DB, now(), config.catalogV2ReadsEnabled ? 2 : 1)
+        ));
       }
       if (request.method === "GET" && /^\/catalog-validations\/\d+$/.test(url.pathname)) {
         if (env.BUYER_OBSERVATION_SECRET === undefined) return errorResponse("not_found", 404);
@@ -202,6 +228,21 @@ export function createWorker(dependencies: WorkerDependencies = {}): WorkerEntry
         const { catalogQuoteEvidenceResponse } = await import("./routes/catalog-quote-evidence");
         return catalogQuoteEvidenceResponse(request, env.DB, {
           ...(env.BSC_RPC_URL === undefined ? {} : { rpcUrl: env.BSC_RPC_URL }),
+          nowMs: now(),
+          timeoutMs: config.probeTimeoutMs,
+        });
+      }
+      if (request.method === "POST" && url.pathname === "/hire-events" && url.search === "") {
+        if (env.BUYER_OBSERVATION_SECRET === undefined) return errorResponse("not_found", 404);
+        if (!await bearerMatches(request.headers.get("authorization"), env.BUYER_OBSERVATION_SECRET)) {
+          return errorResponse("unauthorized", 401);
+        }
+        const { hireEventsResponse } = await import("./routes/hire-events");
+        return hireEventsResponse(request, env.DB, {
+          rpcUrls: {
+            ...(env.BSC_RPC_URL === undefined ? {} : { 56: env.BSC_RPC_URL }),
+            ...(env.BSC_TESTNET_RPC_URL === undefined ? {} : { 97: env.BSC_TESTNET_RPC_URL }),
+          },
           nowMs: now(),
           timeoutMs: config.probeTimeoutMs,
         });

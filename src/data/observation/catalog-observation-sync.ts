@@ -24,7 +24,9 @@ export interface CatalogObservationSyncInput {
   details: { capabilityCount?: number; cors?: boolean; method?: "GET" | "POST" };
 }
 
-function destinationUrl(env: Environment): URL | null {
+// Resolves a private Worker route from the public feed URL, enforcing the exact
+// HTTPS origin allowlist that keeps the bearer from ever leaving the Worker origin.
+export function privateWorkerUrl(env: Environment, pathname: string): URL | null {
   const raw = env.OBSERVATIONS_URL?.trim();
   const allowedRaw = env.BUYER_OBSERVATION_ALLOWED_ORIGIN?.trim();
   if (!raw || !allowedRaw) return null;
@@ -41,13 +43,17 @@ function destinationUrl(env: Environment): URL | null {
       || allowed.username || allowed.password
       || allowed.pathname !== "/" || allowed.search || allowed.hash
       || url.origin !== allowed.origin) return null;
-    url.pathname = "/catalog-browser-observations";
+    url.pathname = pathname;
     url.search = "";
     url.hash = "";
     return url;
   } catch {
     return null;
   }
+}
+
+function destinationUrl(env: Environment): URL | null {
+  return privateWorkerUrl(env, "/catalog-browser-observations");
 }
 
 export function catalogEndpointKey(protocol: CatalogObservationSyncInput["protocol"], endpoint: string): string {

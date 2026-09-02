@@ -176,7 +176,7 @@ export const hireEvents = sqliteTable(
   },
   (table) => [
     index("idx_hire_agent").on(table.chainId, table.agentId, desc(table.occurredAt)),
-    check("hire_events_chain_bsc", sql`${table.chainId} = 56`),
+    check("hire_events_chain_bsc", sql`${table.chainId} IN (56, 97)`),
     check(
       "hire_events_phase",
       sql`${table.phase} IN (
@@ -424,6 +424,9 @@ export const catalogObservations = sqliteTable(
     index("idx_catalog_observations_agent").on(table.agentKey, desc(table.observedAt), desc(table.id)),
     index("idx_catalog_observations_endpoint").on(table.endpointKey, desc(table.observedAt), desc(table.id)),
     index("idx_catalog_observations_outcome").on(table.outcome, desc(table.observedAt), desc(table.id)),
+    index("idx_catalog_observations_agent_evidence").on(
+      table.agentKey, table.outcome, table.verificationLevel, table.protocol, desc(table.observedAt), desc(table.id),
+    ),
     uniqueIndex("idx_catalog_observations_attempt")
       .on(table.attemptId)
       .where(sql`${table.attemptId} IS NOT NULL`),
