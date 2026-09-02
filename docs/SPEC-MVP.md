@@ -1,6 +1,6 @@
 # Capa de observación de contratabilidad — SPEC MVP v5 Free-first
 
-**Estado:** WP0, WP1, WP3, WP4 y WP5 están completos. WP2 conserva pendiente únicamente su ventana canónica de evidencia de 24 horas; la corrida UTC 2026-08-29 fue un ensayo. Staging opera desde el 2026-08-30 con Cron de cinco minutos, Queue, D1 y RPC público BSC. El índice normalizado v2 y sus rutas públicas están desplegados en staging; producción y validation continúan safe-off y sin Cron.
+**Estado:** WP0, WP1, WP3, WP4, WP5 y WP6 están completos. WP2 conserva pendiente únicamente su ventana canónica de evidencia de 24 horas; la corrida UTC 2026-08-29 fue un ensayo. WP6 (`POST /hire-events`, ruta same-origin y reporte desde el navegador) está implementado y probado; su despliegue en staging requiere el secreto `BSC_TESTNET_RPC_URL` además de `BSC_RPC_URL`. Staging opera desde el 2026-08-30 con Cron de cinco minutos, Queue, D1 y RPC público BSC. El índice normalizado v2 y sus rutas públicas están desplegados en staging; producción y validation continúan safe-off y sin Cron.
 **Fecha de corte del diseño:** 2026-08-31.
 **Objetivo:** completar la capa de observación necesaria para recorrer:
 
@@ -365,7 +365,7 @@ CREATE TABLE hire_events (
   id               INTEGER PRIMARY KEY AUTOINCREMENT,
   eventKey         TEXT NOT NULL UNIQUE,
   agentId          TEXT NOT NULL,
-  chainId          INTEGER NOT NULL CHECK (chainId = 56),
+  chainId          INTEGER NOT NULL CHECK (chainId IN (56, 97)),
   phase            TEXT NOT NULL CHECK (phase IN (
     'clicked', 'quoted', 'quote_rejected',
     'created', 'funded', 'submitted', 'settled', 'refunded'
@@ -1295,6 +1295,10 @@ Privado servidor-a-servidor:
 - comparación constante del secreto;
 - telemetría con `marketplace_observed`;
 - fases onchain con `chain_verified`, jobId y txHash obligatorios;
+- `chainId` 56 o 97: `hire_events` es la única tabla que admite Testnet, porque
+  la demo de contratación y el comprador agente ejecutan allí; cada cadena se
+  verifica contra su propio despliegue y su propio RPC (`BSC_RPC_URL`,
+  `BSC_TESTNET_RPC_URL`), y sin RPC la fase responde 503 y no se guarda;
 - receipt, contrato, evento y jobId verificados por RPC antes del insert; el
   estado actual debe existir y ser compatible con haber pasado por la fase, no
   ser exactamente una fase histórica que el job ya superó;

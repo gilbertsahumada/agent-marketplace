@@ -1008,6 +1008,8 @@ describe("marketplace presentation rules", () => {
         headers: { "content-type": "application/json" },
       }));
     vi.stubGlobal("fetch", fetchMock);
+    const sendBeacon = vi.fn(() => true);
+    Object.defineProperty(navigator, "sendBeacon", { value: sendBeacon, configurable: true, writable: true });
     render(createElement(Providers, { children: createElement(Erc8183MainnetDemo, { config: {
       agentId: 303779,
       seller: "0x2222222222222222222222222222222222222222",
@@ -1022,9 +1024,17 @@ describe("marketplace presentation rules", () => {
     }, agentName: "Marketplace Grid Planner" }) }));
 
     expect(fetchMock).not.toHaveBeenCalled();
+    expect(sendBeacon).not.toHaveBeenCalled();
     await user.click(screen.getByRole("button", { name: /get fresh quote/i }));
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(fetchMock).toHaveBeenLastCalledWith("/api/marketplace/demo/erc8183-mainnet/quote", expect.objectContaining({ method: "POST" }));
+    // The click itself is reported as sanitized telemetry through the same-origin
+    // route, never with buyer, session or request context.
+    expect(sendBeacon).toHaveBeenCalledTimes(1);
+    const [beaconUrl, beaconBody] = sendBeacon.mock.calls[0] as unknown as [string, Blob];
+    expect(beaconUrl).toBe("/api/marketplace/hire-events");
+    expect(beaconBody.type).toBe("application/json");
+    expect(JSON.parse(await beaconBody.text())).toEqual({ agentId: "303779", chainId: 56, phase: "clicked", jobId: null, txHash: null });
     expect(await screen.findByText("Seller timed out safely.")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: /try quote again/i }));
     expect(fetchMock).toHaveBeenCalledTimes(2);

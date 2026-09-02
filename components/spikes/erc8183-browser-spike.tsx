@@ -63,6 +63,29 @@ async function apiJson<T>(input: string, init?: RequestInit): Promise<T> {
   return body;
 }
 
+type HireEventReport =
+  | { phase: "clicked" }
+  | { phase: "created" | "funded" | "submitted"; jobId: string; txHash: string };
+
+// Best-effort beacon: the same-origin route sanitizes and forwards the event,
+// and the Worker verifies chain phases by RPC. Nothing here waits on it or
+// claims the shared index was updated, and it survives the job-page redirect.
+function reportHireEvent(deployment: Erc8183BrowserDeployment, event: HireEventReport): void {
+  if (typeof navigator === "undefined" || typeof navigator.sendBeacon !== "function") return;
+  const body = JSON.stringify({
+    agentId: String(deployment.agentId),
+    chainId: deployment.chainId,
+    phase: event.phase,
+    jobId: event.phase === "clicked" ? null : event.jobId,
+    txHash: event.phase === "clicked" ? null : event.txHash,
+  });
+  try {
+    navigator.sendBeacon("/api/marketplace/hire-events", new Blob([body], { type: "application/json" }));
+  } catch {
+    // Telemetry never interrupts the hire.
+  }
+}
+
 function shortAddress(value: string): string {
   return `${value.slice(0, 8)}…${value.slice(-6)}`;
 }
@@ -224,6 +247,7 @@ function Erc8183BrowserDemo({ mode, deployment, agentName }: { mode: "testnet" |
     setError(null);
     setQuote(null);
     setPlan(null);
+    reportHireEvent(deployment, { phase: "clicked" });
     try {
       const result = await apiJson<MainnetQuoteResponse>(`${apiBase}/quote`, { method: "POST" });
       setQuote(result);
@@ -287,7 +311,13 @@ function Erc8183BrowserDemo({ mode, deployment, agentName }: { mode: "testnet" |
       const execution = await executeBrowserHire(provider, plan, {
         journal,
         recoveredJob: job,
-        onProgress: ({ journal: next }) => setJournal(next),
+        onProgress: ({ step, journal: next }) => {
+          setJournal(next);
+          const txHash = step === "created" ? next.transactions.createJob : step === "funded" ? next.transactions.fund : undefined;
+          if ((step === "created" || step === "funded") && next.jobId && txHash) {
+            reportHireEvent(deployment, { phase: step, jobId: next.jobId, txHash });
+          }
+        },
         deployment,
       });
       setJournal(execution.journal);
@@ -301,6 +331,9 @@ function Erc8183BrowserDemo({ mode, deployment, agentName }: { mode: "testnet" |
         lastConfirmedStep: "notified",
       };
       if (notification.job.status === "SUBMITTED" || notification.job.status === "COMPLETED") {
+        if (notification.sellerTransactionHash) {
+          reportHireEvent(deployment, { phase: "submitted", jobId: execution.jobId, txHash: notification.sellerTransactionHash });
+        }
         nextJournal = {
           ...nextJournal,
           ...(notification.sellerTransactionHash ? { transactions: { ...nextJournal.transactions, submit: notification.sellerTransactionHash } } : {}),

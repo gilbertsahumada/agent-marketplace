@@ -21,6 +21,17 @@ dedicated `BUYER_OBSERVATION_SECRET`; it never accepts the administrative
 server-side quote endpoint with a distributed per-buyer/origin rate limiter;
 an in-memory Worker or Function counter is not an enforcement boundary.
 
+The same bearer authenticates `POST /hire-events`, the only writer of the
+append-only `hire_events` table. Telemetry phases (`clicked`, `quoted`,
+`quote_rejected`) are keyed server-side and stamped with receipt time. Chain
+phases (`created`, `funded`, `submitted`, `settled`, `refunded`) are keyed
+`chainId:txHash:phase`, so retries answer `200 duplicate`, and are stored only
+after the receipt, the Commerce event for that job, the current job state and
+the agent's registry wallet are verified by RPC; a claim the chain does not
+support answers `409 phase_rejected`. `chainId` 56 verifies through
+`BSC_RPC_URL`; `chainId` 97 (the browser and agent-buyer demos) needs the
+separate `BSC_TESTNET_RPC_URL` secret and answers `503` without it.
+
 The Free profile caps scheduled work at 40 D1 queries per invocation, below the
 platform limit of 50. Every statement in `DB.batch()` is counted separately and
 four queries are reserved outside the phase budget for a sanitized failure
@@ -483,6 +494,7 @@ only when it emitted no transaction and no event is attributable to it.
 
 ```bash
 npx wrangler secret put BSC_RPC_URL --env staging
+npx wrangler secret put BSC_TESTNET_RPC_URL --env staging
 npx wrangler secret put SHARED_SECRET --env staging
 ```
 

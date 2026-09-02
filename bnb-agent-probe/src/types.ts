@@ -62,6 +62,7 @@ export interface Env {
   SHARED_SECRET?: string;
   BUYER_OBSERVATION_SECRET?: string;
   BSC_RPC_URL?: string;
+  BSC_TESTNET_RPC_URL?: string;
 }
 
 export interface ScheduledController {

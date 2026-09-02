@@ -206,6 +206,21 @@ export function createWorker(dependencies: WorkerDependencies = {}): WorkerEntry
           timeoutMs: config.probeTimeoutMs,
         });
       }
+      if (request.method === "POST" && url.pathname === "/hire-events" && url.search === "") {
+        if (env.BUYER_OBSERVATION_SECRET === undefined) return errorResponse("not_found", 404);
+        if (!await bearerMatches(request.headers.get("authorization"), env.BUYER_OBSERVATION_SECRET)) {
+          return errorResponse("unauthorized", 401);
+        }
+        const { hireEventsResponse } = await import("./routes/hire-events");
+        return hireEventsResponse(request, env.DB, {
+          rpcUrls: {
+            ...(env.BSC_RPC_URL === undefined ? {} : { 56: env.BSC_RPC_URL }),
+            ...(env.BSC_TESTNET_RPC_URL === undefined ? {} : { 97: env.BSC_TESTNET_RPC_URL }),
+          },
+          nowMs: now(),
+          timeoutMs: config.probeTimeoutMs,
+        });
+      }
       if (request.method === "POST" && url.pathname === "/catalog-browser-observations" && url.search === "") {
         if (env.BUYER_OBSERVATION_SECRET === undefined) return errorResponse("not_found", 404);
         if (!await bearerMatches(request.headers.get("authorization"), env.BUYER_OBSERVATION_SECRET)) {

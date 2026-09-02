@@ -6,6 +6,7 @@ import {
   isAddressEqual,
   parseAbi,
   type Address,
+  type Chain,
   type PublicClient,
 } from "viem";
 import { bsc } from "viem/chains";
@@ -27,6 +28,10 @@ export const BSC_COMMERCE = getAddress("0xEa4DAa3100A767e86FDed867729ae7446476EB
 export const BSC_ROUTER = getAddress("0x51895229E12F9876011789B04f8698af06cCD6DA");
 export const BSC_POLICY = getAddress("0x9C01845705b3078Aa2e8cfF7520a6376FD766dE5");
 export const BSC_PAYMENT_TOKEN = getAddress("0xcE24439F2D9C6a2289F741120FE202248B666666");
+// BSC Testnet (97) deployment used by the browser hire demo and the agent-buyer
+// demo. Only hire-event verification reads it; probes stay Mainnet-only.
+export const BSC_TESTNET_REGISTRY = getAddress("0x8004A818BFB912233c491871b3d84c89A494BD9e");
+export const BSC_TESTNET_COMMERCE = getAddress("0xa206c0517b6371c6638cd9e4a42cc9f02a33b0de");
 
 const registryAbi = parseAbi([
   "function getAgentWallet(uint256 agentId) view returns (address)",
@@ -48,13 +53,14 @@ export interface CountedBscClientInput {
   readonly fetch: typeof fetch;
   readonly deadlineMs: number;
   readonly now: () => number;
+  readonly chain?: Chain;
 }
 
 export function createCountedBscClient(input: CountedBscClientInput): PublicClient {
   const rpcUrl = parseRpcUrl(input.rpcUrl);
   let id = 0;
   return createPublicClient({
-    chain: bsc,
+    chain: input.chain ?? bsc,
     transport: custom({
       request: async ({ method, params }) => {
         if (!READ_ONLY_RPC_METHODS.has(method)) throw new BscProbeError("BSC_RPC_METHOD");
