@@ -450,26 +450,30 @@ export async function catalogAgentsResponse(
     readEffectiveAgentObservations(db, agentKeys),
     agentKeys.length === 0 ? Promise.resolve([]) : db.select().from(catalogAgentAdmission)
       .where(inArray(catalogAgentAdmission.agentKey, agentKeys)),
+    // Counted per (agent, endpoint) straight off the agent index and joined to
+    // the page's current operational declarations in memory: joining the
+    // endpoint tables in SQL made the planner drive from catalog_endpoints and
+    // read every eligible endpoint's observations for each page.
     agentKeys.length === 0 ? Promise.resolve([]) : db.select({
       agentKey: catalogObservations.agentKey,
+      endpointKey: catalogObservations.endpointKey,
       total: count(),
     }).from(catalogObservations)
-      .innerJoin(catalogAgentEndpoints, and(
-        eq(catalogAgentEndpoints.agentKey, catalogObservations.agentKey),
-        eq(catalogAgentEndpoints.endpointKey, catalogObservations.endpointKey),
-        eq(catalogAgentEndpoints.declarationState, "current"),
-      ))
-      .innerJoin(catalogEndpoints, eq(catalogEndpoints.endpointKey, catalogObservations.endpointKey))
       .where(and(
-      inArray(catalogObservations.agentKey, agentKeys),
-      inArray(catalogObservations.source, [...PLATFORM_SOURCES]),
-      inArray(catalogObservations.validationKind, [...PLATFORM_VALIDATION_KINDS]),
-      eq(catalogObservations.verificationLevel, "platform_observed"),
-      eq(catalogEndpoints.role, "operational"),
-      eq(catalogEndpoints.eligibility, "eligible"),
-    )).groupBy(catalogObservations.agentKey),
+        inArray(catalogObservations.agentKey, agentKeys),
+        inArray(catalogObservations.source, [...PLATFORM_SOURCES]),
+        inArray(catalogObservations.validationKind, [...PLATFORM_VALIDATION_KINDS]),
+        eq(catalogObservations.verificationLevel, "platform_observed"),
+      )).groupBy(catalogObservations.agentKey, catalogObservations.endpointKey),
   ]);
-  const platformAttemptCountByAgent = new Map(platformAttemptCounts.map((row) => [row.agentKey, row.total]));
+  const operationalDeclarationKeys = new Set(declarations
+    .filter((entry) => entry.endpoint.role === "operational" && entry.endpoint.eligibility === "eligible")
+    .map((entry) => `${entry.agentKey}\n${entry.endpoint.endpointKey}`));
+  const platformAttemptCountByAgent = new Map<string, number>();
+  for (const row of platformAttemptCounts) {
+    if (row.endpointKey === null || !operationalDeclarationKeys.has(`${row.agentKey}\n${row.endpointKey}`)) continue;
+    platformAttemptCountByAgent.set(row.agentKey, (platformAttemptCountByAgent.get(row.agentKey) ?? 0) + row.total);
+  }
   const observations = [...new Map([
     ...recentObservations,
     ...effectiveEndpointObservations,
