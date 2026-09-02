@@ -424,6 +424,9 @@ export const catalogObservations = sqliteTable(
     index("idx_catalog_observations_agent").on(table.agentKey, desc(table.observedAt), desc(table.id)),
     index("idx_catalog_observations_endpoint").on(table.endpointKey, desc(table.observedAt), desc(table.id)),
     index("idx_catalog_observations_outcome").on(table.outcome, desc(table.observedAt), desc(table.id)),
+    index("idx_catalog_observations_agent_evidence").on(
+      table.agentKey, table.outcome, table.verificationLevel, table.protocol, desc(table.observedAt), desc(table.id),
+    ),
     uniqueIndex("idx_catalog_observations_attempt")
       .on(table.attemptId)
       .where(sql`${table.attemptId} IS NOT NULL`),

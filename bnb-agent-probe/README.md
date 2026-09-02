@@ -32,6 +32,15 @@ support answers `409 phase_rejected`. `chainId` 56 verifies through
 `BSC_RPC_URL`; `chainId` 97 (the browser and agent-buyer demos) needs the
 separate `BSC_TESTNET_RPC_URL` secret and answers `503` without it.
 
+Public catalogue reads (`/catalog-agents`, `/catalog-agent`) can be served from
+the Workers Cache for `CATALOG_RESPONSE_CACHE_SECONDS` (default `0`, staging
+`300`). Each uncached list request costs a few D1 index rows per current agent
+for its `count(*)`, and D1's Free read quota is account-wide, so the window is
+what keeps a day of page views inside the budget; the response advertises the
+same window in `Cache-Control` and every payload carries its own timestamps.
+`test/integration/d1-read-profile.test.ts` measures `rows_read` per route at
+catalogue scale and fails when a route exceeds its ceiling.
+
 The Free profile caps scheduled work at 40 D1 queries per invocation, below the
 platform limit of 50. Every statement in `DB.batch()` is counted separately and
 four queries are reserved outside the phase budget for a sanitized failure
