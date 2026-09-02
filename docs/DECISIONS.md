@@ -740,3 +740,19 @@ Cross-session reconciliation between the observation/D1 migration (per `docs/OBS
   verification requires the hiring contract to transport the selected
   `endpointKey`; protocol validation is already general and must not imply that
   every reachable agent has a verified ERC-8183 quote.
+
+## 2026-09-02 — One catalogue authority, visible facets, and pre-expiry renewal
+
+- The landing page now builds featured-agent evidence from the same normalized
+  `/catalog-agents` v2 response as `/agents`; the old `/observations` projection
+  is no longer a second UI authority. A verified but expired quote remains
+  attributed as historical evidence and is not painted green.
+- Successful endpoint evidence is scheduled for renewal four minutes before its
+  expiry. `PROBE` receives one turn every three one-minute scheduler phases, so
+  this preserves at least one extra tick of headroom instead of allowing a
+  healthy priority endpoint to appear stale between phase rotations.
+- Filter totals come from a fixed, five-minute-cached `facets=true` read and are
+  independent of the active filters. D1 production rejected the correlated
+  quote-facet plan even though Miniflare accepted it; the exact count now
+  reconciles current admitted endpoints with their indexed latest quote rows in
+  memory. This uses two bounded D1 reads and preserves newer-rejection semantics.

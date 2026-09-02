@@ -95,7 +95,7 @@ describe("catalog probe D1 persistence", () => {
     expect(targets[0]?.endpointKey).toBe("a".repeat(64));
     expect(await persistence.selectTargets({ limit: 1, nowMs: NOW })).toHaveLength(0);
     await persistence.commit(targets[0]!, {
-      outcome: "protocol_valid", observedAt: NOW, expiresAt: NOW + 900_000,
+      outcome: "protocol_valid", observedAt: NOW, expiresAt: NOW + 24 * 60 * 60_000,
       httpStatus: 200, errorCode: null, durationMs: 25, capabilityCount: 2, method: "POST",
     });
 
@@ -108,7 +108,7 @@ describe("catalog probe D1 persistence", () => {
     expect(await env.DB.prepare("SELECT lastProbedAt, nextProbeAt, consecutiveFailures FROM catalog_endpoints WHERE endpointKey = ?")
       .bind("a".repeat(64)).first()).toMatchObject({
         lastProbedAt: NOW,
-        nextProbeAt: NOW + 24 * 60 * 60_000,
+        nextProbeAt: NOW + 24 * 60 * 60_000 - 4 * 60_000,
         consecutiveFailures: 0,
       });
     expect(await readCatalogProjectionMismatches(db)).toEqual([]);
@@ -178,5 +178,31 @@ describe("catalog probe D1 persistence", () => {
     });
     expect(await env.DB.prepare("SELECT nextProbeAt FROM catalog_endpoints WHERE endpointKey = ?")
       .bind("d".repeat(64)).first()).toMatchObject({ nextProbeAt: NOW + 15_000 });
+  });
+
+  it("renews priority evidence before its freshness window can expire", async () => {
+    const db = createDatabase(env.DB as unknown as D1DatabaseLike);
+    await db.insert(catalogEndpoints).values({
+      endpointKey: "e".repeat(64), representativeAgentKey: "eip155:56:303779", protocol: "a2a",
+      endpoint: "https://seller.example/grid", originKey: "priority-origin", safety: "safe",
+      safetyReason: null, nextProbeAt: 0, consecutiveFailures: 0,
+      declaredProtocol: "a2a", role: "operational", validationProtocol: "a2a", eligibility: "eligible",
+    });
+    await db.insert(catalogAgentEndpoints).values({
+      agentKey: "eip155:56:303779", endpointKey: "e".repeat(64), declarationState: "current",
+      firstSeenAt: NOW, lastSeenAt: NOW, priority: 100,
+    });
+    const persistence = createD1CatalogProbePersistence(env.DB as unknown as D1DatabaseLike);
+    const target = (await persistence.selectTargets({ limit: 1, nowMs: NOW }))[0]!;
+    const expiresAt = NOW + 15 * 60_000;
+
+    await persistence.commit(target, {
+      outcome: "protocol_valid", observedAt: NOW, expiresAt,
+      httpStatus: 200, errorCode: null, durationMs: 20, capabilityCount: 1, method: "GET",
+    });
+
+    const endpoint = await env.DB.prepare("SELECT nextProbeAt FROM catalog_endpoints WHERE endpointKey = ?")
+      .bind("e".repeat(64)).first<{ nextProbeAt: number }>();
+    expect(endpoint!.nextProbeAt).toBeLessThanOrEqual(expiresAt - 4 * 60_000);
   });
 });

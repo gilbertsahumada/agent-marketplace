@@ -251,6 +251,14 @@ describe("PR 16 Mainnet exposure", () => {
     }
   });
 
+  it("builds the landing agent cards from the normalized catalog", () => {
+    const source = readFileSync("app/page.tsx", "utf8");
+    expect(source).toContain("getCatalogCandidatePage");
+    expect(source).toContain("catalogCandidateCard");
+    expect(source).not.toContain("getWorkerObservations");
+    expect(source).not.toContain("agentCardWithObservations");
+  });
+
   it("does not describe Worker observations as authority to request or prepare a hire", () => {
     const visibleCopy = [
       "app/validate/page.tsx",

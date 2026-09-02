@@ -381,6 +381,37 @@ describe("PR 16 marketplace evidence boundaries", () => {
     expect(agentCardWithObservation(agent, target, true, now).hireability).toBe("quote_stale");
   });
 
+  it("does not paint an expired verified quote as current evidence", () => {
+    const now = Date.parse(GENERATED_AT);
+    const agent = toMarketplaceAgent(marketplaceData("qualified", "current"), { evaluateMarketplace: false });
+    const card = agentCardWithObservation(agent, {
+      agentId: agent.agentId,
+      chainId: 56,
+      transport: "a2a",
+      endpoint: "https://seller.example/grid",
+      name: agent.name,
+      categories: ["grid_trading"],
+      declarationState: "current",
+      currentMetadataUpdatedAt: now - 120_000,
+      lastMetadataCheckedAt: now,
+      latest: {
+        probedAt: now - 120_000,
+        probeCategory: "grid_trading",
+        outcome: "quote_verified",
+        observedMetadataUpdatedAt: now - 120_000,
+        quoteNegotiatedAt: now - 120_000,
+        quoteExpiresAt: now - 1,
+        errorCode: null,
+      },
+      latestByCategory: {},
+    }, true, now);
+
+    expect(card.evidence.find(({ kind }) => kind === "quote")).toMatchObject({
+      status: "unknown",
+      provenance: "observed",
+    });
+  });
+
   it("uses quoteNegotiatedAt, not a recent probe timestamp, for the 60-second window", () => {
     const now = Date.parse(GENERATED_AT);
     const agent = toMarketplaceAgent(marketplaceData("qualified", "current"), { evaluateMarketplace: false });
@@ -406,7 +437,7 @@ describe("PR 16 marketplace evidence boundaries", () => {
     expect(agentCardWithObservation(agent, target, true, now).hireability).toBe("quote_stale");
   });
 
-  it("keeps an observed quote verification green after expiry while requiring a fresh quote to hire", () => {
+  it("keeps expired quote provenance without presenting it as current", () => {
     const now = Date.parse(GENERATED_AT);
     const agent = toMarketplaceAgent(marketplaceData("qualified", "current"), { evaluateMarketplace: false });
     const target = {
@@ -431,7 +462,7 @@ describe("PR 16 marketplace evidence boundaries", () => {
     const card = agentCardWithObservation(agent, target, true, now);
     expect(card.hireability).toBe("quote_stale");
     expect(card.evidence.find(({ kind }) => kind === "quote")).toMatchObject({
-      status: "verified",
+      status: "unknown",
       provenance: "observed",
       detail: expect.stringContaining("expired"),
     });

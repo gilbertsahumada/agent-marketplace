@@ -148,6 +148,10 @@ describe("D1 read profile at catalogue scale", () => {
       ["/catalog-agents?status=hireable", 18_000],
       ["/catalog-agents?status=a2a", 40_000],
       ["/catalog-agents?status=mcp&reachability=live", 60_000],
+      // Global filter counts are fetched through one fixed URL and cached for
+      // five minutes; keep the cold aggregate bounded independently from the
+      // much cheaper per-filter catalogue reads.
+      ["/catalog-agents?facets=true", 260_000],
       ["/catalog-agent/100042", 600],
     ];
     for (const [route, ceiling] of routes) {

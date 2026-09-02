@@ -70,6 +70,29 @@ describe("catalog candidate feed", () => {
     });
   });
 
+  it("parses complete non-negative filter facet counts", () => {
+    const fixtures = JSON.parse(readFileSync(
+      new URL("../contracts/catalog-api-v2.fixtures.json", import.meta.url), "utf8",
+    )) as { list: Record<string, unknown> };
+    const list = structuredClone(fixtures.list) as Record<string, unknown>;
+    list.facets = {
+      statuses: {
+        declared: 30, pending: 20, a2a: 4, mcp: 3, mcp_only: 2,
+        erc8183: 1, quote_capable: 1, hireable: 1, failed: 5,
+      },
+      categories: {
+        rebalancing: 7, grid_trading: 6, yield_optimisation: 5, health_factor_monitoring: 4,
+      },
+    };
+
+    expect(parseCatalogCandidatePage(list).facets).toMatchObject({
+      statuses: { declared: 30, hireable: 1 },
+      categories: { grid_trading: 6 },
+    });
+    ((list.facets as { statuses: Record<string, number> }).statuses).declared = -1;
+    expect(() => parseCatalogCandidatePage(list)).toThrow("CATALOG_FEED_INVALID");
+  });
+
   it("does not expose unsafe image targets from a catalog response", () => {
     const fixtures = JSON.parse(readFileSync(
       new URL("../contracts/catalog-api-v2.fixtures.json", import.meta.url), "utf8"),

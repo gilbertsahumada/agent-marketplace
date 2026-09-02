@@ -5,6 +5,7 @@ import {
   type CatalogCandidateDeclaration,
   type CatalogCandidateObservation,
   type CatalogCandidatePage,
+  type CatalogFacetCounts,
   type CatalogStatus,
 } from "../../business/entities/catalog-candidate.ts";
 import { MARKETPLACE_CATEGORIES, type MarketplaceCategory } from "../../business/entities/marketplace-agent.ts";
@@ -209,6 +210,20 @@ function candidate(value: unknown, schemaVersion: 1 | 2): CatalogCandidate {
   };
 }
 
+function facets(value: unknown): CatalogFacetCounts {
+  const item = record(value);
+  const statuses = record(item.statuses);
+  const categories = record(item.categories);
+  if (CATALOG_STATUSES.some((status) => !Number.isSafeInteger(statuses[status]) || Number(statuses[status]) < 0)
+    || MARKETPLACE_CATEGORIES.some((category) => !Number.isSafeInteger(categories[category]) || Number(categories[category]) < 0)) {
+    throw new Error("CATALOG_FEED_INVALID");
+  }
+  return {
+    statuses: Object.fromEntries(CATALOG_STATUSES.map((status) => [status, Number(statuses[status])])) as CatalogFacetCounts["statuses"],
+    categories: Object.fromEntries(MARKETPLACE_CATEGORIES.map((category) => [category, Number(categories[category])])) as CatalogFacetCounts["categories"],
+  };
+}
+
 export function parseCatalogCandidatePage(value: unknown): CatalogCandidatePage {
   const data = record(value);
   if (![1, 2].includes(Number(data.schemaVersion)) || data.chainId !== 56 || !CATALOG_STATUSES.includes(data.status as CatalogStatus)
@@ -236,6 +251,7 @@ export function parseCatalogCandidatePage(value: unknown): CatalogCandidatePage 
     page: integer(data.page)!,
     limit: integer(data.limit)!,
     total: integer(data.total)!,
+    ...(data.facets === undefined ? {} : { facets: facets(data.facets) }),
     ...(data.nextCursor === undefined ? {} : { nextCursor: string(data.nextCursor, true) }),
     items: data.items.map((entry) => candidate(entry, schemaVersion)),
   };
@@ -272,6 +288,7 @@ export async function getCatalogCandidatePage(input: {
   latestFailure?: boolean;
   inventory?: "operational" | "registry";
   cursor?: string;
+  includeFacets?: boolean;
   env?: Readonly<Record<string, string | undefined>>;
 }): Promise<CatalogCandidatePage | null> {
   const base = catalogUrl("/catalog-agents", input.env ?? process.env);
@@ -290,6 +307,7 @@ export async function getCatalogCandidatePage(input: {
   for (const quote of input.quote ?? []) base.searchParams.append("quote", quote);
   if (input.latestFailure !== undefined) base.searchParams.set("latestFailure", String(input.latestFailure));
   if (input.inventory) base.searchParams.set("inventory", input.inventory);
+  if (input.includeFacets) base.searchParams.set("facets", "true");
   try {
     return await cache.get(`catalog:${base}`, CACHE_TTL_MS, async () => {
       const response = await fetch(base, {

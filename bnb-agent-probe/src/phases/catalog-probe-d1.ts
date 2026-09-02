@@ -16,6 +16,10 @@ const SUCCESS_TTL_BY_PROTOCOL = {
 } as const;
 const FAILURE_BACKOFF = [60 * MINUTE, 6 * 60 * MINUTE, 24 * 60 * MINUTE, 7 * 24 * 60 * MINUTE] as const;
 const LEASE_MS = 30_000;
+// PROBE runs once every three scheduler phases. Renew successful evidence with
+// one additional tick of headroom so a healthy endpoint never expires merely
+// because its due time landed immediately after the PROBE phase.
+const EVIDENCE_RENEWAL_HEADROOM_MS = 4 * MINUTE;
 
 const DEFAULT_SCHEDULE_POLICY: CatalogProbeSchedulePolicy = {
   priorityRefreshMs: 15 * MINUTE,
@@ -29,9 +33,13 @@ function nextProbeAt(
   policy: CatalogProbeSchedulePolicy,
 ): number {
   if (observation.outcome === "protocol_valid") {
-    return observation.observedAt + (target.priority >= 100
+    const scheduledAt = observation.observedAt + (target.priority >= 100
       ? policy.priorityRefreshMs
       : policy.refreshMsByProtocol[target.protocol]);
+    return observation.expiresAt === null ? scheduledAt : Math.min(
+      scheduledAt,
+      Math.max(observation.observedAt, observation.expiresAt - EVIDENCE_RENEWAL_HEADROOM_MS),
+    );
   }
   const failureIndex = Math.min(target.consecutiveFailures, policy.failureBackoffMs.length - 1);
   return observation.observedAt + policy.failureBackoffMs[failureIndex]!;

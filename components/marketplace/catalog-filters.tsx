@@ -6,7 +6,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Field, FieldGroup, FieldLabel, FieldLegend, FieldSet } from "@/components/ui/field";
 import { Separator } from "@/components/ui/separator";
 import type { MarketplaceCategory } from "@/src/business/entities/marketplace-agent";
-import type { CatalogStatus } from "@/src/business/entities/catalog-candidate";
+import type { CatalogFacetCounts, CatalogStatus } from "@/src/business/entities/catalog-candidate";
 import { useCatalogNavigation } from "./catalog-navigation";
 
 const statusFilters: Array<{ value: CatalogStatus; label: string }> = [
@@ -27,9 +27,10 @@ const categoryFilters: Array<{ value: MarketplaceCategory; label: string }> = [
   { value: "health_factor_monitoring", label: "Health factor monitoring" },
 ];
 
-export function CatalogFilters({ statuses, categories, q, idPrefix = "catalog" }: {
+export function CatalogFilters({ statuses, categories, counts, q, idPrefix = "catalog" }: {
   statuses: CatalogStatus[];
   categories: MarketplaceCategory[];
+  counts?: CatalogFacetCounts;
   q?: string;
   idPrefix?: string;
 }) {
@@ -60,11 +61,12 @@ export function CatalogFilters({ statuses, categories, q, idPrefix = "catalog" }
                     const next = checked
                       ? [...statuses, filter.value]
                       : statuses.filter((status) => status !== filter.value);
-                    apply(next.length > 0 ? next : ["declared"], categories);
+                    apply(next, categories);
                   }}
                 />
-                <FieldLabel className="cursor-pointer text-sm font-normal text-zinc-300" htmlFor={id}>
-                  {filter.label}
+                <FieldLabel className="flex cursor-pointer items-center justify-between gap-3 text-sm font-normal text-zinc-300" htmlFor={id}>
+                  <span>{filter.label}</span>
+                  {counts && <span aria-hidden="true" className="font-stat text-xs tabular-nums text-zinc-500">{counts.statuses[filter.value].toLocaleString("en-US")}</span>}
                 </FieldLabel>
               </Field>
             );
@@ -90,8 +92,9 @@ export function CatalogFilters({ statuses, categories, q, idPrefix = "catalog" }
                     checked ? [...categories, filter.value] : categories.filter((category) => category !== filter.value),
                   )}
                 />
-                <FieldLabel className="cursor-pointer text-sm font-normal text-zinc-300" htmlFor={id}>
-                  {filter.label}
+                <FieldLabel className="flex cursor-pointer items-center justify-between gap-3 text-sm font-normal text-zinc-300" htmlFor={id}>
+                  <span>{filter.label}</span>
+                  {counts && <span aria-hidden="true" className="font-stat text-xs tabular-nums text-zinc-500">{counts.categories[filter.value].toLocaleString("en-US")}</span>}
                 </FieldLabel>
               </Field>
             );
