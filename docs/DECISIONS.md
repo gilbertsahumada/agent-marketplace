@@ -859,3 +859,21 @@ Cross-session reconciliation between the observation/D1 migration (per `docs/OBS
 - Implements the 2026-08-31 decision in the data adapter, not in components: `executeBrowserHire` asks `wallet_getCapabilities` for the target chain and, for a fresh hire on a wallet whose `atomic` capability is `supported` or `ready`, sends the intents as one `wallet_sendCalls` batch with `atomicRequired` (viem's `sendCalls` / `waitForCallsStatus`). One wallet confirmation; every call lands or none does, which also removes the orphan-job state. Resume and recovery keep the sequential path, because it can skip what chain already shows; a wallet without atomic batching, or one that answers `wallet_sendCalls` is unsupported, takes the sequential path unchanged; a user rejection propagates as such.
 - The batch needs the job id before `createJob` runs, so it is predicted as `jobCounter() + 1` (Commerce assigns `++jobCounter`; probed read-only on BSC Testnet on 2026-09-03: `jobCounter()` = 938 with job 938 present and 939 empty). A wrong prediction cannot cost anything: `registerJob` and `setBudget` are client-checked, so a foreign id reverts and the atomic batch rolls back including `createJob`; the confirmed id read from the `JobCreated` event must also equal the prediction. Only `createJob` is simulated beforehand; the other four are protected by atomicity.
 - The journal records the same steps and receipt hashes as the sequential path (one hash per call or the batch hash for all), so hire-event reporting from the browser and the Passport read surface are unchanged; per-step gas figures are not recorded for a batch. `BrowserHireProgress` and `BrowserHireExecution` gain `mode: "batched" | "sequential"`. The pure helpers (`src/data/erc8183/batched-hire.ts`: call encoding, id prediction, capability check, receipt mapping, fallback classification) are unit-tested; the orchestration against a real batching wallet on Testnet remains a manual verification, listed as pending in the SPEC status. EIP-2612 permit is deliberately not used: inside an atomic batch the exact `approve` costs no extra confirmation.
+
+## 2026-09-03 — Retire duplicate visual aliases after canonical route migration
+
+- `/hire/[agentId]` is the sole agent-facing UI. The old `/agents/[agentId]`
+  profile and `/agents/[agentId]/passport` visual page are now permanent
+  compatibility redirects to it; cards, comparison and validation results no
+  longer link to either visual route.
+- Identity, metadata, services, trust and reputation remain available through
+  the external trust8004 link. The machine-readable
+  `/api/marketplace/agents/[agentId]/passport` endpoint is retained for API,
+  CLI and MCP consumers; removing it would break the evidence contract.
+- The standalone `/demo/erc8183-mainnet` visual alias redirects to the
+  canonical Mainnet hiring workspace for Agent `303779`. The Testnet demo
+  `/demo/erc8183` and its gated `/spikes/erc8183-browser` compatibility route
+  remain because they exercise a distinct chain and flow.
+- The duplicate `/proof/job-514` visual alias redirects to `/jobs/514`. The
+  generic `/jobs/[jobId]` public-proof page remains separate from the live
+  Testnet tracker and is intentionally not redirected.
