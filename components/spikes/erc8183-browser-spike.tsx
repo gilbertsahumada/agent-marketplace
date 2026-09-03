@@ -4,6 +4,7 @@ import {
   AlertTriangle,
   ArrowRight,
   CheckCircle2,
+  ChevronDown,
   ExternalLink,
   FlaskConical,
   LoaderCircle,
@@ -12,7 +13,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useState } from "react";
 import { useAccount, useSwitchChain } from "wagmi";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -122,6 +123,47 @@ function SummaryRow({ label, value, mono = false }: { label: string; value: stri
       <dt className="text-xs text-zinc-500">{label}</dt>
       <dd className={mono ? "font-hash text-xs text-zinc-200" : "text-sm text-zinc-200"}>{value}</dd>
     </div>
+  );
+}
+
+function CheckoutSummaryRow({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
+  return (
+    <div className="grid grid-cols-[5rem_minmax(0,1fr)] items-start gap-3 border-b border-white/[0.06] py-3 last:border-0">
+      <dt className="text-xs text-zinc-500">{label}</dt>
+      <dd className={`${mono ? "font-hash text-xs" : "text-sm"} min-w-0 text-right text-zinc-200`}>{value}</dd>
+    </div>
+  );
+}
+
+function CheckoutStep({
+  children,
+  label,
+  number,
+  state,
+}: {
+  children?: ReactNode;
+  label: string;
+  number: number;
+  state: "complete" | "current" | "locked";
+}) {
+  return (
+    <li className="border-b border-white/[0.08] last:border-0">
+      <div className="flex min-h-16 items-center gap-3 px-4 sm:px-5">
+        <span
+          aria-hidden="true"
+          className={`flex size-8 shrink-0 items-center justify-center rounded-full border text-sm font-medium ${state === "complete"
+            ? "border-emerald-400/40 bg-emerald-400/10 text-emerald-300"
+            : state === "current"
+              ? "border-primary bg-primary text-primary-foreground"
+              : "border-zinc-700 text-zinc-500"}`}
+        >
+          {state === "complete" ? <CheckCircle2 className="size-4" /> : number}
+        </span>
+        <span className={state === "locked" ? "text-sm font-medium text-zinc-500" : "text-sm font-medium text-zinc-100"}>{label}</span>
+        {state === "locked" ? <span className="ml-auto text-xs text-zinc-600">Locked</span> : null}
+      </div>
+      {state === "current" && children ? <div className="px-4 pb-5 pl-15 sm:px-5 sm:pb-6 sm:pl-16">{children}</div> : null}
+    </li>
   );
 }
 
@@ -410,6 +452,142 @@ function Erc8183BrowserDemo({ mode, deployment, agentName, embedded = false }: {
     anchor.click();
     URL.revokeObjectURL(url);
   };
+
+  if (embedded) {
+    const activeStep = quoteExpired || !quote ? "quote" : !plan ? "review" : !submitted ? "fund" : "track";
+    const stepState = (step: "quote" | "review" | "fund" | "track") => {
+      const order = ["quote", "review", "fund", "track"] as const;
+      const current = order.indexOf(activeStep);
+      const position = order.indexOf(step);
+      return position < current ? "complete" as const : position === current ? "current" as const : "locked" as const;
+    };
+
+    return (
+      <section aria-label="ERC-8183 hiring flow" className="w-full">
+        <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_20rem] lg:items-start">
+          <div>
+            <ol aria-label="Hiring progress" className="overflow-hidden rounded-xl border border-white/10 bg-white/[0.015]">
+              <CheckoutStep label="Quote" number={1} state={stepState("quote")}>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="rounded-lg border border-white/10 bg-black/10 px-4 py-3">
+                    <span className="text-xs text-zinc-500">Outcome</span>
+                    <p className="mt-1 text-sm text-zinc-100">Grid trading plan</p>
+                  </div>
+                  <div className="rounded-lg border border-white/10 bg-black/10 px-4 py-3">
+                    <span className="text-xs text-zinc-500">Budget</span>
+                    <p className="mt-1 text-sm text-zinc-100">Set by quote</p>
+                  </div>
+                </div>
+                {quoteExpired ? <p className="mt-3 text-sm text-amber-200" role="status">Quote expired</p> : null}
+                <div className="mt-4 flex flex-wrap items-center gap-3">
+                  <Button className="min-w-44" disabled={busy !== null} onClick={() => void requestQuote()} size="lg">
+                    {busy === "Requesting a signed quote" ? <LoaderCircle aria-hidden="true" className="animate-spin" /> : null}
+                    {quoteExpired ? "Refresh quote" : "Request quote"}<ArrowRight aria-hidden="true" />
+                  </Button>
+                  <span className="inline-flex items-center gap-1.5 text-xs text-zinc-500"><ShieldCheck aria-hidden="true" className="size-4" />No signature</span>
+                </div>
+              </CheckoutStep>
+
+              <CheckoutStep label="Review" number={2} state={stepState("review")}>
+                {quote ? (
+                  <>
+                    <dl className="grid gap-3 sm:grid-cols-2">
+                      <div className="rounded-lg border border-white/10 px-4 py-3">
+                        <dt className="text-xs text-zinc-500">Price</dt>
+                        <dd className="mt-1 text-sm font-medium text-white">{quote.priceDisplay} {quote.tokenSymbol}</dd>
+                      </div>
+                      <div className="rounded-lg border border-white/10 px-4 py-3">
+                        <dt className="text-xs text-zinc-500">Valid until</dt>
+                        <dd className="mt-1 text-sm text-zinc-200">{new Date(quote.quoteExpiresAt * 1_000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</dd>
+                      </div>
+                    </dl>
+                    {mode === "mainnet" ? <p className="mt-3 text-xs text-zinc-500" role="status">{sharedEvidenceSyncMessage(quote.observationSync)}</p> : null}
+                    <Button className="mt-4 min-w-44" disabled={!account || busy !== null} onClick={() => void connectAndPrepare()} size="lg">
+                      {busy === "Preparing the connected wallet" ? <LoaderCircle aria-hidden="true" className="animate-spin" /> : <Wallet aria-hidden="true" />}
+                      {account ? "Prepare hire" : "Connect wallet in header"}
+                    </Button>
+                  </>
+                ) : null}
+              </CheckoutStep>
+
+              <CheckoutStep label="Fund" number={3} state={stepState("fund")}>
+                {plan ? (
+                  <>
+                    <dl className="grid gap-x-5 gap-y-3 sm:grid-cols-2">
+                      <div><dt className="text-xs text-zinc-500">Balance</dt><dd className="mt-1 text-sm text-zinc-200">{displayUnits(plan.tokenBalanceRaw, plan.quote.tokenDecimals)} {plan.quote.tokenSymbol}</dd></div>
+                      <div><dt className="text-xs text-zinc-500">Allowance</dt><dd className="mt-1 text-sm text-zinc-200">{plan.approvalRequired ? `Exact ${plan.quote.priceDisplay} ${plan.quote.tokenSymbol}` : "Ready"}</dd></div>
+                    </dl>
+                    <div className="mt-4"><Erc8183TransactionList explorerUrl={deployment.explorerUrl} intents={plan.transactions} journal={journal} /></div>
+                    <Button className="mt-4 min-w-44" disabled={busy !== null || submitted} onClick={() => void signAndRun()} size="lg">
+                      {busy === "Waiting for wallet confirmations" ? <LoaderCircle aria-hidden="true" className="animate-spin" /> : <Wallet aria-hidden="true" />}
+                      {journal?.jobId ? "Continue funding" : "Create & fund job"}
+                    </Button>
+                    {!journal?.jobId ? (
+                      <details className="mt-4 border-t border-white/10 pt-4 text-sm text-zinc-500">
+                        <summary className="cursor-pointer select-none">Recover interrupted job</summary>
+                        <div className="mt-3 flex gap-2">
+                          <Input aria-label="Confirmed Job ID" inputMode="numeric" onChange={(event) => setRecoveryJobId(event.target.value.trim())} placeholder="Job ID" value={recoveryJobId} />
+                          <Button disabled={busy !== null || !/^\d+$/.test(recoveryJobId)} onClick={() => void recoverJob()} variant="outline">Recover</Button>
+                        </div>
+                      </details>
+                    ) : null}
+                  </>
+                ) : null}
+              </CheckoutStep>
+
+              <CheckoutStep label="Track" number={4} state={stepState("track")}>
+                {job ? (
+                  <div className="flex flex-wrap items-center justify-between gap-4">
+                    <div><p className="text-xs text-zinc-500">Job #{job.jobId}</p><p className="mt-1 text-sm font-medium text-emerald-300">{job.status}</p></div>
+                    <Button asChild variant="outline"><Link href={`${jobPageBase}/${job.jobId}`}>Open tracker<ArrowRight aria-hidden="true" /></Link></Button>
+                  </div>
+                ) : null}
+              </CheckoutStep>
+            </ol>
+
+            {error ? (
+              <Alert className="mt-4" variant="destructive">
+                <AlertTriangle aria-hidden="true" />
+                <AlertTitle>Stopped safely</AlertTitle>
+                <AlertDescription>{error}</AlertDescription>
+                {!quote ? <Button className="mt-3" disabled={busy !== null} onClick={() => void requestQuote()} size="sm" variant="outline">Try quote again</Button> : null}
+              </Alert>
+            ) : null}
+          </div>
+
+          <aside aria-label="Hire summary" className="space-y-4 lg:sticky lg:top-6">
+            <section className="rounded-xl border border-white/10 bg-white/[0.015] px-5">
+              <h2 className="border-b border-white/10 py-4 text-sm font-medium text-white">Hire summary</h2>
+              <dl>
+                <CheckoutSummaryRow label="Agent" value={agentName ?? `Agent ${deployment.agentId}`} />
+                <CheckoutSummaryRow label="Network" value={`${deployment.networkName} · ${deployment.chainId}`} />
+                <CheckoutSummaryRow label="Quote" value={quote && !quoteExpired ? `${quote.priceDisplay} ${quote.tokenSymbol}` : "Not requested"} />
+                <CheckoutSummaryRow label="Wallet" value={account ? shortAddress(account) : "Not connected"} mono={account !== null} />
+              </dl>
+              <p className="flex items-center gap-2 border-t border-white/10 py-4 text-xs text-zinc-500">
+                <ShieldCheck aria-hidden="true" className="size-4 text-emerald-400" />
+                {activeStep === "quote" || activeStep === "review" ? "No signature yet" : "You approve every transaction"}
+              </p>
+            </section>
+
+            <details className="group rounded-xl border border-white/10 bg-white/[0.015]">
+              <summary className="flex cursor-pointer list-none items-center justify-between px-5 py-4 text-sm font-medium text-zinc-200">
+                Contracts &amp; permissions<ChevronDown aria-hidden="true" className="size-4 transition-transform group-open:rotate-180" />
+              </summary>
+              <dl className="border-t border-white/10 px-5 pb-3">
+                <CheckoutSummaryRow label="Custody" value="Your wallet" />
+                <CheckoutSummaryRow label="Approval" value={plan?.approvalRequired ? "Exact quote only" : "Checked before funding"} />
+                <CheckoutSummaryRow label="Escrow" value="ERC-8183" />
+              </dl>
+            </details>
+
+            {journal && !submitted ? <Button className="w-full" onClick={() => { clearBrowserJournal(localStorage, deployment); setJournal(null); setJob(null); setError(null); }} variant="ghost">Clear browser progress</Button> : null}
+            {submitted && journal && job && plan ? <Button className="w-full" onClick={downloadEvidence} variant="ghost">Download evidence</Button> : null}
+          </aside>
+        </div>
+      </section>
+    );
+  }
 
   const Root = embedded ? "section" : "main";
   const Title = embedded ? "h2" : "h1";

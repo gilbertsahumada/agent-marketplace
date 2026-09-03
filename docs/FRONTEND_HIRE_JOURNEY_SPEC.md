@@ -106,17 +106,24 @@ The canonical detail and action page. It combines what used to be a profile with
 
 Required sections, in this order:
 
-1. Compact identity: image, name, BSC network and Agent ID.
-2. One dominant `Hire agent` action with the exact next step or a concise blocker.
-3. Three buyer-facing facts: availability, quote readiness and proven ERC-8183 jobs.
-4. Quote/transaction flow, or the permitted endpoint validation required to begin it.
+1. Compact identity row: image, name, BSC network, Agent ID, reachability,
+   proven-job count and the external identity/reputation link.
+2. One checkout with four states: `Quote → Review → Fund → Track`. Only the
+   current state is expanded, and its control is the page's only primary CTA.
+3. Compact hire summary: agent, network, normalized quote and connected wallet.
+4. Collapsed contract/permission details, expanded only on buyer demand.
 5. Agent-scoped ERC-8183 job history with links to the corresponding job proof.
+
+The CTA names the next real action (`Request quote`, `Prepare hire`, `Create &
+fund job`, `Open tracker`); the page title does not duplicate it. Quote requests
+also refresh seller evidence, so an admitted seller does not require a separate
+reachability action before negotiation.
 
 ERC-8004 identity details, metadata, services, tools, trust score and reputation
 are not duplicated on this route. A secondary link sends users to the agent's
 trust8004 page for those facts. The marketplace route remains useful when an
-agent cannot yet be hired: its Hire action either starts the real flow, begins
-the required availability check, or is disabled with one concise reason.
+agent cannot yet be hired: the checkout either begins the permitted availability
+check or shows one concise blocker.
 
 ### 4.3 `/agents/[agentId]`
 

@@ -820,6 +820,11 @@ Cross-session reconciliation between the observation/D1 migration (per `docs/OBS
 - Agent-scoped Mainnet proofs are returned with the existing passport read and
   rendered as a compact ERC-8183 job history. No new database or competing job
   authority is introduced; each row links to the existing chain-backed job page.
+- The hire workspace uses one progressive checkout (`Quote → Review → Fund →
+  Track`) instead of a hero CTA plus repeated action cards. Only the current step
+  is expanded and only its next action uses the primary button. Financial and
+  wallet facts stay visible in a compact summary; contract permissions are
+  available through progressive disclosure rather than permanent prose.
 
 ## 2026-09-03 — Verified hire events get a read surface: activity, not track record
 
