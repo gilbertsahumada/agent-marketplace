@@ -24,13 +24,47 @@ export default function HireAgentLoading() {
           <Skeleton className="h-7 w-40" />
         </div>
       </div>
-      <div className="mt-8 grid gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
-        <div className="overflow-hidden rounded-xl border border-white/10">
-          <Skeleton className="h-64 rounded-none" />
-          {Array.from({ length: 3 }, (_, index) => <Skeleton className="h-16 rounded-none border-t border-white/10" key={index} />)}
+      <div className="mt-6 rounded-xl border border-white/10 p-4 sm:p-5">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="space-y-2">
+            <Skeleton className="h-3 w-24" />
+            <Skeleton className="h-5 w-44" />
+          </div>
+          <Skeleton className="h-4 w-64 max-w-full" />
         </div>
-        <Skeleton className="h-80 rounded-xl" />
+        <div className="mt-5 grid gap-5 sm:grid-cols-2 lg:grid-cols-4 lg:gap-4">
+          {Array.from({ length: 5 }, (_, index) => (
+            <div className="flex items-start gap-3" key={index}>
+              <Skeleton className="size-9 shrink-0 rounded-full" />
+              <div className="min-w-0 flex-1 space-y-2">
+                <Skeleton className="h-4 w-28" />
+                <Skeleton className="h-3 w-full" />
+                <Skeleton className="h-3 w-4/5" />
+              </div>
+            </div>
+          ))}
+        </div>
+        <Skeleton className="mt-5 h-3 w-72 max-w-full" />
       </div>
+      <div className="mt-6 rounded-xl border border-white/10 p-4 sm:p-5">
+        <Skeleton className="h-5 w-52" />
+        <Skeleton className="mt-2 h-4 w-3/4 max-w-full" />
+        {Array.from({ length: 2 }, (_, index) => (
+          <div className="mt-4 rounded-xl border border-white/10 p-4" key={index}>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="space-y-2">
+                <Skeleton className="h-4 w-36" />
+                <Skeleton className="h-3 w-48" />
+              </div>
+              <div className="flex gap-2">
+                <Skeleton className="h-8 w-32" />
+                <Skeleton className="h-8 w-40" />
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+      <Skeleton className="mt-6 h-40 rounded-xl" />
       <Skeleton className="mt-8 h-28 rounded-xl" />
     </main>
   );
