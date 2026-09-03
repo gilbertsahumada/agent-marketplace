@@ -150,12 +150,11 @@ export function catalogCandidateCard(
     buyerAction: candidate.state?.buyerAction ?? "unavailable",
     blockingReasons: candidate.state?.blockingReasons ?? ["CATALOG_STATE_UNAVAILABLE"],
     categories: candidate.categories,
-    href: `/agents/${candidate.agentId}`,
+    href: `/hire/${candidate.agentId}`,
     hireability: canRequestQuote ? (freshQuote ? "hireable" : "quote_stale") : "listed_only",
     evidence,
     passportState: freshQuote && candidate.state?.canPrepareHire === true ? "hireable"
       : platform.length > 0 ? "evaluated" : "registered",
-    passportHref: `/agents/${candidate.agentId}/passport`,
     monitoring: latest ? {
       state: "probed",
       source: "worker",
