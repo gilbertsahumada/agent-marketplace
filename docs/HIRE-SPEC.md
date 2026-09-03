@@ -185,6 +185,11 @@ none does. The helpers are in `src/data/erc8183/batched-hire.ts`:
 must be `FUNDED` (else `409`). Response: `{ acknowledged: true, alreadySubmitted,
 sellerTransactionHash?, job }` — the seller proceeds to submit its deliverable.
 
+Notify is gated by the Mainnet write flag, a still-configured seller and the
+on-chain checks above (buyer, seller, allowlist, `FUNDED`). It does not consult
+Worker observations: the escrow is already funded, and the 60-second observation
+window used for informative labels cannot survive the wallet confirmations.
+
 ## Step 6 — Track and verify the result
 
 The two networks return different shapes:

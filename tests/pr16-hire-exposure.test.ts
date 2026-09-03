@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 import type { MainnetDemoPublicConfig } from "../src/business/entities/mainnet-browser-demo.ts";
+import { Erc8183SpikeDisabledError } from "../src/business/errors/erc8183-spike-errors.ts";
 import { GetMainnetHiringExposure } from "../src/business/use-cases/get-mainnet-hiring-exposure.ts";
 import { NotifyQualifiedMainnetFundedJob, PrepareQualifiedMainnetHire, RequestQualifiedMainnetQuote } from "../src/business/use-cases/qualified-mainnet-hire.ts";
 import { AsyncTtlCache } from "../src/data/cache/async-ttl-cache.ts";
@@ -192,15 +193,11 @@ describe("PR 16 Mainnet exposure", () => {
   });
 
   it("requires the independent write gate before marketplace notify", async () => {
-    const exposure = new GetMainnetHiringExposure(
-      observations(),
-      { getPublicConfig: () => demoConfig },
-      () => Date.parse("2026-08-24T12:01:00.000Z"),
-    );
+    const configs = { getPublicConfig: () => demoConfig };
     const notifyDelegate = { execute: vi.fn(async () => ({ acknowledged: true })) };
     const getFunded = { execute: vi.fn(async () => ({ status: "FUNDED" })) };
-    const disabled = new NotifyQualifiedMainnetFundedJob(exposure, () => false, getFunded as never, notifyDelegate as never);
-    const enabled = new NotifyQualifiedMainnetFundedJob(exposure, () => true, getFunded as never, notifyDelegate as never);
+    const disabled = new NotifyQualifiedMainnetFundedJob(configs, () => false, getFunded as never, notifyDelegate as never);
+    const enabled = new NotifyQualifiedMainnetFundedJob(configs, () => true, getFunded as never, notifyDelegate as never);
     const input = { jobId: "97", buyer: "0x1111111111111111111111111111111111111111" } as const;
 
     await expect(disabled.execute(input)).rejects.toThrow(/disabled/);
@@ -209,16 +206,38 @@ describe("PR 16 Mainnet exposure", () => {
     expect(notifyDelegate.execute).toHaveBeenCalledWith(input);
   });
 
-  it("preserves terminal notify idempotency after qualification or the write gate expires", async () => {
-    const staleExposure = new GetMainnetHiringExposure(
-      { getObservations: async () => ({ status: "unavailable", feed: null }) },
+  it("notifies a FUNDED job even when Worker observations are stale or unavailable", async () => {
+    // Five wallet confirmations take longer than the 60-second observation
+    // window; the funded escrow must still reach the seller.
+    const notifyDelegate = { execute: vi.fn(async () => ({ acknowledged: true })) };
+    const getFunded = { execute: vi.fn(async () => ({ status: "FUNDED" })) };
+    const notify = new NotifyQualifiedMainnetFundedJob(
       { getPublicConfig: () => demoConfig },
-      () => Date.parse("2026-08-27T12:00:00.001Z"),
+      () => true,
+      getFunded as never,
+      notifyDelegate as never,
     );
+    const input = { jobId: "97", buyer: "0x1111111111111111111111111111111111111111" } as const;
+
+    await expect(notify.execute(input)).resolves.toEqual({ acknowledged: true });
+    expect(notifyDelegate.execute).toHaveBeenCalledWith(input);
+
+    const unconfigured = new NotifyQualifiedMainnetFundedJob(
+      { getPublicConfig: () => { throw new Erc8183SpikeDisabledError(); } },
+      () => true,
+      getFunded as never,
+      notifyDelegate as never,
+    );
+    await expect(unconfigured.execute(input)).rejects.toThrow(/disabled/);
+    expect(notifyDelegate.execute).toHaveBeenCalledTimes(1);
+  });
+
+  it("preserves terminal notify idempotency after the seller config or the write gate expires", async () => {
+    const unconfigured = { getPublicConfig: () => { throw new Erc8183SpikeDisabledError(); } };
     const terminal = { status: "SUBMITTED", jobId: "97" };
     const getStatus = { execute: vi.fn(async () => terminal) };
     const notifyDelegate = { execute: vi.fn(async () => ({ acknowledged: true, alreadySubmitted: true, job: terminal })) };
-    const notify = new NotifyQualifiedMainnetFundedJob(staleExposure, () => false, getStatus as never, notifyDelegate as never);
+    const notify = new NotifyQualifiedMainnetFundedJob(unconfigured, () => false, getStatus as never, notifyDelegate as never);
     const input = { jobId: "97", buyer: "0x1111111111111111111111111111111111111111" } as const;
 
     await expect(notify.execute(input)).resolves.toMatchObject({ acknowledged: true, alreadySubmitted: true });
@@ -226,14 +245,9 @@ describe("PR 16 Mainnet exposure", () => {
   });
 
   it("does not bypass the notify gate from a non-terminal status read", async () => {
-    const exposure = new GetMainnetHiringExposure(
-      observations(),
-      { getPublicConfig: () => demoConfig },
-      () => Date.parse("2026-08-24T12:01:00.000Z"),
-    );
     const getStatus = { execute: vi.fn(async () => ({ status: "OPEN" })) };
     const notifyDelegate = { execute: vi.fn() };
-    const notify = new NotifyQualifiedMainnetFundedJob(exposure, () => false, getStatus as never, notifyDelegate as never);
+    const notify = new NotifyQualifiedMainnetFundedJob({ getPublicConfig: () => demoConfig }, () => false, getStatus as never, notifyDelegate as never);
 
     await expect(notify.execute({ jobId: "97", buyer: "0x1111111111111111111111111111111111111111" }))
       .rejects.toThrow(/disabled/);

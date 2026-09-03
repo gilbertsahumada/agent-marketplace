@@ -81,7 +81,7 @@ export const prepareMainnetErc8183Hire = new PrepareQualifiedMainnetHire(
   liveMainnetPrepare,
 );
 export const notifyMainnetFundedJob = new NotifyQualifiedMainnetFundedJob(
-  getMainnetHiringExposure,
+  mainnetBrowserDemoConfigRepository,
   mainnetWritesEnabled,
   getMainnetErc8183JobStatus,
   liveMainnetNotify,
