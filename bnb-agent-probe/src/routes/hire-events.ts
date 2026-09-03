@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import {
   decodeEventLog,
   getAddress,
@@ -228,6 +228,45 @@ async function verifyChainPhase(
     throw new BscProbeError("BSC_BLOCK_RPC");
   }
   return { blockNumber: receipt.blockNumber, blockTimestamp: block.timestamp };
+}
+
+const LIST_LIMIT = 50;
+
+// Public read surface: only rows the Worker verified on chain, for one agent
+// on one chain. Telemetry rows (marketplace_observed) never leave D1 here.
+export async function hireEventsListResponse(request: Request, d1: D1Database): Promise<Response> {
+  const url = new URL(request.url);
+  const chainId = url.searchParams.get("chainId");
+  const agentId = url.searchParams.get("agentId");
+  const queryValid = [...url.searchParams.keys()].every((key) => key === "chainId" || key === "agentId");
+  if (!queryValid || (chainId !== "56" && chainId !== "97") || agentId === null || !AGENT_ID.test(agentId)) {
+    return jsonResponse({ error: "invalid_request" }, 400);
+  }
+  const db = createDatabase(d1 as unknown as D1DatabaseLike);
+  const rows = await db.select({
+    phase: hireEvents.phase,
+    jobId: hireEvents.jobId,
+    txHash: hireEvents.txHash,
+    blockNumber: hireEvents.blockNumber,
+    occurredAt: hireEvents.occurredAt,
+    verifiedAt: hireEvents.verifiedAt,
+  }).from(hireEvents).where(and(
+    eq(hireEvents.chainId, Number(chainId)),
+    eq(hireEvents.agentId, agentId),
+    eq(hireEvents.provenance, "chain_verified"),
+  )).orderBy(desc(hireEvents.occurredAt), desc(hireEvents.id)).limit(LIST_LIMIT);
+  return Response.json({
+    schemaVersion: 1,
+    chainId: Number(chainId),
+    agentId,
+    events: rows,
+  }, {
+    status: 200,
+    headers: {
+      "cache-control": "public, max-age=30, stale-while-revalidate=60",
+      "x-content-type-options": "nosniff",
+    },
+  });
 }
 
 export async function hireEventsResponse(

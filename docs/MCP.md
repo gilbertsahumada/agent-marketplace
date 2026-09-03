@@ -41,7 +41,12 @@ validated against the pinned allowlist — signing nothing. With
 the same command signs and sends the five transactions. The sequence is verified
 end to end against the deployed Testnet contracts on an anvil fork with a real
 production quote and plan: createJob → registerJob → setBudget → exact approve →
-fund, with the payment moving into escrow.
+fund, with the payment moving into escrow. A live run also reports `clicked`,
+`created`, `funded` and, when the seller's notify answer carries its transaction
+hash, `submitted` to `POST /api/marketplace/hire-events` — the same route and
+contract the browser demo uses, best effort, never interrupting the hire — so
+the job's chain-verified phases appear on `/jobs/testnet/<jobId>`; dry runs
+report nothing.
 
 ## What goes through MCP — and what deliberately does not
 

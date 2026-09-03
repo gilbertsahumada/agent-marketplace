@@ -4,6 +4,7 @@ import { Callout, CodeBlock, DocsSection, ExternalDocLink, InlineCode, ParamTabl
 import type { ParamRow } from "../components";
 import { DOCS_MARKDOWN } from "../markdown";
 import { PageActions } from "../page-actions";
+import { DEMO_AGENT_BUYER } from "@/src/business/entities/demo-agent-buyer";
 
 export const metadata: Metadata = { title: "MCP server documentation" };
 
@@ -146,7 +147,7 @@ const TOOL_DOCS: ToolDoc[] = [
   "job": {
     "chainId": 97,
     "jobId": "551",
-    "buyer": "0x5ee75a1B1648C023e885E58bD3735Ae273f2cc52",
+    "buyer": "${DEMO_AGENT_BUYER.address}",
     "provider": "0xA2a2012e52Fd075c0F3146e37E833E7294ee52B5",
     "status": "COMPLETED",
     "deliverableHash": "0x…",

@@ -3,6 +3,7 @@ import type { AgentEvidencePassport, EvidencePassportCheck, EvidencePassportStat
 import type { HireabilityStatus, MarketplaceAgent } from "../entities/marketplace-agent.ts";
 import type { MainnetJobProof } from "../entities/mainnet-job-proof.ts";
 import type { PublicAgentVerification, PublicVerificationSnapshot } from "../entities/public-verification-snapshot.ts";
+import type { VerifiedHireEvent } from "../entities/verified-hire-event.ts";
 import { isReleaseAgentHireable, isVerificationSnapshotCurrent } from "./release-qualification-policy.ts";
 
 export interface EvidencePassportInput {
@@ -29,6 +30,7 @@ export interface EvidencePassportInput {
     observedAt: string | null;
   };
   jobProofs: MainnetJobProof[];
+  hireEvents: VerifiedHireEvent[];
   generatedAt: string;
 }
 
@@ -237,6 +239,27 @@ export function buildEvidencePassport(input: EvidencePassportInput): AgentEviden
         observedAt: null,
         detail: "No hash-verified BSC Mainnet job is linked to this agent.",
       };
+  // Hire phases the Worker verified on this chain for this agent. They are
+  // reported as activity, never folded into the track record or the state
+  // ladder: a verified phase proves the phase, not the deliverable.
+  const hireEvents = input.hireEvents
+    .filter((event) => event.chainId === input.chainId && event.agentId === input.agentId)
+    .sort((left, right) => Date.parse(right.occurredAt) - Date.parse(left.occurredAt)
+      || right.txHash.localeCompare(left.txHash) || right.phase.localeCompare(left.phase));
+  const latestHireEvent = hireEvents[0] ?? null;
+  const hireActivity: EvidencePassportCheck = latestHireEvent
+    ? {
+        status: "verified",
+        provenance: "onchain",
+        observedAt: latestHireEvent.occurredAt,
+        detail: `Latest chain-verified hire phase: ${latestHireEvent.phase} (Job ${latestHireEvent.jobId}, tx ${latestHireEvent.txHash}).`,
+      }
+    : {
+        status: "missing",
+        provenance: "onchain",
+        observedAt: null,
+        detail: "No chain-verified hire activity is linked to this agent.",
+      };
 
   const attentionReasons: string[] = [];
   if (input.verification?.freshness === "stale") attentionReasons.push("Verification evidence is stale.");
@@ -290,6 +313,7 @@ export function buildEvidencePassport(input: EvidencePassportInput): AgentEviden
     verification: input.verification,
     hireability: input.hireability,
     jobProofs,
+    hireEvents,
   })));
 
   return {
@@ -302,7 +326,7 @@ export function buildEvidencePassport(input: EvidencePassportInput): AgentEviden
     evidenceSnapshotHash,
     generatedAt: input.generatedAt,
     attentionReasons,
-    checks: { identity, endpoint, quote, job },
+    checks: { identity, endpoint, quote, job, hireActivity },
     trackRecord,
     nextRequirements,
   };

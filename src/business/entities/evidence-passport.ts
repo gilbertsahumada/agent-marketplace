@@ -37,6 +37,9 @@ export interface AgentEvidencePassport {
     endpoint: EvidencePassportCheck;
     quote: EvidencePassportCheck & { hireabilityStatus: HireabilityStatus };
     job: EvidencePassportCheck;
+    // Chain-verified hire lifecycle phases recorded by the marketplace; a
+    // phase record, never a deliverable or track-record claim.
+    hireActivity: EvidencePassportCheck;
   };
   trackRecord: {
     provenJobs: number;

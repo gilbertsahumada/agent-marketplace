@@ -85,6 +85,7 @@ export function EvidencePassportCard({
           <PassportCheck check={passport.checks.endpoint} label="Endpoint" />
           <PassportCheck check={passport.checks.quote} label="ERC-8183 quote" />
           <PassportCheck check={passport.checks.job} label="Job result" />
+          <PassportCheck check={passport.checks.hireActivity} label="Verified hire activity" />
         </ul>
 
         {(passport.nextRequirements.length > 0 || apiHref) && (

@@ -132,11 +132,21 @@ error, evidence }`).
 Response: `AgentEvidencePassport` (`src/business/entities/evidence-passport.ts`) —
 `{ schemaVersion: 1, chainId, agentId, name, operator, state: "registered" |
 "evaluated" | "hireable" | "job_proven" | "attention", evidenceSnapshotHash,
-generatedAt, attentionReasons, checks: { identity, endpoint, quote, job },
+generatedAt, attentionReasons, checks: { identity, endpoint, quote, job, hireActivity },
 trackRecord, nextRequirements }`. Each check:
 `{ status: "verified" | "missing" | "not_probed" | "failed" | "unavailable" | "stale",
 provenance, observedAt, detail }`; the `quote` check also carries
 `hireabilityStatus`.
+
+`checks.hireActivity` reports the latest hire lifecycle phase (`created`,
+`funded`, `submitted`, `settled`, `refunded`) that the observation Worker
+verified on BSC Mainnet for this agent: receipt to the pinned Commerce
+contract, a matching Commerce event for the job, compatible job state and the
+job's provider equal to the agent's ERC-8004 registry wallet. It is activity,
+not a track record: it never changes `state`, `trackRecord` or `checks.job`, and
+a verified phase proves the phase, not the deliverable. It enters
+`evidenceSnapshotHash`. When the Worker feed is unavailable the check is
+`missing`, never an error.
 
 ### `GET /api/marketplace/compare?agentId=…&agentId=…`
 
@@ -250,9 +260,24 @@ reading BSC directly; this route never becomes their source.
 ### `GET /api/marketplace/jobs/testnet/[jobId]`
 
 Response: `{ liveStatus: "verified" | "unavailable", job: Erc8183JobFacts | null,
-snapshot: PublicJobProofSnapshotRecord | null }`. When the live chain read is
-unavailable but a stored snapshot exists, the snapshot is served with
-`liveStatus: "unavailable"`.
+snapshot: PublicJobProofSnapshotRecord | null, verifiedPhases: VerifiedHireEvent[],
+buyerIdentity: BuyerIdentity }`.
+When the live chain read is unavailable but a stored snapshot exists, the
+snapshot is served with `liveStatus: "unavailable"`.
+
+`buyerIdentity` is what the marketplace can honestly say about the buyer
+address: `{ kind: "demo_agent" | "unknown", agentId: string | null, verified:
+boolean, registry: address | null }`. `demo_agent` means the buyer is the
+declared demo agent-buyer wallet (`src/business/entities/demo-agent-buyer.ts`);
+`verified` is true only when that wallet declares an ERC-8004 agent id and the
+registry's `getAgentWallet` (or `ownerOf`) read from chain equals the buyer.
+`unknown` claims nothing; human-initiated jobs render exactly as before.
+
+`verifiedPhases` lists this job's hire phases that the observation Worker
+verified on BSC Testnet for the allowlisted seller agent, newest first:
+`{ chainId: 97, agentId, phase, jobId, txHash, blockNumber, occurredAt (block
+time, ISO), verifiedAt }`. Empty when no phase was reported or the Worker feed
+is unavailable; the rest of the response is unchanged either way.
 
 `Erc8183JobFacts`: `{ chainId, jobId, buyer, provider, evaluator, policy, description,
 budgetRaw, deadline, status: "OPEN" | "FUNDED" | "SUBMITTED" | "COMPLETED" |
@@ -302,6 +327,10 @@ the hire flow above, not directly:
   against the agent's declared endpoints). Not for external callers.
 - `app/api/fixtures/erc8183/**` — test infrastructure for the Testnet spike; the
   proof records label it `testInfrastructure: true`.
+- Worker `GET /hire-events?chainId=56|97&agentId=…` — the upstream feed behind
+  `checks.hireActivity` and `verifiedPhases` (chain-verified rows only, at most
+  50, cached 30 s). Like `/catalog-agents`, it is an internal upstream of this
+  API, reached server-side through `OBSERVATIONS_URL`; consume the routes above.
 
 Response shapes on the public routes above are covered by
 `tests/marketplace-controllers.test.ts`, `tests/erc8183-spike-controllers.test.ts` and

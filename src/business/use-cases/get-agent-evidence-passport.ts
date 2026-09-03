@@ -8,6 +8,7 @@ import {
 } from "../entities/catalog-candidate.ts";
 import type { MarketplaceAgent } from "../entities/marketplace-agent.ts";
 import type { MainnetJobProof } from "../entities/mainnet-job-proof.ts";
+import type { VerifiedHireEvent, VerifiedHireEventReader } from "../entities/verified-hire-event.ts";
 import { buildEvidencePassport } from "../policies/evidence-passport-policy.ts";
 
 export interface MarketplaceAgentReader {
@@ -72,14 +73,16 @@ export class GetAgentEvidencePassport {
     private readonly jobProofs: MainnetJobProofReader,
     private readonly now: () => number = Date.now,
     private readonly catalogCandidates?: CatalogCandidateReader,
+    private readonly hireEvents?: VerifiedHireEventReader,
   ) {}
 
   async execute(input: { agentId: string }): Promise<AgentEvidencePassport> {
-    const [agent, catalogCandidate] = await Promise.all([
+    const [agent, catalogCandidate, hireEvents] = await Promise.all([
       this.getAgent.execute(input),
       this.catalogCandidates?.execute(input) ?? Promise.resolve(null),
+      this.readHireEvents(input.agentId),
     ]);
-    return this.build(agent, catalogCandidate);
+    return this.build(agent, catalogCandidate, this.jobProofs.listByAgentId(agent.agentId), hireEvents);
   }
 
   async executeWithAgent(input: { agentId: string }): Promise<{
@@ -88,18 +91,36 @@ export class GetAgentEvidencePassport {
     catalogCandidate: CatalogCandidate | null;
     jobProofs: MainnetJobProof[];
   }> {
-    const [agent, catalogCandidate] = await Promise.all([
+    const [agent, catalogCandidate, hireEvents] = await Promise.all([
       this.getAgent.execute(input),
       this.catalogCandidates?.execute(input) ?? Promise.resolve(null),
+      this.readHireEvents(input.agentId),
     ]);
     const jobProofs = this.jobProofs.listByAgentId(agent.agentId);
-    return { agent, passport: this.build(agent, catalogCandidate, jobProofs), catalogCandidate, jobProofs };
+    return {
+      agent,
+      passport: this.build(agent, catalogCandidate, jobProofs, hireEvents),
+      catalogCandidate,
+      jobProofs,
+    };
+  }
+
+  // The feed fails closed to null; an absent feed is "no verified activity",
+  // never an error that hides the rest of the Passport.
+  private async readHireEvents(agentId: string): Promise<VerifiedHireEvent[]> {
+    if (!this.hireEvents) return [];
+    try {
+      return await this.hireEvents.listByAgent({ chainId: 56, agentId }) ?? [];
+    } catch {
+      return [];
+    }
   }
 
   private build(
     agent: MarketplaceAgent,
     catalogCandidate: CatalogCandidate | null,
-    jobProofs: MainnetJobProof[] = this.jobProofs.listByAgentId(agent.agentId),
+    jobProofs: MainnetJobProof[],
+    hireEvents: VerifiedHireEvent[],
   ): AgentEvidencePassport {
     const now = this.now();
     const platform = catalogCandidate ? newestPlatformObservation(catalogCandidate) : [];
@@ -156,6 +177,7 @@ export class GetAgentEvidencePassport {
         observedAt: quote ? new Date(quote.observedAt).toISOString() : observedAt,
       },
       jobProofs,
+      hireEvents,
       generatedAt: new Date(now).toISOString(),
     });
   }

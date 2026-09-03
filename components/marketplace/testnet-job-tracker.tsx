@@ -115,6 +115,25 @@ export function TestnetJobTracker({ tracking }: { tracking: Erc8183TestnetJobTra
           <CardContent>
             <dl>
               <Fact label="Buyer" value={buyer} />
+              {tracking.buyerIdentity.kind === "demo_agent" && (
+                <div className="border-b border-white/10 py-3 last:border-0 sm:grid sm:grid-cols-[9rem_1fr] sm:gap-4">
+                  <dt className="text-xs text-muted-foreground">Buyer identity</dt>
+                  <dd className="mt-1 flex flex-wrap items-center gap-2 sm:mt-0">
+                    <Badge className="border-primary/30 bg-primary/10 text-primary" variant="outline">Hired by an agent</Badge>
+                    {tracking.buyerIdentity.verified && tracking.buyerIdentity.agentId && tracking.buyerIdentity.registry ? (
+                      <a className="inline-flex items-center gap-1 text-xs text-zinc-200 underline-offset-4 hover:underline" href={`${ERC8183_TESTNET.explorerUrl}/token/${tracking.buyerIdentity.registry}?a=${tracking.buyerIdentity.agentId}`} rel="noreferrer" target="_blank">
+                        ERC-8004 #{tracking.buyerIdentity.agentId} · registry wallet verified<ArrowUpRight aria-hidden="true" className="size-3" />
+                      </a>
+                    ) : (
+                      <span className="text-xs text-zinc-400">
+                        {tracking.buyerIdentity.agentId
+                          ? `ERC-8004 #${tracking.buyerIdentity.agentId} declared · registry wallet not verified`
+                          : "Demo agent-buyer wallet · no ERC-8004 identity declared"}
+                      </span>
+                    )}
+                  </dd>
+                </div>
+              )}
               <Fact label="Seller" value={seller} />
               <Fact label="Seller agent" value={snapshot?.sellerAgentId ?? String(ERC8183_TESTNET.agentId)} />
               <Fact label="Payment token" value={job?.quotedToken ?? snapshot?.payment.token ?? "Unavailable"} />
@@ -147,6 +166,28 @@ export function TestnetJobTracker({ tracking }: { tracking: Erc8183TestnetJobTra
           </CardContent>
         </Card>
       </div>
+
+      {tracking.verifiedPhases.length > 0 && (
+        <Card className="marketplace-surface mt-6">
+          <CardHeader>
+            <CardTitle>Chain-verified hire phases</CardTitle>
+            <CardDescription>Phases the observation Worker verified against BSC Testnet receipts and Commerce events for this job. A verified phase proves the phase, not the deliverable.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ul aria-label={`Chain-verified hire phases for Testnet Job ${jobId}`} className="flex flex-col gap-3">
+              {tracking.verifiedPhases.map((event) => (
+                <li key={`${event.txHash}:${event.phase}`}>
+                  <a className="block rounded-lg border border-white/10 p-3 transition-colors hover:bg-white/[0.03] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" href={`${ERC8183_TESTNET.explorerUrl}/tx/${event.txHash}`} rel="noreferrer" target="_blank">
+                    <span className="flex items-center justify-between gap-3 text-sm text-zinc-200"><span className="flex items-center gap-2"><CheckCircle2 aria-hidden="true" className="size-4 text-emerald-400" />{event.phase}</span><ArrowUpRight aria-hidden="true" className="size-4" /></span>
+                    <span className="font-hash mt-2 block text-[11px] text-zinc-400">{event.txHash}</span>
+                    <span className="mt-2 block text-[11px] text-zinc-500">Block {event.blockNumber} · {event.occurredAt} · onchain</span>
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </CardContent>
+        </Card>
+      )}
 
       {resultVerified && (
         <Card className="mt-6 border-emerald-400/20 bg-emerald-400/[0.04]">
