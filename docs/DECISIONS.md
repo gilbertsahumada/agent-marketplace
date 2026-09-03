@@ -756,3 +756,9 @@ Cross-session reconciliation between the observation/D1 migration (per `docs/OBS
   quote-facet plan even though Miniflare accepted it; the exact count now
   reconciles current admitted endpoints with their indexed latest quote rows in
   memory. This uses two bounded D1 reads and preserves newer-rejection semantics.
+
+## 2026-09-03 — Closing SPEC-MVP §11.3 for the v2-only Paid promotion
+
+- The 2026-09-02 promotion moved staging to the Paid profile on the catalogue v2 path. §11.3 was written for the legacy WP2 `header → sweep → probe` pipeline; that pipeline stays behind `WP2_PAID_PIPELINE_NOT_VALIDATED` and is never selected while `CATALOG_V2_WRITES_ENABLED=1`. No `pipeline` scheduler is built: the v2 path runs one phase per tick on every plan, and `loadConfig` now derives `schedulerMode=single_phase` whenever v2 writes are enabled, so `/health` stops advertising a multi-phase mode the Worker does not run.
+- Items still missing from the checklist are filled in without new infrastructure: `npm run d1:export:staging` (item 2, `wrangler d1 export` into `evidence/raw/`) and a README runbook that fixes the promotion order (safe-off commit → verify → enable in a second commit → two observed rotations) and the rollback order (kill switches → Cron → plan → verify). Everything else in §11.3 (Paid defaults, two full rotations, one-minute Cron with the kill switch, observed rounds) is already evidenced in `evidence/catalog-paid-staging-2026-09-02.json`.
+- The SPEC status line follows the 2026-09-02 decision that Paid billing supersedes the 24-hour Free-quota window as a release blocker; the WP2 evidence tooling keeps asserting the Free profile for its immutable historical artifacts and is not parameterised.

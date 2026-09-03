@@ -12,6 +12,7 @@
     "check": "npm run typecheck && npm run manifest:check && npm test && npm run dry-run && npm run dry-run:staging && npm run dry-run:validation",
     "migrate:local": "wrangler d1 migrations apply bnb-agent-probe --local",
     "migrations:list:local": "wrangler d1 migrations list bnb-agent-probe --local",
+    "d1:export:staging": "mkdir -p ../evidence/raw && wrangler d1 export bnb-agent-probe-staging --remote --env staging --output ../evidence/raw/d1-staging-$(date -u +%Y%m%dT%H%M%SZ).sql",
     "dry-run": "wrangler deploy --dry-run --env=\"\" --outdir dist/worker",
     "dry-run:staging": "wrangler deploy --dry-run --env staging --outdir dist/worker-staging",
     "dry-run:validation": "wrangler deploy --dry-run --env validation --outdir dist/worker-validation",

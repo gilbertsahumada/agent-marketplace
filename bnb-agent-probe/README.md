@@ -303,10 +303,9 @@ consumes one successful `DeleteMessage` bucket at or after that completion's
 `finishedAt` (allowing one second for Analytics timestamp rounding); this includes
 attempts that cross midnight, while retries do not invent extra deletes.
 
-Staging remains on the Free profile and retains one isolated Queue producer and
-serial consumer. Outside the exact 24-hour gate it declares an empty Cron list
-and deploys with the kill switch enabled. Apply its migrations and deploy
-explicitly:
+Staging runs the Paid profile on the catalogue v2 path since 2026-09-02 (one
+isolated Queue producer, serial consumer, `* * * * *`; see the promotion section
+at the end of this file). Apply its migrations and deploy explicitly:
 
 ```bash
 npx wrangler d1 migrations apply bnb-agent-probe-staging --remote --env staging
@@ -533,3 +532,36 @@ they are next touched. The boundary is enforced by
 fingerprint + count): any new raw callsite fails the suite, and a migrated
 callsite requires deleting its entry, so the allowlist only shrinks until the
 normative lease and budget-wrapper exemptions remain.
+
+## Free → Paid promotion (catalogue v2 path)
+
+SPEC-MVP section 11.3 lists the promotion checklist. It applies to the
+catalogue v2 scheduler only: the legacy WP2 `header → sweep → probe` pipeline
+keeps its `WP2_PAID_PIPELINE_NOT_VALIDATED` guard and is never selected while
+`CATALOG_V2_WRITES_ENABLED=1`, so `/health` reports `schedulerMode=single_phase`
+on either plan. Nothing detects the account plan automatically;
+`CLOUDFLARE_WORKERS_PLAN` in `wrangler.jsonc` is the only switch.
+
+Before a plan or budget change, keep a D1 export and the current baseline:
+
+```bash
+npm run d1:export:staging        # ../evidence/raw/d1-staging-<UTC>.sql
+npx wrangler d1 info bnb-agent-probe-staging --env staging
+curl -fsS "$WP2_HEALTH_URL" | jq '{plan, schedulerMode, killSwitch, budgets}'
+```
+
+Promotion order: commit the plan with `KILL_SWITCH=1`, `PRODUCER_KILL_SWITCH=1`
+and an empty Cron list; run `npm run check`, apply migrations, deploy, verify
+`/health`; then enable the kill switches and the Cron in a second commit and
+observe at least two complete `HEADER → SWEEP → PROBE` rotations in
+`last_*_summary` before raising any `D1_*` or `CATALOG_*` value. Temporary
+flips may use `npx wrangler deploy --env staging --keep-vars --var KILL_SWITCH:1`,
+but `test/scaffold.test.ts` pins the checked-in values, so every flip that is
+meant to persist must also be committed.
+
+Rollback: `--keep-vars --var KILL_SWITCH:1 --var PRODUCER_KILL_SWITCH:1` first,
+then `npm run rollback:wp2-activation -- --execute` to delete the Cron (it does
+not restore the plan), then a commit that restores `CLOUDFLARE_WORKERS_PLAN=free`
+and the Free budgets, deploy, and verify `/health` before re-enabling any Cron.
+Never delete observations; repair cursors or leases only through an idempotent
+migration.

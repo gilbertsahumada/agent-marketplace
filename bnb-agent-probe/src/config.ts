@@ -601,7 +601,9 @@ export function loadConfig(env: Partial<Env>): WorkerConfig {
     plan,
     killSwitch,
     producerKillSwitch: parseProducerKillSwitch(source.PRODUCER_KILL_SWITCH, killSwitch),
-    schedulerMode: profile.schedulerMode,
+    // The catalogue v2 path runs one phase per tick on every plan; only the
+    // legacy WP2 pipeline (still guarded) would run the Paid multi-phase mode.
+    schedulerMode: catalogV2WritesEnabled ? "single_phase" : profile.schedulerMode,
     catalogProbeEnabled,
     catalogV2ReadsEnabled,
     catalogResponseCacheSeconds,
