@@ -165,7 +165,7 @@ function CheckoutStep({
   state: "complete" | "current" | "locked";
 }) {
   return (
-    <li className="border-b border-white/[0.08] last:border-0">
+    <li aria-current={state === "current" ? "step" : undefined} className="border-b border-white/[0.08] last:border-0">
       <div className="flex min-h-16 items-center gap-3 px-4 sm:px-5">
         <span
           aria-hidden="true"

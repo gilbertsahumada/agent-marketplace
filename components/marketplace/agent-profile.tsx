@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Breadcrumb } from "./page-primitives";
 import { AgentAvatar } from "./agent-avatar";
 import { trust8004AgentHref } from "./agent-card";
-import { AgentValidationActions, type ValidationObservationSummary } from "./agent-validation-actions";
+import { AgentValidationActions, type ValidationObservationSummary, type ValidationTarget } from "./agent-validation-actions";
 import { declaredBrowserValidationTargets } from "@/src/business/policies/catalog-validation-policy";
 import type { CatalogCandidate } from "@/src/business/entities/catalog-candidate";
 import { catalogCandidateCard } from "./catalog-candidate-view-model";
@@ -101,12 +101,18 @@ export function AgentProfile({
 }) {
   const displayName = marketplaceAgentDisplayName(agent.name);
   const current = catalogCandidate ? catalogCandidateCard(catalogCandidate) : null;
-  const targetMap = new Map(declaredBrowserValidationTargets(agent).map((target) => [
+  const browserTargets = declaredBrowserValidationTargets(agent);
+  const browserTargetKeys = new Set(browserTargets.map((target) => `${target.protocol}\u0000${target.endpoint}`));
+  const targetMap = new Map<string, ValidationTarget>(browserTargets.map((target) => [
     `${target.protocol}\u0000${target.endpoint}`,
-    target,
+    { ...target, browserValidatable: true },
   ]));
   for (const target of agent.validationTargets ?? []) {
-    targetMap.set(`${target.protocol}\u0000${target.endpoint}`, target);
+    const key = `${target.protocol}\u0000${target.endpoint}`;
+    targetMap.set(key, {
+      ...target,
+      browserValidatable: browserTargetKeys.has(key),
+    });
   }
   const validationTargets = [...targetMap.values()];
   const validationObservations: ValidationObservationSummary[] = catalogCandidate?.observations.flatMap((observation) => (
@@ -191,7 +197,6 @@ export function AgentProfile({
                   : "bg-zinc-600"}`} />
             {headerStatus}
           </Badge>
-          {quoteReady ? <Badge className="border-emerald-400/30 bg-emerald-400/10 text-emerald-300" variant="outline">Quote verified</Badge> : null}
           <Badge variant="outline">{passport.trackRecord.provenJobs} jobs</Badge>
           <a
             className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg px-2 py-1 text-sm text-zinc-400 transition-colors hover:bg-white/[0.05] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"

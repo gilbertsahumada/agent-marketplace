@@ -88,4 +88,69 @@ describe("deriveAgentJourney", () => {
     expect(journey.jobs).toMatchObject({ state: "verified", label: "2 proven jobs" });
     expect(journey.nextAction).toMatch(/fresh quote/i);
   });
+
+  it("prioritizes the latest failed probe over stale freshness", () => {
+    const journey = deriveAgentJourney({
+      ...base,
+      state: state({ operationalStatus: "platform_failed", freshness: "stale" }),
+    });
+
+    expect(journey.availability).toMatchObject({ state: "attention", label: "Last check failed" });
+    expect(journey.nextAction).toMatch(/check availability/i);
+  });
+
+  it("keeps a historical quote visible but blocks it from preparing a hire", () => {
+    const journey = deriveAgentJourney({
+      ...base,
+      hireFlowAvailable: true,
+      state: state({
+        quoteStatus: "verified_historical",
+        canPrepareHire: false,
+        buyerAction: "request_quote",
+      }),
+    });
+
+    expect(journey.quote).toMatchObject({ state: "attention", label: "Refresh quote" });
+    expect(journey.hire).toMatchObject({ state: "current", label: "Start hiring" });
+    expect(journey.nextAction).toMatch(/fresh quote/i);
+  });
+
+  it("renders an explicit rejected quote without treating the seller as hireable", () => {
+    const journey = deriveAgentJourney({
+      ...base,
+      hireFlowAvailable: true,
+      state: state({
+        quoteStatus: "rejected",
+        canRequestQuote: false,
+        buyerAction: "unavailable",
+      }),
+    });
+
+    expect(journey.quote).toMatchObject({ state: "attention", label: "Quote rejected" });
+    expect(journey.hire).toMatchObject({ state: "locked", label: "Hiring locked" });
+    expect(journey.nextAction).toMatch(/listed for discovery/i);
+  });
+
+  it("does not imply a check exists when no eligible validation endpoint is available", () => {
+    const journey = deriveAgentJourney({
+      declared: false,
+      validationAvailable: false,
+      hireFlowAvailable: false,
+      provenJobs: 0,
+      state: undefined,
+    });
+
+    expect(journey.declared).toMatchObject({ state: "locked", label: "Not indexed" });
+    expect(journey.availability).toMatchObject({ state: "locked", label: "Not checked" });
+    expect(journey.quote).toMatchObject({ state: "locked", label: "Quote unavailable" });
+    expect(journey.hire).toMatchObject({ state: "locked", label: "Hiring locked" });
+    expect(journey.jobs).toMatchObject({ state: "locked", label: "No proven jobs" });
+  });
+
+  it("shows singular and plural proven-job labels", () => {
+    expect(deriveAgentJourney({ ...base, state: state(), provenJobs: 1 }).jobs.label)
+      .toBe("1 proven job");
+    expect(deriveAgentJourney({ ...base, state: state(), provenJobs: 3 }).jobs.label)
+      .toBe("3 proven jobs");
+  });
 });

@@ -106,21 +106,17 @@ describe("catalog validation sync", () => {
       schemaVersion: 2,
       validation: {
         id: 17,
-        dedupeKey: `eip155:56:${input.agentId}:${endpointKey}:protocol`,
         agentKey: `eip155:56:${input.agentId}`,
         endpointKey,
         validationKind: "protocol",
-        requestedBy: "browser_fallback",
         status: "running",
-        priority: 1_000,
         createdAt: 1_000,
         startedAt: 1_100,
         completedAt: null,
         attemptCount: 1,
-        resultObservationId: null,
         errorCode: null,
-        leaseOwner: null,
-        leaseExpiresAt: null,
+        hasResult: false,
+        result: null,
       },
     }));
     await expect(getCatalogValidationStatus({ ...input, validationId: 17, expiresAt: 10_000 }, { env, fetchImpl }))
@@ -153,8 +149,8 @@ describe("catalog validation sync", () => {
         createdAt: 1_000,
         startedAt: 1_100,
         completedAt: 1_250,
-        resultObservationId: 81,
         errorCode: null,
+        hasResult: true,
         result: {
           protocol: "mcp",
           source: "worker_probe",
@@ -184,7 +180,95 @@ describe("catalog validation sync", () => {
       });
   });
 
-  it("fails closed when Worker points at a missing committed observation", async () => {
+  it("fails closed when hasResult is true without a result", async () => {
+    const fetchImpl = vi.fn(async () => Response.json({
+      schemaVersion: 2,
+      validation: {
+        id: 17,
+        agentKey: `eip155:56:${input.agentId}`,
+        endpointKey,
+        validationKind: "protocol",
+        status: "completed",
+        attemptCount: 1,
+        createdAt: 1_000,
+        startedAt: 1_100,
+        completedAt: 1_250,
+        errorCode: null,
+        hasResult: true,
+        result: null,
+      },
+    }));
+
+    await expect(getCatalogValidationStatus({ ...input, validationId: 17, expiresAt: 10_000 }, { env, fetchImpl }))
+      .rejects.toMatchObject({ code: "CATALOG_VALIDATION_INVALID_RESPONSE", httpStatus: 502 });
+  });
+
+  it("fails closed when hasResult contradicts the public result", async () => {
+    const fetchImpl = vi.fn(async () => Response.json({
+      schemaVersion: 2,
+      validation: {
+        id: 17,
+        agentKey: `eip155:56:${input.agentId}`,
+        endpointKey,
+        validationKind: "protocol",
+        status: "completed",
+        attemptCount: 1,
+        createdAt: 1_000,
+        startedAt: 1_100,
+        completedAt: 1_250,
+        errorCode: null,
+        hasResult: false,
+        result: {
+          protocol: "mcp",
+          source: "worker_probe",
+          outcome: "protocol_valid",
+          observedAt: 1_240,
+          expiresAt: 61_240,
+          httpStatus: 200,
+          durationMs: 340,
+        },
+      },
+    }));
+
+    await expect(getCatalogValidationStatus({ ...input, validationId: 17, expiresAt: 10_000 }, { env, fetchImpl }))
+      .rejects.toMatchObject({ code: "CATALOG_VALIDATION_INVALID_RESPONSE", httpStatus: 502 });
+  });
+
+  it.each(["quote_verified", "quote_rejected"] as const)(
+    "rejects %s as a protocol-validation outcome",
+    async (outcome) => {
+      const fetchImpl = vi.fn(async () => Response.json({
+        schemaVersion: 2,
+        validation: {
+          id: 17,
+          agentKey: `eip155:56:${input.agentId}`,
+          endpointKey,
+          validationKind: "protocol",
+          status: "completed",
+          attemptCount: 1,
+          createdAt: 1_000,
+          startedAt: 1_100,
+          completedAt: 1_250,
+          hasResult: true,
+          errorCode: null,
+          result: {
+            protocol: "mcp",
+            source: "worker_probe",
+            outcome,
+            observedAt: 1_240,
+            expiresAt: 61_240,
+            httpStatus: outcome === "quote_verified" ? 200 : 422,
+            durationMs: 340,
+          },
+        },
+      }));
+
+      await expect(getCatalogValidationStatus({ ...input, validationId: 17, expiresAt: 10_000 }, { env, fetchImpl }))
+        .rejects.toMatchObject({ code: "CATALOG_VALIDATION_INVALID_RESPONSE", httpStatus: 502 });
+    },
+  );
+
+  it("rejects the internal result pointer from the public polling contract", async () => {
     const fetchImpl = vi.fn(async () => Response.json({
       schemaVersion: 2,
       validation: {
@@ -198,8 +282,17 @@ describe("catalog validation sync", () => {
         startedAt: 1_100,
         completedAt: 1_250,
         resultObservationId: 81,
+        hasResult: true,
         errorCode: null,
-        result: null,
+        result: {
+          protocol: "mcp",
+          source: "worker_probe",
+          outcome: "protocol_valid",
+          observedAt: 1_240,
+          expiresAt: 61_240,
+          httpStatus: 200,
+          durationMs: 340,
+        },
       },
     }));
 

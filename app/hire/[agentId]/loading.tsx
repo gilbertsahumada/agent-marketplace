@@ -32,7 +32,7 @@ export default function HireAgentLoading() {
           </div>
           <Skeleton className="h-4 w-64 max-w-full" />
         </div>
-        <div className="mt-5 grid gap-5 sm:grid-cols-2 lg:grid-cols-4 lg:gap-4">
+        <div className="mt-5 grid gap-5 sm:grid-cols-2 lg:grid-cols-5 lg:gap-4">
           {Array.from({ length: 5 }, (_, index) => (
             <div className="flex items-start gap-3" key={index}>
               <Skeleton className="size-9 shrink-0 rounded-full" />

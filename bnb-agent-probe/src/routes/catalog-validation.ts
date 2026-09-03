@@ -57,6 +57,7 @@ export async function createCatalogValidationResponse(
   const agentKey = `eip155:56:${parsed.agentId}`;
   const targets = await db.select({
     endpointKey: catalogEndpoints.endpointKey,
+    validationProtocol: catalogEndpoints.validationProtocol,
     lastSuccessfulAt: catalogEndpoints.lastSuccessfulAt,
     lastAttemptOutcome: catalogEndpoints.lastAttemptOutcome,
     nextProbeAt: catalogEndpoints.nextProbeAt,
@@ -72,6 +73,8 @@ export async function createCatalogValidationResponse(
     )).limit(1);
   const target = targets[0];
   if (!target) return Response.json({ error: "target_unavailable" }, { status: 409, headers: { "cache-control": "no-store" } });
+  const expectedProtocol = target.validationProtocol;
+  if (!expectedProtocol) return Response.json({ error: "target_unavailable" }, { status: 409, headers: { "cache-control": "no-store" } });
   const latestPlatformObservation = await db.select({
     outcome: catalogObservations.outcome,
     expiresAt: catalogObservations.expiresAt,
@@ -81,6 +84,7 @@ export async function createCatalogValidationResponse(
     inArray(catalogObservations.source, ["worker_probe", "buyer_refresh", "migration"]),
     eq(catalogObservations.validationKind, "protocol"),
     eq(catalogObservations.verificationLevel, "platform_observed"),
+    eq(catalogObservations.protocol, expectedProtocol),
   )).orderBy(desc(catalogObservations.observedAt), desc(catalogObservations.id)).limit(1);
   if (latestPlatformObservation[0]?.outcome === "protocol_valid"
     && latestPlatformObservation[0].expiresAt !== null
@@ -191,18 +195,35 @@ export async function catalogValidationStatusResponse(request: Request, d1: D1Da
   const rows = await db.select().from(catalogValidationRequests).where(eq(catalogValidationRequests.id, id)).limit(1);
   if (!rows[0]) return Response.json({ error: "not_found" }, { status: 404, headers: { "cache-control": "no-store" } });
   const validation = rows[0];
-  // Return the committed observation with the request so the buyer can see
-  // exactly what the Worker checked. The agent and endpoint predicates keep a
-  // malformed or cross-scoped result from being presented as this request's
-  // evidence.
-  const resultRows = validation.resultObservationId === null ? [] : await db.select().from(catalogObservations).where(and(
-    eq(catalogObservations.id, validation.resultObservationId),
-    eq(catalogObservations.agentKey, validation.agentKey),
-    eq(catalogObservations.endpointKey, validation.endpointKey),
+  // Return only a committed protocol observation for the exact request target.
+  // The request row is internal state, so a linked observation is not enough by
+  // itself: require the normalized validation kind, platform verification and
+  // the endpoint's expected validation protocol before exposing any result.
+  const expectedProtocolRows = await db.select({
+    protocol: catalogEndpoints.validationProtocol,
+  }).from(catalogEndpoints).where(and(
+    eq(catalogEndpoints.endpointKey, validation.endpointKey),
+    eq(catalogEndpoints.role, "operational"),
+    eq(catalogEndpoints.eligibility, "eligible"),
   )).limit(1);
+  const expectedProtocol = expectedProtocolRows[0]?.protocol;
+  const resultRows = validation.validationKind !== "protocol"
+    || validation.resultObservationId === null
+    || expectedProtocol === null
+    || expectedProtocol === undefined
+    ? []
+    : await db.select().from(catalogObservations).where(and(
+      eq(catalogObservations.id, validation.resultObservationId),
+      eq(catalogObservations.agentKey, validation.agentKey),
+      eq(catalogObservations.endpointKey, validation.endpointKey),
+      eq(catalogObservations.validationKind, "protocol"),
+      eq(catalogObservations.verificationLevel, "platform_observed"),
+      eq(catalogObservations.protocol, expectedProtocol),
+    )).limit(1);
   const publicResult = resultRows[0] ? publicCatalogObservation(resultRows[0]) : null;
-  // Keep the polling contract narrow. Internal attempt ids, raw details and
-  // lease metadata are not needed by the buyer-facing workspace.
+  // Keep the polling contract explicitly allowlisted. Dedupe, caller,
+  // result-id and lease metadata are internal coordination fields and must
+  // never cross the Worker boundary.
   const result = publicResult ? {
     protocol: publicResult.protocol,
     source: publicResult.source,
@@ -212,5 +233,18 @@ export async function catalogValidationStatusResponse(request: Request, d1: D1Da
     httpStatus: publicResult.httpStatus,
     durationMs: publicResult.durationMs,
   } : null;
-  return Response.json({ schemaVersion: 2, validation: { ...validation, result } }, { headers: { "cache-control": "no-store" } });
+  return Response.json({ schemaVersion: 2, validation: {
+    id: validation.id,
+    agentKey: validation.agentKey,
+    endpointKey: validation.endpointKey,
+    validationKind: validation.validationKind,
+    status: validation.status,
+    attemptCount: validation.attemptCount,
+    createdAt: validation.createdAt,
+    startedAt: validation.startedAt,
+    completedAt: validation.completedAt,
+    errorCode: validation.errorCode,
+    hasResult: result !== null,
+    result,
+  } }, { headers: { "cache-control": "no-store" } });
 }

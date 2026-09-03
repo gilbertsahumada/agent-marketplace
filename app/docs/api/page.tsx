@@ -10,6 +10,9 @@ const ROUTES: { journey: string; method: string; path: string; purpose: string }
   { journey: "Discover", method: "GET", path: "/api/marketplace/agents?view=marketplace", purpose: "Search the catalogue: q, category, availability, page, limit." },
   { journey: "Understand", method: "GET", path: "/api/marketplace/agents/{agentId}/passport", purpose: "The agent's Evidence Passport." },
   { journey: "Compare", method: "GET", path: "/api/marketplace/compare?agentId=…&agentId=…", purpose: "2–3 agents side by side (repeated agentId params)." },
+  { journey: "Validate — legacy", method: "POST", path: "/api/marketplace/validate", purpose: "Compatibility validation with { agentId }; synchronous legacy evidence, no polling." },
+  { journey: "Validate — infrastructure", method: "POST", path: "/api/marketplace/validate", purpose: "Endpoint-scoped Worker/D1 validation with { agentId, endpointKey, validationKind }." },
+  { journey: "Validate — poll", method: "GET", path: "/api/marketplace/validate/{requestId}", purpose: "Poll the opaque infrastructure request for status, attempts and committed result." },
   { journey: "Hire — quote", method: "POST", path: "/api/marketplace/demo/erc8183[-mainnet]/quote", purpose: "A fresh allowlist-validated signed quote. No body." },
   { journey: "Hire — prepare", method: "POST", path: "/api/marketplace/demo/erc8183[-mainnet]/prepare", purpose: "{ buyer, quote } → the ordered transaction plan with guardrails." },
   { journey: "Hire — notify", method: "POST", path: "/api/marketplace/demo/erc8183[-mainnet]/notify", purpose: "{ buyer, jobId } once the job is FUNDED." },
@@ -53,7 +56,7 @@ export default function ApiDocsPage() {
             </thead>
             <tbody>
               {ROUTES.map((row) => (
-                <tr className="border-b border-white/[0.06] last:border-b-0" key={row.path}>
+                <tr className="border-b border-white/[0.06] last:border-b-0" key={[row.method, row.journey, row.path].join(":")}>
                   <td className="whitespace-nowrap px-3 py-2 text-zinc-400">{row.journey}</td>
                   <td className="px-3 py-2 font-mono font-medium text-primary">{row.method}</td>
                   <td className="px-3 py-2 font-mono text-zinc-200">{row.path}</td>
@@ -73,6 +76,72 @@ export default function ApiDocsPage() {
             and ingestion routes are internal and not part of this contract.
           </p>
         </Callout>
+      </DocsSection>
+
+      <DocsSection id="validation" title="Validation and polling">
+        <p>
+          The validation route has a compatibility form and a current infrastructure form. The
+          legacy request is <InlineCode>{`{ "agentId": "303779" }`}</InlineCode>: it returns the
+          older synchronous Trust8004 evidence shape and has no polling metadata. New buyer flows
+          must send an endpoint-scoped request:
+        </p>
+        <CodeBlock title="POST /api/marketplace/validate">{`{
+  "agentId": "303779",
+  "endpointKey": "<64 lowercase hexadecimal characters>",
+  "validationKind": "protocol"
+}`}</CodeBlock>
+        <p>
+          A queued or running infrastructure request responds with <InlineCode>202</InlineCode> and
+          an opaque <InlineCode>requestId</InlineCode>. Poll it using the returned token; never use
+          the internal D1 validation id:
+        </p>
+        <CodeBlock title="202 then GET">{`{
+  "schemaVersion": 2,
+  "status": "queued",
+  "reused": false,
+  "requestId": "<opaque token>",
+  "pollAfterMs": 1500
+}
+
+GET /api/marketplace/validate/<opaque token>
+
+{
+  "schemaVersion": 2,
+  "requestId": "<opaque token>",
+  "status": "completed",
+  "attemptCount": 2,
+  "createdAt": 1000,
+  "startedAt": 1100,
+  "completedAt": 1250,
+  "errorCode": null,
+  "hasResult": true,
+  "result": {
+    "protocol": "mcp",
+    "source": "worker_probe",
+    "outcome": "protocol_valid",
+    "observedAt": 1240,
+    "expiresAt": 61240,
+    "httpStatus": 200,
+    "durationMs": 340
+  }
+}`}</CodeBlock>
+        <p>
+          Polling states are <InlineCode>queued</InlineCode>, <InlineCode>running</InlineCode>,{" "}<InlineCode>completed</InlineCode>,{" "}
+          <InlineCode>failed</InlineCode> and <InlineCode>cancelled</InlineCode>. The result is null until a committed observation is
+          available. <InlineCode>hasResult</InlineCode> must exactly match whether{" "}
+          <InlineCode>result</InlineCode> is present. The public polling response never exposes
+          the internal <InlineCode>resultObservationId</InlineCode>; if it appears, or the
+          boolean/result pair contradicts, the response fails closed with{" "}
+          <InlineCode>502 CATALOG_VALIDATION_INVALID_RESPONSE</InlineCode>. The completed result
+          contains the Worker&apos;s sanitized protocol evidence, while browser
+          checks remain separate browser-only observations. Protocol outcomes are{" "}
+          <InlineCode>protocol_valid</InlineCode>, <InlineCode>http_error</InlineCode>,{" "}
+          <InlineCode>timeout</InlineCode>, <InlineCode>network_error</InlineCode>,{" "}
+          <InlineCode>invalid_response</InlineCode>, <InlineCode>unsafe_url</InlineCode>,{" "}
+          <InlineCode>unreachable</InlineCode> and <InlineCode>error</InlineCode>.{" "}
+          <InlineCode>quote_verified</InlineCode> and <InlineCode>quote_rejected</InlineCode> are
+          quote evidence and are not valid protocol-validation outcomes.
+        </p>
       </DocsSection>
 
       <DocsSection id="errors" title="Errors">

@@ -14,7 +14,16 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 type PersistenceStatus = "recorded" | "failed" | "not_configured" | "pending";
-type ValidationTarget = BrowserValidationTarget & { endpointKey?: string };
+/**
+ * A catalog target can be checked by the marketplace Worker even when the
+ * browser policy deliberately excludes it (for example an unsafe or external
+ * declaration). Keep that distinction explicit so the UI never offers a
+ * browser action for a target that the browser/API contract would reject.
+ */
+export type ValidationTarget = BrowserValidationTarget & {
+  endpointKey?: string;
+  browserValidatable?: boolean;
+};
 type InfrastructureState = "pending" | "deferred" | "completed" | "failed";
 type BrowserPhase = "checking" | "saving";
 const POLL_DELAYS_MS = [1_000, 2_000, 4_000, 5_000, 5_000, 5_000] as const;
@@ -180,6 +189,11 @@ export function AgentValidationActions({ agentId, targets, initialObservations =
         persistence = "failed";
       }
       setResults((current) => ({ ...current, [key]: { result, persistence } }));
+      // The POST writes a browser_reported observation that is shared with
+      // other viewers, but it is intentionally not used to promote platform
+      // reachability or hireability. Refresh only after the Worker accepted
+      // the write so the server-rendered observation state can catch up.
+      if (persistence === "recorded") router.refresh();
     } catch {
       setBrowserErrors((current) => ({
         ...current,
@@ -382,16 +396,18 @@ export function AgentValidationActions({ agentId, targets, initialObservations =
                       </p>
                     ) : null}
                     <div className="flex flex-wrap gap-2">
-                      <Button
-                        className="cursor-pointer"
-                        disabled={pending !== null}
-                        onClick={() => void validate(target)}
-                        type="button"
-                        variant="outline"
-                      >
-                        {pending === key ? <LoaderCircle aria-hidden="true" className="animate-spin" /> : <ShieldCheck aria-hidden="true" />}
-                        Validate from browser
-                      </Button>
+                      {target.browserValidatable !== false ? (
+                        <Button
+                          className="cursor-pointer"
+                          disabled={pending !== null}
+                          onClick={() => void validate(target)}
+                          type="button"
+                          variant="outline"
+                        >
+                          {pending === key ? <LoaderCircle aria-hidden="true" className="animate-spin" /> : <ShieldCheck aria-hidden="true" />}
+                          Validate from browser
+                        </Button>
+                      ) : null}
                       {target.endpointKey && (
                         <Button
                           className="cursor-pointer"
