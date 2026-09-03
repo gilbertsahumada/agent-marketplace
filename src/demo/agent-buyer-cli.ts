@@ -75,6 +75,31 @@ async function postJson(origin: string, path: string, body: unknown): Promise<un
   return payload;
 }
 
+type HireEventPhase = "clicked" | "created" | "funded" | "submitted";
+
+// Mirrors the browser demo's telemetry: the same same-origin route, the same
+// five-key contract. Best effort by design — the Worker verifies every chain
+// phase by RPC, so this report carries no weight of its own and must never
+// interrupt or fail the hire.
+export async function reportHireEvent(
+  origin: string,
+  event: { phase: HireEventPhase; jobId: string | null; txHash: string | null },
+  log: (line: string) => void = () => {},
+): Promise<void> {
+  try {
+    const result = await postJson(origin, "/api/marketplace/hire-events", {
+      agentId: String(ERC8183_TESTNET.agentId),
+      chainId: ERC8183_TESTNET.chainId,
+      phase: event.phase,
+      jobId: event.jobId,
+      txHash: event.txHash,
+    }) as { persistence?: string } | undefined;
+    log(`hire-event ${event.phase}: ${result?.persistence ?? "accepted"}`);
+  } catch (error) {
+    log(`hire-event ${event.phase}: not recorded (${error instanceof Error ? error.message : String(error)})`);
+  }
+}
+
 export async function runAgentBuyer(options: { dryRun: boolean; buyerOverride?: string }): Promise<void> {
   const origin = normalizedOrigin(process.env.MARKETPLACE_ORIGIN ?? defaultMarketplaceOrigin());
   const log = (line: string) => console.log(line);
@@ -137,6 +162,7 @@ export async function runAgentBuyer(options: { dryRun: boolean; buyerOverride?: 
       return;
     }
     if (!account) throw new Error("No signing account");
+    await reportHireEvent(origin, { phase: "clicked", jobId: null, txHash: null }, log);
 
     const publicClient = createPublicClient({ chain: bscTestnet, transport: http(deployment.rpcUrl) });
     const walletClient = createWalletClient({ account, chain: bscTestnet, transport: http(deployment.rpcUrl) });
@@ -165,6 +191,7 @@ export async function runAgentBuyer(options: { dryRun: boolean; buyerOverride?: 
     }).then((simulation) => write(simulation.request, deployment.commerce, "createJob"));
     const jobId = extractConfirmedJobId(created.receipt, deployment.commerce);
     log(`jobId: ${jobId}`);
+    await reportHireEvent(origin, { phase: "created", jobId: jobId.toString(), txHash: created.hash }, log);
 
     await publicClient.simulateContract({
       account,
@@ -192,19 +219,23 @@ export async function runAgentBuyer(options: { dryRun: boolean; buyerOverride?: 
       }).then((simulation) => write(simulation.request, deployment.token, "approve"));
     }
 
-    await publicClient.simulateContract({
+    const funded = await publicClient.simulateContract({
       account,
       address: deployment.commerce,
       abi: agenticCommerceBrowserAbi,
       functionName: "fund",
       args: [jobId, budget, "0x"],
     }).then((simulation) => write(simulation.request, deployment.commerce, "fund"));
+    await reportHireEvent(origin, { phase: "funded", jobId: jobId.toString(), txHash: funded.hash }, log);
 
     const notify = await postJson(origin, "/api/marketplace/demo/erc8183/notify", {
       buyer,
       jobId: jobId.toString(),
     }) as { acknowledged: boolean; sellerTransactionHash?: string };
     log(`seller notified: acknowledged=${notify.acknowledged}${notify.sellerTransactionHash ? `, submit tx ${notify.sellerTransactionHash}` : ""}`);
+    if (notify.sellerTransactionHash) {
+      await reportHireEvent(origin, { phase: "submitted", jobId: jobId.toString(), txHash: notify.sellerTransactionHash }, log);
+    }
 
     const status = JSON.parse(toolText(await client.callTool({
       name: "get_job_status",
