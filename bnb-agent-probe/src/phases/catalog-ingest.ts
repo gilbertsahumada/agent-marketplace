@@ -1,7 +1,7 @@
-import { and, asc, desc, eq, inArray, isNull, lte, ne, or, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, lte, ne, or, sql } from "drizzle-orm";
 
 import type { D1DatabaseLike } from "../db/client";
-import { createDatabase } from "../db/orm";
+import { createDatabase, type CatalogIngestTaskRow } from "../db/orm";
 import {
   catalogAgentAdmission,
   catalogDirectedTracking,
@@ -251,11 +251,19 @@ export async function processNextCatalogIngestTask(
     throw new Error("CATALOG_INGEST_LIMIT");
   }
   const db = createDatabase(dbBinding);
-  const candidates = await db.select().from(catalogIngestTasks).where(and(
-    inArray(catalogIngestTasks.status, ["pending", "retiring", "failed"]),
-    lte(catalogIngestTasks.retryAt, input.nowMs),
-    or(isNull(catalogIngestTasks.leaseOwner), lte(catalogIngestTasks.leaseExpiresAt, input.nowMs)),
-  )).orderBy(desc(catalogIngestTasks.priority), asc(catalogIngestTasks.updatedAt), catalogIngestTasks.agentKey).limit(1);
+  // One branch per claimable status, each walking idx_catalog_ingest_tasks_claim
+  // in claim order and stopping at its first row whose retry time and lease
+  // allow it; the compound ORDER BY then ranks at most three rows. A single
+  // `status IN (...)` select had to read and sort the whole backlog.
+  const branch = (status: "pending" | "retiring" | "failed") => sql`SELECT * FROM (
+    SELECT * FROM catalog_ingest_tasks INDEXED BY idx_catalog_ingest_tasks_claim
+    WHERE status = ${status} AND retryAt <= ${input.nowMs}
+      AND (leaseOwner IS NULL OR leaseExpiresAt <= ${input.nowMs})
+    ORDER BY priority DESC, updatedAt ASC, agentKey ASC LIMIT 1)`;
+  const candidates = await db.all<CatalogIngestTaskRow>(sql`${branch("pending")}
+    UNION ALL ${branch("retiring")}
+    UNION ALL ${branch("failed")}
+    ORDER BY priority DESC, updatedAt ASC, agentKey ASC LIMIT 1`);
   const task = candidates[0];
   if (!task) return {
     status: "idle", agentKey: null, declarationsProcessed: 0, declarationsTotal: 0,

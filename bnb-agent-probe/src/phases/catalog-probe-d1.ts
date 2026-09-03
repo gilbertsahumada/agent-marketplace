@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, isNotNull, isNull, lte, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull, isNull, lte, or, sql } from "drizzle-orm";
 import type { D1DatabaseLike } from "../db/client";
 import { createDatabase } from "../db/orm";
 import { catalogAgentAdmission, catalogAgentEndpoints, catalogEndpoints, catalogObservations } from "../db/schema";
@@ -9,6 +9,10 @@ import type {
 } from "./catalog-probe";
 
 const MINUTE = 60_000;
+// Candidate window for target selection: exact ordering is preserved unless
+// more than this many endpoints share the boundary nextProbeAt timestamp.
+const SELECTION_WINDOW_MULTIPLIER = 25;
+const SELECTION_WINDOW_MINIMUM = 100;
 const SUCCESS_TTL_BY_PROTOCOL = {
   a2a: 12 * 60 * MINUTE,
   mcp: 24 * 60 * MINUTE,
@@ -124,6 +128,28 @@ export function createD1CatalogProbePersistence(
   const db = createDatabase(dbBinding);
   return {
     async selectTargets({ limit, nowMs }: { limit: number; nowMs: number }): Promise<CatalogProbeTarget[]> {
+      const due = and(
+        eq(catalogEndpoints.safety, "safe"),
+        eq(catalogEndpoints.role, "operational"),
+        eq(catalogEndpoints.eligibility, "eligible"),
+        isNotNull(catalogEndpoints.representativeAgentKey),
+        isNotNull(catalogEndpoints.validationProtocol),
+        isNotNull(catalogEndpoints.endpoint),
+        lte(catalogEndpoints.nextProbeAt, nowMs),
+        or(isNull(catalogEndpoints.leaseOwner), lte(catalogEndpoints.leaseExpiresAt, nowMs)),
+      );
+      // nextProbeAt is the first ordering key and idx_catalog_endpoints_lease
+      // already yields it in order (ties fall in index order), so the full
+      // sort (protocol, priority, lastProbedAt) only has to rank the
+      // oldest-due window. Without this bound SQLite read and sorted every due
+      // endpoint: 12,000 rows for 4,000 due endpoints against a 3,000-row
+      // phase budget. The outer query deliberately repeats only the lease
+      // check, so its sole usable index is the primary key of the window.
+      const window = db.select({ endpointKey: catalogEndpoints.endpointKey })
+        .from(catalogEndpoints)
+        .where(due)
+        .orderBy(asc(catalogEndpoints.nextProbeAt))
+        .limit(Math.max(limit * SELECTION_WINDOW_MULTIPLIER, SELECTION_WINDOW_MINIMUM));
       const rows = await db.select({
         agentKey: catalogEndpoints.representativeAgentKey,
         endpointKey: catalogEndpoints.endpointKey,
@@ -137,13 +163,7 @@ export function createD1CatalogProbePersistence(
         eq(catalogAgentEndpoints.endpointKey, catalogEndpoints.endpointKey),
         eq(catalogAgentEndpoints.declarationState, "current"),
       )).where(and(
-        eq(catalogEndpoints.safety, "safe"),
-        eq(catalogEndpoints.role, "operational"),
-        eq(catalogEndpoints.eligibility, "eligible"),
-        isNotNull(catalogEndpoints.representativeAgentKey),
-        isNotNull(catalogEndpoints.validationProtocol),
-        isNotNull(catalogEndpoints.endpoint),
-        lte(catalogEndpoints.nextProbeAt, nowMs),
+        inArray(catalogEndpoints.endpointKey, window),
         or(isNull(catalogEndpoints.leaseOwner), lte(catalogEndpoints.leaseExpiresAt, nowMs)),
       )).orderBy(
         asc(catalogEndpoints.nextProbeAt),

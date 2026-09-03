@@ -600,9 +600,8 @@ export const catalogIngestTasks = sqliteTable(
     leaseExpiresAt: integer(),
   },
   (table) => [
-    index("idx_catalog_ingest_tasks_work").on(
+    index("idx_catalog_ingest_tasks_claim").on(
       table.status,
-      table.retryAt,
       desc(table.priority),
       table.updatedAt,
       table.agentKey,
