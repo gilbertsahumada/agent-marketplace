@@ -23,7 +23,9 @@ export default async function HirePage({ params }: { params: Promise<{ agentId: 
       && normalizedState.canRequestQuote
       && (buyerAction === "request_quote"
         || (buyerAction === "prepare_hire" && normalizedState.canPrepareHire));
-    const canCheckAvailability = buyerAction === "check_availability";
+    const canCheckAvailability = buyerAction === "check_availability"
+      && (normalizedState?.canRequestBrowserValidation === true
+        || normalizedState?.canRequestInfrastructureValidation === true);
     let selectedConfig = null;
     if (canRequestQuote) {
       try {

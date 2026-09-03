@@ -143,6 +143,19 @@ describe("hire page normalized commerce gate", () => {
     expect(markup).toContain("Check availability");
   });
 
+  it("fails closed when check_availability has no enabled validation capability", async () => {
+    const markup = await render(state({
+      commerceStatus: "declared",
+      buyerAction: "check_availability",
+      canRequestBrowserValidation: false,
+      canRequestInfrastructureValidation: false,
+      canRequestQuote: false,
+      blockingReasons: ["COMMERCE_NOT_ADMITTED"],
+    }));
+
+    expect(markup).not.toContain("Check availability");
+  });
+
   it("does not render a self-link when the configured seller does not match", async () => {
     executeConfig.mockReturnValue({ agentId: 99 });
 
