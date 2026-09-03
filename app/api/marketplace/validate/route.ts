@@ -9,7 +9,7 @@ import {
   InvalidMarketplaceInputError,
   MarketplacePayloadTooLargeError,
 } from "@/src/business/errors/marketplace-errors";
-import { marketplaceErrorResponse } from "@/src/presentation/http/marketplace-http";
+import { callerContext, marketplaceErrorResponse } from "@/src/presentation/http/marketplace-http";
 
 const MAX_VALIDATION_BODY_BYTES = 256;
 
@@ -69,14 +69,6 @@ function validationInput(raw: string): ValidationInput {
     };
   }
   throw new InvalidMarketplaceInputError("Validation accepts agentId, or an agentId, endpointKey and protocol validation kind");
-}
-
-function callerContext(request: Request): string {
-  const forwarded = request.headers.get("x-forwarded-for")?.split(",", 1)[0]?.trim();
-  const real = request.headers.get("x-real-ip")?.trim();
-  const origin = request.headers.get("origin")?.trim();
-  if (!forwarded && !real && !origin) return "anonymous";
-  return [forwarded || real || "unknown", origin || "same-origin"].join("|");
 }
 
 async function infrastructureResponse(

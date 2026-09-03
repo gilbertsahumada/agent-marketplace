@@ -173,10 +173,13 @@ export const hireEvents = sqliteTable(
     blockNumber: text(),
     occurredAt: integer().notNull(),
     verifiedAt: integer(),
+    callerKey: text().notNull().default("anonymous"),
   },
   (table) => [
     index("idx_hire_agent").on(table.chainId, table.agentId, desc(table.occurredAt)),
+    index("idx_hire_events_caller").on(table.callerKey, table.provenance, desc(table.occurredAt)),
     check("hire_events_chain_bsc", sql`${table.chainId} IN (56, 97)`),
+    check("hire_events_caller_key", sql`length(${table.callerKey}) BETWEEN 1 AND 128`),
     check(
       "hire_events_phase",
       sql`${table.phase} IN (

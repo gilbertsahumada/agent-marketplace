@@ -87,10 +87,13 @@ function fakeReader(overrides: {
   } as unknown as HireChainReader;
 }
 
-function request(body: Record<string, unknown>): Request {
+const CALLER = "a".repeat(64);
+const OTHER_CALLER = "b".repeat(64);
+
+function request(body: Record<string, unknown>, caller: string | null = CALLER): Request {
   return new Request("https://worker.test/hire-events", {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", ...(caller === null ? {} : { "x-marketplace-caller": caller }) },
     body: JSON.stringify({ schemaVersion: 2, chainId: 56, agentId: "303779", jobId: null, txHash: null, ...body }),
   });
 }
@@ -99,11 +102,18 @@ function fundedRequest(body: Record<string, unknown> = {}): Request {
   return request({ phase: "funded", jobId: "551", txHash: TX_HASH, ...body });
 }
 
-function respond(input: Request, reader: HireChainReader | null, chainId: HireChainId = 56) {
+function respond(
+  input: Request,
+  reader: HireChainReader | null,
+  chainId: HireChainId = 56,
+  options: { callerKey?: string; callerDailyLimit?: number } = {},
+) {
   return hireEventsResponse(input, env.DB, {
     rpcUrls: {},
     nowMs: NOW,
     timeoutMs: 5_000,
+    callerKey: options.callerKey ?? CALLER,
+    callerDailyLimit: options.callerDailyLimit ?? 20,
     ...(reader === null ? {} : { dependencies: { createReader: (requested) => {
       expect(requested).toBe(chainId);
       return reader;
@@ -220,13 +230,42 @@ describe("hire events", () => {
     const unauthorized = await app.fetch(request({ phase: "clicked" }), secured);
     expect(unauthorized.status).toBe(401);
 
-    const authorized = new Request("https://worker.test/hire-events", {
+    const authorized = (caller: string | null) => new Request("https://worker.test/hire-events", {
       method: "POST",
-      headers: { "content-type": "application/json", authorization: "Bearer buyer-secret" },
+      headers: {
+        "content-type": "application/json",
+        authorization: "Bearer buyer-secret",
+        ...(caller === null ? {} : { "x-marketplace-caller": caller }),
+      },
       body: JSON.stringify({ schemaVersion: 2, chainId: 56, agentId: "303779", phase: "clicked", jobId: null, txHash: null }),
     });
-    const recorded = await app.fetch(authorized, secured);
+    // A per-caller budget needs a caller: no fingerprint, no anonymous bucket.
+    const unfingerprinted = await app.fetch(authorized(null), secured);
+    expect(unfingerprinted.status).toBe(400);
+    const malformed = await app.fetch(authorized("not-a-fingerprint"), secured);
+    expect(malformed.status).toBe(400);
+    const recorded = await app.fetch(authorized(CALLER), secured);
     expect(recorded.status).toBe(201);
-    expect(await rows()).toHaveLength(1);
+    expect(await rows()).toMatchObject([{ phase: "clicked", callerKey: CALLER }]);
+  });
+
+  it("budgets telemetry per caller and UTC day, never chain phases", async () => {
+    const limit = { callerDailyLimit: 1 };
+    const first = await respond(request({ phase: "clicked" }), null, 56, limit);
+    expect(first.status).toBe(201);
+    const exhausted = await respond(request({ phase: "clicked" }), null, 56, limit);
+    expect(exhausted.status).toBe(429);
+    expect(exhausted.headers.get("retry-after")).toBe(String(Math.ceil((Math.floor(NOW / 86_400_000) * 86_400_000 + 86_400_000 - NOW) / 1_000)));
+    expect(exhausted.headers.get("cache-control")).toBe("no-store");
+    expect(await exhausted.json()).toMatchObject({ error: "caller_daily_budget_exhausted" });
+    const otherCaller = await respond(request({ phase: "clicked" }, OTHER_CALLER), null, 56, { ...limit, callerKey: OTHER_CALLER });
+    expect(otherCaller.status).toBe(201);
+    const chainPhase = await respond(fundedRequest(), fakeReader(), 56, limit);
+    expect(chainPhase.status).toBe(201);
+    expect(await rows()).toMatchObject([
+      { phase: "clicked", provenance: "marketplace_observed", callerKey: CALLER },
+      { phase: "clicked", provenance: "marketplace_observed", callerKey: OTHER_CALLER },
+      { phase: "funded", provenance: "chain_verified", callerKey: CALLER },
+    ]);
   });
 });

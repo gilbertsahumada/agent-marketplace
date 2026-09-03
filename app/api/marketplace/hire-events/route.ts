@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { recordHireEvent } from "@/src/business/composition";
 import { InvalidMarketplaceInputError, MarketplacePayloadTooLargeError } from "@/src/business/errors/marketplace-errors";
-import { marketplaceErrorResponse } from "@/src/presentation/http/marketplace-http";
+import { callerContext, marketplaceErrorResponse } from "@/src/presentation/http/marketplace-http";
 
 type HireEventInput = Parameters<typeof recordHireEvent>[0];
 
@@ -60,7 +60,9 @@ export async function POST(request: Request) {
     if (!request.headers.get("content-type")?.toLowerCase().startsWith("application/json")) {
       throw new InvalidMarketplaceInputError("Content-Type must be application/json");
     }
-    const sync = await recordHireEvent(input(await boundedJson(request)));
+    // The request context feeds the Worker's per-caller telemetry budget as an
+    // HMAC fingerprint only; nothing else about the request is forwarded.
+    const sync = await recordHireEvent(input(await boundedJson(request)), { caller: callerContext(request) });
     return NextResponse.json({ persistence: sync.status }, {
       status: STATUS_CODES[sync.status],
       headers: { "cache-control": "no-store" },

@@ -36,7 +36,9 @@ beforeEach(async () => {
   await env.DB.prepare("DELETE FROM hire_events").run();
 });
 
-describe("GET /hire-events", () => {
+// The first test of a file pays the isolated-storage migration cost; under the
+// full suite's parallel Workerd runs that exceeded the 10 s default twice.
+describe("GET /hire-events", { timeout: 30_000 }, () => {
   it("lists only chain-verified phases of one agent on one chain, newest first", async () => {
     await seed([
       { agentId: "1866", chainId: 97, phase: "created", provenance: "chain_verified", jobId: "551", txHash: TX("aa"), occurredAt: NOW - 2_000 },

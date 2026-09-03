@@ -1,6 +1,8 @@
 import "server-only";
 
-import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes } from "node:crypto";
+import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
+
+import { callerFingerprint as fingerprintCaller } from "./caller-fingerprint.ts";
 
 type Environment = Readonly<Record<string, string | undefined>>;
 
@@ -331,11 +333,7 @@ function tokenKey(secret: string): Buffer {
 }
 
 function callerFingerprint(caller: string | undefined, secret: string): string {
-  const context = caller?.trim().slice(0, 512) || "anonymous";
-  return createHmac("sha256", secret)
-    .update("catalog-validation-caller\0")
-    .update(context)
-    .digest("hex");
+  return fingerprintCaller("catalog-validation-caller", caller, secret);
 }
 
 export function issueCatalogValidationRequestToken(

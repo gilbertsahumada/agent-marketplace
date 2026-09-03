@@ -1,4 +1,4 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, count, desc, eq, gte } from "drizzle-orm";
 import {
   decodeEventLog,
   getAddress,
@@ -276,6 +276,8 @@ export async function hireEventsResponse(
     readonly rpcUrls: Partial<Record<HireChainId, string>>;
     readonly nowMs: number;
     readonly timeoutMs: number;
+    readonly callerKey: string;
+    readonly callerDailyLimit: number;
     readonly dependencies?: HireEventDependencies;
   },
 ): Promise<Response> {
@@ -286,6 +288,22 @@ export async function hireEventsResponse(
   const db = createDatabase(d1 as unknown as D1DatabaseLike);
 
   if (input.kind === "telemetry") {
+    // Telemetry is the only unverified write, so it is the only one budgeted
+    // per caller and UTC day; chain phases are keyed by transaction and
+    // verified by RPC, which bounds them by construction.
+    const dayStart = Math.floor(options.nowMs / 86_400_000) * 86_400_000;
+    const used = await db.select({ total: count() }).from(hireEvents).where(and(
+      eq(hireEvents.callerKey, options.callerKey),
+      eq(hireEvents.provenance, "marketplace_observed"),
+      gte(hireEvents.occurredAt, dayStart),
+    ));
+    if ((used[0]?.total ?? 0) >= options.callerDailyLimit) {
+      const retryAfterMs = dayStart + 86_400_000 - options.nowMs;
+      return Response.json({ error: "caller_daily_budget_exhausted", retryAfterMs }, {
+        status: 429,
+        headers: { "cache-control": "no-store", "retry-after": String(Math.ceil(retryAfterMs / 1_000)) },
+      });
+    }
     const eventKey = crypto.randomUUID();
     await db.insert(hireEvents).values({
       eventKey,
@@ -298,6 +316,7 @@ export async function hireEventsResponse(
       blockNumber: null,
       occurredAt: options.nowMs,
       verifiedAt: null,
+      callerKey: options.callerKey,
     });
     return jsonResponse({
       schemaVersion: 2,
@@ -356,6 +375,7 @@ export async function hireEventsResponse(
     blockNumber: proof.blockNumber.toString(),
     occurredAt,
     verifiedAt: options.nowMs,
+    callerKey: options.callerKey,
   }).onConflictDoNothing().returning({ id: hireEvents.id });
   if (!inserted[0]) return jsonResponse({ schemaVersion: 2, status: "duplicate", eventKey }, 200);
   return jsonResponse({

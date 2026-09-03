@@ -30,7 +30,12 @@ after the receipt, the Commerce event for that job, the current job state and
 the agent's registry wallet are verified by RPC; a claim the chain does not
 support answers `409 phase_rejected`. `chainId` 56 verifies through
 `BSC_RPC_URL`; `chainId` 97 (the browser and agent-buyer demos) needs the
-separate `BSC_TESTNET_RPC_URL` secret and answers `503` without it.
+separate `BSC_TESTNET_RPC_URL` secret and answers `503` without it. Every POST
+must carry `x-marketplace-caller`, the marketplace's HMAC fingerprint of the
+request context (never an IP or origin), or it is a `400`; telemetry phases are
+budgeted per caller and UTC day (`HIRE_EVENTS_PER_CALLER_DAY`, Free 20, Paid 200,
+counted over `idx_hire_events_caller`) and answer `429` with `retry-after` past it.
+Chain phases are not budgeted: their key is the transaction and they are verified.
 `GET /hire-events?chainId=56|97&agentId=…` is the public read of that table: only
 `chain_verified` rows of one agent on one chain, newest first, at most 50, over
 `idx_hire_agent`; any other query key answers `400`. It carries a 30-second
