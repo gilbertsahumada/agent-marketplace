@@ -444,14 +444,11 @@ See the [ERC-8183 Gate 1 interaction diagram](diagrams/erc8183-gate1-flow.html).
 
 ## Documentation
 
-[docs/MARKETPLACE.md](docs/MARKETPLACE.md) is the hub: every surface (web, HTTP
-API, CLI, MCP), the key documents — [docs/API.md](docs/API.md),
-[docs/HIRE-SPEC.md](docs/HIRE-SPEC.md), [docs/MCP.md](docs/MCP.md) — and the
-current verified state. Agents connect directly at
-`https://marketplace.trust8004.xyz/api/mcp`. [docs/RELEASE.md](docs/RELEASE.md)
-is the WP7 release gate: the local checks, the staging smoke with the switches
-off and on, the kill-switch and rollback proof, and the operator steps that
-production still needs.
+This README is the repository's tracked project overview. Detailed working
+documents live locally under `docs/` and are intentionally excluded from Git,
+as are root-level Markdown notes other than `README.md`.
+
+Agents connect directly at `https://marketplace.trust8004.xyz/api/mcp`.
 
 ## License
 
