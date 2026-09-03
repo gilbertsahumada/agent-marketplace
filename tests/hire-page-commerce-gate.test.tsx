@@ -13,6 +13,7 @@ const { executePassport, executeConfig, renderDemo, redirectRoute } = vi.hoisted
 vi.mock("@/src/business/composition", () => ({
   getAgentEvidencePassport: { executeWithAgent: executePassport },
   getMainnetBrowserDemoConfig: { execute: executeConfig },
+  listAgentHireJobs: { execute: async () => [] },
 }));
 
 vi.mock("@/components/spikes/erc8183-browser-spike", () => ({

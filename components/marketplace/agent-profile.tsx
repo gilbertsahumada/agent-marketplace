@@ -4,11 +4,13 @@ import type { ReactNode } from "react";
 import type { MarketplaceAgent } from "@/src/business/entities/marketplace-agent";
 import type { AgentEvidencePassport } from "@/src/business/entities/evidence-passport";
 import type { MainnetJobProof } from "@/src/business/entities/mainnet-job-proof";
+import type { HireJob } from "@/src/business/entities/hire-job";
 import { Badge } from "@/components/ui/badge";
 import { Breadcrumb } from "./page-primitives";
 import { AgentAvatar } from "./agent-avatar";
 import { trust8004AgentHref } from "./agent-card";
 import { AgentValidationActions } from "./agent-validation-actions";
+import { HireJobRows } from "./hire-job-rows";
 import { declaredBrowserValidationTargets } from "@/src/business/policies/catalog-validation-policy";
 import type { CatalogCandidate } from "@/src/business/entities/catalog-candidate";
 import { catalogCandidateCard } from "./catalog-candidate-view-model";
@@ -30,18 +32,27 @@ function utcDate(value: string): string {
   return UTC_DATE.format(new Date(value));
 }
 
-function JobHistory({ hireActivity, jobs }: {
+// Two sources, kept apart on purpose: hash-verified Mainnet proofs drive the
+// "proven" badge and their rows; the indexed ledger adds on-chain jobs sold by
+// the agent's wallet as activity, never as proof of the deliverable.
+function HireActivity({ hireActivity, jobs, hireJobs }: {
   hireActivity: AgentEvidencePassport["checks"]["hireActivity"];
   jobs: readonly MainnetJobProof[];
+  hireJobs: readonly HireJob[] | null;
 }) {
   const ordered = [...jobs].sort((left, right) => Date.parse(right.capturedAt) - Date.parse(left.capturedAt));
+  const proven = new Set(jobs.map((job) => job.jobId));
+  const indexed = (hireJobs ?? []).filter((job) => !proven.has(job.jobId));
   return (
     <section aria-labelledby="erc8183-history" className="mt-8 rounded-xl border border-white/10 bg-white/[0.015]">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 px-4 py-4 sm:px-5">
         <h2 className="flex items-center gap-2 text-base font-medium text-white" id="erc8183-history">
-          <BriefcaseBusiness aria-hidden="true" className="size-4 text-zinc-500" />ERC-8183 job history
+          <BriefcaseBusiness aria-hidden="true" className="size-4 text-zinc-500" />Hire activity
         </h2>
-        <Badge variant="outline">{jobs.length} proven</Badge>
+        <div className="flex flex-wrap gap-2">
+          <Badge variant="outline">{jobs.length} proven</Badge>
+          {hireJobs !== null ? <Badge variant="outline">{hireJobs.length} on-chain</Badge> : null}
+        </div>
       </div>
       {hireActivity.status === "verified" ? (
         <dl className="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-b border-white/10 px-4 py-3 text-sm sm:px-5">
@@ -50,11 +61,12 @@ function JobHistory({ hireActivity, jobs }: {
           {hireActivity.observedAt ? <dd className="text-zinc-500">{utcDate(hireActivity.observedAt)}</dd> : null}
         </dl>
       ) : null}
-      {ordered.length === 0 ? (
+      {ordered.length === 0 && indexed.length === 0 ? (
         <div className="px-5 py-6 text-sm text-zinc-500">
-          No verified ERC-8183 jobs yet.
+          {hireJobs === null ? "No verified ERC-8183 jobs yet." : "No verified ERC-8183 jobs yet, and no indexed on-chain jobs for this provider wallet."}
         </div>
-      ) : (
+      ) : null}
+      {ordered.length > 0 ? (
         <ul className="divide-y divide-white/10">
           {ordered.map((job) => (
             <li key={job.jobId}>
@@ -74,7 +86,13 @@ function JobHistory({ hireActivity, jobs }: {
             </li>
           ))}
         </ul>
-      )}
+      ) : null}
+      {indexed.length > 0 ? (
+        <div className={ordered.length > 0 ? "border-t border-white/10" : ""}>
+          <p className="px-4 pt-4 text-xs text-zinc-500 sm:px-5">Indexed on-chain jobs sold by this agent's wallet. State, not a verified deliverable.</p>
+          <HireJobRows chainId={56} emptyText="" jobs={indexed} />
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -85,12 +103,14 @@ export function AgentProfile({
   catalogCandidate,
   hireFlow,
   jobProofs = EMPTY_JOBS,
+  hireJobs = null,
 }: {
   agent: MarketplaceAgent;
   passport: AgentEvidencePassport;
   catalogCandidate?: CatalogCandidate | null;
   hireFlow?: ReactNode;
   jobProofs?: readonly MainnetJobProof[];
+  hireJobs?: readonly HireJob[] | null;
 }) {
   const displayName = marketplaceAgentDisplayName(agent.name);
   const current = catalogCandidate ? catalogCandidateCard(catalogCandidate) : null;
@@ -146,7 +166,7 @@ export function AgentProfile({
       {!hireFlow && canCheckAvailability ? <AgentValidationActions agentId={agent.agentId} targets={validationTargets} /> : null}
       {!hireTarget ? <p className="mt-8 rounded-xl border border-white/10 px-5 py-4 text-sm text-zinc-500">Hiring unavailable for this agent.</p> : null}
 
-      <JobHistory hireActivity={passport.checks.hireActivity} jobs={jobProofs} />
+      <HireActivity hireActivity={passport.checks.hireActivity} hireJobs={hireJobs} jobs={jobProofs} />
     </main>
   );
 }

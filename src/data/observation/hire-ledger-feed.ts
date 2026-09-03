@@ -1,0 +1,250 @@
+import { AsyncTtlCache } from "../cache/async-ttl-cache.ts";
+import type {
+  HireAddress,
+  HireChainId,
+  HireJob,
+  HireJobDetail,
+  HireJobEvent,
+  HireJobPage,
+  HireJobStatus,
+  HireLedgerCounts,
+  HireLedgerSummary,
+} from "../../business/entities/hire-job.ts";
+import type { VerifiedHireEvent, VerifiedHirePhase } from "../../business/entities/verified-hire-event.ts";
+import { catalogUrl } from "./catalog-candidate-feed.ts";
+
+// Reads the Worker's Commerce indexer (`/commerce-jobs`, `/commerce-summary`).
+// Same posture as the hire-event feed: strict allowlist parsers, a short cache
+// matching the Worker's own, and null on any failure so nothing partial ever
+// renders as on-chain state.
+
+const cache = new AsyncTtlCache();
+const CACHE_TTL_MS = 30_000;
+const STATUS_NAMES: readonly HireJobStatus[] = ["OPEN", "FUNDED", "SUBMITTED", "COMPLETED", "REJECTED", "EXPIRED"];
+const PHASES: readonly VerifiedHirePhase[] = ["created", "funded", "submitted", "settled", "refunded"];
+const ADDRESS = /^0x[0-9a-fA-F]{40}$/;
+const TX_HASH = /^0x[0-9a-fA-F]{64}$/;
+const AGENT_ID = /^[1-9]\d{0,19}$/;
+const JOB_ID = /^(?:0|[1-9]\d{0,15})$/;
+const BLOCK_NUMBER = /^\d{1,20}$/;
+const DECIMAL = /^\d{1,78}$/;
+
+type Env = Readonly<Record<string, string | undefined>>;
+
+function invalid(): never {
+  throw new Error("HIRE_LEDGER_FEED_INVALID");
+}
+
+function record(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) invalid();
+  return value as Record<string, unknown>;
+}
+
+function timestamp(value: unknown): string {
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value <= 0) invalid();
+  return new Date(value).toISOString();
+}
+
+function optionalTimestamp(value: unknown): string | null {
+  return value === null ? null : timestamp(value);
+}
+
+function address(value: unknown): HireAddress {
+  if (typeof value !== "string" || !ADDRESS.test(value)) invalid();
+  return value as HireAddress;
+}
+
+function optionalString(value: unknown, pattern: RegExp): string | null {
+  if (value === null) return null;
+  if (typeof value !== "string" || !pattern.test(value)) invalid();
+  return value;
+}
+
+function chainId(value: unknown, expected: HireChainId): HireChainId {
+  if (value !== expected) invalid();
+  return expected;
+}
+
+function status(value: unknown): HireJobStatus {
+  if (typeof value !== "number" || !Number.isInteger(value)) invalid();
+  const name = STATUS_NAMES[value];
+  if (name === undefined) invalid();
+  return name;
+}
+
+function job(entry: unknown, chain: HireChainId): HireJob {
+  const value = record(entry);
+  if (typeof value.jobId !== "string" || !JOB_ID.test(value.jobId)) invalid();
+  if (typeof value.budget !== "string" || !DECIMAL.test(value.budget)) invalid();
+  if (typeof value.marketplace !== "boolean") invalid();
+  return {
+    chainId: chain,
+    jobId: value.jobId,
+    buyer: address(value.client),
+    provider: address(value.provider),
+    budgetRaw: value.budget,
+    status: status(value.status),
+    expiresAt: timestamp(value.expiredAt),
+    submittedAt: optionalTimestamp(value.submittedAt),
+    marketplace: value.marketplace,
+    updatedAt: timestamp(value.updatedAt),
+  };
+}
+
+function event(entry: unknown): HireJobEvent {
+  const value = record(entry);
+  if (!PHASES.includes(value.phase as VerifiedHirePhase) || typeof value.eventName !== "string") invalid();
+  if (typeof value.txHash !== "string" || !TX_HASH.test(value.txHash)) invalid();
+  if (typeof value.blockNumber !== "string" || !BLOCK_NUMBER.test(value.blockNumber)) invalid();
+  return {
+    phase: value.phase as VerifiedHirePhase,
+    eventName: value.eventName,
+    txHash: value.txHash as HireAddress,
+    blockNumber: value.blockNumber,
+    occurredAt: timestamp(value.occurredAt),
+    actor: value.actor === null ? null : address(value.actor),
+    amount: optionalString(value.amount, DECIMAL),
+    deliverable: optionalString(value.deliverable, /^0x[0-9a-fA-F]{64}$/),
+    reason: optionalString(value.reason, /^0x[0-9a-fA-F]{64}$/),
+  };
+}
+
+function verifiedEvent(entry: unknown, chain: HireChainId, jobId: string): VerifiedHireEvent {
+  const value = record(entry);
+  if (typeof value.agentId !== "string" || !AGENT_ID.test(value.agentId)) invalid();
+  if (!PHASES.includes(value.phase as VerifiedHirePhase)) invalid();
+  if (typeof value.txHash !== "string" || !TX_HASH.test(value.txHash)) invalid();
+  if (typeof value.blockNumber !== "string" || !BLOCK_NUMBER.test(value.blockNumber)) invalid();
+  return {
+    chainId: chain,
+    agentId: value.agentId,
+    phase: value.phase as VerifiedHirePhase,
+    jobId,
+    txHash: value.txHash as HireAddress,
+    blockNumber: value.blockNumber,
+    occurredAt: timestamp(value.occurredAt),
+    verifiedAt: optionalTimestamp(value.verifiedAt),
+  };
+}
+
+function counts(entry: unknown): HireLedgerCounts {
+  const value = record(entry);
+  const byStatus = record(value.byStatus);
+  const result = {} as Record<HireJobStatus, number>;
+  for (const name of STATUS_NAMES) {
+    const count = byStatus[name];
+    if (typeof count !== "number" || !Number.isSafeInteger(count) || count < 0) invalid();
+    result[name] = count;
+  }
+  if (typeof value.jobs !== "number" || !Number.isSafeInteger(value.jobs) || value.jobs < 0) invalid();
+  return { jobs: value.jobs, byStatus: result };
+}
+
+export function parseHireJobPage(value: unknown, chain: HireChainId): HireJobPage {
+  const data = record(value);
+  if (data.schemaVersion !== 1 || !Array.isArray(data.jobs)) invalid();
+  if (data.nextBefore !== null && (typeof data.nextBefore !== "string" || !JOB_ID.test(data.nextBefore))) invalid();
+  return {
+    chainId: chainId(data.chainId, chain),
+    jobs: data.jobs.map((entry) => job(entry, chain)),
+    nextBefore: data.nextBefore as string | null,
+  };
+}
+
+export function parseHireJobDetail(value: unknown, chain: HireChainId): HireJobDetail {
+  const data = record(value);
+  if (data.schemaVersion !== 1 || !Array.isArray(data.events) || !Array.isArray(data.hireEvents)) invalid();
+  chainId(data.chainId, chain);
+  const raw = record(data.job);
+  const base = job(raw, chain);
+  return {
+    ...base,
+    evaluator: address(raw.evaluator),
+    hook: address(raw.hook),
+    deliverable: optionalString(raw.deliverable, /^0x[0-9a-fA-F]{64}$/),
+    firstSeenAt: timestamp(raw.firstSeenAt),
+    events: data.events.map(event),
+    hireEvents: data.hireEvents.map((entry) => verifiedEvent(entry, chain, base.jobId)),
+  };
+}
+
+export function parseHireLedgerSummary(value: unknown, chain: HireChainId): HireLedgerSummary {
+  const data = record(value);
+  if (data.schemaVersion !== 1) invalid();
+  let indexedThrough: HireLedgerSummary["indexedThrough"] = null;
+  if (data.indexedThrough !== null) {
+    const through = record(data.indexedThrough);
+    if (typeof through.blockNumber !== "string" || !BLOCK_NUMBER.test(through.blockNumber)) invalid();
+    indexedThrough = { blockNumber: through.blockNumber, at: timestamp(through.at) };
+  }
+  let lastIndexRun: HireLedgerSummary["lastIndexRun"] = null;
+  if (data.lastIndexRun !== null) {
+    const run = record(data.lastIndexRun);
+    if (typeof run.status !== "string" || !/^[a-z_]{1,32}$/.test(run.status)) invalid();
+    lastIndexRun = { status: run.status, at: timestamp(run.at) };
+  }
+  return {
+    chainId: chainId(data.chainId, chain),
+    indexedThrough,
+    protocol: counts(data.protocol),
+    marketplace: counts(data.marketplace),
+    lastIndexRun,
+  };
+}
+
+async function read<T>(key: string, url: URL, parse: (value: unknown) => T): Promise<T | null> {
+  try {
+    return await cache.get(key, CACHE_TTL_MS, async () => {
+      const response = await fetch(url, {
+        cache: "no-store",
+        headers: { accept: "application/json" },
+        signal: AbortSignal.timeout(5_000),
+      });
+      if (response.status === 404) throw new Error("HIRE_LEDGER_NOT_FOUND");
+      if (!response.ok) throw new Error("HIRE_LEDGER_FEED_UNAVAILABLE");
+      return parse(await response.json());
+    });
+  } catch {
+    return null;
+  }
+}
+
+// At most one identity filter; the Worker rejects two with 400, the reader
+// refuses before any request.
+export async function getHireJobs(input: {
+  chainId: HireChainId;
+  buyer?: HireAddress;
+  provider?: HireAddress;
+  agentId?: string;
+  before?: string;
+  env?: Env;
+}): Promise<HireJobPage | null> {
+  const filters = [input.buyer, input.provider, input.agentId].filter((value) => value !== undefined);
+  if (filters.length > 1) return null;
+  if (input.buyer !== undefined && !ADDRESS.test(input.buyer)) return null;
+  if (input.provider !== undefined && !ADDRESS.test(input.provider)) return null;
+  if (input.agentId !== undefined && !AGENT_ID.test(input.agentId)) return null;
+  if (input.before !== undefined && !JOB_ID.test(input.before)) return null;
+  const url = catalogUrl("/commerce-jobs", input.env ?? process.env);
+  if (!url) return null;
+  url.searchParams.set("chainId", String(input.chainId));
+  if (input.buyer !== undefined) url.searchParams.set("buyer", input.buyer);
+  if (input.provider !== undefined) url.searchParams.set("provider", input.provider);
+  if (input.agentId !== undefined) url.searchParams.set("agentId", input.agentId);
+  if (input.before !== undefined) url.searchParams.set("before", input.before);
+  return read(`commerce-jobs:${url}`, url, (value) => parseHireJobPage(value, input.chainId));
+}
+
+export async function getHireJob(input: { chainId: HireChainId; jobId: string; env?: Env }): Promise<HireJobDetail | null> {
+  if (!JOB_ID.test(input.jobId)) return null;
+  const url = catalogUrl(`/commerce-jobs/${input.chainId}/${input.jobId}`, input.env ?? process.env);
+  if (!url) return null;
+  return read(`commerce-job:${url}`, url, (value) => parseHireJobDetail(value, input.chainId));
+}
+
+export async function getHireLedgerSummary(input: { chainId: HireChainId; env?: Env }): Promise<HireLedgerSummary | null> {
+  const url = catalogUrl("/commerce-summary", input.env ?? process.env);
+  if (!url) return null;
+  url.searchParams.set("chainId", String(input.chainId));
+  return read(`commerce-summary:${url}`, url, (value) => parseHireLedgerSummary(value, input.chainId));
+}

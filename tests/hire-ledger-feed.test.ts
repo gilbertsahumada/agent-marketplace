@@ -1,0 +1,141 @@
+import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  getHireJob,
+  getHireJobs,
+  getHireLedgerSummary,
+  parseHireJobDetail,
+  parseHireJobPage,
+  parseHireLedgerSummary,
+} from "../src/data/observation/hire-ledger-feed.ts";
+
+const ENV = { OBSERVATIONS_URL: "https://probe.example.workers.dev/observations" };
+const BUYER = "0x5ee75a1B1648C023e885E58bD3735Ae273f2cc52";
+const SELLER = "0xA2a2012e52Fd075c0F3146e37E833E7294ee52B5";
+const TX = `0x${"ab".repeat(32)}`;
+const NOW = 1_788_000_000_000;
+
+function job(overrides: Record<string, unknown> = {}) {
+  return {
+    jobId: "56696", client: BUYER, provider: SELLER, budget: "10000000000000000", status: 2,
+    expiredAt: NOW + 600_000, submittedAt: NOW, marketplace: true, updatedAt: NOW, ...overrides,
+  };
+}
+
+function page(overrides: Record<string, unknown> = {}, jobOverrides: Record<string, unknown> = {}) {
+  return { schemaVersion: 1, chainId: 56, jobs: [job(jobOverrides)], nextBefore: null, ...overrides };
+}
+
+function detail(overrides: Record<string, unknown> = {}) {
+  return {
+    schemaVersion: 1,
+    chainId: 56,
+    job: { ...job(), evaluator: SELLER, hook: SELLER, deliverable: null, firstSeenAt: NOW },
+    events: [{
+      phase: "funded", eventName: "JobFunded", txHash: TX, logIndex: 1, blockNumber: "119000000",
+      occurredAt: NOW, actor: BUYER, amount: "10000000000000000", deliverable: null, reason: null,
+    }],
+    hireEvents: [{ agentId: "303779", phase: "funded", txHash: TX, blockNumber: "119000000", occurredAt: NOW, verifiedAt: NOW }],
+    marketplace: true,
+    ...overrides,
+  };
+}
+
+function summary(overrides: Record<string, unknown> = {}) {
+  const byStatus = { OPEN: 1, FUNDED: 2, SUBMITTED: 3, COMPLETED: 4, REJECTED: 0, EXPIRED: 0 };
+  return {
+    schemaVersion: 1, chainId: 56,
+    indexedThrough: { blockNumber: "119000000", at: NOW },
+    protocol: { jobs: 10, byStatus },
+    marketplace: { jobs: 1, byStatus: { ...byStatus, OPEN: 0, FUNDED: 1, SUBMITTED: 0, COMPLETED: 0 } },
+    lastIndexRun: { status: "ok", at: NOW },
+    ...overrides,
+  };
+}
+
+describe("hire ledger feed", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("parses only the allowlisted job fields and maps numeric status to its name", () => {
+    expect(parseHireJobPage(page({}, { extra: "dropped" }), 56)).toEqual({
+      chainId: 56,
+      jobs: [{
+        chainId: 56, jobId: "56696", buyer: BUYER, provider: SELLER, budgetRaw: "10000000000000000", status: "SUBMITTED",
+        expiresAt: new Date(NOW + 600_000).toISOString(), submittedAt: new Date(NOW).toISOString(),
+        marketplace: true, updatedAt: new Date(NOW).toISOString(),
+      }],
+      nextBefore: null,
+    });
+    expect(parseHireJobPage(page({ nextBefore: "56600" }), 56).nextBefore).toBe("56600");
+  });
+
+  it.each<[string, unknown]>([
+    ["schema", page({ schemaVersion: 2 })],
+    ["chain", page({ chainId: 97 })],
+    ["status", page({}, { status: 6 })],
+    ["address", page({}, { client: "0x12" })],
+    ["job id", page({}, { jobId: "-1" })],
+    ["budget", page({}, { budget: "1e18" })],
+    ["cursor", page({ nextBefore: "x" })],
+    ["jobs", page({ jobs: null })],
+    ["marketplace flag", page({}, { marketplace: "yes" })],
+  ])("rejects a malformed %s instead of returning a partial page", (_label, value) => {
+    expect(() => parseHireJobPage(value, 56)).toThrow("HIRE_LEDGER_FEED_INVALID");
+  });
+
+  it("parses a job detail with its phase ledger and verified hire events", () => {
+    const parsed = parseHireJobDetail(detail(), 56);
+    expect(parsed).toMatchObject({
+      jobId: "56696", status: "SUBMITTED", evaluator: SELLER, deliverable: null, firstSeenAt: new Date(NOW).toISOString(),
+      events: [{ phase: "funded", eventName: "JobFunded", txHash: TX, blockNumber: "119000000", actor: BUYER, amount: "10000000000000000" }],
+      hireEvents: [{ chainId: 56, agentId: "303779", phase: "funded", jobId: "56696", txHash: TX, verifiedAt: new Date(NOW).toISOString() }],
+    });
+    expect(() => parseHireJobDetail(detail({ events: [{ phase: "clicked" }] }), 56)).toThrow("HIRE_LEDGER_FEED_INVALID");
+  });
+
+  it("parses the summary and rejects a status name it does not know", () => {
+    expect(parseHireLedgerSummary(summary(), 56)).toMatchObject({
+      chainId: 56,
+      indexedThrough: { blockNumber: "119000000", at: new Date(NOW).toISOString() },
+      protocol: { jobs: 10, byStatus: { COMPLETED: 4 } },
+      marketplace: { jobs: 1 },
+      lastIndexRun: { status: "ok" },
+    });
+    expect(parseHireLedgerSummary(summary({ indexedThrough: null, lastIndexRun: null }), 56)).toMatchObject({ indexedThrough: null, lastIndexRun: null });
+    expect(() => parseHireLedgerSummary(summary({ protocol: { jobs: 1, byStatus: { OPEN: 1 } } }), 56)).toThrow("HIRE_LEDGER_FEED_INVALID");
+  });
+
+  it("builds the three Worker URLs and refuses two identity filters before any request", async () => {
+    const requested: string[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      requested.push(url);
+      if (url.includes("/commerce-summary")) return Response.json(summary());
+      if (/\/commerce-jobs\/56\/\d+$/.test(url)) return Response.json(detail());
+      return Response.json(page());
+    }));
+    await expect(getHireJobs({ chainId: 56, buyer: BUYER, before: "100", env: ENV })).resolves.toMatchObject({ jobs: [{ jobId: "56696" }] });
+    await expect(getHireJob({ chainId: 56, jobId: "56696", env: ENV })).resolves.toMatchObject({ jobId: "56696" });
+    await expect(getHireLedgerSummary({ chainId: 56, env: ENV })).resolves.toMatchObject({ protocol: { jobs: 10 } });
+    expect(requested).toEqual([
+      `https://probe.example.workers.dev/commerce-jobs?chainId=56&buyer=${BUYER}&before=100`,
+      "https://probe.example.workers.dev/commerce-jobs/56/56696",
+      "https://probe.example.workers.dev/commerce-summary?chainId=56",
+    ]);
+    await expect(getHireJobs({ chainId: 56, buyer: BUYER, provider: SELLER, env: ENV })).resolves.toBeNull();
+    await expect(getHireJobs({ chainId: 56, agentId: "0x1", env: ENV })).resolves.toBeNull();
+    await expect(getHireJob({ chainId: 56, jobId: "abc", env: ENV })).resolves.toBeNull();
+    expect(requested).toHaveLength(3);
+  });
+
+  it.each<[string, () => Promise<Response>, Record<string, string | undefined>]>([
+    ["missing origin", async () => Response.json(page()), {}],
+    ["non-https origin", async () => Response.json(page()), { OBSERVATIONS_URL: "http://probe.example/observations" }],
+    ["upstream failure", async () => new Response(null, { status: 503 }), ENV],
+    ["not found", async () => new Response(null, { status: 404 }), ENV],
+    ["malformed payload", async () => Response.json({ schemaVersion: 1 }), ENV],
+    ["transport error", async () => { throw new Error("offline"); }, ENV],
+  ])("fails closed to null on %s", async (_label, response, env) => {
+    vi.stubGlobal("fetch", vi.fn(response));
+    await expect(getHireJobs({ chainId: 97, env })).resolves.toBeNull();
+  });
+});

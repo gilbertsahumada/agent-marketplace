@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { getAgentEvidencePassport, getMainnetBrowserDemoConfig } from "@/src/business/composition";
+import { getAgentEvidencePassport, getMainnetBrowserDemoConfig, listAgentHireJobs } from "@/src/business/composition";
 import { catalogCandidateCard } from "@/components/marketplace/catalog-candidate-view-model";
 import { MarketplaceAgentNotFoundError, MarketplaceDataUnavailableError } from "@/src/business/errors/marketplace-errors";
 import { Erc8183SpikeDisabledError, Erc8183SpikeUnavailableError } from "@/src/business/errors/erc8183-spike-errors";
@@ -14,6 +14,7 @@ export default async function HirePage({ params }: { params: Promise<{ agentId: 
   const { agentId } = await params;
   try {
     const { agent, passport, catalogCandidate, jobProofs } = await getAgentEvidencePassport.executeWithAgent({ agentId });
+    const hireJobs = await listAgentHireJobs.execute({ agent });
     const current = catalogCandidate ? catalogCandidateCard(catalogCandidate) : null;
     const buyerAction = current?.buyerAction ?? "unavailable";
     const normalizedState = catalogCandidate?.state;
@@ -42,6 +43,7 @@ export default async function HirePage({ params }: { params: Promise<{ agentId: 
       agent={agent}
       catalogCandidate={catalogCandidate}
       hireFlow={hireFlow}
+      hireJobs={hireJobs}
       jobProofs={jobProofs}
       passport={passport}
     />;

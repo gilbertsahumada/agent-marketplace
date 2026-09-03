@@ -14,6 +14,7 @@ const ROUTES: { journey: string; method: string; path: string; purpose: string }
   { journey: "Hire — prepare", method: "POST", path: "/api/marketplace/demo/erc8183[-mainnet]/prepare", purpose: "{ buyer, quote } → the ordered transaction plan with guardrails." },
   { journey: "Hire — notify", method: "POST", path: "/api/marketplace/demo/erc8183[-mainnet]/notify", purpose: "{ buyer, jobId } once the job is FUNDED." },
   { journey: "Track / Result", method: "GET", path: "/api/marketplace/jobs/{network}/{jobId}", purpose: "Chain-resolved job state and hash-verified deliverable." },
+  { journey: "Track / Ledger", method: "GET", path: "/api/marketplace/jobs?chainId=…&buyer|provider|agentId=…", purpose: "Indexed on-chain jobs, newest first; /jobs/summary for protocol vs marketplace counts; /jobs/{network}/{jobId}/ledger for one job's phase events." },
   { journey: "Agents (MCP)", method: "POST", path: "/api/mcp", purpose: "The five MCP tools over stateless Streamable HTTP." },
 ];
 

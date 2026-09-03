@@ -645,7 +645,7 @@ describe("marketplace presentation rules", () => {
 
     expect(screen.getByRole("heading", { name: "Marketplace Grid Planner" })).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Hire agent" })).not.toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "ERC-8183 job history" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Hire activity" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /Job #700/i })).toHaveAttribute("href", "/jobs/mainnet/700");
     expect(screen.getByRole("link", { name: /Identity & reputation/i }))
       .toHaveAttribute("href", "https://trust8004.xyz/agents/56:303779");
@@ -671,6 +671,46 @@ describe("marketplace presentation rules", () => {
     expect(screen.getByText(/Latest chain-verified hire phase: funded \(Job 812/)).toBeInTheDocument();
     expect(screen.getByText("0 proven")).toBeInTheDocument();
     expect(screen.getByText("No verified ERC-8183 jobs yet.")).toBeInTheDocument();
+  });
+
+  it("keeps the proven badge driven by proofs while listing indexed on-chain jobs as activity", () => {
+    const agent = marketplaceAgent();
+    agent.agentId = "303779";
+    const passport = evidencePassport("job_proven");
+    const proof = {
+      schemaVersion: 1, capturedAt: "2026-08-26T10:04:00.000Z", chainId: 56, agentId: "303779", jobId: "700",
+      buyer: `0x${"11".repeat(20)}`, seller: `0x${"22".repeat(20)}`, token: `0x${"33".repeat(20)}`, budgetRaw: "2500000",
+      finalState: "COMPLETED", deliverableHash: `0x${"44".repeat(32)}`, resultHashVerified: true, deterministicResultVerified: true,
+      durationSeconds: "42", totalGasCostWei: "1234", transactions: {},
+    } as MainnetJobProof;
+    const hireJob = (jobId: string, status: "FUNDED" | "SUBMITTED" | "COMPLETED") => ({
+      chainId: 56 as const, jobId, buyer: `0x${"11".repeat(20)}` as `0x${string}`, provider: `0x${"22".repeat(20)}` as `0x${string}`,
+      budgetRaw: "10000000000000000", status, expiresAt: "2026-09-10T11:37:24.000Z", submittedAt: null,
+      marketplace: status !== "FUNDED", updatedAt: "2026-09-03T11:12:30.000Z",
+    });
+
+    render(createElement(AgentProfile, {
+      agent,
+      jobProofs: [proof],
+      hireJobs: [hireJob("700", "COMPLETED"), hireJob("56696", "SUBMITTED"), hireJob("56695", "FUNDED")],
+      passport,
+    }));
+
+    expect(screen.getByRole("heading", { name: "Hire activity" })).toBeInTheDocument();
+    expect(screen.getByText("1 proven")).toBeInTheDocument();
+    expect(screen.getByText("3 on-chain")).toBeInTheDocument();
+    expect(screen.getAllByRole("link", { name: /Job #700/ })).toHaveLength(1);
+    expect(screen.getByRole("link", { name: /Job #56696/ })).toHaveAttribute("href", "/jobs/mainnet/56696");
+    expect(screen.getByRole("link", { name: /Job #56695/ })).toHaveAttribute("href", "/jobs/mainnet/56695");
+    expect(screen.getByText(/Indexed on-chain jobs sold by this agent's wallet/)).toBeInTheDocument();
+  });
+
+  it("explains an empty ledger without touching the proven count", () => {
+    const agent = marketplaceAgent();
+    render(createElement(AgentProfile, { agent, hireJobs: [], passport: evidencePassport("registered") }));
+    expect(screen.getByText("0 proven")).toBeInTheDocument();
+    expect(screen.getByText("0 on-chain")).toBeInTheDocument();
+    expect(screen.getByText(/no indexed on-chain jobs for this provider wallet/)).toBeInTheDocument();
   });
 
   it("states the number of wallet confirmations only once the wallet has answered", () => {
