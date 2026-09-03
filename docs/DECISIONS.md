@@ -877,3 +877,19 @@ Cross-session reconciliation between the observation/D1 migration (per `docs/OBS
 - The duplicate `/proof/job-514` visual alias redirects to `/jobs/514`. The
   generic `/jobs/[jobId]` public-proof page remains separate from the live
   Testnet tracker and is intentionally not redirected.
+
+## 2026-09-03 — The hire workspace surfaces verified hire activity and the confirmation count
+
+- Retiring the visual Passport page left `checks.hireActivity` (chain-verified
+  hire phases, WP-C) with no human-facing surface. The hire workspace now lists
+  the latest verified phase as one row above the ERC-8183 job history. It stays
+  a phase record: the "N proven" badge and the job list are untouched, and the
+  row is absent while the check is `missing`.
+- The EIP-5792 mode (P6) was computed but never shown. Preparing a fresh hire
+  now asks the wallet its capabilities once (`detectBrowserHireMode`, the same
+  read the adapter uses before batching) and the Fund step says "One wallet
+  confirmation" or "N wallet confirmations" before the first prompt. Nothing is
+  claimed until the wallet answers; resume and recovery show no line because
+  they always run sequentially.
+- Non-goals: no new API field, no change to the batch itself, no copy in the
+  sticky summary beyond what already exists.

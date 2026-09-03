@@ -31,11 +31,13 @@ import {
 import type { MainnetDemoPublicConfig } from "@/src/business/entities/mainnet-browser-demo";
 import {
   clearBrowserJournal,
+  detectBrowserHireMode,
   executeBrowserHire,
   loadBrowserJournal,
   recoverBrowserJournal,
   saveBrowserJournal,
   ERC8183_TESTNET,
+  type BrowserHireMode,
   type Erc8183BrowserDeployment,
 } from "@/src/business/browser/erc8183-browser-wallet";
 
@@ -48,6 +50,14 @@ export function sharedEvidenceSyncMessage(status: MainnetQuoteResponse["observat
   return status?.status === "synced" || status?.status === "duplicate"
     ? "Shared evidence updated"
     : "Quote verified for this session. Shared evidence sync pending.";
+}
+
+// Shown before the first signature of a fresh hire. `null` until the wallet
+// has been asked (EIP-5792 capabilities), so the copy never guesses.
+export function hireConfirmationLabel(mode: BrowserHireMode | null, requiredTransactions: number): string | null {
+  if (mode === "batched") return "One wallet confirmation";
+  if (mode === "sequential") return `${requiredTransactions} wallet confirmations`;
+  return null;
 }
 
 type InjectedProvider = Parameters<typeof executeBrowserHire>[0];
@@ -254,6 +264,7 @@ function Erc8183BrowserDemo({ mode, deployment, agentName, embedded = false }: {
   const [walletHydrated, setWalletHydrated] = useState(false);
   const account = walletHydrated && isConnected && address ? address : null;
   const [plan, setPlan] = useState<Erc8183HirePlan | null>(null);
+  const [hireMode, setHireMode] = useState<BrowserHireMode | null>(null);
   const [journal, setJournal] = useState<Erc8183BrowserJournal | null>(null);
   const [job, setJob] = useState<Erc8183JobFacts | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -298,6 +309,7 @@ function Erc8183BrowserDemo({ mode, deployment, agentName, embedded = false }: {
     setError(null);
     setQuote(null);
     setPlan(null);
+    setHireMode(null);
     reportHireEvent(deployment, { phase: "clicked" });
     try {
       const result = await apiJson<MainnetQuoteResponse>(`${apiBase}/quote`, { method: "POST" });
@@ -344,6 +356,10 @@ function Erc8183BrowserDemo({ mode, deployment, agentName, embedded = false }: {
       }
       setPlan(prepared);
       if (journal?.jobId) await readJob(journal.jobId);
+      else if (connector) {
+        const provider = (await connector.getProvider()) as InjectedProvider;
+        setHireMode(await detectBrowserHireMode(provider, buyer, deployment));
+      }
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Wallet preparation failed.");
     } finally {
@@ -518,6 +534,9 @@ function Erc8183BrowserDemo({ mode, deployment, agentName, embedded = false }: {
                       <div><dt className="text-xs text-zinc-500">Allowance</dt><dd className="mt-1 text-sm text-zinc-200">{plan.approvalRequired ? `Exact ${plan.quote.priceDisplay} ${plan.quote.tokenSymbol}` : "Ready"}</dd></div>
                     </dl>
                     <div className="mt-4"><Erc8183TransactionList explorerUrl={deployment.explorerUrl} intents={plan.transactions} journal={journal} /></div>
+                    {!journal?.jobId && hireConfirmationLabel(hireMode, signaturePurpose.length) ? (
+                      <p className="mt-3 text-xs text-zinc-500" role="status">{hireConfirmationLabel(hireMode, signaturePurpose.length)}</p>
+                    ) : null}
                     <Button className="mt-4 min-w-44" disabled={busy !== null || submitted} onClick={() => void signAndRun()} size="lg">
                       {busy === "Waiting for wallet confirmations" ? <LoaderCircle aria-hidden="true" className="animate-spin" /> : <Wallet aria-hidden="true" />}
                       {journal?.jobId ? "Continue funding" : "Create & fund job"}
@@ -698,8 +717,13 @@ function Erc8183BrowserDemo({ mode, deployment, agentName, embedded = false }: {
                   ? "Job already submitted"
                   : journal?.jobId
                     ? "Continue remaining wallet signatures"
-                    : `Begin ${signaturePurpose.length || 0} wallet signatures`}
+                    : hireMode === "batched"
+                      ? "Sign once to create & fund"
+                      : `Begin ${signaturePurpose.length || 0} wallet signatures`}
               </Button>
+              {plan && !journal?.jobId && hireConfirmationLabel(hireMode, signaturePurpose.length) ? (
+                <p className="mt-3 text-xs text-zinc-500" role="status">{hireConfirmationLabel(hireMode, signaturePurpose.length)}</p>
+              ) : null}
               {plan && !journal?.jobId && (
                 <div className="mt-5 border-t border-white/[0.07] pt-5">
                   <p className="text-xs leading-relaxed text-zinc-500">
