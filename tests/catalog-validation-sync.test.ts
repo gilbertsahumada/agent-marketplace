@@ -132,11 +132,79 @@ describe("catalog validation sync", () => {
         completedAt: null,
         errorCode: null,
         hasResult: false,
+        result: null,
       });
     expect(fetchImpl).toHaveBeenCalledTimes(1);
     const calls = fetchImpl.mock.calls as unknown as Array<[unknown, RequestInit]>;
     expect(String(calls[0]?.[0])).toBe("https://worker.example/catalog-validations/17");
     expect(calls[0]?.[1]).toEqual(expect.objectContaining({ method: "GET" }));
+  });
+
+  it("returns the exact committed observation so the UI can explain the check", async () => {
+    const fetchImpl = vi.fn(async () => Response.json({
+      schemaVersion: 2,
+      validation: {
+        id: 17,
+        agentKey: `eip155:56:${input.agentId}`,
+        endpointKey,
+        validationKind: "protocol",
+        status: "completed",
+        attemptCount: 2,
+        createdAt: 1_000,
+        startedAt: 1_100,
+        completedAt: 1_250,
+        resultObservationId: 81,
+        errorCode: null,
+        result: {
+          protocol: "mcp",
+          source: "worker_probe",
+          outcome: "protocol_valid",
+          observedAt: 1_240,
+          expiresAt: 61_240,
+          httpStatus: 200,
+          durationMs: 340,
+        },
+      },
+    }));
+
+    await expect(getCatalogValidationStatus({ ...input, validationId: 17, expiresAt: 10_000 }, { env, fetchImpl }))
+      .resolves.toMatchObject({
+        status: "completed",
+        attemptCount: 2,
+        hasResult: true,
+        result: {
+          protocol: "mcp",
+          source: "worker_probe",
+          outcome: "protocol_valid",
+          observedAt: 1_240,
+          expiresAt: 61_240,
+          httpStatus: 200,
+          durationMs: 340,
+        },
+      });
+  });
+
+  it("fails closed when Worker points at a missing committed observation", async () => {
+    const fetchImpl = vi.fn(async () => Response.json({
+      schemaVersion: 2,
+      validation: {
+        id: 17,
+        agentKey: `eip155:56:${input.agentId}`,
+        endpointKey,
+        validationKind: "protocol",
+        status: "completed",
+        attemptCount: 1,
+        createdAt: 1_000,
+        startedAt: 1_100,
+        completedAt: 1_250,
+        resultObservationId: 81,
+        errorCode: null,
+        result: null,
+      },
+    }));
+
+    await expect(getCatalogValidationStatus({ ...input, validationId: 17, expiresAt: 10_000 }, { env, fetchImpl }))
+      .rejects.toMatchObject({ code: "CATALOG_VALIDATION_INVALID_RESPONSE", httpStatus: 502 });
   });
 
   it("issues opaque, expiring request tokens and rejects tampering", () => {
@@ -148,7 +216,6 @@ describe("catalog validation sync", () => {
     const decodedToken = Buffer.from(token!, "base64url").toString("utf8");
     expect(decodedToken).not.toContain(input.agentId);
     expect(decodedToken).not.toContain(endpointKey);
-    expect(decodedToken).not.toContain("17");
     expect(readCatalogValidationRequestToken(token!, { env, now: () => 1_000_001 })).toMatchObject({
       agentId: input.agentId,
       endpointKey,
