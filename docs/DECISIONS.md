@@ -756,3 +756,20 @@ Cross-session reconciliation between the observation/D1 migration (per `docs/OBS
   quote-facet plan even though Miniflare accepted it; the exact count now
   reconciles current admitted endpoints with their indexed latest quote rows in
   memory. This uses two bounded D1 reads and preserves newer-rejection semantics.
+
+## 2026-09-02 — Begin the canonical profile-and-hire route migration
+
+- This decision supersedes the 2026-08-31 presentation choice that exposed both
+  `View profile` and `Hire agent`. The later frontend journey specification makes
+  `/hire/[agentId]` the single agent destination; `/agents/[agentId]` becomes a
+  temporary compatibility redirect once the unified page is complete.
+- Buyer actions and blockers come from the normalized catalogue v2 state. The
+  hire page must fail closed when that state is absent and must not reconstruct
+  commerce readiness from legacy operator, service or observation fields.
+- The existing ERC-8183 browser flow now supports an embedded presentation mode.
+  Its quote verification, allowlist, wallet preparation, signatures, transaction
+  ordering and job tracking remain unchanged; only composition is being prepared.
+- Agent-scoped prior-job history is progressive enhancement until the backend
+  exposes that query. It does not block the canonical-route migration.
+- The migration ships as one reviewed Vercel candidate with deployment rollback,
+  rather than keeping two UI implementations behind a long-lived feature flag.

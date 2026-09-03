@@ -1047,9 +1047,11 @@ Rollout order:
   without contradiction.
 - [x] Commerce admission is the v2 source of hireability; the legacy
   `marketplaceConfigured` field remains only for compatibility.
-- [x] Internal API v2 returns one normalized state/capability model that the
-  application maps consistently into cards, table, Passport and hire-page
-  responses; the application integration is in merged PR #62.
+- [x] Internal API v2 returns one normalized state/capability model consumed by
+  cards, table and Passport; merged PR #62 established this DTO integration.
+- [ ] The canonical `/hire/[agentId]` page consumes that same state/capability
+  model for its complete profile-and-hire presentation. Route unification remains
+  owned by `docs/FRONTEND_HIRE_JOURNEY_SPEC.md`.
 - [x] Migration/backfill loses no declarations or observations in local tests.
 - [ ] Legacy code is removed only after parity and runtime-reference gates.
 - [x] Local Wrangler/Miniflare and bounded remote staging evidence pass before
@@ -1059,8 +1061,9 @@ Rollout order:
 
 - [x] 1. Infrastructure lands the additive D1 migration, internal API v2 schema
   and deterministic fixtures.
-- [x] 2. Frontend rebases and implements the companion hire journey against those
-  fixtures (merged PR #62).
+- [x] 2a. Frontend rebases and consumes the v2 DTO and fixtures (merged PR #62).
+- [ ] 2b. Frontend completes the companion profile/hire route unification against
+  those fixtures.
 - [x] 3. Hiring session exposes quote/prepare/submit interfaces under
   `docs/HIRE-SPEC.md` and consumes verified quote/admission IDs.
 - [x] 4. Integration session resolves shared DTOs, keeps `docs/DECISIONS.md`

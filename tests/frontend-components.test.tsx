@@ -362,6 +362,17 @@ afterEach(() => {
 });
 
 describe("marketplace presentation rules", () => {
+  it("renders the ERC-8183 flow as embeddable content without a second main landmark", () => {
+    render(createElement(Providers, { children: createElement(Erc8183MainnetDemo, {
+      config: MAINNET_DEMO_CONFIG,
+      agentName: "Marketplace Grid Planner",
+      embedded: true,
+    }) }));
+
+    expect(screen.queryByRole("main")).not.toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "ERC-8183 hiring flow" })).toBeInTheDocument();
+  });
+
   it("renders the Evidence Passport as evidence, not as an NFT or guarantee", async () => {
     const { rerender } = render(createElement("main", {}, createElement(EvidencePassportCard, { passport: evidencePassport("registered") })));
     expect(screen.getByRole("heading", { name: "Indexed Evidence Passport" })).toBeInTheDocument();

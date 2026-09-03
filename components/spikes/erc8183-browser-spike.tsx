@@ -176,7 +176,11 @@ const TESTNET_DEPLOYMENT: Erc8183BrowserDeployment = {
   nativeCurrencySymbol: "tBNB",
 };
 
-export function Erc8183MainnetDemo({ config, agentName }: { config: MainnetDemoPublicConfig; agentName?: string }) {
+export function Erc8183MainnetDemo({ config, agentName, embedded = false }: {
+  config: MainnetDemoPublicConfig;
+  agentName?: string;
+  embedded?: boolean;
+}) {
   return <Erc8183BrowserDemo mode="mainnet" deployment={{
     chainId: 56,
     networkName: "BNB Smart Chain",
@@ -184,14 +188,19 @@ export function Erc8183MainnetDemo({ config, agentName }: { config: MainnetDemoP
     nativeCurrencySymbol: "BNB",
     ...config,
     maximumBudgetRaw: BigInt(config.maximumBudgetRaw),
-  }} {...(agentName ? { agentName } : {})} />;
+  }} {...(agentName ? { agentName } : {})} embedded={embedded} />;
 }
 
 export function Erc8183TestnetDemo() {
   return <Erc8183BrowserDemo mode="testnet" deployment={TESTNET_DEPLOYMENT} />;
 }
 
-function Erc8183BrowserDemo({ mode, deployment, agentName }: { mode: "testnet" | "mainnet"; deployment: Erc8183BrowserDeployment; agentName?: string }) {
+function Erc8183BrowserDemo({ mode, deployment, agentName, embedded = false }: {
+  mode: "testnet" | "mainnet";
+  deployment: Erc8183BrowserDeployment;
+  agentName?: string;
+  embedded?: boolean;
+}) {
   const router = useRouter();
   const apiBase = mode === "mainnet" ? "/api/marketplace/demo/erc8183-mainnet" : "/api/marketplace/demo/erc8183";
   const jobsBase = mode === "mainnet" ? "/api/marketplace/jobs/mainnet" : "/api/marketplace/jobs/testnet";
@@ -402,8 +411,12 @@ function Erc8183BrowserDemo({ mode, deployment, agentName }: { mode: "testnet" |
     URL.revokeObjectURL(url);
   };
 
+  const Root = embedded ? "section" : "main";
   return (
-    <main id="main-content" className="mx-auto w-full max-w-6xl px-4 py-10 sm:px-6 lg:px-8 lg:py-14">
+    <Root
+      {...(embedded ? { "aria-label": "ERC-8183 hiring flow" } : { id: "main-content" })}
+      className={embedded ? "w-full" : "mx-auto w-full max-w-6xl px-4 py-10 sm:px-6 lg:px-8 lg:py-14"}
+    >
       <header className="max-w-3xl">
         <div className="flex flex-wrap items-center gap-2">
           <Badge className="border-amber-300/30 bg-amber-300/10 text-amber-100" variant="outline">{deployment.networkName} · chain {deployment.chainId}</Badge>
@@ -602,6 +615,6 @@ function Erc8183BrowserDemo({ mode, deployment, agentName }: { mode: "testnet" |
           )}
         </aside>
       </div>
-    </main>
+    </Root>
   );
 }

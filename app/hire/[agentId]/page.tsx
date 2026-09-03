@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { getMainnetBrowserDemoConfig, getMarketplaceAgent } from "@/src/business/composition";
-import { agentCardViewModel } from "@/components/marketplace/view-models";
+import { getAgentEvidencePassport, getMainnetBrowserDemoConfig } from "@/src/business/composition";
+import { catalogBlockingMessage, catalogCandidateCard } from "@/components/marketplace/catalog-candidate-view-model";
 import { MarketplaceAgentNotFoundError, MarketplaceDataUnavailableError } from "@/src/business/errors/marketplace-errors";
 import { Erc8183SpikeDisabledError, Erc8183SpikeUnavailableError } from "@/src/business/errors/erc8183-spike-errors";
 import { CatalogUnavailable } from "@/components/marketplace/catalog-unavailable";
@@ -15,10 +15,12 @@ export const dynamic = "force-dynamic";
 export default async function HirePage({ params }: { params: Promise<{ agentId: string }> }) {
   const { agentId } = await params;
   try {
-    const agent = await getMarketplaceAgent.execute({ agentId });
-    const current = agentCardViewModel(agent);
+    const { agent, catalogCandidate } = await getAgentEvidencePassport.executeWithAgent({ agentId });
+    const current = catalogCandidate ? catalogCandidateCard(catalogCandidate) : null;
+    const buyerAction = current?.buyerAction ?? "unavailable";
+    const canRequestQuote = buyerAction === "request_quote" || buyerAction === "prepare_hire";
     let selectedConfig = null;
-    if (current.quoteRequestAvailable) {
+    if (canRequestQuote) {
       try {
         const config = getMainnetBrowserDemoConfig.execute();
         if (String(config.agentId) === agent.agentId) selectedConfig = config;
@@ -26,7 +28,7 @@ export default async function HirePage({ params }: { params: Promise<{ agentId: 
         if (!(error instanceof Erc8183SpikeDisabledError) && !(error instanceof Erc8183SpikeUnavailableError)) throw error;
       }
     }
-    if (current.quoteRequestAvailable && selectedConfig) {
+    if (canRequestQuote && selectedConfig) {
       return <Erc8183MainnetDemo config={selectedConfig} agentName={agent.name} />;
     }
     return (
@@ -37,13 +39,13 @@ export default async function HirePage({ params }: { params: Promise<{ agentId: 
         />
         <PageIntro eyebrow="Fresh quote" title={agent.name}>A periodic observation is informative. Only a quote requested by you can start a hire.</PageIntro>
         <Alert className="mt-8 border-amber-400/20 bg-amber-400/5">
-          <AlertTitle>{current.quoteRequestAvailable ? "Fresh quotes are temporarily unavailable" : "This agent cannot be hired through the marketplace"}</AlertTitle>
-          <AlertDescription>{current.quoteRequestAvailable
+          <AlertTitle>{canRequestQuote ? "Fresh quotes are temporarily unavailable" : "This agent cannot be hired through the marketplace"}</AlertTitle>
+          <AlertDescription>{canRequestQuote
             ? "The seller supports the hiring transport, but the on-demand quote service is not configured right now. No Testnet substitute was selected."
-            : agent.hireability.reason}</AlertDescription>
+            : catalogBlockingMessage(current?.blockingReasons)}</AlertDescription>
         </Alert>
         <div className="mt-6 flex flex-wrap gap-3">
-          {current.quoteRequestAvailable && <Button asChild><Link href={`/hire/${agent.agentId}`}>Try again</Link></Button>}
+          {canRequestQuote && <Button asChild><Link href={`/hire/${agent.agentId}`}>Try again</Link></Button>}
           <Button asChild variant="outline"><Link href={`/agents/${agent.agentId}`}>View agent evidence</Link></Button>
         </div>
       </main>
