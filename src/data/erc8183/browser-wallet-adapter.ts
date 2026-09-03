@@ -18,7 +18,16 @@ import type {
   Erc8183JournalStep,
   Erc8183TransactionKind,
 } from "../../business/entities/erc8183-browser-spike.ts";
-import { InvalidErc8183SpikeInputError } from "../../business/errors/erc8183-spike-errors.ts";
+import { Erc8183JobNotReadyError, InvalidErc8183SpikeInputError } from "../../business/errors/erc8183-spike-errors.ts";
+import {
+  buildHireCalls,
+  extractBatchJobId,
+  isBatchUnsupportedError,
+  predictNextJobId,
+  receiptForCall,
+  supportsAtomicBatch,
+  type BatchCallReceipt,
+} from "./batched-hire.ts";
 import {
   agenticCommerceBrowserAbi,
   ERC8183_TESTNET,
@@ -39,14 +48,20 @@ const JOURNAL_STEPS = new Set([
   "submitted",
 ]);
 
+// `batched`: the wallet executed the intents as one atomic EIP-5792 batch
+// (one confirmation); `sequential`: one transaction per intent.
+export type BrowserHireMode = "batched" | "sequential";
+
 export interface BrowserHireProgress {
   step: Erc8183JournalStep;
   journal: Erc8183BrowserJournal;
+  mode?: BrowserHireMode;
 }
 
 export interface BrowserHireExecution {
   jobId: string;
   journal: Erc8183BrowserJournal;
+  mode?: BrowserHireMode;
 }
 
 export interface Erc8183BrowserDeployment {
@@ -283,6 +298,7 @@ function withProgress(
   jobId: string | null,
   onProgress: (progress: BrowserHireProgress) => void,
   deployment: Erc8183BrowserDeployment,
+  mode?: BrowserHireMode,
 ): Erc8183BrowserJournal {
   const next: Erc8183BrowserJournal = {
     ...journal,
@@ -299,7 +315,7 @@ function withProgress(
     lastConfirmedStep: step,
   };
   saveBrowserJournal(next, localStorage, deployment);
-  onProgress({ step, journal: next });
+  onProgress(mode === undefined ? { step, journal: next } : { step, journal: next, mode });
   return next;
 }
 
@@ -432,7 +448,83 @@ export async function executeBrowserHire(
     const block = await publicClient.getBlock({ blockNumber: receipt.blockNumber });
     return { receipt, confirmedAt: new Date(Number(block.timestamp) * 1_000).toISOString() };
   };
+
+  // P6: a fresh hire on a wallet that batches atomically needs one
+  // confirmation. Resume and recovery keep the sequential path, which can skip
+  // the steps chain already shows as done.
+  const executeBatchedHire = async (): Promise<BrowserHireExecution | null> => {
+    try {
+      const capabilities = await walletClient.getCapabilities({ account, chainId: deployment.chainId });
+      if (!supportsAtomicBatch(capabilities)) return null;
+    } catch {
+      return null;
+    }
+    const budget = BigInt(plan.quote.priceRaw);
+    const counter = await publicClient.readContract({
+      address: deployment.commerce,
+      abi: agenticCommerceBrowserAbi,
+      functionName: "jobCounter",
+    });
+    const predicted = predictNextJobId(counter);
+    // Only createJob can be simulated before the job exists; the other four
+    // are protected by the atomic batch (a wrong id reverts everything).
+    await publicClient.simulateContract({
+      account,
+      address: deployment.commerce,
+      abi: agenticCommerceBrowserAbi,
+      functionName: "createJob",
+      args: [plan.seller, deployment.router, BigInt(plan.deadline), plan.quote.description, deployment.router],
+    });
+    const calls = buildHireCalls({ plan, deployment, jobId: predicted, budget });
+    let batchId: string;
+    try {
+      ({ id: batchId } = await walletClient.sendCalls({
+        account,
+        chain,
+        calls: calls.map(({ to, data }) => ({ to, data })),
+        forceAtomic: true,
+      }));
+    } catch (error) {
+      if (isBatchUnsupportedError(error)) return null;
+      throw error;
+    }
+    const status = await walletClient.waitForCallsStatus({ id: batchId, timeout: 180_000 });
+    if (status.status !== "success") {
+      throw new Erc8183JobNotReadyError(`The atomic hire batch did not execute (${status.status})`);
+    }
+    // viem's WalletCallReceipt carries logs, status, hash and block; the
+    // helper type names exactly the fields the mapping reads.
+    const receipts = (status.receipts ?? []) as unknown as readonly BatchCallReceipt[];
+    const confirmedJobId = extractBatchJobId(receipts, deployment.commerce);
+    if (confirmedJobId !== predicted) {
+      throw new Erc8183JobNotReadyError("The batched job id differs from the predicted id");
+    }
+    const block = await publicClient.getBlock({ blockNumber: receiptForCall(receipts, calls.length, 0).blockNumber });
+    const confirmedAt = new Date(Number(block.timestamp) * 1_000).toISOString();
+    const steps: Partial<Record<Erc8183TransactionKind, Erc8183JournalStep>> = {
+      createJob: "created", registerJob: "registered", setBudget: "budgeted", approve: "approved", fund: "funded",
+    };
+    let batchedJournal = journal;
+    calls.forEach((call, index) => {
+      const receipt = receiptForCall(receipts, calls.length, index);
+      batchedJournal = withProgress(
+        batchedJournal,
+        steps[call.kind] ?? "connected",
+        { kind: call.kind, hash: receipt.transactionHash, confirmedAt },
+        confirmedJobId.toString(),
+        onProgress,
+        deployment,
+        "batched",
+      );
+    });
+    return { jobId: confirmedJobId.toString(), journal: batchedJournal, mode: "batched" };
+  };
+
   let jobId = journal.jobId ? BigInt(journal.jobId) : null;
+  if (jobId === null && !journal.transactions.createJob && !options.recoveredJob) {
+    const batched = await executeBatchedHire();
+    if (batched) return batched;
+  }
   if (jobId === null && journal.transactions.createJob) {
     const confirmed = await confirm(journal.transactions.createJob, deployment.commerce);
     jobId = extractConfirmedJobId(confirmed.receipt, deployment.commerce);
@@ -502,5 +594,5 @@ export async function executeBrowserHire(
     const confirmed = await confirm(hash, deployment.commerce);
     journal = withProgress(journal, "funded", { kind: "fund", hash, ...confirmed }, jobId.toString(), onProgress, deployment);
   }
-  return { jobId: jobId.toString(), journal };
+  return { jobId: jobId.toString(), journal, mode: "sequential" };
 }

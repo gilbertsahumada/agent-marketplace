@@ -146,6 +146,34 @@ Mechanics the reference implementation applies and a programmatic buyer should t
   amount is stated by the buyer rather than read from job state.
 - **Atomic alternative**: a wallet supporting EIP-5792 `wallet_sendCalls` can submit
   the five calls as one atomic batch (plan P6), removing the intermediate states.
+  This is what the browser flow does first; see below.
+
+### Batched execution (EIP-5792)
+
+For a fresh hire (no stored journal, no job to recover) `executeBrowserHire` asks
+the wallet `wallet_getCapabilities` for the target chain and, when `atomic.status`
+is `supported` or `ready`, sends the intents as one `wallet_sendCalls` batch with
+`atomicRequired: true` — one wallet confirmation, and either every call lands or
+none does. The helpers are in `src/data/erc8183/batched-hire.ts`:
+
+- **Job id prediction**: calls 2–5 need the job id that `createJob` only assigns
+  on chain, so the batch uses `jobCounter() + 1` (Commerce assigns `++jobCounter`;
+  verified on BSC Testnet 2026-09-03). A wrong prediction is harmless: `registerJob`
+  and `setBudget` are client-checked, a foreign id reverts, and the atomic batch
+  rolls back including `createJob`.
+- **Simulation**: only `createJob` can be simulated before the job exists; the rest
+  is protected by atomicity.
+- **Confirmation**: `wallet_getCallsStatus` until `success`; the confirmed job id is
+  read from the `JobCreated` event across the returned receipts (one per call or one
+  for the batch) and must equal the prediction. The journal then records `created`,
+  `registered`, `budgeted`, `approved` (if any) and `funded` with the receipt hashes,
+  so hire-event reporting is unchanged.
+- **Fallback**: a wallet without atomic capabilities, or one answering that
+  `wallet_sendCalls` is unsupported, takes today's sequential path (five
+  confirmations). Resume and recovery always use the sequential path, which can
+  skip the steps chain already shows as done. A user rejection propagates as such.
+- **No permit**: the exact `approve` stays a call inside the batch; EIP-2612 permit
+  is not used in this iteration.
 
 ## Step 5 — Notify the seller
 
