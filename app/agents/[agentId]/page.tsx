@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { redirect } from "next/navigation";
+import { permanentRedirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 
@@ -10,5 +10,5 @@ export async function generateMetadata({ params }: { params: Promise<{ agentId: 
 
 export default async function AgentPage({ params }: { params: Promise<{ agentId: string }> }) {
   const { agentId } = await params;
-  redirect(`/hire/${agentId}`);
+  permanentRedirect(`/hire/${agentId}`);
 }

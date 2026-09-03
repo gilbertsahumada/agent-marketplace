@@ -141,11 +141,10 @@ describe("PR40 review: card badge and compare hireability labels", () => {
       description: "Agent",
       operator: "third_party",
       categories: ["rebalancing"],
-      href: "/agents/45650",
+      href: "/hire/45650",
       hireability: "listed_only",
       evidence,
       passportState: "registered",
-      passportHref: "/agents/45650/passport",
     } }));
 
     expect(screen.getByText("Never probed")).toBeInTheDocument();

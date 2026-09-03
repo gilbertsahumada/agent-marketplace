@@ -46,7 +46,6 @@ export interface AgentCardViewModel {
   trustScore?: number;
   verification?: VerificationDriftViewModel | null;
   passportState: "registered" | "evaluated" | "hireable" | "job_proven" | "attention";
-  passportHref: string;
   monitoring?: {
     state: "feed_unavailable" | "no_endpoint_declared" | "not_monitored" | "never_probed" | "probed";
     source?: "worker" | "release_snapshot";

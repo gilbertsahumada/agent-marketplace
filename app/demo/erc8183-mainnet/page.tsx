@@ -1,7 +1,5 @@
 import type { Metadata } from "next";
-import { notFound } from "next/navigation";
-import { Erc8183MainnetDemo } from "@/components/spikes/erc8183-browser-spike";
-import { getMainnetHiringExposure } from "@/src/business/composition";
+import { permanentRedirect } from "next/navigation";
 
 export const metadata: Metadata = {
   title: "ERC-8183 Mainnet hiring demo",
@@ -10,8 +8,6 @@ export const metadata: Metadata = {
 
 export const dynamic = "force-dynamic";
 
-export default async function Erc8183MainnetDemoPage() {
-  const exposure = await getMainnetHiringExposure.execute();
-  if (!exposure.demoConfig) notFound();
-  return <Erc8183MainnetDemo config={exposure.demoConfig} />;
+export default function Erc8183MainnetDemoPage() {
+  permanentRedirect("/hire/303779");
 }

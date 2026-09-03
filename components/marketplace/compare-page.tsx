@@ -1,22 +1,15 @@
 import Link from "next/link";
-import { Fingerprint } from "lucide-react";
+import { ExternalLink } from "lucide-react";
 import type { MarketplaceAgentComparison } from "@/src/business/entities/marketplace-agent";
 import { observationTargetsByAgentId, type ObservationFeedResult } from "@/src/business/entities/worker-observations";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { trust8004AgentHref } from "./agent-card";
 import { EvidenceRail } from "./evidence-rail";
 import { PageIntro } from "./page-primitives";
 import { agentCardWithObservations, hireabilityLabelFor, verificationViewModel } from "./view-models";
 import { VerificationDrift } from "./verification-drift";
-
-const passportLabels = {
-  registered: "Registered",
-  evaluated: "Evaluated",
-  hireable: "Hireable",
-  job_proven: "Job proven",
-  attention: "Attention",
-} as const;
 
 export function ComparePage({ candidates, comparison, observations = { status: "unavailable", feed: null }, selected, provenAgentId }: { candidates: { agentId: string; name: string }[]; comparison: MarketplaceAgentComparison | undefined; observations?: ObservationFeedResult; selected: string[]; provenAgentId?: string }) {
   const targets = observationTargetsByAgentId(observations.feed);
@@ -67,16 +60,17 @@ export function ComparePage({ candidates, comparison, observations = { status: "
               <Card className="marketplace-surface marketplace-agent-evidence-card" data-passport-state={passport.passportState} key={agent.agentId}>
                 <CardHeader>
                   <Badge className="w-fit" variant="outline">Agent #{agent.agentId}</Badge>
-                  <CardTitle className="mt-2"><Link href={`/agents/${agent.agentId}`}>{agent.name}</Link></CardTitle>
-                  <Link
-                    aria-label={`Passport · ${passportLabels[passport.passportState]} for ${agent.name}`}
+                  <CardTitle className="mt-2"><Link href={`/hire/${agent.agentId}`}>{agent.name}</Link></CardTitle>
+                  <a
+                    aria-label={`View ${agent.name} identity and reputation on trust8004 (opens in a new tab)`}
                     className="mt-2 inline-flex items-center gap-1.5 text-xs text-zinc-400 underline decoration-zinc-700 underline-offset-4 hover:text-white"
-                    href={passport.passportHref}
-                    prefetch={false}
+                    href={trust8004AgentHref(agent.agentId)}
+                    rel="noopener noreferrer"
+                    target="_blank"
                   >
-                    <Fingerprint aria-hidden="true" className="size-3" />
-                    Passport · {passportLabels[passport.passportState]}
-                  </Link>
+                    Identity & reputation
+                    <ExternalLink aria-hidden="true" className="size-3" />
+                  </a>
                 </CardHeader>
                 <CardContent className="space-y-5">
                   <EvidenceRail compact steps={passport.evidence} />
