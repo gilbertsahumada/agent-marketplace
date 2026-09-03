@@ -60,6 +60,14 @@ export function hireConfirmationLabel(mode: BrowserHireMode | null, requiredTran
   return null;
 }
 
+function busyStatusLabel(busy: string | null): string | null {
+  if (busy === "Requesting a signed quote") return "Requesting a fresh seller quote";
+  if (busy === "Preparing the connected wallet") return "Reading wallet balances and preparing the hire";
+  if (busy === "Waiting for wallet confirmations") return "Waiting for the wallet to confirm the requested transactions";
+  if (busy === "Recovering confirmed job") return "Reading the confirmed job from the chain";
+  return null;
+}
+
 type InjectedProvider = Parameters<typeof executeBrowserHire>[0];
 
 async function apiJson<T>(input: string, init?: RequestInit): Promise<T> {
@@ -485,7 +493,12 @@ function Erc8183BrowserDemo({ mode, deployment, agentName, embedded = false }: {
     };
 
     return (
-      <section aria-label="ERC-8183 hiring flow" className="w-full">
+      <section aria-busy={busy !== null} aria-label="ERC-8183 hiring flow" className="w-full">
+        {busyStatusLabel(busy) ? (
+          <p aria-live="polite" className="mb-4 inline-flex items-center gap-2 text-xs text-cyan-200" role="status">
+            <LoaderCircle aria-hidden="true" className="size-4 animate-spin" />{busyStatusLabel(busy)}…
+          </p>
+        ) : null}
         <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_20rem] lg:items-start">
           <div>
             <ol aria-label="Hiring progress" className="overflow-hidden rounded-xl border border-white/10 bg-white/[0.015]">
@@ -504,7 +517,7 @@ function Erc8183BrowserDemo({ mode, deployment, agentName, embedded = false }: {
                 <div className="mt-4 flex flex-wrap items-center gap-3">
                   <Button className="min-w-44" disabled={busy !== null} onClick={() => void requestQuote()} size="lg">
                     {busy === "Requesting a signed quote" ? <LoaderCircle aria-hidden="true" className="animate-spin" /> : null}
-                    {quoteExpired ? "Refresh quote" : "Request quote"}<ArrowRight aria-hidden="true" />
+                    {busy === "Requesting a signed quote" ? "Requesting quote…" : quoteExpired ? "Refresh quote" : "Request quote"}<ArrowRight aria-hidden="true" />
                   </Button>
                   <span className="inline-flex items-center gap-1.5 text-xs text-zinc-500"><ShieldCheck aria-hidden="true" className="size-4" />No signature</span>
                 </div>
@@ -526,7 +539,7 @@ function Erc8183BrowserDemo({ mode, deployment, agentName, embedded = false }: {
                     {mode === "mainnet" ? <p className="mt-3 text-xs text-zinc-500" role="status">{sharedEvidenceSyncMessage(quote.observationSync)}</p> : null}
                     <Button className="mt-4 min-w-44" disabled={!account || busy !== null} onClick={() => void connectAndPrepare()} size="lg">
                       {busy === "Preparing the connected wallet" ? <LoaderCircle aria-hidden="true" className="animate-spin" /> : <Wallet aria-hidden="true" />}
-                      {account ? "Prepare hire" : "Connect wallet in header"}
+                      {busy === "Preparing the connected wallet" ? "Preparing wallet…" : account ? "Prepare hire" : "Connect wallet in header"}
                     </Button>
                   </>
                 ) : null}
@@ -545,14 +558,14 @@ function Erc8183BrowserDemo({ mode, deployment, agentName, embedded = false }: {
                     ) : null}
                     <Button className="mt-4 min-w-44" disabled={busy !== null || submitted} onClick={() => void signAndRun()} size="lg">
                       {busy === "Waiting for wallet confirmations" ? <LoaderCircle aria-hidden="true" className="animate-spin" /> : <Wallet aria-hidden="true" />}
-                      {journal?.jobId ? "Continue funding" : "Create & fund job"}
+                      {busy === "Waiting for wallet confirmations" ? "Waiting for confirmations…" : journal?.jobId ? "Continue funding" : "Create & fund job"}
                     </Button>
                     {!journal?.jobId ? (
                       <details className="mt-4 border-t border-white/10 pt-4 text-sm text-zinc-500">
                         <summary className="cursor-pointer select-none">Recover interrupted job</summary>
                         <div className="mt-3 flex gap-2">
                           <Input aria-label="Confirmed Job ID" inputMode="numeric" onChange={(event) => setRecoveryJobId(event.target.value.trim())} placeholder="Job ID" value={recoveryJobId} />
-                          <Button disabled={busy !== null || !/^\d+$/.test(recoveryJobId)} onClick={() => void recoverJob()} variant="outline">Recover</Button>
+                          <Button disabled={busy !== null || !/^\d+$/.test(recoveryJobId)} onClick={() => void recoverJob()} variant="outline">{busy === "Recovering confirmed job" ? "Recovering…" : "Recover"}</Button>
                         </div>
                       </details>
                     ) : null}
@@ -619,6 +632,7 @@ function Erc8183BrowserDemo({ mode, deployment, agentName, embedded = false }: {
   return (
     <Root
       {...(embedded ? { "aria-label": "ERC-8183 hiring flow" } : { id: "main-content" })}
+      aria-busy={busy !== null}
       className={embedded ? "w-full" : "mx-auto w-full max-w-6xl px-4 py-10 sm:px-6 lg:px-8 lg:py-14"}
     >
       {!embedded ? (
@@ -641,6 +655,12 @@ function Erc8183BrowserDemo({ mode, deployment, agentName, embedded = false }: {
             <AlertDescription>Only Agent {deployment.agentId} is allowed. The HeyAnon marketplace candidates remain MCP only and cannot use this flow.</AlertDescription>
           </Alert>
         </>
+      ) : null}
+
+      {busyStatusLabel(busy) ? (
+        <p aria-live="polite" className="mt-4 inline-flex items-center gap-2 text-xs text-cyan-200" role="status">
+          <LoaderCircle aria-hidden="true" className="size-4 animate-spin" />{busyStatusLabel(busy)}…
+        </p>
       ) : null}
 
       <div className={`${embedded ? "" : "mt-8 "}grid gap-6 lg:grid-cols-[minmax(0,1.15fr)_minmax(19rem,0.85fr)]`}>
@@ -674,7 +694,7 @@ function Erc8183BrowserDemo({ mode, deployment, agentName, embedded = false }: {
               )}
               <Button className="mt-5" disabled={busy !== null} onClick={() => void requestQuote()}>
                 {busy === "Requesting a signed quote" ? <LoaderCircle aria-hidden="true" className="animate-spin" /> : <ShieldCheck aria-hidden="true" />}
-                {quote ? "Refresh live quote" : mode === "mainnet" ? "Get fresh quote" : "Request live quote"}
+                {busy === "Requesting a signed quote" ? "Requesting quote…" : quote ? "Refresh live quote" : mode === "mainnet" ? "Get fresh quote" : "Request live quote"}
               </Button>
             </CardContent>
           </Card>
@@ -687,7 +707,7 @@ function Erc8183BrowserDemo({ mode, deployment, agentName, embedded = false }: {
             <CardContent>
               <Button disabled={!quote || quoteExpired || !account || busy !== null} onClick={() => void connectAndPrepare()} variant={plan ? "outline" : "default"}>
                 <Wallet aria-hidden="true" />
-                {account ? `Prepare hire as ${shortAddress(account)}` : "Connect a wallet in the header"}
+                {busy === "Preparing the connected wallet" ? "Preparing wallet…" : account ? `Prepare hire as ${shortAddress(account)}` : "Connect a wallet in the header"}
               </Button>
               {plan && (
                 <dl className="mt-5 rounded-xl border border-white/[0.07] bg-white/[0.02] px-4">
@@ -719,7 +739,9 @@ function Erc8183BrowserDemo({ mode, deployment, agentName, embedded = false }: {
               ) : <p className="text-sm text-zinc-500">Connect a wallet to calculate the exact transaction set.</p>}
               <Button className="mt-5" disabled={!plan || quoteExpired || busy !== null || submitted} onClick={() => void signAndRun()}>
                 {busy === "Waiting for wallet confirmations" ? <LoaderCircle aria-hidden="true" className="animate-spin" /> : <Wallet aria-hidden="true" />}
-                {submitted
+                {busy === "Waiting for wallet confirmations"
+                  ? "Waiting for confirmations…"
+                  : submitted
                   ? "Job already submitted"
                   : journal?.jobId
                     ? "Continue remaining wallet signatures"
@@ -744,7 +766,7 @@ function Erc8183BrowserDemo({ mode, deployment, agentName, embedded = false }: {
                       value={recoveryJobId}
                     />
                     <Button disabled={busy !== null || !/^\d+$/.test(recoveryJobId)} onClick={() => void recoverJob()} variant="outline">
-                      Recover
+                      {busy === "Recovering confirmed job" ? "Recovering…" : "Recover"}
                     </Button>
                   </div>
                 </div>
