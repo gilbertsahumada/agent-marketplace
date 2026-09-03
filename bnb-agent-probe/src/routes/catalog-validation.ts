@@ -7,6 +7,7 @@ import {
   catalogObservations,
   catalogValidationRequests,
 } from "../db/schema";
+import { publicCatalogObservation } from "../catalog/api-contract";
 import { callerKey } from "../lib/caller-key";
 import type { D1Database, QueueProducer } from "../types";
 
@@ -189,5 +190,27 @@ export async function catalogValidationStatusResponse(request: Request, d1: D1Da
   const db = createDatabase(d1 as unknown as D1DatabaseLike);
   const rows = await db.select().from(catalogValidationRequests).where(eq(catalogValidationRequests.id, id)).limit(1);
   if (!rows[0]) return Response.json({ error: "not_found" }, { status: 404, headers: { "cache-control": "no-store" } });
-  return Response.json({ schemaVersion: 2, validation: rows[0] }, { headers: { "cache-control": "no-store" } });
+  const validation = rows[0];
+  // Return the committed observation with the request so the buyer can see
+  // exactly what the Worker checked. The agent and endpoint predicates keep a
+  // malformed or cross-scoped result from being presented as this request's
+  // evidence.
+  const resultRows = validation.resultObservationId === null ? [] : await db.select().from(catalogObservations).where(and(
+    eq(catalogObservations.id, validation.resultObservationId),
+    eq(catalogObservations.agentKey, validation.agentKey),
+    eq(catalogObservations.endpointKey, validation.endpointKey),
+  )).limit(1);
+  const publicResult = resultRows[0] ? publicCatalogObservation(resultRows[0]) : null;
+  // Keep the polling contract narrow. Internal attempt ids, raw details and
+  // lease metadata are not needed by the buyer-facing workspace.
+  const result = publicResult ? {
+    protocol: publicResult.protocol,
+    source: publicResult.source,
+    outcome: publicResult.outcome,
+    observedAt: publicResult.observedAt,
+    expiresAt: publicResult.expiresAt,
+    httpStatus: publicResult.httpStatus,
+    durationMs: publicResult.durationMs,
+  } : null;
+  return Response.json({ schemaVersion: 2, validation: { ...validation, result } }, { headers: { "cache-control": "no-store" } });
 }
