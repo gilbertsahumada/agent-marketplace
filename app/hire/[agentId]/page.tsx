@@ -5,7 +5,7 @@ import { MarketplaceAgentNotFoundError, MarketplaceDataUnavailableError } from "
 import { Erc8183SpikeDisabledError, Erc8183SpikeUnavailableError } from "@/src/business/errors/erc8183-spike-errors";
 import { CatalogUnavailable } from "@/components/marketplace/catalog-unavailable";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { AgentProfile } from "@/components/marketplace/agent-profile";
+import { AgentProfile, marketplaceAgentDisplayName } from "@/components/marketplace/agent-profile";
 import { Erc8183MainnetDemo } from "@/components/spikes/erc8183-browser-spike";
 
 export const dynamic = "force-dynamic";
@@ -31,7 +31,7 @@ export default async function HirePage({ params }: { params: Promise<{ agentId: 
       }
     }
     const hireFlow = canRequestQuote && selectedConfig
-      ? <Erc8183MainnetDemo config={selectedConfig} agentName={agent.name} embedded />
+      ? <Erc8183MainnetDemo config={selectedConfig} agentName={marketplaceAgentDisplayName(agent.name)} embedded />
       : canRequestQuote ? (
         <Alert className="border-amber-400/20 bg-amber-400/5">
           <AlertTitle>Fresh quotes are temporarily unavailable</AlertTitle>

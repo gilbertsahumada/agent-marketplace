@@ -23,6 +23,7 @@ vi.mock("@/components/spikes/erc8183-browser-spike", () => ({
 }));
 
 vi.mock("@/components/marketplace/agent-profile", () => ({
+  marketplaceAgentDisplayName: (name: string) => name,
   AgentProfile: ({ catalogCandidate, hireFlow }: {
     catalogCandidate: CatalogCandidate;
     hireFlow?: ReturnType<typeof createElement> | null;
