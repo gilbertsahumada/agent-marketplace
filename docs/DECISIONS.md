@@ -757,7 +757,7 @@ Cross-session reconciliation between the observation/D1 migration (per `docs/OBS
   reconciles current admitted endpoints with their indexed latest quote rows in
   memory. This uses two bounded D1 reads and preserves newer-rejection semantics.
 
-## 2026-09-02 — Begin the canonical profile-and-hire route migration
+## 2026-09-03 — Begin the canonical profile-and-hire route migration
 
 - This decision supersedes the 2026-08-31 presentation choice that exposed both
   `View profile` and `Hire agent`. The later frontend journey specification makes

@@ -412,6 +412,7 @@ function Erc8183BrowserDemo({ mode, deployment, agentName, embedded = false }: {
   };
 
   const Root = embedded ? "section" : "main";
+  const Title = embedded ? "h2" : "h1";
   return (
     <Root
       {...(embedded ? { "aria-label": "ERC-8183 hiring flow" } : { id: "main-content" })}
@@ -423,7 +424,7 @@ function Erc8183BrowserDemo({ mode, deployment, agentName, embedded = false }: {
           <Badge variant="outline">{mode === "mainnet" ? "Mainnet value at risk" : "Controlled hiring demo"}</Badge>
         </div>
         <p className="font-eyebrow font-eyebrow-dot mt-6 text-zinc-500">Non-custodial {mode === "mainnet" ? "Mainnet hire" : "Testnet demo"}</p>
-        <h1 className="mt-2 text-3xl font-light tracking-tight text-white sm:text-5xl">Hire with your wallet. Verify every step.</h1>
+        <Title className="mt-2 text-3xl font-light tracking-tight text-white sm:text-5xl">Hire with your wallet. Verify every step.</Title>
         <p className="mt-4 text-base leading-relaxed text-zinc-400">
           Request a signed quote from {agentName ?? "the controlled seller"}, inspect every contract call, and sign the ERC-8183 lifecycle with your injected wallet.
         </p>

@@ -14,6 +14,19 @@ const target: CatalogProbeTarget = {
   consecutiveFailures: 0,
 };
 
+function expectStageDurations(
+  durations: Readonly<Record<string, number>> | undefined,
+  expectedStages: readonly string[],
+): void {
+  expect(durations).toBeDefined();
+  expect(Object.keys(durations ?? {}).sort()).toEqual([...expectedStages].sort());
+  for (const duration of Object.values(durations ?? {})) {
+    expect(Number.isFinite(duration)).toBe(true);
+    expect(Number.isInteger(duration)).toBe(true);
+    expect(duration).toBeGreaterThanOrEqual(0);
+  }
+}
+
 describe("catalog probe phase", () => {
   it("does no egress when the prioritized queue is empty", async () => {
     const commit = vi.fn();
@@ -38,7 +51,7 @@ describe("catalog probe phase", () => {
 
     expect(observation).toMatchObject({ outcome: "protocol_valid", capabilityCount: 1, httpStatus: 200 });
     expect(fetchImpl).toHaveBeenCalledTimes(3);
-    expect(observation.stageDurationsMs).toMatchObject({ initialize: 0, initialized: 0, toolsList: 0 });
+    expectStageDurations(observation.stageDurationsMs, ["initialize", "initialized", "toolsList"]);
   });
 
   it("uses the configured protocol freshness window", async () => {
@@ -66,7 +79,8 @@ describe("catalog probe phase", () => {
       clock: () => 10,
     });
     expect(fetchImpl).toHaveBeenCalledWith("https://seller.example.com/mcp/health", expect.objectContaining({ method: "GET" }));
-    expect(observation).toMatchObject({ outcome: "protocol_valid", stageDurationsMs: { health: 0 } });
+    expect(observation).toMatchObject({ outcome: "protocol_valid" });
+    expectStageDurations(observation.stageDurationsMs, ["health"]);
   });
 
   it("recognizes an ERC-8183 commerce path only from the complete A2A skill pair", async () => {

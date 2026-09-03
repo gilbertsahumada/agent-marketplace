@@ -370,7 +370,13 @@ describe("marketplace presentation rules", () => {
     }) }));
 
     expect(screen.queryByRole("main")).not.toBeInTheDocument();
-    expect(screen.getByRole("region", { name: "ERC-8183 hiring flow" })).toBeInTheDocument();
+    const flow = screen.getByRole("region", { name: "ERC-8183 hiring flow" });
+    expect(flow).toBeInTheDocument();
+    expect(within(flow).getByRole("heading", {
+      level: 2,
+      name: "Hire with your wallet. Verify every step.",
+    })).toBeInTheDocument();
+    expect(within(flow).queryByRole("heading", { level: 1 })).not.toBeInTheDocument();
   });
 
   it("renders the Evidence Passport as evidence, not as an NFT or guarantee", async () => {

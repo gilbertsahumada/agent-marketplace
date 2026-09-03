@@ -18,11 +18,27 @@ function candidate(): CatalogCandidate {
 }
 
 describe("catalog candidate card", () => {
-  it("maps normalized blocker codes to user-facing copy and fails closed on unknown values", () => {
-    expect(catalogBlockingMessage(["FRESH_QUOTE_REQUIRED"]))
-      .toBe("A fresh seller quote is required before preparing the transaction.");
-    expect(catalogBlockingMessage(["SOMETHING_NEW"]))
-      .toBe("The marketplace returned an unsupported hiring blocker and failed closed.");
+  it.each([
+    ["NO_ELIGIBLE_OPERATIONAL_ENDPOINT", "No supported operational endpoint is available for marketplace hiring."],
+    ["COMMERCE_NOT_ADMITTED", "This seller has not been admitted to the marketplace hiring flow."],
+    ["FRESH_QUOTE_REQUIRED", "A fresh seller quote is required before preparing the transaction."],
+    ["CURRENT_CHAIN_CHECK_REQUIRED", "Current onchain checks are required before preparing the transaction."],
+  ] as const)("maps the production blocker %s to user-facing copy", (reason, message) => {
+    expect(catalogBlockingMessage([reason])).toBe(message);
+  });
+
+  it("combines production blockers and reports unknown blocker codes only once", () => {
+    expect(catalogBlockingMessage([
+      "NO_ELIGIBLE_OPERATIONAL_ENDPOINT",
+      "FRESH_QUOTE_REQUIRED",
+      "SOMETHING_NEW",
+      "SOMETHING_NEW",
+      "ANOTHER_NEW",
+    ])).toBe(
+      "No supported operational endpoint is available for marketplace hiring. "
+      + "A fresh seller quote is required before preparing the transaction. "
+      + "The marketplace returned an unsupported hiring blocker and failed closed.",
+    );
   });
 
   it("does not promote browser evidence to reachable", () => {

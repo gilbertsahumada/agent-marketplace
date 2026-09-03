@@ -19,8 +19,9 @@ const BLOCKING_REASON_COPY: Record<string, string> = {
 
 export function catalogBlockingMessage(reasons: string[] | undefined): string {
   if (!reasons?.length) return "Marketplace hiring is not currently available for this agent.";
-  return reasons.map((reason) => BLOCKING_REASON_COPY[reason]
-    ?? "The marketplace returned an unsupported hiring blocker and failed closed.").join(" ");
+  const messages = reasons.map((reason) => BLOCKING_REASON_COPY[reason]
+    ?? "The marketplace returned an unsupported hiring blocker and failed closed.");
+  return [...new Set(messages)].join(" ");
 }
 
 function isPlatformReachabilityObservation(

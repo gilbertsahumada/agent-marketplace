@@ -18,7 +18,12 @@ export default async function HirePage({ params }: { params: Promise<{ agentId: 
     const { agent, catalogCandidate } = await getAgentEvidencePassport.executeWithAgent({ agentId });
     const current = catalogCandidate ? catalogCandidateCard(catalogCandidate) : null;
     const buyerAction = current?.buyerAction ?? "unavailable";
-    const canRequestQuote = buyerAction === "request_quote" || buyerAction === "prepare_hire";
+    const normalizedState = catalogCandidate?.state;
+    const canRequestQuote = normalizedState?.commerceStatus === "admitted"
+      && normalizedState.canRequestQuote
+      && (buyerAction === "request_quote"
+        || (buyerAction === "prepare_hire" && normalizedState.canPrepareHire));
+    const canCheckAvailability = buyerAction === "check_availability";
     let selectedConfig = null;
     if (canRequestQuote) {
       try {
@@ -45,7 +50,9 @@ export default async function HirePage({ params }: { params: Promise<{ agentId: 
             : catalogBlockingMessage(current?.blockingReasons)}</AlertDescription>
         </Alert>
         <div className="mt-6 flex flex-wrap gap-3">
-          {canRequestQuote && <Button asChild><Link href={`/hire/${agent.agentId}`}>Try again</Link></Button>}
+          {canCheckAvailability && (
+            <Button asChild><Link href={`/agents/${agent.agentId}#validation`}>Check availability</Link></Button>
+          )}
           <Button asChild variant="outline"><Link href={`/agents/${agent.agentId}`}>View agent evidence</Link></Button>
         </div>
       </main>
