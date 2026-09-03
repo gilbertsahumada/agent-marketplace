@@ -70,17 +70,45 @@ describe("catalog probe phase", () => {
     expect(observation.expiresAt).toBe(91_000);
   });
 
-  it("uses the declared ERC-8183 HTTP health convention for scheduled reachability", async () => {
+  it("probes the exact declared ERC-8183 HTTP resource", async () => {
     const fetchImpl = vi.fn(async () => Response.json({ status: "ok" }));
-    const observation = await probeCatalogEndpoint({ ...target, protocol: "erc8183_http" }, {
+    const observation = await probeCatalogEndpoint({
+      ...target,
+      protocol: "erc8183_http",
+      endpoint: "https://seller.example.com/erc8183/status",
+    }, {
       fetchImpl,
       timeoutMs: 5_000,
       now: () => 1_000,
       clock: () => 10,
     });
-    expect(fetchImpl).toHaveBeenCalledWith("https://seller.example.com/mcp/health", expect.objectContaining({ method: "GET" }));
+    expect(fetchImpl).toHaveBeenCalledWith("https://seller.example.com/erc8183/status", expect.objectContaining({ method: "GET" }));
     expect(observation).toMatchObject({ outcome: "protocol_valid" });
-    expectStageDurations(observation.stageDurationsMs, ["health"]);
+    expectStageDurations(observation.stageDurationsMs, ["status"]);
+  });
+
+  it("accepts a structured ERC-8183 support declaration without creating a job", async () => {
+    const fetchImpl = vi.fn(async () => Response.json({
+      agent: "Seller",
+      erc8183: {
+        supported: true,
+        version: "0.1.0",
+        jobTypes: ["weekly_report", "rebalance_report"],
+        endpoint: "https://seller.example.com/erc8183/jobs",
+      },
+    }));
+    const observation = await probeCatalogEndpoint({
+      ...target,
+      protocol: "erc8183_http",
+      endpoint: "https://seller.example.com/erc8183/status",
+    }, { fetchImpl, timeoutMs: 5_000, now: () => 1_000, clock: () => 10 });
+
+    expect(fetchImpl).toHaveBeenCalledOnce();
+    expect(observation).toMatchObject({
+      outcome: "protocol_valid",
+      capabilityCount: 2,
+      method: "GET",
+    });
   });
 
   it("recognizes an ERC-8183 commerce path only from the complete A2A skill pair", async () => {

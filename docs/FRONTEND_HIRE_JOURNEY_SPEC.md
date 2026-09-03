@@ -137,9 +137,9 @@ Remains separate. It tracks an already-created job, chain state and result; it i
 Cards and table rows expose one product destination:
 
 - Clicking the name/card opens `/hire/[agentId]`.
-- `Hire agent` opens `/hire/[agentId]` when commerce is admitted.
+- `Request quote` or `Continue hire` opens the corresponding section in `/hire/[agentId]` when commerce is admitted.
 - `Check availability` opens `/hire/[agentId]` when an operational commerce endpoint exists but current evidence is missing, stale or failed.
-- `Unavailable` is disabled and includes a concise reason when no supported commerce path exists.
+- `View agent` still opens the canonical page when no supported commerce path exists; the page includes the concise blocker instead of presenting a dead Hire control.
 - Remove the separate `View profile` CTA.
 - The Agent ID itself links externally to trust8004 in a new tab.
 
@@ -261,7 +261,7 @@ The browser submits `agentId`, `endpointKey` and `validationKind`; it does not c
 
 - **A2A:** fetch the declared Agent Card, validate its structure, declared URL and skills.
 - **MCP:** `initialize` → `notifications/initialized` → `tools/list`; report per-stage timing and failure.
-- **ERC-8183 HTTP:** generic health only when the declaration explicitly supports the convention; request quote only on buyer demand.
+- **ERC-8183 HTTP:** GET the exact normalized resource declared by the agent. Accept either the legacy `{status: "ok"}` convention or a structured `erc8183` support declaration; never invent `/health` or `/status` suffixes. Request a quote only on buyer demand.
 - **Quote:** preserve the exact signed seller payload so the backend can independently verify it. Parsed fields alone are insufficient.
 
 ### 7.4 Result handling

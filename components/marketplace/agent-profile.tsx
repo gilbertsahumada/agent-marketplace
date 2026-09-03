@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { ArrowUpRight, CheckCircle2, CircleAlert, ExternalLink } from "lucide-react";
+import type { ReactNode } from "react";
 import type { MarketplaceAgent } from "@/src/business/entities/marketplace-agent";
 import type { AgentEvidencePassport } from "@/src/business/entities/evidence-passport";
 import type { WorkerObservationTarget } from "@/src/business/entities/worker-observations";
@@ -30,12 +31,22 @@ function MonoValue({ label, value }: { label: string; value: string | null }) {
   );
 }
 
-export function AgentProfile({ agent, observationTargets = [], observationsAvailable = false, passport, catalogCandidate }: {
+export function AgentProfile({
+  agent,
+  observationTargets = [],
+  observationsAvailable = false,
+  passport,
+  catalogCandidate,
+  journey = "profile",
+  hireFlow,
+}: {
   agent: MarketplaceAgent;
   observationTargets?: WorkerObservationTarget[];
   observationsAvailable?: boolean;
   passport: AgentEvidencePassport;
   catalogCandidate?: CatalogCandidate | null;
+  journey?: "profile" | "hire";
+  hireFlow?: ReactNode;
 }) {
   const evaluated = agent.categoryEvaluation === "evaluated";
   const verification = verificationViewModel(agent);
@@ -51,6 +62,10 @@ export function AgentProfile({ agent, observationTargets = [], observationsAvail
     validationTargetMap.set(`${target.protocol}\u0000${target.endpoint}`, target);
   }
   const validationTargets = [...validationTargetMap.values()];
+  const canCheckAvailability = current.buyerAction === "check_availability"
+    && (catalogCandidate?.state?.canRequestBrowserValidation === true
+      || catalogCandidate?.state?.canRequestInfrastructureValidation === true)
+    && validationTargets.length > 0;
   return (
     <main id="main-content" className="mx-auto w-full max-w-7xl flex-1 px-4 py-12 sm:px-6 lg:px-8">
       <Breadcrumb current={agent.name} trail={[{ href: "/agents", label: "Agents" }]} />
@@ -77,7 +92,11 @@ export function AgentProfile({ agent, observationTargets = [], observationsAvail
               View on trust8004<ExternalLink aria-hidden="true" />
             </a>
           </Button>
-          {current.quoteRequestAvailable ? (
+          {journey === "hire" && canCheckAvailability ? (
+            <Button asChild><a href="#validation">Check availability<ArrowUpRight aria-hidden="true" /></a></Button>
+          ) : journey === "hire" && hireFlow ? (
+            <Button asChild><a href="#hire-flow">{current.buyerAction === "prepare_hire" ? "Continue hire" : "Request fresh quote"}<ArrowUpRight aria-hidden="true" /></a></Button>
+          ) : journey === "profile" && current.quoteRequestAvailable ? (
             <>
               <Button asChild><Link href={`/hire/${agent.agentId}`}>Hire agent<ArrowUpRight aria-hidden="true" /></Link></Button>
               {!observationsAvailable && <p className="max-w-xs text-sm text-zinc-500">Automatic verification is unavailable. You can still request a new transactional quote.</p>}
@@ -92,6 +111,8 @@ export function AgentProfile({ agent, observationTargets = [], observationsAvail
           )}
         </div>
       </div>
+
+      {hireFlow && <div className="mt-8 scroll-mt-6" id="hire-flow">{hireFlow}</div>}
 
       <div className="mt-8">
         <EvidencePassportCard

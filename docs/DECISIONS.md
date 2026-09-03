@@ -773,3 +773,22 @@ Cross-session reconciliation between the observation/D1 migration (per `docs/OBS
   exposes that query. It does not block the canonical-route migration.
 - The migration ships as one reviewed Vercel candidate with deployment rollback,
   rather than keeping two UI implementations behind a long-lived feature flag.
+
+## 2026-09-03 — Complete route unification and honor declared ERC-8183 resources
+
+- Cards and table rows now expose one contextual action and one canonical agent
+  destination: `/hire/[agentId]`. The compatibility `/agents/[agentId]` route
+  redirects there, while the hire page composes identity, evidence, monitoring,
+  endpoint validation and the existing allowlisted Mainnet transaction flow.
+- `Reachable` remains operational evidence, never implicit hireability. A buyer
+  may trigger an immediate browser check or an endpoint-key-bound marketplace
+  validation; only the latter can update shared platform evidence, and neither
+  unsigned check creates a verified quote.
+- ERC-8183 HTTP validation reads the exact normalized URL declared by the agent.
+  It accepts the legacy `{status: "ok"}` response or a structured same-origin
+  support declaration with version, job types and jobs endpoint. The previous
+  Worker-only `/health` suffix could produce a false 404 for declarations such
+  as `/erc8183/status` and is removed from both browser and Worker behavior.
+- Generic signed-quote synchronization remains limited to transports with an
+  implemented quote contract. A protocol-valid third-party status endpoint is
+  presented as available for further validation, not as transaction-ready.

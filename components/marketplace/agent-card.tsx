@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowUpRight, ExternalLink, LockKeyhole, ShieldCheck } from "lucide-react";
+import { ArrowUpRight, ExternalLink, ShieldCheck } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -57,9 +57,18 @@ export function marketplaceStatus(agent: AgentCardViewModel, registry = false) {
   };
 }
 
+export function agentJourneyAction(agent: AgentCardViewModel): { href: string; label: string } {
+  const action = agent.buyerAction ?? (agent.quoteRequestAvailable === true ? "request_quote" : "unavailable");
+  if (action === "prepare_hire") return { href: `/hire/${agent.agentId}#hire-flow`, label: "Continue hire" };
+  if (action === "request_quote") return { href: `/hire/${agent.agentId}#hire-flow`, label: "Request quote" };
+  if (action === "check_availability") return { href: `/hire/${agent.agentId}#validation`, label: "Check availability" };
+  return { href: `/hire/${agent.agentId}`, label: "View agent" };
+}
+
 export function AgentCard({ agent, registry = false }: { agent: AgentCardViewModel; registry?: boolean }) {
   const canRequestQuote = agent.quoteRequestAvailable === true;
   const status = marketplaceStatus(agent, registry);
+  const action = agentJourneyAction(agent);
 
   return (
     <Card className="marketplace-surface marketplace-agent-evidence-card h-full gap-4 py-5" data-passport-state={agent.passportState}>
@@ -67,7 +76,9 @@ export function AgentCard({ agent, registry = false }: { agent: AgentCardViewMod
         <div className="flex items-start gap-3">
           <AgentAvatar {...(agent.imageUrl ? { imageUrl: agent.imageUrl } : {})} name={agent.name} />
           <div className="min-w-0 flex-1">
-            <CardTitle className="line-clamp-2 text-base leading-tight">{agent.name}</CardTitle>
+            <CardTitle className="line-clamp-2 text-base leading-tight">
+              <Link className="hover:text-primary" href={`/hire/${agent.agentId}`} prefetch={false}>{agent.name}</Link>
+            </CardTitle>
             <a
               aria-label={`View ${agent.name} on trust8004 (opens in a new tab)`}
               className="font-stat mt-1 inline-flex items-center gap-1 text-[11px] text-zinc-400 hover:text-white"
@@ -104,26 +115,13 @@ export function AgentCard({ agent, registry = false }: { agent: AgentCardViewMod
         <EvidenceRail ariaLabel={`Evidence for ${agent.name}`} density="summary" steps={agent.evidence} />
       </CardContent>
 
-      <CardFooter className="grid grid-cols-2 gap-3 border-white/10 bg-zinc-950/40 px-5 py-3">
-        <Button asChild size="sm" variant="outline">
-          <Link href={agent.href} prefetch={false}>
-            View profile
+      <CardFooter className="border-white/10 bg-zinc-950/40 px-5 py-3">
+        <Button asChild className="w-full" size="sm" variant={canRequestQuote ? "default" : "outline"}>
+          <Link href={action.href} prefetch={false}>
+            {action.label}
             <ArrowUpRight aria-hidden="true" data-icon="inline-end" />
           </Link>
         </Button>
-        {canRequestQuote ? (
-          <Button asChild size="sm">
-            <Link href={`/hire/${agent.agentId}`} prefetch={false}>
-              Hire agent
-              <ArrowUpRight aria-hidden="true" data-icon="inline-end" />
-            </Link>
-          </Button>
-        ) : (
-          <Button disabled size="sm" title="Hiring is not available for this agent" variant="secondary">
-            Hire agent
-            <LockKeyhole aria-hidden="true" data-icon="inline-end" />
-          </Button>
-        )}
       </CardFooter>
     </Card>
   );

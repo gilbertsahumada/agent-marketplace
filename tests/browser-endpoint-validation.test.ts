@@ -107,18 +107,35 @@ describe("browser endpoint validation", () => {
     });
   });
 
-  it("checks HTTP/ERC-8183 status without requesting a quote", async () => {
+  it("checks the exact declared HTTP/ERC-8183 resource without requesting a quote", async () => {
     const fetchImpl = vi.fn(async () => Response.json({ status: "ok" }));
     const result = await validateEndpointInBrowser(target({
       protocol: "erc8183_http",
-      endpoint: "https://seller.example/jobs",
+      endpoint: "https://seller.example/erc8183/status",
     }), { fetchImpl, now, monotonicNow: () => 10 });
 
     expect(fetchImpl).toHaveBeenCalledWith(
-      "https://seller.example/jobs/status",
+      "https://seller.example/erc8183/status",
       expect.objectContaining({ method: "GET" }),
     );
     expect(result).toMatchObject({ outcome: "protocol_valid", method: "GET" });
+  });
+
+  it("accepts a structured ERC-8183 support declaration in the browser", async () => {
+    const fetchImpl = vi.fn(async () => Response.json({
+      erc8183: {
+        supported: true,
+        version: "0.1.0",
+        jobTypes: ["weekly_report"],
+        endpoint: "https://seller.example/erc8183/jobs",
+      },
+    }));
+    const result = await validateEndpointInBrowser(target({
+      protocol: "erc8183_http",
+      endpoint: "https://seller.example/erc8183/status",
+    }), { fetchImpl, now, monotonicNow: () => 10 });
+
+    expect(result).toMatchObject({ outcome: "protocol_valid", capabilityCount: 1 });
   });
 
   it("reports browser policy/network failures as browser-blocked, never unreachable", async () => {

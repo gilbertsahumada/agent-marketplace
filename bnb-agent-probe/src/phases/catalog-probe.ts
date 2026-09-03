@@ -124,6 +124,22 @@ function routeUrl(endpoint: string, route: string): string {
   return url.toString();
 }
 
+function erc8183CapabilityCount(value: Record<string, unknown>, endpoint: string): number {
+  if (value.status === "ok") return 0;
+  const declaration = record(value.erc8183);
+  if (declaration.supported !== true
+    || typeof declaration.version !== "string" || declaration.version.trim() === ""
+    || !Array.isArray(declaration.jobTypes)
+    || declaration.jobTypes.length === 0
+    || !declaration.jobTypes.every((jobType) => typeof jobType === "string" && jobType.trim() !== "")
+    || typeof declaration.endpoint !== "string"
+    || !isSyntacticallyPublicHttpsUrl(declaration.endpoint)
+    || new URL(declaration.endpoint).origin !== new URL(endpoint).origin) {
+    throw new Error("INVALID_RESPONSE");
+  }
+  return declaration.jobTypes.length;
+}
+
 function mcpHeaders(sessionId?: string): Record<string, string> {
   return {
     accept: "application/json, text/event-stream",
@@ -219,9 +235,7 @@ async function getProbe(
 ): Promise<{ status: number; capabilityCount: number; stageDurationsMs: Record<string, number>; commerceCapability: "erc8183_a2a" | null }> {
   const destination = target.protocol === "a2a"
     ? routeUrl(target.endpoint, ".well-known/agent-card.json")
-    : target.protocol === "erc8183_http"
-      ? routeUrl(target.endpoint, "health")
-      : target.endpoint;
+    : target.endpoint;
   const requestStarted = clock();
   const request = (url: string) => fetchImpl(url, {
     method: "GET",
@@ -261,8 +275,12 @@ async function getProbe(
     return { status: response.status, capabilityCount: value.skills.length,
       stageDurationsMs: { agentCard: requestDuration }, commerceCapability };
   }
-  if (target.protocol === "erc8183_http" && value.status !== "ok") throw new Error("INVALID_RESPONSE");
-  return { status: response.status, capabilityCount: 0, stageDurationsMs: { health: requestDuration }, commerceCapability: null };
+  return {
+    status: response.status,
+    capabilityCount: erc8183CapabilityCount(value, target.endpoint),
+    stageDurationsMs: { status: requestDuration },
+    commerceCapability: null,
+  };
 }
 
 export async function probeCatalogEndpoint(

@@ -1,11 +1,13 @@
+import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { CatalogCandidate } from "../src/business/entities/catalog-candidate.ts";
 
-const { executePassport, executeConfig, renderDemo } = vi.hoisted(() => ({
+const { executePassport, executeConfig, renderDemo, redirectRoute } = vi.hoisted(() => ({
   executePassport: vi.fn(),
   executeConfig: vi.fn(),
   renderDemo: vi.fn(),
+  redirectRoute: vi.fn(),
 }));
 
 vi.mock("@/src/business/composition", () => ({
@@ -20,13 +22,29 @@ vi.mock("@/components/spikes/erc8183-browser-spike", () => ({
   },
 }));
 
+vi.mock("@/components/marketplace/agent-profile", () => ({
+  AgentProfile: ({ catalogCandidate, hireFlow }: {
+    catalogCandidate: CatalogCandidate;
+    hireFlow?: ReturnType<typeof createElement> | null;
+  }) => createElement("main", {},
+    catalogCandidate.state?.buyerAction === "check_availability"
+      && (catalogCandidate.state.canRequestBrowserValidation
+        || catalogCandidate.state.canRequestInfrastructureValidation)
+      ? createElement("a", { href: "#validation" }, "Check availability")
+      : null,
+    hireFlow,
+  ),
+}));
+
 vi.mock("next/navigation", () => ({
+  redirect: redirectRoute,
   notFound: () => {
     throw new Error("NEXT_NOT_FOUND");
   },
 }));
 
 const { default: HirePage } = await import("../app/hire/[agentId]/page.tsx");
+const { default: AgentPage } = await import("../app/agents/[agentId]/page.tsx");
 
 function candidate(state: NonNullable<CatalogCandidate["state"]>): CatalogCandidate {
   return {
@@ -102,6 +120,12 @@ describe("hire page normalized commerce gate", () => {
     executeConfig.mockReturnValue({ agentId: 303779 });
   });
 
+  it("redirects the former profile route to the canonical hire journey", async () => {
+    await AgentPage({ params: Promise.resolve({ agentId: "113284" }) });
+
+    expect(redirectRoute).toHaveBeenCalledWith("/hire/113284");
+  });
+
   it("does not mount the ERC-8183 flow while admission is pending", async () => {
     await render(state({
       commerceStatus: "admission_pending",
@@ -139,7 +163,7 @@ describe("hire page normalized commerce gate", () => {
       blockingReasons: ["COMMERCE_NOT_ADMITTED"],
     }));
 
-    expect(markup).toContain('href="/agents/303779#validation"');
+    expect(markup).toContain('href="#validation"');
     expect(markup).toContain("Check availability");
   });
 
