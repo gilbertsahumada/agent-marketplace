@@ -39,6 +39,7 @@ vi.mock("@/components/marketplace/agent-profile", () => ({
 
 vi.mock("next/navigation", () => ({
   redirect: redirectRoute,
+  permanentRedirect: redirectRoute,
   notFound: () => {
     throw new Error("NEXT_NOT_FOUND");
   },
@@ -46,6 +47,9 @@ vi.mock("next/navigation", () => ({
 
 const { default: HirePage } = await import("../app/hire/[agentId]/page.tsx");
 const { default: AgentPage } = await import("../app/agents/[agentId]/page.tsx");
+const { default: PassportPage } = await import("../app/agents/[agentId]/passport/page.tsx");
+const { default: MainnetDemoAliasPage } = await import("../app/demo/erc8183-mainnet/page.tsx");
+const { default: Job514ProofAliasPage } = await import("../app/proof/job-514/page.tsx");
 
 function candidate(state: NonNullable<CatalogCandidate["state"]>): CatalogCandidate {
   return {
@@ -125,6 +129,20 @@ describe("hire page normalized commerce gate", () => {
     await AgentPage({ params: Promise.resolve({ agentId: "113284" }) });
 
     expect(redirectRoute).toHaveBeenCalledWith("/hire/113284");
+  });
+
+  it("redirects the former Passport page to the canonical hire journey", async () => {
+    await PassportPage({ params: Promise.resolve({ agentId: "113284" }) });
+
+    expect(redirectRoute).toHaveBeenCalledWith("/hire/113284");
+  });
+
+  it("redirects retired demo and proof aliases to their canonical destinations", async () => {
+    MainnetDemoAliasPage();
+    expect(redirectRoute).toHaveBeenCalledWith("/hire/303779");
+
+    Job514ProofAliasPage();
+    expect(redirectRoute).toHaveBeenCalledWith("/jobs/514");
   });
 
   it("does not mount the ERC-8183 flow while admission is pending", async () => {
