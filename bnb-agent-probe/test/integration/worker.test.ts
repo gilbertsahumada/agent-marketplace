@@ -1287,6 +1287,61 @@ describe("WP1 in the Workers runtime", () => {
     expect(ack).toHaveBeenCalledOnce();
   });
 
+  it("returns the request-scoped observation with validation status", async () => {
+    const now = 1_788_000_000_000;
+    const agentKey = "eip155:56:42";
+    const endpointKey = "7".repeat(64);
+    const observationInsert = await env.DB.prepare(`INSERT INTO catalog_observations (
+      agentKey, endpointKey, protocol, source, outcome, observedAt, expiresAt,
+      httpStatus, durationMs, detailsJson, validationKind, verificationLevel
+    ) VALUES (?, ?, 'mcp', 'buyer_refresh', 'protocol_valid', ?, ?, 200, 340, '{}', 'protocol', 'platform_observed')`)
+      .bind(agentKey, endpointKey, now, now + 60_000).run();
+    const observation = await env.DB.prepare("SELECT id FROM catalog_observations WHERE endpointKey = ?")
+      .bind(endpointKey).first<{ id: number }>();
+    expect(observationInsert.success).toBe(true);
+    expect(observation?.id).toEqual(expect.any(Number));
+    await env.DB.prepare(`INSERT INTO catalog_validation_requests (
+      dedupeKey, agentKey, endpointKey, validationKind, requestedBy, callerKey,
+      status, priority, createdAt, startedAt, completedAt, attemptCount,
+      resultObservationId
+    ) VALUES (?, ?, ?, 'protocol', 'browser_fallback', ?, 'completed', 1000, ?, ?, ?, 2, ?)`)
+      .bind(`${agentKey}:${endpointKey}:protocol`, agentKey, endpointKey, VALID_CALLER_KEY,
+        now - 1_000, now - 900, now, observation!.id).run();
+
+    const request = await env.DB.prepare("SELECT id FROM catalog_validation_requests WHERE endpointKey = ?")
+      .bind(endpointKey).first<{ id: number }>();
+    expect(request?.id).toEqual(expect.any(Number));
+    const privateEnv = { ...env, BUYER_OBSERVATION_SECRET: "catalog-secret" } as unknown as Env;
+    const unauthorized = await createWorker({ now: () => now }).fetch(
+      new Request(`https://worker.test/catalog-validations/${request!.id}`),
+      privateEnv,
+      createExecutionContext(),
+    );
+    const status = await createWorker({ now: () => now }).fetch(
+      new Request(`https://worker.test/catalog-validations/${request!.id}`, {
+        headers: { authorization: "Bearer catalog-secret" },
+      }),
+      privateEnv,
+      createExecutionContext(),
+    );
+    expect(unauthorized.status).toBe(401);
+    expect(await status.json()).toMatchObject({
+      schemaVersion: 2,
+      validation: {
+        status: "completed",
+        result: {
+          protocol: "mcp",
+          source: "buyer_refresh",
+          outcome: "protocol_valid",
+          observedAt: now,
+          expiresAt: now + 60_000,
+          httpStatus: 200,
+          durationMs: 340,
+        },
+      },
+    });
+  });
+
   it("does not share an on-demand validation request between agents sharing an endpoint", async () => {
     const now = 1_788_000_000_000;
     const endpointKey = "a".repeat(64);
