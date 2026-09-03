@@ -67,6 +67,15 @@ describe("AgentValidationActions", () => {
         completedAt: 3,
         errorCode: null,
         hasResult: true,
+        result: {
+          protocol: "mcp",
+          source: "buyer_refresh",
+          outcome: "protocol_valid",
+          observedAt: 3,
+          expiresAt: 60_003,
+          httpStatus: 200,
+          durationMs: 125,
+        },
       }));
     vi.stubGlobal("fetch", fetchMock);
     render(<AgentValidationActions agentId="45422" targets={[{
@@ -90,6 +99,25 @@ describe("AgentValidationActions", () => {
     expect(refresh).toHaveBeenCalledOnce();
   });
 
+  it("explains when a fresh shared observation is reused", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({
+      schemaVersion: 2,
+      status: "completed",
+      reused: true,
+      requestId: null,
+    }, { status: 200 })));
+    render(<AgentValidationActions agentId="45422" targets={[{
+      endpointKey: "r".repeat(64),
+      protocol: "a2a",
+      endpoint: "https://seller.example/agent-card.json",
+    }]} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /validate through marketplace/i }));
+
+    expect(await screen.findByText(/fresh shared A2A observation already exists/i)).toBeInTheDocument();
+    expect(refresh).toHaveBeenCalledOnce();
+  });
+
   it("does not offer infrastructure validation for a target without a catalog endpoint key", () => {
     render(<AgentValidationActions agentId="45422" targets={[{
       protocol: "mcp",
@@ -97,6 +125,66 @@ describe("AgentValidationActions", () => {
     }]} />);
 
     expect(screen.queryByRole("button", { name: /validate through marketplace/i })).not.toBeInTheDocument();
+  });
+
+  it("shows the latest shared observation separately from a new browser check", () => {
+    render(<AgentValidationActions agentId="45422" initialObservations={[{
+      endpointKey: "e".repeat(64),
+      protocol: "mcp",
+      source: "worker_probe",
+      outcome: "protocol_valid",
+      observedAt: Date.now() - 1_000,
+      expiresAt: Date.now() + 60_000,
+      httpStatus: 200,
+      durationMs: 340,
+    }]} targets={[{
+      endpointKey: "e".repeat(64),
+      protocol: "mcp",
+      endpoint: "https://seller.example/mcp",
+    }]} />);
+
+    expect(screen.getByText(/Shared: protocol valid · scheduled Worker/)).toBeInTheDocument();
+    expect(screen.getByText(/HTTP 200 · 340 ms/)).toBeInTheDocument();
+    expect(screen.queryByText(/no browser result was recorded/i)).not.toBeInTheDocument();
+  });
+
+  it("reports the committed protocol outcome, transport and attempt count", async () => {
+    vi.stubGlobal("fetch", vi.fn()
+      .mockResolvedValueOnce(Response.json({
+        schemaVersion: 2,
+        status: "queued",
+        requestId: "opaque.result",
+        pollAfterMs: 0,
+      }, { status: 202 }))
+      .mockResolvedValueOnce(Response.json({
+        schemaVersion: 2,
+        requestId: "opaque.result",
+        status: "completed",
+        attemptCount: 2,
+        createdAt: 1,
+        startedAt: 2,
+        completedAt: 3,
+        errorCode: null,
+        hasResult: true,
+        result: {
+          protocol: "mcp",
+          source: "buyer_refresh",
+          outcome: "protocol_valid",
+          observedAt: 3,
+          expiresAt: 60_003,
+          httpStatus: 200,
+          durationMs: 340,
+        },
+      })));
+    render(<AgentValidationActions agentId="45422" targets={[{
+      endpointKey: "f".repeat(64),
+      protocol: "mcp",
+      endpoint: "https://seller.example/mcp",
+    }]} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /validate through marketplace/i }));
+
+    expect(await screen.findByText(/MCP protocol valid · HTTP 200 · 340 ms · 2 attempts/i)).toBeInTheDocument();
   });
 
   it("keeps a non-terminal validation retryable after the bounded polling window", async () => {
