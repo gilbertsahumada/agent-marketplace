@@ -448,7 +448,10 @@ See the [ERC-8183 Gate 1 interaction diagram](diagrams/erc8183-gate1-flow.html).
 API, CLI, MCP), the key documents — [docs/API.md](docs/API.md),
 [docs/HIRE-SPEC.md](docs/HIRE-SPEC.md), [docs/MCP.md](docs/MCP.md) — and the
 current verified state. Agents connect directly at
-`https://marketplace.trust8004.xyz/api/mcp`.
+`https://marketplace.trust8004.xyz/api/mcp`. [docs/RELEASE.md](docs/RELEASE.md)
+is the WP7 release gate: the local checks, the staging smoke with the switches
+off and on, the kill-switch and rollback proof, and the operator steps that
+production still needs.
 
 ## License
 

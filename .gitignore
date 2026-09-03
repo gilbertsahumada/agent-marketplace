@@ -32,6 +32,7 @@ tunnel*.pid
 !/docs/MARKETPLACE.md
 !/docs/FRONTEND_HIRE_JOURNEY_SPEC.md
 !/docs/OBSERVATION_INFRASTRUCTURE_SPEC.md
+!/docs/RELEASE.md
 .claude/
 .vercel/
 .DS_Store
