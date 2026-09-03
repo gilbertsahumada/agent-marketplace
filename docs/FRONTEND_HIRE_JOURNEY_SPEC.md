@@ -32,7 +32,7 @@ This document owns the browser experience from discovery through the handoff to 
 
 - `/agents`: catalog, filters, search, cards/table, loading and empty states.
 - `/hire/[agentId]`: the canonical agent detail and hiring page.
-- The temporary compatibility redirect from `/agents/[agentId]`.
+- The permanent compatibility redirect from `/agents/[agentId]`.
 - Direct browser validation for declared operational endpoints when technically possible.
 - Display of evidence, provenance, freshness, failures and blockers.
 - The UI handoff into the ERC-8183 quote and transaction interfaces owned by the hiring session.
@@ -129,9 +129,14 @@ check or shows one concise blocker.
 
 Compatibility only:
 
-- First release: temporary redirect to `/hire/[agentId]` so rollback remains possible.
-- After production verification and link migration: permanent redirect.
+- Permanent redirect to `/hire/[agentId]`; the unified hire workspace is the
+  only agent-facing destination.
 - No independent profile implementation or duplicated data fetching remains here.
+
+The former visual Passport route, `/agents/[agentId]/passport`, is also a
+permanent compatibility redirect to the same hire workspace. The machine-
+readable API at `/api/marketplace/agents/[agentId]/passport` remains available
+for evidence detail and CLI/MCP consumers.
 
 ### 4.4 `/jobs/[jobId]`
 
@@ -405,6 +410,8 @@ Delete code only after tests prove no remaining consumer:
 
 - Separate `View profile` CTA and duplicated profile-only navigation.
 - Independent `/agents/[agentId]` page implementation after the redirect is in place.
+- Independent visual Passport page under `/agents/[agentId]/passport`; retain
+  its machine-readable API route for CLI/MCP consumers.
 - Components duplicated between profile and hire pages; retain one hire-oriented implementation.
 - Browser validation targets that classify unknown or missing service types as `web`.
 - Test buttons for websites and social links.
@@ -472,9 +479,9 @@ Run these stories against local Worker/D1 fixtures:
 ## 17. Rollout and rollback
 
 1. Ship route unification directly after component, route and production-build gates pass.
-2. Keep the old profile route as a temporary redirect.
+2. Keep `/agents/[agentId]` and `/agents/[agentId]/passport` as permanent compatibility redirects.
 3. Preserve the already shipped endpoint-scoped browser validation and infrastructure fallback contracts.
-4. Promote the redirect to permanent and delete duplicate code only after production verification.
+4. Keep the machine-readable Passport API, trust8004 links and chain-backed job routes; remove only duplicate visual surfaces.
 
 Rollback restores the previous Vercel deployment while preserving backend evidence and D1 migrations. No second implementation or long-lived feature flag is retained.
 
