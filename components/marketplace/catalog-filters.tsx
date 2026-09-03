@@ -1,12 +1,12 @@
 "use client";
 
-import { RotateCcw } from "lucide-react";
+import { ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Field, FieldGroup, FieldLabel, FieldLegend, FieldSet } from "@/components/ui/field";
-import { Separator } from "@/components/ui/separator";
 import type { MarketplaceCategory } from "@/src/business/entities/marketplace-agent";
 import type { CatalogFacetCounts, CatalogStatus } from "@/src/business/entities/catalog-candidate";
+import type { MarketplaceReachability } from "@/src/business/use-cases/list-marketplace-agents";
 import { useCatalogNavigation } from "./catalog-navigation";
 
 const statusFilters: Array<{ value: CatalogStatus; label: string }> = [
@@ -27,28 +27,68 @@ const categoryFilters: Array<{ value: MarketplaceCategory; label: string }> = [
   { value: "health_factor_monitoring", label: "Health factor monitoring" },
 ];
 
-export function CatalogFilters({ statuses, categories, counts, q, idPrefix = "catalog" }: {
+export function CatalogFilters({ statuses, categories, reachability, counts, q, idPrefix = "catalog" }: {
   statuses: CatalogStatus[];
   categories: MarketplaceCategory[];
+  reachability: MarketplaceReachability[];
   counts?: CatalogFacetCounts;
   q?: string;
   idPrefix?: string;
 }) {
   const { navigate, pending } = useCatalogNavigation();
 
-  const apply = (nextStatuses: CatalogStatus[], nextCategories: MarketplaceCategory[]) => {
+  const apply = (
+    nextStatuses: CatalogStatus[],
+    nextCategories: MarketplaceCategory[],
+    nextReachability: MarketplaceReachability[],
+  ) => {
     const params = new URLSearchParams({ view: "marketplace" });
     for (const status of nextStatuses) params.append("status", status);
     for (const category of nextCategories) params.append("category", category);
+    for (const value of nextReachability) params.append("reachability", value);
     if (q) params.set("q", q);
     navigate(`/agents?${params.toString()}`);
   };
 
   return (
-    <div aria-busy={pending} className="flex flex-col gap-6">
-      <FieldSet>
-        <FieldLegend className="font-eyebrow text-zinc-500" variant="label">Evidence</FieldLegend>
-        <FieldGroup data-slot="checkbox-group">
+    <div aria-busy={pending} className="flex flex-col">
+      <div className="flex items-center justify-between border-b border-white/10 px-4 py-4">
+        <p className="text-sm font-semibold text-white">Filters</p>
+        <Button
+          aria-label="Clear filters"
+          className="h-auto cursor-pointer px-0 text-xs text-zinc-400 hover:text-white"
+          disabled={pending}
+          onClick={() => navigate("/agents?view=marketplace")}
+          type="button"
+          variant="link"
+        >
+          Clear all
+        </Button>
+      </div>
+
+      <details className="group border-b border-white/10 px-4 py-4" open>
+        <summary className="flex cursor-pointer list-none items-center justify-between text-sm font-medium text-white [&::-webkit-details-marker]:hidden">
+          Evidence
+          <ChevronDown aria-hidden="true" className="size-4 text-zinc-500 transition-transform group-open:rotate-180" />
+        </summary>
+        <FieldSet className="mt-4">
+          <FieldLegend className="sr-only" variant="label">Evidence</FieldLegend>
+          <FieldGroup data-slot="checkbox-group">
+          <Field orientation="horizontal">
+            <Checkbox
+              checked={reachability.includes("live")}
+              disabled={pending}
+              id={`${idPrefix}-reachability-live`}
+              onCheckedChange={(checked) => apply(
+                statuses,
+                categories,
+                checked ? [...reachability, "live"] : reachability.filter((value) => value !== "live"),
+              )}
+            />
+            <FieldLabel className="flex cursor-pointer items-center justify-between gap-3 text-sm font-normal text-zinc-300" htmlFor={`${idPrefix}-reachability-live`}>
+              <span>Reachable now</span>
+            </FieldLabel>
+          </Field>
           {statusFilters.map((filter) => {
             const id = `${idPrefix}-status-${filter.value}`;
             return (
@@ -61,7 +101,7 @@ export function CatalogFilters({ statuses, categories, counts, q, idPrefix = "ca
                     const next = checked
                       ? [...statuses, filter.value]
                       : statuses.filter((status) => status !== filter.value);
-                    apply(next, categories);
+                    apply(next, categories, reachability);
                   }}
                 />
                 <FieldLabel className="flex cursor-pointer items-center justify-between gap-3 text-sm font-normal text-zinc-300" htmlFor={id}>
@@ -71,14 +111,18 @@ export function CatalogFilters({ statuses, categories, counts, q, idPrefix = "ca
               </Field>
             );
           })}
-        </FieldGroup>
-      </FieldSet>
+          </FieldGroup>
+        </FieldSet>
+      </details>
 
-      <Separator />
-
-      <FieldSet>
-        <FieldLegend className="font-eyebrow text-zinc-500" variant="label">Outcome</FieldLegend>
-        <FieldGroup data-slot="checkbox-group">
+      <details className="group border-b border-white/10 px-4 py-4" open>
+        <summary className="flex cursor-pointer list-none items-center justify-between text-sm font-medium text-white [&::-webkit-details-marker]:hidden">
+          Outcome
+          <ChevronDown aria-hidden="true" className="size-4 text-zinc-500 transition-transform group-open:rotate-180" />
+        </summary>
+        <FieldSet className="mt-4">
+          <FieldLegend className="sr-only" variant="label">Outcome</FieldLegend>
+          <FieldGroup data-slot="checkbox-group">
           {categoryFilters.map((filter) => {
             const id = `${idPrefix}-category-${filter.value}`;
             return (
@@ -90,6 +134,7 @@ export function CatalogFilters({ statuses, categories, counts, q, idPrefix = "ca
                   onCheckedChange={(checked) => apply(
                     statuses,
                     checked ? [...categories, filter.value] : categories.filter((category) => category !== filter.value),
+                    reachability,
                   )}
                 />
                 <FieldLabel className="flex cursor-pointer items-center justify-between gap-3 text-sm font-normal text-zinc-300" htmlFor={id}>
@@ -99,19 +144,10 @@ export function CatalogFilters({ statuses, categories, counts, q, idPrefix = "ca
               </Field>
             );
           })}
-        </FieldGroup>
-      </FieldSet>
+          </FieldGroup>
+        </FieldSet>
+      </details>
 
-      <Button
-        className="w-full"
-        disabled={pending}
-        onClick={() => navigate("/agents?view=marketplace")}
-        type="button"
-        variant="outline"
-      >
-        <RotateCcw aria-hidden="true" data-icon="inline-start" />
-        Clear filters
-      </Button>
     </div>
   );
 }

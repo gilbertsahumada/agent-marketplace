@@ -3,6 +3,7 @@ import {
   type CatalogCandidate,
 } from "@/src/business/entities/catalog-candidate";
 import type { AgentCardViewModel, EvidenceStepViewModel } from "./presentation-types";
+import type { AgentProtocolLabel } from "./presentation-types";
 
 const PLATFORM_SOURCES = new Set(["marketplace_probe", "worker_probe", "buyer_refresh", "migration"]);
 const FAILURE_OUTCOMES = new Set([
@@ -49,6 +50,19 @@ function isPlatformReachabilityObservation(
 }
 
 function time(value: number): string { return new Date(value).toISOString(); }
+
+function declaredProtocols(candidate: CatalogCandidate): AgentProtocolLabel[] {
+  const labels = candidate.declarations.flatMap((declaration): AgentProtocolLabel[] => {
+    const protocol = declaration.declaredProtocol ?? declaration.validationProtocol ?? declaration.protocol;
+    if (protocol === "a2a") return ["A2A"];
+    if (protocol === "mcp") return ["MCP"];
+    if (protocol === "erc8183_http") return ["ERC-8183 HTTP"];
+    if (protocol === "web") return ["Web"];
+    if (protocol === "x402") return ["x402"];
+    return [];
+  });
+  return [...new Set(labels)];
+}
 
 export function catalogCandidateCard(
   candidate: CatalogCandidate,
@@ -150,6 +164,7 @@ export function catalogCandidateCard(
     buyerAction: candidate.state?.buyerAction ?? "unavailable",
     blockingReasons: candidate.state?.blockingReasons ?? ["CATALOG_STATE_UNAVAILABLE"],
     categories: candidate.categories,
+    protocols: declaredProtocols(candidate),
     href: `/hire/${candidate.agentId}`,
     hireability: canRequestQuote ? (freshQuote ? "hireable" : "quote_stale") : "listed_only",
     evidence,

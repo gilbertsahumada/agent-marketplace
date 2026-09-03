@@ -32,12 +32,12 @@ function AgentComparisonTable({ agents, registry }: { agents: AgentCardViewModel
       <Table aria-label="Agent comparison" containerLabel="Scrollable agent comparison">
         <TableHeader>
           <TableRow className="bg-white/[0.02] hover:bg-white/[0.02]">
-            <TableHead className="min-w-64 px-4">Agent</TableHead>
-            <TableHead className="min-w-44">Outcome</TableHead>
-            <TableHead className="min-w-44">Hiring status</TableHead>
-            <TableHead className="min-w-96">Evidence</TableHead>
-            <TableHead>Trust</TableHead>
-            <TableHead className="px-4 text-right">Action</TableHead>
+            <TableHead className="h-10 min-w-56 px-4 text-xs font-medium text-zinc-400">Agent</TableHead>
+            <TableHead className="h-10 min-w-36 text-xs font-medium text-zinc-400">Outcome</TableHead>
+            <TableHead className="h-10 min-w-40 text-xs font-medium text-zinc-400">Hiring status</TableHead>
+            <TableHead className="h-10 min-w-80 text-xs font-medium text-zinc-400">Evidence</TableHead>
+            <TableHead className="h-10 min-w-24 text-xs font-medium text-zinc-400">Trust</TableHead>
+            <TableHead className="h-10 min-w-32 px-4 text-right text-xs font-medium text-zinc-400">Action</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -46,17 +46,19 @@ function AgentComparisonTable({ agents, registry }: { agents: AgentCardViewModel
             const canRequestQuote = agent.quoteRequestAvailable === true;
             const action = agentJourneyAction(agent);
             return (
-              <TableRow className={cn(canRequestQuote && "bg-primary/[0.03]")} key={agent.agentId}>
-                <TableCell className={cn("px-4 py-5", canRequestQuote && "border-l-2 border-l-primary")}>
+              <TableRow className={cn(canRequestQuote && "bg-primary/[0.02]")} key={agent.agentId}>
+                <TableCell className="px-4 py-4">
                   <div className="flex items-center gap-3">
-                    <AgentAvatar {...(agent.imageUrl ? { imageUrl: agent.imageUrl } : {})} name={agent.name} />
+                    <div className="shrink-0 [&_[data-slot=avatar]]:size-9">
+                      <AgentAvatar {...(agent.imageUrl ? { imageUrl: agent.imageUrl } : {})} name={agent.name} />
+                    </div>
                     <div className="min-w-0">
-                      <p className="max-w-52 truncate font-medium text-white">
+                      <p className="max-w-48 truncate text-sm font-medium text-white">
                         <Link className="hover:text-primary" href={`/hire/${agent.agentId}`} prefetch={false}>{agent.name}</Link>
                       </p>
                       <a
                         aria-label={`View ${agent.name} on trust8004 (opens in a new tab)`}
-                        className="mt-1 inline-flex items-center gap-1 text-xs text-zinc-400 hover:text-white"
+                        className="mt-1 inline-flex items-center gap-1 text-[11px] text-zinc-500 hover:text-white"
                         href={trust8004AgentHref(agent.agentId)}
                         rel="noopener noreferrer"
                         target="_blank"
@@ -67,17 +69,17 @@ function AgentComparisonTable({ agents, registry }: { agents: AgentCardViewModel
                     </div>
                   </div>
                 </TableCell>
-                <TableCell className="whitespace-normal text-zinc-300">{outcomeLabel(agent)}</TableCell>
+                <TableCell className="whitespace-normal text-sm text-zinc-300">{outcomeLabel(agent)}</TableCell>
                 <TableCell>
-                  <Badge className={status.className} variant="outline">
+                  <Badge className={cn("text-xs", status.className)} variant="outline">
                     {canRequestQuote && <ShieldCheck aria-hidden="true" />}
                     {status.label}
                   </Badge>
                 </TableCell>
-                <TableCell className="py-5">
-                  <EvidenceRail ariaLabel={`Evidence for ${agent.name}`} density="summary" steps={agent.evidence} />
+                <TableCell className="py-4">
+                  <EvidenceRail ariaLabel={`Evidence for ${agent.name}`} density="table" steps={agent.evidence} />
                 </TableCell>
-                <TableCell className="text-zinc-400">{typeof agent.trustScore === "number" ? "Derived" : "Unavailable"}</TableCell>
+                <TableCell className="text-sm text-zinc-400">{typeof agent.trustScore === "number" ? "Derived" : "Unavailable"}</TableCell>
                 <TableCell className="px-4">
                   <div className="flex justify-end">
                     <Button asChild size="sm" variant={canRequestQuote ? "default" : "outline"}>
@@ -97,10 +99,11 @@ function AgentComparisonTable({ agents, registry }: { agents: AgentCardViewModel
   );
 }
 
-export function CatalogResults({ agents, registry = false, toolbar, emptyContent }: {
+export function CatalogResults({ agents, registry = false, toolbar, filters, emptyContent }: {
   agents: AgentCardViewModel[];
   registry?: boolean;
   toolbar?: ReactNode;
+  filters?: ReactNode;
   emptyContent?: ReactNode;
 }) {
   const { pending } = useCatalogNavigation();
@@ -112,18 +115,20 @@ export function CatalogResults({ agents, registry = false, toolbar, emptyContent
     <Tabs className="gap-5" defaultValue="cards">
       <div className="grid items-center gap-3 min-[30rem]:grid-cols-[minmax(0,1fr)_auto]">
         {toolbar ?? <span />}
-        <TabsList aria-label="Catalog layout" className="justify-self-start min-[30rem]:justify-self-end">
-          <TabsTrigger value="cards"><LayoutGrid aria-hidden="true" data-icon="inline-start" />Cards</TabsTrigger>
-          <TabsTrigger value="table"><List aria-hidden="true" data-icon="inline-start" />Table</TabsTrigger>
+        <TabsList aria-label="Catalog layout" className="h-10 border border-white/10 bg-black/30 justify-self-start min-[30rem]:justify-self-end">
+          <TabsTrigger className="h-full px-3" value="cards"><LayoutGrid aria-hidden="true" data-icon="inline-start" />Cards</TabsTrigger>
+          <TabsTrigger className="h-full px-3" value="table"><List aria-hidden="true" data-icon="inline-start" />Table</TabsTrigger>
         </TabsList>
       </div>
+
+      {filters}
 
       {pending ? (
         <CatalogResultsSkeleton />
       ) : visibleAgents.length > 0 ? (
         <>
           <TabsContent value="cards">
-            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            <div className="grid gap-5 md:grid-cols-2">
               {visibleAgents.map((agent) => <AgentCard agent={agent} key={agent.agentId} registry={registry} />)}
             </div>
           </TabsContent>

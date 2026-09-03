@@ -76,6 +76,18 @@ describe("catalog candidate card", () => {
     expect(card.buyerAction).toBe("request_quote");
     expect(card.blockingReasons).toEqual(["COMMERCE_NOT_ADMITTED"]);
     expect(card.monitoring).toMatchObject({ attemptCount: 17 });
+    expect(card.protocols).toEqual(["A2A"]);
+  });
+
+  it("surfaces every declared transport as a deduplicated card badge", () => {
+    const value = candidate();
+    value.declarations.push(
+      { ...value.declarations[0]!, endpointKey: "b".repeat(64), protocol: "mcp", declaredProtocol: "mcp" },
+      { ...value.declarations[0]!, endpointKey: "c".repeat(64), protocol: "erc8183_http", declaredProtocol: "erc8183_http" },
+      { ...value.declarations[0]!, endpointKey: "d".repeat(64), protocol: "a2a", declaredProtocol: "a2a" },
+    );
+
+    expect(catalogCandidateCard(value, NOW).protocols).toEqual(["A2A", "MCP", "ERC-8183 HTTP"]);
   });
 
   it.each([

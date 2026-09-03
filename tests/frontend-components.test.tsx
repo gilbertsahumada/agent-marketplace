@@ -539,8 +539,38 @@ describe("marketplace presentation rules", () => {
       monitoring: { state: "probed", source: "worker", latestOutcome: "protocol_valid" },
     } }));
 
-    expect(screen.getByRole("link", { name: "Hire agent" }))
+    expect(screen.getByRole("link", { name: "Check availability" }))
       .toHaveAttribute("href", "/hire/113284#validation");
+  });
+
+  it("shows declared transports and a concise platform observation on the catalog card", () => {
+    render(createElement(AgentCard, { agent: {
+      agentId: "113284",
+      name: "Topaz Agent",
+      description: "Agent",
+      operator: "third_party",
+      categories: [],
+      protocols: ["A2A", "MCP", "ERC-8183 HTTP"],
+      href: "/hire/113284",
+      hireability: "listed_only",
+      buyerAction: "check_availability",
+      evidence: evidence.map((step) => step.kind === "reachable" ? { ...step, status: "verified" as const } : step),
+      passportState: "evaluated",
+      monitoring: {
+        state: "probed",
+        source: "worker",
+        latestOutcome: "protocol_valid",
+        lastAttemptAt: "2026-09-03T12:00:00.000Z",
+        latestHttpStatus: 200,
+        latestDurationMs: 346,
+      },
+    } }));
+
+    expect(screen.getByLabelText("Declared protocols")).toHaveTextContent("A2AMCPERC-8183 HTTP");
+    expect(screen.getByText("Platform observation")).toBeInTheDocument();
+    expect(screen.getByText("Protocol valid")).toBeInTheDocument();
+    expect(screen.getByText("HTTP 200 · 346 ms")).toBeInTheDocument();
+    expect(screen.getByText(/Last checked/)).toBeInTheDocument();
   });
 
   it("keeps the quote CTA for an admitted seller that declares only ERC-8183", () => {
@@ -794,12 +824,14 @@ describe("marketplace presentation rules", () => {
       query: { view: "all", sort: "newest" },
       registryTotal: 80_058,
     }));
-    expect(screen.getByRole("heading", { name: "Hire an agent" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Agents" })).toHaveClass("sr-only");
     const totals = screen.getByLabelText("Catalog totals");
     expect(within(totals).getByText("ERC-8004 registered")).toBeInTheDocument();
     expect(within(totals).getByText("80,058")).toBeInTheDocument();
     expect(within(totals).getByText("Operational candidates")).toBeInTheDocument();
     expect(within(totals).getByText("30,006")).toBeInTheDocument();
+    expect(screen.queryByRole("navigation", { name: "Catalog scope" })).not.toBeInTheDocument();
+    expect(screen.getByTestId("catalog-summary")).toContainElement(totals);
     expect(screen.queryByText(/Registration alone is not evaluation or hireability/)).not.toBeInTheDocument();
     expect(screen.queryByText(/trust8004 response\.total/)).not.toBeInTheDocument();
     expect(screen.getByRole("combobox", { name: "Sort agents" })).toHaveValue("newest");
@@ -837,6 +869,7 @@ describe("marketplace presentation rules", () => {
     expect(searchInput.closest("label")).toHaveClass("w-full", "min-w-0");
     expect(searchInput).toHaveClass("focus-visible:ring-0");
     expect(screen.getByRole("tablist", { name: "Catalog layout" }).parentElement).toHaveClass("min-[30rem]:grid-cols-[minmax(0,1fr)_auto]");
+    expect(screen.getByRole("tablist", { name: "Catalog layout" })).toHaveClass("h-10");
     await user.click(mobileFilterButton);
     expect(mobileFilterDetails).toHaveAttribute("open");
     await user.click(mobileFilterButton);
@@ -850,6 +883,13 @@ describe("marketplace presentation rules", () => {
     expect(screen.getAllByRole("checkbox", { name: "Grid trading" }).every((checkbox) => checkbox.getAttribute("data-state") === "unchecked")).toBe(true);
     expect(screen.getByRole("tab", { name: "Cards" })).toHaveAttribute("data-state", "active");
     expect(screen.getByRole("tab", { name: "Cards" })).toHaveClass("cursor-pointer");
+    expect(screen.queryByRole("navigation", { name: "Catalog scope" })).not.toBeInTheDocument();
+    const quickFilters = screen.getByTestId("catalog-quick-filters");
+    expect(screen.getByRole("button", { name: /Hireable now/ })).toHaveClass("h-9", "rounded-md", "w-auto");
+    expect(searchInput.closest("form")?.parentElement?.nextElementSibling).toBe(quickFilters);
+    expect(screen.getByRole("complementary", { name: "Catalog filters" })).toHaveClass("marketplace-surface", "rounded-xl");
+    expect(screen.getByText("Catalog data")).toBeInTheDocument();
+    expect(screen.getByText("trust8004 catalog + marketplace observation Worker")).toBeInTheDocument();
     expect(screen.queryByRole("table", { name: "Agent comparison" })).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: /View .* on trust8004/i })).toHaveAttribute(
       "href",
@@ -857,9 +897,12 @@ describe("marketplace presentation rules", () => {
     );
 
     await user.click(screen.getByRole("tab", { name: "Table" }));
-    expect(screen.getByRole("table", { name: "Agent comparison" })).toBeInTheDocument();
+    const comparisonTable = screen.getByRole("table", { name: "Agent comparison" });
+    expect(comparisonTable).toBeInTheDocument();
+    expect(comparisonTable.querySelector(".border-l-primary")).toBeNull();
+    expect(comparisonTable.querySelector("[data-evidence-status]")).toHaveClass("size-8");
     expect(screen.getByRole("region", { name: "Scrollable agent comparison" })).toHaveClass("overflow-x-auto");
-    expect(screen.getByRole("columnheader", { name: "Evidence" })).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "Evidence" })).toHaveClass("text-xs");
     expect(screen.getByRole("link", { name: /View V3 Pools powered by HeyAnon on trust8004/i })).toHaveTextContent("Agent #45650");
     expect(screen.getByRole("link", { name: "View agent" })).toHaveAttribute("href", "/hire/45650");
   });
@@ -887,7 +930,9 @@ describe("marketplace presentation rules", () => {
     expect(screen.getAllByRole("checkbox", { name: "A2A reachable" }).every((item) => item.getAttribute("data-state") === "checked")).toBe(true);
     expect(screen.getAllByRole("checkbox", { name: "Grid trading" }).every((item) => item.getAttribute("data-state") === "checked")).toBe(true);
     expect(screen.getAllByRole("checkbox", { name: "Rebalancing" }).every((item) => item.getAttribute("data-state") === "checked")).toBe(true);
-    expect(screen.getAllByRole("button", { name: "Clear filters" })).toHaveLength(2);
+    expect(screen.getAllByRole("button", { name: "Clear filters" })).toHaveLength(3);
+    expect(screen.getByTestId("catalog-quick-filters")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Reachable now/ })).toHaveAttribute("aria-pressed", "false");
 
     cleanup();
     render(createElement(AgentsLoading));
@@ -956,6 +1001,28 @@ describe("marketplace presentation rules", () => {
     expect(screen.queryByText("V3 Pools powered by HeyAnon")).not.toBeInTheDocument();
   });
 
+  it("preserves the real-time reachability filter alongside status filters", async () => {
+    const user = userEvent.setup();
+    const page: MarketplaceAgentPage = {
+      view: "marketplace",
+      items: [marketplaceAgent()],
+      pagination: { page: 1, pageSize: 12, total: 1, totalPages: 1 },
+      categories: [],
+      catalogCoverage: "partial",
+      fetchedAt: "2026-08-17T00:00:00.000Z",
+    };
+    routerPush.mockClear();
+    render(createElement(CatalogPage, {
+      data: page,
+      query: { view: "marketplace", statuses: ["declared"], reachability: ["live"] },
+    }));
+
+    expect(screen.getAllByRole("checkbox", { name: "Reachable now" }).every((item) => item.getAttribute("data-state") === "checked")).toBe(true);
+    expect(screen.getByRole("button", { name: /Reachable now/ })).toHaveAttribute("aria-pressed", "true");
+    await user.click(screen.getByRole("button", { name: /^MCP/ }));
+    expect(routerPush).toHaveBeenCalledWith("/agents?view=marketplace&status=declared&status=mcp&reachability=live");
+  });
+
   it("searches while typing with one focus border and preserves active filters", () => {
     vi.useFakeTimers();
     const page: MarketplaceAgentPage = {
@@ -973,6 +1040,7 @@ describe("marketplace presentation rules", () => {
         view: "marketplace",
         statuses: ["declared", "a2a"],
         categories: ["grid_trading"],
+        reachability: ["live"],
       },
     }));
     const search = screen.getByRole("textbox", { name: "Search agents" });
@@ -983,7 +1051,7 @@ describe("marketplace presentation rules", () => {
     expect(routerReplace).not.toHaveBeenCalled();
     act(() => vi.advanceTimersByTime(300));
 
-    expect(routerReplace).toHaveBeenCalledWith("/agents?view=marketplace&status=declared&status=a2a&category=grid_trading&q=grid");
+    expect(routerReplace).toHaveBeenCalledWith("/agents?view=marketplace&status=declared&status=a2a&category=grid_trading&reachability=live&q=grid");
     expect(screen.getByRole("status", { name: "Loading agents" })).toBeInTheDocument();
     vi.useRealTimers();
   });

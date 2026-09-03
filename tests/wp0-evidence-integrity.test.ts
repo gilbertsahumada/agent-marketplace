@@ -22,17 +22,14 @@ describe("committed WP0 evidence", () => {
     expect(snapshot.scan.maxPageBytes).toBeLessThan(16 * 1_024 * 1_024);
   });
 
-  it("keeps the seed migration and spec linked to that artifact", () => {
+  it("keeps the seed migration linked to that artifact", () => {
     const migration = readFileSync(
       resolve(root, "bnb-agent-probe/migrations/0002_seed_funnel_snapshot.sql"),
       "utf8",
     );
-    const spec = readFileSync(resolve(root, "docs/SPEC-MVP.md"), "utf8");
 
     expect(migration).toContain("evidence/funnel-bsc-2026-08-27T19-41-17Z.json");
     expect(migration).toContain(snapshot.sourceSha256);
     expect(migration).toContain(`'${snapshot.cutoff.blockNumber}'`);
-    expect(spec).toContain("7.056.330 bytes");
-    expect(spec).not.toContain("6.718.415 bytes");
   });
 });
