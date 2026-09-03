@@ -608,6 +608,7 @@ describe("GetAgentEvidencePassport", () => {
     expect(reads).toBe(1);
     expect(result.agent).toBe(agent);
     expect(result.passport).toMatchObject({ agentId: "303779", state: "registered" });
+    expect(result.jobProofs).toEqual([]);
   });
 
   it("loads all persisted proofs for the requested agent", async () => {

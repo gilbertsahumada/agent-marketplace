@@ -13,7 +13,7 @@ export const dynamic = "force-dynamic";
 export default async function HirePage({ params }: { params: Promise<{ agentId: string }> }) {
   const { agentId } = await params;
   try {
-    const { agent, passport, catalogCandidate } = await getAgentEvidencePassport.executeWithAgent({ agentId });
+    const { agent, passport, catalogCandidate, jobProofs } = await getAgentEvidencePassport.executeWithAgent({ agentId });
     const current = catalogCandidate ? catalogCandidateCard(catalogCandidate) : null;
     const buyerAction = current?.buyerAction ?? "unavailable";
     const normalizedState = catalogCandidate?.state;
@@ -42,8 +42,7 @@ export default async function HirePage({ params }: { params: Promise<{ agentId: 
       agent={agent}
       catalogCandidate={catalogCandidate}
       hireFlow={hireFlow}
-      journey="hire"
-      observationsAvailable={catalogCandidate !== null}
+      jobProofs={jobProofs}
       passport={passport}
     />;
   } catch (error) {

@@ -418,25 +418,29 @@ function Erc8183BrowserDemo({ mode, deployment, agentName, embedded = false }: {
       {...(embedded ? { "aria-label": "ERC-8183 hiring flow" } : { id: "main-content" })}
       className={embedded ? "w-full" : "mx-auto w-full max-w-6xl px-4 py-10 sm:px-6 lg:px-8 lg:py-14"}
     >
-      <header className="max-w-3xl">
-        <div className="flex flex-wrap items-center gap-2">
-          <Badge className="border-amber-300/30 bg-amber-300/10 text-amber-100" variant="outline">{deployment.networkName} · chain {deployment.chainId}</Badge>
-          <Badge variant="outline">{mode === "mainnet" ? "Mainnet value at risk" : "Controlled hiring demo"}</Badge>
-        </div>
-        <p className="font-eyebrow font-eyebrow-dot mt-6 text-zinc-500">Non-custodial {mode === "mainnet" ? "Mainnet hire" : "Testnet demo"}</p>
-        <Title className="mt-2 text-3xl font-light tracking-tight text-white sm:text-5xl">Hire with your wallet. Verify every step.</Title>
-        <p className="mt-4 text-base leading-relaxed text-zinc-400">
-          Request a signed quote from {agentName ?? "the controlled seller"}, inspect every contract call, and sign the ERC-8183 lifecycle with your injected wallet.
-        </p>
-      </header>
+      {!embedded ? (
+        <>
+          <header className="max-w-3xl">
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge className="border-amber-300/30 bg-amber-300/10 text-amber-100" variant="outline">{deployment.networkName} · chain {deployment.chainId}</Badge>
+              <Badge variant="outline">{mode === "mainnet" ? "Mainnet value at risk" : "Controlled hiring demo"}</Badge>
+            </div>
+            <p className="font-eyebrow font-eyebrow-dot mt-6 text-zinc-500">Non-custodial {mode === "mainnet" ? "Mainnet hire" : "Testnet demo"}</p>
+            <Title className="mt-2 text-3xl font-light tracking-tight text-white sm:text-5xl">Hire with your wallet. Verify every step.</Title>
+            <p className="mt-4 text-base leading-relaxed text-zinc-400">
+              Request a signed quote from {agentName ?? "the controlled seller"}, inspect every contract call, and sign the ERC-8183 lifecycle with your injected wallet.
+            </p>
+          </header>
 
-      <Alert className="mt-8 border-amber-300/20 bg-amber-300/[0.05]">
-        <FlaskConical aria-hidden="true" className="text-amber-300" />
-        <AlertTitle>{mode === "mainnet" ? "Marketplace-operated Grid seller — not an official BNB reference agent" : "Testing infrastructure — not a marketplace agent"}</AlertTitle>
-        <AlertDescription>Only Agent {deployment.agentId} is allowed. The HeyAnon marketplace candidates remain MCP only and cannot use this flow.</AlertDescription>
-      </Alert>
+          <Alert className="mt-8 border-amber-300/20 bg-amber-300/[0.05]">
+            <FlaskConical aria-hidden="true" className="text-amber-300" />
+            <AlertTitle>{mode === "mainnet" ? "Marketplace-operated Grid seller — not an official BNB reference agent" : "Testing infrastructure — not a marketplace agent"}</AlertTitle>
+            <AlertDescription>Only Agent {deployment.agentId} is allowed. The HeyAnon marketplace candidates remain MCP only and cannot use this flow.</AlertDescription>
+          </Alert>
+        </>
+      ) : null}
 
-      <div className="mt-8 grid gap-6 lg:grid-cols-[minmax(0,1.15fr)_minmax(19rem,0.85fr)]">
+      <div className={`${embedded ? "" : "mt-8 "}grid gap-6 lg:grid-cols-[minmax(0,1.15fr)_minmax(19rem,0.85fr)]`}>
         <div className="space-y-6">
           <Card>
             <CardHeader>

@@ -86,15 +86,21 @@ export class GetAgentEvidencePassport {
     agent: MarketplaceAgent;
     passport: AgentEvidencePassport;
     catalogCandidate: CatalogCandidate | null;
+    jobProofs: MainnetJobProof[];
   }> {
     const [agent, catalogCandidate] = await Promise.all([
       this.getAgent.execute(input),
       this.catalogCandidates?.execute(input) ?? Promise.resolve(null),
     ]);
-    return { agent, passport: this.build(agent, catalogCandidate), catalogCandidate };
+    const jobProofs = this.jobProofs.listByAgentId(agent.agentId);
+    return { agent, passport: this.build(agent, catalogCandidate, jobProofs), catalogCandidate, jobProofs };
   }
 
-  private build(agent: MarketplaceAgent, catalogCandidate: CatalogCandidate | null): AgentEvidencePassport {
+  private build(
+    agent: MarketplaceAgent,
+    catalogCandidate: CatalogCandidate | null,
+    jobProofs: MainnetJobProof[] = this.jobProofs.listByAgentId(agent.agentId),
+  ): AgentEvidencePassport {
     const now = this.now();
     const platform = catalogCandidate ? newestPlatformObservation(catalogCandidate) : [];
     const quote = newestQuoteObservation(catalogCandidate);
@@ -149,7 +155,7 @@ export class GetAgentEvidencePassport {
         status: hireabilityStatus,
         observedAt: quote ? new Date(quote.observedAt).toISOString() : observedAt,
       },
-      jobProofs: this.jobProofs.listByAgentId(agent.agentId),
+      jobProofs,
       generatedAt: new Date(now).toISOString(),
     });
   }

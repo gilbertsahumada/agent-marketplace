@@ -106,17 +106,17 @@ The canonical detail and action page. It combines what used to be a profile with
 
 Required sections, in this order:
 
-1. Identity: image, name, BSC network, Agent ID linked to trust8004, owner/source provenance.
-2. Primary action and a concise blocking reason when unavailable.
-3. Outcome and declared commerce terms/capabilities.
-4. Operational endpoints grouped by protocol.
-5. Evidence timeline with source, scope, result, age and exact timestamp.
-6. Quote state and quote request action.
-7. ERC-8183 transaction preview and handoff to the hiring session.
-8. Prior jobs/results when the backend exposes an agent-scoped history query; this
-   is progressive enhancement and does not block route unification.
+1. Compact identity: image, name, BSC network and Agent ID.
+2. One dominant `Hire agent` action with the exact next step or a concise blocker.
+3. Three buyer-facing facts: availability, quote readiness and proven ERC-8183 jobs.
+4. Quote/transaction flow, or the permitted endpoint validation required to begin it.
+5. Agent-scoped ERC-8183 job history with links to the corresponding job proof.
 
-The page is useful even when the agent cannot yet be hired: it explains what is missing and allows a permitted revalidation. It must not become a generic social profile.
+ERC-8004 identity details, metadata, services, tools, trust score and reputation
+are not duplicated on this route. A secondary link sends users to the agent's
+trust8004 page for those facts. The marketplace route remains useful when an
+agent cannot yet be hired: its Hire action either starts the real flow, begins
+the required availability check, or is disabled with one concise reason.
 
 ### 4.3 `/agents/[agentId]`
 
@@ -137,10 +137,12 @@ Remains separate. It tracks an already-created job, chain state and result; it i
 Cards and table rows expose one product destination:
 
 - Clicking the name/card opens `/hire/[agentId]`.
-- `Request quote` or `Continue hire` opens the corresponding section in `/hire/[agentId]` when commerce is admitted.
-- `Check availability` opens `/hire/[agentId]` when an operational commerce endpoint exists but current evidence is missing, stale or failed.
+- `Hire agent` opens the corresponding quote/transaction section when commerce is admitted.
+- `Hire agent` opens the required availability check when an operational commerce endpoint exists but current evidence is missing, stale or failed.
 - `View agent` still opens the canonical page when no supported commerce path exists; the page includes the concise blocker instead of presenting a dead Hire control.
-- Remove the separate `View profile` CTA.
+- Remove the separate `View profile`, `Request quote`, `Continue hire` and
+  `Check availability` catalogue labels. The destination explains the precise
+  next step while the catalogue consistently presents the product action.
 - The Agent ID itself links externally to trust8004 in a new tab.
 
 ### 5.2 Card information hierarchy

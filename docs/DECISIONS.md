@@ -805,3 +805,18 @@ Cross-session reconciliation between the observation/D1 migration (per `docs/OBS
 - Probe target selection (`catalog-probe-d1.ts` `selectTargets`) read and sorted every due endpoint (12,000 rows) because only `nextProbeAt`, the first ordering key, is served by `idx_catalog_endpoints_lease`. It now ranks the full order (protocol, priority, lastProbedAt) inside a window of the oldest-due endpoints (`max(25 × batch, 100)`, taken in index order), and the outer query repeats only the lease check so its sole usable index is the primary key. Ordering is exact unless more than the window size share the boundary due timestamp, in which case the tie resolves in index order; the lease `UPDATE … RETURNING` remains the atomic claim.
 - The ingest claim (`catalog-ingest.ts` `processNextCatalogIngestTask`) ordered every claimable task (401 rows for 200 pending) because `idx_catalog_ingest_tasks_work` leads with `retryAt`. Migration `0020_catalog_ingest_tasks_claim_index.sql` replaces it with `(status, priority DESC, updatedAt, agentKey)`, and the claim is one compound statement with a per-status branch that walks that index in claim order and stops at its first claimable row (`INDEXED BY`, so the plan does not depend on statistics); the compound `ORDER BY` ranks at most three rows. The old index is dropped rather than kept alongside: the claim was its only reader, and a second secondary index would add one written row per task write, which the Free sweep test caught (62 against the 60-row envelope).
 - After the fix: header 17, sweep 20, probe 582 rows at the same scale; the harness pins ceilings of 200 / 200 / 1,000 and asserts every phase under the staging pin of 3,000. The catalogue list `count(*)` is left as-is: on Paid there is no daily read quota and the 300-second response cache bounds it.
+
+## 2026-09-03 — Make the canonical agent route a hiring workspace
+
+- `/hire/[agentId]` is a commerce surface, not a second ERC-8004 profile. It
+  keeps only the agent's compact identity, availability, quote readiness,
+  ERC-8183 work history and the next executable hiring step. Detailed identity,
+  metadata, services, tools, trust score and reputation are delegated to the
+  existing trust8004 agent page through one secondary external link.
+- The catalogue uses `Hire agent` for every candidate with a real next step.
+  The canonical page then resolves that action to quote/transaction preparation
+  or to the required endpoint validation. Unsupported candidates retain the
+  neutral `View agent` action and the hire control is disabled on arrival.
+- Agent-scoped Mainnet proofs are returned with the existing passport read and
+  rendered as a compact ERC-8183 job history. No new database or competing job
+  authority is introduced; each row links to the existing chain-backed job page.
