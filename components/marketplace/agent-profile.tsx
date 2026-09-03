@@ -30,7 +30,10 @@ function utcDate(value: string): string {
   return UTC_DATE.format(new Date(value));
 }
 
-function JobHistory({ jobs }: { jobs: readonly MainnetJobProof[] }) {
+function JobHistory({ hireActivity, jobs }: {
+  hireActivity: AgentEvidencePassport["checks"]["hireActivity"];
+  jobs: readonly MainnetJobProof[];
+}) {
   const ordered = [...jobs].sort((left, right) => Date.parse(right.capturedAt) - Date.parse(left.capturedAt));
   return (
     <section aria-labelledby="erc8183-history" className="mt-8 rounded-xl border border-white/10 bg-white/[0.015]">
@@ -40,6 +43,13 @@ function JobHistory({ jobs }: { jobs: readonly MainnetJobProof[] }) {
         </h2>
         <Badge variant="outline">{jobs.length} proven</Badge>
       </div>
+      {hireActivity.status === "verified" ? (
+        <dl className="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-b border-white/10 px-4 py-3 text-sm sm:px-5">
+          <dt className="text-zinc-500">Verified hire activity</dt>
+          <dd className="min-w-0 break-all text-zinc-300">{hireActivity.detail}</dd>
+          {hireActivity.observedAt ? <dd className="text-zinc-500">{utcDate(hireActivity.observedAt)}</dd> : null}
+        </dl>
+      ) : null}
       {ordered.length === 0 ? (
         <div className="px-5 py-6 text-sm text-zinc-500">
           No verified ERC-8183 jobs yet.
@@ -136,7 +146,7 @@ export function AgentProfile({
       {!hireFlow && canCheckAvailability ? <AgentValidationActions agentId={agent.agentId} targets={validationTargets} /> : null}
       {!hireTarget ? <p className="mt-8 rounded-xl border border-white/10 px-5 py-4 text-sm text-zinc-500">Hiring unavailable for this agent.</p> : null}
 
-      <JobHistory jobs={jobProofs} />
+      <JobHistory hireActivity={passport.checks.hireActivity} jobs={jobProofs} />
     </main>
   );
 }

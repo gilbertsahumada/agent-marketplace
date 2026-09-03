@@ -392,6 +392,23 @@ export function resumeRequirements(job: Erc8183JobFacts | null, budgetRaw: strin
   };
 }
 
+// Answers before any signature so the UI can say how many confirmations a
+// fresh hire needs. Any wallet that cannot answer, or does not batch
+// atomically for this chain, is sequential.
+export async function detectBrowserHireMode(
+  provider: EIP1193Provider,
+  account: Address,
+  deployment: Erc8183BrowserDeployment = TESTNET_BROWSER_DEPLOYMENT,
+): Promise<BrowserHireMode> {
+  try {
+    const walletClient = createWalletClient({ account, chain: viemChain(deployment), transport: custom(provider) });
+    const capabilities = await walletClient.getCapabilities({ account, chainId: deployment.chainId });
+    return supportsAtomicBatch(capabilities) ? "batched" : "sequential";
+  } catch {
+    return "sequential";
+  }
+}
+
 export async function executeBrowserHire(
   provider: EIP1193Provider,
   plan: Erc8183HirePlan,
@@ -453,12 +470,7 @@ export async function executeBrowserHire(
   // confirmation. Resume and recovery keep the sequential path, which can skip
   // the steps chain already shows as done.
   const executeBatchedHire = async (): Promise<BrowserHireExecution | null> => {
-    try {
-      const capabilities = await walletClient.getCapabilities({ account, chainId: deployment.chainId });
-      if (!supportsAtomicBatch(capabilities)) return null;
-    } catch {
-      return null;
-    }
+    if (await detectBrowserHireMode(provider, account, deployment) !== "batched") return null;
     const budget = BigInt(plan.quote.priceRaw);
     const counter = await publicClient.readContract({
       address: deployment.commerce,

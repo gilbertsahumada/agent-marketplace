@@ -24,7 +24,7 @@ import type {
 import type { PublicJobProof } from "../src/business/entities/public-job-proof.ts";
 import { GATE1_JOB_514_MANIFEST } from "../src/data/proofs/gate1-job-514.ts";
 import { GATE6A_JOB_551_MANIFEST } from "../src/data/proofs/gate6a-job-551.ts";
-import { Erc8183MainnetDemo, Erc8183TestnetDemo, Erc8183TransactionList, sharedEvidenceSyncMessage } from "../components/spikes/erc8183-browser-spike.tsx";
+import { Erc8183MainnetDemo, Erc8183TestnetDemo, Erc8183TransactionList, hireConfirmationLabel, sharedEvidenceSyncMessage } from "../components/spikes/erc8183-browser-spike.tsx";
 import { Providers } from "../app/providers.tsx";
 import { VerificationDrift } from "../components/marketplace/verification-drift.tsx";
 import { EvidencePassportCard } from "../components/marketplace/evidence-passport-card.tsx";
@@ -621,6 +621,32 @@ describe("marketplace presentation rules", () => {
       .toHaveAttribute("href", "https://trust8004.xyz/agents/56:303779");
     expect(screen.queryByRole("heading", { name: "Indexed Evidence Passport" })).not.toBeInTheDocument();
     expect(screen.queryByRole("tab", { name: "Reputation" })).not.toBeInTheDocument();
+    expect(screen.queryByText("Verified hire activity")).not.toBeInTheDocument();
+  });
+
+  it("lists the latest chain-verified hire phase in the hiring workspace without counting it as a proven job", () => {
+    const agent = marketplaceAgent();
+    agent.agentId = "303779";
+    const passport = evidencePassport("hireable");
+    passport.checks.hireActivity = {
+      status: "verified",
+      provenance: "onchain",
+      observedAt: "2026-09-02T18:30:00.000Z",
+      detail: `Latest chain-verified hire phase: funded (Job 812, tx 0x${"cd".repeat(32)}).`,
+    };
+
+    render(createElement(AgentProfile, { agent, passport }));
+
+    expect(screen.getByText("Verified hire activity")).toBeInTheDocument();
+    expect(screen.getByText(/Latest chain-verified hire phase: funded \(Job 812/)).toBeInTheDocument();
+    expect(screen.getByText("0 proven")).toBeInTheDocument();
+    expect(screen.getByText("No verified ERC-8183 jobs yet.")).toBeInTheDocument();
+  });
+
+  it("states the number of wallet confirmations only once the wallet has answered", () => {
+    expect(hireConfirmationLabel(null, 5)).toBeNull();
+    expect(hireConfirmationLabel("batched", 5)).toBe("One wallet confirmation");
+    expect(hireConfirmationLabel("sequential", 4)).toBe("4 wallet confirmations");
   });
 
   it("uses a route-specific loading state for the hiring workspace", () => {

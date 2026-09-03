@@ -174,6 +174,10 @@ none does. The helpers are in `src/data/erc8183/batched-hire.ts`:
   skip the steps chain already shows as done. A user rejection propagates as such.
 - **No permit**: the exact `approve` stays a call inside the batch; EIP-2612 permit
   is not used in this iteration.
+- **Visible before signing**: `detectBrowserHireMode` asks the same capabilities
+  once the plan is prepared, so the Fund step says "One wallet confirmation" or
+  "N wallet confirmations" before the first prompt. The line is absent until the
+  wallet has answered and on resume/recovery.
 
 ## Step 5 — Notify the seller
 

@@ -11,6 +11,7 @@ import {
   supportsAtomicBatch,
   type BatchCallReceipt,
 } from "../src/data/erc8183/batched-hire.ts";
+import { detectBrowserHireMode } from "../src/data/erc8183/browser-wallet-adapter.ts";
 import { agenticCommerceBrowserAbi, ERC8183_TESTNET, evaluatorRouterBrowserAbi, paymentTokenBrowserAbi } from "../src/data/erc8183/contracts.ts";
 
 const BUYER = getAddress("0x1111111111111111111111111111111111111111");
@@ -136,5 +137,24 @@ describe("batched hire helpers", () => {
     expect(isBatchUnsupportedError(new Error("wallet_sendCalls is not supported by this wallet"))).toBe(true);
     expect(isBatchUnsupportedError(Object.assign(new Error("User rejected the request."), { code: 4001 }))).toBe(false);
     expect(isBatchUnsupportedError(new Error("insufficient funds"))).toBe(false);
+  });
+
+  it("detects the hire mode from wallet capabilities before any signature and falls back to sequential", async () => {
+    const buyer = getAddress(`0x${"11".repeat(20)}`);
+    const requests: unknown[] = [];
+    const provider = (capabilities: unknown) => ({
+      request: async (args: { method: string; params?: unknown }) => {
+        requests.push(args);
+        if (args.method !== "wallet_getCapabilities") throw new Error(`unexpected ${args.method}`);
+        if (capabilities instanceof Error) throw capabilities;
+        return capabilities;
+      },
+    }) as unknown as Parameters<typeof detectBrowserHireMode>[0];
+
+    await expect(detectBrowserHireMode(provider({ "0x61": { atomic: { status: "supported" } } }), buyer)).resolves.toBe("batched");
+    expect(requests).toEqual([{ method: "wallet_getCapabilities", params: [buyer, ["0x61"]] }]);
+    await expect(detectBrowserHireMode(provider({ "0x61": { atomic: { status: "unsupported" } } }), buyer)).resolves.toBe("sequential");
+    await expect(detectBrowserHireMode(provider({ "0x38": { atomic: { status: "supported" } } }), buyer)).resolves.toBe("sequential");
+    await expect(detectBrowserHireMode(provider(new Error("Method not found")), buyer)).resolves.toBe("sequential");
   });
 });
