@@ -245,6 +245,11 @@ export function createWorker(dependencies: WorkerDependencies = {}): WorkerEntry
         if (!await bearerMatches(request.headers.get("authorization"), env.BUYER_OBSERVATION_SECRET)) {
           return errorResponse("unauthorized", 401);
         }
+        const { callerKey } = await import("./lib/caller-key");
+        const caller = callerKey(request);
+        if (caller === null) {
+          return Response.json({ error: "invalid_request" }, { status: 400, headers: { "cache-control": "no-store" } });
+        }
         const { hireEventsResponse } = await import("./routes/hire-events");
         return hireEventsResponse(request, env.DB, {
           rpcUrls: {
@@ -253,6 +258,8 @@ export function createWorker(dependencies: WorkerDependencies = {}): WorkerEntry
           },
           nowMs: now(),
           timeoutMs: config.probeTimeoutMs,
+          callerKey: caller,
+          callerDailyLimit: config.hireEventsPerCallerDay,
         });
       }
       if (request.method === "POST" && url.pathname === "/catalog-browser-observations" && url.search === "") {

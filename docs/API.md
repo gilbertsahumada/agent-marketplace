@@ -247,13 +247,18 @@ Same-origin evidence route used by the browser hire flow; it is not a hiring ste
 authorizes nothing. Body: `{ agentId, chainId: 56 | 97, phase, jobId, txHash }` where
 `phase` is `clicked` (with `jobId` and `txHash` `null`) or `created`, `funded`,
 `submitted` (both required). The route validates the closed contract, drops every
-request context (no IP, session or headers reach storage) and forwards the event to
-the observation Worker, which verifies chain phases by RPC — receipt, Commerce event
-for that job, current job state and the agent's registry wallet — before storing them
-under the idempotent key `chainId:txHash:phase`. Response: `{ persistence }` with
-`recorded` (201), `duplicate` (200), `rejected` (409, the chain does not support the
-claim), or `failed` / `not_configured` (202, nothing stored). Track and Result keep
-reading BSC directly; this route never becomes their source.
+request context (no IP, session or headers reach storage; the Worker receives only
+an HMAC fingerprint of the caller for its daily telemetry budget) and forwards the
+event to the observation Worker, which verifies chain phases by RPC — receipt,
+Commerce event for that job, current job state and the agent's registry wallet —
+before storing them under the idempotent key `chainId:txHash:phase`. Response:
+`{ persistence }` with `recorded` (201), `duplicate` (200), `rejected` (409, the
+chain does not support the claim), or `failed` / `not_configured` (202, nothing
+stored). Telemetry (`clicked`) is budgeted per caller and UTC day
+(`HIRE_EVENTS_PER_CALLER_DAY` on the Worker); past the budget the route answers
+429 with `Retry-After`. Chain phases are never budgeted: they are keyed by
+transaction and verified. Track and Result keep reading BSC directly; this route
+never becomes their source.
 
 ## Track / Result
 

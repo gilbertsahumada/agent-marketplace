@@ -26,6 +26,16 @@ export function categoryParameter(value: string | null): MarketplaceCategory | u
   return value as MarketplaceCategory;
 }
 
+// Request context for per-caller Worker budgets. Only its HMAC fingerprint
+// leaves the marketplace (see src/data/observation/caller-fingerprint.ts).
+export function callerContext(request: Request): string {
+  const forwarded = request.headers.get("x-forwarded-for")?.split(",", 1)[0]?.trim();
+  const real = request.headers.get("x-real-ip")?.trim();
+  const origin = request.headers.get("origin")?.trim();
+  if (!forwarded && !real && !origin) return "anonymous";
+  return [forwarded || real || "unknown", origin || "same-origin"].join("|");
+}
+
 export function marketplaceErrorResponse(error: unknown): NextResponse {
   if (error instanceof MarketplacePayloadTooLargeError) {
     return NextResponse.json(

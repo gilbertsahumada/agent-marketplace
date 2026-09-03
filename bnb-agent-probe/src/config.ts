@@ -22,6 +22,7 @@ export interface WorkerConfig {
   catalogProbeConcurrency: number;
   catalogValidationRequestsPerDay: number;
   catalogValidationRequestsPerCallerDay: number;
+  hireEventsPerCallerDay: number;
   catalogDiscoveryPageSize: number;
   catalogIngestTasksPerRun: number;
   catalogDeclarationsPerTask: number;
@@ -119,6 +120,7 @@ const FREE_PROFILE: Profile = {
     catalogProbeConcurrency: 2,
     catalogValidationRequestsPerDay: 100,
     catalogValidationRequestsPerCallerDay: 10,
+    hireEventsPerCallerDay: 20,
     // A full all-new page of twelve identities exceeds the 60-row Free
     // invocation budget once the resumable ingest work is admitted. Keep the
     // default at the largest measured safe page and let Paid scale it up.
@@ -151,6 +153,7 @@ const FREE_PROFILE: Profile = {
     catalogProbeConcurrency: 2,
     catalogValidationRequestsPerDay: 500,
     catalogValidationRequestsPerCallerDay: 500,
+    hireEventsPerCallerDay: 200,
     catalogDiscoveryPageSize: 2,
     catalogIngestTasksPerRun: 1,
     catalogDeclarationsPerTask: 1,
@@ -186,6 +189,7 @@ const PAID_PROFILE: Profile = {
     catalogProbeConcurrency: 2,
     catalogValidationRequestsPerDay: 1_000,
     catalogValidationRequestsPerCallerDay: 100,
+    hireEventsPerCallerDay: 200,
     catalogDiscoveryPageSize: 15,
     catalogIngestTasksPerRun: 1,
     catalogDeclarationsPerTask: 1,
@@ -217,6 +221,7 @@ const PAID_PROFILE: Profile = {
     catalogProbeConcurrency: 4,
     catalogValidationRequestsPerDay: 10_000,
     catalogValidationRequestsPerCallerDay: 1_000,
+    hireEventsPerCallerDay: 2_000,
     catalogDiscoveryPageSize: 15,
     catalogIngestTasksPerRun: 50,
     catalogDeclarationsPerTask: 24,
@@ -250,6 +255,7 @@ const NUMERIC_FIELDS = {
   CATALOG_PROBE_CONCURRENCY: "catalogProbeConcurrency",
   CATALOG_VALIDATION_REQUESTS_PER_DAY: "catalogValidationRequestsPerDay",
   CATALOG_VALIDATION_REQUESTS_PER_CALLER_DAY: "catalogValidationRequestsPerCallerDay",
+  HIRE_EVENTS_PER_CALLER_DAY: "hireEventsPerCallerDay",
   CATALOG_DISCOVERY_PAGE_SIZE: "catalogDiscoveryPageSize",
   CATALOG_INGEST_TASKS_PER_RUN: "catalogIngestTasksPerRun",
   CATALOG_DECLARATIONS_PER_TASK: "catalogDeclarationsPerTask",
@@ -312,6 +318,7 @@ function parseInteger(field: keyof typeof NUMERIC_FIELDS, raw: string, maximum: 
     "CATALOG_PROBE_CONCURRENCY",
     "CATALOG_VALIDATION_REQUESTS_PER_DAY",
     "CATALOG_VALIDATION_REQUESTS_PER_CALLER_DAY",
+    "HIRE_EVENTS_PER_CALLER_DAY",
     "CATALOG_DISCOVERY_PAGE_SIZE",
     "CATALOG_INGEST_TASKS_PER_RUN",
     "CATALOG_DECLARATIONS_PER_TASK",

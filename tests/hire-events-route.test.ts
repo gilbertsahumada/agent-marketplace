@@ -29,15 +29,33 @@ describe("same-origin hire event controller", () => {
       expect(response.headers.get("cache-control")).toBe("no-store");
     }
     expect(recordHireEvent).toHaveBeenCalledTimes(5);
-    expect(recordHireEvent).toHaveBeenLastCalledWith(funded);
-    expect(recordHireEvent.mock.calls.every((call) => call.length === 1)).toBe(true);
+    // Only the sanitized event and the caller context reach the sync; the
+    // cookie never does, and the context itself leaves the marketplace only as
+    // an HMAC fingerprint.
+    expect(recordHireEvent).toHaveBeenLastCalledWith(funded, { caller: "203.0.113.1|same-origin" });
+    expect(recordHireEvent.mock.calls.every((call) => call.length === 2)).toBe(true);
+    expect(JSON.stringify(recordHireEvent.mock.calls)).not.toContain("session=abc");
+  });
+
+  it("answers 429 with Retry-After when the Worker's per-caller telemetry budget is exhausted", async () => {
+    const { MarketplaceRateLimitError } = await import("../src/business/errors/marketplace-errors.ts");
+    recordHireEvent.mockRejectedValueOnce(new MarketplaceRateLimitError(1_800, "Hire event reporting is temporarily at capacity"));
+    const response = await post({ agentId: "1866", chainId: 97, phase: "clicked", jobId: null, txHash: null });
+    expect(response.status).toBe(429);
+    expect(response.headers.get("retry-after")).toBe("1800");
+    expect(await response.json()).toEqual({
+      error: { code: "MarketplaceRateLimitError", message: "Hire event reporting is temporarily at capacity" },
+    });
   });
 
   it("accepts telemetry without a job reference on either BSC network", async () => {
     recordHireEvent.mockResolvedValue({ status: "recorded" });
     const response = await post({ agentId: "1866", chainId: 97, phase: "clicked", jobId: null, txHash: null });
     expect(response.status).toBe(201);
-    expect(recordHireEvent).toHaveBeenCalledWith({ agentId: "1866", chainId: 97, phase: "clicked", jobId: null, txHash: null });
+    expect(recordHireEvent).toHaveBeenCalledWith(
+      { agentId: "1866", chainId: 97, phase: "clicked", jobId: null, txHash: null },
+      { caller: "anonymous" },
+    );
   });
 
   it("rejects malformed events without forwarding them", async () => {

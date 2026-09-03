@@ -7,20 +7,15 @@ import {
   catalogObservations,
   catalogValidationRequests,
 } from "../db/schema";
+import { callerKey } from "../lib/caller-key";
 import type { D1Database, QueueProducer } from "../types";
 
 const MAX_BODY_BYTES = 1_024;
 const AGENT_ID = /^[1-9]\d*$/;
 const ENDPOINT_KEY = /^[0-9a-f]{64}$/;
-const CALLER_KEY = /^[0-9a-f]{64}$/;
 const REQUEST_COOLDOWN_MS = 60_000;
 
 class InvalidValidationRequest extends Error {}
-
-function callerKey(request: Request): string | null {
-  const value = request.headers.get("x-marketplace-caller")?.trim().toLowerCase();
-  return value && CALLER_KEY.test(value) ? value : null;
-}
 
 async function input(request: Request): Promise<{ agentId: string; endpointKey: string; validationKind: "protocol" }> {
   if (request.headers.get("content-type")?.split(";", 1)[0]?.trim() !== "application/json") {

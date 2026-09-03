@@ -20,8 +20,8 @@ export class MarketplaceDataUnavailableError extends Error {
 }
 
 export class MarketplaceRateLimitError extends Error {
-  constructor(readonly retryAfterSeconds: number) {
-    super("Agent validation is temporarily at capacity");
+  constructor(readonly retryAfterSeconds: number, message = "Agent validation is temporarily at capacity") {
+    super(message);
     this.name = "MarketplaceRateLimitError";
   }
 }

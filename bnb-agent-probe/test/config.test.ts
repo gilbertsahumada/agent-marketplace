@@ -18,6 +18,7 @@ describe("loadConfig", () => {
       catalogProbeConcurrency: 2,
       catalogValidationRequestsPerDay: 100,
       catalogValidationRequestsPerCallerDay: 10,
+      hireEventsPerCallerDay: 20,
       catalogDiscoveryPageSize: 2,
       catalogIngestTasksPerRun: 1,
       catalogDeclarationsPerTask: 1,
@@ -76,6 +77,7 @@ describe("loadConfig", () => {
       catalogProbeBatchSize: 4,
       catalogProbeConcurrency: 2,
       catalogValidationRequestsPerCallerDay: 100,
+      hireEventsPerCallerDay: 200,
       catalogDiscoveryPageSize: 15,
       catalogIngestTasksPerRun: 1,
       catalogDeclarationsPerTask: 1,
@@ -88,6 +90,14 @@ describe("loadConfig", () => {
       CLOUDFLARE_WORKERS_PLAN: "paid",
       D1_QUERIES_PER_RUN: "41",
     })).toThrow(/^D1_QUERIES_PER_RUN:/);
+  });
+
+  it("bounds the per-caller hire event telemetry budget by profile", () => {
+    expect(loadConfig({ HIRE_EVENTS_PER_CALLER_DAY: "200" })).toMatchObject({ hireEventsPerCallerDay: 200 });
+    expect(() => loadConfig({ HIRE_EVENTS_PER_CALLER_DAY: "201" })).toThrow(/^HIRE_EVENTS_PER_CALLER_DAY:/);
+    expect(() => loadConfig({ HIRE_EVENTS_PER_CALLER_DAY: "0" })).toThrow(/^HIRE_EVENTS_PER_CALLER_DAY:/);
+    expect(loadConfig({ CLOUDFLARE_WORKERS_PLAN: "paid", HIRE_EVENTS_PER_CALLER_DAY: "2000" }))
+      .toMatchObject({ hireEventsPerCallerDay: 2_000 });
   });
 
   it("reports single_phase for the catalogue v2 path on any plan", () => {
