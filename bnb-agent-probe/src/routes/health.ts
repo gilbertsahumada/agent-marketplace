@@ -32,6 +32,10 @@ type SafeSummary = {
   candidateTargets?: number;
   invalidItems?: number;
   processedTargets?: number;
+  fromBlock?: number;
+  toBlock?: number;
+  logs?: number;
+  jobs?: number;
   outcome?: string;
 };
 
@@ -61,6 +65,10 @@ const RUNTIME_KEYS = [
   "last_scheduler_summary",
   "next_scheduler_phase",
   "sweep_round",
+  "commerce_cursor_56",
+  "commerce_cursor_97",
+  "last_index_summary_56",
+  "last_index_summary_97",
 ] as const;
 
 function json(body: unknown, status: number): Response {
@@ -111,6 +119,10 @@ function safeSummary(row: RuntimeRow | undefined): SafeSummary | null {
       "candidateTargets",
       "invalidItems",
       "processedTargets",
+      "fromBlock",
+      "toBlock",
+      "logs",
+      "jobs",
     ] as const;
     for (const field of numericFields) {
       const value = finiteNonNegative(source[field]);
@@ -274,6 +286,19 @@ export async function healthResponse(
       dailyBudget: currentDailyBudget,
       lastPhase,
       lastScheduler,
+      commerceIndex: {
+        enabled: config.commerceIndexEnabled,
+        chains: {
+          56: {
+            cursor: integer(byKey.get("commerce_cursor_56")?.integerValue),
+            lastRun: safeSummary(byKey.get("last_index_summary_56")),
+          },
+          97: {
+            cursor: integer(byKey.get("commerce_cursor_97")?.integerValue),
+            lastRun: safeSummary(byKey.get("last_index_summary_97")),
+          },
+        },
+      },
     }, 200);
   } catch {
     return json({ status: "unavailable", d1: { available: false } }, 503);

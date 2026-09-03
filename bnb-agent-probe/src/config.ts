@@ -23,6 +23,12 @@ export interface WorkerConfig {
   catalogValidationRequestsPerDay: number;
   catalogValidationRequestsPerCallerDay: number;
   hireEventsPerCallerDay: number;
+  commerceIndexEnabled: boolean;
+  commerceIndexBlocksPerRun: number;
+  commerceIndexFinalityBlocks: number;
+  commerceIndexJobsPerRun: number;
+  commerceIndexLogsPerRun: number;
+  commerceIndexBlockLookupsPerRun: number;
   catalogDiscoveryPageSize: number;
   catalogIngestTasksPerRun: number;
   catalogDeclarationsPerTask: number;
@@ -82,6 +88,7 @@ type NumericConfig = Omit<
   | "catalogProbeEnabled"
   | "catalogV2ReadsEnabled"
   | "catalogV2WritesEnabled"
+  | "commerceIndexEnabled"
   | "catalogResponseCacheSeconds"
   | "catalogFailureBackoffMinutes"
   | "platformLimits"
@@ -121,6 +128,11 @@ const FREE_PROFILE: Profile = {
     catalogValidationRequestsPerDay: 100,
     catalogValidationRequestsPerCallerDay: 10,
     hireEventsPerCallerDay: 20,
+    commerceIndexBlocksPerRun: 500,
+    commerceIndexFinalityBlocks: 15,
+    commerceIndexJobsPerRun: 50,
+    commerceIndexLogsPerRun: 24,
+    commerceIndexBlockLookupsPerRun: 10,
     // A full all-new page of twelve identities exceeds the 60-row Free
     // invocation budget once the resumable ingest work is admitted. Keep the
     // default at the largest measured safe page and let Paid scale it up.
@@ -154,6 +166,11 @@ const FREE_PROFILE: Profile = {
     catalogValidationRequestsPerDay: 500,
     catalogValidationRequestsPerCallerDay: 500,
     hireEventsPerCallerDay: 200,
+    commerceIndexBlocksPerRun: 50_000,
+    commerceIndexFinalityBlocks: 200,
+    commerceIndexJobsPerRun: 200,
+    commerceIndexLogsPerRun: 120,
+    commerceIndexBlockLookupsPerRun: 100,
     catalogDiscoveryPageSize: 2,
     catalogIngestTasksPerRun: 1,
     catalogDeclarationsPerTask: 1,
@@ -190,6 +207,11 @@ const PAID_PROFILE: Profile = {
     catalogValidationRequestsPerDay: 1_000,
     catalogValidationRequestsPerCallerDay: 100,
     hireEventsPerCallerDay: 200,
+    commerceIndexBlocksPerRun: 2_000,
+    commerceIndexFinalityBlocks: 15,
+    commerceIndexJobsPerRun: 100,
+    commerceIndexLogsPerRun: 60,
+    commerceIndexBlockLookupsPerRun: 20,
     catalogDiscoveryPageSize: 15,
     catalogIngestTasksPerRun: 1,
     catalogDeclarationsPerTask: 1,
@@ -222,6 +244,11 @@ const PAID_PROFILE: Profile = {
     catalogValidationRequestsPerDay: 10_000,
     catalogValidationRequestsPerCallerDay: 1_000,
     hireEventsPerCallerDay: 2_000,
+    commerceIndexBlocksPerRun: 50_000,
+    commerceIndexFinalityBlocks: 200,
+    commerceIndexJobsPerRun: 200,
+    commerceIndexLogsPerRun: 120,
+    commerceIndexBlockLookupsPerRun: 100,
     catalogDiscoveryPageSize: 15,
     catalogIngestTasksPerRun: 50,
     catalogDeclarationsPerTask: 24,
@@ -256,6 +283,11 @@ const NUMERIC_FIELDS = {
   CATALOG_VALIDATION_REQUESTS_PER_DAY: "catalogValidationRequestsPerDay",
   CATALOG_VALIDATION_REQUESTS_PER_CALLER_DAY: "catalogValidationRequestsPerCallerDay",
   HIRE_EVENTS_PER_CALLER_DAY: "hireEventsPerCallerDay",
+  COMMERCE_INDEX_BLOCKS_PER_RUN: "commerceIndexBlocksPerRun",
+  COMMERCE_INDEX_FINALITY_BLOCKS: "commerceIndexFinalityBlocks",
+  COMMERCE_INDEX_JOBS_PER_RUN: "commerceIndexJobsPerRun",
+  COMMERCE_INDEX_LOGS_PER_RUN: "commerceIndexLogsPerRun",
+  COMMERCE_INDEX_BLOCK_LOOKUPS_PER_RUN: "commerceIndexBlockLookupsPerRun",
   CATALOG_DISCOVERY_PAGE_SIZE: "catalogDiscoveryPageSize",
   CATALOG_INGEST_TASKS_PER_RUN: "catalogIngestTasksPerRun",
   CATALOG_DECLARATIONS_PER_TASK: "catalogDeclarationsPerTask",
@@ -319,6 +351,11 @@ function parseInteger(field: keyof typeof NUMERIC_FIELDS, raw: string, maximum: 
     "CATALOG_VALIDATION_REQUESTS_PER_DAY",
     "CATALOG_VALIDATION_REQUESTS_PER_CALLER_DAY",
     "HIRE_EVENTS_PER_CALLER_DAY",
+    "COMMERCE_INDEX_BLOCKS_PER_RUN",
+    "COMMERCE_INDEX_FINALITY_BLOCKS",
+    "COMMERCE_INDEX_JOBS_PER_RUN",
+    "COMMERCE_INDEX_LOGS_PER_RUN",
+    "COMMERCE_INDEX_BLOCK_LOOKUPS_PER_RUN",
     "CATALOG_DISCOVERY_PAGE_SIZE",
     "CATALOG_INGEST_TASKS_PER_RUN",
     "CATALOG_DECLARATIONS_PER_TASK",
@@ -474,6 +511,14 @@ export function loadConfig(env: Partial<Env>): WorkerConfig {
     && source.CATALOG_V2_READS_ENABLED !== "1") {
     throw new ConfigError("CATALOG_V2_READS_ENABLED", "must be 0 or 1");
   }
+  // Commerce indexer: the cron enqueues one index_range message per chain with
+  // an RPC URL, and the consumer accepts index messages, only when enabled.
+  const commerceIndexEnabled = source.COMMERCE_INDEX_ENABLED === "1";
+  if (source.COMMERCE_INDEX_ENABLED !== undefined
+    && source.COMMERCE_INDEX_ENABLED !== "0"
+    && source.COMMERCE_INDEX_ENABLED !== "1") {
+    throw new ConfigError("COMMERCE_INDEX_ENABLED", "must be 0 or 1");
+  }
   // Public catalogue responses may be served from the Workers Cache for this
   // long. 0 keeps every read live; staging enables it because each uncached
   // list request costs O(agents) D1 rows against the account-wide Free quota.
@@ -549,6 +594,41 @@ export function loadConfig(env: Partial<Env>): WorkerConfig {
     );
   }
 
+  // One index message must fit the per-run D1 envelope: rows are written six
+  // per statement (below D1's bound-variable ceiling), plus the cursor read,
+  // the cursor write and the summary write; an index_range writes one event
+  // row per log and re-reads at most one job per log. Only an enabled indexer
+  // is held to this, so a small write envelope stays valid elsewhere.
+  if (commerceIndexEnabled) {
+    const indexQueryLimit = values.d1QueriesPerRun - 2;
+    const indexJobsQueries = Math.ceil(values.commerceIndexJobsPerRun / 6) + 2;
+    if (indexJobsQueries > indexQueryLimit) {
+      throw new ConfigError(
+        "COMMERCE_INDEX_JOBS_PER_RUN",
+        `an index_jobs message can require ${indexJobsQueries} D1 queries; lower it or raise D1_QUERIES_PER_RUN`,
+      );
+    }
+    const indexRangeQueries = 2 * Math.ceil(values.commerceIndexLogsPerRun / 6) + 4;
+    if (indexRangeQueries > indexQueryLimit) {
+      throw new ConfigError(
+        "COMMERCE_INDEX_LOGS_PER_RUN",
+        `an index_range message can require ${indexRangeQueries} D1 queries; lower it or raise D1_QUERIES_PER_RUN`,
+      );
+    }
+    if (2 * values.commerceIndexLogsPerRun + 2 > values.d1RowsWrittenPerRun) {
+      throw new ConfigError(
+        "COMMERCE_INDEX_LOGS_PER_RUN",
+        "an index_range message must fit D1_ROWS_WRITTEN_PER_RUN with two rows per log",
+      );
+    }
+    if (values.commerceIndexJobsPerRun + 1 > values.d1RowsWrittenPerRun) {
+      throw new ConfigError(
+        "COMMERCE_INDEX_JOBS_PER_RUN",
+        "an index_jobs message must fit D1_ROWS_WRITTEN_PER_RUN",
+      );
+    }
+  }
+
   if (plan === "free") {
     const worstCaseSweepQueries = 6 * values.sweepLimit + 14;
     if (worstCaseSweepQueries > values.d1QueriesPerRun) {
@@ -562,6 +642,8 @@ export function loadConfig(env: Partial<Env>): WorkerConfig {
   const invocations = Math.ceil(1_440 / values.cronIntervalMinutes);
   const maxAttemptsPerInvocation = QUEUE_MAX_RETRIES + 1;
   const maxAttempts = invocations * maxAttemptsPerInvocation;
+  // Each cron tick enqueues the phase tick plus up to one index_range per chain.
+  const scheduledMessagesPerTick = 1 + (commerceIndexEnabled ? 2 : 0);
   const projectedDailyBudget = plan === "free"
     ? {
         invocations,
@@ -573,9 +655,10 @@ export function loadConfig(env: Partial<Env>): WorkerConfig {
         d1RowsRead: maxAttempts * values.d1RowsReadPerRun,
         d1RowsWritten: maxAttempts
           * (values.d1RowsWrittenPerRun + D1_TELEMETRY_WRITES_PER_ATTEMPT),
-        scheduledQueueOperations: invocations * QUEUE_OPERATIONS_PER_MESSAGE,
+        scheduledQueueOperations: invocations * scheduledMessagesPerTick * QUEUE_OPERATIONS_PER_MESSAGE,
         onDemandQueueOperations: values.catalogValidationRequestsPerDay * QUEUE_OPERATIONS_PER_MESSAGE,
-        queueOperations: (invocations + values.catalogValidationRequestsPerDay) * QUEUE_OPERATIONS_PER_MESSAGE,
+        queueOperations: (invocations * scheduledMessagesPerTick + values.catalogValidationRequestsPerDay)
+          * QUEUE_OPERATIONS_PER_MESSAGE,
         freeReadCeiling: FREE_D1_READS_PER_DAY * FREE_SAFETY_RATIO,
         freeWriteCeiling: FREE_D1_WRITES_PER_DAY * FREE_SAFETY_RATIO,
         freeQueueOperationsCeiling: FREE_QUEUE_OPERATIONS_PER_DAY * FREE_SAFETY_RATIO,
@@ -615,6 +698,7 @@ export function loadConfig(env: Partial<Env>): WorkerConfig {
     catalogV2ReadsEnabled,
     catalogResponseCacheSeconds,
     catalogV2WritesEnabled,
+    commerceIndexEnabled,
     catalogFailureBackoffMinutes: parseFailureBackoff(source.CATALOG_FAILURE_BACKOFF_MINUTES, profile),
     probeAgentAllowlist: parseAgentAllowlist(source.PROBE_AGENT_ALLOWLIST, plan, generalEgressApproved),
     probeEndpointAllowlist: parseEndpointAllowlist(source.PROBE_ENDPOINT_ALLOWLIST, plan, generalEgressApproved),
