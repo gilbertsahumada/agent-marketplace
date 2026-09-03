@@ -910,3 +910,19 @@ Cross-session reconciliation between the observation/D1 migration (per `docs/OBS
 - `GetMainnetHiringExposure` keeps its 60-second window for informative labels
   and for deciding what the landing exposes. It is no longer a dependency of
   notify.
+
+## 2026-09-03 — Chain phases are proven by the Commerce log, not by `receipt.to`
+
+- Symptom: the first real Mainnet hires (jobs 56695 and 56696, buyer with an
+  EIP-7702 delegation) left only `clicked` telemetry. Their `created` and
+  `funded` reports were rejected with `CONTRACT_MISMATCH` because the Worker
+  required `receipt.to` to be Commerce, and an atomic EIP-5792 batch is a
+  transaction from the buyer to the buyer. The marketplace mapped the 409 to
+  `rejected` and the browser beacon never reads the answer, so nothing surfaced.
+- The proof of a phase is the Commerce-emitted event for that job id, whose
+  `address` is already checked per log. The `receipt.to` requirement is removed;
+  every other check (receipt success, event present, job state compatible, agent
+  wallet equals provider) is unchanged.
+- The hire page replays the confirmed phases of a stored journal on load; the
+  Worker deduplicates by transaction hash, so lost reports are recovered without
+  a backfill job. On-chain jobs made outside the marketplace remain out of scope.

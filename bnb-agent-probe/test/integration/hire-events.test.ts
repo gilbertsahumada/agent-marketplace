@@ -165,14 +165,26 @@ describe("hire events", () => {
     }]);
   });
 
+  it("verifies phases from an EIP-7702 batch whose receipt targets the buyer, not Commerce", async () => {
+    // One atomic wallet_sendCalls batch: the transaction goes from the buyer to
+    // the buyer's delegated account, and both Commerce events share the hash.
+    const batch = fakeReader({ to: BUYER, logs: [createdLog(BSC_COMMERCE, 551n), fundedLog(BSC_COMMERCE, 551n)] });
+    const created = await respond(request({ chainId: 56, agentId: "303779", phase: "created", jobId: "551", txHash: TX_HASH }), batch);
+    expect(created.status).toBe(201);
+    const funded = await respond(fundedRequest(), batch);
+    expect(funded.status).toBe(201);
+    expect(await rows()).toMatchObject([
+      { eventKey: `56:${TX_HASH}:created`, phase: "created", provenance: "chain_verified" },
+      { eventKey: `56:${TX_HASH}:funded`, phase: "funded", provenance: "chain_verified" },
+    ]);
+  });
+
   it("rejects a funded claim the chain does not support and stores nothing", async () => {
     const cases: Array<[HireChainReader, string]> = [
       [fakeReader({ logs: [createdLog(BSC_COMMERCE, 551n)] }), "EVENT_MISSING"],
       [fakeReader({ logs: [fundedLog(BSC_COMMERCE, 552n)] }), "EVENT_MISSING"],
       [fakeReader({ logs: [fundedLog(OTHER, 551n)] }), "EVENT_MISSING"],
       [fakeReader({ status: "reverted" }), "RECEIPT_REVERTED"],
-      [fakeReader({ to: OTHER }), "CONTRACT_MISMATCH"],
-      [fakeReader({ to: null }), "CONTRACT_MISMATCH"],
       [fakeReader({ jobStatus: 0 }), "JOB_STATUS_INCOMPATIBLE"],
       [fakeReader({ jobProvider: OTHER }), "AGENT_MISMATCH"],
       [fakeReader({ agentWallet: ZERO, jobProvider: OTHER }), "AGENT_MISMATCH"],

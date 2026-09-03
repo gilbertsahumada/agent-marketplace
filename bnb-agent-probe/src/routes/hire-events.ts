@@ -174,9 +174,9 @@ async function verifyChainPhase(
     throw new HireEventRejected("RECEIPT_NOT_FOUND");
   }
   if (receipt.status !== "success") throw new HireEventRejected("RECEIPT_REVERTED");
-  if (!receipt.to || !isAddressEqual(receipt.to, deployment.commerce)) {
-    throw new HireEventRejected("CONTRACT_MISMATCH");
-  }
+  // `receipt.to` is not checked: an EIP-5792 batch from an EIP-7702 wallet is a
+  // transaction from the buyer to the buyer, and the proof of the phase is the
+  // Commerce-emitted log below, whose `address` is checked per log.
   const jobId = BigInt(input.jobId);
   const eventNames = PHASE_EVENTS[input.phase];
   const proven = receipt.logs.some((log) => {
