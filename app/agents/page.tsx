@@ -8,7 +8,9 @@ import { MarketplaceDataUnavailableError } from "@/src/business/errors/marketpla
 import {
   DEFAULT_REGISTERED_AGENT_SORT,
   MARKETPLACE_DATA_SORTS,
+  MARKETPLACE_REACHABILITY,
   type MarketplaceSort,
+  type MarketplaceReachability,
 } from "@/src/business/use-cases/list-marketplace-agents";
 import { CATALOG_STATUSES, type CatalogStatus } from "@/src/business/entities/catalog-candidate";
 
@@ -31,6 +33,12 @@ export default async function AgentsPage({ searchParams }: { searchParams: Promi
   const validStatuses = rawStatuses.filter((status): status is CatalogStatus => CATALOG_STATUSES.includes(status as CatalogStatus));
   if (validStatuses.length !== rawStatuses.length) notFound();
   const statuses: CatalogStatus[] = [...new Set(validStatuses)];
+  const rawReachability = view === "marketplace"
+    ? Array.isArray(params.reachability) ? params.reachability : typeof params.reachability === "string" ? [params.reachability] : []
+    : [];
+  const validReachability = rawReachability.filter((value): value is MarketplaceReachability => MARKETPLACE_REACHABILITY.includes(value as MarketplaceReachability));
+  if (validReachability.length !== rawReachability.length) notFound();
+  const reachability: MarketplaceReachability[] = [...new Set(validReachability)];
   const sort = typeof params.sort === "string" && SUPPORTED_SORTS.has(params.sort as MarketplaceSort)
     ? params.sort as MarketplaceSort
     : view === "all" ? DEFAULT_REGISTERED_AGENT_SORT : undefined;
@@ -41,6 +49,7 @@ export default async function AgentsPage({ searchParams }: { searchParams: Promi
   if (sort) retryParams.set("sort", sort);
   for (const category of categories) retryParams.append("category", category);
   for (const status of statuses) retryParams.append("status", status);
+  for (const value of reachability) retryParams.append("reachability", value);
   const metricsPromise = Promise.all([
     listMarketplaceAgents.execute({
       view: "all",
@@ -51,12 +60,12 @@ export default async function AgentsPage({ searchParams }: { searchParams: Promi
     getCatalogCandidatePage({ status: "declared", page: 1, limit: 1, includeFacets: true }).catch(() => null),
   ]);
   const catalog = view === "marketplace" ? await getCatalogCandidatePage({
-    statuses, categories, page, limit: 24, ...optional,
+    statuses, categories, reachability, page, limit: 24, ...optional,
   }) : null;
   let data;
   if (!catalog) {
     const baselineStatuses = statuses.length === 0 || (statuses.length === 1 && statuses[0] === "declared");
-    if (view === "marketplace" && (!baselineStatuses || categories.length > 1)) {
+    if (view === "marketplace" && (!baselineStatuses || categories.length > 1 || reachability.length > 0)) {
       return <CatalogUnavailable retryHref={`/agents?${retryParams.toString()}`} />;
     }
     try {
@@ -81,7 +90,7 @@ export default async function AgentsPage({ searchParams }: { searchParams: Promi
     {...(data ? { data } : {})}
     {...(catalog ? { catalog } : {})}
     observations={observations}
-    query={{ view, statuses, categories, ...optional }}
+    query={{ view, statuses, categories, reachability, ...optional }}
     {...(mainnetProof ? { provenAgentId: mainnetProof.agentId } : {})}
     {...(typeof registryTotal === "number" ? { registryTotal } : {})}
     {...(typeof operationalTotal === "number" ? { operationalTotal } : {})}

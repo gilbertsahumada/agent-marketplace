@@ -5,7 +5,10 @@ import { Search } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import type { MarketplaceCategory } from "@/src/business/entities/marketplace-agent";
 import type { CatalogStatus } from "@/src/business/entities/catalog-candidate";
-import type { MarketplaceSort } from "@/src/business/use-cases/list-marketplace-agents";
+import type {
+  MarketplaceReachability,
+  MarketplaceSort,
+} from "@/src/business/use-cases/list-marketplace-agents";
 import { useCatalogNavigation } from "./catalog-navigation";
 
 const SEARCH_DELAY_MS = 300;
@@ -14,6 +17,7 @@ export function catalogSearchHref(input: {
   view: "all" | "marketplace";
   statuses: CatalogStatus[];
   categories: MarketplaceCategory[];
+  reachability?: MarketplaceReachability[];
   sort?: MarketplaceSort;
   q: string;
 }) {
@@ -21,6 +25,7 @@ export function catalogSearchHref(input: {
   if (input.view === "marketplace") {
     for (const status of input.statuses) params.append("status", status);
     for (const category of input.categories) params.append("category", category);
+    for (const value of input.reachability ?? []) params.append("reachability", value);
   }
   if (input.sort) params.set("sort", input.sort);
   const q = input.q.trim();
@@ -28,10 +33,11 @@ export function catalogSearchHref(input: {
   return `/agents?${params.toString()}`;
 }
 
-export function CatalogSearch({ view, statuses, categories, sort, q = "" }: {
+export function CatalogSearch({ view, statuses, categories, reachability = [], sort, q = "" }: {
   view: "all" | "marketplace";
   statuses: CatalogStatus[];
   categories: MarketplaceCategory[];
+  reachability?: MarketplaceReachability[];
   sort?: MarketplaceSort;
   q?: string;
 }) {
@@ -47,10 +53,10 @@ export function CatalogSearch({ view, statuses, categories, sort, q = "" }: {
   useEffect(() => {
     if (value.trim() === q.trim()) return;
     const timeout = window.setTimeout(() => {
-      navigate(catalogSearchHref({ view, statuses, categories, ...(sort ? { sort } : {}), q: value }), "replace");
+      navigate(catalogSearchHref({ view, statuses, categories, reachability, ...(sort ? { sort } : {}), q: value }), "replace");
     }, SEARCH_DELAY_MS);
     return () => window.clearTimeout(timeout);
-  }, [categories, navigate, q, sort, statuses, value, view]);
+  }, [categories, navigate, q, reachability, sort, statuses, value, view]);
 
   return (
     <label className="relative block w-full min-w-0">

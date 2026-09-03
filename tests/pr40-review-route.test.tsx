@@ -100,4 +100,11 @@ describe("agents page category handling", () => {
       expect.objectContaining({ view: "marketplace", page: 1, limit: 12, category: "grid_trading" }),
     ]);
   });
+
+  it("R5: forwards live reachability to the catalog feed", async () => {
+    await renderPage({ view: "marketplace", reachability: "live" });
+    expect(catalogDataCalls()).toEqual([
+      expect.objectContaining({ reachability: ["live"], page: 1, limit: 24 }),
+    ]);
+  });
 });

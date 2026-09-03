@@ -97,10 +97,11 @@ function AgentComparisonTable({ agents, registry }: { agents: AgentCardViewModel
   );
 }
 
-export function CatalogResults({ agents, registry = false, toolbar, emptyContent }: {
+export function CatalogResults({ agents, registry = false, toolbar, filters, emptyContent }: {
   agents: AgentCardViewModel[];
   registry?: boolean;
   toolbar?: ReactNode;
+  filters?: ReactNode;
   emptyContent?: ReactNode;
 }) {
   const { pending } = useCatalogNavigation();
@@ -112,18 +113,20 @@ export function CatalogResults({ agents, registry = false, toolbar, emptyContent
     <Tabs className="gap-5" defaultValue="cards">
       <div className="grid items-center gap-3 min-[30rem]:grid-cols-[minmax(0,1fr)_auto]">
         {toolbar ?? <span />}
-        <TabsList aria-label="Catalog layout" className="justify-self-start min-[30rem]:justify-self-end">
-          <TabsTrigger value="cards"><LayoutGrid aria-hidden="true" data-icon="inline-start" />Cards</TabsTrigger>
-          <TabsTrigger value="table"><List aria-hidden="true" data-icon="inline-start" />Table</TabsTrigger>
+        <TabsList aria-label="Catalog layout" className="h-10 border border-white/10 bg-black/30 justify-self-start min-[30rem]:justify-self-end">
+          <TabsTrigger className="h-full px-3" value="cards"><LayoutGrid aria-hidden="true" data-icon="inline-start" />Cards</TabsTrigger>
+          <TabsTrigger className="h-full px-3" value="table"><List aria-hidden="true" data-icon="inline-start" />Table</TabsTrigger>
         </TabsList>
       </div>
+
+      {filters}
 
       {pending ? (
         <CatalogResultsSkeleton />
       ) : visibleAgents.length > 0 ? (
         <>
           <TabsContent value="cards">
-            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            <div className="grid gap-5 md:grid-cols-2">
               {visibleAgents.map((agent) => <AgentCard agent={agent} key={agent.agentId} registry={registry} />)}
             </div>
           </TabsContent>

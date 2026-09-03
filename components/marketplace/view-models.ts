@@ -3,6 +3,7 @@ import type { PublicAgentVerification, PublicVerificationSnapshot } from "@/src/
 import { deriveAgentPassportState, deriveSnapshotAgentPassportState } from "@/src/business/policies/evidence-passport-policy";
 import { isReleaseAgentHireable, isReleaseQuoteCurrent, isVerificationSnapshotCurrent } from "@/src/business/policies/release-qualification-policy";
 import type { AgentCardViewModel, EvidenceStepViewModel, VerificationDriftViewModel } from "./presentation-types";
+import type { AgentProtocolLabel } from "./presentation-types";
 import type { WorkerObservationTarget } from "@/src/business/entities/worker-observations";
 
 export const hireabilityLabels: Record<AgentCardViewModel["hireability"], string> = {
@@ -21,6 +22,23 @@ export function hireabilityLabelFor(view: AgentCardViewModel): string {
 }
 
 const REACHABILITY_OBSERVATION_MAX_AGE_MS = 15 * 60_000;
+
+function declaredProtocols(agent: MarketplaceAgent): AgentProtocolLabel[] {
+  const values = [
+    ...agent.services.map(({ name }) => name),
+    ...(agent.endpointObservation.protocol ? [agent.endpointObservation.protocol] : []),
+  ];
+  const labels = values.flatMap((value): AgentProtocolLabel[] => {
+    const normalized = value.trim().toLowerCase().replace(/[^a-z0-9]/g, "");
+    if (normalized === "a2a") return ["A2A"];
+    if (normalized === "mcp") return ["MCP"];
+    if (normalized === "erc8183" || normalized === "erc8183http") return ["ERC-8183 HTTP"];
+    if (normalized === "web" || normalized === "website") return ["Web"];
+    if (normalized === "x402") return ["x402"];
+    return [];
+  });
+  return [...new Set(labels)];
+}
 
 function evidenceAge(observedAt: string, now = Date.now()): string {
   const elapsedSeconds = Math.max(0, Math.floor((now - Date.parse(observedAt)) / 1_000));
@@ -126,6 +144,7 @@ export function agentCardViewModel(agent: MarketplaceAgent, provenAgentId?: stri
     operator: agent.operator,
     quoteRequestAvailable,
     categories: agent.categories.map(({ category }) => category),
+    protocols: declaredProtocols(agent),
     href: `/hire/${agent.agentId}`,
     hireability: agent.hireability.canHire
       ? "hireable"

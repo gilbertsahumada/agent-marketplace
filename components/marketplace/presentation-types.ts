@@ -10,6 +10,8 @@ export type EvidenceKind = "declared" | "reachable" | "quote" | "job";
 
 export type EvidenceStatus = "verified" | "failed" | "current" | "unavailable" | "unknown";
 
+export type AgentProtocolLabel = "A2A" | "MCP" | "ERC-8183 HTTP" | "Web" | "x402";
+
 export interface EvidenceStepViewModel {
   kind: EvidenceKind;
   label: string;
@@ -40,6 +42,7 @@ export interface AgentCardViewModel {
   buyerAction?: "unavailable" | "check_availability" | "request_quote" | "prepare_hire";
   blockingReasons?: string[];
   categories: MarketplaceCategory[];
+  protocols?: AgentProtocolLabel[];
   href: string;
   hireability: "hireable" | "mcp_only" | "quote_stale" | "wallet_ambiguous" | "listed_only";
   evidence: EvidenceStepViewModel[];

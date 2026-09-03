@@ -62,22 +62,61 @@ export function agentJourneyAction(agent: AgentCardViewModel): { href: string; l
   if (action === "prepare_hire" || action === "request_quote") {
     return { href: `/hire/${agent.agentId}#hire-flow`, label: "Hire agent" };
   }
-  if (action === "check_availability") return { href: `/hire/${agent.agentId}#validation`, label: "Hire agent" };
+  if (action === "check_availability") return { href: `/hire/${agent.agentId}#validation`, label: "Check availability" };
   return { href: `/hire/${agent.agentId}`, label: "View agent" };
+}
+
+function formatObservationTime(value: string) {
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+    timeZone: "UTC",
+  }).format(new Date(value)).replace(",", "") + " UTC";
+}
+
+function platformObservation(agent: AgentCardViewModel) {
+  const monitoring = agent.monitoring;
+  const reachability = agent.evidence.find((step) => step.kind === "reachable")?.status;
+  if (monitoring?.state === "feed_unavailable") return { label: "Monitoring unavailable", tone: "text-zinc-400", dot: "bg-zinc-500" };
+  if (monitoring?.state === "no_endpoint_declared") return { label: "No protocol endpoint", tone: "text-amber-300", dot: "bg-amber-300" };
+  if (!monitoring || monitoring.state === "not_monitored" || monitoring.state === "never_probed") {
+    return { label: "Pending validation", tone: "text-amber-300", dot: "bg-amber-300" };
+  }
+  if (reachability === "verified") {
+    return { label: "Protocol valid", tone: "text-emerald-300", dot: "bg-emerald-300" };
+  }
+  if (reachability === "failed") return { label: "Last probe failed", tone: "text-red-300", dot: "bg-red-400" };
+  if (["quote_verified", "protocol_valid", "quote_rejected", "reachable"].includes(monitoring.latestOutcome ?? "")) {
+    return { label: "Observation expired", tone: "text-amber-300", dot: "bg-amber-300" };
+  }
+  return { label: "Pending validation", tone: "text-amber-300", dot: "bg-amber-300" };
 }
 
 export function AgentCard({ agent, registry = false }: { agent: AgentCardViewModel; registry?: boolean }) {
   const canRequestQuote = agent.quoteRequestAvailable === true;
   const status = marketplaceStatus(agent, registry);
   const action = agentJourneyAction(agent);
+  const observation = platformObservation(agent);
+  const observationMeta = [
+    agent.monitoring?.latestHttpStatus ? `HTTP ${agent.monitoring.latestHttpStatus}` : undefined,
+    typeof agent.monitoring?.latestDurationMs === "number" && agent.monitoring.latestDurationMs > 0
+      ? `${agent.monitoring.latestDurationMs} ms`
+      : undefined,
+  ].filter(Boolean).join(" · ");
 
   return (
-    <Card className="marketplace-surface marketplace-agent-evidence-card h-full gap-4 py-5" data-passport-state={agent.passportState}>
-      <CardHeader className="gap-4 px-5">
-        <div className="flex items-start gap-3">
-          <AgentAvatar {...(agent.imageUrl ? { imageUrl: agent.imageUrl } : {})} name={agent.name} />
+    <Card className="marketplace-surface marketplace-agent-evidence-card h-full gap-5 overflow-hidden py-6" data-passport-state={agent.passportState}>
+      <CardHeader className="gap-5 px-6">
+        <div className="flex items-start gap-4">
+          <div className="shrink-0 [&_[data-slot=avatar]]:size-14">
+            <AgentAvatar {...(agent.imageUrl ? { imageUrl: agent.imageUrl } : {})} name={agent.name} />
+          </div>
           <div className="min-w-0 flex-1">
-            <CardTitle className="line-clamp-2 text-base leading-tight">
+            <CardTitle className="line-clamp-2 text-lg leading-tight">
               <Link className="hover:text-primary" href={`/hire/${agent.agentId}`} prefetch={false}>{agent.name}</Link>
             </CardTitle>
             <a
@@ -110,14 +149,34 @@ export function AgentCard({ agent, registry = false }: { agent: AgentCardViewMod
             </Badge>
           )) : <span className="text-xs text-zinc-500">No marketplace outcome assigned</span>}
         </div>
+        {agent.protocols && agent.protocols.length > 0 && (
+          <div aria-label="Declared protocols" className="flex flex-wrap gap-1.5">
+            {agent.protocols.map((protocol) => <Badge className="border-white/10 bg-white/[0.04] text-[10px] tracking-wide text-zinc-300" key={protocol} variant="outline">{protocol}</Badge>)}
+          </div>
+        )}
       </CardHeader>
 
-      <CardContent className="mt-auto px-5">
+      <CardContent className="mt-auto space-y-5 px-6">
         <EvidenceRail ariaLabel={`Evidence for ${agent.name}`} density="summary" steps={agent.evidence} />
+        <div className="rounded-lg border border-white/8 bg-black/20 p-3.5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className="text-xs font-medium text-zinc-400">Platform observation</span>
+            {observationMeta && <span className="font-stat text-[11px] text-zinc-500">{observationMeta}</span>}
+          </div>
+          <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+            <span className={`inline-flex items-center gap-2 text-sm font-medium ${observation.tone}`}>
+              <span aria-hidden="true" className={`size-1.5 rounded-full ${observation.dot}`} />
+              {observation.label}
+            </span>
+            {agent.monitoring?.lastAttemptAt && (
+              <span className="text-[11px] text-zinc-500">Last checked {formatObservationTime(agent.monitoring.lastAttemptAt)}</span>
+            )}
+          </div>
+        </div>
       </CardContent>
 
-      <CardFooter className="border-white/10 bg-zinc-950/40 px-5 py-3">
-        <Button asChild className="w-full" size="sm" variant={action.label === "Hire agent" ? "default" : "outline"}>
+      <CardFooter className="border-white/10 bg-zinc-950/40 px-6 py-4">
+        <Button asChild className="w-full" variant={action.label === "Hire agent" ? "default" : "outline"}>
           <Link href={action.href} prefetch={false}>
             {action.label}
             <ArrowUpRight aria-hidden="true" data-icon="inline-end" />
