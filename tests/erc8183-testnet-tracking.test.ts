@@ -1,5 +1,6 @@
 import { getAddress } from "viem";
 import { describe, expect, it } from "vitest";
+import { DEMO_AGENT_BUYER } from "../src/business/entities/demo-agent-buyer.ts";
 import type { Erc8183JobFacts } from "../src/business/entities/erc8183-browser-spike.ts";
 import type { VerifiedHireEvent } from "../src/business/entities/verified-hire-event.ts";
 import { Erc8183DemoJobNotFoundError, Erc8183SpikeDisabledError } from "../src/business/errors/erc8183-spike-errors.ts";
@@ -34,7 +35,10 @@ function job(overrides: Partial<Erc8183JobFacts> = {}): Erc8183JobFacts {
   };
 }
 
-function jobs(getJob: Erc8183SpikeRepository["getJob"]): Erc8183SpikeRepository {
+function jobs(
+  getJob: Erc8183SpikeRepository["getJob"],
+  readAgentWallet?: Erc8183SpikeRepository["readAgentWallet"],
+): Erc8183SpikeRepository {
   return {
     allowlist: {
       chainId: 97,
@@ -52,6 +56,7 @@ function jobs(getJob: Erc8183SpikeRepository["getJob"]): Erc8183SpikeRepository 
     validateQuote: async () => { throw new Error("unused"); },
     getBuyerFacts: async () => { throw new Error("unused"); },
     notifyFunded: async () => { throw new Error("unused"); },
+    ...(readAgentWallet ? { readAgentWallet } : {}),
   };
 }
 
@@ -72,6 +77,68 @@ describe("GetErc8183TestnetJobTracking", () => {
       liveStatus: "verified",
       job: { jobId: "551", status: "SUBMITTED" },
       snapshot: { source: "snapshot:gate6a-job-551" },
+      buyerIdentity: { kind: "unknown", agentId: null, verified: false, registry: null },
+    });
+  });
+
+  describe("buyer identity", () => {
+    const REGISTRY = ERC8183_TESTNET.registry;
+
+    it("labels the declared demo agent-buyer wallet without claiming an identity it has not declared", async () => {
+      const result = await new GetErc8183TestnetJobTracking(
+        jobs(async () => job({ buyer: DEMO_AGENT_BUYER.address }), async () => { throw new Error("must not read"); }),
+        proofs(),
+        undefined,
+        { address: DEMO_AGENT_BUYER.address, agentId: null },
+      ).execute({ jobId: "551" });
+      expect(result.buyerIdentity).toEqual({ kind: "demo_agent", agentId: null, verified: false, registry: null });
+    });
+
+    it("verifies a declared agent id against the registry wallet or owner read from chain", async () => {
+      const reads: bigint[] = [];
+      const tracker = (agentWallet: string, owner: string) => new GetErc8183TestnetJobTracking(
+        jobs(async () => job({ buyer: DEMO_AGENT_BUYER.address }), async (agentId) => {
+          reads.push(agentId);
+          return { registry: REGISTRY, agentWallet: getAddress(agentWallet), owner: getAddress(owner) };
+        }),
+        proofs(),
+        undefined,
+        { address: DEMO_AGENT_BUYER.address, agentId: 7 },
+      );
+      const byWallet = await tracker(DEMO_AGENT_BUYER.address, "0x3333333333333333333333333333333333333333").execute({ jobId: "551" });
+      expect(byWallet.buyerIdentity).toEqual({ kind: "demo_agent", agentId: "7", verified: true, registry: REGISTRY });
+      const byOwner = await tracker("0x3333333333333333333333333333333333333333", DEMO_AGENT_BUYER.address.toLowerCase()).execute({ jobId: "551" });
+      expect(byOwner.buyerIdentity.verified).toBe(true);
+      const mismatch = await tracker("0x3333333333333333333333333333333333333333", "0x4444444444444444444444444444444444444444").execute({ jobId: "551" });
+      expect(mismatch.buyerIdentity).toEqual({ kind: "demo_agent", agentId: "7", verified: false, registry: REGISTRY });
+      expect(reads).toEqual([7n, 7n, 7n]);
+    });
+
+    it("never fails the page on a registry read error and never verifies without a chain read", async () => {
+      const failing = await new GetErc8183TestnetJobTracking(
+        jobs(async () => job({ buyer: DEMO_AGENT_BUYER.address }), async () => { throw new Error("rpc down"); }),
+        proofs(),
+        undefined,
+        { address: DEMO_AGENT_BUYER.address, agentId: 7 },
+      ).execute({ jobId: "551" });
+      expect(failing.buyerIdentity).toEqual({ kind: "demo_agent", agentId: "7", verified: false, registry: null });
+      const noReader = await new GetErc8183TestnetJobTracking(
+        jobs(async () => job({ buyer: DEMO_AGENT_BUYER.address })),
+        proofs(),
+        undefined,
+        { address: DEMO_AGENT_BUYER.address, agentId: 7 },
+      ).execute({ jobId: "551" });
+      expect(noReader.buyerIdentity).toEqual({ kind: "demo_agent", agentId: "7", verified: false, registry: null });
+    });
+
+    it("resolves the buyer from the snapshot when the live read is unavailable", async () => {
+      const result = await new GetErc8183TestnetJobTracking(
+        jobs(async () => { throw new Erc8183SpikeDisabledError(); }),
+        proofs(),
+        undefined,
+        { address: GATE6A_JOB_551_MANIFEST.buyer, agentId: null },
+      ).execute({ jobId: "551" });
+      expect(result).toMatchObject({ liveStatus: "unavailable", buyerIdentity: { kind: "demo_agent", verified: false } });
     });
   });
 

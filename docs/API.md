@@ -260,9 +260,18 @@ reading BSC directly; this route never becomes their source.
 ### `GET /api/marketplace/jobs/testnet/[jobId]`
 
 Response: `{ liveStatus: "verified" | "unavailable", job: Erc8183JobFacts | null,
-snapshot: PublicJobProofSnapshotRecord | null, verifiedPhases: VerifiedHireEvent[] }`.
+snapshot: PublicJobProofSnapshotRecord | null, verifiedPhases: VerifiedHireEvent[],
+buyerIdentity: BuyerIdentity }`.
 When the live chain read is unavailable but a stored snapshot exists, the
 snapshot is served with `liveStatus: "unavailable"`.
+
+`buyerIdentity` is what the marketplace can honestly say about the buyer
+address: `{ kind: "demo_agent" | "unknown", agentId: string | null, verified:
+boolean, registry: address | null }`. `demo_agent` means the buyer is the
+declared demo agent-buyer wallet (`src/business/entities/demo-agent-buyer.ts`);
+`verified` is true only when that wallet declares an ERC-8004 agent id and the
+registry's `getAgentWallet` (or `ownerOf`) read from chain equals the buyer.
+`unknown` claims nothing; human-initiated jobs render exactly as before.
 
 `verifiedPhases` lists this job's hire phases that the observation Worker
 verified on BSC Testnet for the allowlisted seller agent, newest first:

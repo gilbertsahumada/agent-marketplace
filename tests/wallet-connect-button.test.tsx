@@ -7,6 +7,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Connector } from "wagmi";
 import { WalletConnectButton } from "../components/marketplace/wallet-connect-button.tsx";
+import { DEMO_AGENT_BUYER } from "../src/business/entities/demo-agent-buyer.ts";
 import { TooltipProvider } from "../components/ui/tooltip.tsx";
 
 const account = vi.fn();
@@ -24,7 +25,7 @@ vi.mock("wagmi", () => ({
   useSwitchChain: () => ({ switchChain }),
 }));
 
-const BUYER = "0x5ee75a1B1648C023e885E58bD3735Ae273f2cc52";
+const BUYER = DEMO_AGENT_BUYER.address;
 
 function renderButton() {
   return render(
