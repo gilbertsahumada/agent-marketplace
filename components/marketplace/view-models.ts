@@ -126,7 +126,7 @@ export function agentCardViewModel(agent: MarketplaceAgent, provenAgentId?: stri
     operator: agent.operator,
     quoteRequestAvailable,
     categories: agent.categories.map(({ category }) => category),
-    href: `/agents/${agent.agentId}`,
+    href: `/hire/${agent.agentId}`,
     hireability: agent.hireability.canHire
       ? "hireable"
       : agent.hireability.status === "mcp_only"
@@ -139,7 +139,6 @@ export function agentCardViewModel(agent: MarketplaceAgent, provenAgentId?: stri
     evidence: evidenceForAgent(agent),
     verification: verificationViewModel(agent),
     passportState: deriveAgentPassportState(agent, provenAgentId),
-    passportHref: `/agents/${agent.agentId}/passport`,
     monitoring: { state: "never_probed", attemptCount: 0 },
     ...(agent.trustScore.total !== null ? { trustScore: agent.trustScore.total } : {}),
   };
@@ -431,11 +430,10 @@ export function snapshotAgentCardViewModel(
     description: "Curated candidate from the sanitized release snapshot; open its profile for live trust8004 metadata.",
     operator: agent.operator,
     categories: agent.categories,
-    href: `/agents/${agent.agentId}`,
+    href: `/hire/${agent.agentId}`,
     hireability: quoteVerified ? "hireable" : quoteStale ? "quote_stale" : "listed_only",
     verification,
     passportState: deriveSnapshotAgentPassportState(agent, snapshot, now, provenAgentId),
-    passportHref: `/agents/${agent.agentId}/passport`,
     monitoring: { state: "never_probed", attemptCount: 0 },
     evidence: [
       {
