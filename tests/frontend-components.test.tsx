@@ -897,9 +897,12 @@ describe("marketplace presentation rules", () => {
     );
 
     await user.click(screen.getByRole("tab", { name: "Table" }));
-    expect(screen.getByRole("table", { name: "Agent comparison" })).toBeInTheDocument();
+    const comparisonTable = screen.getByRole("table", { name: "Agent comparison" });
+    expect(comparisonTable).toBeInTheDocument();
+    expect(comparisonTable.querySelector(".border-l-primary")).toBeNull();
+    expect(comparisonTable.querySelector("[data-evidence-status]")).toHaveClass("size-8");
     expect(screen.getByRole("region", { name: "Scrollable agent comparison" })).toHaveClass("overflow-x-auto");
-    expect(screen.getByRole("columnheader", { name: "Evidence" })).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "Evidence" })).toHaveClass("text-xs");
     expect(screen.getByRole("link", { name: /View V3 Pools powered by HeyAnon on trust8004/i })).toHaveTextContent("Agent #45650");
     expect(screen.getByRole("link", { name: "View agent" })).toHaveAttribute("href", "/hire/45650");
   });

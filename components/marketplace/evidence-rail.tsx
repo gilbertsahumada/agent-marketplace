@@ -63,20 +63,22 @@ function StatusIcon({ status }: { status: EvidenceStatus }) {
   return <CircleDashed aria-hidden="true" className="size-3" />;
 }
 
-function EvidenceIcon({ step }: { step: EvidenceStepViewModel }) {
+function EvidenceIcon({ step, compact = false }: { step: EvidenceStepViewModel; compact?: boolean }) {
   const KindIcon = kindIcons[step.kind];
   return (
     <span
       data-evidence-status={step.status}
       className={cn(
-        "relative flex size-10 items-center justify-center rounded-full border bg-background",
+        "relative flex items-center justify-center rounded-full border bg-background",
+        compact ? "size-8" : "size-10",
         statusStyles[step.status],
         step.status === "unknown" && "border-dashed",
       )}
     >
-      <KindIcon aria-hidden="true" className="size-4" />
+      <KindIcon aria-hidden="true" className={compact ? "size-3.5" : "size-4"} />
       <span className={cn(
-        "absolute -bottom-0.5 -right-0.5 flex size-4 items-center justify-center rounded-full border border-background",
+        "absolute -bottom-0.5 -right-0.5 flex items-center justify-center rounded-full border border-background",
+        compact ? "size-3.5" : "size-4",
         step.status === "verified" && "bg-emerald-500 text-zinc-950",
         step.status === "failed" && "bg-red-500 text-white",
         step.status !== "verified" && step.status !== "failed" && "bg-zinc-800 text-zinc-200",
@@ -95,11 +97,12 @@ export function EvidenceRail({
 }: {
   steps: EvidenceStepViewModel[];
   compact?: boolean;
-  density?: "full" | "compact" | "summary";
+  density?: "full" | "compact" | "summary" | "table";
   ariaLabel?: string;
 }) {
   const condensed = density !== "full";
-  const summary = density === "summary";
+  const summary = density === "summary" || density === "table";
+  const table = density === "table";
 
   return (
     <TooltipProvider>
@@ -108,7 +111,7 @@ export function EvidenceRail({
         className={cn(
           "grid",
           summary
-            ? "evidence-rail-summary grid-cols-4 gap-1.5 sm:gap-2"
+            ? cn("evidence-rail-summary grid-cols-4", table ? "gap-1" : "gap-1.5 sm:gap-2")
             : "gap-4 md:grid-cols-4 md:gap-3",
           condensed && !summary && "gap-3 md:gap-2",
         )}
@@ -133,7 +136,7 @@ export function EvidenceRail({
                       className="relative cursor-pointer rounded-full"
                       type="button"
                     >
-                      <EvidenceIcon step={step} />
+                      <EvidenceIcon compact={table} step={step} />
                     </button>
                   </TooltipTrigger>
                   <TooltipContent
@@ -152,13 +155,13 @@ export function EvidenceRail({
 
               <div className={cn(
                 "min-w-0",
-                summary ? "mt-2 w-full" : "md:mt-3",
+                summary ? table ? "mt-1.5 w-full" : "mt-2 w-full" : "md:mt-3",
                 condensed && !summary && "md:mt-2",
               )}>
                 <div className={cn("flex flex-wrap items-center gap-1.5", summary ? "justify-center" : "md:justify-center")}>
                   <p className={cn(
                     "font-semibold text-zinc-100",
-                    summary ? "text-[10px] leading-tight sm:text-xs" : "text-xs",
+                    summary ? table ? "text-[10px] leading-tight" : "text-[10px] leading-tight sm:text-xs" : "text-xs",
                   )}>{step.label}</p>
                   {density === "full" && <ProvenanceBadge provenance={step.provenance} />}
                   {density === "full" && (
