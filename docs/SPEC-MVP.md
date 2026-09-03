@@ -1,6 +1,6 @@
 # Capa de observación de contratabilidad — SPEC MVP v5 Free-first
 
-**Estado:** WP0, WP1, WP3, WP4, WP5 y WP6 están completos. WP2 conserva pendiente únicamente su ventana canónica de evidencia de 24 horas; la corrida UTC 2026-08-29 fue un ensayo. WP6 (`POST /hire-events`, ruta same-origin y reporte desde el navegador) está implementado y probado; su despliegue en staging requiere el secreto `BSC_TESTNET_RPC_URL` además de `BSC_RPC_URL`. Staging opera desde el 2026-08-30 con Cron de cinco minutos, Queue, D1 y RPC público BSC. El índice normalizado v2 y sus rutas públicas están desplegados en staging; producción y validation continúan safe-off y sin Cron.
+**Estado:** WP0, WP1, WP3, WP4, WP5 y WP6 están completos. La ventana canónica Free de 24 horas de WP2 quedó superada como bloqueante por la promoción a Workers Paid (DECISIONS 2026-09-02); sus artefactos históricos permanecen inmutables. WP6 (`POST /hire-events`, ruta same-origin y reporte desde el navegador) está implementado y probado; su despliegue en staging requiere el secreto `BSC_TESTNET_RPC_URL` además de `BSC_RPC_URL`. Staging opera en Workers Paid desde el 2026-09-02 con Cron de un minuto, Queue, D1 y RPC público BSC sobre el camino v2 del catálogo; el pipeline legacy WP2 conserva su guard y `/health` reporta `schedulerMode=single_phase`. El índice normalizado v2 y sus rutas públicas están desplegados en staging; producción y validation continúan safe-off y sin Cron.
 **Fecha de corte del diseño:** 2026-08-31.
 **Objetivo:** completar la capa de observación necesaria para recorrer:
 

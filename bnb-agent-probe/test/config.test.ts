@@ -90,6 +90,17 @@ describe("loadConfig", () => {
     })).toThrow(/^D1_QUERIES_PER_RUN:/);
   });
 
+  it("reports single_phase for the catalogue v2 path on any plan", () => {
+    expect(loadConfig({ CLOUDFLARE_WORKERS_PLAN: "paid", CATALOG_V2_WRITES_ENABLED: "1" })).toMatchObject({
+      plan: "paid",
+      schedulerMode: "single_phase",
+    });
+    expect(loadConfig({ CATALOG_V2_WRITES_ENABLED: "1" })).toMatchObject({
+      plan: "free",
+      schedulerMode: "single_phase",
+    });
+  });
+
   it.each([
     [{ CLOUDFLARE_WORKERS_PLAN: "enterprise" }, "CLOUDFLARE_WORKERS_PLAN"],
     [{ KILL_SWITCH: "false" }, "KILL_SWITCH"],
