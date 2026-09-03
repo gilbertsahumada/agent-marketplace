@@ -57,6 +57,8 @@ export class ValidateMarketplaceAgent {
       name: evidence.agent.name,
       operator: evidence.agent.operator,
       indexedAt: evidence.agent.indexedAt,
+      // A bounded evaluation report carries no hire history of its own.
+      hireEvents: [],
       onchainIdentity: {
         status: evidence.identity.status === "read_error" ? "unavailable" : evidence.identity.status,
         observedAt: evidence.identity.observedAt,

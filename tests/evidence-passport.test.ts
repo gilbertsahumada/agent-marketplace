@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { MainnetJobProof } from "../src/business/entities/mainnet-job-proof.ts";
 import type { MarketplaceAgent } from "../src/business/entities/marketplace-agent.ts";
+import type { VerifiedHireEvent } from "../src/business/entities/verified-hire-event.ts";
 import {
   buildEvidencePassport,
   type EvidencePassportInput,
@@ -29,7 +30,22 @@ function input(overrides: Partial<EvidencePassportInput> = {}): EvidencePassport
       observedAt: OBSERVED_AT,
     },
     jobProofs: [],
+    hireEvents: [],
     generatedAt: "2026-08-26T10:05:00.000Z",
+    ...overrides,
+  };
+}
+
+function hireEvent(overrides: Partial<VerifiedHireEvent> = {}): VerifiedHireEvent {
+  return {
+    chainId: 56,
+    agentId: "303779",
+    phase: "funded",
+    jobId: "56662",
+    txHash: `0x${"ef".repeat(32)}`,
+    blockNumber: "118077300",
+    occurredAt: "2026-08-26T10:03:00.000Z",
+    verifiedAt: "2026-08-26T10:03:30.000Z",
     ...overrides,
   };
 }
@@ -223,6 +239,36 @@ describe("Evidence Passport policy", () => {
     expect(first.evidenceSnapshotHash).toMatch(/^0x[0-9a-f]{64}$/);
     expect(rerendered.evidenceSnapshotHash).toBe(first.evidenceSnapshotHash);
     expect(changed.evidenceSnapshotHash).not.toBe(first.evidenceSnapshotHash);
+  });
+
+  it("reports chain-verified hire phases as activity without touching the track record or state", () => {
+    const passport = buildEvidencePassport(input({
+      hireEvents: [
+        hireEvent({ phase: "created", occurredAt: "2026-08-26T10:01:00.000Z", txHash: `0x${"aa".repeat(32)}` }),
+        hireEvent(),
+      ],
+    }));
+    expect(passport.checks.hireActivity).toEqual({
+      status: "verified",
+      provenance: "onchain",
+      observedAt: "2026-08-26T10:03:00.000Z",
+      detail: `Latest chain-verified hire phase: funded (Job 56662, tx 0x${"ef".repeat(32)}).`,
+    });
+    expect(passport.state).toBe("registered");
+    expect(passport.trackRecord.provenJobs).toBe(0);
+    expect(passport.checks.job.status).toBe("missing");
+
+    const baseline = buildEvidencePassport(input());
+    expect(baseline.checks.hireActivity).toMatchObject({ status: "missing", provenance: "onchain", observedAt: null });
+    expect(passport.evidenceSnapshotHash).not.toBe(baseline.evidenceSnapshotHash);
+  });
+
+  it("ignores hire events from another chain or agent", () => {
+    const passport = buildEvidencePassport(input({
+      hireEvents: [hireEvent({ chainId: 97 }), hireEvent({ agentId: "1866" })],
+    }));
+    expect(passport.checks.hireActivity.status).toBe("missing");
+    expect(passport.evidenceSnapshotHash).toBe(buildEvidencePassport(input()).evidenceSnapshotHash);
   });
 
   it.each<[string, Partial<MainnetJobProof>]>([
