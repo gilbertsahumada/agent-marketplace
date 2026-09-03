@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import { trust8004AgentHref } from "./agent-card";
 import { EvidencePassportCard } from "./evidence-passport-card";
 
 function ValidationSkeleton() {
@@ -147,8 +148,8 @@ export function ValidateAgentPanel() {
             </div>
 
             <div className="flex flex-wrap gap-3">
-              <Button asChild variant="outline"><Link href={`/agents/${result.agent.agentId}`}>Open indexed profile</Link></Button>
-              <Button asChild variant="ghost"><Link href={`/agents/${result.agent.agentId}/passport`}>Open published Passport</Link></Button>
+              <Button asChild variant="outline"><Link href={`/hire/${result.agent.agentId}`}>Open hiring workspace</Link></Button>
+              <Button asChild variant="ghost"><a href={trust8004AgentHref(result.agent.agentId)} rel="noopener noreferrer" target="_blank">Open identity on trust8004</a></Button>
             </div>
           </div>
         )}
