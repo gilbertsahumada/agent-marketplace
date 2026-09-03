@@ -148,6 +148,28 @@ export function TestnetJobTracker({ tracking }: { tracking: Erc8183TestnetJobTra
         </Card>
       </div>
 
+      {tracking.verifiedPhases.length > 0 && (
+        <Card className="marketplace-surface mt-6">
+          <CardHeader>
+            <CardTitle>Chain-verified hire phases</CardTitle>
+            <CardDescription>Phases the observation Worker verified against BSC Testnet receipts and Commerce events for this job. A verified phase proves the phase, not the deliverable.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ul aria-label={`Chain-verified hire phases for Testnet Job ${jobId}`} className="flex flex-col gap-3">
+              {tracking.verifiedPhases.map((event) => (
+                <li key={`${event.txHash}:${event.phase}`}>
+                  <a className="block rounded-lg border border-white/10 p-3 transition-colors hover:bg-white/[0.03] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" href={`${ERC8183_TESTNET.explorerUrl}/tx/${event.txHash}`} rel="noreferrer" target="_blank">
+                    <span className="flex items-center justify-between gap-3 text-sm text-zinc-200"><span className="flex items-center gap-2"><CheckCircle2 aria-hidden="true" className="size-4 text-emerald-400" />{event.phase}</span><ArrowUpRight aria-hidden="true" className="size-4" /></span>
+                    <span className="font-hash mt-2 block text-[11px] text-zinc-400">{event.txHash}</span>
+                    <span className="mt-2 block text-[11px] text-zinc-500">Block {event.blockNumber} · {event.occurredAt} · onchain</span>
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </CardContent>
+        </Card>
+      )}
+
       {resultVerified && (
         <Card className="mt-6 border-emerald-400/20 bg-emerald-400/[0.04]">
           <CardHeader><CardTitle>Hash-verified result</CardTitle><CardDescription>The displayed content matches the deliverable committed onchain.</CardDescription></CardHeader>

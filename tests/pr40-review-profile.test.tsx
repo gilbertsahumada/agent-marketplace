@@ -119,6 +119,7 @@ function evidencePassport(state: AgentEvidencePassport["state"]): AgentEvidenceP
       endpoint: state === "registered" ? { status: "not_probed", provenance: "not_probed", observedAt: null, detail: "Not probed." } : { ...verified, provenance: "observed" },
       quote: { ...(state === "hireable" || state === "job_proven" ? { ...verified, provenance: "observed" as const } : { status: "missing" as const, provenance: "derived" as const, observedAt: null, detail: "No current quote." }), hireabilityStatus: state === "hireable" || state === "job_proven" ? "quote_verified" : "not_evaluated" },
       job: state === "job_proven" ? verified : { status: "missing", provenance: "onchain", observedAt: null, detail: "No proven job." },
+      hireActivity: { status: "missing", provenance: "onchain", observedAt: null, detail: "No chain-verified hire activity is linked to this agent." },
     },
     trackRecord: {
       provenJobs: state === "job_proven" ? 1 : 0,

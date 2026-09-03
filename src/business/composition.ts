@@ -34,6 +34,7 @@ import {
   getCatalogCandidatePage as loadCatalogCandidatePage,
 } from "../data/observation/catalog-candidate-feed.ts";
 import { syncCatalogObservation } from "../data/observation/catalog-observation-sync.ts";
+import { getVerifiedHireEvents } from "../data/observation/hire-event-feed.ts";
 import { syncHireEvent } from "../data/observation/hire-event-sync.ts";
 import {
   CatalogValidationRequestError,
@@ -53,9 +54,11 @@ export const requestErc8183Quote = new RequestErc8183Quote(erc8183SpikeRepositor
 export const prepareErc8183Hire = new PrepareErc8183Hire(erc8183SpikeRepository);
 export const notifyFundedJob = new NotifyFundedJob(erc8183SpikeRepository);
 export const getErc8183JobStatus = new GetErc8183JobStatus(erc8183SpikeRepository);
+const verifiedHireEventReader = { listByAgent: getVerifiedHireEvents };
 export const getErc8183TestnetJobTracking = new GetErc8183TestnetJobTracking(
   erc8183SpikeRepository,
   publicJobProofRepository,
+  verifiedHireEventReader,
 );
 export const probeMainnetErc8183Quote = new RequestErc8183Quote(mainnetErc8183Repository);
 const liveMainnetQuote = probeMainnetErc8183Quote;
@@ -91,6 +94,7 @@ export const getAgentEvidencePassport = new GetAgentEvidencePassport(
   mainnetJobProofRepository,
   Date.now,
   { execute: loadCatalogCandidate },
+  verifiedHireEventReader,
 );
 export const validateMarketplaceAgent = new ValidateMarketplaceAgent(agentValidationRepository);
 export const getFunnelEvidence = new GetFunnelEvidence(funnelEvidenceRepository);

@@ -1,6 +1,7 @@
 import { getAddress } from "viem";
 import { describe, expect, it } from "vitest";
 import type { Erc8183JobFacts } from "../src/business/entities/erc8183-browser-spike.ts";
+import type { VerifiedHireEvent } from "../src/business/entities/verified-hire-event.ts";
 import { Erc8183DemoJobNotFoundError, Erc8183SpikeDisabledError } from "../src/business/errors/erc8183-spike-errors.ts";
 import { GetErc8183TestnetJobTracking } from "../src/business/use-cases/get-erc8183-testnet-job-tracking.ts";
 import { ERC8183_TESTNET } from "../src/data/erc8183/contracts.ts";
@@ -100,5 +101,36 @@ describe("GetErc8183TestnetJobTracking", () => {
       proofs(),
     );
     await expect(useCase.execute({ jobId: "552" })).rejects.toBeInstanceOf(Erc8183SpikeDisabledError);
+  });
+
+  it("attaches only this job's chain-verified phases for the allowlisted seller agent", async () => {
+    const requests: Array<{ chainId: number; agentId: string }> = [];
+    const event = (jobId: string, phase: VerifiedHireEvent["phase"]): VerifiedHireEvent => ({
+      chainId: 97, agentId: "1866", phase, jobId, txHash: `0x${"ab".repeat(32)}`,
+      blockNumber: "70000000", occurredAt: "2026-09-01T12:00:00.000Z", verifiedAt: null,
+    });
+    const result = await new GetErc8183TestnetJobTracking(jobs(async () => job()), proofs(), {
+      listByAgent: async (input) => {
+        requests.push(input);
+        return [event("551", "funded"), event("552", "created"), event("551", "created")];
+      },
+    }).execute({ jobId: "551" });
+    expect(requests).toEqual([{ chainId: 97, agentId: String(ERC8183_TESTNET.agentId) }]);
+    expect(result.verifiedPhases.map(({ jobId, phase }) => `${jobId}:${phase}`)).toEqual(["551:funded", "551:created"]);
+  });
+
+  it("renders without verified phases when the feed is absent, null or failing", async () => {
+    const absent = await new GetErc8183TestnetJobTracking(jobs(async () => job()), proofs()).execute({ jobId: "551" });
+    expect(absent.verifiedPhases).toEqual([]);
+    const missing = await new GetErc8183TestnetJobTracking(jobs(async () => job()), proofs(), {
+      listByAgent: async () => null,
+    }).execute({ jobId: "551" });
+    expect(missing.verifiedPhases).toEqual([]);
+    const failing = await new GetErc8183TestnetJobTracking(
+      jobs(async () => { throw new Erc8183SpikeDisabledError(); }),
+      proofs(),
+      { listByAgent: async () => { throw new Error("feed down"); } },
+    ).execute({ jobId: "551" });
+    expect(failing).toMatchObject({ liveStatus: "unavailable", verifiedPhases: [] });
   });
 });

@@ -201,6 +201,7 @@ function evidencePassport(state: AgentEvidencePassport["state"]): AgentEvidenceP
       endpoint: state === "registered" ? { status: "not_probed", provenance: "not_probed", observedAt: null, detail: "Not probed." } : { ...verified, provenance: "observed" },
       quote: { ...(state === "hireable" || state === "job_proven" ? { ...verified, provenance: "observed" as const } : { status: "missing" as const, provenance: "derived" as const, observedAt: null, detail: "No current quote." }), hireabilityStatus: state === "hireable" || state === "job_proven" ? "quote_verified" : "not_evaluated" },
       job: state === "job_proven" ? verified : { status: "missing", provenance: "onchain", observedAt: null, detail: "No proven job." },
+      hireActivity: { status: "missing", provenance: "onchain", observedAt: null, detail: "No chain-verified hire activity is linked to this agent." },
     },
     trackRecord: {
       provenJobs: state === "job_proven" ? 1 : 0,
@@ -1294,13 +1295,35 @@ describe("marketplace presentation rules", () => {
 
   it("renders the Job 551 proof with complete hashes when live RPC is unavailable", async () => {
     render(createElement(TestnetJobTracker, {
-      tracking: { liveStatus: "unavailable", job: null, snapshot: GATE6A_JOB_551_MANIFEST },
+      tracking: { liveStatus: "unavailable", job: null, snapshot: GATE6A_JOB_551_MANIFEST, verifiedPhases: [] },
     }));
     expect(screen.getByRole("heading", { name: "ERC-8183 Job #551" })).toBeInTheDocument();
     expect(screen.getByText("Live chain check unavailable")).toBeInTheDocument();
     expect(screen.getByText(GATE6A_JOB_551_MANIFEST.transactions.createJob.hash)).toBeInTheDocument();
     expect(screen.getByText(GATE6A_JOB_551_MANIFEST.transactions.submit.hash)).toBeInTheDocument();
     expect(screen.getByText(GATE6A_JOB_551_MANIFEST.deliverable.content)).toBeInTheDocument();
+    expect(screen.queryByText("Chain-verified hire phases")).not.toBeInTheDocument();
+    const result = await axe.run(document.body);
+    expect(result.violations).toEqual([]);
+  });
+
+  it("lists chain-verified hire phases with their Testnet transaction links", async () => {
+    const txHash = `0x${"cd".repeat(32)}` as const;
+    render(createElement(TestnetJobTracker, {
+      tracking: {
+        liveStatus: "unavailable",
+        job: null,
+        snapshot: GATE6A_JOB_551_MANIFEST,
+        verifiedPhases: [{
+          chainId: 97, agentId: "1866", phase: "funded", jobId: "551", txHash,
+          blockNumber: "70000001", occurredAt: "2026-09-01T12:00:00.000Z", verifiedAt: null,
+        }],
+      },
+    }));
+    expect(screen.getByText("Chain-verified hire phases")).toBeInTheDocument();
+    const list = screen.getByRole("list", { name: "Chain-verified hire phases for Testnet Job 551" });
+    expect(within(list).getByRole("link")).toHaveAttribute("href", `https://testnet.bscscan.com/tx/${txHash}`);
+    expect(within(list).getByText("funded")).toBeInTheDocument();
     const result = await axe.run(document.body);
     expect(result.violations).toEqual([]);
   });

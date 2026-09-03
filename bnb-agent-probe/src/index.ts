@@ -232,6 +232,14 @@ export function createWorker(dependencies: WorkerDependencies = {}): WorkerEntry
           timeoutMs: config.probeTimeoutMs,
         });
       }
+      if (request.method === "GET" && url.pathname === "/hire-events") {
+        const { hireEventsListResponse } = await import("./routes/hire-events");
+        // Short fixed window: verified hire history changes rarely, but the
+        // catalogue-wide cache setting (300 s on staging) is too coarse for it.
+        return cachedCatalogResponse(request, config.catalogResponseCacheSeconds > 0 ? 30 : 0, () => (
+          hireEventsListResponse(request, env.DB)
+        ));
+      }
       if (request.method === "POST" && url.pathname === "/hire-events" && url.search === "") {
         if (env.BUYER_OBSERVATION_SECRET === undefined) return errorResponse("not_found", 404);
         if (!await bearerMatches(request.headers.get("authorization"), env.BUYER_OBSERVATION_SECRET)) {
