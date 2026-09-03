@@ -120,6 +120,7 @@ describe("public catalog validation controllers", () => {
       completedAt: 1_200,
       errorCode: null,
       hasResult: true,
+      result: null,
     });
     const response = await statusRoute.GET(new Request("http://local/api/marketplace/validate/opaque"), {
       params: Promise.resolve({ requestId: "opaque" }),
@@ -135,6 +136,7 @@ describe("public catalog validation controllers", () => {
       completedAt: 1_200,
       errorCode: null,
       hasResult: true,
+      result: null,
     });
     expect(getCatalogValidationStatus).toHaveBeenCalledWith(expect.objectContaining({ validationId: 17 }));
   });
