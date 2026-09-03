@@ -363,6 +363,23 @@ afterEach(() => {
 });
 
 describe("marketplace presentation rules", () => {
+  it("renders the ERC-8183 flow as embeddable content without a second main landmark", () => {
+    render(createElement(Providers, { children: createElement(Erc8183MainnetDemo, {
+      config: MAINNET_DEMO_CONFIG,
+      agentName: "Marketplace Grid Planner",
+      embedded: true,
+    }) }));
+
+    expect(screen.queryByRole("main")).not.toBeInTheDocument();
+    const flow = screen.getByRole("region", { name: "ERC-8183 hiring flow" });
+    expect(flow).toBeInTheDocument();
+    expect(within(flow).getByRole("heading", {
+      level: 2,
+      name: "Hire with your wallet. Verify every step.",
+    })).toBeInTheDocument();
+    expect(within(flow).queryByRole("heading", { level: 1 })).not.toBeInTheDocument();
+  });
+
   it("renders the Evidence Passport as evidence, not as an NFT or guarantee", async () => {
     const { rerender } = render(createElement("main", {}, createElement(EvidencePassportCard, { passport: evidencePassport("registered") })));
     expect(screen.getByRole("heading", { name: "Indexed Evidence Passport" })).toBeInTheDocument();
@@ -451,14 +468,13 @@ describe("marketplace presentation rules", () => {
     expect((await axe.run(document.body)).violations).toEqual([]);
   });
 
-  it("keeps Hire visible but disabled for an MCP-only agent", () => {
+  it("uses one contextual journey action for an MCP-only agent", () => {
     render(createElement(AgentCard, { agent: { agentId: "45650", name: "V3 Pools", description: "Agent", operator: "third_party", categories: ["rebalancing"], href: "/agents/45650", hireability: "mcp_only", evidence, passportState: "evaluated", passportHref: "/agents/45650/passport" } }));
     expect(screen.getByText("Never probed")).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /hire agent/i })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /hire agent/i })).toBeDisabled();
-    const profileLink = screen.getByRole("link", { name: /view profile/i });
-    expect(profileLink).toHaveAttribute("href", "/agents/45650");
-    expect(profileLink).toHaveAttribute("data-prefetch", "false");
+    const journeyLink = screen.getByRole("link", { name: /view agent/i });
+    expect(journeyLink).toHaveAttribute("href", "/hire/45650");
+    expect(journeyLink).toHaveAttribute("data-prefetch", "false");
     const registryLink = screen.getByRole("link", { name: /View V3 Pools on trust8004/i });
     expect(registryLink).toHaveAttribute("href", "https://trust8004.xyz/agents/56:45650");
     expect(registryLink).toHaveTextContent("BSC Mainnet · Agent #45650");
@@ -482,8 +498,7 @@ describe("marketplace presentation rules", () => {
 
     expect(screen.getByText("No endpoint declared")).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /hire agent/i })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /hire agent/i })).toBeDisabled();
-    expect(screen.getByRole("link", { name: /view profile/i })).toHaveAttribute("href", "/agents/45650");
+    expect(screen.getByRole("link", { name: /view agent/i })).toHaveAttribute("href", "/hire/45650");
   });
 
   it("keeps the fresh-quote action visible for a compatible seller without a current observation", () => {
@@ -502,8 +517,29 @@ describe("marketplace presentation rules", () => {
     } }));
 
     expect(screen.getByText("Hireable on Mainnet")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /view profile/i })).toHaveAttribute("href", "/agents/303779");
-    expect(screen.getByRole("link", { name: /hire agent/i })).toHaveAttribute("href", "/hire/303779");
+    expect(screen.queryByRole("link", { name: /view profile/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /request quote/i })).toHaveAttribute("href", "/hire/303779#hire-flow");
+  });
+
+  it("lets a buyer check a declared endpoint without waiting for the scheduler", () => {
+    render(createElement(AgentCard, { agent: {
+      agentId: "113284",
+      name: "Topaz Agent",
+      description: "Agent",
+      operator: "third_party",
+      categories: [],
+      href: "/agents/113284",
+      hireability: "listed_only",
+      buyerAction: "check_availability",
+      evidence,
+      passportState: "evaluated",
+      passportHref: "/agents/113284/passport",
+      monitoring: { state: "probed", source: "worker", latestOutcome: "protocol_valid" },
+    } }));
+
+    expect(screen.getByRole("link", { name: "Check availability" }))
+      .toHaveAttribute("href", "/hire/113284#validation");
+    expect(screen.queryByRole("button", { name: /hire agent/i })).not.toBeInTheDocument();
   });
 
   it("keeps the quote CTA for an admitted seller that declares only ERC-8183", () => {
@@ -751,8 +787,7 @@ describe("marketplace presentation rules", () => {
     expect(screen.getByRole("region", { name: "Scrollable agent comparison" })).toHaveClass("overflow-x-auto");
     expect(screen.getByRole("columnheader", { name: "Evidence" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /View V3 Pools powered by HeyAnon on trust8004/i })).toHaveTextContent("Agent #45650");
-    expect(screen.getByRole("link", { name: "View profile" })).toHaveAttribute("href", "/agents/45650");
-    expect(screen.getByRole("button", { name: /Hire agent/i })).toBeDisabled();
+    expect(screen.getByRole("link", { name: "View agent" })).toHaveAttribute("href", "/hire/45650");
   });
 
   it("renders combined filters, a clear action, and an agents-specific loading skeleton", () => {

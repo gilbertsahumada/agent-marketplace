@@ -48,6 +48,22 @@ function record(value: unknown): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
+function erc8183CapabilityCount(value: Record<string, unknown>, endpoint: URL): number {
+  if (value.status === "ok") return 0;
+  const declaration = record(value.erc8183);
+  if (declaration.supported !== true
+    || typeof declaration.version !== "string" || declaration.version.trim() === ""
+    || !Array.isArray(declaration.jobTypes)
+    || declaration.jobTypes.length === 0
+    || !declaration.jobTypes.every((jobType) => typeof jobType === "string" && jobType.trim() !== "")
+    || typeof declaration.endpoint !== "string") {
+    throw new Error("INVALID_RESPONSE");
+  }
+  const jobsEndpoint = safePublicBrowserUrl(declaration.endpoint);
+  if (!jobsEndpoint || jobsEndpoint.origin !== endpoint.origin) throw new Error("INVALID_RESPONSE");
+  return declaration.jobTypes.length;
+}
+
 function headers(sessionId?: string): Record<string, string> {
   return {
     accept: "application/json, text/event-stream",
@@ -116,9 +132,7 @@ async function validateGet(
 ): Promise<{ status: number; capabilityCount: number }> {
   const destination = target.protocol === "a2a"
     ? routeUrl(url, ".well-known/agent-card.json")
-    : target.protocol === "erc8183_http"
-      ? routeUrl(url, "status")
-      : url.toString();
+    : url.toString();
   const response = await fetchImpl(destination, {
     method: "GET",
     credentials: "omit",
@@ -135,8 +149,7 @@ async function validateGet(
     if (new URL(value.url).origin !== url.origin) throw new Error("INVALID_RESPONSE");
     return { status: response.status, capabilityCount: value.skills.length };
   }
-  if (target.protocol === "erc8183_http" && value.status !== "ok") throw new Error("INVALID_RESPONSE");
-  return { status: response.status, capabilityCount: 0 };
+  return { status: response.status, capabilityCount: erc8183CapabilityCount(value, url) };
 }
 
 export async function validateEndpointInBrowser(

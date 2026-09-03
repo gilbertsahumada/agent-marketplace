@@ -9,6 +9,21 @@ const FAILURE_OUTCOMES = new Set([
   "http_error", "timeout", "network_error", "invalid_response", "unsafe_url", "quote_rejected", "unreachable", "error",
 ]);
 
+const BLOCKING_REASON_COPY: Record<string, string> = {
+  NO_ELIGIBLE_OPERATIONAL_ENDPOINT: "No supported operational endpoint is available for marketplace hiring.",
+  COMMERCE_NOT_ADMITTED: "This seller has not been admitted to the marketplace hiring flow.",
+  FRESH_QUOTE_REQUIRED: "A fresh seller quote is required before preparing the transaction.",
+  CURRENT_CHAIN_CHECK_REQUIRED: "Current onchain checks are required before preparing the transaction.",
+  CATALOG_STATE_UNAVAILABLE: "Current marketplace capability data is unavailable for this agent.",
+};
+
+export function catalogBlockingMessage(reasons: string[] | undefined): string {
+  if (!reasons?.length) return "Marketplace hiring is not currently available for this agent.";
+  const messages = reasons.map((reason) => BLOCKING_REASON_COPY[reason]
+    ?? "The marketplace returned an unsupported hiring blocker and failed closed.");
+  return [...new Set(messages)].join(" ");
+}
+
 function isPlatformReachabilityObservation(
   candidate: CatalogCandidate,
   observation: CatalogCandidate["observations"][number],
@@ -132,6 +147,8 @@ export function catalogCandidateCard(
     ...(candidate.imageUrl ? { imageUrl: candidate.imageUrl } : {}),
     operator: candidate.admission?.state === "admitted" ? "marketplace" : "third_party",
     quoteRequestAvailable: canRequestQuote,
+    buyerAction: candidate.state?.buyerAction ?? "unavailable",
+    blockingReasons: candidate.state?.blockingReasons ?? ["CATALOG_STATE_UNAVAILABLE"],
     categories: candidate.categories,
     href: `/agents/${candidate.agentId}`,
     hireability: canRequestQuote ? (freshQuote ? "hireable" : "quote_stale") : "listed_only",

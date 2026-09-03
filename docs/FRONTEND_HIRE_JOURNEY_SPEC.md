@@ -1,8 +1,8 @@
 # Frontend Hire Journey — Specification
 
-**Status:** Ready for implementation  
-**Date:** 2026-08-31  
-**Owner:** Frontend session  
+**Status:** In implementation
+**Date:** 2026-09-02
+**Owner:** Marketplace integration
 **Companion specification:** `docs/OBSERVATION_INFRASTRUCTURE_SPEC.md`
 
 **Related authorities:** `docs/API.md` defines the public machine-readable API and
@@ -46,9 +46,9 @@ This document owns the browser experience from discovery through the handoff to 
 - Construction, signing or submission of ERC-8183 buyer transactions.
 - Job tracking after creation, except for linking to `/jobs/[jobId]`.
 
-### 2.3 Parallel-session file boundaries
+### 2.3 Integration boundaries
 
-| Area | Owning session | Expected files |
+| Area | Authority | Expected files |
 | --- | --- | --- |
 | Catalog and hire UI | Frontend | `app/agents/**`, `app/hire/**`, `components/marketplace/**`, related UI tests and styles |
 | Discovery and observations | Infrastructure | `bnb-agent-probe/**`, D1 migrations, Worker routes and integration tests |
@@ -56,7 +56,7 @@ This document owns the browser experience from discovery through the handoff to 
 | Shared catalog DTOs | Infrastructure first, frontend consumes | API schema/fixtures and the minimum mapping code needed by the app |
 | Architecture decisions | Integrating session | `docs/DECISIONS.md`, after rebasing all three work streams |
 
-Avoid parallel edits to shared DTO and decision files. The infrastructure contract lands first; the frontend rebases and consumes it; the hiring flow integrates through the explicit interfaces in §10.
+Avoid overlapping edits to shared DTO and decision files. The infrastructure contract is already merged; the frontend consumes it, and the hiring flow integrates through the explicit interfaces in §10.
 
 ## 3. Shared truth model
 
@@ -113,7 +113,8 @@ Required sections, in this order:
 5. Evidence timeline with source, scope, result, age and exact timestamp.
 6. Quote state and quote request action.
 7. ERC-8183 transaction preview and handoff to the hiring session.
-8. Prior jobs/results when available.
+8. Prior jobs/results when the backend exposes an agent-scoped history query; this
+   is progressive enhancement and does not block route unification.
 
 The page is useful even when the agent cannot yet be hired: it explains what is missing and allows a permitted revalidation. It must not become a generic social profile.
 
@@ -136,9 +137,9 @@ Remains separate. It tracks an already-created job, chain state and result; it i
 Cards and table rows expose one product destination:
 
 - Clicking the name/card opens `/hire/[agentId]`.
-- `Hire agent` opens `/hire/[agentId]` when commerce is admitted.
+- `Request quote` or `Continue hire` opens the corresponding section in `/hire/[agentId]` when commerce is admitted.
 - `Check availability` opens `/hire/[agentId]` when an operational commerce endpoint exists but current evidence is missing, stale or failed.
-- `Unavailable` is disabled and includes a concise reason when no supported commerce path exists.
+- `View agent` still opens the canonical page when no supported commerce path exists; the page includes the concise blocker instead of presenting a dead Hire control.
 - Remove the separate `View profile` CTA.
 - The Agent ID itself links externally to trust8004 in a new tab.
 
@@ -260,7 +261,7 @@ The browser submits `agentId`, `endpointKey` and `validationKind`; it does not c
 
 - **A2A:** fetch the declared Agent Card, validate its structure, declared URL and skills.
 - **MCP:** `initialize` → `notifications/initialized` → `tools/list`; report per-stage timing and failure.
-- **ERC-8183 HTTP:** generic health only when the declaration explicitly supports the convention; request quote only on buyer demand.
+- **ERC-8183 HTTP:** GET the exact normalized resource declared by the agent. Accept either the legacy `{status: "ok"}` convention or a structured `erc8183` support declaration; never invent `/health` or `/status` suffixes. Request a quote only on buyer demand.
 - **Quote:** preserve the exact signed seller payload so the backend can independently verify it. Parsed fields alone are insufficient.
 
 ### 7.4 Result handling
@@ -461,13 +462,12 @@ Run these stories against local Worker/D1 fixtures:
 
 ## 17. Rollout and rollback
 
-1. Ship route unification behind a frontend feature flag.
+1. Ship route unification directly after component, route and production-build gates pass.
 2. Keep the old profile route as a temporary redirect.
-3. Enable browser validation for A2A first, then MCP, then ERC-8183 HTTP/quote after protocol fixtures pass.
-4. Enable infrastructure fallback only after the backend route has rate limits, deduplication and staging evidence.
-5. Promote the redirect to permanent and delete duplicate code only after production verification.
+3. Preserve the already shipped endpoint-scoped browser validation and infrastructure fallback contracts.
+4. Promote the redirect to permanent and delete duplicate code only after production verification.
 
-Rollback disables the new orchestration and restores the previous catalog CTA while preserving backend evidence and D1 migrations.
+Rollback restores the previous Vercel deployment while preserving backend evidence and D1 migrations. No second implementation or long-lived feature flag is retained.
 
 ## 18. Acceptance criteria
 

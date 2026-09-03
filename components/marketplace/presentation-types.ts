@@ -37,6 +37,8 @@ export interface AgentCardViewModel {
   imageUrl?: string;
   operator: "third_party" | "marketplace";
   quoteRequestAvailable?: boolean;
+  buyerAction?: "unavailable" | "check_availability" | "request_quote" | "prepare_hire";
+  blockingReasons?: string[];
   categories: MarketplaceCategory[];
   href: string;
   hireability: "hireable" | "mcp_only" | "quote_stale" | "wallet_ambiguous" | "listed_only";

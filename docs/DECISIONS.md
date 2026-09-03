@@ -757,6 +757,42 @@ Cross-session reconciliation between the observation/D1 migration (per `docs/OBS
   reconciles current admitted endpoints with their indexed latest quote rows in
   memory. This uses two bounded D1 reads and preserves newer-rejection semantics.
 
+## 2026-09-03 — Begin the canonical profile-and-hire route migration
+
+- This decision supersedes the 2026-08-31 presentation choice that exposed both
+  `View profile` and `Hire agent`. The later frontend journey specification makes
+  `/hire/[agentId]` the single agent destination; `/agents/[agentId]` becomes a
+  temporary compatibility redirect once the unified page is complete.
+- Buyer actions and blockers come from the normalized catalogue v2 state. The
+  hire page must fail closed when that state is absent and must not reconstruct
+  commerce readiness from legacy operator, service or observation fields.
+- The existing ERC-8183 browser flow now supports an embedded presentation mode.
+  Its quote verification, allowlist, wallet preparation, signatures, transaction
+  ordering and job tracking remain unchanged; only composition is being prepared.
+- Agent-scoped prior-job history is progressive enhancement until the backend
+  exposes that query. It does not block the canonical-route migration.
+- The migration ships as one reviewed Vercel candidate with deployment rollback,
+  rather than keeping two UI implementations behind a long-lived feature flag.
+
+## 2026-09-03 — Complete route unification and honor declared ERC-8183 resources
+
+- Cards and table rows now expose one contextual action and one canonical agent
+  destination: `/hire/[agentId]`. The compatibility `/agents/[agentId]` route
+  redirects there, while the hire page composes identity, evidence, monitoring,
+  endpoint validation and the existing allowlisted Mainnet transaction flow.
+- `Reachable` remains operational evidence, never implicit hireability. A buyer
+  may trigger an immediate browser check or an endpoint-key-bound marketplace
+  validation; only the latter can update shared platform evidence, and neither
+  unsigned check creates a verified quote.
+- ERC-8183 HTTP validation reads the exact normalized URL declared by the agent.
+  It accepts the legacy `{status: "ok"}` response or a structured same-origin
+  support declaration with version, job types and jobs endpoint. The previous
+  Worker-only `/health` suffix could produce a false 404 for declarations such
+  as `/erc8183/status` and is removed from both browser and Worker behavior.
+- Generic signed-quote synchronization remains limited to transports with an
+  implemented quote contract. A protocol-valid third-party status endpoint is
+  presented as available for further validation, not as transaction-ready.
+
 ## 2026-09-03 — Closing SPEC-MVP §11.3 for the v2-only Paid promotion
 
 - The 2026-09-02 promotion moved staging to the Paid profile on the catalogue v2 path. §11.3 was written for the legacy WP2 `header → sweep → probe` pipeline; that pipeline stays behind `WP2_PAID_PIPELINE_NOT_VALIDATED` and is never selected while `CATALOG_V2_WRITES_ENABLED=1`. No `pipeline` scheduler is built: the v2 path runs one phase per tick on every plan, and `loadConfig` now derives `schedulerMode=single_phase` whenever v2 writes are enabled, so `/health` stops advertising a multi-phase mode the Worker does not run.

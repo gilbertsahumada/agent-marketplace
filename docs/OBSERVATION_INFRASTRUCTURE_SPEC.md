@@ -221,7 +221,7 @@ Do not claim an agent was created by BNB Agent Studio unless metadata or a publi
 
 - **A2A:** GET the declared Agent Card and validate its shape, URL and capabilities.
 - **MCP:** POST `initialize`, then `notifications/initialized`, then `tools/list`.
-- **ERC-8183 HTTP:** supported SDK/Studio convention, not a requirement of ERC-8183 itself. Health may establish transport availability; status/admission and negotiation are separate checks.
+- **ERC-8183 HTTP:** supported SDK/Studio convention, not a requirement of ERC-8183 itself. Probe the exact normalized declared resource; do not append an inferred `/health` or `/status`. A valid support/status response may establish transport availability, while admission and negotiation remain separate checks.
 - **x402:** preserve as a declared commerce capability, but it is outside the current ERC-8183 hiring rail unless separately admitted.
 
 ### 4.3 External resources
@@ -631,7 +631,7 @@ evidence, not a code fork.
 ### 11.3 ERC-8183 HTTP
 
 - `/health`, `/status` and `/negotiate` are SDK/Studio conventions, not ERC-8183 core requirements.
-- Scheduled refresh may use the declared health convention.
+- Scheduled and buyer-triggered refresh use the same exact declared resource. Path inference is forbidden because it can turn a valid declaration into a false 404.
 - Status/admission is one-time or metadata-change work, not every hot-path check.
 - Negotiation occurs for admission or buyer demand, not for every scheduled probe.
 
@@ -1047,9 +1047,11 @@ Rollout order:
   without contradiction.
 - [x] Commerce admission is the v2 source of hireability; the legacy
   `marketplaceConfigured` field remains only for compatibility.
-- [x] Internal API v2 returns one normalized state/capability model that the
-  application maps consistently into cards, table, Passport and hire-page
-  responses; the application integration is in merged PR #62.
+- [x] Internal API v2 returns one normalized state/capability model consumed by
+  cards, table and Passport; merged PR #62 established this DTO integration.
+- [x] The canonical `/hire/[agentId]` page consumes that same state/capability
+  model for its complete profile-and-hire presentation; `/agents/[agentId]` is a
+  compatibility redirect and cards/table expose one contextual journey action.
 - [x] Migration/backfill loses no declarations or observations in local tests.
 - [ ] Legacy code is removed only after parity and runtime-reference gates.
 - [x] Local Wrangler/Miniflare and bounded remote staging evidence pass before
@@ -1059,8 +1061,9 @@ Rollout order:
 
 - [x] 1. Infrastructure lands the additive D1 migration, internal API v2 schema
   and deterministic fixtures.
-- [x] 2. Frontend rebases and implements the companion hire journey against those
-  fixtures (merged PR #62).
+- [x] 2a. Frontend rebases and consumes the v2 DTO and fixtures (merged PR #62).
+- [x] 2b. Frontend completes the companion profile/hire route unification against
+  those fixtures.
 - [x] 3. Hiring session exposes quote/prepare/submit interfaces under
   `docs/HIRE-SPEC.md` and consumes verified quote/admission IDs.
 - [x] 4. Integration session resolves shared DTOs, keeps `docs/DECISIONS.md`

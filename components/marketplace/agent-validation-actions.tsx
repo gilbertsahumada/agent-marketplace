@@ -182,7 +182,7 @@ export function AgentValidationActions({ agentId, targets }: {
   }
 
   return (
-    <Card className="marketplace-surface mt-5">
+    <Card className="marketplace-surface mt-5 scroll-mt-6" id="validation">
       <CardHeader>
         <CardTitle>Validate declared endpoints</CardTitle>
         <p className="max-w-3xl text-sm leading-relaxed text-zinc-400">

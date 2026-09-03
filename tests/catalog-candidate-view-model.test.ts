@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { catalogCandidateCard } from "../components/marketplace/catalog-candidate-view-model.ts";
+import { catalogBlockingMessage, catalogCandidateCard } from "../components/marketplace/catalog-candidate-view-model.ts";
 import type { CatalogCandidate } from "../src/business/entities/catalog-candidate.ts";
 
 const NOW = 1_788_000_000_000;
@@ -18,6 +18,29 @@ function candidate(): CatalogCandidate {
 }
 
 describe("catalog candidate card", () => {
+  it.each([
+    ["NO_ELIGIBLE_OPERATIONAL_ENDPOINT", "No supported operational endpoint is available for marketplace hiring."],
+    ["COMMERCE_NOT_ADMITTED", "This seller has not been admitted to the marketplace hiring flow."],
+    ["FRESH_QUOTE_REQUIRED", "A fresh seller quote is required before preparing the transaction."],
+    ["CURRENT_CHAIN_CHECK_REQUIRED", "Current onchain checks are required before preparing the transaction."],
+  ] as const)("maps the production blocker %s to user-facing copy", (reason, message) => {
+    expect(catalogBlockingMessage([reason])).toBe(message);
+  });
+
+  it("combines production blockers and reports unknown blocker codes only once", () => {
+    expect(catalogBlockingMessage([
+      "NO_ELIGIBLE_OPERATIONAL_ENDPOINT",
+      "FRESH_QUOTE_REQUIRED",
+      "SOMETHING_NEW",
+      "SOMETHING_NEW",
+      "ANOTHER_NEW",
+    ])).toBe(
+      "No supported operational endpoint is available for marketplace hiring. "
+      + "A fresh seller quote is required before preparing the transaction. "
+      + "The marketplace returned an unsupported hiring blocker and failed closed.",
+    );
+  });
+
   it("does not promote browser evidence to reachable", () => {
     const value = candidate();
     value.observations.push({ id: 1, agentKey: value.agentKey, endpointKey: "a".repeat(64),
@@ -50,7 +73,41 @@ describe("catalog candidate card", () => {
     const card = catalogCandidateCard(value, NOW);
     expect(card.evidence.find(({ kind }) => kind === "reachable")).toMatchObject({ status: "verified" });
     expect(card.quoteRequestAvailable).toBe(true);
+    expect(card.buyerAction).toBe("request_quote");
+    expect(card.blockingReasons).toEqual(["COMMERCE_NOT_ADMITTED"]);
     expect(card.monitoring).toMatchObject({ attemptCount: 17 });
+  });
+
+  it.each([
+    ["unavailable", false, false, ["NO_COMMERCE_PATH"]],
+    ["check_availability", false, false, ["PLATFORM_EVIDENCE_REQUIRED"]],
+    ["request_quote", true, false, ["FRESH_QUOTE_REQUIRED"]],
+    ["prepare_hire", true, true, []],
+  ] as const)("preserves the normalized %s buyer action and blockers", (
+    buyerAction,
+    canRequestQuote,
+    canPrepareHire,
+    blockingReasons,
+  ) => {
+    const value = candidate();
+    value.state = {
+      operationalStatus: "pending",
+      freshness: "never",
+      commerceStatus: canRequestQuote ? "admitted" : "declared",
+      quoteStatus: canPrepareHire ? "verified_fresh" : "not_requested",
+      buyerAction,
+      canRequestBrowserValidation: buyerAction === "check_availability",
+      canRequestInfrastructureValidation: buyerAction === "check_availability",
+      canRequestQuote,
+      canPrepareHire,
+      blockingReasons: [...blockingReasons],
+    };
+
+    expect(catalogCandidateCard(value, NOW)).toMatchObject({
+      buyerAction,
+      blockingReasons,
+      quoteRequestAvailable: canRequestQuote,
+    });
   });
 
   it("does not surface platform evidence from an external declaration", () => {

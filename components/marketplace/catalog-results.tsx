@@ -2,14 +2,14 @@
 
 import { useMemo, type ReactNode } from "react";
 import Link from "next/link";
-import { ArrowUpRight, ExternalLink, LayoutGrid, List, LockKeyhole, ShieldCheck } from "lucide-react";
+import { ArrowUpRight, ExternalLink, LayoutGrid, List, ShieldCheck } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import { AgentAvatar } from "./agent-avatar";
-import { AgentCard, marketplaceStatus, trust8004AgentHref } from "./agent-card";
+import { AgentCard, agentJourneyAction, marketplaceStatus, trust8004AgentHref } from "./agent-card";
 import { EvidenceRail } from "./evidence-rail";
 import type { AgentCardViewModel, MarketplaceCategory } from "./presentation-types";
 import { CatalogResultsSkeleton } from "./catalog-loading";
@@ -44,13 +44,16 @@ function AgentComparisonTable({ agents, registry }: { agents: AgentCardViewModel
           {agents.map((agent) => {
             const status = marketplaceStatus(agent, registry);
             const canRequestQuote = agent.quoteRequestAvailable === true;
+            const action = agentJourneyAction(agent);
             return (
               <TableRow className={cn(canRequestQuote && "bg-primary/[0.03]")} key={agent.agentId}>
                 <TableCell className={cn("px-4 py-5", canRequestQuote && "border-l-2 border-l-primary")}>
                   <div className="flex items-center gap-3">
                     <AgentAvatar {...(agent.imageUrl ? { imageUrl: agent.imageUrl } : {})} name={agent.name} />
                     <div className="min-w-0">
-                      <p className="max-w-52 truncate font-medium text-white">{agent.name}</p>
+                      <p className="max-w-52 truncate font-medium text-white">
+                        <Link className="hover:text-primary" href={`/hire/${agent.agentId}`} prefetch={false}>{agent.name}</Link>
+                      </p>
                       <a
                         aria-label={`View ${agent.name} on trust8004 (opens in a new tab)`}
                         className="mt-1 inline-flex items-center gap-1 text-xs text-zinc-400 hover:text-white"
@@ -76,23 +79,13 @@ function AgentComparisonTable({ agents, registry }: { agents: AgentCardViewModel
                 </TableCell>
                 <TableCell className="text-zinc-400">{typeof agent.trustScore === "number" ? "Derived" : "Unavailable"}</TableCell>
                 <TableCell className="px-4">
-                  <div className="flex justify-end gap-2">
-                    <Button asChild size="sm" variant="outline">
-                      <Link href={agent.href} prefetch={false}>
-                        View profile
+                  <div className="flex justify-end">
+                    <Button asChild size="sm" variant={canRequestQuote ? "default" : "outline"}>
+                      <Link href={action.href} prefetch={false}>
+                        {action.label}
                         <ArrowUpRight aria-hidden="true" data-icon="inline-end" />
                       </Link>
                     </Button>
-                    {canRequestQuote ? (
-                      <Button asChild size="sm">
-                        <Link href={`/hire/${agent.agentId}`} prefetch={false}>Hire agent</Link>
-                      </Button>
-                    ) : (
-                      <Button disabled size="sm" title="Hiring is not available for this agent" variant="secondary">
-                        Hire agent
-                        <LockKeyhole aria-hidden="true" data-icon="inline-end" />
-                      </Button>
-                    )}
                   </div>
                 </TableCell>
               </TableRow>
