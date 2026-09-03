@@ -412,7 +412,8 @@ describe("marketplace presentation rules", () => {
 
     expect(await screen.findByRole("heading", { name: "Indexed Evidence Passport" })).toBeInTheDocument();
     expect(screen.getByText("Manual review required")).toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: /hire/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Open hiring workspace" })).toHaveAttribute("href", "/hire/303779");
+    expect(screen.getByRole("link", { name: "Open identity on trust8004" })).toHaveAttribute("href", "https://trust8004.xyz/agents/56:303779");
     expect(fetchMock).toHaveBeenCalledWith("/api/marketplace/validate", expect.objectContaining({
       method: "POST",
       body: JSON.stringify({ agentId: "303779" }),
@@ -453,8 +454,8 @@ describe("marketplace presentation rules", () => {
       selected: ["45650", "45381"],
     }));
 
-    expect(screen.getByRole("link", { name: "Passport · Registered for V3 Pools powered by HeyAnon" })).toHaveAttribute("href", "/agents/45650/passport");
-    expect(screen.getByRole("link", { name: "Passport · Registered for Aave powered by HeyAnon" })).toHaveAttribute("href", "/agents/45381/passport");
+    expect(screen.getByRole("link", { name: "View V3 Pools powered by HeyAnon identity and reputation on trust8004 (opens in a new tab)" })).toHaveAttribute("href", "https://trust8004.xyz/agents/56:45650");
+    expect(screen.getByRole("link", { name: "View Aave powered by HeyAnon identity and reputation on trust8004 (opens in a new tab)" })).toHaveAttribute("href", "https://trust8004.xyz/agents/56:45381");
     expect(screen.queryByText("observed ok")).not.toBeInTheDocument();
   });
 
@@ -473,7 +474,7 @@ describe("marketplace presentation rules", () => {
   });
 
   it("uses one contextual journey action for an MCP-only agent", () => {
-    render(createElement(AgentCard, { agent: { agentId: "45650", name: "V3 Pools", description: "Agent", operator: "third_party", categories: ["rebalancing"], href: "/agents/45650", hireability: "mcp_only", evidence, passportState: "evaluated", passportHref: "/agents/45650/passport" } }));
+    render(createElement(AgentCard, { agent: { agentId: "45650", name: "V3 Pools", description: "Agent", operator: "third_party", categories: ["rebalancing"], href: "/hire/45650", hireability: "mcp_only", evidence, passportState: "evaluated" } }));
     expect(screen.getByText("Never probed")).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /hire agent/i })).not.toBeInTheDocument();
     const journeyLink = screen.getByRole("link", { name: /view agent/i });
@@ -492,11 +493,10 @@ describe("marketplace presentation rules", () => {
       description: "Agent",
       operator: "third_party",
       categories: ["rebalancing"],
-      href: "/agents/45650",
+      href: "/hire/45650",
       hireability: "listed_only",
       evidence,
       passportState: "registered",
-      passportHref: "/agents/45650/passport",
       monitoring: { state: "no_endpoint_declared", attemptCount: 0 },
     } }));
 
@@ -512,12 +512,11 @@ describe("marketplace presentation rules", () => {
       description: "Agent",
       operator: "marketplace",
       categories: ["grid_trading"],
-      href: "/agents/303779",
+      href: "/hire/303779",
       hireability: "listed_only",
       quoteRequestAvailable: true,
       evidence,
       passportState: "registered",
-      passportHref: "/agents/303779/passport",
     } }));
 
     expect(screen.getByText("Hireable on Mainnet")).toBeInTheDocument();
@@ -532,12 +531,11 @@ describe("marketplace presentation rules", () => {
       description: "Agent",
       operator: "third_party",
       categories: [],
-      href: "/agents/113284",
+      href: "/hire/113284",
       hireability: "listed_only",
       buyerAction: "check_availability",
       evidence,
       passportState: "evaluated",
-      passportHref: "/agents/113284/passport",
       monitoring: { state: "probed", source: "worker", latestOutcome: "protocol_valid" },
     } }));
 
