@@ -806,6 +806,21 @@ Cross-session reconciliation between the observation/D1 migration (per `docs/OBS
 - The ingest claim (`catalog-ingest.ts` `processNextCatalogIngestTask`) ordered every claimable task (401 rows for 200 pending) because `idx_catalog_ingest_tasks_work` leads with `retryAt`. Migration `0020_catalog_ingest_tasks_claim_index.sql` replaces it with `(status, priority DESC, updatedAt, agentKey)`, and the claim is one compound statement with a per-status branch that walks that index in claim order and stops at its first claimable row (`INDEXED BY`, so the plan does not depend on statistics); the compound `ORDER BY` ranks at most three rows. The old index is dropped rather than kept alongside: the claim was its only reader, and a second secondary index would add one written row per task write, which the Free sweep test caught (62 against the 60-row envelope).
 - After the fix: header 17, sweep 20, probe 582 rows at the same scale; the harness pins ceilings of 200 / 200 / 1,000 and asserts every phase under the staging pin of 3,000. The catalogue list `count(*)` is left as-is: on Paid there is no daily read quota and the 300-second response cache bounds it.
 
+## 2026-09-03 — Make the canonical agent route a hiring workspace
+
+- `/hire/[agentId]` is a commerce surface, not a second ERC-8004 profile. It
+  keeps only the agent's compact identity, availability, quote readiness,
+  ERC-8183 work history and the next executable hiring step. Detailed identity,
+  metadata, services, tools, trust score and reputation are delegated to the
+  existing trust8004 agent page through one secondary external link.
+- The catalogue uses `Hire agent` for every candidate with a real next step.
+  The canonical page then resolves that action to quote/transaction preparation
+  or to the required endpoint validation. Unsupported candidates retain the
+  neutral `View agent` action and the hire control is disabled on arrival.
+- Agent-scoped Mainnet proofs are returned with the existing passport read and
+  rendered as a compact ERC-8183 job history. No new database or competing job
+  authority is introduced; each row links to the existing chain-backed job page.
+
 ## 2026-09-03 — Verified hire events get a read surface: activity, not track record
 
 - Partially lifts the 2026-09-01 non-goal "no read surface yet". The Worker now serves `GET /hire-events?chainId=56|97&agentId=…`: only `chain_verified` rows of one agent on one chain (newest first, at most 50, `idx_hire_agent`), 30-second cache, strict query allowlist. Telemetry rows (`marketplace_observed`) are never exposed. Like `/catalog-agents`, the route is an internal upstream of the marketplace API, read server-side through `OBSERVATIONS_URL` by `src/data/observation/hire-event-feed.ts`, a strict allowlist parser that fails closed to `null`.

@@ -29,6 +29,7 @@ import { Providers } from "../app/providers.tsx";
 import { VerificationDrift } from "../components/marketplace/verification-drift.tsx";
 import { EvidencePassportCard } from "../components/marketplace/evidence-passport-card.tsx";
 import type { AgentEvidencePassport } from "../src/business/entities/evidence-passport.ts";
+import type { MainnetJobProof } from "../src/business/entities/mainnet-job-proof.ts";
 import { ValidateAgentPanel } from "../components/marketplace/validate-agent-panel.tsx";
 import type { AgentValidationReport } from "../src/business/entities/agent-validation.ts";
 import { ComparePage } from "../components/marketplace/compare-page.tsx";
@@ -36,6 +37,7 @@ import ValidateAgentPage from "../app/validate/page.tsx";
 import { agentCardViewModel } from "../components/marketplace/view-models.ts";
 import { MarketplaceLanding } from "../components/marketplace/landing-page.tsx";
 import AgentsLoading from "../app/agents/loading.tsx";
+import HireAgentLoading from "../app/hire/[agentId]/loading.tsx";
 
 const walletState = vi.hoisted(() => ({
   address: null as `0x${string}` | null,
@@ -373,10 +375,8 @@ describe("marketplace presentation rules", () => {
     expect(screen.queryByRole("main")).not.toBeInTheDocument();
     const flow = screen.getByRole("region", { name: "ERC-8183 hiring flow" });
     expect(flow).toBeInTheDocument();
-    expect(within(flow).getByRole("heading", {
-      level: 2,
-      name: "Hire with your wallet. Verify every step.",
-    })).toBeInTheDocument();
+    expect(within(flow).queryByText("Hire with your wallet. Verify every step.")).not.toBeInTheDocument();
+    expect(within(flow).getByText("1 · Get a server-verified quote")).toBeInTheDocument();
     expect(within(flow).queryByRole("heading", { level: 1 })).not.toBeInTheDocument();
   });
 
@@ -518,7 +518,7 @@ describe("marketplace presentation rules", () => {
 
     expect(screen.getByText("Hireable on Mainnet")).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /view profile/i })).not.toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /request quote/i })).toHaveAttribute("href", "/hire/303779#hire-flow");
+    expect(screen.getByRole("link", { name: /hire agent/i })).toHaveAttribute("href", "/hire/303779#hire-flow");
   });
 
   it("lets a buyer check a declared endpoint without waiting for the scheduler", () => {
@@ -537,9 +537,8 @@ describe("marketplace presentation rules", () => {
       monitoring: { state: "probed", source: "worker", latestOutcome: "protocol_valid" },
     } }));
 
-    expect(screen.getByRole("link", { name: "Check availability" }))
+    expect(screen.getByRole("link", { name: "Hire agent" }))
       .toHaveAttribute("href", "/hire/113284#validation");
-    expect(screen.queryByRole("button", { name: /hire agent/i })).not.toBeInTheDocument();
   });
 
   it("keeps the quote CTA for an admitted seller that declares only ERC-8183", () => {
@@ -556,7 +555,7 @@ describe("marketplace presentation rules", () => {
     expect(agentCardViewModel(agent).quoteRequestAvailable).toBe(true);
   });
 
-  it("keeps the profile fresh-quote action visible when Worker observations are unavailable", () => {
+  it("fails closed when the normalized hiring state is unavailable", () => {
     const agent = marketplaceAgent();
     agent.agentId = "303779";
     agent.name = "Marketplace Grid Planner";
@@ -572,13 +571,59 @@ describe("marketplace presentation rules", () => {
 
     render(createElement(AgentProfile, {
       agent,
-      observationsAvailable: false,
       passport: evidencePassport("registered"),
     }));
 
-    expect(screen.getByRole("link", { name: /hire agent/i })).toHaveAttribute("href", "/hire/303779");
-    expect(screen.getByRole("link", { name: /view on trust8004/i })).toHaveAttribute("href", "https://trust8004.xyz/agents/56:303779");
-    expect(screen.getByText(/automatic verification is unavailable/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /hire agent/i })).toBeDisabled();
+    expect(screen.getByRole("link", { name: /ERC-8004 profile and reputation/i }))
+      .toHaveAttribute("href", "https://trust8004.xyz/agents/56:303779");
+  });
+
+  it("presents the agent route as a hiring workspace with ERC-8183 history", () => {
+    const agent = marketplaceAgent();
+    agent.agentId = "303779";
+    agent.name = "Marketplace Grid Planner";
+    const passport = evidencePassport("job_proven");
+    const job = {
+      schemaVersion: 1,
+      capturedAt: "2026-08-26T10:04:00.000Z",
+      chainId: 56,
+      agentId: "303779",
+      jobId: "700",
+      buyer: `0x${"11".repeat(20)}`,
+      seller: `0x${"22".repeat(20)}`,
+      token: `0x${"33".repeat(20)}`,
+      budgetRaw: "2500000",
+      finalState: "COMPLETED",
+      deliverableHash: `0x${"44".repeat(32)}`,
+      resultHashVerified: true,
+      deterministicResultVerified: true,
+      durationSeconds: "42",
+      totalGasCostWei: "1234",
+      transactions: {},
+    } as MainnetJobProof;
+
+    render(createElement(AgentProfile, {
+      agent,
+      hireFlow: createElement("div", {}, "Quote flow"),
+      jobProofs: [job],
+      passport,
+    }));
+
+    expect(screen.getByRole("heading", { name: "Hire Marketplace Grid Planner" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Hire agent" })).toHaveAttribute("href", "#hire-flow");
+    expect(screen.getByRole("heading", { name: "ERC-8183 job history" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Job #700/i })).toHaveAttribute("href", "/jobs/mainnet/700");
+    expect(screen.getByRole("link", { name: /ERC-8004 profile and reputation/i }))
+      .toHaveAttribute("href", "https://trust8004.xyz/agents/56:303779");
+    expect(screen.queryByRole("heading", { name: "Indexed Evidence Passport" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: "Reputation" })).not.toBeInTheDocument();
+  });
+
+  it("uses a route-specific loading state for the hiring workspace", () => {
+    render(createElement(HireAgentLoading));
+    expect(screen.getByRole("main", { name: "Loading hiring workspace" })).toHaveAttribute("aria-busy", "true");
+    expect(screen.getByRole("status")).toHaveTextContent("Loading hiring workspace");
   });
 
   it("renders not-probed evidence neutrally instead of with a green verified icon", () => {
@@ -965,24 +1010,19 @@ describe("marketplace presentation rules", () => {
     expect(within(reachable).queryByText("verified")).not.toBeInTheDocument();
   });
 
-  it("renders curated categories as derived evidence with their rationale", async () => {
-    const user = userEvent.setup();
+  it("keeps ERC-8004 profile details out of the marketplace hiring route", () => {
     const agent = marketplaceAgent();
     agent.endpointObservation.status = "observed_ok";
     render(createElement(AgentProfile, { agent, passport: evidencePassport("registered") }));
     const breadcrumb = screen.getByRole("navigation", { name: "Breadcrumb" });
     expect(within(breadcrumb).getByRole("link", { name: "Agents" })).toHaveAttribute("href", "/agents");
     expect(within(breadcrumb).getByText("V3 Pools powered by HeyAnon")).toHaveAttribute("aria-current", "page");
-    expect(screen.queryByText(/Catalog coverage|Partial coverage/)).not.toBeInTheDocument();
-    expect(screen.getByText("No verified seller.")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Indexed Evidence Passport" })).toBeInTheDocument();
-    expect(screen.queryByText("Live marketplace evidence snapshot — not a financial guarantee.")).not.toBeInTheDocument();
-    expect(screen.getAllByText("derived")).not.toHaveLength(0);
-    expect(screen.getByText(/Curated liquidity-management signal/)).toBeInTheDocument();
-    await user.click(screen.getByRole("tab", { name: "Services" }));
-    expect(screen.queryByText("observed ok")).not.toBeInTheDocument();
-    await user.click(screen.getByRole("tab", { name: "Reputation" }));
-    expect(screen.getByText(/Indexed reputation; not re-read directly from BSC/)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: `Hire ${agent.name}` })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /ERC-8004 profile and reputation/i })).toBeInTheDocument();
+    expect(screen.queryByText(/Curated liquidity-management signal/)).not.toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: "Services" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: "Reputation" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: "Technical" })).not.toBeInTheDocument();
   });
 
   it("keeps historical SUBMITTED evidence separate from live mismatch or unavailability", () => {

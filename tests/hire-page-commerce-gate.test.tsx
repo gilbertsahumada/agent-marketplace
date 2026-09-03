@@ -30,7 +30,7 @@ vi.mock("@/components/marketplace/agent-profile", () => ({
     catalogCandidate.state?.buyerAction === "check_availability"
       && (catalogCandidate.state.canRequestBrowserValidation
         || catalogCandidate.state.canRequestInfrastructureValidation)
-      ? createElement("a", { href: "#validation" }, "Check availability")
+      ? createElement("a", { href: "#validation" }, "Hire agent")
       : null,
     hireFlow,
   ),
@@ -164,7 +164,7 @@ describe("hire page normalized commerce gate", () => {
     }));
 
     expect(markup).toContain('href="#validation"');
-    expect(markup).toContain("Check availability");
+    expect(markup).toContain("Hire agent");
   });
 
   it("fails closed when check_availability has no enabled validation capability", async () => {
@@ -177,7 +177,7 @@ describe("hire page normalized commerce gate", () => {
       blockingReasons: ["COMMERCE_NOT_ADMITTED"],
     }));
 
-    expect(markup).not.toContain("Check availability");
+    expect(markup).not.toContain("Hire agent");
   });
 
   it("does not render a self-link when the configured seller does not match", async () => {

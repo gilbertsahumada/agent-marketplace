@@ -59,9 +59,10 @@ export function marketplaceStatus(agent: AgentCardViewModel, registry = false) {
 
 export function agentJourneyAction(agent: AgentCardViewModel): { href: string; label: string } {
   const action = agent.buyerAction ?? (agent.quoteRequestAvailable === true ? "request_quote" : "unavailable");
-  if (action === "prepare_hire") return { href: `/hire/${agent.agentId}#hire-flow`, label: "Continue hire" };
-  if (action === "request_quote") return { href: `/hire/${agent.agentId}#hire-flow`, label: "Request quote" };
-  if (action === "check_availability") return { href: `/hire/${agent.agentId}#validation`, label: "Check availability" };
+  if (action === "prepare_hire" || action === "request_quote") {
+    return { href: `/hire/${agent.agentId}#hire-flow`, label: "Hire agent" };
+  }
+  if (action === "check_availability") return { href: `/hire/${agent.agentId}#validation`, label: "Hire agent" };
   return { href: `/hire/${agent.agentId}`, label: "View agent" };
 }
 
@@ -116,7 +117,7 @@ export function AgentCard({ agent, registry = false }: { agent: AgentCardViewMod
       </CardContent>
 
       <CardFooter className="border-white/10 bg-zinc-950/40 px-5 py-3">
-        <Button asChild className="w-full" size="sm" variant={canRequestQuote ? "default" : "outline"}>
+        <Button asChild className="w-full" size="sm" variant={action.label === "Hire agent" ? "default" : "outline"}>
           <Link href={action.href} prefetch={false}>
             {action.label}
             <ArrowUpRight aria-hidden="true" data-icon="inline-end" />
