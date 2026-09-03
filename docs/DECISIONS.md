@@ -893,3 +893,20 @@ Cross-session reconciliation between the observation/D1 migration (per `docs/OBS
   they always run sequentially.
 - Non-goals: no new API field, no change to the batch itself, no copy in the
   sticky summary beyond what already exists.
+
+## 2026-09-03 — Notify no longer re-qualifies a funded Mainnet job against Worker observations
+
+- Symptom: after the buyer signed and funded on Mainnet, `POST …/notify`
+  answered "The experimental Mainnet flow is disabled" (404) although every
+  Vercel flag was on. `NotifyQualifiedMainnetFundedJob` re-ran the exposure
+  check, which requires a Worker observation and a negotiated quote both under
+  60 seconds old; five wallet confirmations take longer, so the check failed
+  after the escrow was already funded and the seller was never notified.
+- Root cause, not a symptom fix: the 2026-08-29 decision already states that
+  Worker, D1 and snapshots authorize nothing in the buyer flow. Notify now
+  depends on the write flag, a still-configured seller (`getPublicConfig`) and
+  the on-chain checks `NotifyFundedJob` performs (buyer, seller, allowlist,
+  `FUNDED`). Terminal idempotency (`SUBMITTED`/`COMPLETED`) is unchanged.
+- `GetMainnetHiringExposure` keeps its 60-second window for informative labels
+  and for deciding what the landing exposes. It is no longer a dependency of
+  notify.
