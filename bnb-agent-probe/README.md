@@ -39,7 +39,13 @@ for its `count(*)`, and D1's Free read quota is account-wide, so the window is
 what keeps a day of page views inside the budget; the response advertises the
 same window in `Cache-Control` and every payload carries its own timestamps.
 `test/integration/d1-read-profile.test.ts` measures `rows_read` per route at
-catalogue scale and fails when a route exceeds its ceiling.
+catalogue scale and fails when a route exceeds its ceiling. It also drives one
+catalogue v2 tick per phase with the staging Paid pins against 4,000 due
+endpoints and a 200-task ingest backlog: probe target selection ranks only a
+window of the oldest-due endpoints and the ingest claim walks
+`idx_catalog_ingest_tasks_claim` per status, so neither statement grows with
+the backlog (header 17, sweep 20, probe 582 rows; ceilings 200 / 200 / 1,000,
+all under the staging `D1_ROWS_READ_PER_RUN` of 3,000).
 
 The Free profile caps scheduled work at 40 D1 queries per invocation, below the
 platform limit of 50. Every statement in `DB.batch()` is counted separately and
