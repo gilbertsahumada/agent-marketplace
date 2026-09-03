@@ -39,7 +39,13 @@ for its `count(*)`, and D1's Free read quota is account-wide, so the window is
 what keeps a day of page views inside the budget; the response advertises the
 same window in `Cache-Control` and every payload carries its own timestamps.
 `test/integration/d1-read-profile.test.ts` measures `rows_read` per route at
-catalogue scale and fails when a route exceeds its ceiling.
+catalogue scale and fails when a route exceeds its ceiling. It also drives one
+catalogue v2 tick per phase with the staging Paid pins against 4,000 due
+endpoints and a 200-task ingest backlog: probe target selection ranks only a
+window of the oldest-due endpoints and the ingest claim walks
+`idx_catalog_ingest_tasks_claim` per status, so neither statement grows with
+the backlog (header 17, sweep 20, probe 582 rows; ceilings 200 / 200 / 1,000,
+all under the staging `D1_ROWS_READ_PER_RUN` of 3,000).
 
 The Free profile caps scheduled work at 40 D1 queries per invocation, below the
 platform limit of 50. Every statement in `DB.batch()` is counted separately and
@@ -303,10 +309,9 @@ consumes one successful `DeleteMessage` bucket at or after that completion's
 `finishedAt` (allowing one second for Analytics timestamp rounding); this includes
 attempts that cross midnight, while retries do not invent extra deletes.
 
-Staging remains on the Free profile and retains one isolated Queue producer and
-serial consumer. Outside the exact 24-hour gate it declares an empty Cron list
-and deploys with the kill switch enabled. Apply its migrations and deploy
-explicitly:
+Staging runs the Paid profile on the catalogue v2 path since 2026-09-02 (one
+isolated Queue producer, serial consumer, `* * * * *`; see the promotion section
+at the end of this file). Apply its migrations and deploy explicitly:
 
 ```bash
 npx wrangler d1 migrations apply bnb-agent-probe-staging --remote --env staging
@@ -533,3 +538,36 @@ they are next touched. The boundary is enforced by
 fingerprint + count): any new raw callsite fails the suite, and a migrated
 callsite requires deleting its entry, so the allowlist only shrinks until the
 normative lease and budget-wrapper exemptions remain.
+
+## Free → Paid promotion (catalogue v2 path)
+
+SPEC-MVP section 11.3 lists the promotion checklist. It applies to the
+catalogue v2 scheduler only: the legacy WP2 `header → sweep → probe` pipeline
+keeps its `WP2_PAID_PIPELINE_NOT_VALIDATED` guard and is never selected while
+`CATALOG_V2_WRITES_ENABLED=1`, so `/health` reports `schedulerMode=single_phase`
+on either plan. Nothing detects the account plan automatically;
+`CLOUDFLARE_WORKERS_PLAN` in `wrangler.jsonc` is the only switch.
+
+Before a plan or budget change, keep a D1 export and the current baseline:
+
+```bash
+npm run d1:export:staging        # ../evidence/raw/d1-staging-<UTC>.sql
+npx wrangler d1 info bnb-agent-probe-staging --env staging
+curl -fsS "$WP2_HEALTH_URL" | jq '{plan, schedulerMode, killSwitch, budgets}'
+```
+
+Promotion order: commit the plan with `KILL_SWITCH=1`, `PRODUCER_KILL_SWITCH=1`
+and an empty Cron list; run `npm run check`, apply migrations, deploy, verify
+`/health`; then enable the kill switches and the Cron in a second commit and
+observe at least two complete `HEADER → SWEEP → PROBE` rotations in
+`last_*_summary` before raising any `D1_*` or `CATALOG_*` value. Temporary
+flips may use `npx wrangler deploy --env staging --keep-vars --var KILL_SWITCH:1`,
+but `test/scaffold.test.ts` pins the checked-in values, so every flip that is
+meant to persist must also be committed.
+
+Rollback: `--keep-vars --var KILL_SWITCH:1 --var PRODUCER_KILL_SWITCH:1` first,
+then `npm run rollback:wp2-activation -- --execute` to delete the Cron (it does
+not restore the plan), then a commit that restores `CLOUDFLARE_WORKERS_PLAN=free`
+and the Free budgets, deploy, and verify `/health` before re-enabling any Cron.
+Never delete observations; repair cursors or leases only through an idempotent
+migration.

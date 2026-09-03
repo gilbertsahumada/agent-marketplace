@@ -2,7 +2,9 @@ import { env } from "cloudflare:workers";
 import { createExecutionContext } from "cloudflare:test";
 import { beforeAll, describe, expect, it } from "vitest";
 
+import { loadConfig } from "../../src/config";
 import { createWorker } from "../../src/index";
+import { createWp2ScheduledRunner } from "../../src/scheduled";
 import type { D1Database, D1PreparedStatement, D1Result, Env } from "../../src/types";
 import { clearCatalogFixtures } from "./catalog-fixtures";
 
@@ -43,15 +45,20 @@ function metered(db: D1Database, log: ReadRecord[]): D1Database {
     },
     ...(statement.raw ? {
       async raw<T extends unknown[]>(options?: { columnNames?: boolean }) {
-        // raw() returns no meta: run the bound statement once more through all()
-        // purely to read rows_read, then hand back the raw rows the caller expects.
-        const measured = await statement.all();
+        // raw() returns no meta: execute once through all() to read rows_read
+        // and project the rows the way query-budget.ts does, so statements with
+        // RETURNING clauses are never executed twice.
+        const measured = await statement.all<Record<string, unknown>>();
         record(query, measured, values);
-        return statement.raw!<T>(options);
+        const rows = measured.results ?? [];
+        const projected = rows.map((row) => Object.values(row)) as T[];
+        if (options?.columnNames && rows[0]) projected.unshift(Object.keys(rows[0]) as T);
+        return projected;
       },
     } : {}),
     __query: query,
-  } as D1PreparedStatement & { __query: string });
+    __inner: statement,
+  } as D1PreparedStatement & { __query: string; __inner: D1PreparedStatement });
   return {
     prepare: (query: string) => wrap(query, db.prepare(query)),
     ...(db.batch ? {
@@ -186,4 +193,89 @@ describe("D1 read profile at catalogue scale", () => {
     await app.fetch(new Request(`https://worker.test${probe}&limit=1`), { ...env, DB: metered(env.DB, live) } as unknown as Env, createExecutionContext());
     expect(live.length).toBeGreaterThan(0);
   });
+});
+
+// One catalogue v2 tick per phase, driven exactly like the queue consumer,
+// with the staging Paid pins except the rows-read ceiling (raised so the
+// profile measures the full cost instead of failing closed at 3,000).
+describe("D1 read profile of the cron tick at catalogue scale", () => {
+  const TICK_NOW = NOW + 2 * 3_600_000; // every seeded endpoint is due for a probe
+  const STAGING_ROWS_READ_PER_RUN = 3_000;
+  const stagingPins = {
+    CLOUDFLARE_WORKERS_PLAN: "paid",
+    KILL_SWITCH: "0",
+    PRODUCER_KILL_SWITCH: "0",
+    CATALOG_V2_WRITES_ENABLED: "1",
+    CATALOG_PROBE_ENABLED: "1",
+    PROBE_GENERAL_EGRESS_APPROVED: "1",
+    PROBE_AGENT_ALLOWLIST: "*",
+    PROBE_ENDPOINT_ALLOWLIST: "*",
+    CATALOG_DISCOVERY_PAGE_SIZE: "15",
+    CATALOG_PROBE_BATCH_SIZE: "4",
+    CATALOG_PROBE_CONCURRENCY: "2",
+    CATALOG_INGEST_TASKS_PER_RUN: "1",
+    CATALOG_DECLARATIONS_PER_TASK: "1",
+    TRUST8004_REQUESTS_PER_RUN: "4",
+    EXTERNAL_SUBREQUESTS_PER_RUN: "15",
+    D1_QUERIES_PER_RUN: "40",
+    D1_ROWS_WRITTEN_PER_RUN: "200",
+    D1_ROWS_READ_PER_RUN: "1000000",
+  };
+  const upstream: typeof fetch = async (input) => {
+    const url = new URL(String(input));
+    if (url.hostname === "trust8004.xyz" && url.pathname.endsWith("/agents")) {
+      return Response.json({
+        items: [],
+        total: 0,
+        limit: Number(url.searchParams.get("limit")),
+        offset: Number(url.searchParams.get("offset")),
+      });
+    }
+    return new Response(null, { status: 404 });
+  };
+
+  beforeAll(async () => {
+    // A pending ingest backlog so the claim scan has rows to order.
+    const rows: string[] = [];
+    for (let index = 0; index < 200; index += 1) {
+      rows.push(`('eip155:56:${100_000 + index}', 'v1', 0, 2, 'pending', 'sweep', 0, ${NOW}, NULL, ${NOW}, 0, 0, NULL, NULL, NULL)`);
+    }
+    await env.DB.prepare(`INSERT INTO catalog_ingest_tasks (agentKey, metadataVersion, nextDeclarationIndex, declarationCount, status, requestedBy, priority, generationStartedAt, upstreamObservedAt, updatedAt, attemptCount, retryAt, errorCode, leaseOwner, leaseExpiresAt) VALUES ${rows.join(",")}`).run();
+  });
+
+  it("keeps every phase inside its rows_read ceiling", async () => {
+    // Measured after the bounded selection window and the ingest claim index
+    // (2,000 agents, 4,000 due endpoints, 200 pending ingest tasks): header 17,
+    // sweep 20, probe ~400 rows. Before: 418 / 417 / 12,476.
+    const phases: Array<["header" | "sweep" | "probe", number]> = [
+      ["header", 200],
+      ["sweep", 200],
+      ["probe", 1_000],
+    ];
+    for (const [index, [phase, ceiling]] of phases.entries()) {
+      const tickNow = TICK_NOW + index * 60_000;
+      await env.DB.prepare(
+        `INSERT INTO runtime_state (key, textValue, integerValue, updatedAt) VALUES ('next_scheduler_phase', ?, NULL, ?)
+         ON CONFLICT(key) DO UPDATE SET textValue = excluded.textValue, integerValue = NULL, updatedAt = excluded.updatedAt`,
+      ).bind(phase, tickNow).run();
+      const log: ReadRecord[] = [];
+      const runner = createWp2ScheduledRunner({
+        now: () => tickNow,
+        randomUUID: () => `profile-${phase}`,
+        fetch: upstream,
+      });
+      const outcome = await runner(
+        { scheduledTime: tickNow, cron: "* * * * *" },
+        { ...env, DB: metered(env.DB, log) } as unknown as Env,
+        createExecutionContext(),
+        loadConfig(stagingPins),
+      );
+      await report(`tick:${phase}`, log, 6);
+      const summary = await env.DB.prepare(`SELECT textValue FROM runtime_state WHERE key = 'last_${phase}_summary'`).first<{ textValue: string }>();
+      expect(outcome, `${phase}\n${summary?.textValue}\n${REPORT.at(-1)}`).toBe("completed");
+      const total = log.reduce((sum, entry) => sum + entry.rowsRead, 0);
+      expect(total, `${phase}\n${REPORT.at(-1)}`).toBeLessThanOrEqual(ceiling);
+      expect(total, `${phase} exceeds the staging D1_ROWS_READ_PER_RUN pin\n${REPORT.at(-1)}`).toBeLessThanOrEqual(STAGING_ROWS_READ_PER_RUN);
+    }
+  }, 300_000);
 });
