@@ -290,6 +290,12 @@ function Erc8183BrowserDemo({ mode, deployment, agentName, embedded = false }: {
       void readJob(stored.jobId).catch(() => {
         setError("The local journal was found, but current chain state could not be reconstructed.");
       });
+      // Replay the confirmed phases: the Worker verifies each against chain and
+      // deduplicates by transaction, so a report lost earlier is recovered here.
+      const { createJob, fund, submit } = stored.transactions;
+      if (createJob) reportHireEvent(deployment, { phase: "created", jobId: stored.jobId, txHash: createJob });
+      if (fund) reportHireEvent(deployment, { phase: "funded", jobId: stored.jobId, txHash: fund });
+      if (submit) reportHireEvent(deployment, { phase: "submitted", jobId: stored.jobId, txHash: submit });
     }
   }, [deployment, readJob]);
 
