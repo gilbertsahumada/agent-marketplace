@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { DEMO_AGENT_BUYER } from "../src/business/entities/demo-agent-buyer.ts";
 
 const recordHireEvent = vi.fn();
 
@@ -46,7 +47,7 @@ describe("same-origin hire event controller", () => {
       { ...funded, jobId: null },
       { ...funded, chainId: 1 },
       { ...funded, agentId: "abc" },
-      { ...funded, buyer: "0x5ee75a1B1648C023e885E58bD3735Ae273f2cc52" },
+      { ...funded, buyer: DEMO_AGENT_BUYER.address },
       { agentId: "303779", chainId: 56, phase: "clicked", jobId: "551", txHash: null },
       "not json",
       [],

@@ -115,6 +115,25 @@ export function TestnetJobTracker({ tracking }: { tracking: Erc8183TestnetJobTra
           <CardContent>
             <dl>
               <Fact label="Buyer" value={buyer} />
+              {tracking.buyerIdentity.kind === "demo_agent" && (
+                <div className="border-b border-white/10 py-3 last:border-0 sm:grid sm:grid-cols-[9rem_1fr] sm:gap-4">
+                  <dt className="text-xs text-muted-foreground">Buyer identity</dt>
+                  <dd className="mt-1 flex flex-wrap items-center gap-2 sm:mt-0">
+                    <Badge className="border-primary/30 bg-primary/10 text-primary" variant="outline">Hired by an agent</Badge>
+                    {tracking.buyerIdentity.verified && tracking.buyerIdentity.agentId && tracking.buyerIdentity.registry ? (
+                      <a className="inline-flex items-center gap-1 text-xs text-zinc-200 underline-offset-4 hover:underline" href={`${ERC8183_TESTNET.explorerUrl}/token/${tracking.buyerIdentity.registry}?a=${tracking.buyerIdentity.agentId}`} rel="noreferrer" target="_blank">
+                        ERC-8004 #{tracking.buyerIdentity.agentId} · registry wallet verified<ArrowUpRight aria-hidden="true" className="size-3" />
+                      </a>
+                    ) : (
+                      <span className="text-xs text-zinc-400">
+                        {tracking.buyerIdentity.agentId
+                          ? `ERC-8004 #${tracking.buyerIdentity.agentId} declared · registry wallet not verified`
+                          : "Demo agent-buyer wallet · no ERC-8004 identity declared"}
+                      </span>
+                    )}
+                  </dd>
+                </div>
+              )}
               <Fact label="Seller" value={seller} />
               <Fact label="Seller agent" value={snapshot?.sellerAgentId ?? String(ERC8183_TESTNET.agentId)} />
               <Fact label="Payment token" value={job?.quotedToken ?? snapshot?.payment.token ?? "Unavailable"} />

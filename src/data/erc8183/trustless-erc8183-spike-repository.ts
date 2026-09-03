@@ -6,7 +6,7 @@ import {
   parseJobDescription,
   verifyQuoteSignature,
 } from "@bnbagent/sdk/erc8183";
-import { formatUnits, getAddress, isAddressEqual, type Address } from "viem";
+import { formatUnits, getAddress, isAddressEqual, parseAbi, type Address } from "viem";
 import { fetchAgentCard, negotiate, notifyFunded, type QuoteEnvelope } from "../../a2a.ts";
 import { hasErc8183SellerSkills, negotiationSkillForCard } from "../../erc8183/skills.ts";
 import type {
@@ -23,9 +23,16 @@ import {
 import type { Erc8183SpikeAllowlist } from "../../business/policies/erc8183-spike-policy.ts";
 import { resolveIdentity } from "../../identity.ts";
 import { GATE1_NETWORK } from "../../network.ts";
-import type { Erc8183SpikeRepository } from "../repositories/erc8183-spike-repository.ts";
+import type { Erc8183RegistryWallet, Erc8183SpikeRepository } from "../repositories/erc8183-spike-repository.ts";
 import { ERC8183_TESTNET } from "./contracts.ts";
 import { loadErc8183BrowserSpikeConfig } from "./spike-config.ts";
+
+// The two ERC-8004 registry reads the observation Worker also uses to bind a
+// job party to an agent id (see bnb-agent-probe/src/routes/hire-events.ts).
+const registryWalletAbi = parseAbi([
+  "function getAgentWallet(uint256 agentId) view returns (address)",
+  "function ownerOf(uint256 tokenId) view returns (address)",
+]);
 
 type QuoteResponse = {
   accepted?: unknown;
@@ -311,6 +318,29 @@ export class TrustlessErc8183SpikeRepository implements Erc8183SpikeRepository {
         quotedPriceRaw: parsedDescription?.price ?? null,
         quoteExpiresAt: parsedDescription?.quoteExpiresAt ?? null,
       };
+    } catch (error) {
+      return publicFailure(error);
+    }
+  }
+
+  async readAgentWallet(agentId: bigint): Promise<Erc8183RegistryWallet> {
+    try {
+      const client = await this.client();
+      const [agentWallet, owner] = await Promise.all([
+        client.publicClient.readContract({
+          address: ERC8183_TESTNET.registry,
+          abi: registryWalletAbi,
+          functionName: "getAgentWallet",
+          args: [agentId],
+        }),
+        client.publicClient.readContract({
+          address: ERC8183_TESTNET.registry,
+          abi: registryWalletAbi,
+          functionName: "ownerOf",
+          args: [agentId],
+        }),
+      ]);
+      return { registry: ERC8183_TESTNET.registry, agentWallet: getAddress(agentWallet), owner: getAddress(owner) };
     } catch (error) {
       return publicFailure(error);
     }

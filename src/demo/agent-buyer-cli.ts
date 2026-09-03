@@ -16,6 +16,7 @@ import { privateKeyToAccount } from "viem/accounts";
 import { bscTestnet } from "viem/chains";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import { DEMO_AGENT_BUYER } from "../business/entities/demo-agent-buyer.ts";
 import type { Erc8183HirePlan } from "../business/entities/erc8183-browser-spike.ts";
 import { validateHirePlan } from "../data/erc8183/browser-wallet-adapter.ts";
 import {
@@ -108,7 +109,7 @@ export async function runAgentBuyer(options: { dryRun: boolean; buyerOverride?: 
   let buyer: Address;
   let account: ReturnType<typeof privateKeyToAccount> | null = null;
   if (options.dryRun) {
-    buyer = getAddress(options.buyerOverride ?? "0x5ee75a1B1648C023e885E58bD3735Ae273f2cc52");
+    buyer = getAddress(options.buyerOverride ?? DEMO_AGENT_BUYER.address);
   } else {
     const key = process.env.AGENT_BUYER_PRIVATE_KEY;
     if (!key || !/^0x[0-9a-fA-F]{64}$/.test(key)) {
