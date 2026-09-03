@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useState, type FormEvent } from "react";
-import { CircleAlert, ShieldCheck } from "lucide-react";
+import { CircleAlert, CircleDashed, LoaderCircle, ShieldCheck } from "lucide-react";
 import type { AgentValidationReport } from "@/src/business/entities/agent-validation";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -15,7 +15,29 @@ import { EvidencePassportCard } from "./evidence-passport-card";
 
 function ValidationSkeleton() {
   return (
-    <div aria-busy="true" aria-label="Validation in progress" className="grid gap-4">
+    <div aria-busy="true" aria-label="Validation in progress" className="grid gap-4" role="status">
+      <div className="rounded-xl border border-cyan-400/20 bg-cyan-400/[0.04] p-4">
+        <div className="flex items-center gap-2 text-sm font-medium text-cyan-200">
+          <LoaderCircle aria-hidden="true" className="size-4 animate-spin" />
+          Marketplace validation in progress
+        </div>
+        <p className="mt-2 text-xs leading-relaxed text-zinc-400">
+          The server is resolving the registration, reconciling identity on BSC, probing only declared public transports and checking ERC-8183 evidence where supported. No wallet or transaction is involved.
+        </p>
+        <ul className="mt-3 grid gap-2 text-xs text-zinc-500 sm:grid-cols-2">
+          {[
+            "Resolve trust8004 registration",
+            "Read identity directly from BSC",
+            "Probe declared MCP/A2A/HTTP endpoints",
+            "Assemble the evidence report",
+          ].map((step) => (
+            <li className="flex items-center gap-2" key={step}>
+              <CircleDashed aria-hidden="true" className="size-3.5 text-cyan-300/70" />
+              {step}
+            </li>
+          ))}
+        </ul>
+      </div>
       <Skeleton className="h-52 w-full rounded-xl" />
       <div className="grid gap-3 sm:grid-cols-2">
         <Skeleton className="h-28 w-full rounded-xl" />

@@ -140,6 +140,9 @@ marketplace business layer. MCP tools and the CLI wrap these routes.
 | Discover | GET | /api/marketplace/agents?view=marketplace&q&category&availability&page&limit |
 | Understand | GET | /api/marketplace/agents/{agentId}/passport |
 | Compare | GET | /api/marketplace/compare?agentId=…&agentId=… |
+| Validate — legacy | POST | /api/marketplace/validate  { agentId } |
+| Validate — infrastructure | POST | /api/marketplace/validate  { agentId, endpointKey, validationKind: protocol } |
+| Validate — poll | GET | /api/marketplace/validate/{requestId} |
 | Hire — quote | POST | /api/marketplace/demo/erc8183[-mainnet]/quote |
 | Hire — prepare | POST | /api/marketplace/demo/erc8183[-mainnet]/prepare  { buyer, quote } |
 | Hire — notify | POST | /api/marketplace/demo/erc8183[-mainnet]/notify  { buyer, jobId } |
@@ -148,6 +151,45 @@ marketplace business layer. MCP tools and the CLI wrap these routes.
 
 The demo hire routes are env-gated per network and answer 404 ERC8183_SPIKE_DISABLED
 when off.
+
+## Validation and polling
+
+The validation route preserves two contracts. The legacy compatibility request
+is \`POST /api/marketplace/validate\` with \`{ "agentId": "303779" }\`. It
+returns the synchronous Trust8004 evidence report and has no \`requestId\`,
+\`attemptCount\` or polling state. It does not write a Worker observation.
+
+The buyer-facing infrastructure request is endpoint-scoped and must use a
+normalized catalogue \`endpointKey\`; callers cannot provide an arbitrary URL:
+
+\`\`\`json
+{
+  "agentId": "303779",
+  "endpointKey": "<64 lowercase hexadecimal characters>",
+  "validationKind": "protocol"
+}
+\`\`\`
+
+Queued or running requests return HTTP 202 with an opaque \`requestId\` and a
+\`pollAfterMs\` hint. A current committed observation may instead return HTTP
+200 with \`status: "completed"\`, \`reused: true\` and \`requestId: null\`.
+Poll \`GET /api/marketplace/validate/{requestId}\` until one of these states is
+returned: \`queued\`, \`running\`, \`completed\`, \`failed\` or \`cancelled\`.
+
+The polling response includes \`attemptCount\`, \`createdAt\`, \`startedAt\`,
+\`completedAt\`, \`errorCode\`, \`hasResult\` and \`result\`. \`attemptCount\`
+describes Worker attempts, not browser retries. \`hasResult\` is true exactly
+when \`result\` is present. A queued or running request has a null result; a
+completed result is the sanitized request-scoped observation with \`protocol\`,
+\`source\`, \`outcome\`, \`observedAt\`, \`expiresAt\`, \`httpStatus\`
+and \`durationMs\`. The public polling response never exposes internal \`resultObservationId\`;
+if it appears, or \`hasResult\` disagrees with \`result\`, it fails closed rather than
+becoming shared evidence. Browser CORS results remain browser-only and never promote an agent.
+For \`validationKind="protocol"\`,
+the allowed outcomes are \`protocol_valid\`, \`http_error\`, \`timeout\`,
+\`network_error\`, \`invalid_response\`, \`unsafe_url\`,
+\`unreachable\` and \`error\`. \`quote_verified\` and \`quote_rejected\`
+are quote evidence and are rejected by this polling contract.
 
 ## Errors
 

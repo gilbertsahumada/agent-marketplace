@@ -1243,7 +1243,16 @@ describe("WP1 in the Workers runtime", () => {
     const status = await app.fetch(new Request(statusUrl, {
       headers: { authorization: "Bearer catalog-secret" },
     }), privateEnv, createExecutionContext());
-    expect(await status.json()).toMatchObject({ schemaVersion: 2, validation: { status: "queued", attemptCount: 0 } });
+    const queuedBody = await status.json() as {
+      schemaVersion: number;
+      validation: Record<string, unknown>;
+    };
+    expect(queuedBody).toMatchObject({ schemaVersion: 2, validation: { status: "queued", attemptCount: 0 } });
+    for (const internalField of [
+      "dedupeKey", "callerKey", "resultObservationId", "leaseOwner", "leaseExpiresAt",
+    ]) {
+      expect(queuedBody.validation).not.toHaveProperty(internalField);
+    }
 
     await env.DB.prepare(`INSERT INTO catalog_observations (
       attemptId, agentKey, endpointKey, protocol, source, outcome, observedAt,
@@ -1285,6 +1294,119 @@ describe("WP1 in the Workers runtime", () => {
     }, { ...privateEnv, KILL_SWITCH: "0" }, createExecutionContext());
     expect(runCatalogValidation).toHaveBeenCalledWith(firstBody.validationId, expect.anything(), expect.anything());
     expect(ack).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    { label: "validation kind", protocol: "mcp", validationKind: "quote", verificationLevel: "platform_observed" },
+    { label: "verification level", protocol: "mcp", validationKind: "protocol", verificationLevel: "cryptographic" },
+    { label: "protocol", protocol: "a2a", validationKind: "protocol", verificationLevel: "platform_observed" },
+  ])("does not expose a linked result with an invalid $label", async ({ protocol, validationKind, verificationLevel }) => {
+    const now = 1_788_000_000_000;
+    const agentKey = "eip155:56:42";
+    const endpointKey = "8".repeat(64);
+    await env.DB.prepare(`INSERT INTO catalog_endpoints (
+      endpointKey, protocol, endpoint, safety, nextProbeAt, declaredProtocol,
+      role, validationProtocol, eligibility
+    ) VALUES (?, 'mcp', 'https://seller.example/mcp', 'safe', ?, 'mcp',
+      'operational', 'mcp', 'eligible')`).bind(endpointKey, now).run();
+    await env.DB.prepare(`INSERT INTO catalog_observations (
+      agentKey, endpointKey, protocol, source, outcome, observedAt, expiresAt,
+      httpStatus, durationMs, detailsJson, validationKind, verificationLevel
+    ) VALUES (?, ?, ?, 'worker_probe', 'protocol_valid', ?, ?, 200, 340, '{}', ?, ?)`)
+      .bind(agentKey, endpointKey, protocol, now, now + 60_000, validationKind, verificationLevel).run();
+    const observation = await env.DB.prepare(
+      "SELECT id FROM catalog_observations WHERE endpointKey = ?",
+    ).bind(endpointKey).first<{ id: number }>();
+    expect(observation?.id).toEqual(expect.any(Number));
+    await env.DB.prepare(`INSERT INTO catalog_validation_requests (
+      dedupeKey, agentKey, endpointKey, validationKind, requestedBy, callerKey,
+      status, priority, createdAt, completedAt, attemptCount, resultObservationId
+    ) VALUES (?, ?, ?, 'protocol', 'browser_fallback', ?, 'completed', 1000, ?, ?, 1, ?)`)
+      .bind(`${agentKey}:${endpointKey}:protocol`, agentKey, endpointKey, VALID_CALLER_KEY,
+        now - 1_000, now, observation!.id).run();
+    const request = await env.DB.prepare(
+      "SELECT id FROM catalog_validation_requests WHERE endpointKey = ?",
+    ).bind(endpointKey).first<{ id: number }>();
+    expect(request?.id).toEqual(expect.any(Number));
+
+    const response = await createWorker({ now: () => now }).fetch(
+      new Request(`https://worker.test/catalog-validations/${request!.id}`, {
+        headers: { authorization: "Bearer catalog-secret" },
+      }),
+      { ...env, BUYER_OBSERVATION_SECRET: "catalog-secret" } as unknown as Env,
+      createExecutionContext(),
+    );
+    expect(response.status).toBe(200);
+    const body = await response.json() as { validation: { result?: unknown; hasResult?: unknown } };
+    expect(body.validation.result).toBeNull();
+    expect(body.validation.hasResult).toBe(false);
+  });
+
+  it("returns the request-scoped observation with validation status", async () => {
+    const now = 1_788_000_000_000;
+    const agentKey = "eip155:56:42";
+    const endpointKey = "7".repeat(64);
+    await env.DB.prepare(`INSERT INTO catalog_endpoints (
+      endpointKey, protocol, endpoint, safety, nextProbeAt, declaredProtocol,
+      role, validationProtocol, eligibility
+    ) VALUES (?, 'mcp', 'https://seller.example/mcp', 'safe', ?, 'mcp',
+      'operational', 'mcp', 'eligible')`).bind(endpointKey, now).run();
+    const observationInsert = await env.DB.prepare(`INSERT INTO catalog_observations (
+      agentKey, endpointKey, protocol, source, outcome, observedAt, expiresAt,
+      httpStatus, durationMs, detailsJson, validationKind, verificationLevel
+    ) VALUES (?, ?, 'mcp', 'buyer_refresh', 'protocol_valid', ?, ?, 200, 340, '{}', 'protocol', 'platform_observed')`)
+      .bind(agentKey, endpointKey, now, now + 60_000).run();
+    const observation = await env.DB.prepare("SELECT id FROM catalog_observations WHERE endpointKey = ?")
+      .bind(endpointKey).first<{ id: number }>();
+    expect(observationInsert.success).toBe(true);
+    expect(observation?.id).toEqual(expect.any(Number));
+    await env.DB.prepare(`INSERT INTO catalog_validation_requests (
+      dedupeKey, agentKey, endpointKey, validationKind, requestedBy, callerKey,
+      status, priority, createdAt, startedAt, completedAt, attemptCount,
+      resultObservationId
+    ) VALUES (?, ?, ?, 'protocol', 'browser_fallback', ?, 'completed', 1000, ?, ?, ?, 2, ?)`)
+      .bind(`${agentKey}:${endpointKey}:protocol`, agentKey, endpointKey, VALID_CALLER_KEY,
+        now - 1_000, now - 900, now, observation!.id).run();
+
+    const request = await env.DB.prepare("SELECT id FROM catalog_validation_requests WHERE endpointKey = ?")
+      .bind(endpointKey).first<{ id: number }>();
+    expect(request?.id).toEqual(expect.any(Number));
+    const privateEnv = { ...env, BUYER_OBSERVATION_SECRET: "catalog-secret" } as unknown as Env;
+    const unauthorized = await createWorker({ now: () => now }).fetch(
+      new Request(`https://worker.test/catalog-validations/${request!.id}`),
+      privateEnv,
+      createExecutionContext(),
+    );
+    const status = await createWorker({ now: () => now }).fetch(
+      new Request(`https://worker.test/catalog-validations/${request!.id}`, {
+        headers: { authorization: "Bearer catalog-secret" },
+      }),
+      privateEnv,
+      createExecutionContext(),
+    );
+    expect(unauthorized.status).toBe(401);
+    const statusBody = await status.json() as { validation: Record<string, unknown> };
+    expect(statusBody).toMatchObject({
+      schemaVersion: 2,
+      validation: {
+        status: "completed",
+        hasResult: true,
+        result: {
+          protocol: "mcp",
+          source: "buyer_refresh",
+          outcome: "protocol_valid",
+          observedAt: now,
+          expiresAt: now + 60_000,
+          httpStatus: 200,
+          durationMs: 340,
+        },
+      },
+    });
+    for (const internalField of [
+      "dedupeKey", "callerKey", "resultObservationId", "leaseOwner", "leaseExpiresAt",
+    ]) {
+      expect(statusBody.validation).not.toHaveProperty(internalField);
+    }
   });
 
   it("does not share an on-demand validation request between agents sharing an endpoint", async () => {

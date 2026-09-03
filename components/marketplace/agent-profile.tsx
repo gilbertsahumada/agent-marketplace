@@ -8,12 +8,15 @@ import { Badge } from "@/components/ui/badge";
 import { Breadcrumb } from "./page-primitives";
 import { AgentAvatar } from "./agent-avatar";
 import { trust8004AgentHref } from "./agent-card";
-import { AgentValidationActions } from "./agent-validation-actions";
+import { AgentValidationActions, type ValidationObservationSummary, type ValidationTarget } from "./agent-validation-actions";
 import { declaredBrowserValidationTargets } from "@/src/business/policies/catalog-validation-policy";
 import type { CatalogCandidate } from "@/src/business/entities/catalog-candidate";
 import { catalogCandidateCard } from "./catalog-candidate-view-model";
+import { deriveAgentJourney } from "./agent-journey-state";
+import { AgentJourney, HiringUnavailable } from "./agent-journey";
 
 const EMPTY_JOBS: readonly MainnetJobProof[] = [];
+const SHARED_VALIDATION_SOURCES = new Set(["marketplace_probe", "worker_probe", "buyer_refresh", "migration"]);
 const UTC_DATE = new Intl.DateTimeFormat("en", {
   day: "numeric",
   month: "short",
@@ -84,33 +87,86 @@ export function AgentProfile({
   passport,
   catalogCandidate,
   hireFlow,
+  hireNotice,
+  hireFlowAvailable,
   jobProofs = EMPTY_JOBS,
 }: {
   agent: MarketplaceAgent;
   passport: AgentEvidencePassport;
   catalogCandidate?: CatalogCandidate | null;
   hireFlow?: ReactNode;
+  hireNotice?: ReactNode;
+  hireFlowAvailable?: boolean;
   jobProofs?: readonly MainnetJobProof[];
 }) {
   const displayName = marketplaceAgentDisplayName(agent.name);
   const current = catalogCandidate ? catalogCandidateCard(catalogCandidate) : null;
-  const targetMap = new Map(declaredBrowserValidationTargets(agent).map((target) => [
+  const browserTargets = declaredBrowserValidationTargets(agent);
+  const browserTargetKeys = new Set(browserTargets.map((target) => `${target.protocol}\u0000${target.endpoint}`));
+  const targetMap = new Map<string, ValidationTarget>(browserTargets.map((target) => [
     `${target.protocol}\u0000${target.endpoint}`,
-    target,
+    { ...target, browserValidatable: true },
   ]));
   for (const target of agent.validationTargets ?? []) {
-    targetMap.set(`${target.protocol}\u0000${target.endpoint}`, target);
+    const key = `${target.protocol}\u0000${target.endpoint}`;
+    targetMap.set(key, {
+      ...target,
+      browserValidatable: browserTargetKeys.has(key),
+    });
   }
   const validationTargets = [...targetMap.values()];
-  const canCheckAvailability = current?.buyerAction === "check_availability"
-    && (catalogCandidate?.state?.canRequestBrowserValidation === true
-      || catalogCandidate?.state?.canRequestInfrastructureValidation === true)
+  const validationObservations: ValidationObservationSummary[] = catalogCandidate?.observations.flatMap((observation) => (
+    observation.endpointKey === null
+      || observation.protocol === "erc8183"
+      || !SHARED_VALIDATION_SOURCES.has(observation.source)
+      || (observation.validationKind !== undefined
+        && observation.validationKind !== "reachability"
+        && observation.validationKind !== "protocol")
+      ? []
+      : [{
+        endpointKey: observation.endpointKey,
+        protocol: observation.protocol,
+        source: observation.source,
+        outcome: observation.outcome,
+        observedAt: observation.observedAt,
+        expiresAt: observation.expiresAt,
+        httpStatus: observation.httpStatus,
+        durationMs: observation.durationMs,
+      }]
+  )) ?? [];
+  const canCheckAvailability = (catalogCandidate?.state?.canRequestBrowserValidation === true
+    || catalogCandidate?.state?.canRequestInfrastructureValidation === true)
     && validationTargets.length > 0;
-  const hireTarget = hireFlow ? "#hire-flow" : canCheckAvailability ? "#validation" : null;
   const reachable = catalogCandidate?.state?.operationalStatus === "platform_reachable"
     && catalogCandidate.state.freshness === "live";
   const previouslyReachable = catalogCandidate?.state?.operationalStatus === "platform_reachable";
-  const quoteReady = passport.checks.quote.status === "verified";
+  const browserOnly = catalogCandidate?.state?.operationalStatus === "browser_observed";
+  const platformFailed = catalogCandidate?.state?.operationalStatus === "platform_failed";
+  const quoteReady = catalogCandidate?.state
+    ? catalogCandidate.state.quoteStatus === "verified_fresh"
+    : passport.checks.quote.status === "verified";
+  const journey = deriveAgentJourney({
+    declared: true,
+    state: catalogCandidate?.state,
+    validationAvailable: canCheckAvailability,
+    hireFlowAvailable: hireFlowAvailable ?? hireFlow !== undefined,
+    provenJobs: passport.trackRecord.provenJobs,
+  });
+  const latestCheckedAt = current?.monitoring?.lastAttemptAt;
+  const attemptCount = current?.monitoring?.attemptCount;
+  const headerStatus = quoteReady
+    ? "Quote verified"
+    : reachable
+      ? "Reachable"
+      : platformFailed
+        ? "Last check failed"
+        : previouslyReachable
+          ? "Check required"
+          : browserOnly
+            ? "Browser-only result"
+            : canCheckAvailability
+              ? "Check availability"
+              : "Unavailable";
 
   return (
     <main id="main-content" className="mx-auto w-full max-w-6xl flex-1 px-4 py-10 sm:px-6 lg:px-8 lg:py-14">
@@ -125,11 +181,22 @@ export function AgentProfile({
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2 sm:justify-end">
-          <Badge className={reachable ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-300" : ""} variant="outline">
-            <span aria-hidden="true" className={`size-1.5 rounded-full ${reachable ? "bg-emerald-400" : canCheckAvailability || previouslyReachable ? "bg-amber-300" : "bg-zinc-600"}`} />
-            {reachable ? "Reachable" : hireFlow ? "Verified on quote" : canCheckAvailability || previouslyReachable ? "Check required" : "Unavailable"}
+          <Badge className={reachable || quoteReady
+            ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-300"
+            : platformFailed
+              ? "border-red-400/30 bg-red-400/10 text-red-300"
+              : canCheckAvailability || previouslyReachable
+                ? "border-amber-400/30 bg-amber-400/10 text-amber-300"
+                : ""} variant="outline">
+            <span aria-hidden="true" className={`size-1.5 rounded-full ${reachable || quoteReady
+              ? "bg-emerald-400"
+              : platformFailed
+                ? "bg-red-400"
+                : canCheckAvailability || previouslyReachable
+                  ? "bg-amber-300"
+                  : "bg-zinc-600"}`} />
+            {headerStatus}
           </Badge>
-          {quoteReady ? <Badge className="border-emerald-400/30 bg-emerald-400/10 text-emerald-300" variant="outline">Quote verified</Badge> : null}
           <Badge variant="outline">{passport.trackRecord.provenJobs} jobs</Badge>
           <a
             className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg px-2 py-1 text-sm text-zinc-400 transition-colors hover:bg-white/[0.05] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
@@ -142,9 +209,21 @@ export function AgentProfile({
         </div>
       </section>
 
-      {hireFlow ? <section className="mt-8 scroll-mt-6" id="hire-flow">{hireFlow}</section> : null}
-      {!hireFlow && canCheckAvailability ? <AgentValidationActions agentId={agent.agentId} targets={validationTargets} /> : null}
-      {!hireTarget ? <p className="mt-8 rounded-xl border border-white/10 px-5 py-4 text-sm text-zinc-500">Hiring unavailable for this agent.</p> : null}
+      <AgentJourney
+        model={journey}
+        {...(typeof attemptCount === "number" ? { attemptCount } : {})}
+        {...(latestCheckedAt ? { lastCheckedAt: latestCheckedAt } : {})}
+      />
+      <div className="mt-6 space-y-6">
+        {canCheckAvailability ? (
+          <AgentValidationActions
+            agentId={agent.agentId}
+            initialObservations={validationObservations}
+            targets={validationTargets}
+          />
+        ) : null}
+        {hireFlow ? <section className="scroll-mt-6" id="hire-flow">{hireFlow}</section> : <HiringUnavailable model={journey} notice={hireNotice} validationAvailable={canCheckAvailability} />}
+      </div>
 
       <JobHistory hireActivity={passport.checks.hireActivity} jobs={jobProofs} />
     </main>

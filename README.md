@@ -338,6 +338,52 @@ validation share one trust8004 request scheduler. This is deliberately a local
 safety boundary, not a distributed Vercel quota. Production scale-out still
 requires a platform or shared-store rate limit before increasing public traffic.
 
+### Validation contracts: legacy and infrastructure
+
+`POST /api/marketplace/validate` accepts two deliberately different request
+shapes. The legacy compatibility form is `{ "agentId": "303779" }`. It runs
+the bounded Trust8004 validation use case synchronously and returns its legacy
+evidence report; it has no `requestId`, `attemptCount` or polling state. It is
+kept for existing CLI/builders and does not write a Worker `buyer_refresh`
+observation or make an agent hireable.
+
+The current buyer-facing form is endpoint-scoped infrastructure validation:
+
+```json
+{
+  "agentId": "303779",
+  "endpointKey": "<64 lowercase hexadecimal characters>",
+  "validationKind": "protocol"
+}
+```
+
+`endpointKey` must come from the normalized catalogue response; callers never
+send an arbitrary endpoint URL. A new or in-flight request returns HTTP `202`
+with { "schemaVersion": 2, "status": "queued|running", "reused": boolean,
+"requestId": "<opaque token>", "pollAfterMs": number }. The token is not a
+D1 id and is the only value a client uses for polling. If a fresh committed
+observation is already valid, the request can return HTTP `200` with
+`status="completed"`, `reused=true` and `requestId=null`.
+
+Poll `GET /api/marketplace/validate/{requestId}` until the request is terminal.
+The response is { "schemaVersion": 2, "requestId": "<opaque token>",
+"status": "queued|running|completed|failed|cancelled", "attemptCount": number,
+"createdAt": number, "startedAt": number|null, "completedAt": number|null,
+"errorCode": string|null, "hasResult": boolean, "result": object|null }.
+`attemptCount` and the timestamps describe the Worker request, not a browser
+retry count. `hasResult` is true exactly when `result` is present.
+The public polling response never exposes the internal `resultObservationId`; if
+that internal pointer appears, the response is rejected as an invalid response.
+A queued or running request has no result. A completed result
+is the sanitized, request-scoped observation with `protocol`, `source`,
+`outcome`, `observedAt`, `expiresAt`, `httpStatus` and `durationMs`. Only this
+committed Worker observation can update shared reachability evidence; browser
+CORS results remain explicitly browser-only. For `validationKind="protocol"`,
+`outcome` is limited to `protocol_valid`, `http_error`, `timeout`,
+`network_error`, `invalid_response`, `unsafe_url`, `unreachable` or `error`;
+`quote_verified` and `quote_rejected` belong to separate quote evidence and are
+rejected by this polling contract.
+
 Published Mainnet proofs are retained in a versioned history alongside the
 current primary proof. Passport fingerprints commit the complete sanitized job
 record, reject conflicting copies of the same job and use deterministic ordering.

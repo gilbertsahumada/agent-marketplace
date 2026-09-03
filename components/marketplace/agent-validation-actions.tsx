@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { CheckCircle2, CircleAlert, LoaderCircle, ShieldCheck, WifiOff } from "lucide-react";
 import {
@@ -14,9 +14,48 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 type PersistenceStatus = "recorded" | "failed" | "not_configured" | "pending";
-type ValidationTarget = BrowserValidationTarget & { endpointKey?: string };
+/**
+ * A catalog target can be checked by the marketplace Worker even when the
+ * browser policy deliberately excludes it (for example an unsafe or external
+ * declaration). Keep that distinction explicit so the UI never offers a
+ * browser action for a target that the browser/API contract would reject.
+ */
+export type ValidationTarget = BrowserValidationTarget & {
+  endpointKey?: string;
+  browserValidatable?: boolean;
+};
 type InfrastructureState = "pending" | "deferred" | "completed" | "failed";
+type BrowserPhase = "checking" | "saving";
 const POLL_DELAYS_MS = [1_000, 2_000, 4_000, 5_000, 5_000, 5_000] as const;
+
+interface InfrastructureObservation {
+  protocol: string;
+  outcome: string;
+  observedAt: number;
+  expiresAt: number | null;
+  httpStatus: number | null;
+  durationMs: number;
+  source: string;
+}
+
+interface InfrastructureStatus {
+  state: InfrastructureState;
+  message: string;
+  requestId?: string;
+  attemptCount?: number;
+  result?: InfrastructureObservation | null;
+}
+
+export interface ValidationObservationSummary {
+  endpointKey: string;
+  protocol: string;
+  source: string;
+  outcome: string;
+  observedAt: number;
+  expiresAt: number | null;
+  httpStatus: number | null;
+  durationMs: number;
+}
 
 interface ResultState {
   result: BrowserValidationResult;
@@ -36,43 +75,139 @@ function targetLabel(target: BrowserValidationTarget): string {
   }
 }
 
+function protocolCheckDescription(protocol: BrowserValidationTarget["protocol"]): string {
+  if (protocol === "mcp") return "the MCP initialize → initialized → tools/list handshake";
+  if (protocol === "a2a") return "the A2A Agent Card GET";
+  return "the ERC-8183 HTTP health GET";
+}
+
+function protocolLabel(protocol: string): string {
+  if (protocol === "mcp") return "MCP";
+  if (protocol === "a2a") return "A2A";
+  if (protocol === "erc8183_http") return "ERC-8183 HTTP";
+  return protocol.toUpperCase();
+}
+
+function observedAtLabel(value: number): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "unknown time";
+  return date.toISOString().replace("T", " ").replace(".000Z", "Z");
+}
+
 function resultClass(outcome: BrowserValidationResult["outcome"]): string {
   if (outcome === "protocol_valid") return "border-emerald-400/30 bg-emerald-400/10 text-emerald-200";
   if (outcome === "cors_blocked") return "border-amber-400/30 bg-amber-400/10 text-amber-200";
   return "border-red-400/30 bg-red-400/10 text-red-200";
 }
 
-export function AgentValidationActions({ agentId, targets }: {
+function infrastructureCompletionMessage(
+  target: ValidationTarget,
+  status: { attemptCount?: number; result?: InfrastructureObservation | null },
+): string {
+  const result = status.result;
+  if (!result) return "Marketplace check completed and shared evidence was updated. Refreshing this workspace to recalculate the hiring state.";
+  const outcome = result.outcome.replaceAll("_", " ");
+  const transport = protocolLabel(result.protocol || target.protocol);
+  const http = result.httpStatus === null ? "" : ` · HTTP ${result.httpStatus}`;
+  const duration = result.durationMs > 0 ? ` · ${result.durationMs} ms` : "";
+  const attempts = typeof status.attemptCount === "number" ? ` · ${status.attemptCount} attempt${status.attemptCount === 1 ? "" : "s"}` : "";
+  return `Marketplace check completed and shared evidence was updated: ${transport} ${outcome}${http}${duration}${attempts}. Refreshing this workspace to recalculate the hiring state.`;
+}
+
+function sharedObservationLine(
+  target: ValidationTarget,
+  observation: ValidationObservationSummary | undefined,
+): ReactNode {
+  if (!observation) return <p className="mt-2 text-xs text-zinc-500">Declared by the agent · no shared marketplace check yet</p>;
+  const expired = observation.expiresAt !== null && observation.expiresAt <= Date.now();
+  const failed = !["protocol_valid", "quote_verified"].includes(observation.outcome);
+  const tone = failed ? "text-red-300" : expired ? "text-amber-300" : "text-emerald-300";
+  const outcome = observation.outcome.replaceAll("_", " ");
+  const source = observation.source === "buyer_refresh"
+    ? "buyer refresh"
+    : observation.source === "migration"
+      ? "release snapshot"
+      : "scheduled Worker";
+  return (
+    <p className={`mt-2 text-xs ${tone}`} data-observation-source={observation.source}>
+      Shared: {outcome} · {source} · {observedAtLabel(observation.observedAt)}
+      {observation.httpStatus === null ? "" : ` · HTTP ${observation.httpStatus}`}
+      {observation.durationMs > 0 ? ` · ${observation.durationMs} ms` : ""}
+      {expired ? " · stale" : ""}
+      {target.protocol !== observation.protocol ? ` · declared ${target.protocol.toUpperCase()}` : ""}
+    </p>
+  );
+}
+
+export function AgentValidationActions({ agentId, targets, initialObservations = [] }: {
   agentId: string;
   targets: ValidationTarget[];
+  initialObservations?: ValidationObservationSummary[];
 }) {
   const router = useRouter();
   const [pending, setPending] = useState<string | null>(null);
+  const [browserPhase, setBrowserPhase] = useState<Record<string, BrowserPhase>>({});
   const [results, setResults] = useState<Record<string, ResultState>>({});
-  const [infrastructure, setInfrastructure] = useState<Record<string, {
-    state: InfrastructureState;
-    message: string;
-  }>>({});
+  const [infrastructure, setInfrastructure] = useState<Record<string, InfrastructureStatus>>({});
+  const [browserErrors, setBrowserErrors] = useState<Record<string, string>>({});
+
+  const latestObservations = new Map<string, ValidationObservationSummary>();
+  for (const observation of initialObservations) {
+    const key = `${observation.protocol}\u0000${observation.endpointKey}`;
+    const current = latestObservations.get(key);
+    if (!current || observation.observedAt > current.observedAt) latestObservations.set(key, observation);
+  }
+
+  function existingObservation(target: ValidationTarget): ValidationObservationSummary | undefined {
+    return latestObservations.get(`${target.protocol}\u0000${target.endpointKey ?? ""}`);
+  }
 
   async function validate(target: BrowserValidationTarget) {
     const key = targetKey(target);
     setPending(key);
-    const result = await validateEndpointInBrowser(target);
-    setResults((current) => ({ ...current, [key]: { result, persistence: "pending" } }));
-    let persistence: PersistenceStatus = "failed";
+    setBrowserPhase((current) => ({ ...current, [key]: "checking" }));
+    setBrowserErrors((current) => {
+      if (!(key in current)) return current;
+      const next = { ...current };
+      delete next[key];
+      return next;
+    });
     try {
-      const response = await fetch(`/api/marketplace/agents/${agentId}/observations/browser`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(result),
-      });
-      const payload = await response.json() as { persistence?: PersistenceStatus };
-      persistence = response.ok ? payload.persistence ?? "failed" : "failed";
+      const result = await validateEndpointInBrowser(target);
+      setResults((current) => ({ ...current, [key]: { result, persistence: "pending" } }));
+      setBrowserPhase((current) => ({ ...current, [key]: "saving" }));
+      let persistence: PersistenceStatus = "failed";
+      try {
+        const response = await fetch(`/api/marketplace/agents/${agentId}/observations/browser`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(result),
+        });
+        const payload = await response.json() as { persistence?: PersistenceStatus };
+        persistence = response.ok ? payload.persistence ?? "failed" : "failed";
+      } catch {
+        persistence = "failed";
+      }
+      setResults((current) => ({ ...current, [key]: { result, persistence } }));
+      // The POST writes a browser_reported observation that is shared with
+      // other viewers, but it is intentionally not used to promote platform
+      // reachability or hireability. Refresh only after the Worker accepted
+      // the write so the server-rendered observation state can catch up.
+      if (persistence === "recorded") router.refresh();
     } catch {
-      persistence = "failed";
+      setBrowserErrors((current) => ({
+        ...current,
+        [key]: "The browser check could not start. No browser result was recorded; shared marketplace evidence was not changed.",
+      }));
+    } finally {
+      setPending(null);
+      setBrowserPhase((current) => {
+        if (!(key in current)) return current;
+        const next = { ...current };
+        delete next[key];
+        return next;
+      });
     }
-    setResults((current) => ({ ...current, [key]: { result, persistence } }));
-    setPending(null);
   }
 
   async function validateThroughMarketplace(target: ValidationTarget) {
@@ -80,7 +215,7 @@ export function AgentValidationActions({ agentId, targets }: {
     const key = targetKey(target);
     setInfrastructure((current) => ({
       ...current,
-      [key]: { state: "pending", message: "The marketplace queued this endpoint for validation." },
+      [key]: { state: "pending", message: `Step 1/3 · queued for ${protocolCheckDescription(target.protocol)} through the marketplace.` },
     }));
     try {
       const response = await fetch("/api/marketplace/validate", {
@@ -90,6 +225,7 @@ export function AgentValidationActions({ agentId, targets }: {
       });
       const payload = await response.json() as {
         status?: string;
+        reused?: boolean;
         requestId?: string | null;
         pollAfterMs?: number;
         error?: { message?: string };
@@ -98,14 +234,38 @@ export function AgentValidationActions({ agentId, targets }: {
       if (payload.status === "completed") {
         setInfrastructure((current) => ({
           ...current,
-          [key]: { state: "completed", message: "Marketplace check completed and shared evidence was updated." },
+          [key]: {
+            state: "completed",
+            message: payload.reused
+              ? `A fresh shared ${protocolLabel(target.protocol)} observation already exists. Refreshing this workspace to recalculate the hiring state.`
+              : `Shared evidence was updated for ${target.protocol.toUpperCase()}. Refreshing this workspace to recalculate the hiring state.`,
+          },
         }));
         router.refresh();
         return;
       }
-      if (!payload.requestId) throw new Error("Marketplace validation returned no request identifier.");
+      const requestId = payload.requestId;
+      if (!requestId) throw new Error("Marketplace validation returned no request identifier.");
+
+      setInfrastructure((current) => ({
+        ...current,
+        [key]: {
+          state: "pending",
+          requestId,
+          message: `Step 2/3 · the Worker is running ${protocolCheckDescription(target.protocol)} against ${targetLabel(target)}. No wallet signature is requested.`,
+        },
+      }));
 
       for (let attempt = 0; attempt < POLL_DELAYS_MS.length; attempt += 1) {
+        setInfrastructure((current) => ({
+          ...current,
+          [key]: {
+            ...(current[key] ?? { state: "pending" as const }),
+            state: "pending",
+            requestId,
+            message: `Step 3/3 · reading the ${protocolLabel(target.protocol)} result (poll ${attempt + 1}/${POLL_DELAYS_MS.length}). The endpoint is checked outside this browser.`,
+          },
+        }));
         const delayMs = attempt === 0 && typeof payload.pollAfterMs === "number"
           ? Math.max(0, Math.min(5_000, payload.pollAfterMs))
           : POLL_DELAYS_MS[attempt] ?? 5_000;
@@ -114,11 +274,13 @@ export function AgentValidationActions({ agentId, targets }: {
         let statusPayload: {
           status?: string;
           hasResult?: boolean;
+          attemptCount?: number;
+          result?: InfrastructureObservation | null;
           errorCode?: string | null;
           error?: { message?: string };
         };
         try {
-          statusResponse = await fetch(`/api/marketplace/validate/${encodeURIComponent(payload.requestId)}`, {
+          statusResponse = await fetch(`/api/marketplace/validate/${encodeURIComponent(requestId)}`, {
             cache: "no-store",
           });
           statusPayload = await statusResponse.json();
@@ -127,6 +289,7 @@ export function AgentValidationActions({ agentId, targets }: {
             ...current,
             [key]: {
               state: "deferred",
+              requestId,
               message: "The status check was interrupted. The marketplace validation may still be running; continue checking shortly.",
             },
           }));
@@ -137,6 +300,7 @@ export function AgentValidationActions({ agentId, targets }: {
             ...current,
             [key]: {
               state: "deferred",
+              requestId,
               message: statusPayload.error?.message
                 ? `${statusPayload.error.message} The marketplace validation may still be running.`
                 : "The status check was interrupted. The marketplace validation may still be running; continue checking shortly.",
@@ -145,12 +309,18 @@ export function AgentValidationActions({ agentId, targets }: {
           return;
         }
         if (statusPayload.status === "completed") {
-          if (statusPayload.hasResult !== true) {
+          if (statusPayload.hasResult !== true || !statusPayload.result) {
             throw new Error("Marketplace validation completed but did not produce shared evidence.");
           }
           setInfrastructure((current) => ({
             ...current,
-            [key]: { state: "completed", message: "Marketplace check completed and shared evidence was updated." },
+            [key]: {
+              state: "completed",
+              requestId,
+              ...(typeof statusPayload.attemptCount === "number" ? { attemptCount: statusPayload.attemptCount } : {}),
+              result: statusPayload.result ?? null,
+              message: infrastructureCompletionMessage(target, statusPayload),
+            },
           }));
           router.refresh();
           return;
@@ -160,11 +330,21 @@ export function AgentValidationActions({ agentId, targets }: {
             ? `Marketplace validation stopped (${statusPayload.errorCode}).`
             : "Marketplace validation stopped before producing evidence.");
         }
+        setInfrastructure((current) => ({
+          ...current,
+          [key]: {
+            state: "pending",
+            requestId,
+            ...(typeof statusPayload.attemptCount === "number" ? { attemptCount: statusPayload.attemptCount } : {}),
+            message: `Step 3/3 · the Worker is still running ${protocolCheckDescription(target.protocol)} (poll ${attempt + 1}/${POLL_DELAYS_MS.length}).`,
+          },
+        }));
       }
       setInfrastructure((current) => ({
         ...current,
         [key]: {
           state: "deferred",
+          requestId,
           message: "Marketplace validation is still running. Continue checking shortly to read the shared result.",
         },
       }));
@@ -186,7 +366,7 @@ export function AgentValidationActions({ agentId, targets }: {
       <CardHeader>
         <CardTitle>Validate declared endpoints</CardTitle>
         <p className="max-w-3xl text-sm leading-relaxed text-zinc-400">
-          Run a read-only protocol check now. Browser results are reported separately from marketplace-operated checks and never make an agent hireable by themselves.
+          Run a read-only protocol check now. Browser results stay local to this report; marketplace checks run through the Worker, persist shared evidence, and never make an agent hireable by themselves.
         </p>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -199,26 +379,35 @@ export function AgentValidationActions({ agentId, targets }: {
               const state = results[key];
               const infrastructureState = infrastructure[key];
               return (
-                <li className="rounded-xl border border-white/10 bg-white/[0.02] p-4" key={key}>
+                <li aria-busy={pending === key || infrastructureState?.state === "pending"} className="rounded-xl border border-white/10 bg-white/[0.02] p-4" key={key}>
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
                         <Badge variant="outline">{target.protocol.replace("_", " ").toUpperCase()}</Badge>
                         <span className="truncate text-sm text-zinc-300">{targetLabel(target)}</span>
                       </div>
-                      <p className="mt-2 text-xs text-zinc-500">Declared by the agent · not yet trusted</p>
+                      {sharedObservationLine(target, existingObservation(target))}
                     </div>
+                    {pending === key ? (
+                      <p aria-live="polite" className="text-xs text-cyan-200">
+                        {browserPhase[key] === "saving"
+                          ? "Step 2/2 · Saving this browser result separately. Shared marketplace evidence is unchanged."
+                          : `Step 1/2 · Running ${protocolCheckDescription(target.protocol)} from this browser. This result is reported separately from marketplace evidence.`}
+                      </p>
+                    ) : null}
                     <div className="flex flex-wrap gap-2">
-                      <Button
-                        className="cursor-pointer"
-                        disabled={pending !== null}
-                        onClick={() => void validate(target)}
-                        type="button"
-                        variant="outline"
-                      >
-                        {pending === key ? <LoaderCircle aria-hidden="true" className="animate-spin" /> : <ShieldCheck aria-hidden="true" />}
-                        Validate from browser
-                      </Button>
+                      {target.browserValidatable !== false ? (
+                        <Button
+                          className="cursor-pointer"
+                          disabled={pending !== null}
+                          onClick={() => void validate(target)}
+                          type="button"
+                          variant="outline"
+                        >
+                          {pending === key ? <LoaderCircle aria-hidden="true" className="animate-spin" /> : <ShieldCheck aria-hidden="true" />}
+                          Validate from browser
+                        </Button>
+                      ) : null}
                       {target.endpointKey && (
                         <Button
                           className="cursor-pointer"
@@ -248,12 +437,23 @@ export function AgentValidationActions({ agentId, targets }: {
                       <p className="mt-2 text-xs opacity-80">
                         Checked {new Date(state.result.observedAt).toLocaleString()} · {state.result.durationMs} ms
                         {state.result.capabilityCount > 0 ? ` · ${state.result.capabilityCount} capabilities` : ""}
-                        {state.persistence === "recorded" ? " · saved as browser-reported evidence" : " · local result only"}
+                        {state.persistence === "recorded"
+                          ? " · saved as browser-reported evidence"
+                          : state.persistence === "not_configured"
+                            ? " · shared save not configured · local result only"
+                            : " · shared save failed · local result only"}
                       </p>
                     </div>
                   )}
+                  {browserErrors[key] ? (
+                    <Alert aria-live="polite" className="mt-3" variant="destructive">
+                      <CircleAlert aria-hidden="true" />
+                      <AlertTitle>Browser check stopped</AlertTitle>
+                      <AlertDescription>{browserErrors[key]}</AlertDescription>
+                    </Alert>
+                  ) : null}
                   {infrastructureState && (
-                    <Alert className="mt-3" variant={infrastructureState.state === "failed" ? "destructive" : "default"}>
+                    <Alert aria-live="polite" className="mt-3" variant={infrastructureState.state === "failed" ? "destructive" : "default"}>
                       {infrastructureState.state === "failed"
                         ? <CircleAlert aria-hidden="true" />
                         : <ShieldCheck aria-hidden="true" />}

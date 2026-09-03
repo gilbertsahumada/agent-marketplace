@@ -44,6 +44,18 @@ export interface CatalogValidationStatusResult {
   readonly completedAt: number | null;
   readonly errorCode: string | null;
   readonly hasResult: boolean;
+  readonly result: CatalogValidationResultObservation | null;
+}
+
+export interface CatalogValidationResultObservation {
+  readonly protocol: "a2a" | "mcp" | "erc8183_http";
+  readonly source: "buyer_refresh" | "worker_probe" | "migration";
+  /** Outcomes emitted by the endpoint protocol probe (not quote evidence). */
+  readonly outcome: "protocol_valid" | "http_error" | "timeout" | "network_error" | "invalid_response" | "unsafe_url" | "unreachable" | "error";
+  readonly observedAt: number;
+  readonly expiresAt: number | null;
+  readonly httpStatus: number | null;
+  readonly durationMs: number;
 }
 
 export interface CatalogValidationRequestToken {
@@ -120,6 +132,34 @@ function nullableInteger(value: unknown): number | null {
 function responseErrorCode(value: unknown, fallback: string): string {
   if (typeof value !== "string" || !/^[a-z][a-z0-9_]{1,63}$/.test(value)) return fallback;
   return `CATALOG_${value.toUpperCase()}`;
+}
+
+function validationResult(value: unknown): CatalogValidationResultObservation | null {
+  if (value === null || value === undefined) return null;
+  const item = record(value);
+  if (!item) return null;
+  const protocols = new Set(["a2a", "mcp", "erc8183_http"]);
+  const sources = new Set(["buyer_refresh", "worker_probe", "migration"]);
+  const outcomes = new Set([
+    "protocol_valid", "http_error", "timeout", "network_error", "invalid_response",
+    "unsafe_url", "unreachable", "error",
+  ]);
+  if (typeof item.protocol !== "string" || !protocols.has(item.protocol)
+    || typeof item.source !== "string" || !sources.has(item.source)
+    || typeof item.outcome !== "string" || !outcomes.has(item.outcome)
+    || typeof item.observedAt !== "number" || !Number.isSafeInteger(item.observedAt) || item.observedAt < 0
+    || (item.expiresAt !== null && (typeof item.expiresAt !== "number" || !Number.isSafeInteger(item.expiresAt) || item.expiresAt < 0))
+    || (item.httpStatus !== null && (typeof item.httpStatus !== "number" || !Number.isInteger(item.httpStatus) || item.httpStatus < 100 || item.httpStatus > 599))
+    || typeof item.durationMs !== "number" || !Number.isSafeInteger(item.durationMs) || item.durationMs < 0) return null;
+  return {
+    protocol: item.protocol as CatalogValidationResultObservation["protocol"],
+    source: item.source as CatalogValidationResultObservation["source"],
+    outcome: item.outcome as CatalogValidationResultObservation["outcome"],
+    observedAt: Number(item.observedAt),
+    expiresAt: item.expiresAt === null ? null : Number(item.expiresAt),
+    httpStatus: item.httpStatus === null ? null : Number(item.httpStatus),
+    durationMs: Number(item.durationMs),
+  };
 }
 
 async function readJson(response: Response): Promise<Record<string, unknown>> {
@@ -306,6 +346,12 @@ export async function getCatalogValidationStatus(
   const startedAt = validation ? nullableInteger(validation.startedAt) : null;
   const completedAt = validation ? nullableInteger(validation.completedAt) : null;
   const errorCode = validation?.errorCode;
+  const hasResult = validation?.hasResult;
+  const hasPublicResultField = validation !== null
+    && Object.prototype.hasOwnProperty.call(validation, "result");
+  const hasInternalResultPointer = validation !== null
+    && Object.prototype.hasOwnProperty.call(validation, "resultObservationId");
+  const result = validationResult(validation?.result);
   if (id !== input.validationId
     || agentKey !== `eip155:56:${input.agentId}`
     || endpointKey !== input.endpointKey
@@ -314,7 +360,15 @@ export async function getCatalogValidationStatus(
     || attemptCount === null || createdAt === null
     || (validation?.startedAt !== null && startedAt === null)
     || (validation?.completedAt !== null && completedAt === null)
-    || (errorCode !== null && (typeof errorCode !== "string" || !/^[A-Z][A-Z0-9_]{2,63}$/.test(errorCode)))) {
+    || (errorCode !== null && (typeof errorCode !== "string" || !/^[A-Z][A-Z0-9_]{2,63}$/.test(errorCode)))
+    || typeof hasResult !== "boolean"
+    || !hasPublicResultField
+    || hasInternalResultPointer
+    || (validation?.result !== null && validation?.result !== undefined && result === null)
+    // The public boolean and sanitized result are one committed unit. Never
+    // let an absent result be presented as evidence (or hide a real result by
+    // silently changing hasResult).
+    || hasResult !== (result !== null)) {
     throw new CatalogValidationRequestError("CATALOG_VALIDATION_INVALID_RESPONSE", 502);
   }
   return {
@@ -324,7 +378,8 @@ export async function getCatalogValidationStatus(
     startedAt,
     completedAt,
     errorCode: errorCode as string | null,
-    hasResult: positiveInteger(validation.resultObservationId) !== null,
+    hasResult: hasResult as boolean,
+    result,
   };
 }
 

@@ -17,6 +17,18 @@ function errorResponse(error: CatalogValidationRequestError): NextResponse {
   );
 }
 
+function contradictoryResultResponse(): NextResponse {
+  return NextResponse.json(
+    {
+      error: {
+        code: "CATALOG_VALIDATION_INVALID_RESPONSE",
+        message: "The validation status returned contradictory result metadata",
+      },
+    },
+    { status: 502, headers: { "cache-control": "no-store" } },
+  );
+}
+
 export async function GET(
   _request: Request,
   context: { params: Promise<{ requestId: string }> },
@@ -31,6 +43,10 @@ export async function GET(
   }
   try {
     const result = await getCatalogValidationStatus(token);
+    // Keep the public boundary fail-closed even if an adapter is replaced or
+    // mocked: a positive observation pointer must have the corresponding
+    // sanitized result, and vice versa.
+    if (result.hasResult !== (result.result !== null)) return contradictoryResultResponse();
     return NextResponse.json({
       schemaVersion: 2,
       requestId,
