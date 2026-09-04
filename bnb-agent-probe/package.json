@@ -26,6 +26,7 @@
     "evidence:wp2-deployment": "tsx scripts/capture-wp2-deployment.ts",
     "evidence:wp2-window-start": "tsx scripts/capture-wp2-window-start.ts",
     "rollback:wp2-activation": "tsx scripts/rollback-wp2-activation.ts",
+    "rpc:probe": "tsx scripts/rpc-logs-probe.ts",
     "smoke": "tsx scripts/smoke.ts"
   },
   "dependencies": {

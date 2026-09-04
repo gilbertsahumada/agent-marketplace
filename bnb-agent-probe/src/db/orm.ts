@@ -30,6 +30,8 @@ export type ProbeTargetRow = typeof schema.probeTargets.$inferSelect;
 export type ProbeObservationRow = typeof schema.probeObservations.$inferSelect;
 export type FunnelSnapshotRow = typeof schema.funnelSnapshots.$inferSelect;
 export type HireEventRow = typeof schema.hireEvents.$inferSelect;
+export type CommerceJobRow = typeof schema.commerceJobs.$inferSelect;
+export type CommerceJobEventRow = typeof schema.commerceJobEvents.$inferSelect;
 export type RuntimeStateRow = typeof schema.runtimeState.$inferSelect;
 export type SchedulerAttemptRow = typeof schema.schedulerAttempts.$inferSelect;
 export type CatalogAgentRow = typeof schema.catalogAgents.$inferSelect;
@@ -359,7 +361,7 @@ export async function readCatalogProjectionMismatches(db: Database): Promise<Arr
     )`);
 }
 
-function chunks<T>(values: readonly T[], size: number): T[][] {
+export function chunks<T>(values: readonly T[], size: number): T[][] {
   const result: T[][] = [];
   for (let offset = 0; offset < values.length; offset += size) result.push(values.slice(offset, offset + size));
   return result;

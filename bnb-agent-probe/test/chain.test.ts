@@ -9,6 +9,7 @@ import {
   BSC_ROUTER,
   BscProbeError,
   createCountedBscClient,
+  nestedBscProbeError,
   readProbeChainContext,
 } from "../src/lib/chain";
 
@@ -156,6 +157,38 @@ describe("counted BSC RPC transport", () => {
     expect(JSON.parse(String(fetchImpl.mock.calls[0]?.[1]?.body))).toMatchObject({
       method: "eth_chainId",
     });
+  });
+
+  it("widens the method set and the reply cap only when the caller asks for it", async () => {
+    const reply = (result: unknown) => new Response(JSON.stringify({ jsonrpc: "2.0", id: 1, result }), {
+      headers: { "content-type": "application/json" },
+    });
+    const probe = createCountedBscClient({
+      rpcUrl: "https://rpc.example.com/bsc",
+      fetch: vi.fn<typeof fetch>().mockResolvedValue(reply("0x10")),
+      deadlineMs: Date.now() + 5_000,
+      now: Date.now,
+    });
+    await expect(probe.getBlockNumber()).rejects.toSatisfy((error) => nestedBscProbeError(error)?.code === "BSC_RPC_METHOD");
+
+    const indexer = createCountedBscClient({
+      rpcUrl: "https://rpc.example.com/bsc",
+      fetch: vi.fn<typeof fetch>().mockResolvedValue(reply("0x10")),
+      deadlineMs: Date.now() + 5_000,
+      now: Date.now,
+      methods: new Set(["eth_blockNumber"]),
+    });
+    await expect(indexer.getBlockNumber()).resolves.toBe(16n);
+
+    const capped = createCountedBscClient({
+      rpcUrl: "https://rpc.example.com/bsc",
+      fetch: vi.fn<typeof fetch>().mockResolvedValue(reply("0x10")),
+      deadlineMs: Date.now() + 5_000,
+      now: Date.now,
+      methods: new Set(["eth_blockNumber"]),
+      maxResponseBytes: 8,
+    });
+    await expect(capped.getBlockNumber()).rejects.toSatisfy((error) => nestedBscProbeError(error)?.code === "BSC_RPC_RESPONSE");
   });
 
   it("sanitizes an aborted RPC response stream", async () => {

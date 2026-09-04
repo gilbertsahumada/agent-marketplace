@@ -55,7 +55,7 @@ const PHASE_COMPATIBLE_STATUS: Record<HireChainPhase, readonly number[]> = {
   refunded: [4, 5],
 };
 
-const DEPLOYMENTS: Record<HireChainId, {
+export const DEPLOYMENTS: Record<HireChainId, {
   readonly chain: typeof bsc | typeof bscTestnet;
   readonly commerce: Address;
   readonly registry: Address;
@@ -72,7 +72,7 @@ export const commerceEventsAbi = parseAbi([
   "event JobRejected(uint256 indexed jobId, address indexed rejector, bytes32 reason)",
   "event JobExpired(uint256 indexed jobId)",
 ]);
-const commerceReadAbi = parseAbi([
+export const commerceReadAbi = parseAbi([
   "function getJob(uint256 jobId) view returns ((uint256 id, address client, address provider, address evaluator, string description, uint256 budget, uint256 expiredAt, uint8 status, address hook, uint256 submittedAt, bytes32 deliverable))",
 ]);
 const registryAbi = parseAbi([
