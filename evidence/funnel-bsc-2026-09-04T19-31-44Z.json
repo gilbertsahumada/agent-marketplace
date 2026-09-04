@@ -1,0 +1,206 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-09-04T19:31:44.602Z",
+  "chainId": 56,
+  "cutoff": {
+    "blockNumber": "119975081",
+    "observedAt": "2026-09-04T19:31:44.602Z"
+  },
+  "source": {
+    "baseUrl": "https://trust8004.xyz",
+    "listPath": "/api/app/agents",
+    "detailPathTemplate": "/api/app/agents/56:AGENT_ID",
+    "params": {
+      "chainId": "56",
+      "limit": "2000",
+      "includeReputation": "false",
+      "includeCategoryCounts": "false",
+      "includeMetadataReasonCounts": "true",
+      "includeTotal": "true",
+      "sortBy": "registered",
+      "sortOrder": "asc"
+    },
+    "rateLimitHeaders": {
+      "x-ratelimit-limit": [
+        "60"
+      ],
+      "x-ratelimit-remaining": [
+        "27",
+        "28",
+        "29",
+        "30",
+        "31",
+        "32",
+        "33",
+        "34",
+        "35",
+        "36",
+        "37",
+        "38",
+        "39",
+        "40",
+        "41",
+        "42",
+        "43",
+        "44",
+        "45",
+        "46",
+        "47",
+        "48",
+        "49",
+        "50",
+        "51",
+        "52",
+        "53",
+        "54",
+        "55",
+        "56",
+        "57",
+        "58",
+        "59"
+      ]
+    }
+  },
+  "registeredTotal": 334770,
+  "countOnlyTotal": 334768,
+  "metadata": {
+    "ok": 192946,
+    "httpUnreachable": 124937,
+    "other": 16887
+  },
+  "protocols": {
+    "a2aOnly": 29997,
+    "erc8183Only": 14,
+    "both": 4,
+    "mcpOnly": 5323,
+    "otherOrNone": 157608,
+    "protocolUnknown": 141824
+  },
+  "candidates": {
+    "declaringAgents": 30015,
+    "declaredEndpoints": 30018,
+    "publicHttpsEndpoints": 30006,
+    "topDomains": [
+      {
+        "hostname": "platform-backend.prod.termix.live",
+        "count": 29067
+      },
+      {
+        "hostname": "app.singularry.org",
+        "count": 240
+      },
+      {
+        "hostname": "api.bortagent.xyz",
+        "count": 191
+      },
+      {
+        "hostname": "www.app.bitagent.io",
+        "count": 137
+      },
+      {
+        "hostname": "api.bitagent.io",
+        "count": 102
+      },
+      {
+        "hostname": "me.hyreagent.fun",
+        "count": 41
+      },
+      {
+        "hostname": "bitagent.s3.ap-southeast-1.amazonaws.com",
+        "count": 29
+      },
+      {
+        "hostname": "genesis-agent.example.com",
+        "count": 16
+      },
+      {
+        "hostname": "claw-pump.vercel.app",
+        "count": 15
+      },
+      {
+        "hostname": "aliasai.io",
+        "count": 11
+      }
+    ]
+  },
+  "scan": {
+    "pages": 168,
+    "requestedPageSize": 2000,
+    "observedPageSize": 2000,
+    "firstAgentId": "0",
+    "lastAgentId": "334769",
+    "requests": 173,
+    "retries": 0,
+    "http429Responses": 0,
+    "maximumRequestsPerRollingMinute": 33,
+    "maxPageBytes": 7333202,
+    "missingRegisteredAt": 0,
+    "duplicateAgentIds": 0,
+    "durationMs": 479353,
+    "errors": []
+  },
+  "apiValidation": {
+    "listRoute": true,
+    "detailRoute": true,
+    "rateLimitAdvertised": 60,
+    "requestedLimitAccepted": true,
+    "ascendingSampleConfirmed": true,
+    "detailFieldsObserved": true,
+    "onchainWalletSource": "getAgentWallet",
+    "onchainWalletBlockNumber": "119976135"
+  },
+  "wp1Blocked": true,
+  "gates": [
+    {
+      "name": "protocolBucketsSum",
+      "passed": true,
+      "detail": "334770/334770"
+    },
+    {
+      "name": "metadataBucketsSum",
+      "passed": true,
+      "detail": "334770/334770"
+    },
+    {
+      "name": "countOnlyDriftBelowOnePercent",
+      "passed": true,
+      "detail": "0.000006"
+    },
+    {
+      "name": "ascendingSampleConfirmed",
+      "passed": true,
+      "detail": "confirmed"
+    },
+    {
+      "name": "rateBudget",
+      "passed": true,
+      "detail": "33/55; 429=0"
+    },
+    {
+      "name": "apiContractRevalidated",
+      "passed": true,
+      "detail": "list, detail, rate=60, limit, fields"
+    },
+    {
+      "name": "artifactSanitized",
+      "passed": true,
+      "detail": "sanitized"
+    },
+    {
+      "name": "onchainWalletRevalidated",
+      "passed": true,
+      "detail": "getAgentWallet"
+    },
+    {
+      "name": "wp1SizingWithinBudget",
+      "passed": false,
+      "detail": "agents=30015; endpoints=30018"
+    },
+    {
+      "name": "sourceSha256Reproducible",
+      "passed": true,
+      "detail": "verified"
+    }
+  ],
+  "sourceSha256": "02f3282ed04bf35265b7e61aa2da1f24f32f857da4792b1c9d8ae1fcc5b8f58b"
+}

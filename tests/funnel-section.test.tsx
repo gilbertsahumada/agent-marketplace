@@ -9,31 +9,32 @@ afterEach(cleanup);
 
 const funnel: FunnelSectionViewModel = {
   stages: [
-    { label: "Registered on BSC", detail: "Counted by full sweep.", count: "309,897", share: null, provenance: "observed" },
-    { label: "Declares ERC-8183 hiring", detail: "Escrow transport.", count: "16", share: null, provenance: "declared" },
-    { label: "Answers with a verified quote", detail: "Measured live soon.", count: null, share: null, provenance: null },
+    { label: "Registry entries indexed", detail: "Counted by full sweep.", count: "334,770", share: null, provenance: "observed" },
+    { label: "ERC-8183 declared", detail: "Metadata claim.", count: "18", share: null, provenance: "declared" },
+    { label: "Verified hireable now", detail: "Not published without a complete check.", count: null, share: null, provenance: null },
   ],
   citation: {
-    artifact: "evidence/funnel-bsc-2026-08-27T19-41-17Z.json",
-    sha256: "a8149173eeb70fb19a38610e98e4e11ecbce7ccadcfc2c0e6e25fa14a075fe69",
-    blockNumber: "118441354",
-    generatedAt: "2026-08-27T19:41:17.543Z",
+    artifact: "evidence/funnel-bsc-2026-09-04T19-31-44Z.json",
+    sha256: "02f3282ed04bf35265b7e61aa2da1f24f32f857da4792b1c9d8ae1fcc5b8f58b",
+    blockNumber: "119975081",
+    generatedAt: "2026-09-04T19:31:44.602Z",
+    scanDurationMs: 479353,
   },
 };
 
 describe("FunnelSection", () => {
   it("renders measured stages with counts and the artifact citation", () => {
     render(<FunnelSection funnel={funnel} />);
-    expect(screen.getByText("309,897")).toBeInTheDocument();
-    expect(screen.getByText("16")).toBeInTheDocument();
-    expect(screen.getByText(/block 118441354/)).toBeInTheDocument();
-    expect(screen.getByText(/a8149173…a075fe69/)).toBeInTheDocument();
-    expect(screen.getByText(/2026-08-27T19:41:17\.543Z/)).toBeInTheDocument();
+    expect(screen.getByText("334,770")).toBeInTheDocument();
+    expect(screen.getByText("18")).toBeInTheDocument();
+    expect(screen.getByText("119975081")).toBeInTheDocument();
+    expect(screen.getByText(/02f3282ed0…fcc5b8f58b/)).toBeInTheDocument();
+    expect(screen.getByText(/4 Sept 2026, 19:31 UTC/)).toBeInTheDocument();
   });
 
   it("marks unmeasured stages as pending instead of showing a zero", () => {
     render(<FunnelSection funnel={funnel} />);
-    expect(screen.getByText("Pending observation")).toBeInTheDocument();
+    expect(screen.getByText("Not published")).toBeInTheDocument();
     expect(screen.queryByText("0")).not.toBeInTheDocument();
   });
 
@@ -43,6 +44,6 @@ describe("FunnelSection", () => {
     fireEvent.click(trigger);
     expect(screen.getByText("What it does not mean")).toBeInTheDocument();
     expect(screen.getByText(/It sits in ERC-8183 escrow\./)).toBeInTheDocument();
-    expect(screen.queryByText(/block 118441354/)).not.toBeInTheDocument();
+    expect(screen.queryByText("119975081")).not.toBeInTheDocument();
   });
 });

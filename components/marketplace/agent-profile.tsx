@@ -81,10 +81,12 @@ function EvidenceSummaryItem({
   );
 }
 
-function JobHistory({ hireActivity, jobs, hireJobs }: {
+function JobHistory({ hireActivity, jobs, hireJobs, more, scope }: {
   hireActivity: AgentEvidencePassport["checks"]["hireActivity"];
   jobs: readonly MainnetJobProof[];
   hireJobs: readonly HireJob[] | null;
+  more: boolean;
+  scope: "wallet" | "agent";
 }) {
   const ordered = [...jobs].sort((left, right) => Date.parse(right.capturedAt) - Date.parse(left.capturedAt));
   const proven = new Set(jobs.map((job) => job.jobId));
@@ -104,7 +106,7 @@ function JobHistory({ hireActivity, jobs, hireJobs }: {
         </h2>
         <div className="flex flex-wrap gap-2">
           {hireJobs !== null ? <>
-            <Badge variant="outline">{allJobIds.size} {allJobIds.size === 1 ? "job" : "jobs"}</Badge>
+            <Badge variant="outline">{allJobIds.size}{more ? "+" : ""} {allJobIds.size === 1 ? "job" : "jobs"}</Badge>
             <Badge className={funded > 0 ? "border-amber-300/30 bg-amber-300/10 text-amber-100" : ""} variant="outline">{funded} funded</Badge>
             <Badge className={completed.size > 0 ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-200" : ""} variant="outline">{completed.size} completed</Badge>
             <Badge variant="outline">{resultVerified} result verified</Badge>
@@ -121,7 +123,7 @@ function JobHistory({ hireActivity, jobs, hireJobs }: {
         ) : null}
         {ordered.length === 0 && indexed.length === 0 ? (
           <div className="px-5 py-6 text-sm text-zinc-500">
-            {hireJobs === null ? "No verified ERC-8183 jobs yet." : "No verified ERC-8183 jobs yet, and no indexed on-chain jobs for this provider wallet."}
+            {hireJobs === null ? "Indexed ledger unavailable right now." : "No indexed jobs yet."}
           </div>
         ) : null}
         {ordered.length > 0 ? (
@@ -147,10 +149,11 @@ function JobHistory({ hireActivity, jobs, hireJobs }: {
         ) : null}
         {indexed.length > 0 ? (
           <div className={ordered.length > 0 ? "border-t border-white/10" : ""}>
-            <p className="px-4 pt-4 text-xs text-zinc-500 sm:px-5">Indexed on-chain jobs sold by this agent&apos;s wallet. State, not a verified deliverable.</p>
+            <p className="px-4 pt-4 text-xs text-zinc-500 sm:px-5">{scope === "wallet" ? "Provider wallet activity" : "Agent activity"}</p>
             <HireJobRows chainId={56} emptyText="" jobs={indexed} />
           </div>
         ) : null}
+        {more ? <p className="px-5 py-3 text-xs text-zinc-500">Newest jobs shown. <Link className="text-primary" href="/jobs">Explore jobs</Link></p> : null}
       </div>
     </details>
   );
@@ -164,6 +167,8 @@ export function AgentProfile({
   hireNotice,
   hireFlowAvailable,
   hireJobs = null,
+  hireJobsMore = false,
+  hireJobsScope = "agent",
   jobProofs = EMPTY_JOBS,
 }: {
   agent: MarketplaceAgent;
@@ -173,6 +178,8 @@ export function AgentProfile({
   hireNotice?: ReactNode;
   hireFlowAvailable?: boolean;
   hireJobs?: readonly HireJob[] | null;
+  hireJobsMore?: boolean;
+  hireJobsScope?: "wallet" | "agent";
   jobProofs?: readonly MainnetJobProof[];
 }) {
   const displayName = marketplaceAgentDisplayName(agent.name);
@@ -340,7 +347,7 @@ export function AgentProfile({
       </div>
 
       <QuoteHistory agentId={agent.agentId} />
-      <JobHistory hireActivity={passport.checks.hireActivity} hireJobs={hireJobs} jobs={jobProofs} />
+      <JobHistory hireActivity={passport.checks.hireActivity} hireJobs={hireJobs} jobs={jobProofs} more={hireJobsMore} scope={hireJobsScope} />
     </main>
   );
 }

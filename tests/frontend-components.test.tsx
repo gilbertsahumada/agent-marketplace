@@ -785,7 +785,7 @@ describe("marketplace presentation rules", () => {
     expect(screen.getByText("Identity declared")).toBeInTheDocument();
     expect(screen.getByText("0 completed jobs")).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Hire agent" })).not.toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "ERC-8183 job history" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "ERC-8183 job history", hidden: true })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /Job #700/i })).toHaveAttribute("href", "/jobs/mainnet/700");
     expect(screen.getByRole("link", { name: /Identity & reputation/i }))
       .toHaveAttribute("href", "https://trust8004.xyz/agents/56:303779");
@@ -805,12 +805,12 @@ describe("marketplace presentation rules", () => {
       detail: `Latest chain-verified hire phase: funded (Job 812, tx 0x${"cd".repeat(32)}).`,
     };
 
-    render(createElement(AgentProfile, { agent, passport }));
+    render(createElement(AgentProfile, { agent, hireJobs: [], passport }));
 
     expect(screen.getByText("Verified hire activity")).toBeInTheDocument();
     expect(screen.getByText(/Latest chain-verified hire phase: funded \(Job 812/)).toBeInTheDocument();
     expect(screen.getByText("0 completed jobs")).toBeInTheDocument();
-    expect(screen.getByText("No verified ERC-8183 jobs yet.")).toBeInTheDocument();
+    expect(screen.getByText("No indexed jobs yet.")).toBeInTheDocument();
   });
 
   it("states the number of wallet confirmations only once the wallet has answered", () => {

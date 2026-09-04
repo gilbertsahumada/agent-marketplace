@@ -31,10 +31,10 @@ export function CategoryCard({ category }: { category: CategoryCardViewModel }) 
   const isEmpty = category.availability === "empty";
 
   return (
-    <Card className="marketplace-surface h-full gap-4 py-5 transition-colors hover:border-white/20">
+    <Card className="marketplace-surface h-full gap-4 rounded-2xl py-6 transition-colors hover:border-primary/45">
       <CardHeader className="gap-3 px-5">
         <div className="flex items-start justify-between gap-3">
-          <span className="flex size-10 items-center justify-center rounded-xl border border-white/10 bg-white/[0.03] text-zinc-200">
+          <span className="flex size-10 items-center justify-center rounded-lg border border-border bg-muted text-foreground">
             <Icon aria-hidden="true" className="size-5" />
           </span>
           <Badge
@@ -42,7 +42,7 @@ export function CategoryCard({ category }: { category: CategoryCardViewModel }) 
             className={
               isEmpty
                 ? "border-zinc-700 bg-zinc-900 text-zinc-400"
-                : "border-cyan-400/30 bg-cyan-400/10 text-cyan-300"
+                : "border-emerald-400/30 bg-emerald-400/10 text-emerald-300"
             }
           >
             {category.availabilityLabel}
@@ -57,7 +57,7 @@ export function CategoryCard({ category }: { category: CategoryCardViewModel }) 
       </CardHeader>
       <CardContent className="mt-auto px-5">
         <Link
-          className="inline-flex items-center gap-1.5 text-sm font-medium text-zinc-300 transition-colors hover:text-white"
+          className="inline-flex items-center gap-1.5 text-sm font-medium text-foreground transition-colors hover:text-primary"
           href={category.href}
         >
           {isEmpty ? "View coverage gap" : "Browse candidates"}

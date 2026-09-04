@@ -85,6 +85,9 @@ describe("WP1 Wrangler scaffold", () => {
       D1_ROWS_READ_PER_RUN: "3000",
       D1_ROWS_WRITTEN_PER_RUN: "60",
       MAX_CATALOG_RESPONSE_BYTES: "16777216",
+      // Production serves the commerce summary (two full-table scans per
+      // uncached call) from the Workers Cache like staging does.
+      CATALOG_RESPONSE_CACHE_SECONDS: "60",
     });
   });
 

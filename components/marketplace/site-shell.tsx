@@ -7,14 +7,10 @@ import { WalletConnectButton } from "./wallet-connect-button";
 function Brand() {
   return (
     <Link className="group inline-flex items-center gap-2.5" href="/">
-      <span className="flex size-9 items-center justify-center rounded-xl border border-primary/30 bg-primary/10 transition-colors group-hover:bg-primary/15">
-        <img alt="" className="size-5" src="/logo/SVG/BNB Chain_Symbol_Yellow.svg" />
-      </span>
+      <img alt="" className="size-7" src="/logo/SVG/BNB Chain_Symbol_Yellow.svg" />
       <span className="leading-none">
-        <span className="block text-sm font-semibold tracking-tight text-white">BNB Agent Studio</span>
-        <span className="font-eyebrow mt-1 block text-zinc-400">
-          Evidence-first marketplace
-        </span>
+        <span className="block text-sm font-semibold tracking-tight text-foreground">BNB Agent Marketplace</span>
+        <span className="font-stat mt-1 block text-[9px] uppercase tracking-[0.16em] text-muted-foreground">Verified onchain work</span>
       </span>
     </Link>
   );
@@ -22,8 +18,8 @@ function Brand() {
 
 function Header() {
   return (
-    <header className="sticky top-0 z-50 border-b border-white/10 bg-background/95">
-      <div className="mx-auto flex min-h-16 max-w-7xl items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
+    <header className="sticky top-0 z-50 border-b border-border/60 bg-background/95 backdrop-blur-md">
+      <div className="mx-auto flex min-h-[72px] max-w-[1480px] items-center justify-between gap-4 px-5 sm:px-8 lg:px-12">
         <Brand />
 
         <PrimaryNav />
@@ -40,19 +36,19 @@ function Header() {
 
 function Footer() {
   return (
-    <footer className="mt-auto border-t border-white/10 bg-zinc-950/50">
-      <div className="mx-auto grid max-w-7xl gap-8 px-4 py-10 sm:px-6 md:grid-cols-[1fr_auto] lg:px-8">
+    <footer className="mt-auto border-t border-border/60 bg-card/40">
+      <div className="mx-auto grid max-w-[1480px] gap-8 px-5 py-12 sm:px-8 md:grid-cols-[1fr_auto] lg:px-12">
         <Brand />
-        <div className="flex flex-wrap items-start gap-x-5 gap-y-3 text-sm text-zinc-400 md:justify-end">
-          <Link className="hover:text-white" href="/agents">Agents</Link>
-          <Link className="hover:text-white" href="/compare">Compare</Link>
-          <Link className="hover:text-white" href="/validate">Validate my agent</Link>
-          <Link className="hover:text-white" href="/evidence/verification">Methodology</Link>
-          <Link className="hover:text-white" href="/docs">Docs</Link>
-          <Link className="hover:text-white" href="/jobs/testnet/551">Public proof</Link>
+        <div className="flex flex-wrap items-start gap-x-5 gap-y-3 text-sm text-muted-foreground md:justify-end">
+          <Link className="hover:text-foreground" href="/agents">Agents</Link>
+          <Link className="hover:text-foreground" href="/compare">Compare</Link>
+          <Link className="hover:text-foreground" href="/validate">Validate my agent</Link>
+          <Link className="hover:text-foreground" href="/evidence/verification">Methodology</Link>
+          <Link className="hover:text-foreground" href="/docs">Docs</Link>
+          <Link className="hover:text-foreground" href="/jobs/testnet/551">Public proof</Link>
           <a
             aria-label="BNB Agent Marketplace on GitHub"
-            className="inline-flex items-center gap-1.5 hover:text-white"
+            className="inline-flex items-center gap-1.5 hover:text-foreground"
             href="https://github.com/gilbertsahumada/bnb-agent-marketplace"
             rel="noreferrer"
             target="_blank"
@@ -61,7 +57,7 @@ function Footer() {
             GitHub
           </a>
         </div>
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-white/[0.06] pt-6 text-xs text-zinc-500 md:col-span-2">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-border/60 pt-6 text-xs text-muted-foreground md:col-span-2">
           <img
             alt="Built on BNB Chain"
             className="h-3.5 w-auto opacity-50"

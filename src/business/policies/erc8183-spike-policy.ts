@@ -19,6 +19,17 @@ export interface Erc8183SpikeAllowlist {
   policy: Address;
   token: Address;
   seller: Address;
+  // When the deployment can name its demo jobs, readers decide by id before
+  // any chain read; absent, only the post-read fixture assertion can decide.
+  demoJobIds?: readonly string[];
+}
+
+// Rejects by id alone when the allowlist names its demo jobs, so a non-demo
+// id never costs a chain round-trip. Says nothing when it cannot decide.
+export function assertDemoJobId(jobId: string, allowlist: Erc8183SpikeAllowlist): void {
+  if (allowlist.demoJobIds !== undefined && !allowlist.demoJobIds.includes(jobId)) {
+    throw new Erc8183DemoJobNotFoundError();
+  }
 }
 
 function sameAddress(left: string, right: string): boolean {

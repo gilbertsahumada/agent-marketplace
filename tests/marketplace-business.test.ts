@@ -3,6 +3,15 @@ import type { Address } from "viem";
 import { CompareMarketplaceAgents } from "../src/business/use-cases/compare-marketplace-agents.ts";
 import { GetMarketplaceAgent } from "../src/business/use-cases/get-marketplace-agent.ts";
 import { ListMarketplaceAgents } from "../src/business/use-cases/list-marketplace-agents.ts";
+import { GetErc8183JobStatus } from "../src/business/use-cases/get-erc8183-job-status.ts";
+import type { Erc8183SpikeAllowlist } from "../src/business/policies/erc8183-spike-policy.ts";
+import type { Erc8183JobFacts } from "../src/business/entities/erc8183-browser-spike.ts";
+import type { Erc8183SpikeRepository } from "../src/data/repositories/erc8183-spike-repository.ts";
+import {
+  Erc8183DemoJobNotFoundError,
+  Erc8183SpikeUnavailableError,
+  InvalidErc8183SpikeInputError,
+} from "../src/business/errors/erc8183-spike-errors.ts";
 import { AsyncTtlCache } from "../src/data/cache/async-ttl-cache.ts";
 import { MARKETPLACE_INVENTORY } from "../src/data/inventory/marketplace-inventory.ts";
 import type {
@@ -414,5 +423,51 @@ describe("AsyncTtlCache", () => {
     await expect(first).resolves.toBe("old");
     await expect(cache.get("catalog", 10_000, async () => "unexpected")).resolves.toBe("fresh");
     expect(freshLoads).toBe(1);
+  });
+});
+
+describe("GetErc8183JobStatus", () => {
+  const ADDRESS = "0xA2a2012e52Fd075c0F3146e37E833E7294ee52B5" as Address;
+  const allowlist: Erc8183SpikeAllowlist = {
+    chainId: 56, agentId: 303779, maximumBudgetRaw: 10n ** 18n, networkLabel: "BSC Mainnet",
+    commerce: ADDRESS, router: ADDRESS, policy: ADDRESS, token: ADDRESS, seller: ADDRESS,
+  };
+  function repository(overrides: Partial<Erc8183SpikeRepository> = {}): Erc8183SpikeRepository {
+    return {
+      allowlist,
+      getJob: vi.fn(async () => { throw new Erc8183SpikeUnavailableError("RPC down"); }),
+      requestQuote: vi.fn(), validateQuote: vi.fn(), getBuyerFacts: vi.fn(), notifyFunded: vi.fn(),
+      ...overrides,
+    } as unknown as Erc8183SpikeRepository;
+  }
+
+  it("rejects a non-demo id before touching the chain when the allowlist names its demo jobs", async () => {
+    const listed = repository({ allowlist: { ...allowlist, demoJobIds: ["514"] } });
+    await expect(new GetErc8183JobStatus(listed).execute({ jobId: "9" })).rejects.toBeInstanceOf(Erc8183DemoJobNotFoundError);
+    await expect(new GetErc8183JobStatus(listed).execute({ jobId: "abc" })).rejects.toBeInstanceOf(InvalidErc8183SpikeInputError);
+    expect(listed.getJob).not.toHaveBeenCalled();
+  });
+
+  it("reads the chain for a listed demo id and whenever the allowlist cannot decide by id", async () => {
+    const listed = repository({ allowlist: { ...allowlist, demoJobIds: ["514"] } });
+    await expect(new GetErc8183JobStatus(listed).execute({ jobId: "514" })).rejects.toBeInstanceOf(Erc8183SpikeUnavailableError);
+    expect(listed.getJob).toHaveBeenCalledWith(514n);
+
+    const undecided = repository();
+    await expect(new GetErc8183JobStatus(undecided).execute({ jobId: "9" })).rejects.toBeInstanceOf(Erc8183SpikeUnavailableError);
+    expect(undecided.getJob).toHaveBeenCalledWith(9n);
+  });
+
+  it("keeps the post-read fixture assertion for a job the chain returns outside the allowlist", async () => {
+    const foreign = repository({
+      getJob: vi.fn(async (): Promise<Erc8183JobFacts> => ({
+        chainId: 56, jobId: "9", buyer: ADDRESS, provider: "0x1111111111111111111111111111111111111111", evaluator: ADDRESS,
+        policy: ADDRESS, description: "", budgetRaw: "1", deadline: "1", status: "FUNDED", submittedAt: "0",
+        deliverableHash: `0x${"0".repeat(64)}`, deliverableUrl: null, result: null,
+        quotedToken: ADDRESS, quotedPriceRaw: "1", quoteExpiresAt: null,
+      })),
+    });
+    await expect(new GetErc8183JobStatus(foreign).execute({ jobId: "9" })).rejects.toBeInstanceOf(Erc8183DemoJobNotFoundError);
+    expect(foreign.getJob).toHaveBeenCalledWith(9n);
   });
 });

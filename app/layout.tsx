@@ -22,20 +22,20 @@ const spaceMono = Space_Mono({
 export const metadata: Metadata = {
   metadataBase: new URL("https://marketplace.trust8004.xyz"),
   title: {
-    default: "BNB Agent Studio",
-    template: "%s | BNB Agent Studio",
+    default: "BNB Agent Marketplace",
+    template: "%s | BNB Agent Marketplace",
   },
   description: "Discover, compare, and verify AI agents on BNB Smart Chain before you hire.",
   openGraph: {
     type: "website",
-    siteName: "BNB Agent Studio",
+    siteName: "BNB Agent Marketplace",
     url: "/",
-    title: "BNB Agent Studio",
+    title: "BNB Agent Marketplace",
     description: "Discover, compare, and verify AI agents on BNB Smart Chain before you hire.",
   },
   twitter: {
     card: "summary_large_image",
-    title: "BNB Agent Studio",
+    title: "BNB Agent Marketplace",
     description: "Discover, compare, and verify AI agents on BNB Smart Chain before you hire.",
   },
 };
@@ -44,7 +44,7 @@ export default function RootLayout({ children }: Readonly<{ children: ReactNode 
   return (
     <html lang="en" className={`dark ${spaceGrotesk.variable} ${spaceMono.variable}`}>
       <body>
-        <NextTopLoader color="#f0b90b" height={2} showSpinner={false} shadow="0 0 10px #f0b90b" />
+        <NextTopLoader color="#ffe900" height={2} showSpinner={false} shadow="0 0 10px #ffe900" />
         <Providers>
           <MarketplaceShell>{children}</MarketplaceShell>
         </Providers>

@@ -38,6 +38,8 @@ export default async function HirePage({ params }: { params: Promise<{ agentId: 
       hireFlow={hireFlow}
       hireFlowAvailable={canRequestQuote}
       hireJobs={hireJobs}
+      hireJobsMore={hireJobsResult?.nextBefore != null}
+      hireJobsScope={hireJobsResult?.scope ?? "agent"}
       jobProofs={jobProofs}
       passport={passport}
     />;

@@ -168,9 +168,18 @@ function queueWork(body: unknown, currentTime: number): QueueWork {
       return { kind: "index_range", chainId: value.chainId, fromBlock: null, toBlock: null, enqueuedAt: value.enqueuedAt as number };
     }
     if (nonNegativeInteger(value.fromBlock) && nonNegativeInteger(value.toBlock) && value.fromBlock <= value.toBlock) {
+      if (value.afterLogIndex !== undefined && !nonNegativeInteger(value.afterLogIndex)) {
+        throw new Error("WP2_QUEUE_MESSAGE_INVALID");
+      }
+      if (value.hops !== undefined && (!nonNegativeInteger(value.hops) || value.hops > 100)) {
+        throw new Error("WP2_QUEUE_MESSAGE_INVALID");
+      }
       return {
         kind: "index_range", chainId: value.chainId,
-        fromBlock: value.fromBlock, toBlock: value.toBlock, enqueuedAt: value.enqueuedAt as number,
+        fromBlock: value.fromBlock, toBlock: value.toBlock,
+        ...(value.afterLogIndex === undefined ? {} : { afterLogIndex: value.afterLogIndex as number }),
+        ...(value.hops === undefined ? {} : { hops: value.hops as number }),
+        enqueuedAt: value.enqueuedAt as number,
       };
     }
     throw new Error("WP2_QUEUE_MESSAGE_INVALID");
@@ -497,7 +506,7 @@ export function createWorker(dependencies: WorkerDependencies = {}): WorkerEntry
       if (config.commerceIndexEnabled) {
         // One cursor-driven index_range per chain that has an RPC URL; the
         // consumer reads from the chain cursor to the safe head.
-        await enqueueCommerceIndexTicks(env, env.WP2_QUEUE, now());
+        await enqueueCommerceIndexTicks(env, env.WP2_QUEUE, now(), logger);
       }
       if (config.catalogProbeEnabled && config.catalogV2WritesEnabled && env.CATALOG_QUOTE_QUEUE !== undefined) {
         const { enqueueDueCatalogCapabilities } = await import("./phases/catalog-capability");
@@ -576,6 +585,7 @@ export function createWorker(dependencies: WorkerDependencies = {}): WorkerEntry
             errorCode: queueErrorCode(error),
             kind: work.kind,
             chainId: work.chainId,
+            ...commerceWorkRange(work),
           });
           throw error;
         }
@@ -583,6 +593,7 @@ export function createWorker(dependencies: WorkerDependencies = {}): WorkerEntry
         logger.info("commerce.index.completed", {
           kind: work.kind,
           chainId: work.chainId,
+          ...commerceWorkRange(work),
           status: summary.status,
           fromBlock: summary.fromBlock,
           toBlock: summary.toBlock,
@@ -665,15 +676,42 @@ function queueWorkDetails(work: QueueWork): Record<string, unknown> {
     case "scheduled": return { scheduledTime: work.scheduledTime };
     case "catalog_validation": return { validationId: work.validationId };
     case "catalog_capability_probe": return { agentKey: work.agentKey, endpointKey: work.endpointKey };
-    case "index_range": return { chainId: work.chainId, fromBlock: work.fromBlock, toBlock: work.toBlock };
+    case "index_range": return {
+      chainId: work.chainId, fromBlock: work.fromBlock, toBlock: work.toBlock,
+      ...(work.afterLogIndex === undefined || work.afterLogIndex === null ? {} : { afterLogIndex: work.afterLogIndex }),
+      ...(work.hops === undefined ? {} : { hops: work.hops }),
+    };
     case "index_jobs": return { chainId: work.chainId, fromJobId: work.fromJobId, toJobId: work.toJobId };
   }
 }
 
-async function enqueueCommerceIndexTicks(env: Env, queue: QueueProducer, enqueuedAt: number): Promise<void> {
+// The explicit window of an index message, when it has one: a cursor tick
+// carries null bounds and contributes nothing, so a stalled range is
+// identifiable from the failure log alone.
+function commerceWorkRange(work: CommerceIndexWork): Record<string, number> {
+  if (work.kind === "index_jobs") return { fromJobId: work.fromJobId, toJobId: work.toJobId };
+  return {
+    ...(work.fromBlock === null ? {} : { fromBlock: work.fromBlock }),
+    ...(work.toBlock === null ? {} : { toBlock: work.toBlock }),
+    ...(work.afterLogIndex === undefined || work.afterLogIndex === null ? {} : { afterLogIndex: work.afterLogIndex }),
+    ...(work.hops === undefined ? {} : { hops: work.hops }),
+  };
+}
+
+async function enqueueCommerceIndexTicks(
+  env: Env,
+  queue: QueueProducer,
+  enqueuedAt: number,
+  logger: StructuredLogger,
+): Promise<void> {
   for (const chainId of [56, 97] as const) {
     const rpcUrl = chainId === 56 ? env.BSC_RPC_URL : env.BSC_TESTNET_RPC_URL;
-    if (rpcUrl === undefined) continue;
+    if (rpcUrl === undefined) {
+      // The flag is on but the chain cannot be read: say so every tick rather
+      // than leave /health with a null cursor and no explanation.
+      logger.info("commerce.index.skipped", { chainId, reason: "rpc_url_missing" });
+      continue;
+    }
     await queue.send({ schemaVersion: 2, kind: "index_range", chainId, enqueuedAt });
   }
 }

@@ -111,7 +111,9 @@ interface RunContext {
 }
 
 // getLogs failures that mean "this range was too much for the provider":
-// a rejected/oversized/slow reply. Nothing else narrows the window.
+// a rejected/oversized/slow reply. Nothing else narrows the window; an HTTP
+// status (rate limit, auth wall, outage) says nothing about the range, and
+// halving on it only starves the cursor until it falls behind for good.
 const WINDOW_NARROWING_CODES: ReadonlySet<string> = new Set([
   "BSC_RPC_RESPONSE", "BSC_RPC_TIMEOUT", "BSC_LOGS_RPC",
 ]);
@@ -414,8 +416,8 @@ export async function runCommerceIndex(
         key: commerceSummaryKey(chainId),
         textValue: JSON.stringify({
           kind: work.kind, chainId, status: "error", errorCode: code,
-          fromBlock: context.fromBlock, toBlock: context.toBlock, window: context.window, wallTimeMs: now() - startedAt,
           ...(httpStatus === undefined ? {} : { httpStatus }),
+          fromBlock: context.fromBlock, toBlock: context.toBlock, window: context.window, wallTimeMs: now() - startedAt,
         }),
         integerValue: null,
         updatedAt: now(),

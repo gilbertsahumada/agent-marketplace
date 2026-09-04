@@ -1,9 +1,9 @@
-import artifactJson from "../../../evidence/funnel-bsc-2026-08-27T19-41-17Z.json" with { type: "json" };
+import artifactJson from "../../../evidence/funnel-bsc-2026-09-04T19-31-44Z.json" with { type: "json" };
 import type { FunnelEvidence } from "../../business/entities/funnel-evidence.ts";
 import type { FunnelEvidenceReader } from "../../business/use-cases/get-funnel-evidence.ts";
 import { computeSourceSha256 } from "../../trust8004/funnel-snapshot.ts";
 
-const ARTIFACT_PATH = "evidence/funnel-bsc-2026-08-27T19-41-17Z.json";
+const ARTIFACT_PATH = "evidence/funnel-bsc-2026-09-04T19-31-44Z.json";
 const COUNT_ONLY_TOLERANCE = 0.01;
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -27,13 +27,15 @@ export function funnelEvidenceFromArtifact(artifact: unknown, sourcePath: string
   const metadata = asRecord(root.metadata);
   const protocols = asRecord(root.protocols);
   const candidates = asRecord(root.candidates);
-  if (!cutoff || !metadata || !protocols || !candidates) return null;
+  const scan = asRecord(root.scan);
+  if (!cutoff || !metadata || !protocols || !candidates || !scan) return null;
 
   const sourceSha256 = nonEmptyString(root.sourceSha256);
   const generatedAt = nonEmptyString(root.generatedAt);
   const blockNumber = nonEmptyString(cutoff.blockNumber);
   const registeredTotal = count(root.registeredTotal);
   const countOnlyTotal = count(root.countOnlyTotal);
+  const scanDurationMs = count(scan.durationMs);
   const metadataOk = count(metadata.ok);
   const metadataHttpUnreachable = count(metadata.httpUnreachable);
   const metadataOther = count(metadata.other);
@@ -43,7 +45,7 @@ export function funnelEvidenceFromArtifact(artifact: unknown, sourcePath: string
   const publicHttpsEndpoints = count(candidates.publicHttpsEndpoints);
   if (
     sourceSha256 === null || generatedAt === null || blockNumber === null
-    || registeredTotal === null || countOnlyTotal === null
+    || registeredTotal === null || countOnlyTotal === null || scanDurationMs === null
     || metadataOk === null || metadataHttpUnreachable === null || metadataOther === null
     || buckets.some((bucket) => bucket === null)
     || transportDeclarants === null || publicHttpsEndpoints === null
@@ -60,6 +62,8 @@ export function funnelEvidenceFromArtifact(artifact: unknown, sourcePath: string
     generatedAt,
     blockNumber,
     registeredTotal,
+    countOnlyTotal,
+    scanDurationMs,
     metadataOk,
     transportDeclarants,
     publicHttpsEndpoints,

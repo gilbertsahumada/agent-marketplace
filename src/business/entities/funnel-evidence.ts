@@ -4,6 +4,8 @@ export interface FunnelEvidence {
   generatedAt: string;
   blockNumber: string;
   registeredTotal: number;
+  countOnlyTotal: number;
+  scanDurationMs: number;
   metadataOk: number;
   transportDeclarants: number;
   publicHttpsEndpoints: number;

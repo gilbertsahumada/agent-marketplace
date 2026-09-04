@@ -44,79 +44,63 @@ const notMeanings = [
   "Not an endorsement. Marketplace-operated sellers are labelled as such.",
 ];
 
-function stageCountValue(stage: FunnelStageViewModel): number | null {
-  if (stage.count === null) return null;
-  const value = Number(stage.count.replace(/,/g, ""));
-  return Number.isFinite(value) ? value : null;
-}
-
-function FunnelBar({ stage, total }: { stage: FunnelStageViewModel; total: number | null }) {
+function EvidenceMetric({ stage }: { stage: FunnelStageViewModel }) {
   if (stage.count === null || stage.provenance === null) {
     return (
-      <li className="flex flex-col gap-1 border-t border-dashed border-white/10 py-3 sm:flex-row sm:items-center sm:gap-4">
-        <span className="w-full shrink-0 text-sm font-semibold text-zinc-500 sm:w-56">{stage.label}</span>
-        <span className="inline-flex items-center gap-1.5 text-xs text-zinc-500">
-          <CircleDashed aria-hidden="true" className="size-3" />
-          <span>Pending observation</span>
-          <span>· {stage.detail}</span>
+      <li className="evidence-metric evidence-metric--pending">
+        <span className="inline-flex items-center gap-2 text-xs text-zinc-500">
+          <CircleDashed aria-hidden="true" className="size-3" /> Not published
         </span>
+        <strong className="mt-8 block text-xl text-zinc-400">Awaiting complete verification</strong>
+        <span className="mt-3 block text-sm font-semibold text-zinc-200">{stage.label}</span>
+        <span className="mt-2 block text-xs leading-relaxed text-zinc-500">{stage.detail}</span>
       </li>
     );
   }
-  const value = stageCountValue(stage);
-  const ratio = total && value !== null ? Math.max((value / total) * 100, 5) : 100;
   return (
-    <li className="flex flex-col gap-1 py-2 sm:flex-row sm:items-center sm:gap-4">
-      <span className="w-full shrink-0 sm:w-56">
-        <span className="block text-sm font-semibold text-zinc-100">{stage.label}</span>
-        <span className="block text-[11px] leading-snug text-zinc-500">{stage.detail}</span>
-      </span>
-      <span className="flex min-w-0 flex-1 items-center gap-3">
-        <span
-          className="flex h-8 items-center rounded-lg border border-white/15 bg-gradient-to-r from-white/20 to-white/5 px-3"
-          style={{ width: `${ratio}%`, minWidth: "3.5rem" }}
-        >
-          <span className="font-stat text-sm font-bold text-white">{stage.count}</span>
-        </span>
-        {stage.share !== null && <span className="font-stat text-xs text-zinc-500">{stage.share}</span>}
-      </span>
-      <span className="shrink-0 sm:w-24 sm:text-right">
+    <li className="evidence-metric">
+      <span>
         <ProvenanceBadge provenance={stage.provenance} />
       </span>
+      <strong className="font-stat mt-7 block text-4xl font-bold tracking-[-0.04em] text-white sm:text-5xl">{stage.count}</strong>
+      <span className="mt-3 flex items-center gap-2 text-sm font-semibold text-zinc-100">
+        {stage.label}
+        {stage.share !== null && <small className="font-stat text-xs font-normal text-zinc-500">{stage.share}</small>}
+      </span>
+      <span className="mt-2 block text-xs leading-relaxed text-zinc-500">{stage.detail}</span>
     </li>
   );
 }
 
 export function FunnelSection({ funnel }: { funnel: FunnelSectionViewModel | null }) {
-  const registered = funnel?.stages[0]?.count ?? null;
-  const registeredTotal = funnel?.stages[0] ? stageCountValue(funnel.stages[0]) : null;
-  const hiring = funnel?.stages.find((stage) => stage.label === "Declares ERC-8183 hiring")?.count ?? null;
   return (
-    <section aria-labelledby="funnel-heading" className="border-b border-white/10 bg-zinc-950/40">
-      <div className="mx-auto max-w-7xl px-4 py-14 sm:px-6 sm:py-16 lg:px-8">
-        <div className="max-w-3xl">
-          <p className="font-eyebrow font-eyebrow-dot text-zinc-400">The measurable funnel</p>
-          <h2 className="mt-2 text-3xl font-light tracking-tight text-white" id="funnel-heading">
-            {registered && hiring
-              ? <>{registered} registered. {hiring} declare hiring. <span className="text-primary">We measure the difference.</span></>
-              : "Most registered agents cannot be hired."}
-          </h2>
-          <p className="mt-3 text-sm leading-relaxed text-zinc-400 sm:text-base">
-            A registration is only a name in a registry. No composite scores, no stored booleans.
+    <section aria-labelledby="funnel-heading" className="border-b border-border/60 bg-card/35">
+      <div className="mx-auto max-w-[1480px] px-5 py-20 sm:px-8 lg:px-12 lg:py-28">
+        <div className="grid gap-8 lg:grid-cols-[0.9fr_1.1fr] lg:items-end">
+          <div>
+            <p className="font-eyebrow text-primary">Evidence, not estimates</p>
+            <h2 className="mt-4 text-4xl font-bold leading-[1.03] tracking-[-0.04em] text-foreground sm:text-5xl" id="funnel-heading">
+              Know what is proven. <span className="text-primary">Know what is only declared.</span>
+            </h2>
+          </div>
+          <p className="max-w-2xl text-base leading-7 text-muted-foreground lg:justify-self-end">
+            Every figure is tied to a reproducible snapshot. Missing verification stays visibly unpublished—never converted into a zero or a marketing claim.
           </p>
         </div>
 
         {funnel && (
           <>
-            <ol className="mt-8 max-w-5xl">
+            <ol className="mt-12 grid overflow-hidden rounded-2xl border border-border bg-background/45 sm:grid-cols-2 lg:grid-cols-4">
               {funnel.stages.map((stage) => (
-                <FunnelBar key={stage.label} stage={stage} total={registeredTotal} />
+                <EvidenceMetric key={stage.label} stage={stage} />
               ))}
             </ol>
-            <p className="mt-3 font-stat text-xs text-zinc-500">
-              Source {funnel.citation.artifact} · SHA-256 {funnel.citation.sha256.slice(0, 8)}…{funnel.citation.sha256.slice(-8)} ·
-              block {funnel.citation.blockNumber} · {funnel.citation.generatedAt}
-            </p>
+            <div className="evidence-citation mt-4 font-stat text-[11px] text-zinc-500">
+              <span><small>Scan opened</small>{new Date(funnel.citation.generatedAt).toLocaleString("en-GB", { timeZone: "UTC", dateStyle: "medium", timeStyle: "short" })} UTC</span>
+              <span><small>Opening BSC block</small>{funnel.citation.blockNumber}</span>
+              <span><small>Snapshot hash</small>{funnel.citation.sha256.slice(0, 10)}…{funnel.citation.sha256.slice(-10)}</span>
+              <span><small>Artifact</small>{funnel.citation.artifact}</span>
+            </div>
           </>
         )}
 

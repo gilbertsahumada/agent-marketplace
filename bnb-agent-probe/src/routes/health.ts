@@ -227,6 +227,7 @@ export async function healthResponse(
   now: number,
   options: HealthOptions = {},
 ): Promise<Response> {
+  const rpcConfigured = options.rpcConfigured ?? { 56: false, 97: false };
   try {
     const utcDate = new Date(now).toISOString().slice(0, 10);
     const dailyBudgetKey = `daily_budget_${utcDate.replaceAll("-", "")}`;
@@ -255,7 +256,6 @@ export async function healthResponse(
       })()
       : { available: options.quoteQueueAvailable === true, pending: 0, ready: 0, stale: 0, failed: 0, lastProcessedAt: null, nextProbeAt: null };
     const byKey = new Map(rows.map((row) => [row.key, row]));
-    const rpcConfigured = options.rpcConfigured ?? { 56: false, 97: false };
     const summaryRows = [
       byKey.get("last_header_summary"),
       byKey.get("last_sweep_summary"),
