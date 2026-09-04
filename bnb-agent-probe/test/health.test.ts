@@ -405,7 +405,7 @@ describe("Worker runtime", () => {
         {
           key: "last_index_summary_56",
           textValue: JSON.stringify({
-            kind: "index_range", chainId: 56, status: "error", errorCode: "BSC_LOGS_RPC", fromBlock: 119_000_001, toBlock: 119_000_500,
+            kind: "index_range", chainId: 56, status: "error", errorCode: "BSC_LOGS_RPC", httpStatus: 403, fromBlock: 119_000_001, toBlock: 119_000_500,
             window: 500, jobsFailed: 2, logs: 0, jobs: 0, d1Queries: 1, d1RowsWritten: 3, wallTimeMs: 40, message: "https://rpc.example/must-not-leak",
           }),
           integerValue: null,
@@ -426,7 +426,7 @@ describe("Worker runtime", () => {
           56: {
             rpcConfigured: true,
             cursor: 119_000_000,
-            lastRun: { status: "error", errorCode: "BSC_LOGS_RPC", fromBlock: 119_000_001, toBlock: 119_000_500, window: 500, jobsFailed: 2, d1RowsWritten: 3 },
+            lastRun: { status: "error", errorCode: "BSC_LOGS_RPC", httpStatus: 403, fromBlock: 119_000_001, toBlock: 119_000_500, window: 500, jobsFailed: 2, d1RowsWritten: 3 },
           },
           97: { rpcConfigured: false, cursor: null, lastRun: null },
         },
