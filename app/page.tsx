@@ -17,11 +17,13 @@ function funnelSectionViewModel(evidence: FunnelEvidence | null): FunnelSectionV
   if (!evidence) return null;
   const integer = new Intl.NumberFormat("en-US");
   const share = (value: number) => `${((value / evidence.registeredTotal) * 100).toFixed(1)}%`;
+  const newDuringScan = evidence.registeredTotal - evidence.countOnlyTotal;
+  const scanMinutes = (evidence.scanDurationMs / 60_000).toFixed(1);
   return {
     stages: [
       {
-        label: "Registered on BSC",
-        detail: "ERC-8004 registrations counted by a full catalogue sweep, cross-checked against the API total.",
+        label: "Registry entries indexed",
+        detail: `${integer.format(evidence.countOnlyTotal)} at scan open; ${integer.format(newDuringScan)} new ${newDuringScan === 1 ? "entry" : "entries"} arrived during the ${scanMinutes}-minute sweep.`,
         count: integer.format(evidence.registeredTotal),
         share: null,
         provenance: "observed",
@@ -34,36 +36,15 @@ function funnelSectionViewModel(evidence: FunnelEvidence | null): FunnelSectionV
         provenance: "observed",
       },
       {
-        label: "Declares a hireable transport",
-        detail: "Self-declared A2A or ERC-8183 endpoint in metadata. Declaration is not capability.",
-        count: integer.format(evidence.transportDeclarants),
-        share: share(evidence.transportDeclarants),
-        provenance: "declared",
-      },
-      {
-        label: "Public HTTPS endpoint",
-        detail: "Declared endpoints outside loopback and private ranges. Syntactic check only; not yet contacted.",
-        count: integer.format(evidence.publicHttpsEndpoints),
-        share: null,
-        provenance: "derived",
-      },
-      {
-        label: "Declares ERC-8183 hiring",
-        detail: "The only transport this marketplace can escrow through.",
+        label: "ERC-8183 declared",
+        detail: "Found in agent metadata. This is a claim, not proof that the endpoint works.",
         count: integer.format(evidence.erc8183Declarants),
         share: null,
         provenance: "declared",
       },
       {
-        label: "Answers with a verified quote",
-        detail: "Measured live by the observation layer now in build; never persisted as a boolean.",
-        count: null,
-        share: null,
-        provenance: null,
-      },
-      {
-        label: "Job settled onchain",
-        detail: "Published once the canonical list of marketplace jobs is reconciled against BSC.",
+        label: "Verified hireable now",
+        detail: "No network-wide number is published until every candidate has a fresh endpoint and quote check.",
         count: null,
         share: null,
         provenance: null,
@@ -74,6 +55,7 @@ function funnelSectionViewModel(evidence: FunnelEvidence | null): FunnelSectionV
       sha256: evidence.sourceSha256,
       blockNumber: evidence.blockNumber,
       generatedAt: evidence.generatedAt,
+      scanDurationMs: evidence.scanDurationMs,
     },
   };
 }

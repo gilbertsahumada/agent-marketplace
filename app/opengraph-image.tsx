@@ -1,6 +1,6 @@
 import { ImageResponse } from "next/og";
 
-export const alt = "BNB Agent Studio — discover, compare and hire AI agents on BNB Smart Chain";
+export const alt = "BNB Agent Marketplace — discover, compare and hire AI agents on BNB Smart Chain";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
@@ -44,7 +44,7 @@ export default function OpenGraphImage() {
             </svg>
           </div>
           <div style={{ display: "flex", flexDirection: "column" }}>
-            <div style={{ fontSize: 34, fontWeight: 700 }}>BNB Agent Studio</div>
+            <div style={{ fontSize: 34, fontWeight: 700 }}>BNB Agent Marketplace</div>
             <div style={{ fontSize: 20, color: "#a1a1aa", letterSpacing: 4 }}>EVIDENCE-FIRST MARKETPLACE</div>
           </div>
         </div>

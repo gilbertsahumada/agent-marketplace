@@ -86,6 +86,7 @@ export interface FunnelSectionViewModel {
     sha256: string;
     blockNumber: string;
     generatedAt: string;
+    scanDurationMs: number;
   };
 }
 
