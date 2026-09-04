@@ -31,6 +31,13 @@ function chainIdParameter(value: string | null): 56 | 97 | null {
   return value === "56" ? 56 : value === "97" ? 97 : null;
 }
 
+// Every key at most once and every key known: a repeated key would otherwise
+// read as one value here while forking the response-cache key upstream.
+function queryKeysAllowed(url: URL, allowed: ReadonlySet<string>): boolean {
+  const keys = [...url.searchParams.keys()];
+  return new Set(keys).size === keys.length && keys.every((key) => allowed.has(key));
+}
+
 // Table-qualified on purpose: Drizzle renders column references in a select
 // list unqualified, and inside the correlated subquery "jobId" would bind to
 // hire_events instead of commerce_jobs.
@@ -58,7 +65,7 @@ function publicJob(row: CommerceJobRow & { marketplace: number }) {
 export async function commerceJobsListResponse(request: Request, d1: D1Database): Promise<Response> {
   const url = new URL(request.url);
   const allowed = new Set(["chainId", "buyer", "provider", "agentId", "status", "limit", "before"]);
-  if (![...url.searchParams.keys()].every((key) => allowed.has(key))) return invalidRequest();
+  if (!queryKeysAllowed(url, allowed)) return invalidRequest();
   const chainId = chainIdParameter(url.searchParams.get("chainId"));
   if (chainId === null) return invalidRequest();
   const buyer = url.searchParams.get("buyer");
@@ -201,7 +208,7 @@ function byStatus(rows: Array<{ status: number; total: number }>): { jobs: numbe
 
 export async function commerceSummaryResponse(request: Request, d1: D1Database): Promise<Response> {
   const url = new URL(request.url);
-  if (![...url.searchParams.keys()].every((key) => key === "chainId")) return invalidRequest();
+  if (!queryKeysAllowed(url, new Set(["chainId"]))) return invalidRequest();
   const chainId = chainIdParameter(url.searchParams.get("chainId"));
   if (chainId === null) return invalidRequest();
   const db = createDatabase(d1 as unknown as D1DatabaseLike);

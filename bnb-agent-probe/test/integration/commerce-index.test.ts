@@ -11,6 +11,7 @@ import {
   type CommerceIndexWork,
 } from "../../src/phases/commerce-index";
 import { commerceJobResponse, commerceJobsListResponse, commerceSummaryResponse } from "../../src/routes/commerce-jobs";
+import { DEPLOYMENTS } from "../../src/routes/hire-events";
 import type { Env } from "../../src/types";
 
 const NOW = 1_788_000_000_000;
@@ -21,6 +22,7 @@ const ZERO = "0x0000000000000000000000000000000000000000" as Address;
 const ZERO_BYTES32 = `0x${"0".repeat(64)}` as `0x${string}`;
 
 type DecodedLog = {
+  address: Address;
   eventName: string;
   args: Record<string, unknown>;
   blockNumber: bigint;
@@ -57,7 +59,7 @@ function log(eventName: string, jobId: bigint, blockNumber: bigint, logIndex: nu
           : eventName === "JobFunded"
             ? { jobId, client: BUYER, provider: SELLER, amount: 10_000_000_000_000_000n }
             : { jobId, client: BUYER, provider: SELLER, evaluator: OTHER, expiredAt: 1_788_600_000n, hook: OTHER };
-  return { eventName, args: { ...base, ...args }, blockNumber, logIndex, transactionHash: hash };
+  return { address: DEPLOYMENTS[56].commerce, eventName, args: { ...base, ...args }, blockNumber, logIndex, transactionHash: hash };
 }
 
 function reader(options: {
@@ -78,19 +80,22 @@ function reader(options: {
     async getBlock(input: { blockNumber: bigint }) { return { timestamp: 1_700_000_000n + input.blockNumber }; },
     async multicall(input: { contracts: Array<{ args: [bigint] }> }) {
       calls.multicall += 1;
-      return input.contracts.map((contract) => jobs.get(contract.args[0])
-        ?? job(contract.args[0], { client: ZERO, provider: ZERO, evaluator: ZERO, hook: ZERO, budget: 0n, expiredAt: 0n, status: 0 }));
+      return input.contracts.map((contract) => ({
+        status: "success",
+        result: jobs.get(contract.args[0])
+          ?? job(contract.args[0], { client: ZERO, provider: ZERO, evaluator: ZERO, hook: ZERO, budget: 0n, expiredAt: 0n, status: 0 }),
+      }));
     },
   };
   return { reader: fake as unknown as CommerceIndexReader, calls };
 }
 
-// The test env pins the Free write envelope (60 rows per run), so the Paid
-// index sizes are lowered to the Free ones while keeping the Paid block range.
+// The test env pins the Free write envelope (60 rows per run); these runs use
+// the Paid envelope and the Paid index sizes that fit it.
 function config(overrides: Record<string, string> = {}) {
   return loadConfig({
-    ...env, KILL_SWITCH: "0", CLOUDFLARE_WORKERS_PLAN: "paid", COMMERCE_INDEX_ENABLED: "1",
-    COMMERCE_INDEX_LOGS_PER_RUN: "24", COMMERCE_INDEX_JOBS_PER_RUN: "50", ...overrides,
+    ...env, KILL_SWITCH: "0", PRODUCER_KILL_SWITCH: "0", CLOUDFLARE_WORKERS_PLAN: "paid", COMMERCE_INDEX_ENABLED: "1", D1_ROWS_WRITTEN_PER_RUN: "200",
+    COMMERCE_INDEX_LOGS_PER_RUN: "23", COMMERCE_INDEX_JOBS_PER_RUN: "39", ...overrides,
   } as unknown as Env);
 }
 

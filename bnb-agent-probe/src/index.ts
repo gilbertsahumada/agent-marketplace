@@ -42,6 +42,8 @@ export interface WorkerDependencies {
 }
 
 const COMMERCE_BACKFILL_MAX_MESSAGES = 100;
+// Same cap as the catalog-validation body: a backfill request is three numbers.
+const COMMERCE_BACKFILL_MAX_BODY_BYTES = 1_024;
 
 function queueErrorCode(error: unknown): string {
   if (error instanceof Error && /^[A-Z][A-Z0-9_]{2,63}$/.test(error.message)) {
@@ -77,6 +79,18 @@ async function bearerMatches(header: string | null, secret: string): Promise<boo
   return difference === 0 && candidate.length > 0;
 }
 
+// One cache key per distinct query, not per distinct spelling of it: the
+// parameters are sorted by key and re-encoded from their decoded values, so
+// `?b=1&a=%35%36` and `?a=56&b=1` share an entry. Routes reject duplicate keys
+// before this matters, but the key must not depend on that.
+function canonicalCacheKey(url: URL): Request {
+  const canonical = new URL(url.pathname, url.origin);
+  const entries = [...url.searchParams.entries()]
+    .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0));
+  for (const [key, value] of entries) canonical.searchParams.append(key, value);
+  return new Request(canonical.toString(), { method: "GET" });
+}
+
 // Serves public catalogue reads from the Workers Cache for the configured
 // window. Every uncached list request costs O(agents) D1 rows, so this is the
 // lever that keeps the account-wide Free read quota inside its daily budget.
@@ -87,7 +101,7 @@ async function cachedCatalogResponse(
 ): Promise<Response> {
   if (seconds <= 0) return produce();
   const cache = (caches as unknown as { default: Cache }).default;
-  const key = new Request(request.url, { method: "GET" });
+  const key = canonicalCacheKey(new URL(request.url));
   const hit = await cache.match(key);
   if (hit) return hit;
   const response = await produce();
@@ -178,7 +192,9 @@ export function createWorker(dependencies: WorkerDependencies = {}): WorkerEntry
       const url = new URL(request.url);
       if (request.method === "GET" && url.pathname === "/health") {
         const { healthResponse } = await import("./routes/health");
-        return healthResponse(env.DB, config, now());
+        return healthResponse(env.DB, config, now(), {
+          rpcConfigured: { 56: env.BSC_RPC_URL !== undefined, 97: env.BSC_TESTNET_RPC_URL !== undefined },
+        });
       }
       if (request.method === "GET" && url.pathname === "/observations" && url.search === "") {
         if (config.probeAgentAllowlist.length === 0) {
@@ -424,7 +440,7 @@ export function createWorker(dependencies: WorkerDependencies = {}): WorkerEntry
       if (config.commerceIndexEnabled) {
         // One cursor-driven index_range per chain that has an RPC URL; the
         // consumer reads from the chain cursor to the safe head.
-        await enqueueCommerceIndexTicks(env, env.WP2_QUEUE, now());
+        await enqueueCommerceIndexTicks(env, env.WP2_QUEUE, now(), logger);
       }
     },
 
@@ -468,6 +484,7 @@ export function createWorker(dependencies: WorkerDependencies = {}): WorkerEntry
             errorCode: queueErrorCode(error),
             kind: work.kind,
             chainId: work.chainId,
+            ...commerceWorkRange(work),
           });
           throw error;
         }
@@ -475,6 +492,7 @@ export function createWorker(dependencies: WorkerDependencies = {}): WorkerEntry
         logger.info("commerce.index.completed", {
           kind: work.kind,
           chainId: work.chainId,
+          ...commerceWorkRange(work),
           status: summary.status,
           fromBlock: summary.fromBlock,
           toBlock: summary.toBlock,
@@ -561,10 +579,31 @@ function queueWorkDetails(work: QueueWork): Record<string, unknown> {
   }
 }
 
-async function enqueueCommerceIndexTicks(env: Env, queue: QueueProducer, enqueuedAt: number): Promise<void> {
+// The explicit window of an index message, when it has one: a cursor tick
+// carries null bounds and contributes nothing, so a stalled range is
+// identifiable from the failure log alone.
+function commerceWorkRange(work: CommerceIndexWork): Record<string, number> {
+  if (work.kind === "index_jobs") return { fromJobId: work.fromJobId, toJobId: work.toJobId };
+  return {
+    ...(work.fromBlock === null ? {} : { fromBlock: work.fromBlock }),
+    ...(work.toBlock === null ? {} : { toBlock: work.toBlock }),
+  };
+}
+
+async function enqueueCommerceIndexTicks(
+  env: Env,
+  queue: QueueProducer,
+  enqueuedAt: number,
+  logger: StructuredLogger,
+): Promise<void> {
   for (const chainId of [56, 97] as const) {
     const rpcUrl = chainId === 56 ? env.BSC_RPC_URL : env.BSC_TESTNET_RPC_URL;
-    if (rpcUrl === undefined) continue;
+    if (rpcUrl === undefined) {
+      // The flag is on but the chain cannot be read: say so every tick rather
+      // than leave /health with a null cursor and no explanation.
+      logger.info("commerce.index.skipped", { chainId, reason: "rpc_url_missing" });
+      continue;
+    }
     await queue.send({ schemaVersion: 2, kind: "index_range", chainId, enqueuedAt });
   }
 }
@@ -576,9 +615,11 @@ async function commerceBackfillMessages(
   config: WorkerConfig,
   enqueuedAt: number,
 ): Promise<readonly Record<string, unknown>[] | null> {
+  const text = await request.text();
+  if (new TextEncoder().encode(text).byteLength > COMMERCE_BACKFILL_MAX_BODY_BYTES) return null;
   let body: unknown;
   try {
-    body = await request.json();
+    body = JSON.parse(text) as unknown;
   } catch {
     return null;
   }

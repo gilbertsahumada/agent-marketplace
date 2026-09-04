@@ -6,6 +6,13 @@
 -- which is why hire_events gains a (chainId, jobId) index here. Times are epoch
 -- milliseconds, as everywhere else in this schema; budgets are wei as decimal
 -- text; jobId is an INTEGER so ordering and `before` cursors are numeric.
+--
+-- Rollback (wrangler tracks application; run by hand, in this order, because
+-- the ledger triggers abort any later statement that touches the table):
+--   DROP TRIGGER commerce_job_events_no_update; DROP TRIGGER commerce_job_events_no_delete;
+--   DROP INDEX idx_hire_events_job; DROP INDEX idx_commerce_job_events_job;
+--   DROP INDEX idx_commerce_jobs_status; DROP INDEX idx_commerce_jobs_provider; DROP INDEX idx_commerce_jobs_client;
+--   DROP TABLE commerce_job_events; DROP TABLE commerce_jobs;
 CREATE TABLE commerce_jobs (
   chainId      INTEGER NOT NULL CHECK (chainId IN (56, 97)),
   jobId        INTEGER NOT NULL CHECK (jobId >= 0),
@@ -29,8 +36,11 @@ CREATE INDEX idx_commerce_jobs_client
 CREATE INDEX idx_commerce_jobs_provider
   ON commerce_jobs (chainId, provider, jobId DESC);
 
+-- (chainId, status, jobId DESC) makes `status = ? ORDER BY jobId DESC LIMIT n`
+-- a range scan bounded by the LIMIT instead of a sort over every row of that
+-- status.
 CREATE INDEX idx_commerce_jobs_status
-  ON commerce_jobs (chainId, status);
+  ON commerce_jobs (chainId, status, jobId DESC);
 
 CREATE TABLE commerce_job_events (
   id             INTEGER PRIMARY KEY AUTOINCREMENT,

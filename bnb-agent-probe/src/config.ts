@@ -68,6 +68,12 @@ export interface WorkerConfig {
     d1RowsWrittenNominal: number;
     d1RowsRead: number;
     d1RowsWritten: number;
+    // The Commerce indexer's own per-message envelope, one index_range per
+    // chain per tick, already included in the totals above.
+    commerceIndexMessagesPerDay: number;
+    commerceIndexD1RowsWrittenPerMessage: number;
+    commerceIndexD1RowsRead: number;
+    commerceIndexD1RowsWritten: number;
     queueOperations: number;
     scheduledQueueOperations: number;
     onDemandQueueOperations: number;
@@ -111,6 +117,30 @@ const QUEUE_MAX_RETRIES = 3;
 const QUEUE_OPERATIONS_PER_MESSAGE = 3 + QUEUE_MAX_RETRIES;
 const D1_TELEMETRY_WRITES_PER_ATTEMPT = 2;
 const FREE_MIN_D1_QUERIES_PER_RUN = 38;
+
+// D1 meters rows_written per table row *and* per index entry, measured with
+// miniflare: a commerce_job_events row costs the table, its unique log index
+// and the job index, plus one sqlite_sequence row per INSERT statement into
+// that AUTOINCREMENT table; a commerce_jobs row costs the table, the primary
+// key and the client/provider/status indexes; a new runtime_state row costs
+// the table and its key index (an update costs one). The indexer writes rows
+// six per statement.
+export const COMMERCE_EVENT_ROW_WRITES = 3;
+export const COMMERCE_EVENT_STATEMENT_WRITES = 1;
+export const COMMERCE_JOB_ROW_WRITES = 5;
+export const COMMERCE_RUNTIME_STATE_ROW_WRITES = 2;
+export const COMMERCE_INDEX_ROW_CHUNK = 6;
+
+export function commerceIndexRangeRowWrites(logs: number, jobs: number, runtimeStateWrites: number): number {
+  return logs * COMMERCE_EVENT_ROW_WRITES
+    + Math.ceil(logs / COMMERCE_INDEX_ROW_CHUNK) * COMMERCE_EVENT_STATEMENT_WRITES
+    + jobs * COMMERCE_JOB_ROW_WRITES
+    + runtimeStateWrites * COMMERCE_RUNTIME_STATE_ROW_WRITES;
+}
+
+export function commerceIndexJobsRowWrites(jobs: number): number {
+  return jobs * COMMERCE_JOB_ROW_WRITES + COMMERCE_RUNTIME_STATE_ROW_WRITES;
+}
 const GENERAL_PROBE_SCOPE = "*";
 const SAFE_PROBE_AGENT = "303779";
 const SAFE_PROBE_ENDPOINT = "https://bnb-agent-marketplace-ruby.vercel.app/grid";
@@ -130,8 +160,10 @@ const FREE_PROFILE: Profile = {
     hireEventsPerCallerDay: 20,
     commerceIndexBlocksPerRun: 500,
     commerceIndexFinalityBlocks: 15,
-    commerceIndexJobsPerRun: 50,
-    commerceIndexLogsPerRun: 24,
+    // The largest sizes whose index writes fit the 60-row Free envelope
+    // (see commerceIndexRangeRowWrites): 6 logs → 55 rows, 11 jobs → 57.
+    commerceIndexJobsPerRun: 11,
+    commerceIndexLogsPerRun: 6,
     commerceIndexBlockLookupsPerRun: 10,
     // A full all-new page of twelve identities exceeds the 60-row Free
     // invocation budget once the resumable ingest work is admitted. Keep the
@@ -209,8 +241,10 @@ const PAID_PROFILE: Profile = {
     hireEventsPerCallerDay: 200,
     commerceIndexBlocksPerRun: 2_000,
     commerceIndexFinalityBlocks: 15,
-    commerceIndexJobsPerRun: 100,
-    commerceIndexLogsPerRun: 60,
+    // The largest sizes whose index writes fit the 200-row Paid envelope:
+    // 23 logs → 194 rows, 39 jobs → 197.
+    commerceIndexJobsPerRun: 39,
+    commerceIndexLogsPerRun: 23,
     commerceIndexBlockLookupsPerRun: 20,
     catalogDiscoveryPageSize: 15,
     catalogIngestTasksPerRun: 1,
@@ -309,7 +343,7 @@ const NUMERIC_FIELDS = {
 } as const;
 
 export class ConfigError extends Error {
-  constructor(field: string, message: string) {
+  constructor(readonly field: string, message: string) {
     super(`${field}: ${message}`);
     this.name = "ConfigError";
   }
@@ -595,36 +629,40 @@ export function loadConfig(env: Partial<Env>): WorkerConfig {
   }
 
   // One index message must fit the per-run D1 envelope: rows are written six
-  // per statement (below D1's bound-variable ceiling), plus the cursor read,
-  // the cursor write and the summary write; an index_range writes one event
-  // row per log and re-reads at most one job per log. Only an enabled indexer
-  // is held to this, so a small write envelope stays valid elsewhere.
+  // per statement (below D1's bound-variable ceiling), plus the cursor/window
+  // read and the cursor, window and summary writes; an index_range writes one
+  // event row per log and, worst case, one distinct job per log. Rows are
+  // counted the way D1 meters them (index writes count, see
+  // commerceIndexRangeRowWrites). Only an enabled indexer is held to this, so
+  // a small write envelope stays valid elsewhere.
+  const indexRangeRows = commerceIndexRangeRowWrites(values.commerceIndexLogsPerRun, values.commerceIndexLogsPerRun, 3);
+  const indexJobsRows = commerceIndexJobsRowWrites(values.commerceIndexJobsPerRun);
   if (commerceIndexEnabled) {
     const indexQueryLimit = values.d1QueriesPerRun - 2;
-    const indexJobsQueries = Math.ceil(values.commerceIndexJobsPerRun / 6) + 2;
+    const indexJobsQueries = Math.ceil(values.commerceIndexJobsPerRun / COMMERCE_INDEX_ROW_CHUNK) + 2;
     if (indexJobsQueries > indexQueryLimit) {
       throw new ConfigError(
         "COMMERCE_INDEX_JOBS_PER_RUN",
         `an index_jobs message can require ${indexJobsQueries} D1 queries; lower it or raise D1_QUERIES_PER_RUN`,
       );
     }
-    const indexRangeQueries = 2 * Math.ceil(values.commerceIndexLogsPerRun / 6) + 4;
+    const indexRangeQueries = 2 * Math.ceil(values.commerceIndexLogsPerRun / COMMERCE_INDEX_ROW_CHUNK) + 4;
     if (indexRangeQueries > indexQueryLimit) {
       throw new ConfigError(
         "COMMERCE_INDEX_LOGS_PER_RUN",
         `an index_range message can require ${indexRangeQueries} D1 queries; lower it or raise D1_QUERIES_PER_RUN`,
       );
     }
-    if (2 * values.commerceIndexLogsPerRun + 2 > values.d1RowsWrittenPerRun) {
+    if (indexRangeRows > values.d1RowsWrittenPerRun) {
       throw new ConfigError(
         "COMMERCE_INDEX_LOGS_PER_RUN",
-        "an index_range message must fit D1_ROWS_WRITTEN_PER_RUN with two rows per log",
+        `an index_range message can write ${indexRangeRows} D1 rows (index writes count: ${COMMERCE_EVENT_ROW_WRITES} per event plus a sequence row per statement, ${COMMERCE_JOB_ROW_WRITES} per job, ${COMMERCE_RUNTIME_STATE_ROW_WRITES} per runtime_state row); lower it or raise D1_ROWS_WRITTEN_PER_RUN`,
       );
     }
-    if (values.commerceIndexJobsPerRun + 1 > values.d1RowsWrittenPerRun) {
+    if (indexJobsRows > values.d1RowsWrittenPerRun) {
       throw new ConfigError(
         "COMMERCE_INDEX_JOBS_PER_RUN",
-        "an index_jobs message must fit D1_ROWS_WRITTEN_PER_RUN",
+        `an index_jobs message can write ${indexJobsRows} D1 rows (index writes count: ${COMMERCE_JOB_ROW_WRITES} per job plus the summary row); lower it or raise D1_ROWS_WRITTEN_PER_RUN`,
       );
     }
   }
@@ -643,18 +681,40 @@ export function loadConfig(env: Partial<Env>): WorkerConfig {
   const maxAttemptsPerInvocation = QUEUE_MAX_RETRIES + 1;
   const maxAttempts = invocations * maxAttemptsPerInvocation;
   // Each cron tick enqueues the phase tick plus up to one index_range per chain.
-  const scheduledMessagesPerTick = 1 + (commerceIndexEnabled ? 2 : 0);
+  const commerceIndexChains = commerceIndexEnabled ? 2 : 0;
+  const scheduledMessagesPerTick = 1 + commerceIndexChains;
+  // An index message gets its own D1 envelope, projected from what it can
+  // actually write: one batch (reserved against the row budget before it
+  // commits, so a retried attempt never re-commits it) plus, per failed
+  // attempt, the failure summary and the window hint, each possibly a fresh
+  // runtime_state row. Reads are the cursor/window lookup plus one index
+  // lookup per written row, a fraction of the phase envelope.
+  const commerceIndexMessagesPerDay = invocations * commerceIndexChains;
+  const commerceIndexFailureWrites = 2 * COMMERCE_RUNTIME_STATE_ROW_WRITES;
+  const commerceIndexD1RowsWrittenPerMessage = commerceIndexEnabled
+    ? indexRangeRows + QUEUE_MAX_RETRIES * commerceIndexFailureWrites
+    : 0;
+  const commerceIndexD1RowsReadPerAttempt = commerceIndexEnabled ? indexRangeRows + 2 : 0;
+  const commerceIndexD1RowsWritten = commerceIndexMessagesPerDay * commerceIndexD1RowsWrittenPerMessage;
+  const commerceIndexD1RowsRead = commerceIndexMessagesPerDay * maxAttemptsPerInvocation * commerceIndexD1RowsReadPerAttempt;
+  const phaseD1RowsWritten = maxAttempts * (values.d1RowsWrittenPerRun + D1_TELEMETRY_WRITES_PER_ATTEMPT);
+  const phaseD1RowsRead = maxAttempts * values.d1RowsReadPerRun;
   const projectedDailyBudget = plan === "free"
     ? {
         invocations,
         maxAttemptsPerInvocation,
         maxAttempts,
-        d1RowsReadNominal: invocations * values.d1RowsReadPerRun,
+        d1RowsReadNominal: invocations * values.d1RowsReadPerRun
+          + commerceIndexMessagesPerDay * commerceIndexD1RowsReadPerAttempt,
         d1RowsWrittenNominal: invocations
-          * (values.d1RowsWrittenPerRun + D1_TELEMETRY_WRITES_PER_ATTEMPT),
-        d1RowsRead: maxAttempts * values.d1RowsReadPerRun,
-        d1RowsWritten: maxAttempts
-          * (values.d1RowsWrittenPerRun + D1_TELEMETRY_WRITES_PER_ATTEMPT),
+          * (values.d1RowsWrittenPerRun + D1_TELEMETRY_WRITES_PER_ATTEMPT)
+          + commerceIndexMessagesPerDay * indexRangeRows,
+        d1RowsRead: phaseD1RowsRead + commerceIndexD1RowsRead,
+        d1RowsWritten: phaseD1RowsWritten + commerceIndexD1RowsWritten,
+        commerceIndexMessagesPerDay,
+        commerceIndexD1RowsWrittenPerMessage,
+        commerceIndexD1RowsRead,
+        commerceIndexD1RowsWritten,
         scheduledQueueOperations: invocations * scheduledMessagesPerTick * QUEUE_OPERATIONS_PER_MESSAGE,
         onDemandQueueOperations: values.catalogValidationRequestsPerDay * QUEUE_OPERATIONS_PER_MESSAGE,
         queueOperations: (invocations * scheduledMessagesPerTick + values.catalogValidationRequestsPerDay)
@@ -666,6 +726,30 @@ export function loadConfig(env: Partial<Env>): WorkerConfig {
     : null;
 
   if (projectedDailyBudget !== null) {
+    // The phase envelope alone is checked first so the field that broke the
+    // ceiling is the one to change; with a valid phase envelope the indexer
+    // is the addition that did not fit.
+    if (phaseD1RowsRead > projectedDailyBudget.freeReadCeiling) {
+      throw new ConfigError(
+        "D1_ROWS_READ_PER_RUN",
+        "projected daily reads exceed Free safety ceiling",
+      );
+    }
+    if (phaseD1RowsWritten > projectedDailyBudget.freeWriteCeiling) {
+      throw new ConfigError(
+        "D1_ROWS_WRITTEN_PER_RUN",
+        "projected daily writes exceed Free safety ceiling",
+      );
+    }
+    if (
+      projectedDailyBudget.d1RowsRead > projectedDailyBudget.freeReadCeiling
+      || projectedDailyBudget.d1RowsWritten > projectedDailyBudget.freeWriteCeiling
+    ) {
+      throw new ConfigError(
+        "COMMERCE_INDEX_ENABLED",
+        `projected daily D1 usage with one index_range per chain per tick (${commerceIndexD1RowsWrittenPerMessage} rows written per message) exceeds the Free safety ceiling; raise CRON_INTERVAL_MINUTES (10 fits the defaults) or lower COMMERCE_INDEX_LOGS_PER_RUN`,
+      );
+    }
     if (projectedDailyBudget.d1RowsRead > projectedDailyBudget.freeReadCeiling) {
       throw new ConfigError(
         "D1_ROWS_READ_PER_RUN",

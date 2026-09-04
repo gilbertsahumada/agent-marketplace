@@ -218,7 +218,7 @@ export const commerceJobs = sqliteTable(
     primaryKey({ columns: [table.chainId, table.jobId] }),
     index("idx_commerce_jobs_client").on(table.chainId, table.client, desc(table.jobId)),
     index("idx_commerce_jobs_provider").on(table.chainId, table.provider, desc(table.jobId)),
-    index("idx_commerce_jobs_status").on(table.chainId, table.status),
+    index("idx_commerce_jobs_status").on(table.chainId, table.status, desc(table.jobId)),
     check("commerce_jobs_chain", sql`${table.chainId} IN (56, 97)`),
     check("commerce_jobs_job", sql`${table.jobId} >= 0`),
     check("commerce_jobs_status", sql`${table.status} BETWEEN 0 AND 5`),

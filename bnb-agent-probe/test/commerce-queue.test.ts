@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { loadConfig } from "../src/config";
 import { createWorker } from "../src/index";
 import type { D1Database, D1PreparedStatement, Env, ExecutionContext } from "../src/types";
 
@@ -26,6 +27,7 @@ function activeEnv(overrides: Partial<Env> = {}) {
     KILL_SWITCH: "0",
     PRODUCER_KILL_SWITCH: "0",
     COMMERCE_INDEX_ENABLED: "1",
+    CRON_INTERVAL_MINUTES: "10",
     WP2_QUEUE: { send: vi.fn().mockResolvedValue(undefined) },
     ...overrides,
   } as Env & { WP2_QUEUE: { send: ReturnType<typeof vi.fn> } };
@@ -39,7 +41,7 @@ describe("Commerce indexer queue wiring", () => {
   it("enqueues one cursor tick per chain with an RPC URL after the phase tick", async () => {
     const worker = createWorker({ now: () => NOW, runScheduled: vi.fn() });
     const bothChains = activeEnv({ BSC_RPC_URL: "https://rpc.example/bsc", BSC_TESTNET_RPC_URL: "https://rpc.example/testnet" });
-    await worker.scheduled({ scheduledTime: NOW, cron: "*/5 * * * *" }, bothChains, context);
+    await worker.scheduled({ scheduledTime: NOW, cron: "*/10 * * * *" }, bothChains, context);
     expect(bothChains.WP2_QUEUE.send.mock.calls.map((call) => call[0])).toEqual([
       { schemaVersion: 1, scheduledTime: NOW },
       { schemaVersion: 2, kind: "index_range", chainId: 56, enqueuedAt: NOW },
@@ -47,12 +49,25 @@ describe("Commerce indexer queue wiring", () => {
     ]);
 
     const mainnetOnly = activeEnv({ BSC_RPC_URL: "https://rpc.example/bsc" });
-    await worker.scheduled({ scheduledTime: NOW, cron: "*/5 * * * *" }, mainnetOnly, context);
+    await worker.scheduled({ scheduledTime: NOW, cron: "*/10 * * * *" }, mainnetOnly, context);
     expect(mainnetOnly.WP2_QUEUE.send).toHaveBeenCalledTimes(2);
 
     const disabled = activeEnv({ BSC_RPC_URL: "https://rpc.example/bsc", COMMERCE_INDEX_ENABLED: "0" });
-    await worker.scheduled({ scheduledTime: NOW, cron: "*/5 * * * *" }, disabled, context);
+    await worker.scheduled({ scheduledTime: NOW, cron: "*/10 * * * *" }, disabled, context);
     expect(disabled.WP2_QUEUE.send).toHaveBeenCalledTimes(1);
+  });
+
+  it("logs a skipped chain when the indexer is on but its RPC URL secret is missing", async () => {
+    const logger = { info: vi.fn(), error: vi.fn() };
+    const worker = createWorker({ now: () => NOW, runScheduled: vi.fn(), logger });
+    const mainnetOnly = activeEnv({ BSC_RPC_URL: "https://rpc.example/secret-token" });
+
+    await worker.scheduled({ scheduledTime: NOW, cron: "*/10 * * * *" }, mainnetOnly, context);
+
+    expect(logger.info).toHaveBeenCalledWith("commerce.index.skipped", { chainId: 97, reason: "rpc_url_missing" });
+    expect(logger.info).not.toHaveBeenCalledWith("commerce.index.skipped", expect.objectContaining({ chainId: 56 }));
+    expect(JSON.stringify(logger.info.mock.calls)).not.toContain("secret-token");
+    expect(mainnetOnly.WP2_QUEUE.send).toHaveBeenCalledTimes(2);
   });
 
   it("dispatches index messages to the indexer runner and acknowledges on success", async () => {
@@ -97,6 +112,32 @@ describe("Commerce indexer queue wiring", () => {
     expect(tick.ack).not.toHaveBeenCalled();
   });
 
+  it("carries the explicit block or job range on failure and completion logs", async () => {
+    const logger = { info: vi.fn(), error: vi.fn() };
+    const failing = createWorker({
+      now: () => NOW,
+      runScheduled: vi.fn(),
+      runCommerceIndex: vi.fn().mockRejectedValue(new Error("BSC_RPC_RESPONSE")),
+      logger,
+    });
+    const range = message({ schemaVersion: 2, kind: "index_range", chainId: 56, fromBlock: 100, toBlock: 200, enqueuedAt: NOW });
+    await expect(failing.queue({ messages: [range] }, activeEnv(), context)).rejects.toThrow("BSC_RPC_RESPONSE");
+    expect(logger.error).toHaveBeenCalledWith("commerce.index.failed", {
+      attempt: 1, errorCode: "BSC_RPC_RESPONSE", kind: "index_range", chainId: 56, fromBlock: 100, toBlock: 200,
+    });
+
+    const jobs = message({ schemaVersion: 2, kind: "index_jobs", chainId: 97, fromJobId: 1, toJobId: 50, enqueuedAt: NOW });
+    await expect(failing.queue({ messages: [jobs] }, activeEnv(), context)).rejects.toThrow("BSC_RPC_RESPONSE");
+    expect(logger.error).toHaveBeenLastCalledWith("commerce.index.failed", {
+      attempt: 1, errorCode: "BSC_RPC_RESPONSE", kind: "index_jobs", chainId: 97, fromJobId: 1, toJobId: 50,
+    });
+
+    const summary = { kind: "index_jobs", chainId: 97, status: "ok", fromBlock: null, toBlock: null, logs: 0, jobs: 50, d1Queries: 9, wallTimeMs: 7 } as const;
+    const succeeding = createWorker({ now: () => NOW, runScheduled: vi.fn(), runCommerceIndex: vi.fn().mockResolvedValue(summary), logger });
+    await succeeding.queue({ messages: [message({ schemaVersion: 2, kind: "index_jobs", chainId: 97, fromJobId: 1, toJobId: 50, enqueuedAt: NOW })] }, activeEnv(), context);
+    expect(logger.info).toHaveBeenLastCalledWith("commerce.index.completed", expect.objectContaining({ kind: "index_jobs", chainId: 97, fromJobId: 1, toJobId: 50, jobs: 50 }));
+  });
+
   it("drops queued index work while the indexer flag is off", async () => {
     const runCommerceIndex = vi.fn();
     const worker = createWorker({ now: () => NOW, runScheduled: vi.fn(), runCommerceIndex });
@@ -127,11 +168,14 @@ describe("Commerce indexer queue wiring", () => {
 });
 
 describe("Commerce backfill admin route", () => {
+  // Paid profile with staging's write envelope; the expected splits derive
+  // from the configured per-run sizes so a re-pinned envelope moves them too.
   const adminEnv = (overrides: Partial<Env> = {}) => activeEnv({
     DEPLOYMENT_ENV: "staging",
     STAGING_MANUAL_RUN: "1",
     SHARED_SECRET: "must-never-leak",
     CLOUDFLARE_WORKERS_PLAN: "paid",
+    D1_ROWS_WRITTEN_PER_RUN: "200",
     ...overrides,
   });
   const post = (worker: ReturnType<typeof createWorker>, env: Env, body: unknown, authorization = "Bearer must-never-leak") => worker.fetch(
@@ -147,26 +191,28 @@ describe("Commerce backfill admin route", () => {
   it("splits a job id range into one message per consumer run", async () => {
     const worker = createWorker({ now: () => NOW, runScheduled: vi.fn() });
     const env = adminEnv();
-    const response = await post(worker, env, { chainId: 56, fromJobId: 1, toJobId: 250 });
+    const size = loadConfig(env).commerceIndexJobsPerRun;
+    const response = await post(worker, env, { chainId: 56, fromJobId: 1, toJobId: 2 * size + 5 });
 
     expect(response.status).toBe(202);
     expect(await response.json()).toEqual({ enqueued: 3 });
     expect(env.WP2_QUEUE.send.mock.calls.map((call) => call[0])).toEqual([
-      { schemaVersion: 2, kind: "index_jobs", chainId: 56, fromJobId: 1, toJobId: 100, enqueuedAt: NOW },
-      { schemaVersion: 2, kind: "index_jobs", chainId: 56, fromJobId: 101, toJobId: 200, enqueuedAt: NOW },
-      { schemaVersion: 2, kind: "index_jobs", chainId: 56, fromJobId: 201, toJobId: 250, enqueuedAt: NOW },
+      { schemaVersion: 2, kind: "index_jobs", chainId: 56, fromJobId: 1, toJobId: size, enqueuedAt: NOW },
+      { schemaVersion: 2, kind: "index_jobs", chainId: 56, fromJobId: size + 1, toJobId: 2 * size, enqueuedAt: NOW },
+      { schemaVersion: 2, kind: "index_jobs", chainId: 56, fromJobId: 2 * size + 1, toJobId: 2 * size + 5, enqueuedAt: NOW },
     ]);
   });
 
   it("splits a block range into explicit index_range messages", async () => {
     const worker = createWorker({ now: () => NOW, runScheduled: vi.fn() });
     const env = adminEnv();
-    const response = await post(worker, env, { chainId: 97, fromBlock: 100, toBlock: 4_100 });
+    const size = loadConfig(env).commerceIndexBlocksPerRun;
+    const response = await post(worker, env, { chainId: 97, fromBlock: 100, toBlock: 100 + 2 * size });
 
     expect(response.status).toBe(202);
     expect(await response.json()).toEqual({ enqueued: 3 });
     expect(env.WP2_QUEUE.send.mock.calls[2]?.[0]).toEqual({
-      schemaVersion: 2, kind: "index_range", chainId: 97, fromBlock: 4_100, toBlock: 4_100, enqueuedAt: NOW,
+      schemaVersion: 2, kind: "index_range", chainId: 97, fromBlock: 100 + 2 * size, toBlock: 100 + 2 * size, enqueuedAt: NOW,
     });
   });
 

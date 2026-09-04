@@ -17,6 +17,7 @@ type SafeSummary = {
   cpuMs?: number;
   wallTimeMs?: number;
   d1Queries?: number;
+  d1RowsWritten?: number;
   errorCode?: string;
   headerWindowExhausted?: boolean;
   complete?: boolean;
@@ -34,9 +35,17 @@ type SafeSummary = {
   processedTargets?: number;
   fromBlock?: number;
   toBlock?: number;
+  window?: number;
   logs?: number;
   jobs?: number;
+  jobsFailed?: number;
   outcome?: string;
+};
+
+type HealthOptions = {
+  // Derived from the presence of the per-chain RPC secret; the URL itself
+  // never reaches this route.
+  rpcConfigured?: { 56: boolean; 97: boolean };
 };
 
 type DailyBudget = {
@@ -107,6 +116,7 @@ function safeSummary(row: RuntimeRow | undefined): SafeSummary | null {
     if (wallTimeMs !== undefined) result.wallTimeMs = wallTimeMs;
     const numericFields = [
       "d1Queries",
+      "d1RowsWritten",
       "previousOffset",
       "nextOffset",
       "sweepRound",
@@ -121,8 +131,10 @@ function safeSummary(row: RuntimeRow | undefined): SafeSummary | null {
       "processedTargets",
       "fromBlock",
       "toBlock",
+      "window",
       "logs",
       "jobs",
+      "jobsFailed",
     ] as const;
     for (const field of numericFields) {
       const value = finiteNonNegative(source[field]);
@@ -211,7 +223,9 @@ export async function healthResponse(
   db: D1Database,
   config: WorkerConfig,
   now: number,
+  options: HealthOptions = {},
 ): Promise<Response> {
+  const rpcConfigured = options.rpcConfigured ?? { 56: false, 97: false };
   try {
     const utcDate = new Date(now).toISOString().slice(0, 10);
     const dailyBudgetKey = `daily_budget_${utcDate.replaceAll("-", "")}`;
@@ -290,10 +304,12 @@ export async function healthResponse(
         enabled: config.commerceIndexEnabled,
         chains: {
           56: {
+            rpcConfigured: rpcConfigured[56],
             cursor: integer(byKey.get("commerce_cursor_56")?.integerValue),
             lastRun: safeSummary(byKey.get("last_index_summary_56")),
           },
           97: {
+            rpcConfigured: rpcConfigured[97],
             cursor: integer(byKey.get("commerce_cursor_97")?.integerValue),
             lastRun: safeSummary(byKey.get("last_index_summary_97")),
           },
