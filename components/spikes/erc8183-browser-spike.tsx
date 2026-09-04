@@ -5,6 +5,9 @@ import {
   ArrowRight,
   CheckCircle2,
   ChevronDown,
+  CircleDashed,
+  Clock3,
+  Copy,
   ExternalLink,
   FlaskConical,
   LoaderCircle,
@@ -15,11 +18,14 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { type ReactNode, useCallback, useEffect, useState } from "react";
 import { useAccount, useSwitchChain } from "wagmi";
+import { ERC8183_MAINNET } from "@/src/mainnet/contracts";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { markCatalogForRefresh } from "@/components/marketplace/catalog-return-refresh";
+import { relativeAge } from "@/components/marketplace/relative-time";
 import {
   type Erc8183BrowserJournal,
   type Erc8183HirePlan,
@@ -42,7 +48,9 @@ import {
 } from "@/src/business/browser/erc8183-browser-wallet";
 
 type ApiError = { error?: { code?: string; message?: string } };
-type MainnetQuoteResponse = NormalizedErc8183Quote & {
+export type MainnetQuoteResponse = NormalizedErc8183Quote & {
+  maximumBudgetRaw?: string;
+  observationId?: number | null;
   observationSync?: { status: "synced" | "duplicate" | "failed" | "not_configured" };
 };
 
@@ -89,7 +97,7 @@ type HireEventReport =
 // Best-effort beacon: the same-origin route sanitizes and forwards the event,
 // and the Worker verifies chain phases by RPC. Nothing here waits on it or
 // claims the shared index was updated, and it survives the job-page redirect.
-function reportHireEvent(deployment: Erc8183BrowserDeployment, event: HireEventReport): void {
+function reportHireEvent(deployment: Erc8183BrowserDeployment, event: HireEventReport, options: { quoteRequestId?: number | null } = {}): void {
   if (typeof navigator === "undefined" || typeof navigator.sendBeacon !== "function") return;
   const body = JSON.stringify({
     agentId: String(deployment.agentId),
@@ -97,6 +105,9 @@ function reportHireEvent(deployment: Erc8183BrowserDeployment, event: HireEventR
     phase: event.phase,
     jobId: event.phase === "clicked" ? null : event.jobId,
     txHash: event.phase === "clicked" ? null : event.txHash,
+    ...(event.phase === "clicked" || options.quoteRequestId === undefined || options.quoteRequestId === null
+      ? {}
+      : { quoteRequestId: options.quoteRequestId }),
   });
   try {
     navigator.sendBeacon("/api/marketplace/hire-events", new Blob([body], { type: "application/json" }));
@@ -144,12 +155,49 @@ function SummaryRow({ label, value, mono = false }: { label: string; value: stri
   );
 }
 
-function CheckoutSummaryRow({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
+function CheckoutSummaryRow({ label, value, mono = false }: { label: string; value: ReactNode; mono?: boolean }) {
   return (
     <div className="grid grid-cols-[5rem_minmax(0,1fr)] items-start gap-3 border-b border-white/[0.06] py-3 last:border-0">
       <dt className="text-xs text-zinc-500">{label}</dt>
       <dd className={`${mono ? "font-hash text-xs" : "text-sm"} min-w-0 text-right text-zinc-200`}>{value}</dd>
     </div>
+  );
+}
+
+function ChainReference({
+  explorerUrl,
+  kind,
+  label,
+  value,
+}: {
+  explorerUrl: string;
+  kind: "address" | "transaction";
+  label?: string;
+  value: string;
+}) {
+  const href = `${explorerUrl}/${kind === "transaction" ? "tx" : "address"}/${value}`;
+  return (
+    <span className="inline-flex min-w-0 items-center justify-end gap-1.5">
+      <a
+        aria-label={`View ${label ? `${label} ` : ""}${kind} ${value} in explorer`}
+        className="font-hash truncate text-xs text-zinc-200 underline decoration-white/20 underline-offset-4 transition-colors hover:text-white"
+        href={href}
+        rel="noreferrer"
+        target="_blank"
+        title={value}
+      >
+        {shortAddress(value)}
+      </a>
+      <button
+        aria-label={`Copy ${kind} ${value}`}
+        className="cursor-pointer rounded-md p-1 text-zinc-500 transition-colors hover:bg-white/[0.05] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+        onClick={() => void navigator.clipboard?.writeText(value)}
+        type="button"
+      >
+        <Copy aria-hidden="true" className="size-3.5" />
+      </button>
+      <ExternalLink aria-hidden="true" className="size-3 text-zinc-500" />
+    </span>
   );
 }
 
@@ -165,8 +213,9 @@ function CheckoutStep({
   state: "complete" | "current" | "locked";
 }) {
   return (
-    <li aria-current={state === "current" ? "step" : undefined} className="border-b border-white/[0.08] last:border-0">
-      <div className="flex min-h-16 items-center gap-3 px-4 sm:px-5">
+    <li aria-current={state === "current" ? "step" : undefined} className="relative border-b border-white/[0.08] last:border-0" data-checkout-step={state}>
+      <span aria-hidden="true" className={`absolute bottom-0 left-[1.95rem] top-12 w-px sm:left-[2.2rem] ${state === "complete" ? "bg-emerald-400/60" : state === "current" ? "bg-primary/60" : "bg-white/10"}`} />
+      <div className="relative flex min-h-16 items-center gap-3 px-4 sm:px-5">
         <span
           aria-hidden="true"
           className={`flex size-8 shrink-0 items-center justify-center rounded-full border text-sm font-medium ${state === "complete"
@@ -189,44 +238,80 @@ export function Erc8183TransactionList({
   explorerUrl,
   intents,
   journal,
+  mode = null,
+  restored = false,
 }: {
   explorerUrl: string;
   intents: Erc8183TransactionIntent[];
   journal: Erc8183BrowserJournal | null;
+  mode?: BrowserHireMode | null;
+  /** True when the rows came from the browser's persisted progress journal. */
+  restored?: boolean;
 }) {
+  const executionNote = restored
+    ? "Progress was restored from this browser. A confirmed row has a recorded receipt; the current job read and explorer remain authoritative."
+    : mode === "batched"
+    ? "Your wallet can submit these calls as one atomic confirmation. Each row is marked confirmed only after its chain receipt is verified."
+    : mode === "sequential"
+      ? "Your wallet will ask for each required call in order. A row is sent only after you approve it, and confirmed only after its chain receipt is verified."
+      : "These are the exact calls the wallet may execute. Nothing is sent while you review this list; the wallet action below starts the request.";
+
   return (
-    <ol className="space-y-3" aria-label="Expected wallet signatures">
+    <div>
+      <p className="mb-3 rounded-lg border border-white/[0.07] bg-white/[0.02] px-3 py-2 text-xs leading-relaxed text-zinc-400" data-transaction-plan-note>
+        {executionNote}
+      </p>
+      <ol className="space-y-3" aria-label="Planned wallet transactions">
       {intents.map((intent) => {
         const hash = journal?.transactions[intent.kind];
         const confirmed = journal?.receipts?.[intent.kind] !== undefined;
+        const state = confirmed ? "confirmed" : hash ? "submitted" : intent.required ? "not_sent" : "not_required";
+        const stateConfig = {
+          confirmed: {
+            label: "Confirmed onchain",
+            className: "border-emerald-400/30 text-emerald-300",
+            icon: CheckCircle2,
+          },
+          submitted: {
+            label: "Sent · awaiting confirmation",
+            className: "border-cyan-400/30 text-cyan-200",
+            icon: LoaderCircle,
+          },
+          not_sent: {
+            label: "Not sent",
+            className: "border-amber-400/30 text-amber-200",
+            icon: CircleDashed,
+          },
+          not_required: {
+            label: "Not required",
+            className: "border-zinc-700 text-zinc-500",
+            icon: CircleDashed,
+          },
+        }[state];
+        const StateIcon = stateConfig.icon;
         return (
-          <li key={intent.kind} className="rounded-lg border border-white/[0.07] bg-white/[0.02] p-3">
+          <li key={intent.kind} className="rounded-lg border border-white/[0.07] bg-white/[0.02] p-3" data-transaction-state={state}>
             <div className="flex items-start justify-between gap-4">
               <div className="min-w-0">
                 <p className="font-hash text-xs text-zinc-200">{intent.kind}</p>
                 <p className="mt-1 text-xs text-zinc-500">{intent.purpose}</p>
-                <p className="font-hash mt-1 text-[10px] text-zinc-600">{intent.contract}</p>
+                <div className="mt-2 flex justify-start">
+                  <ChainReference explorerUrl={explorerUrl} kind="address" label={`${intent.kind} contract`} value={intent.contract} />
+                </div>
               </div>
-              <Badge className={confirmed ? "border-emerald-400/30 text-emerald-300" : undefined} variant="outline">
-                {confirmed && <CheckCircle2 aria-hidden="true" className="size-3" />}
-                {confirmed ? "confirmed" : hash ? "pending" : intent.required ? "signature" : "skipped"}
+              <Badge className={stateConfig.className} variant="outline">
+                <StateIcon aria-hidden="true" className={`size-3 ${state === "submitted" ? "animate-spin" : ""}`} />
+                {stateConfig.label}
               </Badge>
             </div>
             {hash && (
-              <a
-                aria-label={`View ${intent.kind} transaction in explorer`}
-                className="font-hash mt-3 inline-flex items-center gap-2 text-[11px] text-amber-200 hover:text-amber-100"
-                href={`${explorerUrl}/tx/${hash}`}
-                rel="noreferrer"
-                target="_blank"
-              >
-                {shortAddress(hash)} <ExternalLink aria-hidden="true" className="size-3" />
-              </a>
+              <div className="mt-3 flex justify-start"><ChainReference explorerUrl={explorerUrl} kind="transaction" label={intent.kind} value={hash} /></div>
             )}
           </li>
         );
       })}
-    </ol>
+      </ol>
+    </div>
   );
 }
 
@@ -236,10 +321,22 @@ const TESTNET_DEPLOYMENT: Erc8183BrowserDeployment = {
   nativeCurrencySymbol: "tBNB",
 };
 
-export function Erc8183MainnetDemo({ config, agentName, embedded = false }: {
+export interface EmbeddedHireEvidence {
+  protocol: string;
+  endpoint: string;
+  reachable: boolean;
+  quoteStatus?: "not_supported" | "not_requested" | "verified_fresh" | "verified_historical" | "rejected";
+  lastCheckedAt?: string;
+  attemptCount?: number;
+  httpStatus?: number;
+  durationMs?: number;
+}
+
+export function Erc8183MainnetDemo({ config, agentName, embedded = false, evidence }: {
   config: MainnetDemoPublicConfig;
   agentName?: string;
   embedded?: boolean;
+  evidence?: EmbeddedHireEvidence;
 }) {
   return <Erc8183BrowserDemo mode="mainnet" deployment={{
     chainId: 56,
@@ -248,24 +345,76 @@ export function Erc8183MainnetDemo({ config, agentName, embedded = false }: {
     nativeCurrencySymbol: "BNB",
     ...config,
     maximumBudgetRaw: BigInt(config.maximumBudgetRaw),
-  }} {...(agentName ? { agentName } : {})} embedded={embedded} />;
+  }} {...(agentName ? { agentName } : {})} embedded={embedded} {...(evidence ? { evidence } : {})} />;
+}
+
+/**
+ * The catalog path uses the same audited browser wallet and stepper as the
+ * legacy demo, but receives its deployment from the verified seller quote.
+ * This keeps every compatible seller on one hire experience.
+ */
+export function Erc8183MarketplaceHire({
+  agentName,
+  onQuoteExpired,
+  quote,
+  quoteRequestId,
+}: {
+  agentName?: string;
+  onQuoteExpired?: () => void;
+  quote: MainnetQuoteResponse;
+  quoteRequestId: number;
+}) {
+  const deployment: Erc8183BrowserDeployment = {
+    chainId: 56,
+    networkName: ERC8183_MAINNET.networkName,
+    nativeCurrencyName: "BNB",
+    nativeCurrencySymbol: "BNB",
+    rpcUrl: ERC8183_MAINNET.rpcUrl,
+    explorerUrl: ERC8183_MAINNET.explorerUrl,
+    agentId: quote.agentId,
+    commerce: quote.commerce,
+    router: quote.router,
+    policy: quote.policy,
+    token: quote.token,
+    seller: quote.provider,
+    maximumBudgetRaw: BigInt(quote.maximumBudgetRaw ?? ERC8183_MAINNET.maximumDemoBudgetRaw.toString()),
+  };
+  return (
+    <Erc8183BrowserDemo
+      {...(agentName ? { agentName } : {})}
+      apiBaseOverride={`/api/marketplace/agents/${quote.agentId}/hire`}
+      deployment={deployment}
+      embedded
+      initialQuote={quote}
+      jobsBaseOverride={`/api/marketplace/agents/${quote.agentId}/hire/jobs`}
+      mode="mainnet"
+      {...(onQuoteExpired ? { onQuoteExpired } : {})}
+      quoteRequestId={quoteRequestId}
+    />
+  );
 }
 
 export function Erc8183TestnetDemo() {
   return <Erc8183BrowserDemo mode="testnet" deployment={TESTNET_DEPLOYMENT} />;
 }
 
-function Erc8183BrowserDemo({ mode, deployment, agentName, embedded = false }: {
+function Erc8183BrowserDemo({ mode, deployment, agentName, embedded = false, evidence, initialQuote = null, apiBaseOverride, jobsBaseOverride, quoteRequestId = null, onQuoteExpired }: {
   mode: "testnet" | "mainnet";
   deployment: Erc8183BrowserDeployment;
   agentName?: string;
   embedded?: boolean;
+  evidence?: EmbeddedHireEvidence;
+  initialQuote?: MainnetQuoteResponse | null;
+  apiBaseOverride?: string;
+  jobsBaseOverride?: string;
+  quoteRequestId?: number | null;
+  onQuoteExpired?: () => void;
 }) {
   const router = useRouter();
-  const apiBase = mode === "mainnet" ? "/api/marketplace/demo/erc8183-mainnet" : "/api/marketplace/demo/erc8183";
-  const jobsBase = mode === "mainnet" ? "/api/marketplace/jobs/mainnet" : "/api/marketplace/jobs/testnet";
+  const apiBase = apiBaseOverride ?? (mode === "mainnet" ? "/api/marketplace/demo/erc8183-mainnet" : "/api/marketplace/demo/erc8183");
+  const jobsBase = jobsBaseOverride ?? (mode === "mainnet" ? "/api/marketplace/jobs/mainnet" : "/api/marketplace/jobs/testnet");
   const jobPageBase = mode === "mainnet" ? "/jobs/mainnet" : "/jobs/testnet";
-  const [quote, setQuote] = useState<MainnetQuoteResponse | null>(null);
+  const [quote, setQuote] = useState<MainnetQuoteResponse | null>(initialQuote);
   const [quoteClock, setQuoteClock] = useState(() => Math.floor(Date.now() / 1_000));
   const { address, isConnected, connector } = useAccount();
   const { switchChainAsync } = useSwitchChain();
@@ -274,18 +423,22 @@ function Erc8183BrowserDemo({ mode, deployment, agentName, embedded = false }: {
   const [plan, setPlan] = useState<Erc8183HirePlan | null>(null);
   const [hireMode, setHireMode] = useState<BrowserHireMode | null>(null);
   const [journal, setJournal] = useState<Erc8183BrowserJournal | null>(null);
+  const [journalRestored, setJournalRestored] = useState(false);
   const [job, setJob] = useState<Erc8183JobFacts | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [recoveryJobId, setRecoveryJobId] = useState("");
 
   const readJob = useCallback(async (jobId: string) => {
-    const tracking = await apiJson<{ job: Erc8183JobFacts | null }>(`${jobsBase}/${jobId}`);
+    const trackingUrl = quoteRequestId === null
+      ? `${jobsBase}/${jobId}`
+      : `${jobsBase}/${jobId}?quoteRequestId=${encodeURIComponent(String(quoteRequestId))}`;
+    const tracking = await apiJson<{ job: Erc8183JobFacts | null }>(trackingUrl);
     if (!tracking.job) throw new Error("Current chain state is temporarily unavailable.");
     const current = tracking.job;
     setJob(current);
     return current;
-  }, [jobsBase]);
+  }, [jobsBase, quoteRequestId]);
 
   useEffect(() => {
     setWalletHydrated(true);
@@ -294,6 +447,7 @@ function Erc8183BrowserDemo({ mode, deployment, agentName, embedded = false }: {
   useEffect(() => {
     const stored = loadBrowserJournal(localStorage, deployment);
     setJournal(stored);
+    setJournalRestored(stored !== null);
     if (stored?.jobId) {
       void readJob(stored.jobId).catch(() => {
         setError("The local journal was found, but current chain state could not be reconstructed.");
@@ -301,11 +455,11 @@ function Erc8183BrowserDemo({ mode, deployment, agentName, embedded = false }: {
       // Replay the confirmed phases: the Worker verifies each against chain and
       // deduplicates by transaction, so a report lost earlier is recovered here.
       const { createJob, fund, submit } = stored.transactions;
-      if (createJob) reportHireEvent(deployment, { phase: "created", jobId: stored.jobId, txHash: createJob });
-      if (fund) reportHireEvent(deployment, { phase: "funded", jobId: stored.jobId, txHash: fund });
-      if (submit) reportHireEvent(deployment, { phase: "submitted", jobId: stored.jobId, txHash: submit });
+      if (createJob) reportHireEvent(deployment, { phase: "created", jobId: stored.jobId, txHash: createJob }, { quoteRequestId });
+      if (fund) reportHireEvent(deployment, { phase: "funded", jobId: stored.jobId, txHash: fund }, { quoteRequestId });
+      if (submit) reportHireEvent(deployment, { phase: "submitted", jobId: stored.jobId, txHash: submit }, { quoteRequestId });
     }
-  }, [deployment, readJob]);
+  }, [deployment, readJob, quoteRequestId]);
 
   useEffect(() => {
     if (!quote) return;
@@ -319,6 +473,11 @@ function Erc8183BrowserDemo({ mode, deployment, agentName, embedded = false }: {
   }, [quote]);
 
   const requestQuote = async () => {
+    if (apiBaseOverride) {
+      setError("Quote expired. Return to the quote request to obtain a fresh buyer quote.");
+      onQuoteExpired?.();
+      return;
+    }
     setBusy("Requesting a signed quote");
     setError(null);
     setQuote(null);
@@ -328,6 +487,9 @@ function Erc8183BrowserDemo({ mode, deployment, agentName, embedded = false }: {
     try {
       const result = await apiJson<MainnetQuoteResponse>(`${apiBase}/quote`, { method: "POST" });
       setQuote(result);
+      if (result.observationSync?.status === "synced" || result.observationSync?.status === "duplicate") {
+        markCatalogForRefresh();
+      }
       if (
         journal?.lastConfirmedStep === "submitted"
         || job?.status === "SUBMITTED"
@@ -336,6 +498,7 @@ function Erc8183BrowserDemo({ mode, deployment, agentName, embedded = false }: {
         // Detach the terminal execution so this fresh quote can start a new hire.
         // Its persisted journal remains available until a new execution progresses.
         setJournal(null);
+        setJournalRestored(false);
         setJob(null);
       }
     } catch (cause) {
@@ -363,7 +526,7 @@ function Erc8183BrowserDemo({ mode, deployment, agentName, embedded = false }: {
       const buyer = account;
       const prepared = await apiJson<Erc8183HirePlan>(`${apiBase}/prepare`, {
         method: "POST",
-        body: JSON.stringify({ buyer, quote: quote.envelope }),
+        body: JSON.stringify({ buyer, quote: quote.envelope, ...(quoteRequestId === null ? {} : { quoteRequestId }) }),
       });
       if (journal && journal.buyer.toLowerCase() !== buyer.toLowerCase()) {
         throw new Error("The saved journal belongs to a different wallet. Reconnect that wallet or clear the journal.");
@@ -396,7 +559,7 @@ function Erc8183BrowserDemo({ mode, deployment, agentName, embedded = false }: {
           setJournal(next);
           const txHash = step === "created" ? next.transactions.createJob : step === "funded" ? next.transactions.fund : undefined;
           if ((step === "created" || step === "funded") && next.jobId && txHash) {
-            reportHireEvent(deployment, { phase: step, jobId: next.jobId, txHash });
+            reportHireEvent(deployment, { phase: step, jobId: next.jobId, txHash }, { quoteRequestId });
           }
         },
         deployment,
@@ -405,7 +568,7 @@ function Erc8183BrowserDemo({ mode, deployment, agentName, embedded = false }: {
       await readJob(execution.jobId);
       const notification = await apiJson<NotifyFundedResult>(`${apiBase}/notify`, {
         method: "POST",
-        body: JSON.stringify({ buyer: account, jobId: execution.jobId }),
+        body: JSON.stringify({ buyer: account, jobId: execution.jobId, ...(quoteRequestId === null ? {} : { quoteRequestId }) }),
       });
       let nextJournal: Erc8183BrowserJournal = {
         ...execution.journal,
@@ -413,7 +576,7 @@ function Erc8183BrowserDemo({ mode, deployment, agentName, embedded = false }: {
       };
       if (notification.job.status === "SUBMITTED" || notification.job.status === "COMPLETED") {
         if (notification.sellerTransactionHash) {
-          reportHireEvent(deployment, { phase: "submitted", jobId: execution.jobId, txHash: notification.sellerTransactionHash });
+          reportHireEvent(deployment, { phase: "submitted", jobId: execution.jobId, txHash: notification.sellerTransactionHash }, { quoteRequestId });
         }
         nextJournal = {
           ...nextJournal,
@@ -452,9 +615,17 @@ function Erc8183BrowserDemo({ mode, deployment, agentName, embedded = false }: {
   };
 
   const signaturePurpose = plan?.transactions.filter(({ required }) => required) ?? [];
+  const pendingSignatures = signaturePurpose.filter(({ kind }) => journal?.receipts?.[kind] === undefined).length;
   const quoteExpired = quote !== null && quote.quoteExpiresAt <= quoteClock;
+  const historicalQuote = quote === null && evidence?.quoteStatus === "verified_historical";
+  const needsFreshQuote = quoteExpired || historicalQuote;
   const submitted = job?.status === "SUBMITTED" || job?.status === "COMPLETED";
   const funded = job !== null && ["FUNDED", "SUBMITTED", "COMPLETED"].includes(job.status);
+  const fundingReceiptRecorded = journal?.receipts?.fund !== undefined;
+  const stopTitle = fundingReceiptRecorded || funded ? "Funding confirmed · seller step stopped" : "Stopped safely";
+  const stopDetail = fundingReceiptRecorded || funded
+    ? `${error ?? "The seller step could not be completed."} No additional buyer transaction was sent after the funding receipt.`
+    : error;
   const downloadEvidence = () => {
     if (!journal || !job || !plan) return;
     const evidence = {
@@ -499,25 +670,64 @@ function Erc8183BrowserDemo({ mode, deployment, agentName, embedded = false }: {
             <LoaderCircle aria-hidden="true" className="size-4 animate-spin" />{busyStatusLabel(busy)}…
           </p>
         ) : null}
-        <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_20rem] lg:items-start">
+        <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_28rem] lg:items-start">
           <div>
             <ol aria-label="Hiring progress" className="overflow-hidden rounded-xl border border-white/10 bg-white/[0.015]">
               <CheckoutStep label="Quote" number={1} state={stepState("quote")}>
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <div className="rounded-lg border border-white/10 bg-black/10 px-4 py-3">
+                <div className="grid overflow-hidden rounded-lg border border-white/10 sm:grid-cols-2 sm:divide-x sm:divide-white/10">
+                  <div className="px-4 py-3">
                     <span className="text-xs text-zinc-500">Outcome</span>
                     <p className="mt-1 text-sm text-zinc-100">Grid trading plan</p>
                   </div>
-                  <div className="rounded-lg border border-white/10 bg-black/10 px-4 py-3">
+                  <div className="border-t border-white/10 px-4 py-3 sm:border-t-0">
                     <span className="text-xs text-zinc-500">Budget</span>
                     <p className="mt-1 text-sm text-zinc-100">Set by quote</p>
                   </div>
                 </div>
-                {quoteExpired ? <p className="mt-3 text-sm text-amber-200" role="status">Quote expired</p> : null}
+                {evidence ? (
+                  <div className="mt-3 rounded-lg border border-white/10 bg-black/10 p-3">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="text-xs font-medium text-zinc-200">{evidence.protocol.toUpperCase()} endpoint health</p>
+                        <a
+                          className="mt-1 block truncate text-xs text-zinc-500 underline decoration-white/10 underline-offset-4 transition-colors hover:text-zinc-200"
+                          href={evidence.endpoint}
+                          rel="noreferrer"
+                          target="_blank"
+                          title={evidence.endpoint}
+                        >
+                          {evidence.endpoint.replace(/^https?:\/\//, "")}<ExternalLink aria-hidden="true" className="ml-1 inline size-3" />
+                        </a>
+                      </div>
+                      <Button asChild size="sm" variant="outline">
+                        <Link href="#validation">Recheck</Link>
+                      </Button>
+                    </div>
+                    <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-white/[0.07] pt-3 text-xs">
+                      <span className={evidence.reachable ? "text-emerald-300" : "text-amber-200"}>
+                        {evidence.reachable ? "Endpoint verified" : "Check required"}
+                      </span>
+                      {typeof evidence.httpStatus === "number" ? <span className="text-zinc-400">HTTP {evidence.httpStatus}</span> : null}
+                      {typeof evidence.durationMs === "number" ? <span className="text-zinc-400">{evidence.durationMs} ms</span> : null}
+                      {evidence.lastCheckedAt ? (
+                        <span className="inline-flex items-center gap-1 text-zinc-500">
+                          <Clock3 aria-hidden="true" className="size-3" />
+                          <time dateTime={evidence.lastCheckedAt} title={evidence.lastCheckedAt}>{relativeAge(evidence.lastCheckedAt)}</time>
+                        </span>
+                      ) : null}
+                      {typeof evidence.attemptCount === "number" ? <span className="ml-auto text-zinc-600">{evidence.attemptCount} checks</span> : null}
+                    </div>
+                  </div>
+                ) : null}
+                {needsFreshQuote ? (
+                  <div className="mt-3 flex items-center justify-between gap-3 rounded-lg border border-amber-400/20 bg-amber-400/[0.05] px-3 py-2 text-sm text-amber-200" role="status">
+                    <span>Quote expired</span><span className="text-xs">Request a fresh quote to continue</span>
+                  </div>
+                ) : null}
                 <div className="mt-4 flex flex-wrap items-center gap-3">
-                  <Button className="min-w-44" disabled={busy !== null} onClick={() => void requestQuote()} size="lg">
-                    {busy === "Requesting a signed quote" ? <LoaderCircle aria-hidden="true" className="animate-spin" /> : null}
-                    {busy === "Requesting a signed quote" ? "Requesting quote…" : quoteExpired ? "Refresh quote" : "Request quote"}<ArrowRight aria-hidden="true" />
+                  <Button className="min-w-48" disabled={busy !== null} onClick={() => void requestQuote()} size="lg">
+                    {busy === "Requesting a signed quote" ? <LoaderCircle aria-hidden="true" className="animate-spin" data-icon="inline-start" /> : null}
+                    {busy === "Requesting a signed quote" ? "Requesting quote…" : needsFreshQuote ? "Request fresh quote" : "Request quote"}<ArrowRight aria-hidden="true" data-icon="inline-end" />
                   </Button>
                   <span className="inline-flex items-center gap-1.5 text-xs text-zinc-500"><ShieldCheck aria-hidden="true" className="size-4" />No signature</span>
                 </div>
@@ -545,20 +755,28 @@ function Erc8183BrowserDemo({ mode, deployment, agentName, embedded = false }: {
                 ) : null}
               </CheckoutStep>
 
-              <CheckoutStep label="Fund" number={3} state={stepState("fund")}>
+              <CheckoutStep label="Authorize & fund" number={3} state={stepState("fund")}>
                 {plan ? (
                   <>
                     <dl className="grid gap-x-5 gap-y-3 sm:grid-cols-2">
                       <div><dt className="text-xs text-zinc-500">Balance</dt><dd className="mt-1 text-sm text-zinc-200">{displayUnits(plan.tokenBalanceRaw, plan.quote.tokenDecimals)} {plan.quote.tokenSymbol}</dd></div>
                       <div><dt className="text-xs text-zinc-500">Allowance</dt><dd className="mt-1 text-sm text-zinc-200">{plan.approvalRequired ? `Exact ${plan.quote.priceDisplay} ${plan.quote.tokenSymbol}` : "Ready"}</dd></div>
                     </dl>
-                    <div className="mt-4"><Erc8183TransactionList explorerUrl={deployment.explorerUrl} intents={plan.transactions} journal={journal} /></div>
+                    <div className="mt-4"><Erc8183TransactionList explorerUrl={deployment.explorerUrl} intents={plan.transactions} journal={journal} mode={hireMode} restored={journalRestored} /></div>
                     {!journal?.jobId && hireConfirmationLabel(hireMode, signaturePurpose.length) ? (
                       <p className="mt-3 text-xs text-zinc-500" role="status">{hireConfirmationLabel(hireMode, signaturePurpose.length)}</p>
                     ) : null}
                     <Button className="mt-4 min-w-44" disabled={busy !== null || submitted} onClick={() => void signAndRun()} size="lg">
                       {busy === "Waiting for wallet confirmations" ? <LoaderCircle aria-hidden="true" className="animate-spin" /> : <Wallet aria-hidden="true" />}
-                      {busy === "Waiting for wallet confirmations" ? "Waiting for confirmations…" : journal?.jobId ? "Continue funding" : "Create & fund job"}
+                      {busy === "Waiting for wallet confirmations"
+                        ? "Waiting for confirmations…"
+                        : journal?.jobId
+                          ? pendingSignatures > 0
+                            ? `Continue ${pendingSignatures} wallet approval${pendingSignatures === 1 ? "" : "s"}`
+                            : "Confirm funding with seller"
+                          : hireMode === "batched"
+                            ? "Authorize hire (one confirmation)"
+                            : `Begin ${signaturePurpose.length || 0} wallet approval${signaturePurpose.length === 1 ? "" : "s"}`}
                     </Button>
                     {!journal?.jobId ? (
                       <details className="mt-4 border-t border-white/10 pt-4 text-sm text-zinc-500">
@@ -586,25 +804,33 @@ function Erc8183BrowserDemo({ mode, deployment, agentName, embedded = false }: {
             {error ? (
               <Alert className="mt-4" variant="destructive">
                 <AlertTriangle aria-hidden="true" />
-                <AlertTitle>Stopped safely</AlertTitle>
-                <AlertDescription>{error}</AlertDescription>
+                <AlertTitle>{stopTitle}</AlertTitle>
+                <AlertDescription>{stopDetail}</AlertDescription>
                 {!quote ? <Button className="mt-3" disabled={busy !== null} onClick={() => void requestQuote()} size="sm" variant="outline">Try quote again</Button> : null}
               </Alert>
             ) : null}
           </div>
 
-          <aside aria-label="Hire summary" className="space-y-4 lg:sticky lg:top-6">
+          <aside aria-label="Hire summary" className="flex flex-col gap-3 lg:sticky lg:top-6">
             <section className="rounded-xl border border-white/10 bg-white/[0.015] px-5">
               <h2 className="border-b border-white/10 py-4 text-sm font-medium text-white">Hire summary</h2>
               <dl>
                 <CheckoutSummaryRow label="Agent" value={agentName ?? `Agent ${deployment.agentId}`} />
-                <CheckoutSummaryRow label="Network" value={`${deployment.networkName} · ${deployment.chainId}`} />
-                <CheckoutSummaryRow label="Quote" value={quote && !quoteExpired ? `${quote.priceDisplay} ${quote.tokenSymbol}` : "Not requested"} />
-                <CheckoutSummaryRow label="Wallet" value={account ? shortAddress(account) : "Not connected"} mono={account !== null} />
+                <CheckoutSummaryRow label="Network" value={<a className="inline-flex items-center justify-end gap-1 text-right text-zinc-200 underline decoration-white/20 underline-offset-4 hover:text-white" href={deployment.explorerUrl} rel="noreferrer" target="_blank">{deployment.networkName} · {deployment.chainId}<ExternalLink aria-hidden="true" className="size-3" /></a>} />
+                <CheckoutSummaryRow label="Quote" value={quote && !quoteExpired
+                  ? `${quote.priceDisplay} ${quote.tokenSymbol}`
+                  : <span className={needsFreshQuote ? "text-amber-200" : undefined}>{needsFreshQuote ? "Expired — refresh required" : "Not requested"}</span>} />
+                <CheckoutSummaryRow label="Wallet" value={account ? <ChainReference explorerUrl={deployment.explorerUrl} kind="address" value={account} /> : "Not connected"} mono={account !== null} />
               </dl>
               <p className="flex items-center gap-2 border-t border-white/10 py-4 text-xs text-zinc-500">
                 <ShieldCheck aria-hidden="true" className="size-4 text-emerald-400" />
-                {activeStep === "quote" || activeStep === "review" ? "No signature yet" : "You approve every transaction"}
+                {activeStep === "quote" || activeStep === "review"
+                  ? "No signature yet"
+                  : hireMode === "batched"
+                    ? "One wallet confirmation"
+                    : hireMode === "sequential"
+                      ? `${signaturePurpose.length} wallet approval${signaturePurpose.length === 1 ? "" : "s"}`
+                      : "You approve every transaction"}
               </p>
             </section>
 
@@ -619,7 +845,7 @@ function Erc8183BrowserDemo({ mode, deployment, agentName, embedded = false }: {
               </dl>
             </details>
 
-            {journal && !submitted ? <Button className="w-full" onClick={() => { clearBrowserJournal(localStorage, deployment); setJournal(null); setJob(null); setError(null); }} variant="ghost">Clear browser progress</Button> : null}
+            {journal && !submitted ? <Button className="w-full" onClick={() => { clearBrowserJournal(localStorage, deployment); setJournal(null); setJournalRestored(false); setJob(null); setError(null); }} variant="ghost">Clear browser progress</Button> : null}
             {submitted && journal && job && plan ? <Button className="w-full" onClick={downloadEvidence} variant="ghost">Download evidence</Button> : null}
           </aside>
         </div>
@@ -694,7 +920,7 @@ function Erc8183BrowserDemo({ mode, deployment, agentName, embedded = false }: {
               )}
               <Button className="mt-5" disabled={busy !== null} onClick={() => void requestQuote()}>
                 {busy === "Requesting a signed quote" ? <LoaderCircle aria-hidden="true" className="animate-spin" /> : <ShieldCheck aria-hidden="true" />}
-                {busy === "Requesting a signed quote" ? "Requesting quote…" : quote ? "Refresh live quote" : mode === "mainnet" ? "Get fresh quote" : "Request live quote"}
+                {busy === "Requesting a signed quote" ? "Requesting quote…" : quote ? "Request fresh quote" : mode === "mainnet" ? "Get fresh quote" : "Request live quote"}
               </Button>
             </CardContent>
           </Card>
@@ -730,12 +956,18 @@ function Erc8183BrowserDemo({ mode, deployment, agentName, embedded = false }: {
 
           <Card>
             <CardHeader>
-              <CardTitle>3 · Review and sign sequentially</CardTitle>
-              <CardDescription>Each call is simulated, then its receipt must succeed before the next wallet prompt appears.</CardDescription>
+              <CardTitle>3 · Authorize the hire</CardTitle>
+              <CardDescription>
+                {hireMode === "batched"
+                  ? "Your wallet can execute the required calls as one atomic confirmation. Nothing is sent until you authorize it."
+                  : hireMode === "sequential"
+                    ? "Your wallet will show each required call in order. Nothing is sent until you authorize each one."
+                    : "Review the exact calls first. Nothing is sent until you start the wallet authorization below."}
+              </CardDescription>
             </CardHeader>
             <CardContent>
               {plan ? (
-                <Erc8183TransactionList explorerUrl={deployment.explorerUrl} intents={plan.transactions} journal={journal} />
+                <Erc8183TransactionList explorerUrl={deployment.explorerUrl} intents={plan.transactions} journal={journal} mode={hireMode} restored={journalRestored} />
               ) : <p className="text-sm text-zinc-500">Connect a wallet to calculate the exact transaction set.</p>}
               <Button className="mt-5" disabled={!plan || quoteExpired || busy !== null || submitted} onClick={() => void signAndRun()}>
                 {busy === "Waiting for wallet confirmations" ? <LoaderCircle aria-hidden="true" className="animate-spin" /> : <Wallet aria-hidden="true" />}
@@ -744,10 +976,12 @@ function Erc8183BrowserDemo({ mode, deployment, agentName, embedded = false }: {
                   : submitted
                   ? "Job already submitted"
                   : journal?.jobId
-                    ? "Continue remaining wallet signatures"
+                    ? pendingSignatures > 0
+                      ? `Continue ${pendingSignatures} wallet approval${pendingSignatures === 1 ? "" : "s"}`
+                      : "Confirm funding with seller"
                     : hireMode === "batched"
-                      ? "Sign once to create & fund"
-                      : `Begin ${signaturePurpose.length || 0} wallet signatures`}
+                      ? "Authorize hire (one confirmation)"
+                      : `Begin ${signaturePurpose.length || 0} wallet approval${signaturePurpose.length === 1 ? "" : "s"}`}
               </Button>
               {plan && !journal?.jobId && hireConfirmationLabel(hireMode, signaturePurpose.length) ? (
                 <p className="mt-3 text-xs text-zinc-500" role="status">{hireConfirmationLabel(hireMode, signaturePurpose.length)}</p>
@@ -837,14 +1071,14 @@ function Erc8183BrowserDemo({ mode, deployment, agentName, embedded = false }: {
           {error && (
             <Alert variant="destructive">
               <AlertTriangle aria-hidden="true" />
-              <AlertTitle>Flow stopped safely</AlertTitle>
-              <AlertDescription>{error}</AlertDescription>
+            <AlertTitle>{stopTitle}</AlertTitle>
+            <AlertDescription>{stopDetail}</AlertDescription>
               {!quote && <Button className="mt-3" disabled={busy !== null} onClick={() => void requestQuote()} size="sm" variant="outline">Try quote again</Button>}
             </Alert>
           )}
 
           {journal && !submitted && (
-            <Button onClick={() => { clearBrowserJournal(localStorage, deployment); setJournal(null); setJob(null); setError(null); }} variant="ghost">
+            <Button onClick={() => { clearBrowserJournal(localStorage, deployment); setJournal(null); setJournalRestored(false); setJob(null); setError(null); }} variant="ghost">
               Clear this browser journal
             </Button>
           )}

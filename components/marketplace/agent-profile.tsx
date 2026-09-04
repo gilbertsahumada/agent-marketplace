@@ -1,9 +1,18 @@
 import Link from "next/link";
-import { ArrowRight, BriefcaseBusiness, ExternalLink } from "lucide-react";
+import {
+  ArrowRight,
+  BadgeCheck,
+  BriefcaseBusiness,
+  Clock3,
+  ExternalLink,
+  FileText,
+  RadioTower,
+} from "lucide-react";
 import type { ReactNode } from "react";
 import type { MarketplaceAgent } from "@/src/business/entities/marketplace-agent";
 import type { AgentEvidencePassport } from "@/src/business/entities/evidence-passport";
 import type { MainnetJobProof } from "@/src/business/entities/mainnet-job-proof";
+import type { HireJob } from "@/src/business/entities/hire-job";
 import { Badge } from "@/components/ui/badge";
 import { Breadcrumb } from "./page-primitives";
 import { AgentAvatar } from "./agent-avatar";
@@ -13,7 +22,12 @@ import { declaredBrowserValidationTargets } from "@/src/business/policies/catalo
 import type { CatalogCandidate } from "@/src/business/entities/catalog-candidate";
 import { catalogCandidateCard } from "./catalog-candidate-view-model";
 import { deriveAgentJourney } from "./agent-journey-state";
-import { AgentJourney, HiringUnavailable } from "./agent-journey";
+import { HiringUnavailable } from "./agent-journey";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { cn } from "@/lib/utils";
+import { relativeAge } from "./relative-time";
+import { HireJobRows } from "./hire-job-rows";
+import { QuoteHistory } from "./quote-history";
 
 const EMPTY_JOBS: readonly MainnetJobProof[] = [];
 const SHARED_VALIDATION_SOURCES = new Set(["marketplace_probe", "worker_probe", "buyer_refresh", "migration"]);
@@ -33,52 +47,112 @@ function utcDate(value: string): string {
   return UTC_DATE.format(new Date(value));
 }
 
-function JobHistory({ hireActivity, jobs }: {
+function EvidenceSummaryItem({
+  detail,
+  icon: Icon,
+  label,
+  state,
+}: {
+  detail: string;
+  icon: typeof FileText;
+  label: ReactNode;
+  state: "verified" | "attention" | "neutral";
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          className="flex min-w-0 cursor-pointer items-center gap-3 rounded-lg px-3 py-3 text-left transition-colors hover:bg-white/[0.04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+          type="button"
+        >
+          <span className={cn(
+            "flex size-8 shrink-0 items-center justify-center rounded-full border",
+            state === "verified" && "border-emerald-400/30 bg-emerald-400/10 text-emerald-300",
+            state === "attention" && "border-amber-400/30 bg-amber-400/10 text-amber-200",
+            state === "neutral" && "border-white/10 bg-white/[0.02] text-zinc-500",
+          )}>
+            <Icon aria-hidden="true" className="size-4" />
+          </span>
+          <span className="min-w-0 text-sm font-medium text-zinc-200">{label}</span>
+        </button>
+      </TooltipTrigger>
+      <TooltipContent className="max-w-72 leading-relaxed" sideOffset={8}>{detail}</TooltipContent>
+    </Tooltip>
+  );
+}
+
+function JobHistory({ hireActivity, jobs, hireJobs }: {
   hireActivity: AgentEvidencePassport["checks"]["hireActivity"];
   jobs: readonly MainnetJobProof[];
+  hireJobs: readonly HireJob[] | null;
 }) {
   const ordered = [...jobs].sort((left, right) => Date.parse(right.capturedAt) - Date.parse(left.capturedAt));
+  const proven = new Set(jobs.map((job) => job.jobId));
+  const indexed = (hireJobs ?? []).filter((job) => !proven.has(job.jobId));
+  const allJobIds = new Set([...jobs.map((job) => job.jobId), ...(hireJobs ?? []).map((job) => job.jobId)]);
+  const completed = new Set([
+    ...jobs.filter((job) => job.finalState === "COMPLETED").map((job) => job.jobId),
+    ...(hireJobs ?? []).filter((job) => job.status === "COMPLETED").map((job) => job.jobId),
+  ]);
+  const funded = (hireJobs ?? []).filter((job) => job.status === "FUNDED").length;
+  const resultVerified = new Set(jobs.map((job) => job.jobId)).size;
   return (
-    <section aria-labelledby="erc8183-history" className="mt-8 rounded-xl border border-white/10 bg-white/[0.015]">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 px-4 py-4 sm:px-5">
+    <details className="group mt-5 rounded-xl border border-white/10 bg-white/[0.015]">
+      <summary className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-3 px-4 py-4 sm:px-5">
         <h2 className="flex items-center gap-2 text-base font-medium text-white" id="erc8183-history">
           <BriefcaseBusiness aria-hidden="true" className="size-4 text-zinc-500" />ERC-8183 job history
         </h2>
-        <Badge variant="outline">{jobs.length} proven</Badge>
-      </div>
-      {hireActivity.status === "verified" ? (
-        <dl className="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-b border-white/10 px-4 py-3 text-sm sm:px-5">
-          <dt className="text-zinc-500">Verified hire activity</dt>
-          <dd className="min-w-0 break-all text-zinc-300">{hireActivity.detail}</dd>
-          {hireActivity.observedAt ? <dd className="text-zinc-500">{utcDate(hireActivity.observedAt)}</dd> : null}
-        </dl>
-      ) : null}
-      {ordered.length === 0 ? (
-        <div className="px-5 py-6 text-sm text-zinc-500">
-          No verified ERC-8183 jobs yet.
+        <div className="flex flex-wrap gap-2">
+          {hireJobs !== null ? <>
+            <Badge variant="outline">{allJobIds.size} {allJobIds.size === 1 ? "job" : "jobs"}</Badge>
+            <Badge className={funded > 0 ? "border-amber-300/30 bg-amber-300/10 text-amber-100" : ""} variant="outline">{funded} funded</Badge>
+            <Badge className={completed.size > 0 ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-200" : ""} variant="outline">{completed.size} completed</Badge>
+            <Badge variant="outline">{resultVerified} result verified</Badge>
+          </> : <Badge variant="outline">{jobs.length} result verified</Badge>}
         </div>
-      ) : (
-        <ul className="divide-y divide-white/10">
-          {ordered.map((job) => (
-            <li key={job.jobId}>
-              <Link
-                className="grid cursor-pointer items-center gap-3 px-4 py-4 transition-colors hover:bg-white/[0.04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary sm:grid-cols-[1fr_auto_auto_auto] sm:px-5"
-                href={`/jobs/mainnet/${job.jobId}`}
-              >
-                <span className="font-medium text-white">Job #{job.jobId}</span>
-                <Badge className={job.finalState === "COMPLETED" ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-200" : ""} variant="outline">
-                  {job.finalState === "COMPLETED" ? "Completed" : "Submitted"}
-                </Badge>
-                <span className="text-sm text-zinc-400">{job.durationSeconds}s</span>
-                <span className="flex items-center justify-between gap-3 text-sm text-zinc-500 sm:justify-start">
-                  {utcDate(job.capturedAt)}<ArrowRight aria-hidden="true" className="size-4" />
-                </span>
-              </Link>
-            </li>
-          ))}
-        </ul>
-      )}
-    </section>
+      </summary>
+      <div className="border-t border-white/10">
+        {hireActivity.status === "verified" ? (
+          <dl className="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-b border-white/10 px-4 py-3 text-sm sm:px-5">
+            <dt className="text-zinc-500">Verified hire activity</dt>
+            <dd className="min-w-0 break-all text-zinc-300">{hireActivity.detail}</dd>
+            {hireActivity.observedAt ? <dd className="text-zinc-500">{utcDate(hireActivity.observedAt)}</dd> : null}
+          </dl>
+        ) : null}
+        {ordered.length === 0 && indexed.length === 0 ? (
+          <div className="px-5 py-6 text-sm text-zinc-500">
+            {hireJobs === null ? "No verified ERC-8183 jobs yet." : "No verified ERC-8183 jobs yet, and no indexed on-chain jobs for this provider wallet."}
+          </div>
+        ) : null}
+        {ordered.length > 0 ? (
+          <ul className="divide-y divide-white/10">
+            {ordered.map((job) => (
+              <li key={job.jobId}>
+                <Link
+                  className="grid cursor-pointer items-center gap-3 px-4 py-4 transition-colors hover:bg-white/[0.04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary sm:grid-cols-[1fr_auto_auto_auto] sm:px-5"
+                  href={`/jobs/mainnet/${job.jobId}`}
+                >
+                  <span className="font-medium text-white">Job #{job.jobId}</span>
+                  <Badge className={job.finalState === "COMPLETED" ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-200" : ""} variant="outline">
+                    {job.finalState === "COMPLETED" ? "Completed" : "Submitted"}
+                  </Badge>
+                  <span className="text-sm text-zinc-400">{job.durationSeconds}s</span>
+                  <span className="flex items-center justify-between gap-3 text-sm text-zinc-500 sm:justify-start">
+                    {utcDate(job.capturedAt)}<ArrowRight aria-hidden="true" className="size-4" />
+                  </span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+        {indexed.length > 0 ? (
+          <div className={ordered.length > 0 ? "border-t border-white/10" : ""}>
+            <p className="px-4 pt-4 text-xs text-zinc-500 sm:px-5">Indexed on-chain jobs sold by this agent&apos;s wallet. State, not a verified deliverable.</p>
+            <HireJobRows chainId={56} emptyText="" jobs={indexed} />
+          </div>
+        ) : null}
+      </div>
+    </details>
   );
 }
 
@@ -89,6 +163,7 @@ export function AgentProfile({
   hireFlow,
   hireNotice,
   hireFlowAvailable,
+  hireJobs = null,
   jobProofs = EMPTY_JOBS,
 }: {
   agent: MarketplaceAgent;
@@ -97,6 +172,7 @@ export function AgentProfile({
   hireFlow?: ReactNode;
   hireNotice?: ReactNode;
   hireFlowAvailable?: boolean;
+  hireJobs?: readonly HireJob[] | null;
   jobProofs?: readonly MainnetJobProof[];
 }) {
   const displayName = marketplaceAgentDisplayName(agent.name);
@@ -142,15 +218,16 @@ export function AgentProfile({
   const previouslyReachable = catalogCandidate?.state?.operationalStatus === "platform_reachable";
   const browserOnly = catalogCandidate?.state?.operationalStatus === "browser_observed";
   const platformFailed = catalogCandidate?.state?.operationalStatus === "platform_failed";
-  const quoteReady = catalogCandidate?.state
+  const quoteReady = !platformFailed && (catalogCandidate?.state
     ? catalogCandidate.state.quoteStatus === "verified_fresh"
-    : passport.checks.quote.status === "verified";
+    : passport.checks.quote.status === "verified");
   const journey = deriveAgentJourney({
     declared: true,
     state: catalogCandidate?.state,
     validationAvailable: canCheckAvailability,
     hireFlowAvailable: hireFlowAvailable ?? hireFlow !== undefined,
     provenJobs: passport.trackRecord.provenJobs,
+    indexedJobs: hireJobs?.length ?? 0,
   });
   const latestCheckedAt = current?.monitoring?.lastAttemptAt;
   const attemptCount = current?.monitoring?.attemptCount;
@@ -169,15 +246,25 @@ export function AgentProfile({
               : "Unavailable";
 
   return (
-    <main id="main-content" className="mx-auto w-full max-w-6xl flex-1 px-4 py-10 sm:px-6 lg:px-8 lg:py-14">
+    <main id="main-content" className="mx-auto w-full max-w-[1480px] flex-1 px-4 py-10 sm:px-6 lg:px-8 lg:py-12">
       <Breadcrumb current={displayName} trail={[{ href: "/agents", label: "Agents" }]} />
 
-      <section className="flex flex-col gap-5 border-y border-white/10 py-5 sm:flex-row sm:items-center sm:justify-between">
+      <section className="mt-5 flex flex-col gap-5 rounded-xl border border-white/10 bg-white/[0.015] p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
         <div className="flex min-w-0 items-center gap-4">
           <AgentAvatar {...(agent.imageUrl ? { imageUrl: agent.imageUrl } : {})} className="size-14" name={displayName} />
           <div className="min-w-0">
             <h1 className="truncate text-xl font-medium tracking-tight text-white sm:text-2xl">{displayName}</h1>
-            <p className="mt-1 text-sm text-zinc-500">BSC Mainnet · Agent #{agent.agentId}</p>
+            <p className="mt-1 text-sm text-zinc-500">
+              BSC Mainnet ·{" "}
+              <a
+                className="font-hash cursor-pointer text-zinc-400 underline decoration-white/20 underline-offset-4 transition-colors hover:text-white"
+                href={trust8004AgentHref(agent.agentId)}
+                rel="noopener noreferrer"
+                target="_blank"
+              >
+                Agent #{agent.agentId}<ExternalLink aria-hidden="true" className="ml-1 inline size-3" />
+              </a>
+            </p>
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2 sm:justify-end">
@@ -197,7 +284,7 @@ export function AgentProfile({
                   : "bg-zinc-600"}`} />
             {headerStatus}
           </Badge>
-          <Badge variant="outline">{passport.trackRecord.provenJobs} jobs</Badge>
+          <Badge variant="outline">{Math.max(passport.trackRecord.provenJobs, hireJobs?.length ?? 0)} jobs</Badge>
           <a
             className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg px-2 py-1 text-sm text-zinc-400 transition-colors hover:bg-white/[0.05] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
             href={trust8004AgentHref(agent.agentId)}
@@ -209,23 +296,51 @@ export function AgentProfile({
         </div>
       </section>
 
-      <AgentJourney
-        model={journey}
-        {...(typeof attemptCount === "number" ? { attemptCount } : {})}
-        {...(latestCheckedAt ? { lastCheckedAt: latestCheckedAt } : {})}
-      />
-      <div className="mt-6 space-y-6">
-        {canCheckAvailability ? (
-          <AgentValidationActions
-            agentId={agent.agentId}
-            initialObservations={validationObservations}
-            targets={validationTargets}
+      <TooltipProvider>
+        <section aria-label="Hiring evidence" className="mt-3 grid rounded-xl border border-white/10 bg-white/[0.015] sm:grid-cols-2 lg:grid-cols-4">
+          <EvidenceSummaryItem detail={journey.declared.detail} icon={FileText} label="Identity declared" state="verified" />
+          <EvidenceSummaryItem
+            detail={journey.availability.detail}
+            icon={RadioTower}
+            label={<span className="inline-flex min-w-0 items-center gap-1.5">
+              {journey.availability.label}
+              {latestCheckedAt ? <span className="inline-flex shrink-0 items-center gap-1 text-xs font-normal text-zinc-500"><Clock3 aria-hidden="true" className="size-3" /><time dateTime={latestCheckedAt} title={latestCheckedAt}>{relativeAge(latestCheckedAt)}</time></span> : null}
+            </span>}
+            state={reachable ? "verified" : "attention"}
           />
-        ) : null}
+          <EvidenceSummaryItem detail={journey.quote.detail} icon={BadgeCheck} label={journey.quote.label} state={journey.quote.state === "verified" ? "verified" : journey.quote.state === "locked" ? "neutral" : "attention"} />
+          <EvidenceSummaryItem
+            detail={journey.jobs.detail}
+            icon={BriefcaseBusiness}
+            label={`${passport.trackRecord.completedJobs + (hireJobs ?? []).filter((job) => job.status === "COMPLETED").length} completed job${passport.trackRecord.completedJobs + (hireJobs ?? []).filter((job) => job.status === "COMPLETED").length === 1 ? "" : "s"}`}
+            state={passport.trackRecord.completedJobs > 0 || (hireJobs ?? []).some((job) => job.status === "COMPLETED") ? "verified" : "neutral"}
+          />
+        </section>
+      </TooltipProvider>
+      {typeof attemptCount === "number" ? <p className="mt-2 px-1 text-right text-[11px] text-zinc-600">{attemptCount} marketplace check{attemptCount === 1 ? "" : "s"}</p> : null}
+
+      <div className="mt-5 flex flex-col gap-5">
         {hireFlow ? <section className="scroll-mt-6" id="hire-flow">{hireFlow}</section> : <HiringUnavailable model={journey} notice={hireNotice} validationAvailable={canCheckAvailability} />}
+        {canCheckAvailability ? (
+          <details open={!reachable} className="group rounded-xl border border-white/10 bg-white/[0.015]" id="validation">
+            <summary className="flex cursor-pointer list-none items-center justify-between px-5 py-4 text-sm font-medium text-zinc-200">
+              {reachable ? "Diagnostics" : "Check connection"}
+              <span className="text-xs font-normal text-zinc-500 group-open:hidden">Validate declared endpoints</span>
+              <span className="hidden text-xs font-normal text-zinc-500 group-open:inline">Hide</span>
+            </summary>
+            <div className="border-t border-white/10 px-4 pb-5 sm:px-5">
+              <AgentValidationActions
+                agentId={agent.agentId}
+                initialObservations={validationObservations}
+                targets={validationTargets}
+              />
+            </div>
+          </details>
+        ) : null}
       </div>
 
-      <JobHistory hireActivity={passport.checks.hireActivity} jobs={jobProofs} />
+      <QuoteHistory agentId={agent.agentId} />
+      <JobHistory hireActivity={passport.checks.hireActivity} hireJobs={hireJobs} jobs={jobProofs} />
     </main>
   );
 }

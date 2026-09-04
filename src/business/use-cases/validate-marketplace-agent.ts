@@ -108,7 +108,7 @@ export class ValidateMarketplaceAgent {
         note: alreadyMarketplaceConfigured
           ? "This agent is already configured for marketplace hiring. Hire requests and validates a fresh ERC-8183 quote before signing."
           : quoteVerifiedCandidate
-            ? "The ad-hoc quote passed validation, but Hire remains disabled until manual marketplace admission; storing an observation never promotes an agent automatically."
+            ? "The ad-hoc quote passed validation, but this diagnostic report is not the shared capability ledger; use the marketplace quote flow to publish buyer-facing readiness."
             : "No matching direct identity plus current verified ERC-8183 quote was established.",
       },
       evidence: {

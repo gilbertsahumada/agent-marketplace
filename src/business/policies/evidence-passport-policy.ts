@@ -169,7 +169,7 @@ function quoteCheck(input: EvidencePassportInput): AgentEvidencePassport["checks
       status: "stale",
       provenance: "observed",
       observedAt: input.hireability.observedAt,
-      detail: "A signed ERC-8183 quote was verified previously, but it is outside the 60-second hireable-now window.",
+      detail: "A signed ERC-8183 quote was verified previously, but its signed validity window has ended.",
       hireabilityStatus: input.hireability.status,
     };
   }

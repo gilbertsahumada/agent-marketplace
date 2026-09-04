@@ -1,16 +1,20 @@
-import { and, count, desc, eq, getTableColumns, inArray, isNull, max, min, or, sql } from "drizzle-orm";
+import { and, count, countDistinct, desc, eq, getTableColumns, inArray, isNull, max, min, or, sql } from "drizzle-orm";
 import { drizzle, type DrizzleD1Database } from "drizzle-orm/d1";
 
 import type { D1DatabaseLike } from "./client";
 import {
   catalogAgents,
-  catalogAgentAdmission,
+  catalogSellerCapabilities,
+  catalogQuoteRequests,
+  catalogQuoteAttempts,
   catalogAgentEndpoints,
   catalogEndpoints,
   catalogIngestTasks,
   catalogObservations,
   catalogValidationRequests,
+  commerceJobs,
   funnelSnapshots,
+  hireEvents,
   probeObservations,
   probeTargets,
   runtimeState,
@@ -30,6 +34,8 @@ export type ProbeTargetRow = typeof schema.probeTargets.$inferSelect;
 export type ProbeObservationRow = typeof schema.probeObservations.$inferSelect;
 export type FunnelSnapshotRow = typeof schema.funnelSnapshots.$inferSelect;
 export type HireEventRow = typeof schema.hireEvents.$inferSelect;
+export type CommerceJobRow = typeof schema.commerceJobs.$inferSelect;
+export type CommerceJobEventRow = typeof schema.commerceJobEvents.$inferSelect;
 export type RuntimeStateRow = typeof schema.runtimeState.$inferSelect;
 export type SchedulerAttemptRow = typeof schema.schedulerAttempts.$inferSelect;
 export type CatalogAgentRow = typeof schema.catalogAgents.$inferSelect;
@@ -37,6 +43,9 @@ export type CatalogAgentEndpointRow = typeof schema.catalogAgentEndpoints.$infer
 export type CatalogEndpointRow = typeof schema.catalogEndpoints.$inferSelect;
 export type CatalogObservationRow = typeof schema.catalogObservations.$inferSelect;
 export type CatalogAgentAdmissionRow = typeof schema.catalogAgentAdmission.$inferSelect;
+export type CatalogSellerCapabilityRow = typeof schema.catalogSellerCapabilities.$inferSelect;
+export type CatalogQuoteRequestRow = typeof schema.catalogQuoteRequests.$inferSelect;
+export type CatalogQuoteAttemptRow = typeof schema.catalogQuoteAttempts.$inferSelect;
 export type CatalogIngestTaskRow = typeof schema.catalogIngestTasks.$inferSelect;
 
 export interface CatalogAgentEvidenceRows {
@@ -48,6 +57,9 @@ export interface CatalogAgentEvidenceRows {
   readonly platformAttemptCount: number;
   readonly ingestTask: CatalogIngestTaskRow | null;
   readonly platformAttemptCountByEndpoint: ReadonlyMap<string, number>;
+  readonly capabilities: CatalogSellerCapabilityRow[];
+  readonly quoteStats: { requestCount: number; successCount: number; lastAttemptAt: number | null };
+  readonly jobStats: { total: number; completed: number; funded: number; submitted: number };
 }
 
 export interface ObservationFeedRows {
@@ -102,8 +114,149 @@ export interface CatalogOperationsRows {
   };
 }
 
+export interface CatalogReachabilityFacetCounts {
+  readonly live: number;
+  readonly historical: number;
+  readonly never: number;
+  readonly browserObserved: number;
+}
+
 export function createDatabase(d1: D1DatabaseLike): Database {
   return drizzle(d1 as Parameters<typeof drizzle>[0], { schema });
+}
+
+/**
+ * Return global reachability facets without expanding the same correlated
+ * predicates once per facet. The catalogue route also exposes status and
+ * category facets; keeping this aggregate in a small CTE avoids SQLite's
+ * bound-variable ceiling at production catalogue sizes.
+ */
+export async function readCatalogReachabilityFacets(
+  db: Database,
+  nowMs: number,
+): Promise<CatalogReachabilityFacetCounts> {
+  type EndpointFacetRow = {
+    agentKey: string;
+    endpointKey: string;
+    priority: number;
+    protocol: string;
+    lastAttemptAt: number | null;
+    lastAttemptOutcome: string | null;
+    lastSuccessfulAt: number | null;
+  };
+  type ObservationFacetRow = {
+    agentKey: string;
+    endpointKey: string;
+    platformSuccess: number;
+    freshSuccess: number;
+  };
+
+  // Endpoint projections are the normal fast path: the probe writes the
+  // latest attempt and success timestamps transactionally with its ledger
+  // observation. Only rows without a projection need the bounded fallback
+  // below (useful for a just-ingested declaration or an older fixture).
+  const endpointRows = await db.all<EndpointFacetRow>(sql`
+    SELECT declaration.agentKey, declaration.endpointKey, declaration.priority,
+      endpoint.protocol, endpoint.lastAttemptAt, endpoint.lastAttemptOutcome,
+      endpoint.lastSuccessfulAt
+    FROM catalog_agent_endpoints declaration
+    INNER JOIN catalog_endpoints endpoint
+      ON endpoint.endpointKey = declaration.endpointKey
+    INNER JOIN catalog_agents agent
+      ON agent.agentKey = declaration.agentKey
+      AND agent.indexState = 'current'
+    WHERE declaration.declarationState = 'current'
+      AND endpoint.role = 'operational'
+      AND endpoint.eligibility = 'eligible'
+  `);
+  const unresolved = endpointRows.some((row) => row.lastAttemptAt === null);
+  const fallbackRows = unresolved
+    ? await db.all<ObservationFacetRow>(sql`
+      WITH ranked AS (
+        SELECT observation.agentKey, observation.endpointKey,
+          observation.outcome, observation.expiresAt,
+          ROW_NUMBER() OVER (
+            PARTITION BY observation.agentKey, observation.endpointKey
+            ORDER BY observation.observedAt DESC, observation.id DESC
+          ) AS position
+        FROM catalog_observations observation
+        WHERE observation.source IN ('worker_probe', 'buyer_refresh', 'migration')
+          AND observation.verificationLevel = 'platform_observed'
+          AND observation.validationKind IN ('reachability', 'protocol')
+      )
+      SELECT observation.agentKey, observation.endpointKey,
+        MAX(CASE WHEN observation.outcome = 'protocol_valid' THEN 1 ELSE 0 END) AS platformSuccess,
+        MAX(CASE WHEN observation.position = 1
+          AND observation.outcome = 'protocol_valid'
+          AND observation.expiresAt > ${nowMs} THEN 1 ELSE 0 END) AS freshSuccess
+      FROM ranked observation
+      INNER JOIN catalog_agent_endpoints declaration
+        ON declaration.agentKey = observation.agentKey
+        AND declaration.endpointKey = observation.endpointKey
+        AND declaration.declarationState = 'current'
+      INNER JOIN catalog_endpoints endpoint
+        ON endpoint.endpointKey = declaration.endpointKey
+        AND endpoint.role = 'operational'
+        AND endpoint.eligibility = 'eligible'
+        AND endpoint.lastAttemptAt IS NULL
+      INNER JOIN catalog_agents agent
+        ON agent.agentKey = observation.agentKey
+        AND agent.indexState = 'current'
+      GROUP BY observation.agentKey, observation.endpointKey
+    `)
+    : [];
+  const fallbackByEndpoint = new Map(fallbackRows.map((row) => [`${row.agentKey}\n${row.endpointKey}`, row]));
+  const platformByAgent = new Map<string, { success: boolean; fresh: boolean }>();
+  for (const endpoint of endpointRows) {
+    const fallback = fallbackByEndpoint.get(`${endpoint.agentKey}\n${endpoint.endpointKey}`);
+    const success = fallback
+      ? fallback.platformSuccess === 1
+      : endpoint.lastSuccessfulAt !== null;
+    const fresh = fallback
+      ? fallback.freshSuccess === 1
+      : endpoint.lastAttemptOutcome === 'protocol_valid'
+        && endpoint.lastSuccessfulAt !== null
+        && endpoint.lastSuccessfulAt + (endpoint.priority >= 100
+          ? 900_000
+          : endpoint.protocol === 'a2a'
+            ? 43_200_000
+            : endpoint.protocol === 'mcp' ? 86_400_000 : 21_600_000) > nowMs;
+    const current = platformByAgent.get(endpoint.agentKey) ?? { success: false, fresh: false };
+    platformByAgent.set(endpoint.agentKey, { success: current.success || success, fresh: current.fresh || fresh });
+  }
+  const browserRows = await db.all<{ agentKey: string }>(sql`
+    SELECT DISTINCT observation.agentKey
+    FROM catalog_observations observation
+    INNER JOIN catalog_agent_endpoints declaration
+      ON declaration.agentKey = observation.agentKey
+      AND declaration.endpointKey = observation.endpointKey
+      AND declaration.declarationState = 'current'
+    INNER JOIN catalog_endpoints endpoint
+      ON endpoint.endpointKey = declaration.endpointKey
+      AND endpoint.role = 'operational'
+      AND endpoint.eligibility = 'eligible'
+    INNER JOIN catalog_agents agent
+      ON agent.agentKey = observation.agentKey
+      AND agent.indexState = 'current'
+    WHERE observation.source = 'browser_reported'
+      AND observation.outcome = 'protocol_valid'
+  `);
+  const browserAgents = new Set(browserRows.map((row) => row.agentKey));
+  const agentKeys = new Set(endpointRows.map((row) => row.agentKey));
+  let live = 0;
+  let historical = 0;
+  let never = 0;
+  let browserObserved = 0;
+  for (const agentKey of agentKeys) {
+    const status = platformByAgent.get(agentKey) ?? { success: false, fresh: false };
+    if (status.fresh) live += 1;
+    else if (status.success) historical += 1;
+    else {
+      never += 1;
+      if (browserAgents.has(agentKey)) browserObserved += 1;
+    }
+  }
+  return { live, historical, never, browserObserved };
 }
 
 export async function readCatalogOperations(
@@ -199,7 +352,7 @@ export async function readCatalogAgentEvidence(
   observationLimit = 50,
 ): Promise<CatalogAgentEvidenceRows> {
   const agentKey = `eip155:56:${agentId}`;
-  const [agents, declarations, admissions, ingestTasks] = await Promise.all([
+  const [agents, declarations, ingestTasks, capabilities, quoteStatsRows, jobStatsRows] = await Promise.all([
     db.select().from(catalogAgents).where(eq(catalogAgents.agentKey, agentKey)).limit(1),
     db.select().from(catalogAgentEndpoints)
       .where(and(
@@ -207,12 +360,36 @@ export async function readCatalogAgentEvidence(
         eq(catalogAgentEndpoints.declarationState, "current"),
       ))
       .orderBy(desc(catalogAgentEndpoints.priority), catalogAgentEndpoints.endpointKey),
-    db.select().from(catalogAgentAdmission)
-      .where(eq(catalogAgentAdmission.agentKey, agentKey))
-      .limit(1),
     db.select().from(catalogIngestTasks)
       .where(eq(catalogIngestTasks.agentKey, agentKey))
       .limit(1),
+    db.select().from(catalogSellerCapabilities)
+      .where(eq(catalogSellerCapabilities.agentKey, agentKey))
+      .orderBy(desc(catalogSellerCapabilities.updatedAt)),
+    db.select({
+      // A browser-first request may have both a browser attempt and a Worker
+      // fallback. Count the logical request once, not once per physical try.
+      requestCount: countDistinct(catalogQuoteRequests.id),
+      successCount: sql<number>`COUNT(DISTINCT CASE WHEN ${catalogQuoteRequests.status} = 'succeeded' THEN ${catalogQuoteRequests.id} END)`,
+      lastAttemptAt: sql<number | null>`MAX(${catalogQuoteAttempts.startedAt})`,
+    }).from(catalogQuoteRequests)
+      .leftJoin(catalogQuoteAttempts, eq(catalogQuoteAttempts.requestId, catalogQuoteRequests.id))
+      .where(and(eq(catalogQuoteRequests.agentKey, agentKey), eq(catalogQuoteRequests.kind, "buyer_quote"))),
+    db.select({
+      total: countDistinct(sql`CAST(${commerceJobs.jobId} AS TEXT)`),
+      completed: sql<number>`COUNT(DISTINCT CASE WHEN ${commerceJobs.status} = 3 THEN CAST(${commerceJobs.jobId} AS TEXT) END)`,
+      funded: sql<number>`COUNT(DISTINCT CASE WHEN ${commerceJobs.status} = 1 THEN CAST(${commerceJobs.jobId} AS TEXT) END)`,
+      submitted: sql<number>`COUNT(DISTINCT CASE WHEN ${commerceJobs.status} = 2 THEN CAST(${commerceJobs.jobId} AS TEXT) END)`,
+    }).from(hireEvents)
+      .innerJoin(commerceJobs, and(
+        eq(hireEvents.chainId, commerceJobs.chainId),
+        eq(hireEvents.jobId, sql`CAST(${commerceJobs.jobId} AS TEXT)`),
+      ))
+      .where(and(
+        eq(hireEvents.chainId, 56),
+        eq(hireEvents.agentId, agentId),
+        eq(hireEvents.provenance, "chain_verified"),
+      )),
   ]);
   const endpointKeys = declarations.map((entry) => entry.endpointKey);
   const observationCondition = eq(catalogObservations.agentKey, agentKey);
@@ -275,12 +452,24 @@ export async function readCatalogAgentEvidence(
     declarations,
     endpoints,
     observations,
-    admission: admissions[0] ?? null,
+    admission: null,
     platformAttemptCount: platformAttemptTotals[0]?.total ?? 0,
     ingestTask: ingestTasks[0] ?? null,
     platformAttemptCountByEndpoint: new Map(platformAttemptsByEndpoint.flatMap((row) => row.endpointKey === null
       ? []
       : [[row.endpointKey, row.total] as const])),
+    capabilities,
+    quoteStats: {
+      requestCount: Number(quoteStatsRows[0]?.requestCount ?? 0),
+      successCount: Number(quoteStatsRows[0]?.successCount ?? 0),
+      lastAttemptAt: quoteStatsRows[0]?.lastAttemptAt ?? null,
+    },
+    jobStats: {
+      total: Number(jobStatsRows[0]?.total ?? 0),
+      completed: Number(jobStatsRows[0]?.completed ?? 0),
+      funded: Number(jobStatsRows[0]?.funded ?? 0),
+      submitted: Number(jobStatsRows[0]?.submitted ?? 0),
+    },
   };
 }
 
@@ -359,7 +548,7 @@ export async function readCatalogProjectionMismatches(db: Database): Promise<Arr
     )`);
 }
 
-function chunks<T>(values: readonly T[], size: number): T[][] {
+export function chunks<T>(values: readonly T[], size: number): T[][] {
   const result: T[][] = [];
   for (let offset = 0; offset < values.length; offset += size) result.push(values.slice(offset, offset + size));
   return result;

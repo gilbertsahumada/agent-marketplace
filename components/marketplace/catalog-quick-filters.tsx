@@ -16,7 +16,7 @@ type QuickFilter = {
 };
 
 const quickFilters: QuickFilter[] = [
-  { label: "Hireable now", icon: ShieldCheck, status: "hireable", countKey: "hireable" },
+  { label: "Ready to quote", icon: ShieldCheck, status: "quote_capable", countKey: "quote_capable" },
   { label: "Reachable now", icon: RadioTower, reachability: "live" },
   { label: "A2A", icon: Waypoints, status: "a2a", countKey: "a2a" },
   { label: "MCP", icon: Waypoints, status: "mcp", countKey: "mcp" },
@@ -52,15 +52,19 @@ export function CatalogQuickFilters({
     : filter.reachability !== undefined && reachability.includes(filter.reachability);
 
   return (
-    <div aria-label="Quick filters" className="flex max-w-full items-center gap-2 overflow-x-auto" data-testid="catalog-quick-filters">
+    <div aria-busy={pending} aria-label="Quick filters" className="flex max-w-full items-center gap-2 overflow-x-auto pb-1 pr-1" data-testid="catalog-quick-filters">
       {quickFilters.map((filter) => {
         const Icon = filter.icon;
         const isActive = active(filter);
-        const count = filter.countKey === undefined ? undefined : counts?.statuses[filter.countKey];
+        const count = filter.countKey !== undefined
+          ? counts?.statuses[filter.countKey]
+          : filter.reachability !== undefined
+            ? counts?.reachability?.[filter.reachability]
+            : undefined;
         return (
           <Button
             aria-pressed={isActive}
-            className="h-9 w-auto shrink-0 cursor-pointer gap-2 rounded-md px-3"
+            className="h-8 w-auto shrink-0 cursor-pointer gap-1.5 rounded-md px-2.5 text-xs whitespace-nowrap"
             disabled={pending}
             key={filter.label}
             onClick={() => {
@@ -86,7 +90,7 @@ export function CatalogQuickFilters({
         );
       })}
       <Button
-        className="h-9 w-auto shrink-0 cursor-pointer gap-2 rounded-md px-3"
+        className="h-8 w-auto shrink-0 cursor-pointer gap-1.5 rounded-md px-2.5 text-xs whitespace-nowrap"
         disabled={pending || (statuses.length === 0 && categories.length === 0 && reachability.length === 0 && !q)}
         onClick={() => navigate("/agents?view=marketplace")}
         type="button"

@@ -2,6 +2,7 @@ import "server-only";
 
 import type { NormalizedErc8183Quote } from "../../business/entities/erc8183-browser-spike.ts";
 import { catalogEndpointKey } from "./catalog-observation-sync.ts";
+import { invalidateCatalogCandidateCache } from "./catalog-candidate-feed.ts";
 
 export type ObservationSyncStatus = "synced" | "duplicate" | "failed" | "not_configured";
 export interface ObservationSyncResult { readonly status: ObservationSyncStatus }
@@ -120,7 +121,15 @@ export async function syncBuyerQuoteObservation(
       });
       return { status: "failed" };
     }
-    return body?.status === "duplicate" ? { status: "duplicate" } : body?.status === "verified" ? { status: "synced" } : { status: "failed" };
+    if (body?.status === "duplicate") {
+      invalidateCatalogCandidateCache();
+      return { status: "duplicate" };
+    }
+    if (body?.status === "verified") {
+      invalidateCatalogCandidateCache();
+      return { status: "synced" };
+    }
+    return { status: "failed" };
   } catch { return { status: "failed" }; }
 }
 

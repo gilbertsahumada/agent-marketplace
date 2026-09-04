@@ -378,10 +378,38 @@ describe("marketplace presentation rules", () => {
     expect(within(flow).queryByText("Hire with your wallet. Verify every step.")).not.toBeInTheDocument();
     expect(within(flow).getByRole("list", { name: "Hiring progress" })).toBeInTheDocument();
     expect(within(flow).getByRole("button", { name: "Request quote" })).toBeInTheDocument();
+    expect(within(flow).getByText("Authorize & fund")).toBeInTheDocument();
     expect(within(flow).getByText("No signature")).toBeInTheDocument();
     expect(within(flow).queryByText("Guardrails and continuing authority")).not.toBeInTheDocument();
     expect(within(flow).queryByText(/server resolves Agent/i)).not.toBeInTheDocument();
     expect(within(flow).queryByRole("heading", { level: 1 })).not.toBeInTheDocument();
+  });
+
+  it("turns historical quote evidence into an explicit fresh-quote action", () => {
+    render(createElement(Providers, { children: createElement(Erc8183MainnetDemo, {
+      agentName: "Marketplace Grid Planner",
+      config: MAINNET_DEMO_CONFIG,
+      embedded: true,
+      evidence: {
+        protocol: "a2a",
+        endpoint: "https://example.test/.well-known/agent-card.json",
+        reachable: true,
+        quoteStatus: "verified_historical",
+        lastCheckedAt: new Date(Date.now() - 30_000).toISOString(),
+        attemptCount: 191,
+        httpStatus: 200,
+        durationMs: 204,
+      },
+    }) }));
+
+    const flow = screen.getByRole("region", { name: "ERC-8183 hiring flow" });
+    expect(within(flow).getByText("Endpoint verified")).toBeInTheDocument();
+    expect(within(flow).getByText("HTTP 200")).toBeInTheDocument();
+    expect(within(flow).getByText("204 ms")).toBeInTheDocument();
+    expect(within(flow).getByText("191 checks")).toBeInTheDocument();
+    expect(within(flow).getByText("Quote expired")).toBeInTheDocument();
+    expect(within(flow).getByRole("button", { name: "Request fresh quote" })).toBeInTheDocument();
+    expect(within(flow).getByText("Expired — refresh required")).toBeInTheDocument();
   });
 
   it("renders the Evidence Passport as evidence, not as an NFT or guarantee", async () => {
@@ -475,10 +503,10 @@ describe("marketplace presentation rules", () => {
 
   it("uses one contextual journey action for an MCP-only agent", () => {
     render(createElement(AgentCard, { agent: { agentId: "45650", name: "V3 Pools", description: "Agent", operator: "third_party", categories: ["rebalancing"], href: "/hire/45650", hireability: "mcp_only", evidence, passportState: "evaluated" } }));
-    expect(screen.getByText("Never probed")).toBeInTheDocument();
+    expect(screen.getAllByText("Not checked yet")).toHaveLength(2);
     expect(screen.queryByRole("link", { name: /hire agent/i })).not.toBeInTheDocument();
-    const journeyLink = screen.getByRole("link", { name: /view agent/i });
-    expect(journeyLink).toHaveAttribute("href", "/hire/45650");
+    const journeyLink = screen.getByRole("link", { name: /check availability/i });
+    expect(journeyLink).toHaveAttribute("href", "/hire/45650#validation");
     expect(journeyLink).toHaveAttribute("data-prefetch", "false");
     const registryLink = screen.getByRole("link", { name: /View V3 Pools on trust8004/i });
     expect(registryLink).toHaveAttribute("href", "https://trust8004.xyz/agents/56:45650");
@@ -500,12 +528,12 @@ describe("marketplace presentation rules", () => {
       monitoring: { state: "no_endpoint_declared", attemptCount: 0 },
     } }));
 
-    expect(screen.getByText("No endpoint declared")).toBeInTheDocument();
+    expect(screen.getAllByText("No endpoint declared")).toHaveLength(2);
     expect(screen.queryByRole("link", { name: /hire agent/i })).not.toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /view agent/i })).toHaveAttribute("href", "/hire/45650");
+    expect(screen.getByRole("button", { name: "Not available" })).toBeDisabled();
   });
 
-  it("keeps the fresh-quote action visible for a compatible seller without a current observation", () => {
+  it("labels a quote-enabled seller separately from one that is already ready to hire", () => {
     render(createElement(AgentCard, { agent: {
       agentId: "303779",
       name: "Marketplace Grid Planner",
@@ -515,12 +543,68 @@ describe("marketplace presentation rules", () => {
       href: "/hire/303779",
       hireability: "listed_only",
       quoteRequestAvailable: true,
-      evidence,
+      capabilityState: "ready",
+      evidence: evidence.map((step) => step.kind === "reachable" ? { ...step, status: "verified" as const } : step),
       passportState: "registered",
     } }));
 
-    expect(screen.getByText("Hireable on Mainnet")).toBeInTheDocument();
+    expect(screen.getByText("Ready to quote")).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /view profile/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /request quote/i })).toHaveAttribute("href", "/hire/303779#hire-flow");
+    expect(screen.queryByRole("link", { name: /hire agent/i })).not.toBeInTheDocument();
+  });
+
+  it("offers a retry when the latest seller capability attempt failed", () => {
+    render(createElement(AgentCard, { agent: {
+      agentId: "303779",
+      name: "Marketplace Grid Planner",
+      description: "Agent",
+      operator: "marketplace",
+      categories: ["grid_trading"],
+      href: "/hire/303779",
+      hireability: "listed_only",
+      quoteRequestAvailable: true,
+      buyerAction: "request_quote",
+      capabilityState: "failed",
+      evidence: evidence.map((step) => step.kind === "reachable" ? { ...step, status: "verified" as const } : step),
+      passportState: "registered",
+    } }));
+
+    expect(screen.getByText("Quote failed")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /retry quote/i })).toHaveAttribute("href", "/hire/303779#hire-flow");
+  });
+
+  it("prioritizes a failed connection over previously ready quote capability", () => {
+    render(createElement(AgentCard, { agent: {
+      agentId: "334760", name: "Seller", description: "Agent",
+      operator: "third_party", categories: [], href: "/hire/334760",
+      hireability: "listed_only", quoteRequestAvailable: true,
+      buyerAction: "request_quote", capabilityState: "ready",
+      evidence: evidence.map((step) => step.kind === "reachable" ? { ...step, status: "failed" as const } : step),
+      passportState: "evaluated",
+    } }));
+    expect(screen.getByText("Connection failed")).toBeInTheDocument();
+    expect(screen.queryByText("Ready to quote")).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Retry availability" })).toHaveAttribute("href", "/hire/334760#validation");
+    expect(screen.queryByRole("link", { name: "Request quote" })).not.toBeInTheDocument();
+  });
+
+  it("reserves Hire agent for a seller with a fresh quote and current chain checks", () => {
+    render(createElement(AgentCard, { agent: {
+      agentId: "303779",
+      name: "Marketplace Grid Planner",
+      description: "Agent",
+      operator: "marketplace",
+      categories: ["grid_trading"],
+      href: "/hire/303779",
+      hireability: "hireable",
+      quoteRequestAvailable: true,
+      buyerAction: "prepare_hire",
+      evidence: evidence.map((step) => step.kind === "reachable" ? { ...step, status: "verified" as const } : step),
+      passportState: "hireable",
+    } }));
+
+    expect(screen.getByText("Ready to hire")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /hire agent/i })).toHaveAttribute("href", "/hire/303779#hire-flow");
   });
 
@@ -541,6 +625,26 @@ describe("marketplace presentation rules", () => {
 
     expect(screen.getByRole("link", { name: "Check availability" }))
       .toHaveAttribute("href", "/hire/113284#validation");
+  });
+
+  it("does not imply hiring when a reachable agent has no marketplace quote flow", () => {
+    render(createElement(AgentCard, { agent: {
+      agentId: "113284",
+      name: "Topaz Agent",
+      description: "Agent",
+      operator: "third_party",
+      categories: [],
+      href: "/hire/113284",
+      hireability: "listed_only",
+      buyerAction: "check_availability",
+      evidence: evidence.map((step) => step.kind === "reachable" ? { ...step, status: "verified" as const } : step),
+      passportState: "evaluated",
+      monitoring: { state: "probed", source: "worker", latestOutcome: "protocol_valid" },
+    } }));
+
+    expect(screen.getByText("Reachable only")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "View details" })).toHaveAttribute("href", "/hire/113284");
+    expect(screen.queryByRole("link", { name: /hire agent|request quote/i })).not.toBeInTheDocument();
   });
 
   it("shows declared transports and a concise platform observation on the catalog card", () => {
@@ -567,10 +671,43 @@ describe("marketplace presentation rules", () => {
     } }));
 
     expect(screen.getByLabelText("Declared protocols")).toHaveTextContent("A2AMCPERC-8183 HTTP");
-    expect(screen.getByText("Platform observation")).toBeInTheDocument();
-    expect(screen.getByText("Protocol valid")).toBeInTheDocument();
+    expect(screen.getByText("Reachable only")).toBeInTheDocument();
+    expect(screen.getByText("Reachable now")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Latest check: Reachable now" })).toBeInTheDocument();
     expect(screen.getByText("HTTP 200 · 346 ms")).toBeInTheDocument();
-    expect(screen.getByText(/Last checked/)).toBeInTheDocument();
+    expect(screen.getByTitle("Last checked 03 Sept 2026 12:00 UTC")).toBeInTheDocument();
+  });
+
+  it("keeps a rejected quote visibly reachable while separating quote failure", () => {
+    render(createElement(AgentCard, { agent: {
+      agentId: "45422",
+      name: "Quote-rejecting seller",
+      description: "Agent",
+      operator: "third_party",
+      categories: [],
+      protocols: ["A2A"],
+      href: "/hire/45422",
+      hireability: "listed_only",
+      evidence: evidence.map((step) => step.kind === "reachable"
+        ? { ...step, status: "verified" as const }
+        : step.kind === "quote"
+          ? { ...step, status: "failed" as const }
+          : step),
+      passportState: "evaluated",
+      monitoring: {
+        state: "probed",
+        source: "worker",
+        latestOutcome: "quote_rejected",
+        latestHttpStatus: 200,
+        latestDurationMs: 401,
+      },
+    } }));
+
+    expect(screen.getByText("Reachable only")).toBeInTheDocument();
+    expect(screen.getByText("Reachable now")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Latest check: Reachable now" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Latest check: Reachable now" }).closest("[data-observation-status=\"Reachable now\"]")).not.toBeNull();
+    expect(screen.queryByText("Check failed")).not.toBeInTheDocument();
   });
 
   it("keeps the quote CTA for an admitted seller that declares only ERC-8183", () => {
@@ -606,7 +743,7 @@ describe("marketplace presentation rules", () => {
       passport: evidencePassport("registered"),
     }));
 
-    expect(screen.getByText("Hiring unavailable for this agent.")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Hiring unavailable" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /hire agent/i })).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: /Identity & reputation/i }))
       .toHaveAttribute("href", "https://trust8004.xyz/agents/56:303779");
@@ -644,6 +781,9 @@ describe("marketplace presentation rules", () => {
     }));
 
     expect(screen.getByRole("heading", { name: "Marketplace Grid Planner" })).toBeInTheDocument();
+    expect(screen.queryByText("Readiness at a glance")).not.toBeInTheDocument();
+    expect(screen.getByText("Identity declared")).toBeInTheDocument();
+    expect(screen.getByText("0 completed jobs")).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Hire agent" })).not.toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "ERC-8183 job history" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /Job #700/i })).toHaveAttribute("href", "/jobs/mainnet/700");
@@ -669,7 +809,7 @@ describe("marketplace presentation rules", () => {
 
     expect(screen.getByText("Verified hire activity")).toBeInTheDocument();
     expect(screen.getByText(/Latest chain-verified hire phase: funded \(Job 812/)).toBeInTheDocument();
-    expect(screen.getByText("0 proven")).toBeInTheDocument();
+    expect(screen.getByText("0 completed jobs")).toBeInTheDocument();
     expect(screen.getByText("No verified ERC-8183 jobs yet.")).toBeInTheDocument();
   });
 
@@ -736,8 +876,8 @@ describe("marketplace presentation rules", () => {
     render(createElement(EvidenceRail, { ariaLabel: "Agent evidence", steps: evidence }));
     expect(screen.getByRole("list", { name: "Agent evidence" })).toBeInTheDocument();
     expect(screen.getAllByRole("listitem")).toHaveLength(4);
-    expect(screen.getAllByText("verified")).not.toHaveLength(0);
-    expect(screen.getAllByText("not observed")).toHaveLength(3);
+    expect(screen.getAllByText("Verified")).not.toHaveLength(0);
+    expect(screen.getAllByText("Not checked")).toHaveLength(3);
   });
 
   it("keeps summary evidence concise and exposes details on focus", async () => {
@@ -752,8 +892,8 @@ describe("marketplace presentation rules", () => {
       "evidence-rail-summary",
       "grid-cols-4",
     );
-    expect(screen.queryByText("derived · not observed")).not.toBeInTheDocument();
-    const quote = screen.getByRole("button", { name: /Quote verified: not observed/i });
+    expect(screen.queryByText("Derived · Not checked")).not.toBeInTheDocument();
+    const quote = screen.getByRole("button", { name: /Quote verified: Not checked/i });
     expect(quote).toHaveClass("cursor-pointer");
     quote.focus();
     await user.keyboard("{Tab}{Shift>}{Tab}{/Shift}");
@@ -804,7 +944,7 @@ describe("marketplace presentation rules", () => {
   it("renders a recoverable catalogue outage without fabricating fallback rows", () => {
     render(createElement(CatalogUnavailable, { retryHref: "/agents?view=all&page=2" }));
     expect(screen.getByText("Live catalogue temporarily unavailable")).toBeInTheDocument();
-    expect(screen.getByText(/No registered agent or profile data was invented/)).toBeInTheDocument();
+    expect(screen.getByText(/No agent status or profile data was invented/)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Try again" })).toHaveAttribute("href", "/agents?view=all&page=2");
     expect(screen.getByRole("link", { name: "Return to marketplace status" })).toHaveAttribute("href", "/");
   });
@@ -839,6 +979,7 @@ describe("marketplace presentation rules", () => {
 
   it("defaults the catalogue to cards and lets buyers switch to a comparison table", async () => {
     const user = userEvent.setup();
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
     const agent = marketplaceAgent();
     const page: MarketplaceAgentPage = {
       view: "marketplace",
@@ -879,13 +1020,13 @@ describe("marketplace presentation rules", () => {
     expect(container.querySelector(".lucide-search")).toHaveClass("top-1/2", "-translate-y-1/2");
     expect(screen.getAllByRole("checkbox", { name: "Declared endpoints" })).toHaveLength(2);
     expect(screen.getAllByRole("checkbox", { name: "Declared endpoints" }).every((checkbox) => checkbox.getAttribute("data-state") === "unchecked")).toBe(true);
-    expect(screen.getAllByRole("checkbox", { name: "Quote verified" }).every((checkbox) => checkbox.getAttribute("data-state") === "unchecked")).toBe(true);
+    expect(screen.getAllByRole("checkbox", { name: "Ready to quote" }).every((checkbox) => checkbox.getAttribute("data-state") === "unchecked")).toBe(true);
     expect(screen.getAllByRole("checkbox", { name: "Grid trading" }).every((checkbox) => checkbox.getAttribute("data-state") === "unchecked")).toBe(true);
     expect(screen.getByRole("tab", { name: "Cards" })).toHaveAttribute("data-state", "active");
     expect(screen.getByRole("tab", { name: "Cards" })).toHaveClass("cursor-pointer");
     expect(screen.queryByRole("navigation", { name: "Catalog scope" })).not.toBeInTheDocument();
     const quickFilters = screen.getByTestId("catalog-quick-filters");
-    expect(screen.getByRole("button", { name: /Hireable now/ })).toHaveClass("h-9", "rounded-md", "w-auto");
+    expect(screen.getByRole("button", { name: /Ready to quote/ })).toHaveClass("h-8", "rounded-md", "w-auto");
     expect(searchInput.closest("form")?.parentElement?.nextElementSibling).toBe(quickFilters);
     expect(screen.getByRole("complementary", { name: "Catalog filters" })).toHaveClass("marketplace-surface", "rounded-xl");
     expect(screen.getByText("Catalog data")).toBeInTheDocument();
@@ -904,7 +1045,9 @@ describe("marketplace presentation rules", () => {
     expect(screen.getByRole("region", { name: "Scrollable agent comparison" })).toHaveClass("overflow-x-auto");
     expect(screen.getByRole("columnheader", { name: "Evidence" })).toHaveClass("text-xs");
     expect(screen.getByRole("link", { name: /View V3 Pools powered by HeyAnon on trust8004/i })).toHaveTextContent("Agent #45650");
-    expect(screen.getByRole("link", { name: "View agent" })).toHaveAttribute("href", "/hire/45650");
+    expect(screen.getByRole("button", { name: "Not available" })).toBeDisabled();
+    expect(consoleError.mock.calls.flat().join(" ")).not.toContain("Each child in a list should have a unique \"key\" prop");
+    consoleError.mockRestore();
   });
 
   it("renders combined filters, a clear action, and an agents-specific loading skeleton", () => {
@@ -971,12 +1114,15 @@ describe("marketplace presentation rules", () => {
           yield_optimisation: 3,
           health_factor_monitoring: 2,
         },
-      },
+        reachability: { live: 9_999, historical: 8, never: 7, browser_observed: 1 },
+        },
       query: { view: "marketplace", statuses: ["declared"] },
     }));
 
     expect(screen.getAllByText("30,024")).toHaveLength(2);
     expect(screen.getAllByText("7")).toHaveLength(2);
+    expect(screen.getAllByText("9,999")).toHaveLength(3);
+    expect(screen.getByRole("button", { name: /Reachable now 9,999/ })).toBeInTheDocument();
     await user.click(screen.getAllByRole("checkbox", { name: "Declared endpoints" })[0]!);
     expect(routerPush).toHaveBeenCalledWith("/agents?view=marketplace");
   });
@@ -1252,7 +1398,7 @@ describe("marketplace presentation rules", () => {
     expect(await screen.findByText("Seller timed out safely.")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: /try quote again/i }));
     expect(fetchMock).toHaveBeenCalledTimes(2);
-    const refresh = await screen.findByRole("button", { name: /refresh live quote/i });
+    const refresh = await screen.findByRole("button", { name: /request fresh quote/i });
     expect(screen.getByText("Quote verified for this session. Shared evidence sync pending.")).toBeInTheDocument();
     expect(screen.getByText("Quote verified", { selector: "span" })).toBeInTheDocument();
     await user.click(refresh);
@@ -1287,7 +1433,7 @@ describe("marketplace presentation rules", () => {
     consoleError.mockRestore();
   });
 
-  it("does not claim Mainnet has no seller while Grid remains admitted for fresh quotes", () => {
+  it("does not claim Mainnet has no seller while Grid has quote-capability evidence", () => {
     render(createElement(MarketplaceLanding, {
       categories: [],
       demoEnabled: true,
@@ -1297,8 +1443,8 @@ describe("marketplace presentation rules", () => {
       qualifiedSeller: null,
     }));
 
-    expect(screen.queryByText(/no Mainnet seller is admitted/i)).not.toBeInTheDocument();
-    expect(screen.getByText(/Grid.*admitted.*Mainnet.*quote/i)).toBeInTheDocument();
+    expect(screen.queryByText(/no Mainnet seller/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/current quote-capability evidence.*Grid seller/i)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Explore Mainnet agents" })).toHaveAttribute("href", "/agents?view=marketplace&category=grid_trading");
     expect(screen.queryByText(/Try a verified Testnet hire/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/BSC Testnet.*Job #551/i)).not.toBeInTheDocument();
@@ -1382,7 +1528,7 @@ describe("marketplace presentation rules", () => {
     await user.click(await screen.findByRole("button", { name: /prepare hire as/i }));
     expect(await screen.findByText(/maximum signatures/i)).toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: /refresh live quote/i }));
+    await user.click(screen.getByRole("button", { name: /request fresh quote/i }));
     expect(await screen.findByText("Seller timed out safely.")).toBeInTheDocument();
     expect(screen.queryByText(/maximum signatures/i)).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /connect a wallet in the header|prepare hire as/i })).toBeDisabled();
@@ -1399,7 +1545,7 @@ describe("marketplace presentation rules", () => {
     await user.click(screen.getByRole("button", { name: /get fresh quote/i }));
     expect(await screen.findByText(/quote expired/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /prepare hire as/i })).toBeDisabled();
-    expect(screen.getByRole("button", { name: /wallet signatures/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /wallet approval/i })).toBeDisabled();
   });
 
   it.each(["SUBMITTED", "COMPLETED"] as const)("allows a new hire after a fresh quote when the saved job is %s", async (status) => {
@@ -1427,7 +1573,7 @@ describe("marketplace presentation rules", () => {
     await user.click(screen.getByRole("button", { name: /get fresh quote/i }));
     expect(localStorage.getItem("bnb-agent-marketplace:erc8183-browser:56:303779:v1")).not.toBeNull();
     await user.click(await screen.findByRole("button", { name: /prepare hire as/i }));
-    expect(await screen.findByRole("button", { name: /begin \d+ wallet signatures/i })).toBeEnabled();
+    expect(await screen.findByRole("button", { name: /begin \d+ wallet approval/i })).toBeEnabled();
   });
 
   it.each([
@@ -1461,8 +1607,49 @@ describe("marketplace presentation rules", () => {
       },
     }));
 
-    expect(screen.getByText("confirmed")).toBeInTheDocument();
+    expect(screen.getByText("Confirmed onchain")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /view createJob transaction/i })).toHaveAttribute("href", `https://bscscan.com/tx/${hash}`);
+  });
+
+  it("distinguishes planned and submitted wallet calls from confirmed receipts", () => {
+    const hash = `0x${"34".repeat(32)}` as const;
+    render(createElement(Erc8183TransactionList, {
+      explorerUrl: "https://bscscan.com",
+      intents: [
+        {
+          kind: "createJob",
+          contract: "0x1111111111111111111111111111111111111111",
+          purpose: "Create the job",
+          required: true,
+        },
+        {
+          kind: "approve",
+          contract: "0x2222222222222222222222222222222222222222",
+          purpose: "Approve exact funding",
+          required: true,
+        },
+        {
+          kind: "fund",
+          contract: "0x3333333333333333333333333333333333333333",
+          purpose: "Fund escrow",
+          required: false,
+        },
+      ],
+      journal: {
+        schemaVersion: 1,
+        chainId: 56,
+        buyer: "0x4444444444444444444444444444444444444444",
+        seller: "0x5555555555555555555555555555555555555555",
+        jobId: null,
+        transactions: { createJob: hash },
+        lastConfirmedStep: "connected",
+      },
+    }));
+
+    expect(screen.getByText(/These are the exact calls the wallet may execute/)).toBeInTheDocument();
+    expect(screen.getByText("Sent · awaiting confirmation")).toBeInTheDocument();
+    expect(screen.getByText("Not sent")).toBeInTheDocument();
+    expect(screen.getByText("Not required")).toBeInTheDocument();
   });
 
   it("renders the Job 551 proof with complete hashes when live RPC is unavailable", async () => {

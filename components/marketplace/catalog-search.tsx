@@ -43,7 +43,7 @@ export function CatalogSearch({ view, statuses, categories, reachability = [], s
 }) {
   const [value, setValue] = useState(q);
   const previousQuery = useRef(q);
-  const { navigate } = useCatalogNavigation();
+  const { navigate, pending } = useCatalogNavigation();
 
   useEffect(() => {
     setValue((current) => current.trim() === previousQuery.current.trim() ? q : current);
@@ -63,7 +63,9 @@ export function CatalogSearch({ view, statuses, categories, reachability = [], s
       <span className="sr-only">Search agents</span>
       <Search aria-hidden="true" className="absolute top-1/2 left-4 size-4 -translate-y-1/2 text-zinc-500" />
       <Input
+        aria-busy={pending}
         className="catalog-search-input h-10 pl-11 focus-visible:ring-0"
+        disabled={pending}
         maxLength={120}
         name="q"
         onChange={(event) => setValue(event.currentTarget.value)}

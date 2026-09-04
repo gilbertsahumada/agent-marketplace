@@ -1,6 +1,7 @@
 import {
   and,
   count,
+  countDistinct,
   desc,
   eq,
   exists,
@@ -16,18 +17,23 @@ import {
 import type { D1DatabaseLike } from "../db/client";
 import {
   createDatabase,
+  readCatalogReachabilityFacets,
   readEffectiveAgentObservations,
   readEffectiveCatalogObservationsForAgents,
   readLatestBrowserObservationsForAgents,
 } from "../db/orm";
-import { deriveCatalogEvidenceState } from "../catalog/evidence-policy";
+import { deriveCatalogEvidenceState, selectBestCapability, type CapabilityFact, type SellerCapabilityState } from "../catalog/evidence-policy";
 import { CATALOG_API_VERSION, publicCatalogObservation } from "../catalog/api-contract";
 import {
-  catalogAgentAdmission,
   catalogAgentEndpoints,
   catalogAgents,
   catalogEndpoints,
   catalogObservations,
+  catalogSellerCapabilities,
+  catalogQuoteRequests,
+  catalogQuoteAttempts,
+  commerceJobs,
+  hireEvents,
 } from "../db/schema";
 import type { D1Database } from "../types";
 
@@ -144,6 +150,25 @@ export async function catalogAgentsResponse(
   const includeFacets = responseVersion === 2 && rawFacets === "true";
 
   const db = createDatabase(d1 as unknown as D1DatabaseLike);
+  // Ready-to-quote is a capability projection, not an active buyer quote. A
+  // correlated EXISTS keeps this filter/facet bounded by the agent index and
+  // avoids materialising a potentially 20k-item key set in the Worker.
+  const quoteCapableCondition = exists(db.select({ value: sql`1` })
+    .from(catalogSellerCapabilities)
+    .innerJoin(catalogAgentEndpoints, and(
+      eq(catalogAgentEndpoints.agentKey, catalogSellerCapabilities.agentKey),
+      eq(catalogAgentEndpoints.endpointKey, catalogSellerCapabilities.endpointKey),
+    ))
+    .innerJoin(catalogEndpoints, eq(catalogEndpoints.endpointKey, catalogSellerCapabilities.endpointKey))
+    .where(and(
+      eq(catalogSellerCapabilities.agentKey, catalogAgents.agentKey),
+      eq(catalogSellerCapabilities.state, "ready"),
+      gt(catalogSellerCapabilities.capabilityExpiresAt, nowMs),
+      eq(catalogAgentEndpoints.declarationState, "current"),
+      eq(catalogEndpoints.role, "operational"),
+      eq(catalogEndpoints.eligibility, "eligible"),
+      inArray(catalogEndpoints.validationProtocol, ["a2a", "mcp", "erc8183_http"]),
+    )));
   const operationalDeclarationExists = exists(db.select({ value: sql`1` })
     .from(catalogAgentEndpoints)
     .innerJoin(catalogEndpoints, eq(catalogEndpoints.endpointKey, catalogAgentEndpoints.endpointKey))
@@ -234,23 +259,6 @@ export async function catalogAgentsResponse(
       eq(catalogEndpoints.eligibility, "eligible"),
       eq(catalogEndpoints.validationProtocol, "erc8183_http"),
     )));
-  const admittedCommerce = exists(db.select({ value: sql`1` })
-    .from(catalogAgentAdmission)
-    .where(and(
-      eq(catalogAgentAdmission.agentKey, catalogAgents.agentKey),
-      eq(catalogAgentAdmission.state, "admitted"),
-      exists(db.select({ value: sql`1` })
-        .from(catalogAgentEndpoints)
-        .innerJoin(catalogEndpoints, eq(catalogEndpoints.endpointKey, catalogAgentEndpoints.endpointKey))
-        .where(and(
-          eq(catalogAgentEndpoints.agentKey, catalogAgentAdmission.agentKey),
-          eq(catalogAgentEndpoints.endpointKey, catalogAgentAdmission.endpointKey),
-          eq(catalogAgentEndpoints.declarationState, "current"),
-          eq(catalogEndpoints.role, "operational"),
-          eq(catalogEndpoints.eligibility, "eligible"),
-          inArray(catalogEndpoints.validationProtocol, ["a2a", "erc8183_http"]),
-        ))),
-    )));
   const mcpDeclarationExists = exists(db.select({ value: sql`1` })
     .from(catalogAgentEndpoints)
     .innerJoin(catalogEndpoints, eq(catalogEndpoints.endpointKey, catalogAgentEndpoints.endpointKey))
@@ -271,31 +279,36 @@ export async function catalogAgentsResponse(
       eq(catalogEndpoints.eligibility, "eligible"),
       inArray(catalogEndpoints.validationProtocol, ["a2a", "erc8183_http"]),
     )));
-  const admittedCommerceObservation = exists(db.select({ value: sql`1` })
-    .from(catalogAgentAdmission)
-    .innerJoin(catalogAgentEndpoints, and(
-      eq(catalogAgentEndpoints.agentKey, catalogObservations.agentKey),
-      eq(catalogAgentEndpoints.endpointKey, catalogObservations.endpointKey),
-      eq(catalogAgentEndpoints.declarationState, "current"),
-    ))
-    .innerJoin(catalogEndpoints, eq(catalogEndpoints.endpointKey, catalogAgentEndpoints.endpointKey))
+  // A capability probe may carry a valid signed receipt, but it is not a
+  // buyer quote for a brief and must never satisfy the quote filters.
+  const buyerQuoteObservation = sql`COALESCE(json_extract(${catalogObservations.detailsJson}, '$.quoteKind'), '') <> 'capability_probe'`;
+  // A quote is only public evidence for the endpoint that is currently
+  // ready-to-quote. This prevents an old/superseded declaration from making
+  // the seller appear quote-ready after its active endpoint changed.
+  const quoteOnReadyCapability = exists(db.select({ value: sql`1` })
+    .from(catalogSellerCapabilities)
     .where(and(
-      eq(catalogAgentAdmission.agentKey, catalogObservations.agentKey),
-      eq(catalogAgentAdmission.endpointKey, catalogObservations.endpointKey),
-      eq(catalogAgentAdmission.state, "admitted"),
-      eq(catalogEndpoints.role, "operational"),
-      eq(catalogEndpoints.eligibility, "eligible"),
-      inArray(catalogEndpoints.validationProtocol, ["a2a", "erc8183_http"]),
+      eq(catalogSellerCapabilities.agentKey, catalogObservations.agentKey),
+      eq(catalogSellerCapabilities.endpointKey, catalogObservations.endpointKey),
+      eq(catalogSellerCapabilities.state, "ready"),
+      gt(catalogSellerCapabilities.capabilityExpiresAt, nowMs),
+    )));
+  const quoteOnKnownCapability = exists(db.select({ value: sql`1` })
+    .from(catalogSellerCapabilities)
+    .where(and(
+      eq(catalogSellerCapabilities.agentKey, catalogObservations.agentKey),
+      eq(catalogSellerCapabilities.endpointKey, catalogObservations.endpointKey),
     )));
   const freshQuote = exists(db.select({ value: sql`1` })
     .from(catalogObservations)
     .where(and(
       eq(catalogObservations.agentKey, catalogAgents.agentKey),
       observationBelongsToAgent,
-      admittedCommerceObservation,
       eq(catalogObservations.validationKind, "quote"),
       eq(catalogObservations.verificationLevel, "cryptographic"),
       eq(catalogObservations.outcome, "quote_verified"),
+      buyerQuoteObservation,
+      quoteOnReadyCapability,
       gt(catalogObservations.expiresAt, nowMs),
       not(exists(db.select({ value: sql`1` }).from(newerQuoteObservation).where(and(
         eq(newerQuoteObservation.agentKey, catalogObservations.agentKey),
@@ -316,10 +329,11 @@ export async function catalogAgentsResponse(
     .where(and(
       eq(catalogObservations.agentKey, catalogAgents.agentKey),
       observationBelongsToAgent,
-      admittedCommerceObservation,
       eq(catalogObservations.validationKind, "quote"),
       eq(catalogObservations.verificationLevel, "cryptographic"),
       eq(catalogObservations.outcome, "quote_verified"),
+      buyerQuoteObservation,
+      quoteOnKnownCapability,
     )));
   const freshValid = exists(db.select({ value: sql`1` })
     .from(catalogObservations)
@@ -394,11 +408,12 @@ export async function catalogAgentsResponse(
         ),
       )))),
     )));
-  const admissionState = (state: "candidate" | "admitted" | "suspended") => exists(db.select({ value: sql`1` })
-    .from(catalogAgentAdmission)
-    .where(and(eq(catalogAgentAdmission.agentKey, catalogAgents.agentKey), eq(catalogAgentAdmission.state, state))));
-  const anyAdmission = exists(db.select({ value: sql`1` }).from(catalogAgentAdmission)
-    .where(eq(catalogAgentAdmission.agentKey, catalogAgents.agentKey)));
+  const capabilityState = (state: "discovered" | "stale" | "failed" | "suspended") => exists(db.select({ value: sql`1` })
+    .from(catalogSellerCapabilities)
+    .where(and(
+      eq(catalogSellerCapabilities.agentKey, catalogAgents.agentKey),
+      eq(catalogSellerCapabilities.state, state),
+    )));
   // Every current catalog row is an ERC-8004 identity declaration. Endpoint
   // declarations are optional, so registry inventory must retain identities
   // whose metadata has not yielded an operational resource yet.
@@ -406,10 +421,13 @@ export async function catalogAgentsResponse(
     : status === "pending" ? not(platformObservationExists)
       : status === "a2a" ? freshProtocol("a2a")
         : status === "mcp" ? freshProtocol("mcp")
-          : status === "mcp_only" ? and(mcpDeclarationExists, not(sellerDeclarationExists))!
+          : status === "mcp_only" ? and(mcpDeclarationExists, not(sellerDeclarationExists), not(quoteCapableCondition))!
           : status === "erc8183" ? erc8183Declaration
-            : status === "quote_capable" ? freshQuote
-              : status === "hireable" ? admittedCommerce
+              : status === "quote_capable" ? quoteCapableCondition
+              // Keep the legacy query alias, but make it mean the same thing
+              // as Ready to quote. Manual admission is no longer a hiring
+              // prerequisite and must not hide compatible sellers.
+              : status === "hireable" ? quoteCapableCondition
                 : and(failureExists, not(latestReachableExists), not(freshValid))!;
   const escapedQuery = q.replaceAll("\\", "\\\\").replaceAll("%", "\\%").replaceAll("_", "\\_");
   const searchCondition = q.length === 0 ? undefined : or(
@@ -434,19 +452,30 @@ export async function catalogAgentsResponse(
       : value === "never" ? not(anyPlatformSuccess)
         : and(browserSuccess, not(anyPlatformSuccess))!));
   const commerceCondition = commerce.length === 0 ? undefined : or(...commerce.map((value) => value === "declared"
-    ? erc8183Declaration
-    : value === "none" ? not(anyAdmission)
-      : admissionState(value)));
+    ? sellerDeclarationExists
+    : value === "none" ? not(sellerDeclarationExists)
+      : value === "candidate" ? and(sellerDeclarationExists, not(quoteCapableCondition), not(capabilityState("suspended")))!
+        : value === "admitted" ? quoteCapableCondition
+          : capabilityState(value)));
   const quoteCondition = quote.length === 0 ? undefined : or(...quote.map((value) => value === "verified"
     ? freshQuote
     : value === "expired" ? and(anyQuote, not(freshQuote))!
       : not(anyQuote)));
+  // Statuses are one facet: selecting several evidence states means “match
+  // any of these states”, while the default declared value is only the
+  // identity-scope sentinel and must not turn the OR into a tautology.
+  const selectedStatusConditions = statuses
+    .filter((status) => status !== "declared")
+    .map(statusCondition);
+  const statusConditionCombined = selectedStatusConditions.length > 0
+    ? or(...selectedStatusConditions)
+    : statusCondition("declared");
   const where = and(
     eq(catalogAgents.indexState, "current"),
     inventory === "operational" && !statuses.some((status) => OPERATIONAL_STATUSES.has(status as CatalogStatus))
       ? operationalDeclarationExists
       : undefined,
-    ...statuses.map(statusCondition),
+    statusConditionCombined,
     searchCondition,
     categoryCondition,
     protocolCondition,
@@ -468,56 +497,6 @@ export async function catalogAgentsResponse(
   );
   const countFacet = (status: CatalogStatus) => db.select({ count: count() })
     .from(catalogAgents).where(and(operationalBase, statusCondition(status)));
-  // D1's production planner aborts the equivalent correlated quote-count query
-  // at catalogue scale. Both inputs are small and indexed, so reconcile the
-  // current admitted endpoints with their latest quote observations in memory.
-  const quoteCapableFacet = (async () => {
-    const admitted = await db.select({
-      agentKey: catalogAgentAdmission.agentKey,
-      endpointKey: catalogAgentAdmission.endpointKey,
-    }).from(catalogAgentAdmission)
-      .innerJoin(catalogAgents, eq(catalogAgents.agentKey, catalogAgentAdmission.agentKey))
-      .innerJoin(catalogAgentEndpoints, and(
-        eq(catalogAgentEndpoints.agentKey, catalogAgentAdmission.agentKey),
-        eq(catalogAgentEndpoints.endpointKey, catalogAgentAdmission.endpointKey),
-      ))
-      .innerJoin(catalogEndpoints, eq(catalogEndpoints.endpointKey, catalogAgentAdmission.endpointKey))
-      .where(and(
-        eq(catalogAgents.indexState, "current"),
-        eq(catalogAgentAdmission.state, "admitted"),
-        eq(catalogAgentEndpoints.declarationState, "current"),
-        eq(catalogEndpoints.role, "operational"),
-        eq(catalogEndpoints.eligibility, "eligible"),
-        inArray(catalogEndpoints.validationProtocol, ["a2a", "erc8183_http"]),
-      ));
-    const admittedPairs = new Set(admitted
-      .filter((row): row is { agentKey: string; endpointKey: string } => row.endpointKey !== null)
-      .map((row) => `${row.agentKey}\n${row.endpointKey}`));
-    if (admittedPairs.size === 0) return [{ count: 0 }];
-    const quotes = await db.select({
-      id: catalogObservations.id,
-      agentKey: catalogObservations.agentKey,
-      endpointKey: catalogObservations.endpointKey,
-      outcome: catalogObservations.outcome,
-      observedAt: catalogObservations.observedAt,
-      expiresAt: catalogObservations.expiresAt,
-    }).from(catalogObservations).where(and(
-      eq(catalogObservations.validationKind, "quote"),
-      eq(catalogObservations.verificationLevel, "cryptographic"),
-    )).orderBy(desc(catalogObservations.observedAt), desc(catalogObservations.id));
-    const seenPairs = new Set<string>();
-    const capableAgents = new Set<string>();
-    for (const quote of quotes) {
-      if (quote.endpointKey === null) continue;
-      const pair = `${quote.agentKey}\n${quote.endpointKey}`;
-      if (!admittedPairs.has(pair) || seenPairs.has(pair)) continue;
-      seenPairs.add(pair);
-      if (quote.outcome === "quote_verified" && quote.expiresAt !== null && quote.expiresAt > nowMs) {
-        capableAgents.add(quote.agentKey);
-      }
-    }
-    return [{ count: capableAgents.size }];
-  })();
   const facetRowsPromise = includeFacets
     ? Promise.all([
       db.select({
@@ -533,15 +512,20 @@ export async function catalogAgentsResponse(
       countFacet("pending"),
       countFacet("a2a"),
       countFacet("mcp"),
-      quoteCapableFacet,
+      countFacet("quote_capable"),
       countFacet("failed"),
-    ]).then(([simple, pending, a2a, mcp, quoteCapable, failed]) => [{
+      readCatalogReachabilityFacets(db, nowMs),
+    ]).then(([simple, pending, a2a, mcp, quoteCapable, failed, reachabilityFacets]) => [{
       ...simple[0]!,
       pending: pending[0]?.count ?? 0,
       a2a: a2a[0]?.count ?? 0,
       mcp: mcp[0]?.count ?? 0,
       quoteCapable: quoteCapable[0]?.count ?? 0,
       failed: failed[0]?.count ?? 0,
+      live: reachabilityFacets.live,
+      historical: reachabilityFacets.historical,
+      never: reachabilityFacets.never,
+      browserObserved: reachabilityFacets.browserObserved,
     }])
     : Promise.resolve([]);
   const cursorCondition = cursor === undefined ? undefined : or(
@@ -584,12 +568,10 @@ export async function catalogAgentsResponse(
   const endpointKeys = declarations
     .filter(({ endpoint }) => endpoint.role === "operational" && endpoint.eligibility === "eligible")
     .map((entry) => entry.endpoint.endpointKey);
-  const [browserObservations, effectiveEndpointObservations, effectiveAgentObservations, admissions, platformAttemptCounts] = await Promise.all([
+  const [browserObservations, effectiveEndpointObservations, effectiveAgentObservations, platformAttemptCounts, capabilities, quoteStats, jobStats] = await Promise.all([
     readLatestBrowserObservationsForAgents(db, agentKeys),
     readEffectiveCatalogObservationsForAgents(db, agentKeys, endpointKeys),
     readEffectiveAgentObservations(db, agentKeys),
-    agentKeys.length === 0 ? Promise.resolve([]) : db.select().from(catalogAgentAdmission)
-      .where(inArray(catalogAgentAdmission.agentKey, agentKeys)),
     // Counted per (agent, endpoint) straight off the agent index and joined to
     // the page's current operational declarations in memory: joining the
     // endpoint tables in SQL made the planner drive from catalog_endpoints and
@@ -605,6 +587,37 @@ export async function catalogAgentsResponse(
         inArray(catalogObservations.validationKind, [...PLATFORM_VALIDATION_KINDS]),
         eq(catalogObservations.verificationLevel, "platform_observed"),
       )).groupBy(catalogObservations.agentKey, catalogObservations.endpointKey),
+    agentKeys.length === 0 ? Promise.resolve([]) : db.select().from(catalogSellerCapabilities)
+      .where(inArray(catalogSellerCapabilities.agentKey, agentKeys))
+      .orderBy(desc(catalogSellerCapabilities.updatedAt)),
+    agentKeys.length === 0 ? Promise.resolve([]) : db.select({
+      agentKey: catalogQuoteRequests.agentKey,
+      // Count logical buyer requests once even when browser-first execution
+      // also records a Worker fallback attempt.
+      requestCount: countDistinct(catalogQuoteRequests.id),
+      successCount: sql<number>`COUNT(DISTINCT CASE WHEN ${catalogQuoteRequests.status} = 'succeeded' THEN ${catalogQuoteRequests.id} END)`,
+      lastAttemptAt: sql<number | null>`MAX(${catalogQuoteAttempts.startedAt})`,
+    }).from(catalogQuoteRequests)
+      .leftJoin(catalogQuoteAttempts, eq(catalogQuoteAttempts.requestId, catalogQuoteRequests.id))
+      .where(and(inArray(catalogQuoteRequests.agentKey, agentKeys), eq(catalogQuoteRequests.kind, "buyer_quote")))
+      .groupBy(catalogQuoteRequests.agentKey),
+    agentKeys.length === 0 ? Promise.resolve([]) : db.select({
+      agentId: hireEvents.agentId,
+      total: countDistinct(sql`CAST(${commerceJobs.jobId} AS TEXT)`),
+      completed: sql<number>`COUNT(DISTINCT CASE WHEN ${commerceJobs.status} = 3 THEN CAST(${commerceJobs.jobId} AS TEXT) END)`,
+      funded: sql<number>`COUNT(DISTINCT CASE WHEN ${commerceJobs.status} = 1 THEN CAST(${commerceJobs.jobId} AS TEXT) END)`,
+      submitted: sql<number>`COUNT(DISTINCT CASE WHEN ${commerceJobs.status} = 2 THEN CAST(${commerceJobs.jobId} AS TEXT) END)`,
+    }).from(hireEvents)
+      .innerJoin(commerceJobs, and(
+        eq(hireEvents.chainId, commerceJobs.chainId),
+        eq(hireEvents.jobId, sql`CAST(${commerceJobs.jobId} AS TEXT)`),
+      ))
+      .where(and(
+        eq(hireEvents.chainId, 56),
+        inArray(hireEvents.agentId, agents.map((agent) => agent.agentId)),
+        eq(hireEvents.provenance, "chain_verified"),
+      ))
+      .groupBy(hireEvents.agentId),
   ]);
   const operationalDeclarationKeys = new Set(declarations
     .filter((entry) => entry.endpoint.role === "operational" && entry.endpoint.eligibility === "eligible")
@@ -624,7 +637,25 @@ export async function catalogAgentsResponse(
   const items = agents.map((agent) => {
     const agentDeclarations = declarations.filter((entry) => entry.agentKey === agent.agentKey);
     const agentObservations = observations.filter((observation) => observation.agentKey === agent.agentKey);
-    const admission = admissions.find((entry) => entry.agentKey === agent.agentKey) ?? null;
+    // The capability ledger is the runtime authority. The former admission
+    // table remains only for migration/backfill and is intentionally not read
+    // while serving catalogue pages.
+    const admission = null;
+    const capabilityRows: Array<CapabilityFact & { endpointKey: string; transport: "a2a" | "mcp" | "erc8183_http" }> = capabilities
+      .filter((entry) => entry.agentKey === agent.agentKey)
+      .map((entry) => ({
+        endpointKey: entry.endpointKey,
+        transport: entry.transport as "a2a" | "mcp" | "erc8183_http",
+        state: entry.state as SellerCapabilityState,
+        lastSuccessAt: entry.lastSuccessAt ?? null,
+        capabilityExpiresAt: entry.capabilityExpiresAt ?? null,
+        lastAttemptAt: entry.lastAttemptAt ?? null,
+        consecutiveFailures: entry.consecutiveFailures ?? 0,
+        lastErrorCode: entry.lastErrorCode ?? null,
+      }));
+    const capability = selectBestCapability(capabilityRows, nowMs);
+    const quoteStat = quoteStats.find((entry) => entry.agentKey === agent.agentKey);
+    const jobStat = jobStats.find((entry) => entry.agentId === agent.agentId);
     return {
       ...agent,
       admission,
@@ -633,6 +664,27 @@ export async function catalogAgentsResponse(
         endpoints: agentDeclarations.map(({ endpoint }) => endpoint),
         observations: agentObservations,
         admission,
+        capability: capability ? {
+          ...(capability.endpointKey ? { endpointKey: capability.endpointKey } : {}),
+          ...(capability.transport ? { transport: capability.transport } : {}),
+          state: capability.state as "unsupported" | "discovered" | "ready" | "stale" | "failed" | "suspended",
+          lastSuccessAt: capability.lastSuccessAt ?? null,
+          capabilityExpiresAt: capability.capabilityExpiresAt ?? null,
+          lastAttemptAt: capability.lastAttemptAt ?? null,
+          consecutiveFailures: capability.consecutiveFailures ?? 0,
+          lastErrorCode: capability.lastErrorCode ?? null,
+        } : null,
+        ...(quoteStat ? { quoteStats: {
+          requestCount: Number(quoteStat.requestCount),
+          successCount: Number(quoteStat.successCount),
+          lastAttemptAt: quoteStat.lastAttemptAt ?? null,
+        } } : {}),
+        ...(jobStat ? { jobStats: {
+          total: Number(jobStat.total),
+          completed: Number(jobStat.completed),
+          funded: Number(jobStat.funded),
+          submitted: Number(jobStat.submitted),
+        } } : {}),
         nowMs,
       }),
       declarations: agentDeclarations.map((entry) => ({
@@ -661,6 +713,12 @@ export async function catalogAgentsResponse(
       grid_trading: Number(facetRow.gridTrading),
       yield_optimisation: Number(facetRow.yieldOptimisation),
       health_factor_monitoring: Number(facetRow.healthFactorMonitoring),
+    },
+    reachability: {
+      live: Number(facetRow.live),
+      historical: Number(facetRow.historical),
+      never: Number(facetRow.never),
+      browser_observed: Number(facetRow.browserObserved),
     },
   } : undefined;
   const body = responseVersion === 1 ? {

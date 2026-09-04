@@ -170,6 +170,7 @@ export const hireEvents = sqliteTable(
     provenance: text().notNull(),
     jobId: text(),
     txHash: text(),
+    quoteRequestId: integer(),
     blockNumber: text(),
     occurredAt: integer().notNull(),
     verifiedAt: integer(),
@@ -178,6 +179,8 @@ export const hireEvents = sqliteTable(
   (table) => [
     index("idx_hire_agent").on(table.chainId, table.agentId, desc(table.occurredAt)),
     index("idx_hire_events_caller").on(table.callerKey, table.provenance, desc(table.occurredAt)),
+    index("idx_hire_events_job").on(table.chainId, table.jobId),
+    index("idx_hire_events_job_quote").on(table.chainId, table.jobId, table.quoteRequestId),
     check("hire_events_chain_bsc", sql`${table.chainId} IN (56, 97)`),
     check("hire_events_caller_key", sql`length(${table.callerKey}) BETWEEN 1 AND 128`),
     check(
@@ -191,6 +194,171 @@ export const hireEvents = sqliteTable(
       "hire_events_provenance",
       sql`${table.provenance} IN ('marketplace_observed', 'chain_verified')`,
     ),
+  ],
+);
+
+export const catalogSellerCapabilities = sqliteTable(
+  "catalog_seller_capabilities",
+  {
+    agentKey: text().notNull(),
+    endpointKey: text().notNull(),
+    transport: text().notNull(),
+    state: text().notNull(),
+    lastSuccessAt: integer(),
+    capabilityExpiresAt: integer(),
+    nextProbeAt: integer(),
+    consecutiveFailures: integer().notNull().default(0),
+    lastAttemptAt: integer(),
+    lastAttemptId: text(),
+    lastErrorCode: text(),
+    createdAt: integer().notNull(),
+    updatedAt: integer().notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.agentKey, table.endpointKey] }),
+    index("idx_catalog_seller_capabilities_queue").on(table.state, table.nextProbeAt, table.updatedAt),
+    index("idx_catalog_seller_capabilities_agent").on(table.agentKey, desc(table.updatedAt)),
+    check("catalog_seller_capabilities_transport", sql`${table.transport} IN ('a2a', 'mcp', 'erc8183_http')`),
+    check("catalog_seller_capabilities_state", sql`${table.state} IN ('unsupported', 'discovered', 'ready', 'stale', 'failed', 'suspended')`),
+    check("catalog_seller_capabilities_failures", sql`${table.consecutiveFailures} >= 0`),
+  ],
+);
+
+export const catalogQuoteRequests = sqliteTable(
+  "catalog_quote_requests",
+  {
+    id: integer().primaryKey({ autoIncrement: true }),
+    requestHash: text().notNull(),
+    artifactHash: text(),
+    agentKey: text().notNull(),
+    endpointKey: text().notNull(),
+    transport: text().notNull(),
+    kind: text().notNull(),
+    status: text().notNull(),
+    callerKey: text().notNull().default("anonymous"),
+    createdAt: integer().notNull(),
+    completedAt: integer(),
+    quoteExpiresAt: integer(),
+    resultObservationId: integer(),
+    errorCode: text(),
+    metadataJson: text().notNull().default("{}"),
+  },
+  (table) => [
+    index("idx_catalog_quote_requests_agent").on(table.agentKey, desc(table.createdAt)),
+    index("idx_catalog_quote_requests_status").on(table.status, table.createdAt),
+    uniqueIndex("idx_catalog_quote_requests_dedupe").on(table.agentKey, table.requestHash, table.createdAt),
+    uniqueIndex("idx_catalog_quote_requests_artifact").on(table.agentKey, table.artifactHash)
+      .where(sql`${table.artifactHash} IS NOT NULL`),
+    check("catalog_quote_requests_transport", sql`${table.transport} IN ('a2a', 'mcp', 'erc8183_http')`),
+    check("catalog_quote_requests_kind", sql`${table.kind} IN ('capability_probe', 'buyer_quote')`),
+    check("catalog_quote_requests_status", sql`${table.status} IN ('queued', 'running', 'succeeded', 'rejected', 'failed', 'expired')`),
+    check("catalog_quote_requests_caller", sql`length(${table.callerKey}) BETWEEN 1 AND 128`),
+  ],
+);
+
+export const catalogQuoteAttempts = sqliteTable(
+  "catalog_quote_attempts",
+  {
+    id: text().primaryKey(),
+    requestId: integer().notNull(),
+    executor: text().notNull(),
+    status: text().notNull(),
+    startedAt: integer().notNull(),
+    finishedAt: integer(),
+    durationMs: integer(),
+    httpStatus: integer(),
+    outcome: text(),
+    errorCode: text(),
+    metadataJson: text().notNull().default("{}"),
+  },
+  (table) => [
+    index("idx_catalog_quote_attempts_request").on(table.requestId, desc(table.startedAt)),
+    index("idx_catalog_quote_attempts_status").on(table.status, desc(table.startedAt)),
+    check("catalog_quote_attempts_executor", sql`${table.executor} IN ('browser', 'worker')`),
+    check("catalog_quote_attempts_status", sql`${table.status} IN ('pending', 'running', 'succeeded', 'rejected', 'failed')`),
+    check("catalog_quote_attempts_duration", sql`${table.durationMs} IS NULL OR ${table.durationMs} >= 0`),
+  ],
+);
+
+// Current getJob() state of every Commerce job the indexer has seen. Marketplace
+// attribution is not a column: it is derived from hire_events on (chainId, jobId).
+export const commerceJobs = sqliteTable(
+  "commerce_jobs",
+  {
+    chainId: integer().notNull(),
+    jobId: integer().notNull(),
+    client: text().notNull(),
+    provider: text().notNull(),
+    evaluator: text().notNull(),
+    budget: text().notNull(),
+    expiredAt: integer().notNull(),
+    status: integer().notNull(),
+    hook: text().notNull(),
+    submittedAt: integer(),
+    deliverable: text(),
+    firstSeenAt: integer().notNull(),
+    updatedAt: integer().notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.chainId, table.jobId] }),
+    index("idx_commerce_jobs_client").on(table.chainId, table.client, desc(table.jobId)),
+    index("idx_commerce_jobs_provider").on(table.chainId, table.provider, desc(table.jobId)),
+    index("idx_commerce_jobs_status").on(table.chainId, table.status),
+    check("commerce_jobs_chain", sql`${table.chainId} IN (56, 97)`),
+    check("commerce_jobs_job", sql`${table.jobId} >= 0`),
+    check("commerce_jobs_status", sql`${table.status} BETWEEN 0 AND 5`),
+  ],
+);
+
+// Fixed-size aggregate used by the public jobs summary. Triggers in migration
+// 0022 keep these rows in sync without scanning the full Commerce ledger.
+export const commerceJobCounts = sqliteTable(
+  "commerce_job_counts",
+  {
+    chainId: integer().notNull(),
+    status: integer().notNull(),
+    protocolJobs: integer().notNull().default(0),
+    marketplaceJobs: integer().notNull().default(0),
+  },
+  (table) => [
+    primaryKey({ columns: [table.chainId, table.status] }),
+    check("commerce_job_counts_chain", sql`${table.chainId} IN (56, 97)`),
+    check("commerce_job_counts_status", sql`${table.status} BETWEEN 0 AND 5`),
+    check("commerce_job_counts_protocol", sql`${table.protocolJobs} >= 0`),
+    check("commerce_job_counts_marketplace", sql`${table.marketplaceJobs} >= 0`),
+  ],
+);
+
+// Append-only phase ledger decoded from Commerce logs (one row per log).
+export const commerceJobEvents = sqliteTable(
+  "commerce_job_events",
+  {
+    id: integer().primaryKey({ autoIncrement: true }),
+    chainId: integer().notNull(),
+    jobId: integer().notNull(),
+    phase: text().notNull(),
+    eventName: text().notNull(),
+    txHash: text().notNull(),
+    logIndex: integer().notNull(),
+    blockNumber: integer().notNull(),
+    blockTimestamp: integer().notNull(),
+    actor: text(),
+    amount: text(),
+    deliverable: text(),
+    reason: text(),
+    indexedAt: integer().notNull(),
+  },
+  (table) => [
+    uniqueIndex("commerce_job_events_log").on(table.chainId, table.txHash, table.logIndex),
+    index("idx_commerce_job_events_job").on(table.chainId, table.jobId, table.blockNumber),
+    check("commerce_job_events_chain", sql`${table.chainId} IN (56, 97)`),
+    check("commerce_job_events_job", sql`${table.jobId} >= 0`),
+    check(
+      "commerce_job_events_phase",
+      sql`${table.phase} IN ('created', 'funded', 'submitted', 'settled', 'refunded')`,
+    ),
+    check("commerce_job_events_log_index", sql`${table.logIndex} >= 0`),
+    check("commerce_job_events_block", sql`${table.blockNumber} >= 0`),
   ],
 );
 
@@ -653,6 +821,12 @@ export const schema = {
   probeObservations,
   funnelSnapshots,
   hireEvents,
+  catalogSellerCapabilities,
+  catalogQuoteRequests,
+  catalogQuoteAttempts,
+  commerceJobs,
+  commerceJobCounts,
+  commerceJobEvents,
   runtimeState,
   schedulerAttempts,
   catalogAgents,

@@ -4,6 +4,7 @@ import type {
   BrowserValidationProtocol,
   BrowserValidationResult,
 } from "../../business/entities/browser-validation.ts";
+import { invalidateCatalogCandidateCache } from "./catalog-candidate-feed.ts";
 
 export type CatalogObservationSource = "browser_reported";
 export type CatalogObservationSyncStatus = "recorded" | "failed" | "not_configured";
@@ -103,7 +104,11 @@ export async function syncCatalogObservation(
       body,
       signal: AbortSignal.timeout(5_000),
     });
-    return response.status === 201 ? { status: "recorded" } : { status: "failed" };
+    if (response.status === 201) {
+      invalidateCatalogCandidateCache();
+      return { status: "recorded" };
+    }
+    return { status: "failed" };
   } catch {
     return { status: "failed" };
   }

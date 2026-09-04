@@ -11,3 +11,4 @@ export {
 } from "../../data/erc8183/browser-wallet-adapter.ts";
 export type { BrowserHireMode, Erc8183BrowserDeployment } from "../../data/erc8183/browser-wallet-adapter.ts";
 export { ERC8183_TESTNET } from "../../data/erc8183/contracts.ts";
+export { ERC8183_MAINNET } from "../../mainnet/contracts.ts";

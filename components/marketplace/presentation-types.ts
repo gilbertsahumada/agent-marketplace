@@ -39,6 +39,14 @@ export interface AgentCardViewModel {
   imageUrl?: string;
   operator: "third_party" | "marketplace";
   quoteRequestAvailable?: boolean;
+  /** Public, sanitised quote-request counters from the Worker ledger. */
+  quoteRequestCount?: number;
+  quoteSuccessCount?: number;
+  lastQuoteAttemptAt?: string | null;
+  jobCount?: number;
+  completedJobCount?: number;
+  capabilityState?: "unsupported" | "discovered" | "ready" | "stale" | "failed" | "suspended";
+  capabilityExpiresAt?: string | null;
   buyerAction?: "unavailable" | "check_availability" | "request_quote" | "prepare_hire";
   blockingReasons?: string[];
   categories: MarketplaceCategory[];

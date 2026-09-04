@@ -20,8 +20,9 @@ export class D1RowBudgetExceededError extends Error {
     readonly dimension: "rows_read" | "rows_written",
     readonly limit: number,
     readonly observed: number,
+    readonly when: "before" | "after" = "after",
   ) {
-    super(`D1 ${dimension} budget exceeded after database access`);
+    super(`D1 ${dimension} budget exceeded ${when} database access`);
     this.name = "D1RowBudgetExceededError";
   }
 }
@@ -68,6 +69,10 @@ export interface BudgetedD1Database {
   db: D1DatabaseLike;
   budget: D1QueryBudget;
   usage: D1RowUsage;
+  // Pre-flight check for a write about to happen: throws (before any D1
+  // access) when the rows already metered plus `rows` would exceed the
+  // rows_written budget. It records nothing; the batch's own meta does that.
+  reserveRowsWritten(rows: number): void;
 }
 
 export function createBudgetedD1Database(
@@ -171,7 +176,17 @@ export function createBudgetedD1Database(
     },
   };
 
-  return { db, budget, usage };
+  const reserveRowsWritten = (rows: number): void => {
+    if (!Number.isSafeInteger(rows) || rows < 0) {
+      throw new Error("D1 row reservation must be a non-negative safe integer");
+    }
+    if (rowBudget === undefined) return;
+    if (usage.rowsWritten + rows > rowBudget.rowsWritten) {
+      throw new D1RowBudgetExceededError("rows_written", rowBudget.rowsWritten, usage.rowsWritten + rows, "before");
+    }
+  };
+
+  return { db, budget, usage, reserveRowsWritten };
 }
 
 function rowCount(value: unknown): number {

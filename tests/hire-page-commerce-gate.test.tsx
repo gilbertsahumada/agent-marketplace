@@ -13,12 +13,20 @@ const { executePassport, executeConfig, renderDemo, redirectRoute } = vi.hoisted
 vi.mock("@/src/business/composition", () => ({
   getAgentEvidencePassport: { executeWithAgent: executePassport },
   getMainnetBrowserDemoConfig: { execute: executeConfig },
+  listAgentHireJobs: { execute: async () => [] },
 }));
 
 vi.mock("@/components/spikes/erc8183-browser-spike", () => ({
   Erc8183MainnetDemo: () => {
     renderDemo();
     return null;
+  },
+}));
+
+vi.mock("@/components/marketplace/quote-request-panel", () => ({
+  QuoteRequestPanel: () => {
+    renderDemo();
+    return createElement("section", {}, "Quote request panel");
   },
 }));
 
@@ -145,12 +153,12 @@ describe("hire page normalized commerce gate", () => {
     expect(redirectRoute).toHaveBeenCalledWith("/jobs/514");
   });
 
-  it("does not mount the ERC-8183 flow while admission is pending", async () => {
+  it("does not mount the quote flow while the seller is suspended", async () => {
     await render(state({
-      commerceStatus: "admission_pending",
-      buyerAction: "request_quote",
-      canRequestQuote: true,
-      blockingReasons: ["COMMERCE_NOT_ADMITTED"],
+      commerceStatus: "suspended",
+      buyerAction: "unavailable",
+      canRequestQuote: false,
+      blockingReasons: ["NO_QUOTE_TRANSPORT"],
     }));
 
     expect(renderDemo).not.toHaveBeenCalled();
@@ -168,7 +176,7 @@ describe("hire page normalized commerce gate", () => {
     expect(renderDemo).not.toHaveBeenCalled();
   });
 
-  it("mounts the ERC-8183 flow for a coherent admitted request_quote state", async () => {
+  it("mounts the quote flow for a coherent request_quote state", async () => {
     await render(state());
 
     expect(renderDemo).toHaveBeenCalledOnce();
@@ -179,7 +187,7 @@ describe("hire page normalized commerce gate", () => {
       commerceStatus: "declared",
       buyerAction: "check_availability",
       canRequestQuote: false,
-      blockingReasons: ["COMMERCE_NOT_ADMITTED"],
+      blockingReasons: ["NO_QUOTE_TRANSPORT"],
     }));
 
     expect(markup).toContain('href="#validation"');
@@ -193,18 +201,18 @@ describe("hire page normalized commerce gate", () => {
       canRequestBrowserValidation: false,
       canRequestInfrastructureValidation: false,
       canRequestQuote: false,
-      blockingReasons: ["COMMERCE_NOT_ADMITTED"],
+      blockingReasons: ["NO_QUOTE_TRANSPORT"],
     }));
 
     expect(markup).not.toContain("Hire agent");
   });
 
-  it("does not render a self-link when the configured seller does not match", async () => {
+  it("does not depend on a hardcoded seller when the configured demo changes", async () => {
     executeConfig.mockReturnValue({ agentId: 99 });
 
     const markup = await render(state());
 
-    expect(renderDemo).not.toHaveBeenCalled();
-    expect(markup).not.toContain("Try again");
+    expect(renderDemo).toHaveBeenCalledOnce();
+    expect(markup).toContain("Quote request panel");
   });
 });

@@ -74,7 +74,7 @@ export default function DocsOverviewPage() {
           </Link>
           <Link className="rounded-lg border border-white/10 p-4 transition-colors hover:border-white/25 hover:bg-white/[0.03]" href="/docs/hire">
             <p className="text-sm font-semibold text-zinc-100">Hire flow</p>
-            <p className="mt-1 text-xs leading-relaxed">For buyers. Quote → prepare → five transactions → notify → track, with the guardrails.</p>
+            <p className="mt-1 text-xs leading-relaxed">For buyers. Quote → prepare → authorize 4–5 calls → notify → track, with the guardrails.</p>
           </Link>
           <a className="rounded-lg border border-white/10 p-4 transition-colors hover:border-white/25 hover:bg-white/[0.03]" href={`${REPO_DOCS}/MARKETPLACE.md`} rel="noreferrer" target="_blank">
             <p className="text-sm font-semibold text-zinc-100">Repository docs ↗</p>

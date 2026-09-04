@@ -98,9 +98,8 @@ export function HiringUnavailable({
           {locked ? <ShieldCheck aria-hidden="true" className="size-4" /> : <CircleAlert aria-hidden="true" className="size-4" />}
         </span>
         <div className="min-w-0">
-          <p className="font-eyebrow text-zinc-500">Hiring</p>
           <h2 className="mt-1 text-base font-medium text-white" id="hire-flow-title">
-            {locked ? "Hiring unavailable for this agent." : model.hire.label}
+            {model.hire.label}
           </h2>
           <p className="mt-2 max-w-2xl text-sm leading-relaxed text-zinc-400">{model.hire.detail}</p>
         </div>
@@ -109,10 +108,9 @@ export function HiringUnavailable({
       <div className="mt-4 flex flex-wrap items-center gap-3 border-t border-white/[0.07] pt-4">
         {validationAvailable && model.availability.state !== "verified" ? (
           <Button asChild size="sm" variant="outline">
-            <Link href="#validation">Check availability<ArrowRight aria-hidden="true" data-icon="inline-end" /></Link>
+            <Link href="#validation">{model.availability.label === "Last check failed" ? "Retry availability" : "Check availability"}<ArrowRight aria-hidden="true" data-icon="inline-end" /></Link>
           </Button>
         ) : null}
-        <span className="text-xs text-zinc-500">{model.nextAction}</span>
       </div>
     </section>
   );

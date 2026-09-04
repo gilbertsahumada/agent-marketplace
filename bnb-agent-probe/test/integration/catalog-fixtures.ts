@@ -15,6 +15,11 @@ export async function clearCatalogObservationFixtures(): Promise<void> {
 
 export async function clearCatalogFixtures(): Promise<void> {
   await clearCatalogObservationFixtures();
+  await env.DB.prepare("DELETE FROM hire_events").run();
+  await env.DB.prepare("DELETE FROM commerce_jobs").run();
+  await env.DB.prepare("DELETE FROM catalog_quote_attempts").run();
+  await env.DB.prepare("DELETE FROM catalog_quote_requests").run();
+  await env.DB.prepare("DELETE FROM catalog_seller_capabilities").run();
   await env.DB.prepare("DELETE FROM catalog_validation_requests").run();
   await env.DB.prepare("DELETE FROM catalog_ingest_tasks").run();
   await env.DB.prepare("DELETE FROM catalog_directed_tracking").run();

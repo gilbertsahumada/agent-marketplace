@@ -19,6 +19,8 @@ export interface D1Database {
 export interface Env {
   DB: D1Database;
   WP2_QUEUE?: QueueProducer;
+  /** Dedicated queue for seller capability/quote probes. */
+  CATALOG_QUOTE_QUEUE?: QueueProducer;
   CLOUDFLARE_WORKERS_PLAN?: string;
   KILL_SWITCH?: string;
   PRODUCER_KILL_SWITCH?: string;
@@ -38,7 +40,15 @@ export interface Env {
   CATALOG_PROBE_CONCURRENCY?: string;
   CATALOG_VALIDATION_REQUESTS_PER_DAY?: string;
   CATALOG_VALIDATION_REQUESTS_PER_CALLER_DAY?: string;
+  CATALOG_VALIDATION_REQUESTS_PER_AGENT_DAY?: string;
+  CATALOG_VALIDATION_REQUESTS_PER_ORIGIN_DAY?: string;
   HIRE_EVENTS_PER_CALLER_DAY?: string;
+  COMMERCE_INDEX_ENABLED?: string;
+  COMMERCE_INDEX_BLOCKS_PER_RUN?: string;
+  COMMERCE_INDEX_FINALITY_BLOCKS?: string;
+  COMMERCE_INDEX_JOBS_PER_RUN?: string;
+  COMMERCE_INDEX_LOGS_PER_RUN?: string;
+  COMMERCE_INDEX_BLOCK_LOOKUPS_PER_RUN?: string;
   CATALOG_DISCOVERY_PAGE_SIZE?: string;
   CATALOG_INGEST_TASKS_PER_RUN?: string;
   CATALOG_DECLARATIONS_PER_TASK?: string;

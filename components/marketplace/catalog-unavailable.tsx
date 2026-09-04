@@ -20,7 +20,7 @@ export function CatalogUnavailable({ retryHref }: { retryHref: string }) {
           </EmptyMedia>
           <EmptyTitle>Live catalogue temporarily unavailable</EmptyTitle>
           <EmptyDescription>
-            trust8004 did not answer within the bounded request window. No registered agent or profile data was invented.
+            The marketplace evidence service did not finish this request. No agent status or profile data was invented.
           </EmptyDescription>
         </EmptyHeader>
         <EmptyContent>

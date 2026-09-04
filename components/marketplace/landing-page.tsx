@@ -34,18 +34,18 @@ export function MarketplaceLanding({
   proofSummary?: { href: string; network: string; title: string; description: string; evidence: EvidenceStepViewModel[] };
   qualifiedSeller: { agentId: string; name: string } | null;
 }) {
-  const admittedCard = featuredAgents.find((agent) =>
+  const capabilityCard = featuredAgents.find((agent) =>
     agent.agentId === qualifiedSeller?.agentId || agent.quoteRequestAvailable === true,
   ) ?? null;
-  const admittedSeller = qualifiedSeller ?? (admittedCard ? { agentId: admittedCard.agentId, name: admittedCard.name } : null);
-  const mainnetEvidence = proofSummary?.evidence ?? admittedCard?.evidence ?? [
+  const quoteSeller = qualifiedSeller ?? (capabilityCard ? { agentId: capabilityCard.agentId, name: capabilityCard.name } : null);
+  const mainnetEvidence = proofSummary?.evidence ?? capabilityCard?.evidence ?? [
     { kind: "declared", label: "Declared", status: "unknown", provenance: "declared", detail: "Choose a Mainnet seller to inspect its current declaration." },
     { kind: "reachable", label: "Reachable", status: "unknown", provenance: "observed", detail: "Reachability is checked for the selected seller." },
     { kind: "quote", label: "Fresh quote", status: "unknown", provenance: "observed", detail: "A transactional quote is requested only when the buyer asks." },
     { kind: "job", label: "Job", status: "unknown", provenance: "onchain", detail: "No completed Mainnet job is claimed by this card." },
   ] satisfies EvidenceStepViewModel[];
-  const mainnetHref = admittedSeller
-    ? `/hire/${admittedSeller.agentId}`
+  const mainnetHref = quoteSeller
+    ? `/hire/${quoteSeller.agentId}`
     : "/agents?view=marketplace&category=grid_trading";
   return (
     <main id="main-content">
@@ -54,11 +54,11 @@ export function MarketplaceLanding({
           badge: proofSummary ? "Onchain proof" : "Mainnet hiring",
           network: proofSummary?.network ?? "BSC Mainnet · chain 56",
           title: proofSummary?.title ?? "Request a fresh Mainnet quote",
-          description: proofSummary?.description ?? "The marketplace Grid seller stays admitted for Mainnet quotes. Token, budget and transaction intent are checked again before any signature.",
+          description: proofSummary?.description ?? "The marketplace has current quote-capability evidence for this Grid seller. Token, budget and transaction intent are checked again before any signature.",
           primaryHref: mainnetHref,
-          primaryLabel: admittedSeller ? "Get a Mainnet quote" : "Explore Mainnet agents",
-          ...(admittedSeller ? { note: `Quotes by ${admittedSeller.name} · non-custodial` } : {}),
-          detailHref: proofSummary?.href ?? (admittedCard?.href ?? mainnetHref),
+          primaryLabel: quoteSeller ? "Get a Mainnet quote" : "Explore Mainnet agents",
+          ...(quoteSeller ? { note: `Quotes by ${quoteSeller.name} · non-custodial` } : {}),
+          detailHref: proofSummary?.href ?? (capabilityCard?.href ?? mainnetHref),
           detailLabel: proofSummary ? "Inspect public proof" : "Inspect Mainnet seller",
           evidence: mainnetEvidence,
           evidenceAriaLabel: "Evidence for the Mainnet hiring path",

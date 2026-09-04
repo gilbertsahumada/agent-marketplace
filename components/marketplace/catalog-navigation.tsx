@@ -8,6 +8,8 @@ type CatalogNavigationValue = {
   pending: boolean;
 };
 
+const NAVIGATION_TIMEOUT_MS = 15_000;
+
 const CatalogNavigationContext = createContext<CatalogNavigationValue | null>(null);
 
 export function CatalogNavigationProvider({ children, navigationKey }: { children: ReactNode; navigationKey: string }) {
@@ -16,6 +18,12 @@ export function CatalogNavigationProvider({ children, navigationKey }: { childre
   const [transitionPending, startTransition] = useTransition();
 
   useEffect(() => setTargetHref(null), [navigationKey]);
+
+  useEffect(() => {
+    if (targetHref === null) return;
+    const timeout = window.setTimeout(() => setTargetHref(null), NAVIGATION_TIMEOUT_MS);
+    return () => window.clearTimeout(timeout);
+  }, [targetHref]);
 
   const navigate = useCallback((href: string, method: "push" | "replace" = "push") => {
     setTargetHref(href);

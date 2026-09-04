@@ -14,6 +14,8 @@ export interface HireEventSyncInput {
   readonly phase: HireEventPhase;
   readonly jobId: string | null;
   readonly txHash: string | null;
+  /** Logical buyer quote that led to this on-chain job, when available. */
+  readonly quoteRequestId?: number | null;
 }
 
 type Environment = Readonly<Record<string, string | undefined>>;
@@ -46,6 +48,7 @@ export async function syncHireEvent(
     phase: input.phase,
     jobId: input.jobId,
     txHash: input.txHash,
+    ...(input.quoteRequestId === undefined || input.quoteRequestId === null ? {} : { quoteRequestId: input.quoteRequestId }),
   });
   let response: Response;
   try {

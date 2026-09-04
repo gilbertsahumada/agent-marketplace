@@ -12,7 +12,7 @@ import { bsc, bscTestnet } from "viem/chains";
 
 import type { D1DatabaseLike } from "../db/client";
 import { createDatabase } from "../db/orm";
-import { hireEvents } from "../db/schema";
+import { catalogObservations, catalogQuoteRequests, hireEvents } from "../db/schema";
 import {
   BSC_COMMERCE,
   BSC_REGISTRY,
@@ -55,7 +55,7 @@ const PHASE_COMPATIBLE_STATUS: Record<HireChainPhase, readonly number[]> = {
   refunded: [4, 5],
 };
 
-const DEPLOYMENTS: Record<HireChainId, {
+export const DEPLOYMENTS: Record<HireChainId, {
   readonly chain: typeof bsc | typeof bscTestnet;
   readonly commerce: Address;
   readonly registry: Address;
@@ -72,7 +72,7 @@ export const commerceEventsAbi = parseAbi([
   "event JobRejected(uint256 indexed jobId, address indexed rejector, bytes32 reason)",
   "event JobExpired(uint256 indexed jobId)",
 ]);
-const commerceReadAbi = parseAbi([
+export const commerceReadAbi = parseAbi([
   "function getJob(uint256 jobId) view returns ((uint256 id, address client, address provider, address evaluator, string description, uint256 budget, uint256 expiredAt, uint8 status, address hook, uint256 submittedAt, bytes32 deliverable))",
 ]);
 const registryAbi = parseAbi([
@@ -105,6 +105,7 @@ type HireEventInput =
     readonly phase: HireChainPhase;
     readonly jobId: string;
     readonly txHash: Hash;
+    readonly quoteRequestId: number | null;
   };
 
 type MulticallRead = { status: "success"; result: unknown } | { status: "failure"; error: unknown };
@@ -128,7 +129,8 @@ async function parseInput(request: Request): Promise<HireEventInput> {
   try { value = JSON.parse(body) as unknown; } catch { throw new InvalidHireEventRequest(); }
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new InvalidHireEventRequest();
   const record = value as Record<string, unknown>;
-  if (Object.keys(record).sort().join(",") !== "agentId,chainId,jobId,phase,schemaVersion,txHash"
+  const keys = Object.keys(record).filter((key) => key !== "quoteRequestId").sort().join(",");
+  if (keys !== "agentId,chainId,jobId,phase,schemaVersion,txHash"
     || record.schemaVersion !== 2
     || (record.chainId !== 56 && record.chainId !== 97)
     || typeof record.agentId !== "string" || !AGENT_ID.test(record.agentId)
@@ -137,7 +139,7 @@ async function parseInput(request: Request): Promise<HireEventInput> {
   }
   const base = { chainId: record.chainId as HireChainId, agentId: record.agentId };
   if ((HIRE_TELEMETRY_PHASES as readonly string[]).includes(record.phase)) {
-    if (record.jobId !== null || record.txHash !== null) throw new InvalidHireEventRequest();
+    if (record.jobId !== null || record.txHash !== null || record.quoteRequestId !== undefined) throw new InvalidHireEventRequest();
     return { kind: "telemetry", ...base, phase: record.phase as HireTelemetryPhase };
   }
   if ((HIRE_CHAIN_PHASES as readonly string[]).includes(record.phase)) {
@@ -151,6 +153,10 @@ async function parseInput(request: Request): Promise<HireEventInput> {
       phase: record.phase as HireChainPhase,
       jobId: record.jobId,
       txHash: record.txHash.toLowerCase() as Hash,
+      quoteRequestId: record.quoteRequestId === undefined ? null : (
+        Number.isSafeInteger(record.quoteRequestId) && Number(record.quoteRequestId) >= 1
+          ? Number(record.quoteRequestId) : (() => { throw new InvalidHireEventRequest(); })()
+      ),
     };
   }
   throw new InvalidHireEventRequest();
@@ -230,6 +236,57 @@ async function verifyChainPhase(
   return { blockNumber: receipt.blockNumber, blockTimestamp: block.timestamp };
 }
 
+async function verifyQuoteRequestLink(
+  db: ReturnType<typeof createDatabase>,
+  input: Extract<HireEventInput, { kind: "chain" }>,
+): Promise<void> {
+  if (input.quoteRequestId === null) return;
+  let rows: Array<{ id: number; kind: string; status: string; quoteExpiresAt: number | null; resultObservationId: number | null }>;
+  try {
+    rows = await db.select({
+      id: catalogQuoteRequests.id,
+      kind: catalogQuoteRequests.kind,
+      status: catalogQuoteRequests.status,
+      quoteExpiresAt: catalogQuoteRequests.quoteExpiresAt,
+      resultObservationId: catalogQuoteRequests.resultObservationId,
+    }).from(catalogQuoteRequests)
+      .where(and(
+        eq(catalogQuoteRequests.id, input.quoteRequestId),
+        eq(catalogQuoteRequests.agentKey, `eip155:${input.chainId}:${input.agentId}`),
+        eq(catalogQuoteRequests.kind, "buyer_quote"),
+      )).limit(1);
+  } catch {
+    throw new HireEventRejected("QUOTE_REQUEST_UNAVAILABLE");
+  }
+  const request = rows[0];
+  if (!request) throw new HireEventRejected("QUOTE_REQUEST_NOT_FOUND");
+  // Freshness is enforced when the transaction plan is prepared. Once the
+  // buyer has signed and a receipt exists, event ingestion must retain the
+  // historical quote link even if the short-lived quote window has elapsed.
+  if (request.status !== "succeeded" || request.quoteExpiresAt === null) {
+    throw new HireEventRejected("QUOTE_REQUEST_EXPIRED");
+  }
+  if (request.resultObservationId === null) throw new HireEventRejected("QUOTE_REQUEST_UNVERIFIED");
+  try {
+    const observations = await db.select({ id: catalogObservations.id }).from(catalogObservations)
+      .where(and(
+        eq(catalogObservations.id, request.resultObservationId),
+        eq(catalogObservations.agentKey, requestAgentKey(input)),
+        eq(catalogObservations.validationKind, "quote"),
+        eq(catalogObservations.verificationLevel, "cryptographic"),
+        eq(catalogObservations.outcome, "quote_verified"),
+      )).limit(1);
+    if (!observations[0]) throw new HireEventRejected("QUOTE_REQUEST_UNVERIFIED");
+  } catch (error) {
+    if (error instanceof HireEventRejected) throw error;
+    throw new HireEventRejected("QUOTE_REQUEST_UNAVAILABLE");
+  }
+}
+
+function requestAgentKey(input: Extract<HireEventInput, { kind: "chain" }>): string {
+  return `eip155:${input.chainId}:${input.agentId}`;
+}
+
 const LIST_LIMIT = 50;
 
 // Public read surface: only rows the Worker verified on chain, for one agent
@@ -247,6 +304,7 @@ export async function hireEventsListResponse(request: Request, d1: D1Database): 
     phase: hireEvents.phase,
     jobId: hireEvents.jobId,
     txHash: hireEvents.txHash,
+    quoteRequestId: hireEvents.quoteRequestId,
     blockNumber: hireEvents.blockNumber,
     occurredAt: hireEvents.occurredAt,
     verifiedAt: hireEvents.verifiedAt,
@@ -313,6 +371,7 @@ export async function hireEventsResponse(
       provenance: "marketplace_observed",
       jobId: null,
       txHash: null,
+      quoteRequestId: null,
       blockNumber: null,
       occurredAt: options.nowMs,
       verifiedAt: null,
@@ -363,6 +422,12 @@ export async function hireEventsResponse(
     if (error instanceof BscProbeError) return jsonResponse({ error: "chain_unavailable", code: error.code }, 503);
     throw error;
   }
+  try {
+    await verifyQuoteRequestLink(db, input);
+  } catch (error) {
+    if (error instanceof HireEventRejected) return jsonResponse({ error: "phase_rejected", code: error.code }, 409);
+    throw error;
+  }
   const occurredAt = Number(proof.blockTimestamp) * 1_000;
   const inserted = await db.insert(hireEvents).values({
     eventKey,
@@ -372,6 +437,7 @@ export async function hireEventsResponse(
     provenance: "chain_verified",
     jobId: input.jobId,
     txHash: input.txHash,
+    quoteRequestId: input.quoteRequestId,
     blockNumber: proof.blockNumber.toString(),
     occurredAt,
     verifiedAt: options.nowMs,

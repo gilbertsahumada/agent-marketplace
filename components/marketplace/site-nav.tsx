@@ -9,6 +9,7 @@ import { WalletConnectButton } from "./wallet-connect-button";
 const navigation = [
   { href: "/agents", label: "Agents" },
   { href: "/compare", label: "Compare" },
+  { href: "/jobs", label: "Jobs" },
   { href: "/validate", label: "Validate" },
 ] as const;
 

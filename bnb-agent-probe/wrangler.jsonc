@@ -23,12 +23,17 @@
     "PROBE_ENDPOINT_ALLOWLIST": "https://bnb-agent-marketplace-ruby.vercel.app/grid",
     "PROBE_GENERAL_EGRESS_APPROVED": "0",
     "CATALOG_PROBE_ENABLED": "0",
+    "COMMERCE_INDEX_ENABLED": "0",
     "CATALOG_V2_READS_ENABLED": "0",
     "CATALOG_V2_WRITES_ENABLED": "0",
     "CATALOG_PROBE_BATCH_SIZE": "1",
+    "CATALOG_QUOTE_BATCH_SIZE": "1",
+    "CATALOG_QUOTE_CONCURRENCY": "1",
     "CATALOG_PROBE_CONCURRENCY": "2",
     "CATALOG_VALIDATION_REQUESTS_PER_DAY": "100",
     "CATALOG_VALIDATION_REQUESTS_PER_CALLER_DAY": "10",
+    "CATALOG_VALIDATION_REQUESTS_PER_AGENT_DAY": "25",
+    "CATALOG_VALIDATION_REQUESTS_PER_ORIGIN_DAY": "25",
     "CATALOG_DISCOVERY_PAGE_SIZE": "2",
     "CATALOG_INGEST_TASKS_PER_RUN": "1",
     "CATALOG_DECLARATIONS_PER_TASK": "1",
@@ -59,11 +64,20 @@
   ],
   "queues": {
     "producers": [
-      { "binding": "WP2_QUEUE", "queue": "bnb-agent-probe" }
+      { "binding": "WP2_QUEUE", "queue": "bnb-agent-probe" },
+      { "binding": "CATALOG_QUOTE_QUEUE", "queue": "bnb-agent-catalog-quotes" }
     ],
     "consumers": [
       {
         "queue": "bnb-agent-probe",
+        "max_batch_size": 1,
+        "max_batch_timeout": 1,
+        "max_retries": 3,
+        "max_concurrency": 1,
+        "retry_delay": 60
+      },
+      {
+        "queue": "bnb-agent-catalog-quotes",
         "max_batch_size": 1,
         "max_batch_timeout": 1,
         "max_retries": 3,
@@ -94,11 +108,16 @@
         "CATALOG_PROBE_ENABLED": "1",
         "CATALOG_V2_READS_ENABLED": "1",
         "CATALOG_V2_WRITES_ENABLED": "1",
-        "CATALOG_RESPONSE_CACHE_SECONDS": "300",
+        "COMMERCE_INDEX_ENABLED": "1",
+        "CATALOG_RESPONSE_CACHE_SECONDS": "30",
         "CATALOG_PROBE_BATCH_SIZE": "4",
         "CATALOG_PROBE_CONCURRENCY": "2",
+        "CATALOG_QUOTE_BATCH_SIZE": "4",
+        "CATALOG_QUOTE_CONCURRENCY": "2",
         "CATALOG_VALIDATION_REQUESTS_PER_DAY": "100",
         "CATALOG_VALIDATION_REQUESTS_PER_CALLER_DAY": "10",
+        "CATALOG_VALIDATION_REQUESTS_PER_AGENT_DAY": "25",
+        "CATALOG_VALIDATION_REQUESTS_PER_ORIGIN_DAY": "25",
         "CATALOG_DISCOVERY_PAGE_SIZE": "15",
         "CATALOG_INGEST_TASKS_PER_RUN": "1",
         "CATALOG_DECLARATIONS_PER_TASK": "1",
@@ -129,7 +148,8 @@
       ],
       "queues": {
         "producers": [
-          { "binding": "WP2_QUEUE", "queue": "bnb-agent-probe-staging" }
+          { "binding": "WP2_QUEUE", "queue": "bnb-agent-probe-staging" },
+          { "binding": "CATALOG_QUOTE_QUEUE", "queue": "bnb-agent-catalog-quotes-staging" }
         ],
         "consumers": [
           {
@@ -138,6 +158,14 @@
             "max_batch_timeout": 1,
             "max_retries": 3,
             "max_concurrency": 1,
+            "retry_delay": 60
+          },
+          {
+            "queue": "bnb-agent-catalog-quotes-staging",
+            "max_batch_size": 1,
+            "max_batch_timeout": 1,
+            "max_retries": 3,
+            "max_concurrency": 2,
             "retry_delay": 60
           }
         ]
@@ -162,12 +190,17 @@
         "PROBE_ENDPOINT_ALLOWLIST": "https://bnb-agent-marketplace-ruby.vercel.app/grid",
         "PROBE_GENERAL_EGRESS_APPROVED": "0",
         "CATALOG_PROBE_ENABLED": "0",
+        "COMMERCE_INDEX_ENABLED": "0",
         "CATALOG_V2_READS_ENABLED": "0",
         "CATALOG_V2_WRITES_ENABLED": "0",
         "CATALOG_PROBE_BATCH_SIZE": "1",
         "CATALOG_PROBE_CONCURRENCY": "2",
+        "CATALOG_QUOTE_BATCH_SIZE": "1",
+        "CATALOG_QUOTE_CONCURRENCY": "1",
         "CATALOG_VALIDATION_REQUESTS_PER_DAY": "100",
         "CATALOG_VALIDATION_REQUESTS_PER_CALLER_DAY": "10",
+        "CATALOG_VALIDATION_REQUESTS_PER_AGENT_DAY": "25",
+        "CATALOG_VALIDATION_REQUESTS_PER_ORIGIN_DAY": "25",
         "CATALOG_DISCOVERY_PAGE_SIZE": "2",
         "CATALOG_INGEST_TASKS_PER_RUN": "1",
         "CATALOG_DECLARATIONS_PER_TASK": "1",
@@ -198,11 +231,20 @@
       ],
       "queues": {
         "producers": [
-          { "binding": "WP2_QUEUE", "queue": "bnb-agent-probe-validation-20260828" }
+          { "binding": "WP2_QUEUE", "queue": "bnb-agent-probe-validation-20260828" },
+          { "binding": "CATALOG_QUOTE_QUEUE", "queue": "bnb-agent-catalog-quotes-validation-20260828" }
         ],
         "consumers": [
           {
             "queue": "bnb-agent-probe-validation-20260828",
+            "max_batch_size": 1,
+            "max_batch_timeout": 1,
+            "max_retries": 3,
+            "max_concurrency": 1,
+            "retry_delay": 60
+          },
+          {
+            "queue": "bnb-agent-catalog-quotes-validation-20260828",
             "max_batch_size": 1,
             "max_batch_timeout": 1,
             "max_retries": 3,

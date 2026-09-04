@@ -213,11 +213,20 @@ describe("WP1 in the Workers runtime", () => {
       items: [{ agentId: "1" }],
     });
 
+    const multiEvidence = await app.fetch(new Request("https://worker.test/catalog-agents?status=a2a&status=mcp_only"), env, context);
+    expect(multiEvidence.status).toBe(200);
+    expect(await multiEvidence.json()).toMatchObject({
+      statuses: ["a2a", "mcp_only"],
+      total: 2,
+      items: [{ agentId: "1" }, { agentId: "2" }],
+    });
+
     const facets = await app.fetch(new Request("https://worker.test/catalog-agents?status=declared&facets=true"), env, context);
     expect(await facets.json()).toMatchObject({
       facets: {
         statuses: { declared: 2, pending: 1, a2a: 1, mcp: 0, mcp_only: 1 },
         categories: { grid_trading: 1, yield_optimisation: 1 },
+        reachability: { live: 1, historical: 0, never: 1, browser_observed: 1 },
       },
     });
 
@@ -238,8 +247,34 @@ describe("WP1 in the Workers runtime", () => {
       validatedAt, configurationVersion, reasonCode
     ) VALUES ('eip155:56:1', 'admitted', 'a2a', ?, 56, 'test', ?, 'test-v1', 'fixture')`)
       .bind("a".repeat(64), now).run();
+    await env.DB.prepare(`INSERT INTO catalog_seller_capabilities (
+      agentKey, endpointKey, transport, state, lastSuccessAt, capabilityExpiresAt,
+      nextProbeAt, consecutiveFailures, lastAttemptAt, lastAttemptId, lastErrorCode,
+      createdAt, updatedAt
+    ) VALUES (?, ?, 'a2a', 'ready', ?, ?, ?, 0, ?, NULL, NULL, ?, ?)`)
+      .bind("eip155:56:1", "a".repeat(64), now, now + 86_400_000, now + 86_400_000, now, now, now).run();
+    await env.DB.prepare(`INSERT INTO commerce_jobs (
+      chainId, jobId, client, provider, evaluator, budget, expiredAt, status, hook,
+      submittedAt, deliverable, firstSeenAt, updatedAt
+    ) VALUES (56, 77, ?, ?, ?, '1000', ?, 1, ?, NULL, NULL, ?, ?)`)
+      .bind(
+        "0x2222222222222222222222222222222222222222",
+        "0x1111111111111111111111111111111111111111",
+        "0x3333333333333333333333333333333333333333",
+        now + 86_400_000,
+        "0x0000000000000000000000000000000000000000",
+        now,
+        now,
+      ).run();
+    await env.DB.prepare(`INSERT INTO hire_events (
+      eventKey, agentId, chainId, phase, provenance, jobId, txHash, blockNumber, occurredAt, verifiedAt
+    ) VALUES ('worker-test-job-77', '1', 56, 'created', 'chain_verified', '77', ?, '77', ?, ?)`)
+      .bind(`0x${"7".repeat(64)}`, now, now).run();
     const hireable = await app.fetch(new Request("https://worker.test/catalog-agents?status=hireable"), env, context);
-    expect(await hireable.json()).toMatchObject({ total: 1, items: [{ agentId: "1" }] });
+    expect(await hireable.json()).toMatchObject({
+      total: 1,
+      items: [{ agentId: "1", state: { jobCount: 1, completedJobCount: 0, fundedJobCount: 1 } }],
+    });
 
     await env.DB.prepare(`INSERT INTO catalog_observations (
       agentKey, endpointKey, protocol, source, outcome, observedAt, expiresAt, durationMs, detailsJson,
@@ -252,7 +287,14 @@ describe("WP1 in the Workers runtime", () => {
       new Request("https://worker.test/catalog-agents?status=declared&facets=true"), env, context,
     );
     expect(await rejectedQuoteFacets.json()).toMatchObject({
-      facets: { statuses: { quote_capable: 0 } },
+      facets: { statuses: { quote_capable: 1 } },
+    });
+    const rejectedQuotePage = await app.fetch(
+      new Request("https://worker.test/catalog-agents?status=quote_capable&page=1&limit=24"), env, context,
+    );
+    expect(rejectedQuotePage.status).toBe(200);
+    expect(await rejectedQuotePage.json()).toMatchObject({
+      status: "quote_capable", total: 1, items: [{ agentId: "1" }],
     });
 
     await env.DB.prepare(`INSERT INTO catalog_observations (
@@ -265,6 +307,15 @@ describe("WP1 in the Workers runtime", () => {
     );
     expect(await verifiedQuoteFacets.json()).toMatchObject({
       facets: { statuses: { quote_capable: 1 } },
+    });
+    const verifiedQuotePage = await app.fetch(
+      new Request("https://worker.test/catalog-agents?status=quote_capable&page=1&limit=24"), env, context,
+    );
+    expect(verifiedQuotePage.status).toBe(200);
+    expect(await verifiedQuotePage.json()).toMatchObject({
+      status: "quote_capable",
+      total: 1,
+      items: [{ agentId: "1", state: { quoteStatus: "verified_fresh" } }],
     });
   });
 
@@ -472,6 +523,12 @@ describe("WP1 in the Workers runtime", () => {
     await env.DB.prepare(`INSERT INTO catalog_agent_admission (
       agentKey, state, commerceTransport, endpointKey, chainId, reasonCode
     ) VALUES (?, 'admitted', 'a2a', ?, 56, 'fixture')`).bind(agentKey, admittedEndpoint).run();
+    await env.DB.prepare(`INSERT INTO catalog_seller_capabilities (
+      agentKey, endpointKey, transport, state, lastSuccessAt, capabilityExpiresAt,
+      nextProbeAt, consecutiveFailures, lastAttemptAt, lastAttemptId, lastErrorCode,
+      createdAt, updatedAt
+    ) VALUES (?, ?, 'a2a', 'ready', ?, ?, ?, 0, ?, NULL, NULL, ?, ?)`)
+      .bind(agentKey, admittedEndpoint, now, now + 86_400_000, now + 86_400_000, now, now, now).run();
     await env.DB.prepare(`INSERT INTO catalog_observations (
       agentKey, endpointKey, protocol, source, outcome, observedAt, expiresAt, durationMs,
       detailsJson, validationKind, verificationLevel
@@ -700,6 +757,12 @@ describe("WP1 in the Workers runtime", () => {
     ) VALUES ('eip155:56:10', 'admitted', 'a2a', ?, 56,
       '0x1111111111111111111111111111111111111111', ?, 'quote-v1')`)
       .bind("c".repeat(64), now).run();
+    await env.DB.prepare(`INSERT INTO catalog_seller_capabilities (
+      agentKey, endpointKey, transport, state, lastSuccessAt, capabilityExpiresAt,
+      nextProbeAt, consecutiveFailures, lastAttemptAt, lastAttemptId, lastErrorCode,
+      createdAt, updatedAt
+    ) VALUES ('eip155:56:10', ?, 'mcp', 'ready', ?, ?, ?, 0, ?, NULL, NULL, ?, ?)`)
+      .bind("c".repeat(64), now, now + 86_400_000, now + 86_400_000, now, now, now).run();
     await env.DB.prepare(`INSERT INTO catalog_ingest_tasks (
       agentKey, metadataVersion, nextDeclarationIndex, declarationCount, status, requestedBy,
       priority, generationStartedAt, updatedAt, attemptCount, retryAt
@@ -896,7 +959,7 @@ describe("WP1 in the Workers runtime", () => {
     expect(await detail.json()).toMatchObject({
       quote: null,
       onchainReferences: [],
-      state: { quoteStatus: "not_supported", canPrepareHire: false },
+      state: { quoteStatus: "not_requested", canPrepareHire: false },
     });
   });
 
@@ -1524,6 +1587,8 @@ describe("WP1 in the Workers runtime", () => {
       BUYER_OBSERVATION_SECRET: "catalog-secret",
       CATALOG_VALIDATION_REQUESTS_PER_DAY: "1",
       CATALOG_VALIDATION_REQUESTS_PER_CALLER_DAY: "1",
+      CATALOG_VALIDATION_REQUESTS_PER_AGENT_DAY: "1",
+      CATALOG_VALIDATION_REQUESTS_PER_ORIGIN_DAY: "1",
       WP2_QUEUE: { send },
     } as unknown as Env;
     const response = await createWorker({ now: () => now }).fetch(new Request(
@@ -1571,6 +1636,8 @@ describe("WP1 in the Workers runtime", () => {
       BUYER_OBSERVATION_SECRET: "catalog-secret",
       CATALOG_VALIDATION_REQUESTS_PER_DAY: "10",
       CATALOG_VALIDATION_REQUESTS_PER_CALLER_DAY: "1",
+      CATALOG_VALIDATION_REQUESTS_PER_AGENT_DAY: "10",
+      CATALOG_VALIDATION_REQUESTS_PER_ORIGIN_DAY: "10",
       WP2_QUEUE: { send },
     } as unknown as Env;
     const app = createWorker({ now: () => now });

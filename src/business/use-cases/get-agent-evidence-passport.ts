@@ -31,6 +31,14 @@ const FAILURE_OUTCOMES = new Set([
   "http_error", "timeout", "network_error", "invalid_response", "unsafe_url", "quote_rejected", "unreachable", "error",
 ]);
 
+function isBuyerQuoteObservation(observation: CatalogCandidateObservation): boolean {
+  if (observation.validationKind !== "quote") return true;
+  if (observation.details && typeof observation.details === "object" && !Array.isArray(observation.details)) {
+    return (observation.details as Record<string, unknown>).quoteKind !== "capability_probe";
+  }
+  return true;
+}
+
 function newestPlatformObservation(candidate: CatalogCandidate): CatalogCandidateObservation[] {
   const observations = candidate.observations
     .filter((observation) => PLATFORM_SOURCES.has(observation.source)
@@ -39,30 +47,34 @@ function newestPlatformObservation(candidate: CatalogCandidate): CatalogCandidat
         || observation.validationKind === "protocol")
       && isCatalogOperationalObservation(candidate, observation))
     .sort((left, right) => right.observedAt - left.observedAt || right.id - left.id);
-  const admittedEndpointKey = candidate.admission?.endpointKey;
-  if (admittedEndpointKey === null || admittedEndpointKey === undefined) return observations;
-  const scoped = observations.filter((observation) => observation.endpointKey === admittedEndpointKey);
+  const capabilityEndpointKey = candidate.state?.capabilityState === undefined
+    ? candidate.admission?.endpointKey
+    : candidate.state.capabilityEndpointKey;
+  if (capabilityEndpointKey === null || capabilityEndpointKey === undefined) return observations;
+  const scoped = observations.filter((observation) => observation.endpointKey === capabilityEndpointKey);
   return scoped.length > 0 ? scoped : observations;
 }
 
 function newestQuoteObservation(candidate: CatalogCandidate | null): CatalogCandidateObservation | undefined {
   const quotes = candidate?.observations
-    .filter((observation) => (observation.validationKind === "quote"
+    .filter((observation) => isBuyerQuoteObservation(observation) && ((observation.validationKind === "quote"
       && observation.verificationLevel === "cryptographic")
       || (observation.validationKind === undefined
         && PLATFORM_SOURCES.has(observation.source)
-        && (observation.outcome === "quote_verified" || observation.outcome === "quote_rejected")))
+        && (observation.outcome === "quote_verified" || observation.outcome === "quote_rejected"))))
     .sort((left, right) => right.observedAt - left.observedAt || right.id - left.id)[0];
   if (!candidate || !quotes) return quotes;
-  const admittedEndpointKey = candidate.admission?.endpointKey;
-  if (admittedEndpointKey === null || admittedEndpointKey === undefined) return quotes;
+  const capabilityEndpointKey = candidate.state?.capabilityState === undefined
+    ? candidate.admission?.endpointKey
+    : candidate.state.capabilityEndpointKey;
+  if (capabilityEndpointKey === null || capabilityEndpointKey === undefined) return quotes;
   const scoped = candidate.observations
-    .filter((observation) => (observation.validationKind === "quote"
+    .filter((observation) => isBuyerQuoteObservation(observation) && ((observation.validationKind === "quote"
       && observation.verificationLevel === "cryptographic")
       || (observation.validationKind === undefined
         && PLATFORM_SOURCES.has(observation.source)
-        && (observation.outcome === "quote_verified" || observation.outcome === "quote_rejected")))
-    .filter((observation) => observation.endpointKey === admittedEndpointKey)
+        && (observation.outcome === "quote_verified" || observation.outcome === "quote_rejected"))))
+    .filter((observation) => observation.endpointKey === capabilityEndpointKey)
     .sort((left, right) => right.observedAt - left.observedAt || right.id - left.id)[0];
   return scoped ?? quotes;
 }
@@ -135,10 +147,10 @@ export class GetAgentEvidencePassport {
     const compatibleDeclaration = catalogCandidate?.declarations.some(isCatalogSellerDeclaration) ?? false;
     // The normalized v2 state is the commerce authority.  Keep this fail-closed
     // during the compatibility window instead of promoting the legacy flag.
-    // `canHire` means an admitted executable seller can negotiate a fresh
-    // quote.  `canPrepareHire` remains the stricter transaction-preview gate.
-    const canHire = catalogCandidate?.state?.commerceStatus === "admitted"
-      && catalogCandidate.state.canRequestQuote
+    // `canHire` means the buyer can enter the quote flow. Capability is the
+    // automatic admission projection; a legacy manual-admission row must not
+    // hide a compatible discovered seller.
+    const canHire = catalogCandidate?.state?.canRequestQuote === true
       && compatibleDeclaration;
     const hireabilityStatus = quoteIsFresh
       ? "quote_verified" as const

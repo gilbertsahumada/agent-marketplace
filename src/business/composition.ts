@@ -35,7 +35,17 @@ import {
 } from "../data/observation/catalog-candidate-feed.ts";
 import { syncCatalogObservation } from "../data/observation/catalog-observation-sync.ts";
 import { getVerifiedHireEvents } from "../data/observation/hire-event-feed.ts";
+import { getHireJob, getHireJobs, getHireLedgerSummary } from "../data/observation/hire-ledger-feed.ts";
+import { ListAgentHireJobs } from "./use-cases/list-agent-hire-jobs.ts";
+import type { HireLedger } from "./entities/hire-job.ts";
 import { syncHireEvent } from "../data/observation/hire-event-sync.ts";
+import {
+  fallbackBuyerQuote,
+  getBuyerQuoteHistory,
+  reportBuyerQuoteFailure,
+  startBuyerQuote,
+  submitBuyerQuoteResult,
+} from "../data/observation/quote-request-sync.ts";
 import {
   CatalogValidationRequestError,
   getCatalogValidationStatus as loadCatalogValidationStatus,
@@ -96,6 +106,18 @@ export const getAgentEvidencePassport = new GetAgentEvidencePassport(
   { execute: loadCatalogCandidate },
   verifiedHireEventReader,
 );
+// One reader over the Worker's Commerce indexer; HTTP, pages, MCP and the CLI
+// all consume it through this port.
+const hireLedger: HireLedger = {
+  listRecentJobs: (input) => getHireJobs(input),
+  listJobsByBuyer: (input) => getHireJobs(input),
+  listJobsByProvider: (input) => getHireJobs(input),
+  listJobsByAgent: (input) => getHireJobs(input),
+  getJob: (input) => getHireJob(input),
+  summary: (input) => getHireLedgerSummary(input),
+};
+export const getHireLedger = hireLedger;
+export const listAgentHireJobs = new ListAgentHireJobs(hireLedger);
 export const validateMarketplaceAgent = new ValidateMarketplaceAgent(agentValidationRepository);
 export const getFunnelEvidence = new GetFunnelEvidence(funnelEvidenceRepository);
 export const getWorkerObservations = workerObservationFeed;
@@ -103,6 +125,8 @@ export const getCatalogCandidate = loadCatalogCandidate;
 export const getCatalogCandidatePage = loadCatalogCandidatePage;
 export const recordCatalogObservation = syncCatalogObservation;
 export const recordHireEvent = syncHireEvent;
+// Quote request ports keep Next route handlers free of infrastructure imports.
+export { fallbackBuyerQuote, getBuyerQuoteHistory, reportBuyerQuoteFailure, startBuyerQuote, submitBuyerQuoteResult };
 export {
   CatalogValidationRequestError,
   loadCatalogValidationStatus as getCatalogValidationStatus,

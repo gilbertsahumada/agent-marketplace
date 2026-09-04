@@ -31,8 +31,8 @@ const hireableChecks: { label: string; detail: string; provenance: ProvenanceKin
     provenance: "onchain",
   },
   {
-    label: "Fresh signed quote",
-    detail: "A quote signed within the last 60 seconds passes every verification condition.",
+    label: "Current quote capability",
+    detail: "A standardized signed quote proved this seller can negotiate; that public capability remains current for 24 hours. A buyer still requests a fresh session quote.",
     provenance: "observed",
   },
 ];
@@ -121,9 +121,9 @@ export function FunnelSection({ funnel }: { funnel: FunnelSectionViewModel | nul
         )}
 
         <Accordion className="mt-10 rounded-2xl border border-white/10 bg-zinc-950/60 px-6" collapsible type="single">
-          <AccordionItem className="border-b-0" value="hireable-now">
+          <AccordionItem className="border-b-0" value="ready-to-quote">
             <AccordionTrigger className="py-4 text-sm font-semibold text-zinc-200 hover:no-underline">
-              What “Hireable now” means here
+              What “Ready to quote” means here
             </AccordionTrigger>
             <AccordionContent>
               <div className="grid gap-6 pb-2 pt-1 lg:grid-cols-[1.2fr_0.8fr] lg:items-start">

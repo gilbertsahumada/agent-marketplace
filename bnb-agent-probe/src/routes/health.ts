@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import type { WorkerConfig } from "../config";
 import type { D1Database } from "../types";
 import type { D1DatabaseLike } from "../db/client";
@@ -17,6 +18,7 @@ type SafeSummary = {
   cpuMs?: number;
   wallTimeMs?: number;
   d1Queries?: number;
+  d1RowsWritten?: number;
   errorCode?: string;
   headerWindowExhausted?: boolean;
   complete?: boolean;
@@ -32,7 +34,19 @@ type SafeSummary = {
   candidateTargets?: number;
   invalidItems?: number;
   processedTargets?: number;
+  fromBlock?: number;
+  toBlock?: number;
+  window?: number;
+  logs?: number;
+  jobs?: number;
+  jobsFailed?: number;
+  httpStatus?: number;
   outcome?: string;
+};
+
+type HealthOptions = {
+  readonly quoteQueueAvailable?: boolean;
+  readonly rpcConfigured?: { readonly 56: boolean; readonly 97: boolean };
 };
 
 type DailyBudget = {
@@ -61,6 +75,10 @@ const RUNTIME_KEYS = [
   "last_scheduler_summary",
   "next_scheduler_phase",
   "sweep_round",
+  "commerce_cursor_56",
+  "commerce_cursor_97",
+  "last_index_summary_56",
+  "last_index_summary_97",
 ] as const;
 
 function json(body: unknown, status: number): Response {
@@ -99,6 +117,7 @@ function safeSummary(row: RuntimeRow | undefined): SafeSummary | null {
     if (wallTimeMs !== undefined) result.wallTimeMs = wallTimeMs;
     const numericFields = [
       "d1Queries",
+      "d1RowsWritten",
       "previousOffset",
       "nextOffset",
       "sweepRound",
@@ -111,6 +130,13 @@ function safeSummary(row: RuntimeRow | undefined): SafeSummary | null {
       "candidateTargets",
       "invalidItems",
       "processedTargets",
+      "fromBlock",
+      "toBlock",
+      "window",
+      "logs",
+      "jobs",
+      "jobsFailed",
+      "httpStatus",
     ] as const;
     for (const field of numericFields) {
       const value = finiteNonNegative(source[field]);
@@ -199,6 +225,7 @@ export async function healthResponse(
   db: D1Database,
   config: WorkerConfig,
   now: number,
+  options: HealthOptions = {},
 ): Promise<Response> {
   try {
     const utcDate = new Date(now).toISOString().slice(0, 10);
@@ -207,7 +234,28 @@ export async function healthResponse(
     const rows = await readRuntimeStates(
       createDatabase(db as unknown as D1DatabaseLike), runtimeKeys,
     ) as RuntimeRow[];
+    const quoteQueue = config.catalogV2WritesEnabled
+      ? await (async () => {
+        const quoteDb = createDatabase(db as unknown as D1DatabaseLike);
+        const [counts, latest] = await Promise.all([
+          quoteDb.all<{ state: string; total: number }>(sql`SELECT state, COUNT(*) AS total FROM catalog_seller_capabilities GROUP BY state`),
+          quoteDb.all<{ lastAttemptAt: number | null; nextProbeAt: number | null }>(sql`SELECT MAX(lastAttemptAt) AS lastAttemptAt, MIN(CASE WHEN state IN ('discovered','stale','failed') THEN nextProbeAt END) AS nextProbeAt FROM catalog_seller_capabilities`),
+        ]);
+        const count = (state: string) => Number(counts.find((row) => row.state === state)?.total ?? 0);
+        const row = latest[0];
+        return {
+          available: options.quoteQueueAvailable === true,
+          pending: count("discovered") + count("stale") + count("failed"),
+          ready: count("ready"),
+          stale: count("stale"),
+          failed: count("failed"),
+          lastProcessedAt: row?.lastAttemptAt ?? null,
+          nextProbeAt: row?.nextProbeAt ?? null,
+        };
+      })()
+      : { available: options.quoteQueueAvailable === true, pending: 0, ready: 0, stale: 0, failed: 0, lastProcessedAt: null, nextProbeAt: null };
     const byKey = new Map(rows.map((row) => [row.key, row]));
+    const rpcConfigured = options.rpcConfigured ?? { 56: false, 97: false };
     const summaryRows = [
       byKey.get("last_header_summary"),
       byKey.get("last_sweep_summary"),
@@ -250,6 +298,8 @@ export async function healthResponse(
         sweepLimit: config.sweepLimit,
         sweepPagesPerRun: config.sweepPagesPerRun,
         probeBatchSize: config.probeBatchSize,
+        catalogQuoteBatchSize: config.catalogQuoteBatchSize,
+        catalogQuoteConcurrency: config.catalogQuoteConcurrency,
         trust8004RequestsPerRun: config.trust8004RequestsPerRun,
         externalSubrequestsPerRun: config.externalSubrequestsPerRun,
         d1QueriesPerRun: config.d1QueriesPerRun,
@@ -274,6 +324,22 @@ export async function healthResponse(
       dailyBudget: currentDailyBudget,
       lastPhase,
       lastScheduler,
+      commerceIndex: {
+        enabled: config.commerceIndexEnabled,
+        chains: {
+          56: {
+            rpcConfigured: rpcConfigured[56],
+            cursor: integer(byKey.get("commerce_cursor_56")?.integerValue),
+            lastRun: safeSummary(byKey.get("last_index_summary_56")),
+          },
+          97: {
+            rpcConfigured: rpcConfigured[97],
+            cursor: integer(byKey.get("commerce_cursor_97")?.integerValue),
+            lastRun: safeSummary(byKey.get("last_index_summary_97")),
+          },
+        },
+      },
+      quoteQueue,
     }, 200);
   } catch {
     return json({ status: "unavailable", d1: { available: false } }, 503);

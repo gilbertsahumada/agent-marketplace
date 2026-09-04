@@ -7,7 +7,7 @@ import type { AgentProtocolLabel } from "./presentation-types";
 import type { WorkerObservationTarget } from "@/src/business/entities/worker-observations";
 
 export const hireabilityLabels: Record<AgentCardViewModel["hireability"], string> = {
-  hireable: "Hireable now",
+  hireable: "Ready to hire",
   mcp_only: "MCP only",
   quote_stale: "Quote expired",
   wallet_ambiguous: "Wallet attribution ambiguous",
@@ -17,7 +17,7 @@ export const hireabilityLabels: Record<AgentCardViewModel["hireability"], string
 // Single home of the quote-on-request rule so card, profile and compare cannot disagree.
 export function hireabilityLabelFor(view: AgentCardViewModel): string {
   return view.hireability === "listed_only" && view.quoteRequestAvailable === true
-    ? "Quote on request"
+    ? "Ready to quote"
     : hireabilityLabels[view.hireability];
 }
 
@@ -77,11 +77,11 @@ export function evidenceForAgent(agent: MarketplaceAgent, now = Date.now()): Evi
     : agent.endpointObservation.status === "observed_ok";
   const reachabilityProvenance = releaseReachability === "not_probed" ? "not_probed" : "observed";
   const reachabilityDetail = releaseReachability === "failed"
-    ? `The release probe did not establish protocol-valid reachability (${agent.verification!.tools.probeOutcomes.join(", ")}).`
+    ? `The release probe did not establish endpoint reachability (${agent.verification!.tools.probeOutcomes.join(", ")}).`
     : releaseReachability === "verified" && !releaseEvidenceCurrent
-      ? "The protocol-valid observation belongs to a stale release snapshot and is not current reachability evidence."
+      ? "The verified response belongs to a stale release snapshot and is not current reachability evidence."
     : reachable
-      ? "A service endpoint was observed as protocol-valid and reachable."
+      ? "A service endpoint returned a verified response and was reachable."
       : releaseReachability === "not_probed"
         ? "No endpoint probe was attempted in the current release snapshot."
         : "No recent endpoint observation is available.";
@@ -115,9 +115,9 @@ export function evidenceForAgent(agent: MarketplaceAgent, now = Date.now()): Evi
       status: quoteVerified ? "verified" : "unknown",
       provenance: quoteVerified || quoteStale ? "observed" : "derived",
       detail: quoteVerified
-        ? `An ERC-8183 seller quote was verified ${quoteObservedAt ? evidenceAge(quoteObservedAt, now) : "recently"} and is inside the 60-second hireable-now window.`
+        ? `An ERC-8183 seller quote was verified ${quoteObservedAt ? evidenceAge(quoteObservedAt, now) : "recently"} and remains inside its signed validity window.`
         : quoteStale
-          ? `A signed ERC-8183 quote was last verified ${quoteObservedAt ? evidenceAge(quoteObservedAt, now) : "more than 60 seconds ago"}; refresh before hiring.`
+          ? `A signed ERC-8183 quote was last verified ${quoteObservedAt ? evidenceAge(quoteObservedAt, now) : "previously"}, but its signed validity window has ended; request another before hiring.`
           : "No compatible ERC-8183 seller quote has been verified.",
       ...(quoteObservedAt && (quoteVerified || quoteStale) ? { timestamp: quoteObservedAt } : {}),
     },
@@ -134,7 +134,7 @@ export function evidenceForAgent(agent: MarketplaceAgent, now = Date.now()): Evi
 export function agentCardViewModel(agent: MarketplaceAgent, provenAgentId?: string): AgentCardViewModel {
   const quoteRequestAvailable = agent.operator === "marketplace" && agent.services.some(({ name, endpoint }) => {
     const protocol = name.trim().toLowerCase().replace(/[^a-z0-9]/g, "");
-    return endpoint !== null && (protocol === "a2a" || protocol === "erc8183" || protocol === "erc8183http");
+    return endpoint !== null && (protocol === "a2a" || protocol === "mcp" || protocol === "erc8183" || protocol === "erc8183http");
   });
   return {
     agentId: agent.agentId,
@@ -181,8 +181,8 @@ export function agentCardWithObservation(
         ...step,
         status: agent.verification?.tools.reachability === "verified" ? "verified" : "failed",
         detail: agent.verification?.tools.reachability === "verified"
-          ? "A protocol-valid endpoint response was observed in the dated release verification; this is historical evidence, not current Worker reachability."
-          : "The dated release verification failed to establish a protocol-valid endpoint response; this is historical evidence, not a current Worker result.",
+          ? "A verified endpoint response was observed in the dated release verification; this is historical evidence, not current Worker reachability."
+          : "The dated release verification failed to establish a verified endpoint response; this is historical evidence, not a current Worker result.",
       } : step),
     };
     if (!hasDeclaredServiceEndpoint(agent)) return withoutDeclaredEndpoint(base);
@@ -261,12 +261,12 @@ export function agentCardWithObservation(
           : target.declarationState === "metadata_unavailable"
             ? "Current metadata could not be reconciled; the seller was not classified as unreachable."
             : reachable
-              ? `The target returned a protocol-valid response. ${attemptSummary}`
+              ? `The target returned a verified endpoint response. ${attemptSummary}`
               : historicallyReachable
-                ? `The last probe returned a protocol-valid response, but it is older than the 15-minute monitoring window. ${attemptSummary}`
+                ? `The last probe returned a verified endpoint response, but it is older than the 15-minute monitoring window. ${attemptSummary}`
               : latest?.outcome === "unreachable"
                 ? `The last bounded probe could not reach the target${latest.errorCode ? ` (${latest.errorCode})` : ""}. ${attemptSummary}`
-                : `No protocol-valid response has been observed for this target. ${attemptSummary}`,
+                : `No verified endpoint response has been observed for this target. ${attemptSummary}`,
         source: "marketplace observation Worker",
         ...(observedAt ? { timestamp: observedAt } : {}),
       };
@@ -275,7 +275,7 @@ export function agentCardWithObservation(
         status: quoteCurrent ? "verified" : quoteFailed ? "failed" : latest ? "unknown" : "unavailable",
         provenance: latest ? "observed" : "not_probed",
         detail: quoteCurrent
-          ? "A signed ERC-8183 quote is inside the 60-second observation window; Hire still requests a new quote."
+          ? "A signed ERC-8183 quote is inside its validity window; a buyer session still requests a quote for its exact brief."
           : quoteExpired
             ? "A signed ERC-8183 quote was verified during the last probe and has expired; Hire requests a new quote before wallet action."
           : quoteObserved
@@ -470,9 +470,9 @@ export function snapshotAgentCardViewModel(
         status: endpointReachable ? "verified" : "unknown",
         provenance: agent.tools.reachability === "not_probed" ? "not_probed" : "observed",
         detail: endpointReachable
-          ? "An MCP endpoint completed protocol validation during release verification."
+          ? "An MCP handshake completed during release verification."
           : !snapshotCurrent && agent.tools.reachability === "verified"
-            ? "The protocol-valid observation belongs to a stale release snapshot and is not current reachability evidence."
+            ? "The verified response belongs to a stale release snapshot and is not current reachability evidence."
           : agent.tools.reachability === "failed"
             ? `A probe was attempted but did not establish reachability (${agent.tools.probeOutcomes.join(", ")}).`
             : "No endpoint probe is available in this release snapshot.",
@@ -487,7 +487,7 @@ export function snapshotAgentCardViewModel(
         detail: quoteVerified
           ? `The current release readiness snapshot qualifies this seller; the quote was verified ${evidenceAge(agent.qualification.observedAt, now)} ago and a fresh quote is still required before signing.`
           : quoteStale
-            ? `A signed quote was last verified ${evidenceAge(agent.qualification.observedAt, now)} ago at ${agent.qualification.observedAt}; it is outside the 60-second hireable-now window.`
+            ? `A signed quote was last verified ${evidenceAge(agent.qualification.observedAt, now)} ago at ${agent.qualification.observedAt}; its signed validity window has ended.`
             : "No current ERC-8183 seller qualification is present in this release snapshot.",
         ...(quoteStale || quoteVerified ? { timestamp: agent.qualification.observedAt } : {}),
       },

@@ -12,6 +12,13 @@ export class MarketplaceAgentNotFoundError extends Error {
   }
 }
 
+export class HireJobNotFoundError extends Error {
+  constructor(readonly chainId: number, readonly jobId: string) {
+    super(`Job ${jobId} on chain ${chainId} is not in the indexed ledger`);
+    this.name = "HireJobNotFoundError";
+  }
+}
+
 export class MarketplaceDataUnavailableError extends Error {
   constructor(readonly operation: string, options?: ErrorOptions) {
     super(`Marketplace data is unavailable for ${operation}`, options);

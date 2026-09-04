@@ -179,6 +179,17 @@ describe("WP3 quote validation", () => {
     }))).rejects.toMatchObject({ code: "QUOTE_SIGNER" });
   });
 
+  it("rejects a validly signed buyer quote above the marketplace spend ceiling", async () => {
+    const quote = acceptedEnvelope();
+    ((quote.response as Record<string, unknown>).terms as Record<string, unknown>).price = "10000000000000001";
+    quote.response_hash = NegotiationResponse.fromDict(quote.response as Record<string, unknown>).computeHash();
+
+    await expect(validateProbeQuote(quote, {
+      ...context(),
+      maximumPriceRaw: 10_000_000_000_000_000n,
+    }, validVerifier())).rejects.toMatchObject({ code: "QUOTE_PRICE_LIMIT" });
+  });
+
   it("accepts an ERC-1271 account signature only when the account verifier passes", async () => {
     await expect(validateProbeQuote(acceptedEnvelope(), context(), async () => ({
       valid: true,

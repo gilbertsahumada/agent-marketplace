@@ -15,7 +15,7 @@ const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 const MAX_BLOCK_AGE_SECONDS = 120;
 const MAX_FUTURE_BLOCK_SKEW_SECONDS = 10;
 const MAX_RPC_RESPONSE_BYTES = 64 * 1_024;
-const READ_ONLY_RPC_METHODS = new Set([
+export const READ_ONLY_RPC_METHODS: ReadonlySet<string> = new Set([
   "eth_chainId",
   "eth_getBlockByNumber",
   "eth_call",
@@ -42,13 +42,13 @@ const routerAbi = parseAbi(["function policyWhitelist(address policy) view retur
 const tokenAbi = parseAbi(["function decimals() view returns (uint8)"]);
 
 export class BscProbeError extends Error {
-  constructor(readonly code: string) {
+  constructor(readonly code: string, readonly httpStatus?: number) {
     super(code);
     this.name = "BscProbeError";
   }
 }
 
-function nestedBscProbeError(error: unknown): BscProbeError | null {
+export function nestedBscProbeError(error: unknown): BscProbeError | null {
   let current = error;
   const seen = new Set<unknown>();
   for (let depth = 0; depth < 8 && current !== null && typeof current === "object"; depth += 1) {
@@ -66,17 +66,23 @@ export interface CountedBscClientInput {
   readonly deadlineMs: number;
   readonly now: () => number;
   readonly chain?: Chain;
+  // Probes keep the small read-only method set and a 64 KiB reply cap; the
+  // Commerce indexer widens both (eth_getLogs, eth_blockNumber, larger replies).
+  readonly methods?: ReadonlySet<string>;
+  readonly maxResponseBytes?: number;
 }
 
 export function createCountedBscClient(input: CountedBscClientInput): PublicClient {
   const rpcUrl = parseRpcUrl(input.rpcUrl);
   const fetchImpl = input.fetch;
+  const methods = input.methods ?? READ_ONLY_RPC_METHODS;
+  const maxResponseBytes = input.maxResponseBytes ?? MAX_RPC_RESPONSE_BYTES;
   let id = 0;
   return createPublicClient({
     chain: input.chain ?? bsc,
     transport: custom({
       request: async ({ method, params }) => {
-        if (!READ_ONLY_RPC_METHODS.has(method)) throw new BscProbeError("BSC_RPC_METHOD");
+        if (!methods.has(method)) throw new BscProbeError("BSC_RPC_METHOD");
         const remainingMs = Math.floor(input.deadlineMs - input.now());
         if (remainingMs <= 0) throw new BscProbeError("BSC_RPC_TIMEOUT");
         let response: Response;
@@ -101,8 +107,8 @@ export function createCountedBscClient(input: CountedBscClientInput): PublicClie
         if (response.type === "opaqueredirect" || (response.status >= 300 && response.status < 400)) {
           throw new BscProbeError("BSC_RPC_REDIRECT");
         }
-        if (!response.ok) throw new BscProbeError("BSC_RPC_HTTP");
-        const reply = await readRpcReply(response);
+        if (!response.ok) throw new BscProbeError("BSC_RPC_HTTP", response.status);
+        const reply = await readRpcReply(response, maxResponseBytes);
         if (reply.error !== undefined || !("result" in reply)) {
           throw new BscProbeError("BSC_RPC_RESPONSE");
         }
@@ -229,7 +235,7 @@ function parseRpcUrl(value: string): URL {
   return url;
 }
 
-async function readRpcReply(response: Response): Promise<Record<string, unknown>> {
+async function readRpcReply(response: Response, maxResponseBytes: number): Promise<Record<string, unknown>> {
   if (!response.headers.get("content-type")?.toLowerCase().includes("application/json")) {
     throw new BscProbeError("BSC_RPC_RESPONSE");
   }
@@ -242,7 +248,7 @@ async function readRpcReply(response: Response): Promise<Record<string, unknown>
       const { done, value } = await reader.read();
       if (done) break;
       total += value.byteLength;
-      if (total > MAX_RPC_RESPONSE_BYTES) {
+      if (total > maxResponseBytes) {
         await reader.cancel();
         throw new BscProbeError("BSC_RPC_RESPONSE");
       }

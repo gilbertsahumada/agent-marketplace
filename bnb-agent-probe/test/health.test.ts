@@ -360,6 +360,83 @@ describe("Worker runtime", () => {
     expect(text).not.toContain("must-not-leak");
   });
 
+  it("exposes the Commerce indexer cursor and last run per chain, sanitized", async () => {
+    const now = 1_800_000_000_000;
+    const db = database({
+      runtime: [
+        { key: "commerce_cursor_56", textValue: null, integerValue: 119_000_000, updatedAt: now },
+        {
+          key: "last_index_summary_56",
+          textValue: JSON.stringify({
+            kind: "index_range", chainId: 56, status: "ok", fromBlock: 118_999_900, toBlock: 119_000_000,
+            logs: 3, jobs: 2, d1Queries: 9, wallTimeMs: 40, rpcUrl: "must-not-leak",
+          }),
+          integerValue: null,
+          updatedAt: now,
+        },
+      ],
+    });
+    const response = await createWorker({ now: () => now }).fetch(
+      new Request("https://worker.test/health"),
+      { ...env(db), CLOUDFLARE_WORKERS_PLAN: "paid", COMMERCE_INDEX_ENABLED: "1" },
+    );
+    const text = await response.text();
+    expect(JSON.parse(text)).toMatchObject({
+      status: "ok",
+      commerceIndex: {
+        enabled: true,
+        chains: {
+          56: {
+            cursor: 119_000_000,
+            lastRun: { status: "ok", fromBlock: 118_999_900, toBlock: 119_000_000, logs: 3, jobs: 2, d1Queries: 9, wallTimeMs: 40 },
+          },
+          97: { cursor: null, lastRun: null },
+        },
+      },
+    });
+    expect(text).not.toContain("must-not-leak");
+  });
+
+  it("reports RPC readiness and sanitized Commerce transport failures", async () => {
+    const now = 1_800_000_000_000;
+    const db = database({
+      runtime: [
+        { key: "commerce_cursor_56", textValue: null, integerValue: 119_000_000, updatedAt: now },
+        {
+          key: "last_index_summary_56",
+          textValue: JSON.stringify({
+            status: "error", errorCode: "BSC_RPC_HTTP", httpStatus: 429,
+            fromBlock: 119_000_001, toBlock: 119_000_200, window: 200,
+            jobsFailed: 2, d1RowsWritten: 3, message: "secret upstream detail",
+          }),
+          integerValue: null,
+          updatedAt: now,
+        },
+      ],
+    });
+    const response = await createWorker({ now: () => now }).fetch(
+      new Request("https://worker.test/health"),
+      { ...env(db), CLOUDFLARE_WORKERS_PLAN: "paid", COMMERCE_INDEX_ENABLED: "1", BSC_RPC_URL: "https://rpc.example/secret-token" },
+    );
+    const text = await response.text();
+
+    expect(JSON.parse(text)).toMatchObject({
+      commerceIndex: {
+        chains: {
+          56: {
+            rpcConfigured: true,
+            cursor: 119_000_000,
+            lastRun: { status: "error", errorCode: "BSC_RPC_HTTP", httpStatus: 429, window: 200, jobsFailed: 2, d1RowsWritten: 3 },
+          },
+          97: { rpcConfigured: false },
+        },
+      },
+    });
+    expect(text).not.toContain("secret upstream detail");
+    expect(text).not.toContain("secret-token");
+    expect(text).not.toContain("rpc.example");
+  });
+
   it("returns 503 only when D1 cannot be read and sanitizes the failure", async () => {
     const response = await createWorker().fetch(
       new Request("https://worker.test/health"),

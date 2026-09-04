@@ -395,4 +395,24 @@ describe("AsyncTtlCache", () => {
     void cache.get("b", 10, never);
     await expect(cache.get("c", 10, async () => "c")).rejects.toThrow("cache request capacity exceeded");
   });
+
+  it("does not reuse an in-flight value after invalidation", async () => {
+    const cache = new AsyncTtlCache(() => 0, 2);
+    let releaseOld!: (value: string) => void;
+    const old = new Promise<string>((resolve) => { releaseOld = resolve; });
+    const first = cache.get("catalog", 10_000, async () => old);
+
+    cache.clear();
+    let freshLoads = 0;
+    const fresh = cache.get("catalog", 10_000, async () => {
+      freshLoads += 1;
+      return "fresh";
+    });
+
+    await expect(fresh).resolves.toBe("fresh");
+    releaseOld("old");
+    await expect(first).resolves.toBe("old");
+    await expect(cache.get("catalog", 10_000, async () => "unexpected")).resolves.toBe("fresh");
+    expect(freshLoads).toBe(1);
+  });
 });
