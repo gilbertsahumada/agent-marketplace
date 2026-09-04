@@ -210,11 +210,11 @@ describe("HireLedgerPage", () => {
   it("names the two counts as activity and reports a succeeded index run", async () => {
     render(createElement(HireLedgerPage, { chainId: 56, summary: summary(), page }));
 
-    expect(screen.getByRole("heading", { level: 2, name: "All Commerce jobs" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { level: 2, name: "Hired via this marketplace" })).toBeInTheDocument();
-    expect(screen.getByText(/Jobs with a chain-verified hire event recorded by this marketplace/)).toBeInTheDocument();
-    expect(screen.queryByText(/Processed through|^Protocol$/)).not.toBeInTheDocument();
-    expect(screen.getByText(/last run succeeded/)).toBeInTheDocument();
+    expect(screen.getByText("Protocol jobs indexed")).toBeInTheDocument();
+    expect(screen.getByText("Attributed to marketplace")).toBeInTheDocument();
+    expect(screen.getByText(/Marketplace attribution confirms a recorded hire event/)).toBeInTheDocument();
+    expect(screen.queryByText("My jobs")).not.toBeInTheDocument();
+    expect(screen.getByText(/Last run succeeded/)).toBeInTheDocument();
     expect(screen.queryByText(/last run ok/)).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Older jobs" })).toHaveAttribute("href", "/jobs?chainId=56&before=56695");
     expect(screen.queryByRole("link", { name: "Newest jobs" })).not.toBeInTheDocument();
@@ -224,9 +224,18 @@ describe("HireLedgerPage", () => {
   it("maps a failed index run and offers the way back to the newest page", () => {
     render(createElement(HireLedgerPage, { chainId: 56, summary: summary({ lastIndexRun: { status: "error", at: NOW } }), page: { ...page, nextBefore: null }, before: "56695" }));
 
-    expect(screen.getByText(/last run failed/)).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Jobs before #56695" })).toBeInTheDocument();
+    expect(screen.getByText(/Last run failed/)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Indexed jobs before #56695" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Newest jobs" })).toHaveAttribute("href", "/jobs?chainId=56");
+  });
+
+  it.each([
+    ["idle", "Waiting for new blocks"],
+    ["initialized", "Index initialized"],
+  ])("does not label an %s index run as failed", (status, label) => {
+    render(createElement(HireLedgerPage, { chainId: 56, summary: summary({ lastIndexRun: { status, at: NOW } }), page }));
+    expect(screen.getByText(new RegExp(label))).toBeInTheDocument();
+    expect(screen.queryByText(/Last run failed/)).not.toBeInTheDocument();
   });
 
   it("keeps the recent jobs when only the counts are unavailable", () => {
@@ -241,9 +250,8 @@ describe("HireLedgerPage", () => {
   it("keeps the counts when only the recent jobs are unavailable", () => {
     render(createElement(HireLedgerPage, { chainId: 56, summary: summary(), page: null }));
 
-    expect(screen.getByText("Recent jobs temporarily unavailable.")).toBeInTheDocument();
+    expect(screen.getByText("Indexed ledger temporarily unavailable.")).toBeInTheDocument();
     expect(screen.getByText("56,697")).toBeInTheDocument();
-    expect(screen.queryByText("Indexed ledger temporarily unavailable.")).not.toBeInTheDocument();
     expect(screen.queryByText(/Counts temporarily unavailable/)).not.toBeInTheDocument();
   });
 
@@ -251,7 +259,7 @@ describe("HireLedgerPage", () => {
     render(createElement(HireLedgerPage, { chainId: 56, summary: null, page: null }));
 
     expect(screen.getByText("Indexed ledger temporarily unavailable.")).toBeInTheDocument();
-    expect(screen.queryByText(/Counts temporarily unavailable/)).not.toBeInTheDocument();
+    expect(screen.getByText(/Counts temporarily unavailable/)).toBeInTheDocument();
     expect(screen.queryByText(/Recent jobs temporarily unavailable/)).not.toBeInTheDocument();
   });
 });
