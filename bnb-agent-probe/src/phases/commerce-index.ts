@@ -111,9 +111,11 @@ interface RunContext {
 }
 
 // getLogs failures that mean "this range was too much for the provider":
-// a rejected/oversized/slow reply. Nothing else narrows the window.
+// a rejected/oversized/slow reply. Nothing else narrows the window; an HTTP
+// status (rate limit, auth wall, outage) says nothing about the range, and
+// halving on it only starves the cursor until it falls behind for good.
 const WINDOW_NARROWING_CODES: ReadonlySet<string> = new Set([
-  "BSC_RPC_RESPONSE", "BSC_RPC_TIMEOUT", "BSC_RPC_HTTP", "BSC_LOGS_RPC",
+  "BSC_RPC_RESPONSE", "BSC_RPC_TIMEOUT", "BSC_LOGS_RPC",
 ]);
 
 const ROW_CHUNK = COMMERCE_INDEX_ROW_CHUNK;
@@ -407,12 +409,14 @@ export async function runCommerceIndex(
     return { ...summary, d1Queries: budgeted.budget.used, d1RowsWritten: budgeted.usage.rowsWritten, wallTimeMs: now() - startedAt };
   } catch (error) {
     const code = errorCode(error);
+    const httpStatus = nestedBscProbeError(error)?.httpStatus;
     const raw = createDatabase(env.DB as unknown as D1DatabaseLike);
     try {
       await writeRuntimeState(raw, {
         key: commerceSummaryKey(chainId),
         textValue: JSON.stringify({
           kind: work.kind, chainId, status: "error", errorCode: code,
+          ...(httpStatus === undefined ? {} : { httpStatus }),
           fromBlock: context.fromBlock, toBlock: context.toBlock, window: context.window, wallTimeMs: now() - startedAt,
         }),
         integerValue: null,

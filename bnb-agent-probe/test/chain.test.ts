@@ -224,7 +224,7 @@ describe("counted BSC RPC transport", () => {
     await expect(readProbeChainContext(client as never, {
       agentId: "303779",
       nowSeconds: NOW,
-    })).rejects.toMatchObject({ code: "BSC_RPC_HTTP", message: "BSC_RPC_HTTP" });
+    })).rejects.toMatchObject({ code: "BSC_RPC_HTTP", message: "BSC_RPC_HTTP", httpStatus: 503 });
   });
 
   it("distinguishes an RPC fetch timeout from an unreachable host", async () => {

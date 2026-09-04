@@ -39,6 +39,7 @@ type SafeSummary = {
   logs?: number;
   jobs?: number;
   jobsFailed?: number;
+  httpStatus?: number;
   outcome?: string;
 };
 
@@ -135,6 +136,7 @@ function safeSummary(row: RuntimeRow | undefined): SafeSummary | null {
       "logs",
       "jobs",
       "jobsFailed",
+      "httpStatus",
     ] as const;
     for (const field of numericFields) {
       const value = finiteNonNegative(source[field]);

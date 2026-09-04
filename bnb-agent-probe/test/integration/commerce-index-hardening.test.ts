@@ -70,6 +70,8 @@ interface ReaderOptions {
   jobs?: readonly Job[];
   // getLogs rejects (like a provider range cap or an oversized reply) above this many blocks.
   maxRange?: number;
+  // getLogs fails with a transport-level HTTP status (rate limit, auth wall).
+  logsHttpStatus?: number;
   failBlock?: boolean;
   failJobIds?: readonly bigint[];
   multicallResult?: unknown;
@@ -86,6 +88,7 @@ function reader(options: ReaderOptions = {}) {
     async getBlockNumber() { return options.head ?? 1_100n; },
     async getLogs(input: { fromBlock: bigint; toBlock: bigint }) {
       calls.getLogs.push({ fromBlock: input.fromBlock, toBlock: input.toBlock });
+      if (options.logsHttpStatus !== undefined) throw new BscProbeError("BSC_RPC_HTTP", options.logsHttpStatus);
       if (options.maxRange !== undefined && input.toBlock - input.fromBlock + 1n > BigInt(options.maxRange)) {
         throw new BscProbeError("BSC_RPC_RESPONSE");
       }
@@ -201,6 +204,23 @@ describe("Commerce indexer window recovery", () => {
       { fromBlock: 1_051n, toBlock: 1_150n }, { fromBlock: 1_051n, toBlock: 1_100n },
     ]);
     expect(await eventCount(11, 13)).toBe(3);
+  });
+
+  it("keeps the window on an HTTP failure and records the status, because a rate limit or an auth wall is not a range problem", async () => {
+    await seedCursor(56, 1_000);
+    const { reader: chainReader, calls } = reader({ head: 2_000n, logsHttpStatus: 429 });
+    const blocks = { COMMERCE_INDEX_BLOCKS_PER_RUN: "200" };
+
+    await expect(run(rangeTick(), chainReader, { config: blocks })).rejects.toThrow("BSC_RPC_HTTP");
+    expect(await integerState(commerceWindowKey(56))).toBeNull();
+    expect(await lastSummary(56)).toMatchObject({
+      status: "error", errorCode: "BSC_RPC_HTTP", httpStatus: 429, fromBlock: 1_001, toBlock: 1_200, window: 200,
+    });
+    expect(await integerState(commerceCursorKey(56))).toBe(1_000);
+
+    await expect(run(rangeTick(), chainReader, { config: blocks })).rejects.toThrow("BSC_RPC_HTTP");
+    expect(await integerState(commerceWindowKey(56))).toBeNull();
+    expect(calls.getLogs).toEqual([{ fromBlock: 1_001n, toBlock: 1_200n }, { fromBlock: 1_001n, toBlock: 1_200n }]);
   });
 
   it("never narrows below one block and keeps the window at the configured size when nothing was persisted", async () => {
