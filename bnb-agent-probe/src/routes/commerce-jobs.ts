@@ -1,9 +1,9 @@
-import { and, asc, count, desc, eq, lt, sql } from "drizzle-orm";
+import { and, asc, desc, eq, lt, sql } from "drizzle-orm";
 import { getAddress, isAddress } from "viem";
 
 import type { D1DatabaseLike } from "../db/client";
 import { createDatabase, readRuntimeStates, type CommerceJobRow } from "../db/orm";
-import { commerceJobEvents, commerceJobs, hireEvents } from "../db/schema";
+import { commerceJobCounts, commerceJobEvents, commerceJobs, hireEvents } from "../db/schema";
 import { commerceCursorKey, commerceSummaryKey } from "../phases/commerce-index";
 import type { D1Database } from "../types";
 
@@ -29,6 +29,12 @@ function invalidRequest(): Response {
 
 function chainIdParameter(value: string | null): 56 | 97 | null {
   return value === "56" ? 56 : value === "97" ? 97 : null;
+}
+
+function jobIdParameter(value: string | null): number | null {
+  if (value === null || !JOB_ID.test(value)) return null;
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) ? parsed : null;
 }
 
 // Every key at most once and every key known: a repeated key would otherwise
@@ -79,7 +85,8 @@ export async function commerceJobsListResponse(request: Request, d1: D1Database)
   if (agentId !== null && !AGENT_ID.test(agentId)) return invalidRequest();
   if (status !== null && !(STATUS_NAMES as readonly string[]).includes(status)) return invalidRequest();
   if (limitRaw !== null && !/^[1-9]\d?$/.test(limitRaw)) return invalidRequest();
-  if (before !== null && !JOB_ID.test(before)) return invalidRequest();
+  const beforeJobId = before === null ? null : jobIdParameter(before);
+  if (before !== null && beforeJobId === null) return invalidRequest();
   const limit = Math.min(limitRaw === null ? LIST_LIMIT : Number(limitRaw), LIST_LIMIT);
 
   const db = createDatabase(d1 as unknown as D1DatabaseLike);
@@ -94,7 +101,7 @@ export async function commerceJobsListResponse(request: Request, d1: D1Database)
     )`);
   }
   if (status !== null) conditions.push(eq(commerceJobs.status, STATUS_NAMES.indexOf(status as typeof STATUS_NAMES[number])));
-  if (before !== null) conditions.push(lt(commerceJobs.jobId, Number(before)));
+  if (beforeJobId !== null) conditions.push(lt(commerceJobs.jobId, beforeJobId));
   const rows = await db.select({
     chainId: commerceJobs.chainId,
     jobId: commerceJobs.jobId,
@@ -126,7 +133,8 @@ export async function commerceJobResponse(request: Request, d1: D1Database): Pro
   const match = /^\/commerce-jobs\/(56|97)\/(0|[1-9]\d{0,15})$/.exec(url.pathname);
   if (match === null || url.search !== "") return invalidRequest();
   const chainId = Number(match[1]) as 56 | 97;
-  const jobId = Number(match[2]);
+  const jobId = jobIdParameter(match[2] ?? null);
+  if (jobId === null) return invalidRequest();
   const db = createDatabase(d1 as unknown as D1DatabaseLike);
   const [job] = await db.select({
     chainId: commerceJobs.chainId,
@@ -212,13 +220,12 @@ export async function commerceSummaryResponse(request: Request, d1: D1Database):
   const chainId = chainIdParameter(url.searchParams.get("chainId"));
   if (chainId === null) return invalidRequest();
   const db = createDatabase(d1 as unknown as D1DatabaseLike);
-  const [protocolRows, marketplaceRows, runtime] = await Promise.all([
-    db.select({ status: commerceJobs.status, total: count() }).from(commerceJobs)
-      .where(eq(commerceJobs.chainId, chainId)).groupBy(commerceJobs.status),
-    db.select({ status: commerceJobs.status, total: count() }).from(commerceJobs)
-      .where(and(eq(commerceJobs.chainId, chainId), marketplaceFlag)).groupBy(commerceJobs.status),
+  const [counts, runtime] = await Promise.all([
+    db.select().from(commerceJobCounts).where(eq(commerceJobCounts.chainId, chainId)),
     readRuntimeStates(db, [commerceCursorKey(chainId), commerceSummaryKey(chainId)]),
   ]);
+  const protocolRows = counts.map((row) => ({ status: row.status, total: row.protocolJobs }));
+  const marketplaceRows = counts.map((row) => ({ status: row.status, total: row.marketplaceJobs }));
   const cursor = runtime.find((row) => row.key === commerceCursorKey(chainId));
   const summaryRow = runtime.find((row) => row.key === commerceSummaryKey(chainId));
   let lastIndexRun: { status: string; at: number } | null = null;

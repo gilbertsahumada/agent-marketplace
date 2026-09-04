@@ -4,7 +4,7 @@ import { Column, getTableColumns, getTableName, is, SQL } from "drizzle-orm";
 import { getTableConfig } from "drizzle-orm/sqlite-core";
 import { describe, expect, it } from "vitest";
 
-import { commerceJobEvents, commerceJobs } from "../src/db/schema";
+import { commerceJobCounts, commerceJobEvents, commerceJobs } from "../src/db/schema";
 
 const migrationsDir = new URL("../migrations/", import.meta.url);
 const migration = readFileSync(new URL("0022_commerce_index.sql", migrationsDir), "utf8");
@@ -21,7 +21,7 @@ function migratedDatabase(): DatabaseSync {
 
 describe("Commerce index schema", () => {
   it("keeps the Drizzle model reconciled with migration 0022", () => {
-    for (const table of [commerceJobs, commerceJobEvents]) {
+    for (const table of [commerceJobs, commerceJobCounts, commerceJobEvents]) {
       const tableName = getTableName(table);
       const migrationTable = migration.match(new RegExp(`CREATE TABLE ${tableName} \\(([\\s\\S]*?)\\n\\);`))?.[1];
       expect(migrationTable, `missing migration table ${tableName}`).toBeDefined();
@@ -29,6 +29,15 @@ describe("Commerce index schema", () => {
         expect(new RegExp(`(^|\\n)\\s*${column}\\s`, "m").test(migrationTable!), `${tableName}.${column}`).toBe(true);
       }
     }
+  });
+
+  it("seeds a fixed aggregate row for every chain and Commerce status", () => {
+    const db = migratedDatabase();
+    expect(db.prepare("SELECT chainId, status, protocolJobs, marketplaceJobs FROM commerce_job_counts ORDER BY chainId, status").all())
+      .toHaveLength(12);
+    expect(db.prepare("SELECT SUM(protocolJobs) AS protocolJobs, SUM(marketplaceJobs) AS marketplaceJobs FROM commerce_job_counts").get())
+      .toEqual({ protocolJobs: 0, marketplaceJobs: 0 });
+    db.close();
   });
 
   it("keys jobs by chain and numeric id, dedupes events by log and joins hire_events by job", () => {
@@ -69,6 +78,6 @@ describe("Commerce index schema", () => {
   it("makes the event ledger append-only", () => {
     expect(migration).toMatch(/CREATE TRIGGER commerce_job_events_no_update/);
     expect(migration).toMatch(/CREATE TRIGGER commerce_job_events_no_delete/);
-    expect(migration).not.toMatch(/CREATE TRIGGER commerce_jobs/);
+    expect(migration).not.toMatch(/CREATE TRIGGER commerce_jobs_(?:no_update|no_delete)/);
   });
 });

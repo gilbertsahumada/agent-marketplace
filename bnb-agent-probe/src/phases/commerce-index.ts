@@ -37,8 +37,9 @@ import type { Env } from "../types";
  *
  * Two guards keep a run from stalling or overspending: the per-chain block
  * window (`commerce_window_<chain>`) halves whenever the provider rejects a
- * getLogs range and doubles back after a full-window success, and every batch
- * is reserved against the D1 rows_written budget before it is sent.
+ * getLogs range and doubles back after a full-window success. A log-index
+ * cursor pages through a single block that exceeds the event cap, and every
+ * batch is reserved against the D1 rows_written budget before it is sent.
  *
  * Nothing here attributes a job to the marketplace: readers join `hire_events`.
  */
@@ -51,6 +52,7 @@ export type CommerceIndexWork =
     readonly chainId: CommerceIndexChainId;
     readonly fromBlock: number | null;
     readonly toBlock: number | null;
+    readonly afterLogIndex?: number | null;
     readonly enqueuedAt: number;
   }
   | {
@@ -144,6 +146,10 @@ export function commerceWindowKey(chainId: CommerceIndexChainId): string {
   return `commerce_window_${chainId}`;
 }
 
+export function commerceCursorLogIndexKey(chainId: CommerceIndexChainId): string {
+  return `commerce_cursor_log_index_${chainId}`;
+}
+
 function windowStatement(db: ReturnType<typeof createDatabase>, chainId: CommerceIndexChainId, window: number, nowMs: number) {
   return db.insert(runtimeState).values({ key: commerceWindowKey(chainId), textValue: null, integerValue: window, updatedAt: nowMs })
     .onConflictDoUpdate({ target: runtimeState.key, set: { integerValue: window, updatedAt: nowMs } });
@@ -172,14 +178,19 @@ interface JobState {
   readonly deliverable: `0x${string}`;
 }
 
-// Whole blocks only, in order, until either cap would be exceeded. The first
-// block is always included so a single busy block cannot stall the cursor.
-export function truncateLogs<T extends { blockNumber: bigint }>(
+// Whole blocks in order until either cap would be exceeded. When the first
+// block alone exceeds the log cap, return one page and its last log index so
+// the caller can resume inside that block without dropping the remainder.
+export function truncateLogs<T extends { blockNumber: bigint; logIndex?: number }>(
   logs: readonly T[],
   limits: { readonly logs: number; readonly blocks: number },
   toBlock: bigint,
-): { included: T[]; toBlock: bigint } {
-  const ordered = [...logs].sort((left, right) => (left.blockNumber < right.blockNumber ? -1 : left.blockNumber > right.blockNumber ? 1 : 0));
+): { included: T[]; toBlock: bigint; partialLogIndex: number | null } {
+  const ordered = [...logs].sort((left, right) => {
+    if (left.blockNumber < right.blockNumber) return -1;
+    if (left.blockNumber > right.blockNumber) return 1;
+    return (left.logIndex ?? 0) - (right.logIndex ?? 0);
+  });
   const included: T[] = [];
   let blocks = 0;
   let index = 0;
@@ -188,14 +199,22 @@ export function truncateLogs<T extends { blockNumber: bigint }>(
     let end = index;
     while (end < ordered.length && ordered[end]!.blockNumber === block) end += 1;
     const size = end - index;
+    if (included.length === 0 && size > limits.logs) {
+      const partial = ordered.slice(index, index + limits.logs);
+      const last = partial[partial.length - 1] as T & { logIndex?: unknown };
+      if (typeof last.logIndex !== "number" || !Number.isSafeInteger(last.logIndex) || last.logIndex < 0) {
+        throw new Error("COMMERCE_LOG_INDEX_INVALID");
+      }
+      return { included: partial, toBlock: block - 1n, partialLogIndex: last.logIndex };
+    }
     if (included.length > 0 && (included.length + size > limits.logs || blocks + 1 > limits.blocks)) {
-      return { included, toBlock: block - 1n };
+      return { included, toBlock: block - 1n, partialLogIndex: null };
     }
     included.push(...ordered.slice(index, end));
     blocks += 1;
     index = end;
   }
-  return { included, toBlock };
+  return { included, toBlock, partialLogIndex: null };
 }
 
 function errorCode(error: unknown): string {
@@ -460,10 +479,14 @@ async function indexRange(
   now: () => number,
 ): Promise<CommerceIndexSummary> {
   const cursorKey = commerceCursorKey(chainId);
+  const cursorLogIndexKey = commerceCursorLogIndexKey(chainId);
   const windowKey = commerceWindowKey(chainId);
   const cursorMode = work.fromBlock === null || work.toBlock === null;
-  const rows = await readRuntimeStates(db, cursorMode ? [cursorKey, windowKey] : [windowKey]);
+  const rows = await readRuntimeStates(db, cursorMode ? [cursorKey, cursorLogIndexKey, windowKey] : [windowKey]);
   const cursorRow = rows.find((row) => row.key === cursorKey);
+  const cursorLogIndex = cursorMode
+    ? rows.find((row) => row.key === cursorLogIndexKey)?.integerValue ?? null
+    : work.afterLogIndex ?? null;
   const persisted = rows.find((row) => row.key === windowKey)?.integerValue ?? null;
   const window = Math.min(
     config.commerceIndexBlocksPerRun,
@@ -545,7 +568,8 @@ async function indexRange(
   // the filter is what makes the append-only ledger safe to trust.
   const commerce = DEPLOYMENTS[chainId].commerce;
   logs = logs.filter((log) => log.removed !== true
-    && typeof log.address === "string" && isAddress(log.address) && isAddressEqual(log.address, commerce));
+    && typeof log.address === "string" && isAddress(log.address) && isAddressEqual(log.address, commerce)
+    && !(cursorLogIndex !== null && log.blockNumber === fromBlock && log.logIndex <= cursorLogIndex));
   const truncated = truncateLogs(logs, {
     logs: config.commerceIndexLogsPerRun,
     blocks: config.commerceIndexBlockLookupsPerRun,
@@ -569,17 +593,20 @@ async function indexRange(
     .map((log) => eventRow(chainId, log, timestamps.get(log.blockNumber) ?? 0, nowMs))
     .filter((row): row is NonNullable<typeof row> => row !== null);
   const jobIds = [...new Set(eventRows.map((row) => row.jobId))].map((id) => BigInt(id));
-  const read = await readJobs(reader, chainId, jobIds, indexedThrough);
+  const readBlock = truncated.partialLogIndex === null ? indexedThrough : fromBlock;
+  const read = await readJobs(reader, chainId, jobIds, readBlock);
   const jobRows = read.jobs
     .filter((job) => !isAddressEqual(job.client, ZERO_ADDRESS))
     .map((job) => jobRow(chainId, job, nowMs));
 
   // A narrowed window grows back (doubling, capped at the configured size)
   // only after a cursor run that exercised the whole window succeeded.
-  const grownWindow = cursorMode && window < config.commerceIndexBlocksPerRun && asked === window
+  const grownWindow = cursorMode && truncated.partialLogIndex === null
+    && window < config.commerceIndexBlocksPerRun && asked === window
     ? Math.min(window * 2, config.commerceIndexBlocksPerRun)
     : null;
-  const runtimeStateWrites = (cursorMode ? 1 : 0) + (grownWindow !== null ? 1 : 0) + 1;
+  const writeCursorLogIndex = cursorMode && (truncated.partialLogIndex !== null || cursorLogIndex !== null);
+  const runtimeStateWrites = (cursorMode ? 1 : 0) + (writeCursorLogIndex ? 1 : 0) + (grownWindow !== null ? 1 : 0) + 1;
   const summary: CommerceIndexSummary = {
     kind: "index_range", chainId, status: "ok",
     fromBlock: Number(fromBlock), toBlock: Number(indexedThrough), window,
@@ -599,6 +626,17 @@ async function indexRange(
           setWhere: sql`${runtimeState.integerValue} IS NULL OR ${runtimeState.integerValue} < ${Number(indexedThrough)}`,
         }),
     ] : []),
+    ...(writeCursorLogIndex ? [
+      db.insert(runtimeState).values({
+        key: cursorLogIndexKey,
+        textValue: null,
+        integerValue: truncated.partialLogIndex,
+        updatedAt: nowMs,
+      }).onConflictDoUpdate({
+        target: runtimeState.key,
+        set: { integerValue: truncated.partialLogIndex, updatedAt: nowMs },
+      }),
+    ] : []),
     ...(grownWindow !== null ? [windowStatement(db, chainId, grownWindow, nowMs)] : []),
     summaryStatement(db, chainId, { ...summary, wallTimeMs: now() - startedAt }, nowMs),
   ];
@@ -608,7 +646,9 @@ async function indexRange(
     // Explicit ranges are backfill work: the part that did not fit goes back
     // to the queue instead of being silently dropped, unless the producer
     // kill switch is on: then nothing new enters the queue from anywhere.
-    const remainder = { chainId, fromBlock: Number(indexedThrough) + 1, toBlock: Number(rangeEnd) };
+    const remainder = truncated.partialLogIndex === null
+      ? { chainId, fromBlock: Number(indexedThrough) + 1, toBlock: Number(rangeEnd) }
+      : { chainId, fromBlock: Number(fromBlock), toBlock: Number(rangeEnd), afterLogIndex: truncated.partialLogIndex };
     if (config.producerKillSwitch) {
       logger?.info("commerce.index.remainder_dropped", remainder);
     } else {

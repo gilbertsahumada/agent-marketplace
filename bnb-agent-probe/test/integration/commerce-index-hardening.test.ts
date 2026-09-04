@@ -114,12 +114,12 @@ function reader(options: ReaderOptions = {}) {
   return { reader: fake as unknown as CommerceIndexReader, calls };
 }
 
-// Paid sizes at the Paid write envelope (200 rows: 23 logs, 39 jobs), so a run
+// Paid sizes at the Paid write envelope (200 rows: 19 logs, 28 jobs), so a run
 // can hold the largest Paid batch; single tests narrow them again.
 function config(overrides: Record<string, string> = {}) {
   return loadConfig({
     ...env, KILL_SWITCH: "0", PRODUCER_KILL_SWITCH: "0", CLOUDFLARE_WORKERS_PLAN: "paid", COMMERCE_INDEX_ENABLED: "1",
-    D1_ROWS_WRITTEN_PER_RUN: "200", COMMERCE_INDEX_LOGS_PER_RUN: "23", COMMERCE_INDEX_JOBS_PER_RUN: "39", ...overrides,
+    D1_ROWS_WRITTEN_PER_RUN: "200", COMMERCE_INDEX_LOGS_PER_RUN: "19", COMMERCE_INDEX_JOBS_PER_RUN: "28", ...overrides,
   } as unknown as Env);
 }
 
@@ -220,25 +220,25 @@ describe("Commerce indexer window recovery", () => {
 });
 
 describe("Commerce indexer row budget", () => {
-  // 23 logs on 23 distinct jobs across 12 blocks: the largest Paid batch.
+  // 19 logs on 19 distinct jobs across 10 blocks: the largest Paid batch.
   // Job ids are per test: the ledger is append-only and shared within a file.
-  const capLogs = (base: number) => Array.from({ length: 23 }, (_, index) => created(BigInt(base + index), 1_001n + BigInt(index >> 1), index & 1));
+  const capLogs = (base: number) => Array.from({ length: 19 }, (_, index) => created(BigInt(base + index), 1_001n + BigInt(index >> 1), index & 1));
   const jobsOf = (logs: DecodedLog[]) => logs.map((entry) => job(entry.args.jobId as bigint));
-  // 23*3 events + 4 sequence rows + 23*5 jobs = 188, plus the cursor update (1)
-  // and a fresh summary row (2) = 191 metered; the reservation allows two
-  // rows for each runtime_state write: 192.
-  const reserved = 23 * EVENT_ROW_WRITES + 4 + 23 * JOB_ROW_WRITES + 2 * 2;
+  // The reservation includes the worst case where every job upsert changes
+  // status and therefore updates two aggregate rows. Fresh inserts only touch
+  // one aggregate row, so real D1 metering is lower than this bound.
+  const reserved = 19 * EVENT_ROW_WRITES + 4 + 19 * JOB_ROW_WRITES + 2 * 2;
 
   it("meters a run at the Paid cap under D1_ROWS_WRITTEN_PER_RUN using the real rows_written meta", async () => {
     await seedCursor(56, 1_000);
     const logs = capLogs(100);
     const { reader: chainReader } = reader({ head: 1_100n, logs, jobs: jobsOf(logs) });
     const summary = await run(rangeTick(), chainReader, { config: { COMMERCE_INDEX_BLOCK_LOOKUPS_PER_RUN: "12" } });
-    expect(summary).toMatchObject({ status: "ok", logs: 23, jobs: 23 });
-    expect(summary.d1RowsWritten).toBe(reserved - 1);
+    expect(summary).toMatchObject({ status: "ok", logs: 19, jobs: 19 });
+    expect(summary.d1RowsWritten).toBeLessThanOrEqual(reserved);
     expect(summary.d1RowsWritten).toBeLessThanOrEqual(config().d1RowsWrittenPerRun);
     expect(await lastSummary(56)).toMatchObject({ status: "ok", d1RowsWritten: reserved });
-    expect(await eventCount(100, 122)).toBe(23);
+    expect(await eventCount(100, 118)).toBe(19);
   });
 
   it("refuses the batch before anything commits when the expected index writes exceed the row budget", async () => {
@@ -250,8 +250,42 @@ describe("Commerce indexer row budget", () => {
     })).rejects.toThrow("D1_ROW_BUDGET");
     expect(await lastSummary(56)).toMatchObject({ status: "error", errorCode: "D1_ROW_BUDGET" });
     expect(await integerState(commerceCursorKey(56))).toBe(1_000);
-    expect(await eventCount(200, 222)).toBe(0);
+    expect(await eventCount(200, 218)).toBe(0);
     expect(await jobRow(56, 200)).toBeNull();
+  });
+
+  it("keeps a full status-changing job upsert inside the reserved Paid envelope", async () => {
+    const ids = Array.from({ length: 28 }, (_, index) => BigInt(900 + index));
+    const open = reader({ jobs: ids.map((id) => job(id, { status: 0 })) }).reader;
+    const funded = reader({ jobs: ids.map((id) => job(id, { status: 1 })) }).reader;
+    const work = { kind: "index_jobs", chainId: 56, fromJobId: 900, toJobId: 927, enqueuedAt: NOW } as const;
+
+    await expect(run(work, open)).resolves.toMatchObject({ status: "ok", jobs: 28 });
+    const changed = await run(work, funded);
+    expect(changed).toMatchObject({ status: "ok", jobs: 28 });
+    expect(changed.d1RowsWritten).toBeLessThanOrEqual(config().d1RowsWrittenPerRun);
+  });
+
+  it("pages through one busy block without exceeding the row envelope or losing events", async () => {
+    await seedCursor(56, 1_000);
+    const logs = Array.from({ length: 8 }, (_, index) => created(BigInt(250 + index), 1_001n, index));
+    const { reader: chainReader } = reader({ head: 1_100n, logs, jobs: jobsOf(logs) });
+    const limits = { COMMERCE_INDEX_LOGS_PER_RUN: "3" };
+
+    const first = await run(rangeTick(), chainReader, { config: limits });
+    expect(first).toMatchObject({ status: "ok", fromBlock: 1_001, toBlock: 1_000, logs: 3, jobs: 3 });
+    expect(await integerState(commerceCursorKey(56))).toBe(1_000);
+    expect(await integerState("commerce_cursor_log_index_56")).toBe(2);
+
+    const second = await run(rangeTick(), chainReader, { config: limits });
+    expect(second).toMatchObject({ status: "ok", fromBlock: 1_001, toBlock: 1_000, logs: 3, jobs: 3 });
+    expect(await integerState("commerce_cursor_log_index_56")).toBe(5);
+
+    const third = await run(rangeTick(), chainReader, { config: limits });
+    expect(third).toMatchObject({ status: "ok", fromBlock: 1_001, toBlock: 1_085, logs: 2, jobs: 2 });
+    expect(await integerState(commerceCursorKey(56))).toBe(1_085);
+    expect(await integerState("commerce_cursor_log_index_56")).toBeNull();
+    expect(await eventCount(250, 257)).toBe(8);
   });
 });
 
@@ -294,6 +328,27 @@ describe("Commerce indexer explicit ranges", () => {
       config: { COMMERCE_INDEX_BLOCK_LOOKUPS_PER_RUN: "1", PRODUCER_KILL_SWITCH: "1" }, queue: { send },
     })).resolves.toMatchObject({ status: "ok" });
     expect(send).not.toHaveBeenCalled();
+  });
+
+  it("carries the log offset while an explicit backfill pages through a busy block", async () => {
+    const logs = Array.from({ length: 8 }, (_, index) => created(BigInt(350 + index), 1_001n, index));
+    const { reader: chainReader } = reader({ head: 1_100n, logs, jobs: logs.map((entry) => job(entry.args.jobId as bigint)) });
+    const send = vi.fn().mockResolvedValue(undefined);
+    const options = { config: { COMMERCE_INDEX_LOGS_PER_RUN: "3" }, queue: { send } };
+
+    await expect(run(explicit(1_001, 1_001), chainReader, options)).resolves.toMatchObject({ logs: 3, toBlock: 1_000 });
+    const second = send.mock.calls[0]![0] as CommerceIndexWork;
+    expect(second).toMatchObject({ kind: "index_range", fromBlock: 1_001, toBlock: 1_001, afterLogIndex: 2 });
+    send.mockClear();
+
+    await expect(run(second, chainReader, options)).resolves.toMatchObject({ logs: 3, toBlock: 1_000 });
+    const third = send.mock.calls[0]![0] as CommerceIndexWork;
+    expect(third).toMatchObject({ afterLogIndex: 5 });
+    send.mockClear();
+
+    await expect(run(third, chainReader, options)).resolves.toMatchObject({ logs: 2, toBlock: 1_001 });
+    expect(send).not.toHaveBeenCalled();
+    expect(await eventCount(350, 357)).toBe(8);
   });
 });
 

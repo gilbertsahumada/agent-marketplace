@@ -225,6 +225,23 @@ export const commerceJobs = sqliteTable(
   ],
 );
 
+export const commerceJobCounts = sqliteTable(
+  "commerce_job_counts",
+  {
+    chainId: integer().notNull(),
+    status: integer().notNull(),
+    protocolJobs: integer().notNull().default(0),
+    marketplaceJobs: integer().notNull().default(0),
+  },
+  (table) => [
+    primaryKey({ columns: [table.chainId, table.status] }),
+    check("commerce_job_counts_chain", sql`${table.chainId} IN (56, 97)`),
+    check("commerce_job_counts_status", sql`${table.status} BETWEEN 0 AND 5`),
+    check("commerce_job_counts_protocol", sql`${table.protocolJobs} >= 0`),
+    check("commerce_job_counts_marketplace", sql`${table.marketplaceJobs} >= 0`),
+  ],
+);
+
 // Append-only phase ledger decoded from Commerce logs (one row per log).
 export const commerceJobEvents = sqliteTable(
   "commerce_job_events",

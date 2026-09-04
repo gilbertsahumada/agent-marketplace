@@ -95,7 +95,7 @@ function reader(options: {
 function config(overrides: Record<string, string> = {}) {
   return loadConfig({
     ...env, KILL_SWITCH: "0", PRODUCER_KILL_SWITCH: "0", CLOUDFLARE_WORKERS_PLAN: "paid", COMMERCE_INDEX_ENABLED: "1", D1_ROWS_WRITTEN_PER_RUN: "200",
-    COMMERCE_INDEX_LOGS_PER_RUN: "23", COMMERCE_INDEX_JOBS_PER_RUN: "39", ...overrides,
+    COMMERCE_INDEX_LOGS_PER_RUN: "19", COMMERCE_INDEX_JOBS_PER_RUN: "28", ...overrides,
   } as unknown as Env);
 }
 
@@ -136,13 +136,18 @@ beforeEach(async () => {
 describe("truncateLogs", () => {
   it("keeps whole blocks in order, always at least the first block, within both caps", () => {
     const logs = [
-      { blockNumber: 12n, id: "c" }, { blockNumber: 10n, id: "a" }, { blockNumber: 10n, id: "b" }, { blockNumber: 14n, id: "d" },
+      { blockNumber: 12n, logIndex: 0, id: "c" }, { blockNumber: 10n, logIndex: 0, id: "a" },
+      { blockNumber: 10n, logIndex: 1, id: "b" }, { blockNumber: 14n, logIndex: 0, id: "d" },
     ];
-    expect(truncateLogs(logs, { logs: 2, blocks: 5 }, 20n)).toEqual({ included: [{ blockNumber: 10n, id: "a" }, { blockNumber: 10n, id: "b" }], toBlock: 11n });
-    expect(truncateLogs(logs, { logs: 1, blocks: 5 }, 20n).toBlock).toBe(11n);
+    expect(truncateLogs(logs, { logs: 2, blocks: 5 }, 20n)).toEqual({
+      included: [{ blockNumber: 10n, logIndex: 0, id: "a" }, { blockNumber: 10n, logIndex: 1, id: "b" }],
+      toBlock: 11n,
+      partialLogIndex: null,
+    });
+    expect(truncateLogs(logs, { logs: 1, blocks: 5 }, 20n)).toMatchObject({ toBlock: 9n, partialLogIndex: 0 });
     expect(truncateLogs(logs, { logs: 10, blocks: 2 }, 20n)).toMatchObject({ toBlock: 13n });
     expect(truncateLogs(logs, { logs: 10, blocks: 10 }, 20n)).toMatchObject({ toBlock: 20n });
-    expect(truncateLogs([], { logs: 1, blocks: 1 }, 20n)).toEqual({ included: [], toBlock: 20n });
+    expect(truncateLogs([], { logs: 1, blocks: 1 }, 20n)).toEqual({ included: [], toBlock: 20n, partialLogIndex: null });
   });
 });
 
@@ -314,9 +319,11 @@ describe("Commerce read routes", () => {
     "/commerce-jobs?chainId=56&buyer=0x1111111111111111111111111111111111111111&provider=0x1111111111111111111111111111111111111111",
     "/commerce-jobs?chainId=56&status=DONE",
     "/commerce-jobs?chainId=56&before=x",
+    "/commerce-jobs?chainId=56&before=9999999999999999",
     "/commerce-jobs?chainId=56&limit=0",
     "/commerce-jobs?chainId=56&unknown=1",
     "/commerce-jobs/56/801?x=1",
+    "/commerce-jobs/56/9999999999999999",
     "/commerce-summary",
     "/commerce-summary?chainId=56&extra=1",
   ])("rejects %s with 400 and no caching", async (path) => {
@@ -353,7 +360,15 @@ describe("Commerce read routes", () => {
 
   it("summarizes protocol and marketplace counts per status with the indexed cursor", async () => {
     await seedLedger();
-    const response = await commerceSummaryResponse(new Request("https://worker.test/commerce-summary?chainId=56"), env.DB);
+    const bounded = {
+      prepare(query: string) {
+        if (/\b(?:COUNT|GROUP\s+BY|EXISTS)\b/i.test(query)) {
+          throw new Error(`unbounded summary query: ${query}`);
+        }
+        return env.DB.prepare(query);
+      },
+    } as unknown as typeof env.DB;
+    const response = await commerceSummaryResponse(new Request("https://worker.test/commerce-summary?chainId=56"), bounded);
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({
       schemaVersion: 1,
@@ -365,5 +380,20 @@ describe("Commerce read routes", () => {
     });
     const empty = await (await commerceSummaryResponse(new Request("https://worker.test/commerce-summary?chainId=97"), env.DB)).json();
     expect(empty).toMatchObject({ chainId: 97, indexedThrough: null, protocol: { jobs: 0 }, marketplace: { jobs: 0 }, lastIndexRun: null });
+  });
+
+  it("moves fixed summary counts on status changes without double-counting later verified phases", async () => {
+    await seedLedger();
+    await env.DB.prepare("UPDATE commerce_jobs SET status = 3 WHERE chainId = 56 AND jobId = 801").run();
+    await env.DB.prepare(`INSERT INTO hire_events
+      (eventKey, agentId, chainId, phase, provenance, jobId, txHash, blockNumber, occurredAt, verifiedAt, callerKey)
+      VALUES ('summary-second-phase', '303779', 56, 'settled', 'chain_verified', '801', ?, '1002', ?, ?, 'test')`)
+      .bind(tx("2"), NOW, NOW).run();
+
+    const body = await (await commerceSummaryResponse(
+      new Request("https://worker.test/commerce-summary?chainId=56"), env.DB,
+    )).json() as { protocol: { byStatus: Record<string, number> }; marketplace: { byStatus: Record<string, number> } };
+    expect(body.protocol.byStatus).toMatchObject({ FUNDED: 0, COMPLETED: 1 });
+    expect(body.marketplace.byStatus).toMatchObject({ FUNDED: 0, COMPLETED: 1 });
   });
 });

@@ -27,25 +27,25 @@ describe("Commerce indexer configuration", () => {
 
   it("only enables the indexer explicitly and sizes it per plan", () => {
     expect(loadConfig(free)).toMatchObject({
-      commerceIndexEnabled: true, commerceIndexLogsPerRun: 6, commerceIndexJobsPerRun: 11,
+      commerceIndexEnabled: true, commerceIndexLogsPerRun: 5, commerceIndexJobsPerRun: 8,
     });
     expect(loadConfig({ CLOUDFLARE_WORKERS_PLAN: "paid" })).toMatchObject({
       commerceIndexEnabled: false,
       commerceIndexBlocksPerRun: 2_000,
       commerceIndexFinalityBlocks: 15,
-      commerceIndexJobsPerRun: 39,
-      commerceIndexLogsPerRun: 23,
+      commerceIndexJobsPerRun: 28,
+      commerceIndexLogsPerRun: 19,
       commerceIndexBlockLookupsPerRun: 20,
     });
     expect(configError(() => loadConfig({ COMMERCE_INDEX_ENABLED: "yes" })).field).toBe("COMMERCE_INDEX_ENABLED");
   });
 
   it("models D1 rows_written per index entry: events, their sequence row, jobs and runtime_state", () => {
-    expect([COMMERCE_EVENT_ROW_WRITES, COMMERCE_EVENT_STATEMENT_WRITES, COMMERCE_JOB_ROW_WRITES, COMMERCE_RUNTIME_STATE_ROW_WRITES]).toEqual([3, 1, 5, 2]);
-    // 24 logs on 24 jobs in four six-row statements: 72 + 4 + 120 + three runtime_state rows.
-    expect(commerceIndexRangeRowWrites(24, 24, 3)).toBe(202);
+    expect([COMMERCE_EVENT_ROW_WRITES, COMMERCE_EVENT_STATEMENT_WRITES, COMMERCE_JOB_ROW_WRITES, COMMERCE_RUNTIME_STATE_ROW_WRITES]).toEqual([3, 1, 7, 2]);
+    // 24 logs on 24 jobs in four six-row statements: 72 + 4 + 168 + three runtime_state rows.
+    expect(commerceIndexRangeRowWrites(24, 24, 3)).toBe(250);
     expect(commerceIndexRangeRowWrites(0, 0, 1)).toBe(2);
-    expect(commerceIndexJobsRowWrites(39)).toBe(197);
+    expect(commerceIndexJobsRowWrites(39)).toBe(275);
   });
 
   it.each([
@@ -60,19 +60,19 @@ describe("Commerce indexer configuration", () => {
   });
 
   it("projects the indexer's own per-message D1 envelope for every cron tick on Free and holds it to the ceiling", () => {
-    // Per index message: the 55-row batch is reserved before it commits, so a
+    // Per index message: the 57-row batch is reserved before it commits, so a
     // retried attempt writes only the failure summary and window hint (2 rows
-    // each, possibly fresh); three retries → 55 + 12. Reads: cursor/window plus
+    // each, possibly fresh); three retries → 57 + 12. Reads: cursor/window plus
     // one lookup per written row. 144 ticks × 2 chains at ten minutes.
     expect(loadConfig(free).projectedDailyBudget).toMatchObject({
       invocations: 144,
       commerceIndexMessagesPerDay: 288,
-      commerceIndexD1RowsWrittenPerMessage: 67,
-      commerceIndexD1RowsWritten: 19_296,
-      commerceIndexD1RowsRead: 288 * 4 * 57,
-      d1RowsWrittenNominal: 144 * 62 + 288 * 55,
-      d1RowsWritten: 144 * 4 * 62 + 19_296,
-      d1RowsRead: 144 * 4 * 3_000 + 288 * 4 * 57,
+      commerceIndexD1RowsWrittenPerMessage: 69,
+      commerceIndexD1RowsWritten: 19_872,
+      commerceIndexD1RowsRead: 288 * 4 * 59,
+      d1RowsWrittenNominal: 144 * 62 + 288 * 57,
+      d1RowsWritten: 144 * 4 * 62 + 19_872,
+      d1RowsRead: 144 * 4 * 3_000 + 288 * 4 * 59,
       scheduledQueueOperations: 2_592,
       queueOperations: 3_192,
     });
@@ -86,12 +86,12 @@ describe("Commerce indexer configuration", () => {
 
   it("holds only an enabled indexer to the D1 write envelope, counting index writes", () => {
     const paid = { CLOUDFLARE_WORKERS_PLAN: "paid", COMMERCE_INDEX_ENABLED: "1" };
-    expect(loadConfig({ ...paid, COMMERCE_INDEX_LOGS_PER_RUN: "23" })).toMatchObject({ commerceIndexLogsPerRun: 23 });
-    const logs = configError(() => loadConfig({ ...paid, COMMERCE_INDEX_LOGS_PER_RUN: "24" }));
+    expect(loadConfig({ ...paid, COMMERCE_INDEX_LOGS_PER_RUN: "19" })).toMatchObject({ commerceIndexLogsPerRun: 19 });
+    const logs = configError(() => loadConfig({ ...paid, COMMERCE_INDEX_LOGS_PER_RUN: "20" }));
     expect(logs.field).toBe("COMMERCE_INDEX_LOGS_PER_RUN");
-    expect(logs.message).toMatch(/202 D1 rows.*index writes count.*D1_ROWS_WRITTEN_PER_RUN/);
-    expect(loadConfig({ ...paid, COMMERCE_INDEX_JOBS_PER_RUN: "39" })).toMatchObject({ commerceIndexJobsPerRun: 39 });
-    const jobs = configError(() => loadConfig({ ...paid, COMMERCE_INDEX_JOBS_PER_RUN: "40" }));
+    expect(logs.message).toMatch(/210 D1 rows.*index writes count.*D1_ROWS_WRITTEN_PER_RUN/);
+    expect(loadConfig({ ...paid, COMMERCE_INDEX_JOBS_PER_RUN: "28" })).toMatchObject({ commerceIndexJobsPerRun: 28 });
+    const jobs = configError(() => loadConfig({ ...paid, COMMERCE_INDEX_JOBS_PER_RUN: "29" }));
     expect(jobs.field).toBe("COMMERCE_INDEX_JOBS_PER_RUN");
     expect(jobs.message).toMatch(/index writes count/);
     expect(loadConfig({ CLOUDFLARE_WORKERS_PLAN: "paid", D1_ROWS_WRITTEN_PER_RUN: "40" })).toMatchObject({ commerceIndexEnabled: false });

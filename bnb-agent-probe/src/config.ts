@@ -127,7 +127,9 @@ const FREE_MIN_D1_QUERIES_PER_RUN = 38;
 // six per statement.
 export const COMMERCE_EVENT_ROW_WRITES = 3;
 export const COMMERCE_EVENT_STATEMENT_WRITES = 1;
-export const COMMERCE_JOB_ROW_WRITES = 5;
+// A status-changing upsert also updates two fixed aggregate rows. New inserts
+// update one; reserve the larger case so the preflight bound stays sound.
+export const COMMERCE_JOB_ROW_WRITES = 7;
 export const COMMERCE_RUNTIME_STATE_ROW_WRITES = 2;
 export const COMMERCE_INDEX_ROW_CHUNK = 6;
 
@@ -161,9 +163,9 @@ const FREE_PROFILE: Profile = {
     commerceIndexBlocksPerRun: 500,
     commerceIndexFinalityBlocks: 15,
     // The largest sizes whose index writes fit the 60-row Free envelope
-    // (see commerceIndexRangeRowWrites): 6 logs → 55 rows, 11 jobs → 57.
-    commerceIndexJobsPerRun: 11,
-    commerceIndexLogsPerRun: 6,
+    // (see commerceIndexRangeRowWrites): 5 logs → 57 rows, 8 jobs → 58.
+    commerceIndexJobsPerRun: 8,
+    commerceIndexLogsPerRun: 5,
     commerceIndexBlockLookupsPerRun: 10,
     // A full all-new page of twelve identities exceeds the 60-row Free
     // invocation budget once the resumable ingest work is admitted. Keep the
@@ -242,9 +244,9 @@ const PAID_PROFILE: Profile = {
     commerceIndexBlocksPerRun: 2_000,
     commerceIndexFinalityBlocks: 15,
     // The largest sizes whose index writes fit the 200-row Paid envelope:
-    // 23 logs → 194 rows, 39 jobs → 197.
-    commerceIndexJobsPerRun: 39,
-    commerceIndexLogsPerRun: 23,
+    // 19 logs → 200 rows, 28 jobs → 198.
+    commerceIndexJobsPerRun: 28,
+    commerceIndexLogsPerRun: 19,
     commerceIndexBlockLookupsPerRun: 20,
     catalogDiscoveryPageSize: 15,
     catalogIngestTasksPerRun: 1,

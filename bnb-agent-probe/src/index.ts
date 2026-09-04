@@ -146,9 +146,14 @@ function queueWork(body: unknown, currentTime: number): QueueWork {
       return { kind: "index_range", chainId: value.chainId, fromBlock: null, toBlock: null, enqueuedAt: value.enqueuedAt as number };
     }
     if (nonNegativeInteger(value.fromBlock) && nonNegativeInteger(value.toBlock) && value.fromBlock <= value.toBlock) {
+      if (value.afterLogIndex !== undefined && !nonNegativeInteger(value.afterLogIndex)) {
+        throw new Error("WP2_QUEUE_MESSAGE_INVALID");
+      }
       return {
         kind: "index_range", chainId: value.chainId,
-        fromBlock: value.fromBlock, toBlock: value.toBlock, enqueuedAt: value.enqueuedAt as number,
+        fromBlock: value.fromBlock, toBlock: value.toBlock,
+        ...(value.afterLogIndex === undefined ? {} : { afterLogIndex: value.afterLogIndex as number }),
+        enqueuedAt: value.enqueuedAt as number,
       };
     }
     throw new Error("WP2_QUEUE_MESSAGE_INVALID");
@@ -574,7 +579,10 @@ function queueWorkDetails(work: QueueWork): Record<string, unknown> {
   switch (work.kind) {
     case "scheduled": return { scheduledTime: work.scheduledTime };
     case "catalog_validation": return { validationId: work.validationId };
-    case "index_range": return { chainId: work.chainId, fromBlock: work.fromBlock, toBlock: work.toBlock };
+    case "index_range": return {
+      chainId: work.chainId, fromBlock: work.fromBlock, toBlock: work.toBlock,
+      ...(work.afterLogIndex === undefined || work.afterLogIndex === null ? {} : { afterLogIndex: work.afterLogIndex }),
+    };
     case "index_jobs": return { chainId: work.chainId, fromJobId: work.fromJobId, toJobId: work.toJobId };
   }
 }
