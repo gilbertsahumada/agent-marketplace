@@ -81,7 +81,7 @@ export function deriveAgentJourney(input: {
 
   const jobs: AgentJourneyStage = input.provenJobs > 0
     ? { state: "verified", label: `${input.provenJobs} proven job${input.provenJobs === 1 ? "" : "s"}`, detail: "Completed ERC-8183 work linked to this agent is shown below." }
-    : { state: "locked", label: "No proven jobs", detail: "Verified ERC-8183 work will appear here after a completed job is indexed." };
+    : { state: "locked", label: "No proven jobs", detail: "Indexed on-chain jobs are listed below as activity; a job becomes proven only when its deliverable is hash-verified." };
 
   const nextAction = input.hireFlowAvailable && canPrepareHire
     ? "Request a fresh quote below; the current indexed quote is evidence, not a wallet authorization."

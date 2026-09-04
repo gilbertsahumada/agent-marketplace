@@ -4,9 +4,16 @@ import { notFound } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { CatalogUnavailable } from "@/components/marketplace/catalog-unavailable";
+import { HireJobLedgerPage } from "@/components/marketplace/hire-job-ledger-page";
 import { Breadcrumb } from "@/components/marketplace/page-primitives";
-import { getMainnetErc8183JobStatus } from "@/src/business/composition";
-import { Erc8183DemoJobNotFoundError, Erc8183SpikeDisabledError } from "@/src/business/errors/erc8183-spike-errors";
+import { getHireLedger, getMainnetErc8183JobStatus } from "@/src/business/composition";
+import {
+  Erc8183DemoJobNotFoundError,
+  Erc8183SpikeDisabledError,
+  Erc8183SpikeUnavailableError,
+} from "@/src/business/errors/erc8183-spike-errors";
+import { MarketplaceDataUnavailableError } from "@/src/business/errors/marketplace-errors";
 
 export const metadata: Metadata = { title: "BSC Mainnet ERC-8183 job" };
 export const dynamic = "force-dynamic";
@@ -17,7 +24,24 @@ export default async function MainnetJobPage({ params }: { params: Promise<{ job
   let job;
   try { job = await getMainnetErc8183JobStatus.execute({ jobId }); }
   catch (error) {
-    if (error instanceof Erc8183SpikeDisabledError || error instanceof Erc8183DemoJobNotFoundError) notFound();
+    if (
+      error instanceof Erc8183SpikeDisabledError
+      || error instanceof Erc8183DemoJobNotFoundError
+      || error instanceof Erc8183SpikeUnavailableError
+    ) {
+      // Outside the live demo allowlist, or when the live chain read fails,
+      // fall back to the indexed ledger so every job listed on /jobs still
+      // has a page: indexed state is a legitimate degraded answer. A ledger
+      // outage is an unavailable page, never a 404.
+      let ledger;
+      try { ledger = await getHireLedger.getJob({ chainId: 56, jobId }); }
+      catch (ledgerError) {
+        if (ledgerError instanceof MarketplaceDataUnavailableError) return <CatalogUnavailable retryHref={`/jobs/mainnet/${jobId}`} />;
+        throw ledgerError;
+      }
+      if (ledger !== null) return <HireJobLedgerPage job={ledger} />;
+      notFound();
+    }
     throw error;
   }
   return (

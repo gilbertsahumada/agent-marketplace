@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { MARKETPLACE_CATEGORIES, type MarketplaceCategory } from "../../business/entities/marketplace-agent.ts";
 import {
+  HireJobNotFoundError,
   InvalidMarketplaceInputError,
   MarketplaceAgentNotFoundError,
   MarketplaceDataUnavailableError,
@@ -52,7 +53,8 @@ export function marketplaceErrorResponse(error: unknown): NextResponse {
   if (error instanceof InvalidMarketplaceInputError || error instanceof InvalidPublicJobProofIdError) {
     return NextResponse.json({ error: { code: error.name, message: error.message } }, { status: 400 });
   }
-  if (error instanceof MarketplaceAgentNotFoundError || error instanceof PublicJobProofNotFoundError) {
+  if (error instanceof MarketplaceAgentNotFoundError || error instanceof PublicJobProofNotFoundError
+    || error instanceof HireJobNotFoundError) {
     return NextResponse.json({ error: { code: error.name, message: error.message } }, { status: 404 });
   }
   if (error instanceof MarketplaceDataUnavailableError) {
