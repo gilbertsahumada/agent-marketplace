@@ -178,6 +178,7 @@ export const hireEvents = sqliteTable(
   (table) => [
     index("idx_hire_agent").on(table.chainId, table.agentId, desc(table.occurredAt)),
     index("idx_hire_events_caller").on(table.callerKey, table.provenance, desc(table.occurredAt)),
+    index("idx_hire_events_job").on(table.chainId, table.jobId),
     check("hire_events_chain_bsc", sql`${table.chainId} IN (56, 97)`),
     check("hire_events_caller_key", sql`length(${table.callerKey}) BETWEEN 1 AND 128`),
     check(
@@ -191,6 +192,86 @@ export const hireEvents = sqliteTable(
       "hire_events_provenance",
       sql`${table.provenance} IN ('marketplace_observed', 'chain_verified')`,
     ),
+  ],
+);
+
+// Current getJob() state of every Commerce job the indexer has seen. Marketplace
+// attribution is not a column: it is derived from hire_events on (chainId, jobId).
+export const commerceJobs = sqliteTable(
+  "commerce_jobs",
+  {
+    chainId: integer().notNull(),
+    jobId: integer().notNull(),
+    client: text().notNull(),
+    provider: text().notNull(),
+    evaluator: text().notNull(),
+    budget: text().notNull(),
+    expiredAt: integer().notNull(),
+    status: integer().notNull(),
+    hook: text().notNull(),
+    submittedAt: integer(),
+    deliverable: text(),
+    firstSeenAt: integer().notNull(),
+    updatedAt: integer().notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.chainId, table.jobId] }),
+    index("idx_commerce_jobs_client").on(table.chainId, table.client, desc(table.jobId)),
+    index("idx_commerce_jobs_provider").on(table.chainId, table.provider, desc(table.jobId)),
+    index("idx_commerce_jobs_status").on(table.chainId, table.status, desc(table.jobId)),
+    check("commerce_jobs_chain", sql`${table.chainId} IN (56, 97)`),
+    check("commerce_jobs_job", sql`${table.jobId} >= 0`),
+    check("commerce_jobs_status", sql`${table.status} BETWEEN 0 AND 5`),
+  ],
+);
+
+export const commerceJobCounts = sqliteTable(
+  "commerce_job_counts",
+  {
+    chainId: integer().notNull(),
+    status: integer().notNull(),
+    protocolJobs: integer().notNull().default(0),
+    marketplaceJobs: integer().notNull().default(0),
+  },
+  (table) => [
+    primaryKey({ columns: [table.chainId, table.status] }),
+    check("commerce_job_counts_chain", sql`${table.chainId} IN (56, 97)`),
+    check("commerce_job_counts_status", sql`${table.status} BETWEEN 0 AND 5`),
+    check("commerce_job_counts_protocol", sql`${table.protocolJobs} >= 0`),
+    check("commerce_job_counts_marketplace", sql`${table.marketplaceJobs} >= 0`),
+  ],
+);
+
+// Append-only phase ledger decoded from Commerce logs (one row per log).
+export const commerceJobEvents = sqliteTable(
+  "commerce_job_events",
+  {
+    id: integer().primaryKey({ autoIncrement: true }),
+    chainId: integer().notNull(),
+    jobId: integer().notNull(),
+    phase: text().notNull(),
+    eventName: text().notNull(),
+    txHash: text().notNull(),
+    logIndex: integer().notNull(),
+    blockNumber: integer().notNull(),
+    blockTimestamp: integer().notNull(),
+    actor: text(),
+    amount: text(),
+    deliverable: text(),
+    reason: text(),
+    indexedAt: integer().notNull(),
+  },
+  (table) => [
+    uniqueIndex("commerce_job_events_log").on(table.chainId, table.txHash, table.logIndex),
+    index("idx_commerce_job_events_job").on(table.chainId, table.jobId, table.blockNumber),
+    check("commerce_job_events_chain", sql`${table.chainId} IN (56, 97)`),
+    check("commerce_job_events_job", sql`${table.jobId} >= 0`),
+    check(
+      "commerce_job_events_phase",
+      sql`${table.phase} IN ('created', 'funded', 'submitted', 'settled', 'refunded')`,
+    ),
+    check("commerce_job_events_log_index", sql`${table.logIndex} >= 0`),
+    check("commerce_job_events_block", sql`${table.blockNumber} >= 0`),
   ],
 );
 
@@ -653,6 +734,8 @@ export const schema = {
   probeObservations,
   funnelSnapshots,
   hireEvents,
+  commerceJobs,
+  commerceJobEvents,
   runtimeState,
   schedulerAttempts,
   catalogAgents,

@@ -1,7 +1,7 @@
 import { and, desc, eq, inArray, isNull, lte, ne, or, sql } from "drizzle-orm";
 
 import type { D1DatabaseLike } from "../db/client";
-import { createDatabase, type CatalogIngestTaskRow } from "../db/orm";
+import { chunks, createDatabase, type CatalogIngestTaskRow } from "../db/orm";
 import {
   catalogAgentAdmission,
   catalogDirectedTracking,
@@ -63,12 +63,6 @@ export interface CatalogIngestSummary {
   readonly d1Queries: number;
   readonly externalRequests: number;
   readonly errorCode: string | null;
-}
-
-function chunks<T>(values: readonly T[], size: number): T[][] {
-  const result: T[][] = [];
-  for (let offset = 0; offset < values.length; offset += size) result.push(values.slice(offset, offset + size));
-  return result;
 }
 
 function agentPriority(agentId: string, resources: readonly NormalizedCatalogResource[]): number {

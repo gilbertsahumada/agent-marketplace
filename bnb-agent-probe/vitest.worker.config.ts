@@ -11,6 +11,9 @@ export default defineConfig({
         bindings: {
           TEST_MIGRATIONS: await readD1Migrations(path.join(import.meta.dirname, "migrations")),
           CATALOG_V2_READS_ENABLED: "1",
+          // Production caches public reads (wrangler.jsonc); the Workers Cache
+          // is shared across test files, so tests opt in per request instead.
+          CATALOG_RESPONSE_CACHE_SECONDS: "0",
           CATALOG_API_V2_FIXTURE: await readFile(
             path.join(import.meta.dirname, "../contracts/catalog-api-v2.fixtures.json"),
             "utf8",

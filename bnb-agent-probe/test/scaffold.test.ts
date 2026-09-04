@@ -75,7 +75,17 @@ describe("WP1 Wrangler scaffold", () => {
       D1_ROWS_READ_PER_RUN: "3000",
       D1_ROWS_WRITTEN_PER_RUN: "60",
       MAX_CATALOG_RESPONSE_BYTES: "16777216",
+      // Production serves the commerce summary (two full-table scans per
+      // uncached call) from the Workers Cache like staging does.
+      CATALOG_RESPONSE_CACHE_SECONDS: "60",
     });
+  });
+
+  it("declares the Commerce indexer flag off wherever the catalogue flags are declared", () => {
+    for (const vars of [wrangler.vars, wrangler.env?.staging?.vars, wrangler.env?.validation?.vars]) {
+      expect(vars?.CATALOG_PROBE_ENABLED).toBeDefined();
+      expect(vars?.COMMERCE_INDEX_ENABLED).toBe("0");
+    }
   });
 
   it("keeps product monitoring active only in the isolated staging environment", () => {
