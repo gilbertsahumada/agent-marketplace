@@ -11,15 +11,21 @@ import type {
   HireLedgerSummary,
 } from "../../business/entities/hire-job.ts";
 import type { VerifiedHireEvent, VerifiedHirePhase } from "../../business/entities/verified-hire-event.ts";
+import { MarketplaceDataUnavailableError } from "../../business/errors/marketplace-errors.ts";
 import { catalogUrl } from "./catalog-candidate-feed.ts";
 
 // Reads the Worker's Commerce indexer (`/commerce-jobs`, `/commerce-summary`).
 // Same posture as the hire-event feed: strict allowlist parsers, a short cache
-// matching the Worker's own, and null on any failure so nothing partial ever
-// renders as on-chain state.
+// matching the Worker's own, and nothing partial ever renders as on-chain
+// state. Lists and the summary answer null on any failure; the single-job
+// reader keeps "not indexed" (null) apart from "cannot read the ledger"
+// (MarketplaceDataUnavailableError) because callers turn the first into a 404.
 
-const cache = new AsyncTtlCache();
+// Clock read through the global so tests can drive it with fake timers.
+const cache = new AsyncTtlCache(() => Date.now());
 const CACHE_TTL_MS = 30_000;
+const MISS_TTL_MS = 10_000;
+const misses = new Map<string, number>();
 const STATUS_NAMES: readonly HireJobStatus[] = ["OPEN", "FUNDED", "SUBMITTED", "COMPLETED", "REJECTED", "EXPIRED"];
 const PHASES: readonly VerifiedHirePhase[] = ["created", "funded", "submitted", "settled", "refunded"];
 const ADDRESS = /^0x[0-9a-fA-F]{40}$/;
@@ -95,11 +101,13 @@ function event(entry: unknown): HireJobEvent {
   const value = record(entry);
   if (!PHASES.includes(value.phase as VerifiedHirePhase) || typeof value.eventName !== "string") invalid();
   if (typeof value.txHash !== "string" || !TX_HASH.test(value.txHash)) invalid();
+  if (typeof value.logIndex !== "number" || !Number.isSafeInteger(value.logIndex) || value.logIndex < 0) invalid();
   if (typeof value.blockNumber !== "string" || !BLOCK_NUMBER.test(value.blockNumber)) invalid();
   return {
     phase: value.phase as VerifiedHirePhase,
     eventName: value.eventName,
     txHash: value.txHash as HireAddress,
+    logIndex: value.logIndex,
     blockNumber: value.blockNumber,
     occurredAt: timestamp(value.occurredAt),
     actor: value.actor === null ? null : address(value.actor),
@@ -192,18 +200,31 @@ export function parseHireLedgerSummary(value: unknown, chain: HireChainId): Hire
   };
 }
 
-async function read<T>(key: string, url: URL, parse: (value: unknown) => T): Promise<T | null> {
-  try {
-    return await cache.get(key, CACHE_TTL_MS, async () => {
-      const response = await fetch(url, {
-        cache: "no-store",
-        headers: { accept: "application/json" },
-        signal: AbortSignal.timeout(5_000),
-      });
-      if (response.status === 404) throw new Error("HIRE_LEDGER_NOT_FOUND");
-      if (!response.ok) throw new Error("HIRE_LEDGER_FEED_UNAVAILABLE");
-      return parse(await response.json());
+class HireLedgerMissError extends Error {
+  constructor() {
+    super("HIRE_LEDGER_NOT_FOUND");
+    this.name = "HireLedgerMissError";
+  }
+}
+
+// Successful reads are cached for the Worker's own window; failures are not,
+// so the next call retries. A 404 surfaces as HireLedgerMissError.
+async function read<T>(key: string, url: URL, parse: (value: unknown) => T): Promise<T> {
+  return cache.get(key, CACHE_TTL_MS, async () => {
+    const response = await fetch(url, {
+      cache: "no-store",
+      headers: { accept: "application/json" },
+      signal: AbortSignal.timeout(5_000),
     });
+    if (response.status === 404) throw new HireLedgerMissError();
+    if (!response.ok) throw new Error("HIRE_LEDGER_FEED_UNAVAILABLE");
+    return parse(await response.json());
+  });
+}
+
+async function readOrNull<T>(key: string, url: URL, parse: (value: unknown) => T): Promise<T | null> {
+  try {
+    return await read(key, url, parse);
   } catch {
     return null;
   }
@@ -232,19 +253,35 @@ export async function getHireJobs(input: {
   if (input.provider !== undefined) url.searchParams.set("provider", input.provider);
   if (input.agentId !== undefined) url.searchParams.set("agentId", input.agentId);
   if (input.before !== undefined) url.searchParams.set("before", input.before);
-  return read(`commerce-jobs:${url}`, url, (value) => parseHireJobPage(value, input.chainId));
+  return readOrNull(`commerce-jobs:${url}`, url, (value) => parseHireJobPage(value, input.chainId));
 }
 
+// null means the Worker has no row for the job (a miss, remembered briefly so
+// an unknown id does not cost a round-trip per view); every other failure,
+// including a missing or non-https OBSERVATIONS_URL, throws
+// MarketplaceDataUnavailableError so it is never reported as "not found".
 export async function getHireJob(input: { chainId: HireChainId; jobId: string; env?: Env }): Promise<HireJobDetail | null> {
   if (!JOB_ID.test(input.jobId)) return null;
   const url = catalogUrl(`/commerce-jobs/${input.chainId}/${input.jobId}`, input.env ?? process.env);
-  if (!url) return null;
-  return read(`commerce-job:${url}`, url, (value) => parseHireJobDetail(value, input.chainId));
+  if (!url) throw new MarketplaceDataUnavailableError("hire ledger job");
+  const key = `commerce-job:${url}`;
+  const missedUntil = misses.get(key);
+  if (missedUntil !== undefined && missedUntil > Date.now()) return null;
+  misses.delete(key);
+  try {
+    return await read(key, url, (value) => parseHireJobDetail(value, input.chainId));
+  } catch (error) {
+    if (error instanceof HireLedgerMissError) {
+      misses.set(key, Date.now() + MISS_TTL_MS);
+      return null;
+    }
+    throw new MarketplaceDataUnavailableError("hire ledger job", { cause: error });
+  }
 }
 
 export async function getHireLedgerSummary(input: { chainId: HireChainId; env?: Env }): Promise<HireLedgerSummary | null> {
   const url = catalogUrl("/commerce-summary", input.env ?? process.env);
   if (!url) return null;
   url.searchParams.set("chainId", String(input.chainId));
-  return read(`commerce-summary:${url}`, url, (value) => parseHireLedgerSummary(value, input.chainId));
+  return readOrNull(`commerce-summary:${url}`, url, (value) => parseHireLedgerSummary(value, input.chainId));
 }

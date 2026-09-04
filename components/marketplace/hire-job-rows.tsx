@@ -34,8 +34,9 @@ function statusClassName(status: HireJobStatus): string {
 }
 
 // One row per indexed job. Every row links to the job page for its network,
-// so no cell is a dead end; "marketplace" marks a job with a chain-verified
-// hire event, nothing more.
+// so no cell is a dead end. "Hired here" marks a job with a chain-verified
+// hire event (the hire started via this marketplace), nothing more. Address
+// roles and the update time are spoken, not only shown on hover.
 export function HireJobRows({ chainId, jobs, emptyText }: {
   chainId: HireChainId;
   jobs: readonly HireJob[];
@@ -55,11 +56,12 @@ export function HireJobRows({ chainId, jobs, emptyText }: {
             <span className="font-medium text-white">Job #{job.jobId}</span>
             <Badge className={statusClassName(job.status)} variant="outline">{jobStatusLabel(job.status)}</Badge>
             <span className="font-hash min-w-0 truncate text-xs text-zinc-400" title={`${job.buyer} → ${job.provider}`}>
-              {shortAddress(job.buyer)} → {shortAddress(job.provider)}
+              <span className="sr-only">Buyer </span>{shortAddress(job.buyer)} <span aria-hidden="true">→</span> <span className="sr-only">provider </span>{shortAddress(job.provider)}
             </span>
-            <span>{job.marketplace ? <Badge className="border-primary/40 bg-primary/10 text-primary" variant="outline">marketplace</Badge> : null}</span>
+            <span>{job.marketplace ? <Badge className="border-primary/40 bg-primary/10 text-primary" variant="outline">Hired here</Badge> : null}</span>
             <span className="flex items-center justify-between gap-3 text-sm text-zinc-500 sm:justify-end">
-              {UTC_DATE.format(new Date(job.updatedAt))}<ArrowRight aria-hidden="true" className="size-4" />
+              <time dateTime={job.updatedAt}><span className="sr-only">Updated </span>{UTC_DATE.format(new Date(job.updatedAt))} UTC</time>
+              <ArrowRight aria-hidden="true" className="size-4" />
             </span>
           </Link>
         </li>

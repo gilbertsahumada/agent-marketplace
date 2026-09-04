@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { MarketplaceDataUnavailableError } from "../src/business/errors/marketplace-errors.ts";
 
 const ledger = vi.hoisted(() => ({
   listRecentJobs: vi.fn(),
@@ -54,8 +55,9 @@ describe("hire ledger controllers", () => {
     const response = await jobs.GET(new Request(`http://local/api/marketplace/jobs?${query}`));
     expect(response.status).toBe(400);
     expect((await response.json()).error.code).toBe("InvalidMarketplaceInputError");
-    expect(ledger.listRecentJobs).not.toHaveBeenCalled();
-    expect(ledger.listJobsByBuyer).not.toHaveBeenCalled();
+    for (const reader of [ledger.listRecentJobs, ledger.listJobsByBuyer, ledger.listJobsByProvider, ledger.listJobsByAgent, ledger.summary]) {
+      expect(reader).not.toHaveBeenCalled();
+    }
   });
 
   it("answers 503 when the ledger is unavailable", async () => {
@@ -88,5 +90,14 @@ describe("hire ledger controllers", () => {
 
     const invalid = await testnetLedger.GET(new Request("http://local/x"), { params: Promise.resolve({ jobId: "abc" }) });
     expect(invalid.status).toBe(400);
+  });
+
+  it("answers 503, not 404, when the ledger cannot be read for one job", async () => {
+    ledger.getJob.mockRejectedValue(new MarketplaceDataUnavailableError("hire ledger job"));
+    for (const route of [mainnetLedger, testnetLedger]) {
+      const response = await route.GET(new Request("http://local/x"), { params: Promise.resolve({ jobId: "56696" }) });
+      expect(response.status).toBe(503);
+      expect((await response.json()).error.code).toBe("MarketplaceDataUnavailableError");
+    }
   });
 });

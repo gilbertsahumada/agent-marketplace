@@ -36,23 +36,32 @@ describe("ListAgentHireJobs", () => {
     expect(providerWallet(agent({ agentWallet: null, owner: "not-an-address" }))).toBeNull();
   });
 
-  it("lists jobs by provider wallet when known and by verified hire events otherwise", async () => {
+  it("lists jobs by provider wallet when known and by verified hire events otherwise, naming the scope", async () => {
     const known = ledger();
     await expect(new ListAgentHireJobs(known).execute({ agent: agent({ agentWallet: WALLET, owner: OWNER }) }))
-      .resolves.toEqual([{ jobId: "56696" }]);
+      .resolves.toEqual({ jobs: [{ jobId: "56696" }], nextBefore: null, scope: "wallet" });
     expect(known.listJobsByProvider).toHaveBeenCalledWith({ chainId: 56, provider: WALLET });
     expect(known.listJobsByAgent).not.toHaveBeenCalled();
 
     const unknown = ledger();
-    await new ListAgentHireJobs(unknown).execute({ agent: agent({ agentWallet: null, owner: null }) });
+    await expect(new ListAgentHireJobs(unknown).execute({ agent: agent({ agentWallet: null, owner: null }) }))
+      .resolves.toEqual({ jobs: [{ jobId: "56696" }], nextBefore: null, scope: "agent" });
     expect(unknown.listJobsByAgent).toHaveBeenCalledWith({ chainId: 56, agentId: "303779" });
     expect(unknown.listJobsByProvider).not.toHaveBeenCalled();
   });
 
-  it("returns an empty list when the ledger is unavailable or throws", async () => {
+  it("keeps an empty ledger page apart from an unavailable ledger and passes the cursor through", async () => {
+    const empty = ledger({ listJobsByProvider: async () => ({ chainId: 56, jobs: [], nextBefore: null }) });
+    await expect(new ListAgentHireJobs(empty).execute({ agent: agent({ agentWallet: WALLET, owner: null }) }))
+      .resolves.toEqual({ jobs: [], nextBefore: null, scope: "wallet" });
+
+    const more = ledger({ listJobsByProvider: async () => ({ chainId: 56, jobs: [], nextBefore: "56600" }) });
+    await expect(new ListAgentHireJobs(more).execute({ agent: agent({ agentWallet: WALLET, owner: null }) }))
+      .resolves.toMatchObject({ nextBefore: "56600" });
+
     await expect(new ListAgentHireJobs(ledger({ listJobsByProvider: async () => null })).execute({ agent: agent({ agentWallet: WALLET, owner: null }) }))
-      .resolves.toEqual([]);
+      .resolves.toBeNull();
     await expect(new ListAgentHireJobs(ledger({ listJobsByProvider: async () => { throw new Error("offline"); } })).execute({ agent: agent({ agentWallet: WALLET, owner: null }) }))
-      .resolves.toEqual([]);
+      .resolves.toBeNull();
   });
 });

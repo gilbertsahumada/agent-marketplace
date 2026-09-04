@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   getHireJob,
   getHireJobs,
@@ -7,6 +7,7 @@ import {
   parseHireJobPage,
   parseHireLedgerSummary,
 } from "../src/data/observation/hire-ledger-feed.ts";
+import { MarketplaceDataUnavailableError } from "../src/business/errors/marketplace-errors.ts";
 
 const ENV = { OBSERVATIONS_URL: "https://probe.example.workers.dev/observations" };
 const BUYER = "0x5ee75a1B1648C023e885E58bD3735Ae273f2cc52";
@@ -82,23 +83,32 @@ describe("hire ledger feed", () => {
     expect(() => parseHireJobPage(value, 56)).toThrow("HIRE_LEDGER_FEED_INVALID");
   });
 
-  it("parses a job detail with its phase ledger and verified hire events", () => {
-    const parsed = parseHireJobDetail(detail(), 56);
-    expect(parsed).toMatchObject({
-      jobId: "56696", status: "SUBMITTED", evaluator: SELLER, deliverable: null, firstSeenAt: new Date(NOW).toISOString(),
-      events: [{ phase: "funded", eventName: "JobFunded", txHash: TX, blockNumber: "119000000", actor: BUYER, amount: "10000000000000000" }],
-      hireEvents: [{ chainId: 56, agentId: "303779", phase: "funded", jobId: "56696", txHash: TX, verifiedAt: new Date(NOW).toISOString() }],
+  it("parses a job detail with its phase ledger (including logIndex) and verified hire events", () => {
+    const at = new Date(NOW).toISOString();
+    expect(parseHireJobDetail(detail(), 56)).toEqual({
+      chainId: 56, jobId: "56696", buyer: BUYER, provider: SELLER, budgetRaw: "10000000000000000", status: "SUBMITTED",
+      expiresAt: new Date(NOW + 600_000).toISOString(), submittedAt: at, marketplace: true, updatedAt: at,
+      evaluator: SELLER, hook: SELLER, deliverable: null, firstSeenAt: at,
+      events: [{
+        phase: "funded", eventName: "JobFunded", txHash: TX, logIndex: 1, blockNumber: "119000000", occurredAt: at,
+        actor: BUYER, amount: "10000000000000000", deliverable: null, reason: null,
+      }],
+      hireEvents: [{ chainId: 56, agentId: "303779", phase: "funded", jobId: "56696", txHash: TX, blockNumber: "119000000", occurredAt: at, verifiedAt: at }],
     });
     expect(() => parseHireJobDetail(detail({ events: [{ phase: "clicked" }] }), 56)).toThrow("HIRE_LEDGER_FEED_INVALID");
+    for (const logIndex of ["1", -1, 1.5, undefined]) {
+      expect(() => parseHireJobDetail(detail({ events: [{ ...detail().events[0], logIndex }] }), 56)).toThrow("HIRE_LEDGER_FEED_INVALID");
+    }
   });
 
   it("parses the summary and rejects a status name it does not know", () => {
-    expect(parseHireLedgerSummary(summary(), 56)).toMatchObject({
+    const at = new Date(NOW).toISOString();
+    expect(parseHireLedgerSummary(summary(), 56)).toEqual({
       chainId: 56,
-      indexedThrough: { blockNumber: "119000000", at: new Date(NOW).toISOString() },
-      protocol: { jobs: 10, byStatus: { COMPLETED: 4 } },
-      marketplace: { jobs: 1 },
-      lastIndexRun: { status: "ok" },
+      indexedThrough: { blockNumber: "119000000", at },
+      protocol: { jobs: 10, byStatus: { OPEN: 1, FUNDED: 2, SUBMITTED: 3, COMPLETED: 4, REJECTED: 0, EXPIRED: 0 } },
+      marketplace: { jobs: 1, byStatus: { OPEN: 0, FUNDED: 1, SUBMITTED: 0, COMPLETED: 0, REJECTED: 0, EXPIRED: 0 } },
+      lastIndexRun: { status: "ok", at },
     });
     expect(parseHireLedgerSummary(summary({ indexedThrough: null, lastIndexRun: null }), 56)).toMatchObject({ indexedThrough: null, lastIndexRun: null });
     expect(() => parseHireLedgerSummary(summary({ protocol: { jobs: 1, byStatus: { OPEN: 1 } } }), 56)).toThrow("HIRE_LEDGER_FEED_INVALID");
@@ -134,8 +144,71 @@ describe("hire ledger feed", () => {
     ["not found", async () => new Response(null, { status: 404 }), ENV],
     ["malformed payload", async () => Response.json({ schemaVersion: 1 }), ENV],
     ["transport error", async () => { throw new Error("offline"); }, ENV],
-  ])("fails closed to null on %s", async (_label, response, env) => {
+  ])("list fails closed to null on %s", async (_label, response, env) => {
     vi.stubGlobal("fetch", vi.fn(response));
     await expect(getHireJobs({ chainId: 97, env })).resolves.toBeNull();
+  });
+
+  // A job the Worker has not indexed is a miss; a Worker the marketplace
+  // cannot read is an outage. Callers must never confuse the two.
+  it("getHireJob answers null only for a Worker 404", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(null, { status: 404 })));
+    await expect(getHireJob({ chainId: 56, jobId: "404001", env: ENV })).resolves.toBeNull();
+  });
+
+  it.each<[string, () => Promise<Response>, Record<string, string | undefined>, string]>([
+    ["missing origin", async () => Response.json(detail()), {}, "503000"],
+    ["non-https origin", async () => Response.json(detail()), { OBSERVATIONS_URL: "http://probe.example/observations" }, "503000"],
+    ["upstream failure", async () => new Response(null, { status: 503 }), ENV, "503001"],
+    ["malformed payload", async () => Response.json({ schemaVersion: 1 }), ENV, "503002"],
+    ["transport error", async () => { throw new Error("offline"); }, ENV, "503003"],
+    ["timeout", async () => { throw new DOMException("The operation was aborted due to timeout", "TimeoutError"); }, ENV, "503004"],
+  ])("getHireJob throws MarketplaceDataUnavailableError on %s", async (_label, response, env, jobId) => {
+    vi.stubGlobal("fetch", vi.fn(response));
+    await expect(getHireJob({ chainId: 56, jobId, env })).rejects.toBeInstanceOf(MarketplaceDataUnavailableError);
+  });
+});
+
+describe("hire ledger feed cache", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  it("serves a repeat read within 30 s from cache and hands fetch an abort signal", async () => {
+    const fetchMock = vi.fn<typeof fetch>(async () => Response.json(page()));
+    vi.stubGlobal("fetch", fetchMock);
+    await getHireJobs({ chainId: 56, before: "30001", env: ENV });
+    await getHireJobs({ chainId: 56, before: "30001", env: ENV });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0]?.[1]?.signal).toBeInstanceOf(AbortSignal);
+    vi.advanceTimersByTime(30_001);
+    await getHireJobs({ chainId: 56, before: "30001", env: ENV });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not cache a 503: the next call refetches", async () => {
+    const fetchMock = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response(null, { status: 503 }))
+      .mockResolvedValueOnce(Response.json(page()));
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(getHireJobs({ chainId: 56, before: "30002", env: ENV })).resolves.toBeNull();
+    await expect(getHireJobs({ chainId: 56, before: "30002", env: ENV })).resolves.toMatchObject({ jobs: [{ jobId: "56696" }] });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("remembers a 404 miss for 10 s so an unknown job does not cost a Worker round-trip per view", async () => {
+    const fetchMock = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response(null, { status: 404 }))
+      .mockResolvedValueOnce(Response.json(detail()));
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(getHireJob({ chainId: 56, jobId: "30003", env: ENV })).resolves.toBeNull();
+    vi.advanceTimersByTime(9_000);
+    await expect(getHireJob({ chainId: 56, jobId: "30003", env: ENV })).resolves.toBeNull();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    vi.advanceTimersByTime(1_001);
+    await expect(getHireJob({ chainId: 56, jobId: "30003", env: ENV })).resolves.toMatchObject({ jobId: "56696" });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 });

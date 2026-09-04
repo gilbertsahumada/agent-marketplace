@@ -14,7 +14,10 @@ export default async function HirePage({ params }: { params: Promise<{ agentId: 
   const { agentId } = await params;
   try {
     const { agent, passport, catalogCandidate, jobProofs } = await getAgentEvidencePassport.executeWithAgent({ agentId });
-    const hireJobs = await listAgentHireJobs.execute({ agent });
+    // The ledger read only needs the agent: start it now, overlap it with the
+    // rest of the page's work and await it last. It never rejects (null on an
+    // unavailable ledger), so the pending promise cannot go unhandled.
+    const hireJobsPromise = listAgentHireJobs.execute({ agent });
     const current = catalogCandidate ? catalogCandidateCard(catalogCandidate) : null;
     const buyerAction = current?.buyerAction ?? "unavailable";
     const normalizedState = catalogCandidate?.state;
@@ -40,12 +43,15 @@ export default async function HirePage({ params }: { params: Promise<{ agentId: 
     const hireFlow = canRequestQuote && selectedConfig
       ? <Erc8183MainnetDemo config={selectedConfig} agentName={marketplaceAgentDisplayName(agent.name)} embedded />
       : null;
+    const hireJobs = await hireJobsPromise;
     return <AgentProfile
       agent={agent}
       catalogCandidate={catalogCandidate}
       hireFlow={hireFlow}
       hireFlowAvailable={selectedConfig !== null}
-      hireJobs={hireJobs}
+      hireJobs={hireJobs?.jobs ?? null}
+      hireJobsMore={hireJobs !== null && hireJobs.nextBefore !== null}
+      hireJobsScope={hireJobs?.scope ?? "agent"}
       hireNotice={hireNotice}
       jobProofs={jobProofs}
       passport={passport}

@@ -147,6 +147,17 @@ describe("deriveAgentJourney", () => {
     expect(journey.jobs).toMatchObject({ state: "locked", label: "No proven jobs" });
   });
 
+  it("keeps indexed on-chain jobs as activity while the proven stage stays locked", () => {
+    const journey = deriveAgentJourney({ ...base, state: state(), provenJobs: 0 });
+
+    expect(journey.jobs).toMatchObject({
+      state: "locked",
+      label: "No proven jobs",
+      detail: "Indexed on-chain jobs are listed below as activity; a job becomes proven only when its deliverable is hash-verified.",
+    });
+    expect(journey.jobs.detail).not.toMatch(/will appear here after a completed job is indexed/);
+  });
+
   it("shows singular and plural proven-job labels", () => {
     expect(deriveAgentJourney({ ...base, state: state(), provenJobs: 1 }).jobs.label)
       .toBe("1 proven job");
