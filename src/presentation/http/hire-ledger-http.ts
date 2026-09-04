@@ -24,8 +24,11 @@ export function jobIdParameter(value: string | null, name: string): string | und
 }
 
 export function allowlistedQuery(url: URL, allowed: readonly string[]): void {
+  const seen = new Set<string>();
   for (const key of url.searchParams.keys()) {
     if (!allowed.includes(key)) throw new InvalidMarketplaceInputError(`Unknown query parameter ${key}`);
+    if (seen.has(key)) throw new InvalidMarketplaceInputError(`Query parameter ${key} must appear once`);
+    seen.add(key);
   }
 }
 

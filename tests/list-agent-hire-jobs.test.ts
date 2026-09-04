@@ -29,10 +29,10 @@ function ledger(overrides: Partial<HireLedger> = {}): HireLedger {
 }
 
 describe("ListAgentHireJobs", () => {
-  it("prefers the registry wallet, then the registry owner, then the indexed owner", () => {
+  it("uses only the registry agent wallet as the ERC-8183 provider", () => {
     expect(providerWallet(agent({ agentWallet: WALLET, owner: OWNER }))).toBe(WALLET);
-    expect(providerWallet(agent({ agentWallet: ZERO, owner: OWNER }))).toBe(OWNER);
-    expect(providerWallet(agent({ agentWallet: null, owner: null }, OWNER))).toBe(OWNER);
+    expect(providerWallet(agent({ agentWallet: ZERO, owner: OWNER }))).toBeNull();
+    expect(providerWallet(agent({ agentWallet: null, owner: null }, OWNER))).toBeNull();
     expect(providerWallet(agent({ agentWallet: null, owner: "not-an-address" }))).toBeNull();
   });
 

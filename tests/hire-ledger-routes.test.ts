@@ -50,6 +50,7 @@ describe("hire ledger controllers", () => {
     "chainId=56&buyer=0x12",
     "chainId=56&agentId=0",
     "chainId=56&before=x",
+    "chainId=56&chainId=97",
     "chainId=56&unknown=1",
   ])("rejects ?%s with 400 before reading the ledger", async (query) => {
     const response = await jobs.GET(new Request(`http://local/api/marketplace/jobs?${query}`));

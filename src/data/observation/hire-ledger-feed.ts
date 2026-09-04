@@ -25,6 +25,7 @@ import { catalogUrl } from "./catalog-candidate-feed.ts";
 const cache = new AsyncTtlCache(() => Date.now());
 const CACHE_TTL_MS = 30_000;
 const MISS_TTL_MS = 10_000;
+const MAX_MISSES = 256;
 const misses = new Map<string, number>();
 const STATUS_NAMES: readonly HireJobStatus[] = ["OPEN", "FUNDED", "SUBMITTED", "COMPLETED", "REJECTED", "EXPIRED"];
 const PHASES: readonly VerifiedHirePhase[] = ["created", "funded", "submitted", "settled", "refunded"];
@@ -207,6 +208,19 @@ class HireLedgerMissError extends Error {
   }
 }
 
+function rememberMiss(key: string): void {
+  const now = Date.now();
+  for (const [candidate, expiresAt] of misses) {
+    if (expiresAt <= now) misses.delete(candidate);
+  }
+  while (misses.size >= MAX_MISSES) {
+    const oldest = misses.keys().next().value;
+    if (oldest === undefined) break;
+    misses.delete(oldest);
+  }
+  misses.set(key, now + MISS_TTL_MS);
+}
+
 // Successful reads are cached for the Worker's own window; failures are not,
 // so the next call retries. A 404 surfaces as HireLedgerMissError.
 async function read<T>(key: string, url: URL, parse: (value: unknown) => T): Promise<T> {
@@ -269,10 +283,14 @@ export async function getHireJob(input: { chainId: HireChainId; jobId: string; e
   if (missedUntil !== undefined && missedUntil > Date.now()) return null;
   misses.delete(key);
   try {
-    return await read(key, url, (value) => parseHireJobDetail(value, input.chainId));
+    return await read(key, url, (value) => {
+      const detail = parseHireJobDetail(value, input.chainId);
+      if (detail.jobId !== input.jobId) invalid();
+      return detail;
+    });
   } catch (error) {
     if (error instanceof HireLedgerMissError) {
-      misses.set(key, Date.now() + MISS_TTL_MS);
+      rememberMiss(key);
       return null;
     }
     throw new MarketplaceDataUnavailableError("hire ledger job", { cause: error });

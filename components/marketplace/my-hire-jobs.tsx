@@ -23,14 +23,38 @@ interface Cursor {
   before: string;
 }
 
+const ADDRESS = /^0x[0-9a-fA-F]{40}$/;
+const JOB_ID = /^(?:0|[1-9]\d{0,15})$/;
+const DECIMAL = /^\d{1,78}$/;
+const STATUSES = new Set(["OPEN", "FUNDED", "SUBMITTED", "COMPLETED", "REJECTED", "EXPIRED"]);
+
+function isTimestamp(value: unknown): value is string {
+  return typeof value === "string" && Number.isFinite(Date.parse(value));
+}
+
+function isJob(value: unknown, chainId: HireChainId): value is HireJob {
+  if (typeof value !== "object" || value === null) return false;
+  const job = value as Partial<HireJob>;
+  return job.chainId === chainId
+    && typeof job.jobId === "string" && JOB_ID.test(job.jobId)
+    && typeof job.buyer === "string" && ADDRESS.test(job.buyer)
+    && typeof job.provider === "string" && ADDRESS.test(job.provider)
+    && typeof job.budgetRaw === "string" && DECIMAL.test(job.budgetRaw)
+    && typeof job.status === "string" && STATUSES.has(job.status)
+    && isTimestamp(job.expiresAt)
+    && (job.submittedAt === null || isTimestamp(job.submittedAt))
+    && typeof job.marketplace === "boolean"
+    && isTimestamp(job.updatedAt);
+}
+
 // The route is same-origin and typed, but a 200 with the wrong shape must
 // degrade to "unavailable" rather than crash the page in render.
-function parsePage(body: unknown): HireJobPage | null {
+function parsePage(body: unknown, chainId: HireChainId): HireJobPage | null {
   if (typeof body !== "object" || body === null) return null;
   const page = body as Partial<HireJobPage>;
-  if (!Array.isArray(page.jobs)) return null;
-  if (page.nextBefore !== null && typeof page.nextBefore !== "string") return null;
-  return { chainId: page.chainId as HireChainId, jobs: page.jobs, nextBefore: page.nextBefore ?? null };
+  if (page.chainId !== chainId || !Array.isArray(page.jobs) || !page.jobs.every((job) => isJob(job, chainId))) return null;
+  if (page.nextBefore !== null && (typeof page.nextBefore !== "string" || !JOB_ID.test(page.nextBefore))) return null;
+  return { chainId, jobs: page.jobs, nextBefore: page.nextBefore ?? null };
 }
 
 // The wallet address only exists in the browser (injected connector, no
@@ -61,7 +85,7 @@ export function MyHireJobs({ chainId }: { chainId: HireChainId }) {
     })
       .then(async (response) => {
         if (!response.ok) throw new Error(String(response.status));
-        const page = parsePage(await response.json());
+        const page = parsePage(await response.json(), chainId);
         if (controller.signal.aborted) return;
         if (page === null) {
           setState({ status: "unavailable" });

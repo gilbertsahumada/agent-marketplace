@@ -137,6 +137,13 @@ describe("hire ledger feed", () => {
     expect(requested).toHaveLength(3);
   });
 
+  it("rejects a detail response for a different job than the one requested", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json(detail({ job: { ...detail().job, jobId: "56695" } }))));
+
+    await expect(getHireJob({ chainId: 56, jobId: "56694", env: ENV }))
+      .rejects.toBeInstanceOf(MarketplaceDataUnavailableError);
+  });
+
   it.each<[string, () => Promise<Response>, Record<string, string | undefined>]>([
     ["missing origin", async () => Response.json(page()), {}],
     ["non-https origin", async () => Response.json(page()), { OBSERVATIONS_URL: "http://probe.example/observations" }],
@@ -201,14 +208,26 @@ describe("hire ledger feed cache", () => {
   it("remembers a 404 miss for 10 s so an unknown job does not cost a Worker round-trip per view", async () => {
     const fetchMock = vi.fn<typeof fetch>()
       .mockResolvedValueOnce(new Response(null, { status: 404 }))
-      .mockResolvedValueOnce(Response.json(detail()));
+      .mockResolvedValueOnce(Response.json(detail({ job: { ...detail().job, jobId: "30003" } })));
     vi.stubGlobal("fetch", fetchMock);
     await expect(getHireJob({ chainId: 56, jobId: "30003", env: ENV })).resolves.toBeNull();
     vi.advanceTimersByTime(9_000);
     await expect(getHireJob({ chainId: 56, jobId: "30003", env: ENV })).resolves.toBeNull();
     expect(fetchMock).toHaveBeenCalledTimes(1);
     vi.advanceTimersByTime(1_001);
-    await expect(getHireJob({ chainId: 56, jobId: "30003", env: ENV })).resolves.toMatchObject({ jobId: "56696" });
+    await expect(getHireJob({ chainId: 56, jobId: "30003", env: ENV })).resolves.toMatchObject({ jobId: "30003" });
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("bounds remembered misses so arbitrary job ids cannot grow memory without limit", async () => {
+    const fetchMock = vi.fn<typeof fetch>(async () => new Response(null, { status: 404 }));
+    vi.stubGlobal("fetch", fetchMock);
+    for (let index = 0; index <= 256; index += 1) {
+      await getHireJob({ chainId: 56, jobId: String(40000 + index), env: ENV });
+    }
+
+    await getHireJob({ chainId: 56, jobId: "40000", env: ENV });
+
+    expect(fetchMock).toHaveBeenCalledTimes(258);
   });
 });

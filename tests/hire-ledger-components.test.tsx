@@ -141,6 +141,8 @@ describe("hire ledger components", () => {
   it.each([
     ["an object without jobs", {}],
     ["a jobs field that is not an array", { chainId: 56, jobs: "56696", nextBefore: null }],
+    ["a malformed job inside the jobs array", { chainId: 56, jobs: [{}], nextBefore: null }],
+    ["a response for another network", { chainId: 97, jobs: [], nextBefore: null }],
     ["a cursor that is neither string nor null", { chainId: 56, jobs: [], nextBefore: 5 }],
     ["a non-object body", "ok"],
   ])("treats a 200 with %s as unavailable instead of crashing the page", async (_label, body) => {

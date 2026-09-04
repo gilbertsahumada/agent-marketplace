@@ -12,8 +12,8 @@ export interface AgentHireJobs {
   scope: HireJobsScope;
 }
 
-// Jobs sold by an agent, by its registry wallet when the marketplace knows it
-// (getAgentWallet, falling back to the owner), otherwise only the jobs the
+// Jobs sold by an agent, by its registry agent wallet when the marketplace
+// knows it, otherwise only the jobs the
 // marketplace itself recorded a chain-verified hire event for. An unavailable
 // ledger yields null, never an error that hides the hire page and never an
 // empty list that reads as "no jobs".
@@ -36,10 +36,8 @@ export class ListAgentHireJobs {
 }
 
 export function providerWallet(agent: MarketplaceAgent): HireAddress | null {
-  for (const candidate of [agent.onchainIdentity.agentWallet, agent.onchainIdentity.owner, agent.owner]) {
-    if (candidate !== null && ADDRESS.test(candidate) && candidate.toLowerCase() !== ZERO_ADDRESS) {
-      return candidate as HireAddress;
-    }
-  }
-  return null;
+  const candidate = agent.onchainIdentity.agentWallet;
+  return candidate !== null && ADDRESS.test(candidate) && candidate.toLowerCase() !== ZERO_ADDRESS
+    ? candidate as HireAddress
+    : null;
 }
