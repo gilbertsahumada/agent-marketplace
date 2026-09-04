@@ -149,10 +149,14 @@ function queueWork(body: unknown, currentTime: number): QueueWork {
       if (value.afterLogIndex !== undefined && !nonNegativeInteger(value.afterLogIndex)) {
         throw new Error("WP2_QUEUE_MESSAGE_INVALID");
       }
+      if (value.hops !== undefined && (!nonNegativeInteger(value.hops) || value.hops > 100)) {
+        throw new Error("WP2_QUEUE_MESSAGE_INVALID");
+      }
       return {
         kind: "index_range", chainId: value.chainId,
         fromBlock: value.fromBlock, toBlock: value.toBlock,
         ...(value.afterLogIndex === undefined ? {} : { afterLogIndex: value.afterLogIndex as number }),
+        ...(value.hops === undefined ? {} : { hops: value.hops as number }),
         enqueuedAt: value.enqueuedAt as number,
       };
     }
@@ -582,6 +586,7 @@ function queueWorkDetails(work: QueueWork): Record<string, unknown> {
     case "index_range": return {
       chainId: work.chainId, fromBlock: work.fromBlock, toBlock: work.toBlock,
       ...(work.afterLogIndex === undefined || work.afterLogIndex === null ? {} : { afterLogIndex: work.afterLogIndex }),
+      ...(work.hops === undefined ? {} : { hops: work.hops }),
     };
     case "index_jobs": return { chainId: work.chainId, fromJobId: work.fromJobId, toJobId: work.toJobId };
   }
@@ -595,6 +600,8 @@ function commerceWorkRange(work: CommerceIndexWork): Record<string, number> {
   return {
     ...(work.fromBlock === null ? {} : { fromBlock: work.fromBlock }),
     ...(work.toBlock === null ? {} : { toBlock: work.toBlock }),
+    ...(work.afterLogIndex === undefined || work.afterLogIndex === null ? {} : { afterLogIndex: work.afterLogIndex }),
+    ...(work.hops === undefined ? {} : { hops: work.hops }),
   };
 }
 

@@ -299,7 +299,7 @@ describe("Commerce indexer explicit ranges", () => {
     const summary = await run(explicit(1_070, 1_095), chainReader, { config: { COMMERCE_INDEX_BLOCK_LOOKUPS_PER_RUN: "1" }, queue: { send } });
     expect(calls.getLogs).toEqual([{ fromBlock: 1_070n, toBlock: 1_085n }]);
     expect(summary).toMatchObject({ status: "ok", fromBlock: 1_070, toBlock: 1_079, logs: 1 });
-    expect(send).toHaveBeenCalledWith({ schemaVersion: 2, kind: "index_range", chainId: 56, fromBlock: 1_080, toBlock: 1_085, enqueuedAt: NOW });
+    expect(send).toHaveBeenCalledWith({ schemaVersion: 2, kind: "index_range", chainId: 56, fromBlock: 1_080, toBlock: 1_085, hops: 1, enqueuedAt: NOW });
     expect(await jobRow(56, 303)).toBeNull();
     expect(await integerState(commerceCursorKey(56))).toBeNull();
   });
@@ -330,6 +330,22 @@ describe("Commerce indexer explicit ranges", () => {
     expect(send).not.toHaveBeenCalled();
   });
 
+  it("ends an explicit backfill chain at its hop cap", async () => {
+    const logs = [created(321n, 1_001n), created(322n, 1_002n)];
+    const { reader: chainReader } = reader({ head: 1_100n, logs, jobs: [job(321n), job(322n)] });
+    const send = vi.fn().mockResolvedValue(undefined);
+    const logger = { info: vi.fn(), error: vi.fn() };
+    const capped = { ...explicit(1_000, 1_010), hops: 100 } as CommerceIndexWork;
+
+    await expect(run(capped, chainReader, {
+      config: { COMMERCE_INDEX_BLOCK_LOOKUPS_PER_RUN: "1" }, queue: { send }, logger,
+    })).resolves.toMatchObject({ status: "ok", toBlock: 1_001 });
+    expect(send).not.toHaveBeenCalled();
+    expect(logger.info).toHaveBeenCalledWith("commerce.index.remainder_dropped", {
+      chainId: 56, fromBlock: 1_002, toBlock: 1_010, reason: "hop_limit",
+    });
+  });
+
   it("carries the log offset while an explicit backfill pages through a busy block", async () => {
     const logs = Array.from({ length: 8 }, (_, index) => created(BigInt(350 + index), 1_001n, index));
     const { reader: chainReader } = reader({ head: 1_100n, logs, jobs: logs.map((entry) => job(entry.args.jobId as bigint)) });
@@ -338,12 +354,12 @@ describe("Commerce indexer explicit ranges", () => {
 
     await expect(run(explicit(1_001, 1_001), chainReader, options)).resolves.toMatchObject({ logs: 3, toBlock: 1_000 });
     const second = send.mock.calls[0]![0] as CommerceIndexWork;
-    expect(second).toMatchObject({ kind: "index_range", fromBlock: 1_001, toBlock: 1_001, afterLogIndex: 2 });
+    expect(second).toMatchObject({ kind: "index_range", fromBlock: 1_001, toBlock: 1_001, afterLogIndex: 2, hops: 1 });
     send.mockClear();
 
     await expect(run(second, chainReader, options)).resolves.toMatchObject({ logs: 3, toBlock: 1_000 });
     const third = send.mock.calls[0]![0] as CommerceIndexWork;
-    expect(third).toMatchObject({ afterLogIndex: 5 });
+    expect(third).toMatchObject({ afterLogIndex: 5, hops: 2 });
     send.mockClear();
 
     await expect(run(third, chainReader, options)).resolves.toMatchObject({ logs: 2, toBlock: 1_001 });

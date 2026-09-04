@@ -120,10 +120,11 @@ describe("Commerce indexer queue wiring", () => {
       runCommerceIndex: vi.fn().mockRejectedValue(new Error("BSC_RPC_RESPONSE")),
       logger,
     });
-    const range = message({ schemaVersion: 2, kind: "index_range", chainId: 56, fromBlock: 100, toBlock: 200, enqueuedAt: NOW });
+    const range = message({ schemaVersion: 2, kind: "index_range", chainId: 56, fromBlock: 100, toBlock: 200, afterLogIndex: 3, hops: 2, enqueuedAt: NOW });
     await expect(failing.queue({ messages: [range] }, activeEnv(), context)).rejects.toThrow("BSC_RPC_RESPONSE");
     expect(logger.error).toHaveBeenCalledWith("commerce.index.failed", {
-      attempt: 1, errorCode: "BSC_RPC_RESPONSE", kind: "index_range", chainId: 56, fromBlock: 100, toBlock: 200,
+      attempt: 1, errorCode: "BSC_RPC_RESPONSE", kind: "index_range", chainId: 56,
+      fromBlock: 100, toBlock: 200, afterLogIndex: 3, hops: 2,
     });
 
     const jobs = message({ schemaVersion: 2, kind: "index_jobs", chainId: 97, fromJobId: 1, toJobId: 50, enqueuedAt: NOW });
@@ -153,6 +154,7 @@ describe("Commerce indexer queue wiring", () => {
     { schemaVersion: 2, kind: "index_range", chainId: 1, enqueuedAt: NOW },
     { schemaVersion: 2, kind: "index_range", chainId: 56, fromBlock: 10, enqueuedAt: NOW },
     { schemaVersion: 2, kind: "index_range", chainId: 56, fromBlock: 10, toBlock: 9, enqueuedAt: NOW },
+    { schemaVersion: 2, kind: "index_range", chainId: 56, fromBlock: 10, toBlock: 20, hops: 101, enqueuedAt: NOW },
     { schemaVersion: 2, kind: "index_range", chainId: 56, enqueuedAt: NOW + 300_001 },
     { schemaVersion: 2, kind: "index_jobs", chainId: 56, fromJobId: 5, toJobId: 4, enqueuedAt: NOW },
     { schemaVersion: 2, kind: "index_jobs", chainId: 56, fromJobId: -1, toJobId: 4, enqueuedAt: NOW },

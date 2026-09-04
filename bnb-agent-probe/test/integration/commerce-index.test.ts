@@ -232,7 +232,7 @@ describe("Commerce indexer", () => {
     );
 
     expect(summary).toMatchObject({ status: "ok", fromBlock: 890, toBlock: 904, logs: 1 });
-    expect(send).toHaveBeenCalledWith({ schemaVersion: 2, kind: "index_range", chainId: 56, fromBlock: 905, toBlock: 910, enqueuedAt: NOW });
+    expect(send).toHaveBeenCalledWith({ schemaVersion: 2, kind: "index_range", chainId: 56, fromBlock: 905, toBlock: 910, hops: 1, enqueuedAt: NOW });
     expect(await cursor(56)).toBeNull();
   });
 

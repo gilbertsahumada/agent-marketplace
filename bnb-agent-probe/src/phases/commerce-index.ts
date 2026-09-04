@@ -53,6 +53,7 @@ export type CommerceIndexWork =
     readonly fromBlock: number | null;
     readonly toBlock: number | null;
     readonly afterLogIndex?: number | null;
+    readonly hops?: number;
     readonly enqueuedAt: number;
   }
   | {
@@ -119,6 +120,7 @@ const ROW_CHUNK = COMMERCE_INDEX_ROW_CHUNK;
 const JOB_READ_CHUNK = 50;
 const INDEX_RPC_DEADLINE_MS = 60_000;
 const INDEX_RPC_RESPONSE_BYTES = 2 * 1_024 * 1_024;
+const MAX_REENQUEUE_HOPS = 100;
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 const ZERO_BYTES32 = `0x${"0".repeat(64)}`;
 export const COMMERCE_INDEX_RPC_METHODS: ReadonlySet<string> = new Set([
@@ -649,11 +651,14 @@ async function indexRange(
     const remainder = truncated.partialLogIndex === null
       ? { chainId, fromBlock: Number(indexedThrough) + 1, toBlock: Number(rangeEnd) }
       : { chainId, fromBlock: Number(fromBlock), toBlock: Number(rangeEnd), afterLogIndex: truncated.partialLogIndex };
+    const hops = work.hops ?? 0;
     if (config.producerKillSwitch) {
       logger?.info("commerce.index.remainder_dropped", remainder);
+    } else if (hops >= MAX_REENQUEUE_HOPS) {
+      logger?.info("commerce.index.remainder_dropped", { ...remainder, reason: "hop_limit" });
     } else {
       if (env.WP2_QUEUE === undefined) throw new Error("WP2_QUEUE_BINDING_REQUIRED");
-      await env.WP2_QUEUE.send({ schemaVersion: 2, kind: "index_range", ...remainder, enqueuedAt: now() });
+      await env.WP2_QUEUE.send({ schemaVersion: 2, kind: "index_range", ...remainder, hops: hops + 1, enqueuedAt: now() });
     }
   }
   return summary;
