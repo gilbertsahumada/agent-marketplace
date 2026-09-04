@@ -42,8 +42,6 @@ const routerAbi = parseAbi(["function policyWhitelist(address policy) view retur
 const tokenAbi = parseAbi(["function decimals() view returns (uint8)"]);
 
 export class BscProbeError extends Error {
-  // Transport status for BSC_RPC_HTTP, so an operator can tell a rate limit
-  // (429) from an auth wall (403) without the response body ever being kept.
   constructor(readonly code: string, readonly httpStatus?: number) {
     super(code);
     this.name = "BscProbeError";

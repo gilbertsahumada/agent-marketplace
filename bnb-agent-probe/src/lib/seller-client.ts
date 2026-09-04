@@ -20,6 +20,9 @@ export interface A2aProbeInput {
   readonly now?: () => number;
   readonly expectedHttpStatus?: Erc8183HttpStatusExpectation;
   readonly expectedA2aMessageUrl?: string;
+  /** Capability probes can require the funded notification skill; a buyer
+   * quote only needs negotiation and may omit it. */
+  readonly requireNotifyFunded?: boolean;
 }
 
 export interface Erc8183HttpStatusExpectation {
@@ -34,6 +37,16 @@ export interface Erc8183HttpStatusExpectation {
 export interface A2aProbeResult {
   readonly quote: Record<string, unknown>;
   readonly negotiationSkill: typeof NEGOTIATION_SKILLS[number];
+}
+
+export interface McpProbeInput extends Omit<A2aProbeInput, "expectedHttpStatus" | "expectedA2aMessageUrl"> {
+  readonly taskDescription: string;
+  readonly terms: {
+    deliverables: string;
+    quality_standards: string;
+    evaluation_required: true;
+    evaluator_type: "uma_oov3";
+  };
 }
 
 export async function probeA2aSeller(input: A2aProbeInput): Promise<A2aProbeResult> {
@@ -53,7 +66,8 @@ export async function probeA2aSeller(input: A2aProbeInput): Promise<A2aProbeResu
   const messageUrl = parseMessageUrl(card.url, new URL(baseEndpoint), input.expectedA2aMessageUrl);
   const skills = parseSkills(card.skills);
   const negotiationSkill = NEGOTIATION_SKILLS.find((skill) => skills.includes(skill));
-  if (!negotiationSkill || skills.filter((skill) => skill === "notify_funded").length !== 1) {
+  if (!negotiationSkill || (input.requireNotifyFunded !== false
+    && skills.filter((skill) => skill === "notify_funded").length !== 1)) {
     throw new SellerProbeError("A2A_REQUIRED_SKILLS");
   }
 
@@ -120,6 +134,114 @@ export async function probeErc8183HttpSeller(input: A2aProbeInput): Promise<A2aP
     body: JSON.stringify(input.request),
   }, input, deadline, usage);
   return { quote, negotiationSkill: "negotiate-erc8183-job" };
+}
+
+/** Strict MCP quote adapter. Generic MCP tools are intentionally not enough
+ * for hiring; the server must advertise one of the two exact tool names and
+ * accept the canonical task_description + terms shape. */
+export async function probeMcpSeller(input: McpProbeInput): Promise<A2aProbeResult> {
+  if (!isSyntacticallyPublicHttpsUrl(input.endpoint)) throw new SellerProbeError("SELLER_UNSAFE_URL");
+  const now = input.now ?? performance.now.bind(performance);
+  const deadline = now() + input.timeoutMs;
+  const usage = { bytes: 0 };
+  const target = new URL(input.endpoint);
+  const initReply = await fetchMcpJson(target, {
+    jsonrpc: "2.0",
+    id: crypto.randomUUID(),
+    method: "initialize",
+    params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "trust8004-marketplace", version: "1.0" } },
+  }, input, deadline, usage);
+  const sessionId = initReply.sessionId;
+  const toolsReply = await fetchMcpJson(target, {
+    jsonrpc: "2.0",
+    id: crypto.randomUUID(),
+    method: "tools/list",
+    params: {},
+  }, input, deadline, usage, sessionId);
+  const tools = toolsReply.result && isRecord(toolsReply.result) ? toolsReply.result.tools : undefined;
+  if (!Array.isArray(tools)) throw new SellerProbeError("MCP_TOOLS_INVALID");
+  const advertised = tools.find((tool) => isRecord(tool)
+    && (tool.name === "negotiate_erc8183_job" || tool.name === "request_quote"));
+  if (!isRecord(advertised) || typeof advertised.name !== "string") throw new SellerProbeError("MCP_QUOTE_TOOL_REQUIRED");
+  const schema = advertised.inputSchema;
+  const properties = isRecord(schema) && isRecord(schema.properties) ? schema.properties : null;
+  const required = isRecord(schema) && Array.isArray(schema.required)
+    && schema.required.every((field) => typeof field === "string")
+    ? schema.required as string[]
+    : null;
+  if (!isRecord(schema)
+    || (schema.type !== undefined && schema.type !== "object")
+    || properties === null
+    || required === null
+    || !( ["task_description", "terms"] as const).every((field) => field in properties)
+    || !( ["task_description", "terms"] as const).every((field) => required.includes(field))) {
+    throw new SellerProbeError("MCP_QUOTE_SCHEMA_INVALID");
+  }
+  const callReply = await fetchMcpJson(target, {
+    jsonrpc: "2.0",
+    id: crypto.randomUUID(),
+    method: "tools/call",
+    params: {
+      name: advertised.name,
+      arguments: { task_description: input.taskDescription, terms: input.terms },
+    },
+  }, input, deadline, usage, sessionId);
+  if (callReply.error !== undefined) throw new SellerProbeError("MCP_QUOTE_REJECTED");
+  const result = callReply.result;
+  if (!isRecord(result)) throw new SellerProbeError("MCP_QUOTE_INVALID");
+  const content = Array.isArray(result.content) ? result.content : [];
+  const data = content.find((item) => isRecord(item) && item.type === "json" && isRecord(item.json));
+  if (isRecord(data) && isRecord(data.json)) return { quote: data.json, negotiationSkill: "negotiate-erc8183-job" };
+  if (isRecord(result.structuredContent)) return { quote: result.structuredContent, negotiationSkill: "negotiate-erc8183-job" };
+  const text = content.find((item) => isRecord(item) && item.type === "text" && typeof item.text === "string");
+  if (isRecord(text) && typeof text.text === "string") {
+    try {
+      const parsed: unknown = JSON.parse(text.text);
+      if (isRecord(parsed)) return { quote: parsed, negotiationSkill: "negotiate-erc8183-job" };
+    } catch { /* handled by the stable MCP_QUOTE_INVALID result below */ }
+  }
+  throw new SellerProbeError("MCP_QUOTE_INVALID");
+}
+
+async function fetchMcpJson(
+  endpoint: URL,
+  body: Record<string, unknown>,
+  input: McpProbeInput,
+  deadline: number,
+  usage: { bytes: number },
+  sessionId?: string,
+): Promise<Record<string, unknown> & { sessionId?: string }> {
+  const remainingMs = Math.floor(deadline - (input.now ?? performance.now.bind(performance))());
+  if (remainingMs <= 0) throw new SellerProbeError("SELLER_TIMEOUT");
+  let response: Response;
+  try {
+    response = await input.fetch(endpoint, {
+      method: "POST",
+      redirect: "manual",
+      headers: {
+        accept: "application/json, text/event-stream",
+        "content-type": "application/json",
+        ...(sessionId ? { "mcp-session-id": sessionId } : {}),
+      },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(remainingMs),
+    });
+  } catch { throw new SellerProbeError("SELLER_UNREACHABLE"); }
+  if (response.status >= 300 && response.status < 400) throw new SellerProbeError("SELLER_REDIRECT");
+  if (!response.ok) throw new SellerProbeError("MCP_HTTP_ERROR");
+  const text = await readBoundedText(response, input.maxResponseBytes, usage);
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    const event = text.split(/\r?\n/).filter((line) => line.startsWith("data:")).at(-1)?.slice(5).trim();
+    try { parsed = event ? JSON.parse(event) : null; } catch { parsed = null; }
+  }
+  if (!isRecord(parsed) || parsed.jsonrpc !== "2.0" || parsed.id !== body.id || parsed.error !== undefined) {
+    throw new SellerProbeError("MCP_JSONRPC_INVALID");
+  }
+  const id = response.headers.get("mcp-session-id") ?? sessionId;
+  return id ? { ...parsed, sessionId: id } : parsed;
 }
 
 function validHttpStatus(

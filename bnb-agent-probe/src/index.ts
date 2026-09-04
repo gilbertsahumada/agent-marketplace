@@ -1,5 +1,6 @@
 import { ConfigError, loadConfig, type WorkerConfig } from "./config";
 import type { CommerceIndexSummary, CommerceIndexWork } from "./phases/commerce-index";
+import type { CatalogCapabilityProbeSummary, CatalogCapabilityWork } from "./phases/catalog-capability";
 import type {
   Env,
   ExecutionContext,
@@ -39,6 +40,11 @@ export interface WorkerDependencies {
     env: Env,
     config: WorkerConfig,
   ) => Promise<CommerceIndexSummary>;
+  runCatalogCapabilityProbe?: (
+    work: CatalogCapabilityWork,
+    env: Env,
+    config: WorkerConfig,
+  ) => Promise<CatalogCapabilityProbeSummary>;
 }
 
 const COMMERCE_BACKFILL_MAX_MESSAGES = 100;
@@ -81,8 +87,8 @@ async function bearerMatches(header: string | null, secret: string): Promise<boo
 
 // One cache key per distinct query, not per distinct spelling of it: the
 // parameters are sorted by key and re-encoded from their decoded values, so
-// `?b=1&a=%35%36` and `?a=56&b=1` share an entry. Routes reject duplicate keys
-// before this matters, but the key must not depend on that.
+// equivalent requests share one entry. Routes reject duplicate keys before
+// this matters, but the key must not depend on their original ordering.
 function canonicalCacheKey(url: URL): Request {
   const canonical = new URL(url.pathname, url.origin);
   const entries = [...url.searchParams.entries()]
@@ -116,6 +122,7 @@ async function cachedCatalogResponse(
 type QueueWork =
   | { kind: "scheduled"; scheduledTime: number }
   | { kind: "catalog_validation"; validationId: number; enqueuedAt: number }
+  | CatalogCapabilityWork
   | CommerceIndexWork;
 
 function nonNegativeInteger(value: unknown): value is number {
@@ -129,6 +136,21 @@ function queueWork(body: unknown, currentTime: number): QueueWork {
   const value = body as Record<string, unknown>;
   const enqueuedAtValid = nonNegativeInteger(value.enqueuedAt)
     && value.enqueuedAt <= currentTime + QUEUE_MAX_FUTURE_SKEW_MS;
+  if (value.schemaVersion === 2
+    && value.kind === "catalog_capability_probe"
+    && typeof value.agentKey === "string"
+    && /^eip155:56:[1-9]\d{0,19}$/.test(value.agentKey)
+    && typeof value.endpointKey === "string"
+    && /^[a-f0-9]{64}$/.test(value.endpointKey)
+    && enqueuedAtValid) {
+    return {
+      schemaVersion: 2,
+      kind: "catalog_capability_probe",
+      agentKey: value.agentKey,
+      endpointKey: value.endpointKey,
+      enqueuedAt: value.enqueuedAt as number,
+    };
+  }
   if (value.schemaVersion === 2
     && value.kind === "catalog_validation"
     && typeof value.validationId === "number"
@@ -202,7 +224,11 @@ export function createWorker(dependencies: WorkerDependencies = {}): WorkerEntry
       if (request.method === "GET" && url.pathname === "/health") {
         const { healthResponse } = await import("./routes/health");
         return healthResponse(env.DB, config, now(), {
-          rpcConfigured: { 56: env.BSC_RPC_URL !== undefined, 97: env.BSC_TESTNET_RPC_URL !== undefined },
+          quoteQueueAvailable: env.CATALOG_QUOTE_QUEUE !== undefined,
+          rpcConfigured: {
+            56: typeof env.BSC_RPC_URL === "string" && env.BSC_RPC_URL.trim().length > 0,
+            97: typeof env.BSC_TESTNET_RPC_URL === "string" && env.BSC_TESTNET_RPC_URL.trim().length > 0,
+          },
         });
       }
       if (request.method === "GET" && url.pathname === "/observations" && url.search === "") {
@@ -297,6 +323,37 @@ export function createWorker(dependencies: WorkerDependencies = {}): WorkerEntry
           nowMs: now(),
           timeoutMs: config.probeTimeoutMs,
         });
+      }
+      if ((request.method === "POST" && /^\/catalog-quotes\/[1-9]\d{0,19}$/.test(url.pathname))
+        || (request.method === "GET" && /^\/catalog-quotes\/[1-9]\d{0,19}$/.test(url.pathname))) {
+        if (env.BUYER_OBSERVATION_SECRET === undefined) return errorResponse("not_found", 404);
+        if (!await bearerMatches(request.headers.get("authorization"), env.BUYER_OBSERVATION_SECRET)) {
+          return errorResponse("unauthorized", 401);
+        }
+        const { createCatalogQuoteRequestResponse, catalogQuoteHistoryResponse, callerForQuote } = await import("./routes/catalog-quotes");
+        if (request.method === "GET") return catalogQuoteHistoryResponse(request, env.DB, url.pathname.split("/").at(-1)!, now());
+        return createCatalogQuoteRequestResponse(request, env.DB, {
+          nowMs: now(),
+          caller: callerForQuote(request),
+          dailyLimit: config.catalogValidationRequestsPerDay,
+          callerDailyLimit: config.catalogValidationRequestsPerCallerDay,
+          agentDailyLimit: config.catalogValidationRequestsPerAgentDay,
+          originDailyLimit: config.catalogValidationRequestsPerOriginDay,
+        });
+      }
+      if (request.method === "POST" && /^\/catalog-quotes\/(?:[1-9]\d{0,19}\/)?attempt\/[0-9a-f-]{16,80}\/(result|fallback)$/.test(url.pathname)) {
+        if (env.BUYER_OBSERVATION_SECRET === undefined) return errorResponse("not_found", 404);
+        if (!await bearerMatches(request.headers.get("authorization"), env.BUYER_OBSERVATION_SECRET)) {
+          return errorResponse("unauthorized", 401);
+        }
+        const { catalogQuoteBrowserResultResponse, catalogQuoteFallbackResponse } = await import("./routes/catalog-quotes");
+        const parts = url.pathname.split("/");
+        const attemptId = parts.at(-2)!;
+        const expectedAgentId = parts[2] === "attempt" ? undefined : parts[2];
+        const options = { nowMs: now(), env, config, ...(expectedAgentId ? { expectedAgentId } : {}) };
+        return url.pathname.endsWith("/result")
+          ? catalogQuoteBrowserResultResponse(request, env.DB, attemptId, options)
+          : catalogQuoteFallbackResponse(request, env.DB, attemptId, options);
       }
       if (request.method === "GET" && url.pathname === "/commerce-jobs") {
         const { commerceJobsListResponse } = await import("./routes/commerce-jobs");
@@ -451,6 +508,15 @@ export function createWorker(dependencies: WorkerDependencies = {}): WorkerEntry
         // consumer reads from the chain cursor to the safe head.
         await enqueueCommerceIndexTicks(env, env.WP2_QUEUE, now(), logger);
       }
+      if (config.catalogProbeEnabled && config.catalogV2WritesEnabled && env.CATALOG_QUOTE_QUEUE !== undefined) {
+        const { enqueueDueCatalogCapabilities } = await import("./phases/catalog-capability");
+        const summary = await enqueueDueCatalogCapabilities(env.DB as never, env.CATALOG_QUOTE_QUEUE, {
+          nowMs: now(),
+          limit: config.catalogQuoteBatchSize,
+          concurrency: config.catalogQuoteConcurrency,
+        });
+        logger.info("catalog.quote.queue.enqueued", { ...summary, scheduledTime: controller.scheduledTime });
+      }
     },
 
     async queue(batch: QueueBatch, env, context) {
@@ -473,6 +539,32 @@ export function createWorker(dependencies: WorkerDependencies = {}): WorkerEntry
         kind: work.kind,
         ...queueWorkDetails(work),
       });
+      if (work.kind === "catalog_capability_probe") {
+        if (!config.catalogProbeEnabled || !config.catalogV2WritesEnabled) {
+          message.ack();
+          return;
+        }
+        const runner = dependencies.runCatalogCapabilityProbe
+          ?? (async (probeWork: CatalogCapabilityWork, runnerEnv: Env, runnerConfig: WorkerConfig) => {
+            const { runCatalogCapabilityProbe } = await import("./phases/catalog-capability");
+            return runCatalogCapabilityProbe(probeWork, runnerEnv, runnerConfig);
+          });
+        let summary: CatalogCapabilityProbeSummary;
+        try {
+          summary = await runner(work, env, config);
+        } catch (error) {
+          logger.error("catalog.quote.queue.failed", {
+            attempt: message.attempts,
+            errorCode: queueErrorCode(error),
+            agentKey: work.agentKey,
+            endpointKey: work.endpointKey,
+          });
+          throw error;
+        }
+        message.ack();
+        logger.info("catalog.quote.queue.completed", summary);
+        return;
+      }
       if (work.kind === "index_range" || work.kind === "index_jobs") {
         if (!config.commerceIndexEnabled) {
           // The flag is the off switch for the indexer: queued work is dropped
@@ -583,6 +675,7 @@ function queueWorkDetails(work: QueueWork): Record<string, unknown> {
   switch (work.kind) {
     case "scheduled": return { scheduledTime: work.scheduledTime };
     case "catalog_validation": return { validationId: work.validationId };
+    case "catalog_capability_probe": return { agentKey: work.agentKey, endpointKey: work.endpointKey };
     case "index_range": return {
       chainId: work.chainId, fromBlock: work.fromBlock, toBlock: work.toBlock,
       ...(work.afterLogIndex === undefined || work.afterLogIndex === null ? {} : { afterLogIndex: work.afterLogIndex }),

@@ -91,7 +91,7 @@ describe("catalog-backed marketplace policy", () => {
     const agent = toMarketplaceAgent({ ...baseData(), catalogCandidate: normalized }, { evaluateMarketplace: false });
 
     expect(agent.endpointObservation).toMatchObject({ status: "not_observed", protocol: null, endpoint: null });
-    expect(agent.hireability).toMatchObject({ status: "protocol_discovered", canHire: false });
+    expect(agent.hireability).toMatchObject({ status: "protocol_discovered", canHire: true });
   });
 
   it("keeps an admitted seller hireable for fresh-quote negotiation without claiming prepare readiness", () => {

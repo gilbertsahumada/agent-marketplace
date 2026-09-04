@@ -2,7 +2,7 @@
 
 import { useMemo, type ReactNode } from "react";
 import Link from "next/link";
-import { ArrowUpRight, ExternalLink, LayoutGrid, List, ShieldCheck } from "lucide-react";
+import { ArrowUpRight, ExternalLink, LayoutGrid, List, LockKeyhole } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -72,7 +72,7 @@ function AgentComparisonTable({ agents, registry }: { agents: AgentCardViewModel
                 <TableCell className="whitespace-normal text-sm text-zinc-300">{outcomeLabel(agent)}</TableCell>
                 <TableCell>
                   <Badge className={cn("text-xs", status.className)} variant="outline">
-                    {canRequestQuote && <ShieldCheck aria-hidden="true" />}
+                    <status.icon aria-hidden="true" className="size-3.5" />
                     {status.label}
                   </Badge>
                 </TableCell>
@@ -82,12 +82,19 @@ function AgentComparisonTable({ agents, registry }: { agents: AgentCardViewModel
                 <TableCell className="text-sm text-zinc-400">{typeof agent.trustScore === "number" ? "Derived" : "Unavailable"}</TableCell>
                 <TableCell className="px-4">
                   <div className="flex justify-end">
-                    <Button asChild size="sm" variant={canRequestQuote ? "default" : "outline"}>
-                      <Link href={action.href} prefetch={false}>
+                    {action.disabled ? (
+                      <Button aria-disabled="true" disabled size="sm" title="No compatible hiring transport is declared for this agent." variant="outline">
                         {action.label}
-                        <ArrowUpRight aria-hidden="true" data-icon="inline-end" />
-                      </Link>
-                    </Button>
+                        <LockKeyhole aria-hidden="true" data-icon="inline-end" />
+                      </Button>
+                    ) : (
+                      <Button asChild size="sm" variant={action.label === "Hire agent" || action.label === "Request quote" || action.label === "Retry quote" ? "default" : "outline"}>
+                        <Link href={action.href} prefetch={false}>
+                          {action.label}
+                          <ArrowUpRight aria-hidden="true" data-icon="inline-end" />
+                        </Link>
+                      </Button>
+                    )}
                   </div>
                 </TableCell>
               </TableRow>
@@ -108,14 +115,21 @@ export function CatalogResults({ agents, registry = false, toolbar, filters, emp
 }) {
   const { pending } = useCatalogNavigation();
   const visibleAgents = useMemo(() => {
-    return [...agents].sort((left, right) => Number(right.quoteRequestAvailable === true) - Number(left.quoteRequestAvailable === true));
+    const priority = (agent: AgentCardViewModel) => {
+      if (agent.buyerAction === "prepare_hire") return 4;
+      if (agent.buyerAction === "request_quote" || (agent.buyerAction === undefined && agent.quoteRequestAvailable === true)) return 3;
+      if (agent.evidence.some((step) => step.kind === "reachable" && step.status === "verified")) return 2;
+      if (agent.buyerAction === "check_availability") return 1;
+      return 0;
+    };
+    return [...agents].sort((left, right) => priority(right) - priority(left));
   }, [agents]);
 
   return (
-    <Tabs className="gap-5" defaultValue="cards">
-      <div className="grid items-center gap-3 min-[30rem]:grid-cols-[minmax(0,1fr)_auto]">
+    <Tabs aria-busy={pending} className="min-w-0 gap-5" defaultValue="cards">
+      <div className="grid min-w-0 items-center gap-3 min-[30rem]:grid-cols-[minmax(0,1fr)_auto]">
         {toolbar ?? <span />}
-        <TabsList aria-label="Catalog layout" className="h-10 border border-white/10 bg-black/30 justify-self-start min-[30rem]:justify-self-end">
+        <TabsList aria-label="Catalog layout" className="h-10 shrink-0 border border-white/10 bg-black/30 justify-self-start min-[30rem]:justify-self-end">
           <TabsTrigger className="h-full px-3" value="cards"><LayoutGrid aria-hidden="true" data-icon="inline-start" />Cards</TabsTrigger>
           <TabsTrigger className="h-full px-3" value="table"><List aria-hidden="true" data-icon="inline-start" />Table</TabsTrigger>
         </TabsList>

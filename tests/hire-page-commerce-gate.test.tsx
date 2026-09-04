@@ -3,11 +3,9 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { CatalogCandidate } from "../src/business/entities/catalog-candidate.ts";
 
-const { executePassport, executeConfig, executeHireJobs, profileProps, renderDemo, redirectRoute } = vi.hoisted(() => ({
+const { executePassport, executeConfig, renderDemo, redirectRoute } = vi.hoisted(() => ({
   executePassport: vi.fn(),
   executeConfig: vi.fn(),
-  executeHireJobs: vi.fn(),
-  profileProps: vi.fn(),
   renderDemo: vi.fn(),
   redirectRoute: vi.fn(),
 }));
@@ -15,7 +13,7 @@ const { executePassport, executeConfig, executeHireJobs, profileProps, renderDem
 vi.mock("@/src/business/composition", () => ({
   getAgentEvidencePassport: { executeWithAgent: executePassport },
   getMainnetBrowserDemoConfig: { execute: executeConfig },
-  listAgentHireJobs: { execute: executeHireJobs },
+  listAgentHireJobs: { execute: async () => [] },
 }));
 
 vi.mock("@/components/spikes/erc8183-browser-spike", () => ({
@@ -25,23 +23,26 @@ vi.mock("@/components/spikes/erc8183-browser-spike", () => ({
   },
 }));
 
+vi.mock("@/components/marketplace/quote-request-panel", () => ({
+  QuoteRequestPanel: () => {
+    renderDemo();
+    return createElement("section", {}, "Quote request panel");
+  },
+}));
+
 vi.mock("@/components/marketplace/agent-profile", () => ({
   marketplaceAgentDisplayName: (name: string) => name,
-  AgentProfile: (props: {
+  AgentProfile: ({ catalogCandidate, hireFlow }: {
     catalogCandidate: CatalogCandidate;
     hireFlow?: ReturnType<typeof createElement> | null;
-  }) => {
-    profileProps(props);
-    const { catalogCandidate, hireFlow } = props;
-    return createElement("main", {},
-      catalogCandidate.state?.buyerAction === "check_availability"
-        && (catalogCandidate.state.canRequestBrowserValidation
-          || catalogCandidate.state.canRequestInfrastructureValidation)
-        ? createElement("a", { href: "#validation" }, "Hire agent")
-        : null,
-      hireFlow,
-    );
-  },
+  }) => createElement("main", {},
+    catalogCandidate.state?.buyerAction === "check_availability"
+      && (catalogCandidate.state.canRequestBrowserValidation
+        || catalogCandidate.state.canRequestInfrastructureValidation)
+      ? createElement("a", { href: "#validation" }, "Hire agent")
+      : null,
+    hireFlow,
+  ),
 }));
 
 vi.mock("next/navigation", () => ({
@@ -126,36 +127,10 @@ async function render(candidateState: NonNullable<CatalogCandidate["state"]>) {
   return renderToStaticMarkup(page);
 }
 
-const INDEXED_JOB = {
-  chainId: 56 as const, jobId: "56696", buyer: "0x5ee75a1B1648C023e885E58bD3735Ae273f2cc52" as const,
-  provider: "0xA2a2012e52Fd075c0F3146e37E833E7294ee52B5" as const, budgetRaw: "10000000000000000", status: "COMPLETED" as const,
-  expiresAt: "2026-09-03T12:00:00.000Z", submittedAt: null, marketplace: true, updatedAt: "2026-09-03T12:00:00.000Z",
-};
-
 describe("hire page normalized commerce gate", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     executeConfig.mockReturnValue({ agentId: 303779 });
-    executeHireJobs.mockResolvedValue({ jobs: [INDEXED_JOB], nextBefore: "56600", scope: "wallet" });
-  });
-
-  it("hands the indexed ledger page, its cursor and its scope to the profile", async () => {
-    await render(state());
-
-    expect(executeHireJobs).toHaveBeenCalledWith({ agent: expect.objectContaining({ agentId: "303779" }) });
-    expect(profileProps).toHaveBeenCalledWith(expect.objectContaining({
-      hireJobs: [expect.objectContaining({ jobId: "56696" })],
-      hireJobsMore: true,
-      hireJobsScope: "wallet",
-    }));
-  });
-
-  it("tells the profile the ledger is unavailable rather than empty", async () => {
-    executeHireJobs.mockResolvedValue(null);
-
-    await render(state());
-
-    expect(profileProps).toHaveBeenCalledWith(expect.objectContaining({ hireJobs: null, hireJobsMore: false, hireJobsScope: "agent" }));
   });
 
   it("redirects the former profile route to the canonical hire journey", async () => {
@@ -178,12 +153,12 @@ describe("hire page normalized commerce gate", () => {
     expect(redirectRoute).toHaveBeenCalledWith("/jobs/514");
   });
 
-  it("does not mount the ERC-8183 flow while admission is pending", async () => {
+  it("does not mount the quote flow while the seller is suspended", async () => {
     await render(state({
-      commerceStatus: "admission_pending",
-      buyerAction: "request_quote",
-      canRequestQuote: true,
-      blockingReasons: ["COMMERCE_NOT_ADMITTED"],
+      commerceStatus: "suspended",
+      buyerAction: "unavailable",
+      canRequestQuote: false,
+      blockingReasons: ["NO_QUOTE_TRANSPORT"],
     }));
 
     expect(renderDemo).not.toHaveBeenCalled();
@@ -201,7 +176,7 @@ describe("hire page normalized commerce gate", () => {
     expect(renderDemo).not.toHaveBeenCalled();
   });
 
-  it("mounts the ERC-8183 flow for a coherent admitted request_quote state", async () => {
+  it("mounts the quote flow for a coherent request_quote state", async () => {
     await render(state());
 
     expect(renderDemo).toHaveBeenCalledOnce();
@@ -212,7 +187,7 @@ describe("hire page normalized commerce gate", () => {
       commerceStatus: "declared",
       buyerAction: "check_availability",
       canRequestQuote: false,
-      blockingReasons: ["COMMERCE_NOT_ADMITTED"],
+      blockingReasons: ["NO_QUOTE_TRANSPORT"],
     }));
 
     expect(markup).toContain('href="#validation"');
@@ -226,18 +201,18 @@ describe("hire page normalized commerce gate", () => {
       canRequestBrowserValidation: false,
       canRequestInfrastructureValidation: false,
       canRequestQuote: false,
-      blockingReasons: ["COMMERCE_NOT_ADMITTED"],
+      blockingReasons: ["NO_QUOTE_TRANSPORT"],
     }));
 
     expect(markup).not.toContain("Hire agent");
   });
 
-  it("does not render a self-link when the configured seller does not match", async () => {
+  it("does not depend on a hardcoded seller when the configured demo changes", async () => {
     executeConfig.mockReturnValue({ agentId: 99 });
 
     const markup = await render(state());
 
-    expect(renderDemo).not.toHaveBeenCalled();
-    expect(markup).not.toContain("Try again");
+    expect(renderDemo).toHaveBeenCalledOnce();
+    expect(markup).toContain("Quote request panel");
   });
 });

@@ -24,6 +24,51 @@ function observation(overrides: Record<string, unknown> = {}) {
 }
 
 describe("catalog effective evidence policy", () => {
+  it("downgrades an expired ready capability to stale before deriving buyer actions", () => {
+    const state = deriveCatalogEvidenceState({
+      endpoints: [{ ...endpoint, validationProtocol: "a2a" }],
+      observations: [],
+      admission: null,
+      capability: {
+        endpointKey: "endpoint",
+        transport: "a2a",
+        state: "ready",
+        capabilityExpiresAt: NOW,
+        lastAttemptAt: NOW - 1_000,
+      },
+      nowMs: NOW,
+    });
+
+    expect(state).toMatchObject({
+      capabilityState: "stale",
+      capabilityExpiresAt: NOW,
+      canRequestQuote: true,
+      buyerAction: "request_quote",
+    });
+  });
+
+  it("does not treat a ready capability without an expiry as permanently ready", () => {
+    const state = deriveCatalogEvidenceState({
+      endpoints: [{ ...endpoint, validationProtocol: "a2a" }],
+      observations: [],
+      admission: null,
+      capability: {
+        endpointKey: "endpoint",
+        transport: "a2a",
+        state: "ready",
+        capabilityExpiresAt: null,
+      },
+      nowMs: NOW,
+    });
+
+    expect(state).toMatchObject({
+      capabilityState: "discovered",
+      canRequestQuote: true,
+      canPrepareHire: false,
+      buyerAction: "request_quote",
+    });
+  });
+
   it("uses the latest platform attempt without erasing the previous success timestamp", () => {
     expect(deriveCatalogEvidenceState({
       endpoints: [endpoint],
@@ -78,18 +123,23 @@ describe("catalog effective evidence policy", () => {
     });
   });
 
-  it("requires admission, a fresh cryptographic quote and a current chain check before prepare", () => {
+  it("requires a fresh cryptographic quote and a current chain check before prepare", () => {
+    const commerceEndpoint = { ...endpoint, validationProtocol: "a2a" as const };
     const admitted = { state: "admitted", endpointKey: "endpoint" };
     const quote = observation({
       id: 2, endpointKey: "endpoint", outcome: "quote_verified",
       validationKind: "quote", verificationLevel: "cryptographic",
     });
-    expect(deriveCatalogEvidenceState({ endpoints: [endpoint], observations: [quote], admission: admitted, nowMs: NOW }))
+    expect(deriveCatalogEvidenceState({
+      endpoints: [commerceEndpoint], observations: [quote], admission: admitted,
+      capability: { state: "ready", endpointKey: "endpoint", transport: "a2a", capabilityExpiresAt: NOW + 1_000 }, nowMs: NOW,
+    }))
       .toMatchObject({ quoteStatus: "verified_fresh", buyerAction: "request_quote", canPrepareHire: false });
     expect(deriveCatalogEvidenceState({
-      endpoints: [endpoint],
+      endpoints: [commerceEndpoint],
       observations: [quote, observation({ id: 3, endpointKey: null, outcome: "protocol_valid", validationKind: "chain", verificationLevel: "onchain" })],
       admission: admitted,
+      capability: { state: "ready", endpointKey: "endpoint", transport: "a2a", capabilityExpiresAt: NOW + 1_000 },
       nowMs: NOW,
     })).toMatchObject({ quoteStatus: "verified_fresh", buyerAction: "prepare_hire", canPrepareHire: true });
   });
@@ -111,6 +161,7 @@ describe("catalog effective evidence policy", () => {
       endpoints: [currentEndpoint, oldEndpoint],
       observations: [oldQuote, currentChain],
       admission: admitted,
+      capability: { state: "discovered", endpointKey: "current-endpoint", transport: "a2a" },
       nowMs: NOW,
     })).toMatchObject({
       quoteStatus: "not_requested",
@@ -136,21 +187,21 @@ describe("catalog effective evidence policy", () => {
     });
     expect(deriveCatalogEvidenceState({
       endpoints: [endpoint], observations: [browserClaim, chain], admission: admitted, nowMs: NOW,
-    })).toMatchObject({ quoteStatus: "not_requested", canPrepareHire: false, buyerAction: "request_quote" });
+    })).toMatchObject({ quoteStatus: "not_requested", canPrepareHire: false, buyerAction: "check_availability" });
   });
 
-  it("lets an admission candidate request a quote without calling it hireable", () => {
+  it("lets a discovered A2A/HTTP candidate request a quote without manual admission", () => {
     expect(deriveCatalogEvidenceState({
-      endpoints: [endpoint],
+      endpoints: [{ ...endpoint, validationProtocol: "a2a" }],
       observations: [],
       admission: { state: "candidate", endpointKey: "endpoint-a" },
       nowMs: NOW,
     })).toMatchObject({
-      commerceStatus: "admission_pending",
+      commerceStatus: "declared",
       canRequestQuote: true,
       canPrepareHire: false,
       buyerAction: "request_quote",
-      blockingReasons: expect.arrayContaining(["COMMERCE_NOT_ADMITTED"]),
+      blockingReasons: expect.arrayContaining(["FRESH_QUOTE_REQUIRED"]),
     });
   });
 
@@ -189,11 +240,11 @@ describe("catalog effective evidence policy", () => {
       admission: null,
       nowMs: NOW,
     })).toMatchObject({
-      commerceStatus: "none",
+      commerceStatus: "declared",
       canRequestQuote: false,
       canPrepareHire: false,
       buyerAction: "check_availability",
-      blockingReasons: expect.arrayContaining(["COMMERCE_NOT_ADMITTED"]),
+      blockingReasons: expect.arrayContaining(["MCP_QUOTE_TOOL_REQUIRED"]),
     });
   });
 });

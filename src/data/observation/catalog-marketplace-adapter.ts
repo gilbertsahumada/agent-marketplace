@@ -38,10 +38,12 @@ function latestPlatformObservation(candidate: CatalogCandidate): CatalogCandidat
       && observation.verificationLevel === "platform_observed"
       && isCatalogOperationalObservation(candidate, observation))
     .sort((left, right) => right.observedAt - left.observedAt || right.id - left.id);
-  const admittedEndpointKey = candidate.admission?.endpointKey;
-  return (admittedEndpointKey === null || admittedEndpointKey === undefined
+  const capableEndpointKey = candidate.state?.capabilityState === undefined
+    ? candidate.admission?.endpointKey ?? null
+    : candidate.state.capabilityEndpointKey ?? null;
+  return (capableEndpointKey === null
     ? observations
-    : observations.filter((observation) => observation.endpointKey === admittedEndpointKey))[0]
+    : observations.filter((observation) => observation.endpointKey === capableEndpointKey))[0]
     ?? observations[0];
 }
 

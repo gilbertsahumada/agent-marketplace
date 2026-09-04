@@ -55,8 +55,8 @@ describe("GET /hire-events", { timeout: 30_000 }, () => {
       chainId: 97,
       agentId: "1866",
       events: [
-        { phase: "funded", jobId: "551", txHash: TX("bb"), blockNumber: "4242", occurredAt: NOW - 1_000, verifiedAt: NOW },
-        { phase: "created", jobId: "551", txHash: TX("aa"), blockNumber: "4242", occurredAt: NOW - 2_000, verifiedAt: NOW },
+        { phase: "funded", jobId: "551", quoteRequestId: null, txHash: TX("bb"), blockNumber: "4242", occurredAt: NOW - 1_000, verifiedAt: NOW },
+        { phase: "created", jobId: "551", quoteRequestId: null, txHash: TX("aa"), blockNumber: "4242", occurredAt: NOW - 2_000, verifiedAt: NOW },
       ],
     });
   });

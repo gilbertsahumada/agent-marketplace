@@ -79,7 +79,7 @@ export function determineHireability(
         canHire: false,
         reason: agent.verification.freshness === "stale"
           ? "A signed quote was verified in an expired release snapshot; refresh the seller evidence before hiring."
-          : "A signed quote was verified, but it is older than 60 seconds; refresh it before hiring.",
+          : "A signed quote was verified, but it is outside its release validity window; request a fresh buyer quote before hiring.",
         evidence: evidence(
           "observed",
           "marketplace-readiness",
@@ -87,7 +87,7 @@ export function determineHireability(
           true,
           agent.verification.freshness === "stale"
             ? "The last signed quote passed the release gate, but its release snapshot is expired."
-            : "The last signed quote passed the release gate but is outside the 60-second hireable-now window.",
+            : "The last signed quote passed the release gate but is outside its validity window.",
         ),
       };
     }
@@ -108,8 +108,11 @@ export function determineHireability(
   if (hasSellerProtocol) {
     return {
       status: "protocol_discovered",
-      canHire: false,
-      reason: "A seller protocol is declared, but no signed ERC-8183 quote is verified in this catalogue record.",
+      // Discovery is enough to start the browser/Worker quote negotiation. A
+      // fresh signed quote is still required before any wallet transaction;
+      // the card therefore exposes Request quote rather than promising Hire.
+      canHire: true,
+      reason: "A compatible seller protocol is declared; request a fresh ERC-8183 quote before authorizing a transaction.",
       evidence: evidence(
         "derived",
         "marketplace-inventory",
@@ -156,10 +159,12 @@ function newestCatalogPlatformObservation(candidate: CatalogCandidate): CatalogC
       && observation.verificationLevel === "platform_observed"
       && isCatalogOperationalObservation(candidate, observation))
     .sort((left, right) => right.observedAt - left.observedAt || right.id - left.id);
-  const admittedEndpointKey = candidate.admission?.endpointKey;
-  return (admittedEndpointKey === null || admittedEndpointKey === undefined
+  const capableEndpointKey = candidate.state?.capabilityState === undefined
+    ? candidate.admission?.endpointKey ?? null
+    : candidate.state.capabilityEndpointKey ?? null;
+  return (capableEndpointKey === null
     ? observations
-    : observations.filter((observation) => observation.endpointKey === admittedEndpointKey))[0]
+    : observations.filter((observation) => observation.endpointKey === capableEndpointKey))[0]
     ?? observations[0];
 }
 
@@ -206,10 +211,21 @@ function catalogHireability(candidate: CatalogCandidate, now: number): Marketpla
     ?? candidate.registeredAt
     ?? now;
   const timestamp = new Date(observedAt).toISOString();
-  const sellerDeclared = candidate.declarations.some(isCatalogSellerDeclaration);
-  const admitted = state.commerceStatus === "admitted"
-    && state.canRequestQuote
-    && sellerDeclared;
+  const sellerDeclarations = candidate.declarations.filter(isCatalogSellerDeclaration);
+  const hasNonMcpSeller = sellerDeclarations.some((declaration) => {
+    const protocol = declaration.validationProtocol ?? declaration.protocol;
+    return protocol === "a2a" || protocol === "erc8183_http";
+  });
+  const hasMcpSeller = sellerDeclarations.some((declaration) =>
+    (declaration.validationProtocol ?? declaration.protocol) === "mcp");
+  // Capability is the marketplace's automatic seller-readiness projection. The
+  // legacy catalog_agent_admission row may still exist during migration, but
+  // it must not gate a buyer from requesting a quote from a discovered seller.
+  const quoteCapable = state.canRequestQuote && (hasNonMcpSeller || hasMcpSeller);
+  // A generic MCP server is useful for reachability, but it is not a hiring
+  // path until the exact negotiation tool has been observed. Keep it visible
+  // as MCP-only instead of implying that a quote can be requested forever.
+  const sellerDeclared = hasNonMcpSeller || (hasMcpSeller && state.canRequestQuote);
   const readinessEvidence = (note: string, kind: EvidenceRecord["kind"] = "derived"): EvidenceRecord => evidence(
     kind,
     "marketplace-readiness",
@@ -220,15 +236,15 @@ function catalogHireability(candidate: CatalogCandidate, now: number): Marketpla
   if (state.canPrepareHire) {
     return {
       status: "quote_verified",
-      canHire: admitted,
-      reason: "The normalized catalog has a fresh verified quote and current chain evidence for this admitted endpoint.",
-      evidence: readinessEvidence("Derived from the normalized Worker admission and evidence state."),
+      canHire: quoteCapable,
+      reason: "The normalized catalog has a fresh verified quote and current chain evidence for this seller endpoint.",
+      evidence: readinessEvidence("Derived from the normalized Worker capability and evidence state."),
     };
   }
   if (state.quoteStatus === "verified_historical") {
     return {
       status: "quote_stale",
-      canHire: admitted,
+      canHire: quoteCapable,
       reason: "A signed quote was verified previously, but it is outside its validity window.",
       evidence: readinessEvidence("The quote remains in the append-only ledger but is no longer fresh.", "observed"),
     };
@@ -236,20 +252,20 @@ function catalogHireability(candidate: CatalogCandidate, now: number): Marketpla
   if (sellerDeclared) {
     return {
       status: "protocol_discovered",
-      canHire: admitted,
-      reason: state.commerceStatus === "admitted"
-        ? "The seller is admitted and can request a fresh quote; a cached observation never authorizes a transaction."
-        : "A compatible seller transport is declared, but marketplace admission is not complete.",
-      evidence: readinessEvidence("Protocol declaration and commerce admission are distinct from hireability."),
+      canHire: quoteCapable,
+      reason: quoteCapable
+        ? "A compatible seller transport is declared; request a fresh quote before authorizing a transaction."
+        : "A compatible seller transport is declared, but quote capability is not available yet.",
+      evidence: readinessEvidence("Protocol declaration and quote capability are distinct from a wallet transaction."),
     };
   }
-  if (candidate.declarations.some((declaration) => isCatalogOperationalDeclaration(declaration)
+  if (hasMcpSeller || candidate.declarations.some((declaration) => isCatalogOperationalDeclaration(declaration)
     && (declaration.validationProtocol ?? declaration.protocol) === "mcp")) {
     return {
       status: "mcp_only",
       canHire: false,
       reason: "MCP reachability does not provide an ERC-8183 hiring path.",
-      evidence: readinessEvidence("MCP is an operational transport, not commerce admission."),
+      evidence: readinessEvidence("MCP is an operational transport, not by itself a commerce quote path."),
     };
   }
   return {
@@ -322,7 +338,7 @@ export function toMarketplaceAgent(
     ...(data.imageUrl ? { imageUrl: data.imageUrl } : {}),
     owner: data.owner,
     metadataUri: data.metadataUri,
-    operator: catalog?.admission?.state === "admitted"
+    operator: catalog?.state?.canRequestQuote === true
       ? "marketplace"
       : data.verification?.operator ?? inventory?.operator ?? "third_party",
     indexedIdentity: {

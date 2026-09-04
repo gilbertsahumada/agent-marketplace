@@ -292,7 +292,7 @@ describe("PR 16 Mainnet exposure", () => {
     expect(visibleCopy).not.toContain("current ERC-8183 evidence qualifies");
     expect(visibleCopy).not.toContain("Hire eligibility are disabled until the observation Worker responds");
     expect(visibleCopy).toContain("fresh ERC-8183 quote");
-    expect(visibleCopy).toContain("compatible seller admitted by the marketplace");
+    expect(visibleCopy).toContain("compatible seller with current Ready-to-quote evidence");
   });
 
   it("monitors Mainnet quote and read-only prepare only after public exposure", () => {

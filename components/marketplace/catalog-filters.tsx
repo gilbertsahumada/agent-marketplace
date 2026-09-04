@@ -15,8 +15,8 @@ const statusFilters: Array<{ value: CatalogStatus; label: string }> = [
   { value: "a2a", label: "A2A reachable" },
   { value: "mcp", label: "MCP reachable" },
   { value: "erc8183", label: "ERC-8183 declared" },
-  { value: "quote_capable", label: "Quote verified" },
-  { value: "hireable", label: "Hireable now" },
+  { value: "quote_capable", label: "Ready to quote" },
+  { value: "hireable", label: "Ready to hire" },
   { value: "failed", label: "Latest probe failed" },
 ];
 
@@ -87,6 +87,7 @@ export function CatalogFilters({ statuses, categories, reachability, counts, q, 
             />
             <FieldLabel className="flex cursor-pointer items-center justify-between gap-3 text-sm font-normal text-zinc-300" htmlFor={`${idPrefix}-reachability-live`}>
               <span>Reachable now</span>
+              {counts?.reachability && <span aria-hidden="true" className="font-stat text-xs tabular-nums text-zinc-500">{counts.reachability.live.toLocaleString("en-US")}</span>}
             </FieldLabel>
           </Field>
           {statusFilters.map((filter) => {

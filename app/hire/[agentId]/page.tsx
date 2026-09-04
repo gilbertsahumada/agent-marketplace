@@ -1,12 +1,10 @@
 import { notFound } from "next/navigation";
-import { getAgentEvidencePassport, getMainnetBrowserDemoConfig, listAgentHireJobs } from "@/src/business/composition";
+import { getAgentEvidencePassport, listAgentHireJobs } from "@/src/business/composition";
 import { catalogCandidateCard } from "@/components/marketplace/catalog-candidate-view-model";
 import { MarketplaceAgentNotFoundError, MarketplaceDataUnavailableError } from "@/src/business/errors/marketplace-errors";
-import { Erc8183SpikeDisabledError, Erc8183SpikeUnavailableError } from "@/src/business/errors/erc8183-spike-errors";
 import { CatalogUnavailable } from "@/components/marketplace/catalog-unavailable";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { AgentProfile, marketplaceAgentDisplayName } from "@/components/marketplace/agent-profile";
-import { Erc8183MainnetDemo } from "@/components/spikes/erc8183-browser-spike";
+import { QuoteRequestPanel } from "@/components/marketplace/quote-request-panel";
 
 export const dynamic = "force-dynamic";
 
@@ -14,45 +12,34 @@ export default async function HirePage({ params }: { params: Promise<{ agentId: 
   const { agentId } = await params;
   try {
     const { agent, passport, catalogCandidate, jobProofs } = await getAgentEvidencePassport.executeWithAgent({ agentId });
-    // The ledger read only needs the agent: start it now, overlap it with the
-    // rest of the page's work and await it last. It never rejects (null on an
-    // unavailable ledger), so the pending promise cannot go unhandled.
-    const hireJobsPromise = listAgentHireJobs.execute({ agent });
+    const hireJobsResult = await listAgentHireJobs.execute({ agent });
+    const hireJobs = hireJobsResult?.jobs ?? null;
     const current = catalogCandidate ? catalogCandidateCard(catalogCandidate) : null;
     const buyerAction = current?.buyerAction ?? "unavailable";
     const normalizedState = catalogCandidate?.state;
-    const canRequestQuote = normalizedState?.commerceStatus === "admitted"
-      && normalizedState.canRequestQuote
+    // Quote capability is a projection of the seller transport, not a manual
+    // admission gate. A discovered seller can be asked for a buyer quote
+    // immediately; the Worker will promote it to ready only after verification.
+    const canRequestQuote = normalizedState?.canRequestQuote === true
+      && normalizedState.operationalStatus === "platform_reachable"
+      && normalizedState.freshness === "live"
+      && normalizedState?.commerceStatus !== "suspended"
       && (buyerAction === "request_quote"
         || (buyerAction === "prepare_hire" && normalizedState.canPrepareHire));
-    let selectedConfig = null;
-    if (canRequestQuote) {
-      try {
-        const config = getMainnetBrowserDemoConfig.execute();
-        if (String(config.agentId) === agent.agentId) selectedConfig = config;
-      } catch (error) {
-        if (!(error instanceof Erc8183SpikeDisabledError) && !(error instanceof Erc8183SpikeUnavailableError)) throw error;
-      }
-    }
-    const hireNotice = canRequestQuote && !selectedConfig ? (
-      <Alert className="border-amber-400/20 bg-amber-400/5">
-        <AlertTitle>Fresh quotes are temporarily unavailable</AlertTitle>
-        <AlertDescription>The seller supports the hiring transport, but the on-demand quote service is not configured right now. No Testnet substitute was selected.</AlertDescription>
-      </Alert>
+    // Every compatible catalog seller uses the same browser-first quote and
+    // ERC-8183 stepper. The old 303779-only demo is intentionally no longer a
+    // separate route: its verified quote is just another catalog request.
+    const hireFlow = canRequestQuote ? (
+      <QuoteRequestPanel agentId={agent.agentId} agentName={marketplaceAgentDisplayName(agent.name)} />
     ) : null;
-    const hireFlow = canRequestQuote && selectedConfig
-      ? <Erc8183MainnetDemo config={selectedConfig} agentName={marketplaceAgentDisplayName(agent.name)} embedded />
-      : null;
-    const hireJobs = await hireJobsPromise;
     return <AgentProfile
       agent={agent}
       catalogCandidate={catalogCandidate}
       hireFlow={hireFlow}
-      hireFlowAvailable={selectedConfig !== null}
-      hireJobs={hireJobs?.jobs ?? null}
-      hireJobsMore={hireJobs !== null && hireJobs.nextBefore !== null}
-      hireJobsScope={hireJobs?.scope ?? "agent"}
-      hireNotice={hireNotice}
+      hireFlowAvailable={canRequestQuote}
+      hireJobs={hireJobs}
+      hireJobsMore={hireJobsResult?.nextBefore != null}
+      hireJobsScope={hireJobsResult?.scope ?? "agent"}
       jobProofs={jobProofs}
       passport={passport}
     />;

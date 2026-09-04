@@ -67,8 +67,8 @@ The repository ships the reference agent buyer. \`npm run agent-buyer -- --dry-r
 runs the whole journey up to the signature boundary (real output against production):
 discovery via MCP, passport read, live signed quote, prepare, plan validated against
 the pinned allowlist — nothing signed. With AGENT_BUYER_PRIVATE_KEY set (a funded
-Testnet key that never leaves the process) the same command signs and sends the five
-transactions; the sequence is fork-verified against the deployed Testnet contracts
+Testnet key that never leaves the process) the same command signs and sends the required
+four or five transactions; the sequence is fork-verified against the deployed Testnet contracts
 (createJob → registerJob → setBudget → exact approve → fund, escrow confirmed).
 
 ## What goes through MCP — and what deliberately does not
@@ -78,7 +78,7 @@ transactions; the sequence is fork-verified against the deployed Testnet contrac
 | Discover · Understand · Compare | MCP | Read-only evidence with provenance |
 | Quote | MCP | Free, signs nothing; returns the seller-signed envelope |
 | Prepare · Notify | HTTP | Prepare returns WHAT to sign (intents, deadlines, guardrails) — never a signature |
-| Sign + send 5 transactions | buyer's wallet → chain | The key never leaves the buyer; the marketplace is not in the money path |
+| Authorize + send 4–5 calls | buyer's wallet → chain | The plan is not sent during review; the key never leaves the buyer. A compatible wallet may batch them atomically |
 | Track · Result | MCP or HTTP | State is resolved from chain either way |
 
 There is no sign or submit_transaction tool on purpose. A server that could produce a
@@ -92,10 +92,10 @@ buyer (browser wallet) and an agent buyer (local key).
 
 ### search_agents(q?, category?, availability?, page?, limit?)
 Search the catalogue. category: rebalancing | grid_trading | yield_optimisation |
-health_factor_monitoring. availability: all | hireable | mcp_only. Note:
-availability=hireable currently requires quote evidence observed in the last 60
-seconds — stricter than the Passport state; discover with availability=all and read
-the Passport per agent.
+health_factor_monitoring. availability: all | hireable | mcp_only. hireable is a
+compatibility alias for Ready to quote: it uses the marketplace's 24-hour capability
+evidence, not a transactable buyer quote. A fresh quote is still required before
+prepare/funding.
 
 ### get_passport(agentId)
 The agent's Evidence Passport: provenance-labeled identity/endpoint/quote/job checks
@@ -106,9 +106,9 @@ a fresh quote is still validated before any signature.
 Side-by-side evidence. Any registered agent ids work. No winner is declared.
 
 ### request_quote(network: testnet | mainnet)
-A fresh ERC-8183 quote from the network's admitted seller, validated against the
-server allowlist (seller, contracts, token, budget ceiling, expiry). Free — signs
-nothing. Keep the returned envelope byte-identical for the prepare step. 404
+A fresh ERC-8183 quote from a compatible seller, validated against the server
+allowlist (seller, contracts, token, budget ceiling, expiry). Free — signs nothing.
+Keep the returned envelope byte-identical for the prepare step. 404
 ERC8183_SPIKE_DISABLED when the flow is env-disabled.
 
 ### get_job_status(network, jobId)
@@ -143,6 +143,12 @@ marketplace business layer. MCP tools and the CLI wrap these routes.
 | Validate — legacy | POST | /api/marketplace/validate  { agentId } |
 | Validate — infrastructure | POST | /api/marketplace/validate  { agentId, endpointKey, validationKind: protocol } |
 | Validate — poll | GET | /api/marketplace/validate/{requestId} |
+| Quote — request | POST | /api/marketplace/agents/{agentId}/quotes |
+| Quote — report browser result | POST | /api/marketplace/agents/{agentId}/quotes/{attemptId}/result |
+| Quote — Worker fallback | POST | /api/marketplace/agents/{agentId}/quotes/{attemptId}/fallback |
+| Quote — public history | GET | /api/marketplace/agents/{agentId}/quotes |
+| Hire — dynamic prepare | POST | /api/marketplace/agents/{agentId}/hire/prepare |
+| Hire — dynamic notify | POST | /api/marketplace/agents/{agentId}/hire/notify |
 | Hire — quote | POST | /api/marketplace/demo/erc8183[-mainnet]/quote |
 | Hire — prepare | POST | /api/marketplace/demo/erc8183[-mainnet]/prepare  { buyer, quote } |
 | Hire — notify | POST | /api/marketplace/demo/erc8183[-mainnet]/notify  { buyer, jobId } |
@@ -191,6 +197,22 @@ the allowed outcomes are \`protocol_valid\`, \`http_error\`, \`timeout\`,
 \`unreachable\` and \`error\`. \`quote_verified\` and \`quote_rejected\`
 are quote evidence and are rejected by this polling contract.
 
+## Buyer quotes
+
+Ready to quote is 24-hour public capability evidence, not a transactable quote. A buyer
+POSTs \`{ objective, deliverable, acceptanceCriteria }\` to
+\`/api/marketplace/agents/{agentId}/quotes\`. The response registers one logical
+request and returns its canonical request, browser-safe target, transport and
+\`attemptId\`.
+
+The browser tries the declared protocol first. CORS, timeout or browser network blocking
+uses \`/{attemptId}/fallback\` with the same canonical request. A deterministic
+seller rejection goes to \`/{attemptId}/result\` and is not repeated by the
+Worker. The brief is never stored: only its canonical request hash, sanitized outcome
+and physical attempts are persisted. GET the collection route for public counts/history.
+A successful signed quote updates the 24-hour capability projection, but only that
+buyer's fresh session quote can proceed to \`/{agentId}/hire/prepare\` and funding.
+
 ## Errors
 
 Machine-facing failures: { "error": { "code", "message" } }.
@@ -212,7 +234,7 @@ InvalidMarketplaceInputError on 400).
 Facts are labeled declared | observed | onchain | derived, with source timestamps
 preserved. Propagate the labels; a derived mapping is not proof of capability.
 
-Full contract: https://github.com/gilbertsahumada/bnb-agent-marketplace/blob/main/docs/API.md
+Interactive reference: https://marketplace.trust8004.xyz/docs/api
 `;
 
 const HIRE_MD = `# ERC-8183 Hire Flow

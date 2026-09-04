@@ -4,6 +4,7 @@ import {
   GRID_PROBE_REQUEST_HASH,
   PROBE_CATEGORIES,
   PROBE_REQUEST_SCHEMA_VERSION,
+  buildBuyerQuoteRequest,
   buildGridProbeRequest,
   buildProbeRequest,
 } from "../src/lib/terms";
@@ -38,5 +39,26 @@ describe("Grid probe terms", () => {
     expect(GRID_PROBE_REQUEST_HASH).toBe(
       "0x697a15f62a1748230d3e4bdbbe24f6a619d1b82d45f1e4c82787e268ab2497d3",
     );
+  });
+});
+
+describe("buyer quote terms", () => {
+  it("canonicalizes one structured brief into the same SDK request used by every transport", () => {
+    const quote = buildBuyerQuoteRequest({
+      objective: "  Compare two strategies  ",
+      deliverable: " A JSON recommendation ",
+      acceptanceCriteria: " Include assumptions and risks ",
+    });
+
+    expect(quote.request.toDict()).toEqual({
+      task_description: "MARKETPLACE_QUOTE_V1:{\"objective\":\"Compare two strategies\",\"deliverable\":\"A JSON recommendation\",\"acceptanceCriteria\":\"Include assumptions and risks\"}",
+      terms: {
+        deliverables: "A JSON recommendation",
+        quality_standards: "Include assumptions and risks",
+        evaluation_required: true,
+        evaluator_type: "uma_oov3",
+      },
+    });
+    expect(quote.requestHash).toBe(quote.request.computeHash().toLowerCase());
   });
 });

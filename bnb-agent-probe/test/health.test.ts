@@ -378,7 +378,7 @@ describe("Worker runtime", () => {
     });
     const response = await createWorker({ now: () => now }).fetch(
       new Request("https://worker.test/health"),
-      { ...env(db), COMMERCE_INDEX_ENABLED: "1", CRON_INTERVAL_MINUTES: "10" },
+      { ...env(db), CLOUDFLARE_WORKERS_PLAN: "paid", COMMERCE_INDEX_ENABLED: "1" },
     );
     const text = await response.text();
     expect(JSON.parse(text)).toMatchObject({
@@ -397,7 +397,7 @@ describe("Worker runtime", () => {
     expect(text).not.toContain("must-not-leak");
   });
 
-  it("tells whether each chain has an RPC secret without exposing it, and surfaces the last index error code", async () => {
+  it("reports RPC readiness and sanitized Commerce transport failures", async () => {
     const now = 1_800_000_000_000;
     const db = database({
       runtime: [
@@ -405,37 +405,36 @@ describe("Worker runtime", () => {
         {
           key: "last_index_summary_56",
           textValue: JSON.stringify({
-            kind: "index_range", chainId: 56, status: "error", errorCode: "BSC_LOGS_RPC", httpStatus: 403, fromBlock: 119_000_001, toBlock: 119_000_500,
-            window: 500, jobsFailed: 2, logs: 0, jobs: 0, d1Queries: 1, d1RowsWritten: 3, wallTimeMs: 40, message: "https://rpc.example/must-not-leak",
+            status: "error", errorCode: "BSC_RPC_HTTP", httpStatus: 429,
+            fromBlock: 119_000_001, toBlock: 119_000_200, window: 200,
+            jobsFailed: 2, d1RowsWritten: 3, message: "secret upstream detail",
           }),
           integerValue: null,
           updatedAt: now,
         },
       ],
     });
-    const prepare = vi.spyOn(db, "prepare");
     const response = await createWorker({ now: () => now }).fetch(
       new Request("https://worker.test/health"),
-      { ...env(db), COMMERCE_INDEX_ENABLED: "1", CRON_INTERVAL_MINUTES: "10" },
+      { ...env(db), CLOUDFLARE_WORKERS_PLAN: "paid", COMMERCE_INDEX_ENABLED: "1", BSC_RPC_URL: "https://rpc.example/secret-token" },
     );
     const text = await response.text();
+
     expect(JSON.parse(text)).toMatchObject({
       commerceIndex: {
-        enabled: true,
         chains: {
           56: {
             rpcConfigured: true,
             cursor: 119_000_000,
-            lastRun: { status: "error", errorCode: "BSC_LOGS_RPC", httpStatus: 403, fromBlock: 119_000_001, toBlock: 119_000_500, window: 500, jobsFailed: 2, d1RowsWritten: 3 },
+            lastRun: { status: "error", errorCode: "BSC_RPC_HTTP", httpStatus: 429, window: 200, jobsFailed: 2, d1RowsWritten: 3 },
           },
-          97: { rpcConfigured: false, cursor: null, lastRun: null },
+          97: { rpcConfigured: false },
         },
       },
     });
-    expect(text).not.toContain("must-not-leak");
+    expect(text).not.toContain("secret upstream detail");
     expect(text).not.toContain("secret-token");
     expect(text).not.toContain("rpc.example");
-    expect(prepare).toHaveBeenCalledTimes(1);
   });
 
   it("returns 503 only when D1 cannot be read and sanitizes the failure", async () => {

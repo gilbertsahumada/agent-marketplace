@@ -1,15 +1,17 @@
-import { and, eq, inArray } from "drizzle-orm";
-import { getAddress, isAddress, type PublicClient } from "viem";
+import { and, eq } from "drizzle-orm";
+import { type PublicClient } from "viem";
 import type { QuoteSigVerdict, VerifyQuoteSignatureOpts } from "@bnbagent/sdk/erc8183";
 
 import type { D1DatabaseLike } from "../db/client";
 import { createDatabase, readCatalogAgentEvidence } from "../db/orm";
 import {
-  catalogAgentAdmission,
   catalogAgentEndpoints,
   catalogAgents,
   catalogEndpoints,
   catalogObservations,
+  catalogQuoteAttempts,
+  catalogQuoteRequests,
+  catalogSellerCapabilities,
 } from "../db/schema";
 import {
   BscProbeError,
@@ -151,15 +153,11 @@ export async function catalogQuoteEvidenceResponse(
   const agentKey = `eip155:56:${input.agentId}`;
   const rows = await db.select({
     categoriesJson: catalogAgents.categoriesJson,
+    endpoint: catalogEndpoints.endpoint,
     endpointProtocol: catalogEndpoints.validationProtocol,
-    admissionState: catalogAgentAdmission.state,
-    admissionEndpointKey: catalogAgentAdmission.endpointKey,
-    admissionTransport: catalogAgentAdmission.commerceTransport,
-    admissionProvider: catalogAgentAdmission.provider,
   }).from(catalogAgents)
     .innerJoin(catalogAgentEndpoints, eq(catalogAgentEndpoints.agentKey, catalogAgents.agentKey))
     .innerJoin(catalogEndpoints, eq(catalogEndpoints.endpointKey, catalogAgentEndpoints.endpointKey))
-    .innerJoin(catalogAgentAdmission, eq(catalogAgentAdmission.agentKey, catalogAgents.agentKey))
     .where(and(
       eq(catalogAgents.agentKey, agentKey),
       eq(catalogAgents.indexState, "current"),
@@ -167,17 +165,11 @@ export async function catalogQuoteEvidenceResponse(
       eq(catalogAgentEndpoints.declarationState, "current"),
       eq(catalogEndpoints.role, "operational"),
       eq(catalogEndpoints.eligibility, "eligible"),
-      inArray(catalogAgentAdmission.state, ["candidate", "admitted"]),
-      eq(catalogAgentAdmission.endpointKey, input.endpointKey),
-      eq(catalogAgentAdmission.chainId, 56),
     )).limit(1);
   const target = rows[0];
   if (!target
-    || (target.endpointProtocol !== "a2a" && target.endpointProtocol !== "erc8183_http")
-    || target.admissionTransport !== target.endpointProtocol
-    || (target.admissionState === "admitted"
-      && (!target.admissionProvider || !isAddress(target.admissionProvider)))) {
-    return jsonResponse({ error: "target_not_admitted" }, 409);
+    || (target.endpointProtocol !== "a2a" && target.endpointProtocol !== "erc8183_http")) {
+    return jsonResponse({ error: "target_not_quote_compatible" }, 409);
   }
   const categories = parsedCategories(target.categoriesJson);
   if (input.probeCategory !== null && !categories.includes(input.probeCategory)) {
@@ -194,6 +186,19 @@ export async function catalogQuoteEvidenceResponse(
       eq(catalogObservations.artifactHash, hash),
     )).limit(1);
   if (existing[0]) return jsonResponse({ status: "duplicate", observationId: existing[0].id }, 200);
+  const existingRequest = await db.select({ id: catalogQuoteRequests.id, resultObservationId: catalogQuoteRequests.resultObservationId })
+    .from(catalogQuoteRequests)
+    .where(and(
+      eq(catalogQuoteRequests.agentKey, agentKey),
+      eq(catalogQuoteRequests.artifactHash, hash),
+    )).limit(1);
+  if (existingRequest[0]) {
+    return jsonResponse({
+      status: "duplicate",
+      requestId: existingRequest[0].id,
+      observationId: existingRequest[0].resultObservationId,
+    }, 200);
+  }
 
   const dependencies = options.dependencies ?? {};
   const clock = dependencies.clock ?? (() => performance.now());
@@ -217,10 +222,6 @@ export async function catalogQuoteEvidenceResponse(
         publicClient: client,
       };
     }
-    if (target.admissionProvider && (!isAddress(target.admissionProvider)
-      || getAddress(target.admissionProvider) !== context.provider)) {
-      return jsonResponse({ error: "admission_identity_mismatch" }, 409);
-    }
     const quoteContext = {
       ...context,
       nowSeconds: Math.floor(options.nowMs / 1_000),
@@ -233,7 +234,29 @@ export async function catalogQuoteEvidenceResponse(
       return jsonResponse({ error: "quote_rejected", code: verdict.errorCode }, 422);
     }
     const durationMs = Math.max(0, Math.round(clock() - startedAt));
-    const attemptRoot = `quote:${agentKey}:${input.endpointKey}:${hash}`;
+    const requestHash = verdict.requestHash;
+    const requestRows = await db.insert(catalogQuoteRequests).values({
+      requestHash,
+      artifactHash: hash,
+      agentKey,
+      endpointKey: input.endpointKey,
+      transport: target.endpointProtocol,
+      kind: "buyer_quote",
+      status: "succeeded",
+      callerKey: "browser",
+      createdAt: options.nowMs,
+      completedAt: options.nowMs,
+      quoteExpiresAt: verdict.quoteExpiresAt,
+      metadataJson: JSON.stringify({
+        requestHash,
+        transport: target.endpointProtocol,
+        ...(target.endpoint ? { endpoint: target.endpoint } : {}),
+        source: "legacy_browser_report",
+      }),
+    }).returning({ id: catalogQuoteRequests.id });
+    const requestId = requestRows[0]?.id;
+    if (requestId === undefined) return jsonResponse({ error: "quote_request_failed" }, 500);
+    const attemptId = crypto.randomUUID();
     const results = await db.batch([
       db.insert(catalogObservations).values({
         agentKey,
@@ -245,7 +268,7 @@ export async function catalogQuoteEvidenceResponse(
         expiresAt: verdict.quoteExpiresAt,
         durationMs,
         detailsJson: JSON.stringify(quoteDetails(verdict, context)),
-        attemptId: `${attemptRoot}:artifact`,
+        attemptId,
         validationKind: "quote",
         verificationLevel: "cryptographic",
         artifactHash: hash,
@@ -272,35 +295,55 @@ export async function catalogQuoteEvidenceResponse(
           tokenDecimals: context.tokenDecimals,
           policyAllowlisted: context.policyAllowlisted,
         }),
-        attemptId: `${attemptRoot}:chain`,
+        attemptId: `${attemptId}:chain`,
         validationKind: "chain",
         verificationLevel: "onchain",
         artifactHash: hash,
       }).onConflictDoNothing().returning({ id: catalogObservations.id }),
-      db.insert(catalogAgentAdmission).values({
+      db.insert(catalogQuoteAttempts).values({
+        id: attemptId,
+        requestId,
+        executor: "browser",
+        status: "succeeded",
+        startedAt: options.nowMs,
+        finishedAt: options.nowMs,
+        durationMs,
+        outcome: "quote_verified",
+        metadataJson: JSON.stringify({
+          requestHash,
+          transport: target.endpointProtocol,
+          ...(target.endpoint ? { endpoint: target.endpoint } : {}),
+        }),
+      }),
+      db.insert(catalogSellerCapabilities).values({
         agentKey,
-        state: "admitted",
-        commerceTransport: target.endpointProtocol,
         endpointKey: input.endpointKey,
-        chainId: 56,
-        provider: context.provider,
-        validatedAt: options.nowMs,
-        configurationVersion: `quote:${hash}`,
-        reasonCode: null,
+        transport: target.endpointProtocol,
+        state: "ready",
+        lastSuccessAt: options.nowMs,
+        capabilityExpiresAt: options.nowMs + 24 * 60 * 60 * 1_000,
+        nextProbeAt: options.nowMs + 24 * 60 * 60 * 1_000,
+        consecutiveFailures: 0,
+        lastAttemptAt: options.nowMs,
+        lastAttemptId: attemptId,
+        lastErrorCode: null,
+        createdAt: options.nowMs,
+        updatedAt: options.nowMs,
       }).onConflictDoUpdate({
-        target: catalogAgentAdmission.agentKey,
+        target: [catalogSellerCapabilities.agentKey, catalogSellerCapabilities.endpointKey],
         set: {
-          state: "admitted",
-          commerceTransport: target.endpointProtocol,
-          endpointKey: input.endpointKey,
-          provider: context.provider,
-          validatedAt: options.nowMs,
-          configurationVersion: `quote:${hash}`,
-          reasonCode: null,
+          transport: target.endpointProtocol,
+          state: "ready",
+          lastSuccessAt: options.nowMs,
+          capabilityExpiresAt: options.nowMs + 24 * 60 * 60 * 1_000,
+          nextProbeAt: options.nowMs + 24 * 60 * 60 * 1_000,
+          consecutiveFailures: 0,
+          lastAttemptAt: options.nowMs,
+          lastAttemptId: attemptId,
+          lastErrorCode: null,
+          updatedAt: options.nowMs,
         },
       }),
-      db.update(catalogAgents).set({ marketplaceConfigured: 1 })
-        .where(eq(catalogAgents.agentKey, agentKey)),
     ]);
     const quoteRows = results[0] as Array<{ id: number }>;
     if (!quoteRows[0]) {
@@ -324,6 +367,17 @@ export async function catalogQuoteEvidenceResponse(
         endpoints: evidence.endpoints,
         observations: evidence.observations,
         admission: evidence.admission,
+        capability: {
+          endpointKey: input.endpointKey,
+          transport: target.endpointProtocol,
+          state: "ready",
+          lastSuccessAt: options.nowMs,
+          capabilityExpiresAt: options.nowMs + 24 * 60 * 60 * 1_000,
+          lastAttemptAt: options.nowMs,
+          consecutiveFailures: 0,
+          lastErrorCode: null,
+        },
+        quoteStats: evidence.quoteStats,
         nowMs: options.nowMs,
       }),
     }, 201);

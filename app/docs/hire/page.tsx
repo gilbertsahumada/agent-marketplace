@@ -29,7 +29,7 @@ export default function HireDocsPage() {
       </header>
 
       <DocsSection id="sequence" title="The sequence">
-        <FlowDiagram steps={["request_quote", "verify locally", "prepare", "5 transactions", "notify", "track"]} />
+        <FlowDiagram steps={["request_quote", "verify locally", "prepare", "authorize 4–5 calls", "notify", "track"]} />
         <SubHeading id="quote">1 · Request a quote</SubHeading>
         <p>
           <InlineCode>POST /api/marketplace/demo/erc8183[-mainnet]/quote</InlineCode> (or the <InlineCode>request_quote</InlineCode> MCP
@@ -53,7 +53,7 @@ export default function HireDocsPage() {
           guardrails: injected-wallet custody, no private key ever sent, spend ceiling, exact
           approval only when required, no cancellation after funding.
         </p>
-        <SubHeading id="transactions">4 · The five transactions</SubHeading>
+        <SubHeading id="transactions">4 · Authorize the transaction plan</SubHeading>
         <div className="overflow-x-auto rounded-lg border border-white/10">
           <table className="w-full text-left text-xs">
             <thead>
@@ -77,10 +77,13 @@ export default function HireDocsPage() {
           </table>
         </div>
         <p>
-          Simulate, then write: simulate each call with the buyer account, send the returned request,
-          wait for the receipt, require success, and check the transaction&apos;s{" "}
+          The table is a plan, not a transaction history. Nothing is sent while it is being reviewed.
+          When the buyer starts authorization, simulate each call with the buyer account, send the
+          returned request, wait for the receipt, require success, and check the transaction&apos;s{" "}
           <InlineCode>to</InlineCode> equals the intended contract. A wallet supporting EIP-5792{" "}
-          <InlineCode>wallet_sendCalls</InlineCode> can submit the five calls as one atomic batch.
+          <InlineCode>wallet_sendCalls</InlineCode> can submit the required calls as one atomic batch;
+          otherwise the wallet asks for each required call in order. The UI labels each row as
+          planned, sent/awaiting confirmation, or confirmed from a recorded receipt.
         </p>
         <Callout tone="warning">
           <p>
@@ -120,8 +123,9 @@ export default function HireDocsPage() {
 
       <DocsSection id="scope" title="Scope and reference">
         <p>
-          This flow covers the marketplace&apos;s demo-gated, allowlisted hire path — one admitted seller
-          per network with a bounded budget. It is not a general ERC-8183 client specification. The
+          This flow covers the marketplace&apos;s bounded, allowlisted hire path — a seller becomes ready to
+          quote after a recent capability check, while each buyer requests a fresh quote for the current
+          brief. It is not a general ERC-8183 client specification. The
           normative document, with the exact quote fields, the eight allowlist rules and the plan
           validation checks, is{" "}
           <ExternalDocLink href="https://github.com/gilbertsahumada/bnb-agent-marketplace/blob/main/docs/HIRE-SPEC.md">docs/HIRE-SPEC.md</ExternalDocLink>.

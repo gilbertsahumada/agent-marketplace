@@ -20,7 +20,8 @@ function candidate(): CatalogCandidate {
 describe("catalog candidate card", () => {
   it.each([
     ["NO_ELIGIBLE_OPERATIONAL_ENDPOINT", "No supported operational endpoint is available for marketplace hiring."],
-    ["COMMERCE_NOT_ADMITTED", "This seller has not been admitted to the marketplace hiring flow."],
+    ["NO_QUOTE_TRANSPORT", "No compatible negotiation transport is available for requesting a quote."],
+    ["MCP_QUOTE_TOOL_REQUIRED", "This MCP endpoint is reachable, but it does not expose the required quote tool yet."],
     ["FRESH_QUOTE_REQUIRED", "A fresh seller quote is required before preparing the transaction."],
     ["CURRENT_CHAIN_CHECK_REQUIRED", "Current onchain checks are required before preparing the transaction."],
   ] as const)("maps the production blocker %s to user-facing copy", (reason, message) => {
@@ -57,14 +58,14 @@ describe("catalog candidate card", () => {
     value.state = {
       operationalStatus: "platform_reachable",
       freshness: "live",
-      commerceStatus: "admission_pending",
+      commerceStatus: "declared",
       quoteStatus: "not_requested",
       buyerAction: "request_quote",
       canRequestBrowserValidation: true,
       canRequestInfrastructureValidation: true,
       canRequestQuote: true,
       canPrepareHire: false,
-      blockingReasons: ["COMMERCE_NOT_ADMITTED"],
+      blockingReasons: ["FRESH_QUOTE_REQUIRED"],
     };
     value.platformAttemptCount = 17;
     value.observations.push({ id: 2, agentKey: value.agentKey, endpointKey: "a".repeat(64),
@@ -74,7 +75,7 @@ describe("catalog candidate card", () => {
     expect(card.evidence.find(({ kind }) => kind === "reachable")).toMatchObject({ status: "verified" });
     expect(card.quoteRequestAvailable).toBe(true);
     expect(card.buyerAction).toBe("request_quote");
-    expect(card.blockingReasons).toEqual(["COMMERCE_NOT_ADMITTED"]);
+    expect(card.blockingReasons).toEqual(["FRESH_QUOTE_REQUIRED"]);
     expect(card.monitoring).toMatchObject({ attemptCount: 17 });
     expect(card.protocols).toEqual(["A2A"]);
   });
@@ -214,14 +215,14 @@ describe("catalog candidate card", () => {
     value.state = {
       operationalStatus: "platform_reachable",
       freshness: "live",
-      commerceStatus: "admission_pending",
+      commerceStatus: "declared",
       quoteStatus: "not_requested",
       buyerAction: "request_quote",
       canRequestBrowserValidation: true,
       canRequestInfrastructureValidation: true,
       canRequestQuote: true,
       canPrepareHire: false,
-      blockingReasons: ["COMMERCE_NOT_ADMITTED"],
+      blockingReasons: ["FRESH_QUOTE_REQUIRED"],
     };
     value.observations.push({ id: 4, agentKey: value.agentKey, endpointKey: "a".repeat(64),
       protocol: "a2a", source: "buyer_refresh", outcome: "protocol_valid", observedAt: NOW,
@@ -269,7 +270,7 @@ describe("catalog candidate card", () => {
 
     const card = catalogCandidateCard(value, NOW);
     expect(card.evidence.find(({ kind }) => kind === "quote")).toMatchObject({ status: "failed" });
-    expect(card.hireability).toBe("quote_stale");
+    expect(card.hireability).toBe("listed_only");
   });
 
   it("does not reuse quote evidence from a different admitted endpoint", () => {
@@ -304,7 +305,7 @@ describe("catalog candidate card", () => {
     const card = catalogCandidateCard(value, NOW);
 
     expect(card.evidence.find(({ kind }) => kind === "quote")).toMatchObject({ status: "unknown" });
-    expect(card.hireability).toBe("quote_stale");
+    expect(card.hireability).toBe("listed_only");
   });
 
   it("surfaces a cryptographically verified browser quote as verified transport", () => {

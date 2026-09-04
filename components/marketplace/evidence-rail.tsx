@@ -2,13 +2,13 @@
 
 import {
   ArrowUpRight,
-  BadgeCheck,
-  Blocks,
+  BriefcaseBusiness,
   Check,
+  FileCheck2,
   CircleDashed,
   CircleOff,
-  FileText,
-  RadioTower,
+  Globe2,
+  ReceiptText,
   X,
 } from "lucide-react";
 import {
@@ -34,18 +34,27 @@ const statusStyles: Record<EvidenceStatus, string> = {
 };
 
 const kindIcons = {
-  declared: FileText,
-  reachable: RadioTower,
-  quote: BadgeCheck,
-  job: Blocks,
-} satisfies Record<EvidenceKind, typeof FileText>;
+  declared: FileCheck2,
+  reachable: Globe2,
+  quote: ReceiptText,
+  job: BriefcaseBusiness,
+} satisfies Record<EvidenceKind, typeof FileCheck2>;
 
 const statusLabels: Record<EvidenceStatus, string> = {
-  verified: "verified",
-  failed: "failed",
-  current: "in progress",
-  unavailable: "unavailable",
-  unknown: "not observed",
+  verified: "Verified",
+  failed: "Check failed",
+  current: "In progress",
+  unavailable: "Unavailable",
+  unknown: "Not checked",
+};
+
+const provenanceLabels: Record<EvidenceStepViewModel["provenance"], string> = {
+  declared: "Declared",
+  observed: "Marketplace",
+  onchain: "Onchain",
+  derived: "Derived",
+  not_probed: "Not checked",
+  unavailable: "Unavailable",
 };
 
 function StepTimestamp({ iso }: { iso: string }) {
@@ -133,7 +142,7 @@ export function EvidenceRail({
                   <TooltipTrigger asChild>
                     <button
                       aria-label={`${step.label}: ${statusLabels[step.status]}`}
-                      className="relative cursor-pointer rounded-full"
+                      className="relative cursor-pointer rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                       type="button"
                     >
                       <EvidenceIcon compact={table} step={step} />
@@ -144,7 +153,7 @@ export function EvidenceRail({
                     sideOffset={8}
                   >
                     <p className="font-semibold">{step.label}</p>
-                    <p className="capitalize text-cyan-300">{step.provenance} · {statusLabels[step.status]}</p>
+                    <p className="text-cyan-300">{provenanceLabels[step.provenance]} · {statusLabels[step.status]}</p>
                     <p className="leading-relaxed text-zinc-300">{step.detail}</p>
                     {step.timestamp && <p className="text-zinc-400"><StepTimestamp iso={step.timestamp} /></p>}
                   </TooltipContent>
@@ -161,7 +170,7 @@ export function EvidenceRail({
                 <div className={cn("flex flex-wrap items-center gap-1.5", summary ? "justify-center" : "md:justify-center")}>
                   <p className={cn(
                     "font-semibold text-zinc-100",
-                    summary ? table ? "text-[10px] leading-tight" : "text-[10px] leading-tight sm:text-xs" : "text-xs",
+                    summary ? table ? "text-[11px] leading-tight" : "text-[11px] leading-tight sm:text-xs" : "text-xs",
                   )}>{step.label}</p>
                   {density === "full" && <ProvenanceBadge provenance={step.provenance} />}
                   {density === "full" && (
@@ -171,7 +180,7 @@ export function EvidenceRail({
                   )}
                 </div>
                 {density === "compact" && (
-                  <p className="mt-1 text-[10px] capitalize text-zinc-400">{step.provenance} · {statusLabels[step.status]}</p>
+                  <p className="mt-1 text-[10px] text-zinc-400">{provenanceLabels[step.provenance]} · {statusLabels[step.status]}</p>
                 )}
                 {density === "full" && <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{step.detail}</p>}
                 {density === "full" && (step.source || step.timestamp) && (

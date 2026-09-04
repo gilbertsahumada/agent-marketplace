@@ -25,7 +25,7 @@ describe("catalog candidate feed", () => {
       agentId: "42",
       owner: "0x1111111111111111111111111111111111111111",
       metadataUri: "ipfs://bafybeigdyrzt5-example",
-      admission: { state: "candidate" },
+      admission: null,
       state: { canRequestQuote: true },
     });
   });
@@ -83,14 +83,28 @@ describe("catalog candidate feed", () => {
       categories: {
         rebalancing: 7, grid_trading: 6, yield_optimisation: 5, health_factor_monitoring: 4,
       },
+      reachability: { live: 4, historical: 3, never: 20, browser_observed: 1 },
     };
 
     expect(parseCatalogCandidatePage(list).facets).toMatchObject({
       statuses: { declared: 30, hireable: 1 },
       categories: { grid_trading: 6 },
+      reachability: { live: 4, historical: 3, never: 20, browser_observed: 1 },
     });
     ((list.facets as { statuses: Record<string, number> }).statuses).declared = -1;
     expect(() => parseCatalogCandidatePage(list)).toThrow("CATALOG_FEED_INVALID");
+    const malformed = structuredClone(fixtures.list) as Record<string, unknown>;
+    malformed.facets = {
+      statuses: {
+        declared: 30, pending: 20, a2a: 4, mcp: 3, mcp_only: 2,
+        erc8183: 1, quote_capable: 1, hireable: 1, failed: 5,
+      },
+      categories: {
+        rebalancing: 7, grid_trading: 6, yield_optimisation: 5, health_factor_monitoring: 4,
+      },
+      reachability: { live: -1, historical: 3, never: 20, browser_observed: 1 },
+    };
+    expect(() => parseCatalogCandidatePage(malformed)).toThrow("CATALOG_FEED_INVALID");
   });
 
   it("does not expose unsafe image targets from a catalog response", () => {

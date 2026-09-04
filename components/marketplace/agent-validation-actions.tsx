@@ -12,6 +12,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { markCatalogForRefresh } from "./catalog-return-refresh";
 
 type PersistenceStatus = "recorded" | "failed" | "not_configured" | "pending";
 /**
@@ -88,6 +89,24 @@ function protocolLabel(protocol: string): string {
   return protocol.toUpperCase();
 }
 
+function outcomeLabel(outcome: string): string {
+  const labels: Record<string, string> = {
+    protocol_valid: "Endpoint response verified",
+    quote_verified: "Quote verified",
+    quote_rejected: "Quote rejected",
+    quote_invalid: "Quote invalid",
+    cors_blocked: "Browser blocked by CORS",
+    unreachable: "Endpoint unreachable",
+    unsafe_url: "Unsafe endpoint URL",
+    http_error: "HTTP error",
+    timeout: "Request timed out",
+    network_error: "Network error",
+    invalid_response: "Invalid endpoint response",
+    error: "Check failed",
+  };
+  return labels[outcome] ?? outcome.replaceAll("_", " ");
+}
+
 function observedAtLabel(value: number): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "unknown time";
@@ -106,7 +125,7 @@ function infrastructureCompletionMessage(
 ): string {
   const result = status.result;
   if (!result) return "Marketplace check completed and shared evidence was updated. Refreshing this workspace to recalculate the hiring state.";
-  const outcome = result.outcome.replaceAll("_", " ");
+  const outcome = outcomeLabel(result.outcome).toLocaleLowerCase();
   const transport = protocolLabel(result.protocol || target.protocol);
   const http = result.httpStatus === null ? "" : ` · HTTP ${result.httpStatus}`;
   const duration = result.durationMs > 0 ? ` · ${result.durationMs} ms` : "";
@@ -122,7 +141,7 @@ function sharedObservationLine(
   const expired = observation.expiresAt !== null && observation.expiresAt <= Date.now();
   const failed = !["protocol_valid", "quote_verified"].includes(observation.outcome);
   const tone = failed ? "text-red-300" : expired ? "text-amber-300" : "text-emerald-300";
-  const outcome = observation.outcome.replaceAll("_", " ");
+  const outcome = outcomeLabel(observation.outcome);
   const source = observation.source === "buyer_refresh"
     ? "buyer refresh"
     : observation.source === "migration"
@@ -193,7 +212,10 @@ export function AgentValidationActions({ agentId, targets, initialObservations =
       // other viewers, but it is intentionally not used to promote platform
       // reachability or hireability. Refresh only after the Worker accepted
       // the write so the server-rendered observation state can catch up.
-      if (persistence === "recorded") router.refresh();
+      if (persistence === "recorded") {
+        markCatalogForRefresh();
+        router.refresh();
+      }
     } catch {
       setBrowserErrors((current) => ({
         ...current,
@@ -241,6 +263,7 @@ export function AgentValidationActions({ agentId, targets, initialObservations =
               : `Shared evidence was updated for ${target.protocol.toUpperCase()}. Refreshing this workspace to recalculate the hiring state.`,
           },
         }));
+        markCatalogForRefresh();
         router.refresh();
         return;
       }
@@ -322,6 +345,7 @@ export function AgentValidationActions({ agentId, targets, initialObservations =
               message: infrastructureCompletionMessage(target, statusPayload),
             },
           }));
+          markCatalogForRefresh();
           router.refresh();
           return;
         }
@@ -364,9 +388,9 @@ export function AgentValidationActions({ agentId, targets, initialObservations =
   return (
     <Card className="marketplace-surface mt-5 scroll-mt-6" id="validation">
       <CardHeader>
-        <CardTitle>Validate declared endpoints</CardTitle>
+        <CardTitle>Connection check</CardTitle>
         <p className="max-w-3xl text-sm leading-relaxed text-zinc-400">
-          Run a read-only protocol check now. Browser results stay local to this report; marketplace checks run through the Worker, persist shared evidence, and never make an agent hireable by themselves.
+          Browser checks are local. Marketplace checks update the shared status.
         </p>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -431,7 +455,7 @@ export function AgentValidationActions({ agentId, targets, initialObservations =
                           : state.result.outcome === "cors_blocked"
                             ? <WifiOff aria-hidden="true" className="size-4" />
                             : <CircleAlert aria-hidden="true" className="size-4" />}
-                        {state.result.outcome.replaceAll("_", " ")}
+                        {outcomeLabel(state.result.outcome)}
                       </div>
                       <p className="mt-1 leading-relaxed">{state.result.message}</p>
                       <p className="mt-2 text-xs opacity-80">

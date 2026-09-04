@@ -40,6 +40,13 @@ import { ListAgentHireJobs } from "./use-cases/list-agent-hire-jobs.ts";
 import type { HireLedger } from "./entities/hire-job.ts";
 import { syncHireEvent } from "../data/observation/hire-event-sync.ts";
 import {
+  fallbackBuyerQuote,
+  getBuyerQuoteHistory,
+  reportBuyerQuoteFailure,
+  startBuyerQuote,
+  submitBuyerQuoteResult,
+} from "../data/observation/quote-request-sync.ts";
+import {
   CatalogValidationRequestError,
   getCatalogValidationStatus as loadCatalogValidationStatus,
   issueCatalogValidationRequestToken as createCatalogValidationRequestToken,
@@ -118,6 +125,8 @@ export const getCatalogCandidate = loadCatalogCandidate;
 export const getCatalogCandidatePage = loadCatalogCandidatePage;
 export const recordCatalogObservation = syncCatalogObservation;
 export const recordHireEvent = syncHireEvent;
+// Quote request ports keep Next route handlers free of infrastructure imports.
+export { fallbackBuyerQuote, getBuyerQuoteHistory, reportBuyerQuoteFailure, startBuyerQuote, submitBuyerQuoteResult };
 export {
   CatalogValidationRequestError,
   loadCatalogValidationStatus as getCatalogValidationStatus,

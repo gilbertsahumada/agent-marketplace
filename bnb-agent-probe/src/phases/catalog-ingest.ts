@@ -9,6 +9,7 @@ import {
   catalogAgents,
   catalogEndpoints,
   catalogIngestTasks,
+  catalogSellerCapabilities,
   runtimeState,
 } from "../db/schema";
 import { CURATED_INVENTORY } from "../manifest/curated-inventory";
@@ -26,6 +27,7 @@ import { CatalogHttpError } from "../trust8004/client";
 const AGENT_CHUNK = 2;
 const TASK_CHUNK = 3;
 const ENDPOINT_CHUNK = 2;
+const CAPABILITY_CHUNK = 4;
 const RELATION_CHUNK = 5;
 const LEASE_MS = 30_000;
 const LAST_SEEN_REFRESH_MS = 60 * 60_000;
@@ -220,6 +222,9 @@ export async function enqueueCatalogDiscoveryPage(
     tasksQueued: taskRows.length,
     cursor: input.cursor ?? null,
     d1Queries: (agentKeys.length === 0 ? 0 : 2) + statements.length,
+    // Capability rows are materialised by the bounded ingest task after the
+    // endpoint/relation exists. Keeping page discovery metadata-only avoids
+    // writing the same projection twice and keeps the Free row envelope safe.
     d1RowsWritten: agentRows.length + taskRows.length
       + (input.cursor === undefined ? 0 : 1)
       + (input.headerHighWater === undefined ? 0 : 1),
@@ -307,6 +312,10 @@ export async function processNextCatalogIngestTask(
       }).where(and(
         eq(catalogEndpoints.representativeAgentKey, active.agentKey),
         inArray(catalogEndpoints.endpointKey, old.map(({ endpointKey }) => endpointKey)),
+        ))]),
+      ...(old.length === 0 ? [] : [db.delete(catalogSellerCapabilities).where(and(
+        eq(catalogSellerCapabilities.agentKey, active.agentKey),
+        inArray(catalogSellerCapabilities.endpointKey, old.map(({ endpointKey }) => endpointKey)),
       ))]),
       ...(active.declarationCount === 0 ? [db.update(catalogAgentAdmission).set({
         state: "suspended",
@@ -419,6 +428,32 @@ export async function processNextCatalogIngestTask(
     rawSourceIndex: resource.rawSourceIndex,
     metadataVersion: current.metadataVersion,
   }));
+  // Keep the capability projection in lockstep with normalized declarations.
+  // This direct task path is also used for directed refreshes, so relying only
+  // on the page enqueue would leave newly discovered sellers invisible to the
+  // quote queue until the next full sweep.
+  const capabilityRows = selected.flatMap((resource) => (
+    resource.eligibility === "eligible"
+      && (resource.validationProtocol === "a2a"
+        || resource.validationProtocol === "mcp"
+        || resource.validationProtocol === "erc8183_http")
+      ? [{
+          agentKey: active.agentKey,
+          endpointKey: resource.endpointKey,
+          transport: resource.validationProtocol as "a2a" | "mcp" | "erc8183_http",
+          state: "discovered" as const,
+          lastSuccessAt: null,
+          capabilityExpiresAt: null,
+          nextProbeAt: input.nowMs,
+          consecutiveFailures: 0,
+          lastAttemptAt: null,
+          lastAttemptId: null,
+          lastErrorCode: null,
+          createdAt: input.nowMs,
+          updatedAt: input.nowMs,
+        }]
+      : []
+  ));
   const commerce = current.resources.find((resource) => resource.eligibility === "eligible"
     && resource.validationProtocol === "erc8183_http")
     ?? (CURATED_INVENTORY.entries.find((entry) => entry.agentId === agentId)?.operator === "marketplace"
@@ -511,6 +546,18 @@ export async function processNextCatalogIngestTask(
           declarationState: "current", lastSeenAt: input.nowMs, priority: current.priority,
           rawServiceLabel: sql.raw("excluded.rawServiceLabel"), rawSource: sql.raw("excluded.rawSource"),
           rawSourceIndex: sql.raw("excluded.rawSourceIndex"), metadataVersion: current.metadataVersion,
+        },
+      })),
+    ...chunks(capabilityRows, CAPABILITY_CHUNK).map((rows) => db.insert(catalogSellerCapabilities).values(rows)
+      .onConflictDoUpdate({
+        target: [catalogSellerCapabilities.agentKey, catalogSellerCapabilities.endpointKey],
+        set: {
+          transport: sql.raw("excluded.transport"),
+          state: sql`CASE WHEN ${catalogSellerCapabilities.state} IN ('ready', 'suspended')
+            THEN ${catalogSellerCapabilities.state} ELSE 'discovered' END`,
+          nextProbeAt: sql`CASE WHEN ${catalogSellerCapabilities.state} IN ('ready', 'suspended')
+            THEN ${catalogSellerCapabilities.nextProbeAt} ELSE excluded.nextProbeAt END`,
+          updatedAt: sql.raw("excluded.updatedAt"),
         },
       })),
     ...admissionStatements,
