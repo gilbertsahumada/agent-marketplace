@@ -31,19 +31,22 @@ export default async function HirePage({ params }: { params: Promise<{ agentId: 
         if (!(error instanceof Erc8183SpikeDisabledError) && !(error instanceof Erc8183SpikeUnavailableError)) throw error;
       }
     }
+    const hireNotice = canRequestQuote && !selectedConfig ? (
+      <Alert className="border-amber-400/20 bg-amber-400/5">
+        <AlertTitle>Fresh quotes are temporarily unavailable</AlertTitle>
+        <AlertDescription>The seller supports the hiring transport, but the on-demand quote service is not configured right now. No Testnet substitute was selected.</AlertDescription>
+      </Alert>
+    ) : null;
     const hireFlow = canRequestQuote && selectedConfig
       ? <Erc8183MainnetDemo config={selectedConfig} agentName={marketplaceAgentDisplayName(agent.name)} embedded />
-      : canRequestQuote ? (
-        <Alert className="border-amber-400/20 bg-amber-400/5">
-          <AlertTitle>Fresh quotes are temporarily unavailable</AlertTitle>
-          <AlertDescription>The seller supports the hiring transport, but the on-demand quote service is not configured right now. No Testnet substitute was selected.</AlertDescription>
-        </Alert>
-      ) : null;
+      : null;
     return <AgentProfile
       agent={agent}
       catalogCandidate={catalogCandidate}
       hireFlow={hireFlow}
+      hireFlowAvailable={selectedConfig !== null}
       hireJobs={hireJobs}
+      hireNotice={hireNotice}
       jobProofs={jobProofs}
       passport={passport}
     />;
