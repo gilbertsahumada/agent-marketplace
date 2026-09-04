@@ -81,11 +81,17 @@ describe("WP1 Wrangler scaffold", () => {
     });
   });
 
-  it("declares the Commerce indexer flag off wherever the catalogue flags are declared", () => {
+  it("declares the Commerce indexer flag wherever the catalogue flags are declared, on only in staging", () => {
     for (const vars of [wrangler.vars, wrangler.env?.staging?.vars, wrangler.env?.validation?.vars]) {
       expect(vars?.CATALOG_PROBE_ENABLED).toBeDefined();
-      expect(vars?.COMMERCE_INDEX_ENABLED).toBe("0");
+      expect(vars?.COMMERCE_INDEX_ENABLED).toBeDefined();
     }
+    // Staging is the rollout environment: migration 0022 is applied there and
+    // both chain RPC secrets exist. Production and validation stay off until
+    // the staging cursor has been observed advancing.
+    expect(wrangler.env?.staging?.vars?.COMMERCE_INDEX_ENABLED).toBe("1");
+    expect(wrangler.vars?.COMMERCE_INDEX_ENABLED).toBe("0");
+    expect(wrangler.env?.validation?.vars?.COMMERCE_INDEX_ENABLED).toBe("0");
   });
 
   it("keeps product monitoring active only in the isolated staging environment", () => {
