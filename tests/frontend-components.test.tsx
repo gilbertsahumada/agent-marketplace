@@ -24,7 +24,8 @@ import type {
 import type { PublicJobProof } from "../src/business/entities/public-job-proof.ts";
 import { GATE1_JOB_514_MANIFEST } from "../src/data/proofs/gate1-job-514.ts";
 import { GATE6A_JOB_551_MANIFEST } from "../src/data/proofs/gate6a-job-551.ts";
-import { Erc8183MainnetDemo, Erc8183TestnetDemo, Erc8183TransactionList, hireConfirmationLabel, sharedEvidenceSyncMessage } from "../components/spikes/erc8183-browser-spike.tsx";
+import { Erc8183MainnetDemo, Erc8183MarketplaceHire, Erc8183SavedHire, Erc8183TestnetDemo, Erc8183TransactionList, hireConfirmationLabel, sharedEvidenceSyncMessage } from "../components/spikes/erc8183-browser-spike.tsx";
+import { ERC8183_MAINNET } from "../src/mainnet/contracts.ts";
 import { Providers } from "../app/providers.tsx";
 import { VerificationDrift } from "../components/marketplace/verification-drift.tsx";
 import { EvidencePassportCard } from "../components/marketplace/evidence-passport-card.tsx";
@@ -1558,7 +1559,55 @@ describe("marketplace presentation rules", () => {
     expect(screen.getByRole("button", { name: /wallet approval/i })).toBeDisabled();
   });
 
+  it("resumes original funded job with an expired, different quote without preparing or sending transactions", async () => {
+    const user = userEvent.setup();
+    const buyer = "0x7777777777777777777777777777777777777777" as const;
+    walletState.address = buyer;
+    localStorage.setItem("bnb-agent-marketplace:erc8183-browser:56:303779:v1", JSON.stringify({
+      schemaVersion: 1, chainId: 56, buyer, seller: MAINNET_DEMO_CONFIG.seller,
+      jobId: "42", quoteRequestId: 17, transactions: {}, lastConfirmedStep: "funded",
+    }));
+    const quote = mainnetQuote({ quoteExpiresAt: Math.floor(Date.now() / 1_000) - 60, priceRaw: "2" });
+    const previousJob = { ...mainnetJob("FUNDED"), evaluator: quote.router };
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(jsonResponse({ job: previousJob })));
+    vi.stubGlobal("fetch", fetchMock);
+    render(createElement(Providers, { children: createElement(Erc8183MarketplaceHire, { quote: { ...quote, chainId: 56, observationSync: { status: "synced" } }, quoteRequestId: 99 }) }));
+    const resume = await screen.findByRole("button", { name: "Resume job #42" });
+    expect(resume).toBeEnabled();
+    await user.click(resume);
+    expect(screen.queryByText(/Recovered chain state|older job|not funded/)).not.toBeInTheDocument();
+    await waitFor(() => expect(document.body.textContent).toContain("Resumed job #42 · FUNDED"));
+    await user.click(screen.getByRole("button", { name: "Retry seller notification" }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
+    expect(fetchMock.mock.calls.map(call => String(call[0]))).toEqual([
+      "/api/marketplace/agents/303779/hire/jobs/42?quoteRequestId=17",
+      "/api/marketplace/agents/303779/hire/jobs/42?quoteRequestId=17",
+      "/api/marketplace/agents/303779/hire/notify",
+    ]);
+    expect(JSON.parse(fetchMock.mock.calls[2]?.[1]?.body as string)).toEqual({ buyer, jobId: "42", quoteRequestId: 17 });
+    expect(walletState.switchChainAsync).not.toHaveBeenCalled();
+    expect(screen.queryByText("Confirmed onchain")).not.toBeInTheDocument();
+  });
+
+  it("offers saved funded recovery after reload without any buyer quote", async () => {
+    walletState.address = "0x7777777777777777777777777777777777777777";
+    localStorage.setItem("bnb-agent-marketplace:erc8183-browser:56:303779:v1", JSON.stringify({
+      schemaVersion: 1, chainId: 56, buyer: walletState.address, seller: MAINNET_DEMO_CONFIG.seller,
+      jobId: "42", quoteRequestId: 17, transactions: {}, lastConfirmedStep: "funded",
+    }));
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ job: { ...mainnetJob("FUNDED"),
+      evaluator: ERC8183_MAINNET.router, policy: ERC8183_MAINNET.policy, quotedToken: ERC8183_MAINNET.token } }));
+    vi.stubGlobal("fetch", fetchMock);
+    render(createElement(Providers, { children: createElement(Erc8183SavedHire, { agentId: "303779" }) }));
+    await userEvent.click(await screen.findByRole("button", { name: "Resume job #42" }));
+    expect(await screen.findByText(/Resumed job #42 · FUNDED/)).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(String(fetchMock.mock.calls[0]?.[0])).toContain("quoteRequestId=17");
+    expect(screen.queryByRole("button", { name: /request quote|prepare hire/i })).not.toBeInTheDocument();
+  });
+
   it.each(["FUNDED", "SUBMITTED", "COMPLETED"] as const)("does not restore a saved %s job into a new quote", async (status) => {
+    vi.spyOn(navigator, "sendBeacon").mockReturnValue(true);
     const user = userEvent.setup();
     const buyer = "0x7777777777777777777777777777777777777777" as const;
     walletState.address = buyer;
@@ -1578,7 +1627,7 @@ describe("marketplace presentation rules", () => {
     vi.stubGlobal("fetch", fetchMock);
     const view = renderMainnetDemo();
 
-    expect(await screen.findByRole("button", { name: "Resume job #42" })).toBeDisabled();
+    expect(await screen.findByRole("button", { name: "Resume job #42" })).toBeEnabled();
     expect(screen.queryByText(`Current state: ${status}`)).not.toBeInTheDocument();
     expect(fetchMock).not.toHaveBeenCalled();
     await user.click(screen.getByRole("button", { name: /get fresh quote/i }));
