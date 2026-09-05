@@ -12,6 +12,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { EvidenceRail } from "./evidence-rail";
 import { Breadcrumb, PageIntro } from "./page-primitives";
+import { JobAgentCell } from "./job-agent-cell";
+import type { JobAgentResolution } from "@/src/business/entities/job-agent-resolution";
 
 const TRANSACTION_LABELS = {
   createJob: "Create job",
@@ -41,7 +43,7 @@ function Fact({ label, value }: { label: string; value: string }) {
   );
 }
 
-export function TestnetJobTracker({ tracking }: { tracking: Erc8183TestnetJobTracking }) {
+export function TestnetJobTracker({ tracking, agentResolution }: { tracking: Erc8183TestnetJobTracking; agentResolution?: JobAgentResolution | undefined }) {
   const router = useRouter();
   const [journal, setJournal] = useState<Erc8183BrowserJournal | null>(null);
   const { job, snapshot } = tracking;
@@ -135,7 +137,10 @@ export function TestnetJobTracker({ tracking }: { tracking: Erc8183TestnetJobTra
                 </div>
               )}
               <Fact label="Seller" value={seller} />
-              <Fact label="Seller agent" value={snapshot?.sellerAgentId ?? String(ERC8183_TESTNET.agentId)} />
+              <div className="border-b border-border py-3 sm:grid sm:grid-cols-[9rem_1fr] sm:gap-4">
+                <dt className="text-xs text-muted-foreground">Seller agent</dt>
+                <dd><JobAgentCell resolution={agentResolution} /></dd>
+              </div>
               <Fact label="Payment token" value={job?.quotedToken ?? snapshot?.payment.token ?? "Unavailable"} />
               <Fact label="Budget" value={`${job?.budgetRaw ?? snapshot?.payment.budgetRaw ?? "Unavailable"} raw units`} />
               <Fact label="Deadline" value={job ? timestamp(job.deadline) : snapshot?.lifecycle.deadline.iso ?? "Unavailable"} />
