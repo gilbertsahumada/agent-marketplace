@@ -1,4 +1,4 @@
-import { AsciiImageSignal } from "./ascii-image-signal";
+import { AsciiBnbMark } from "./ascii-bnb-mark";
 
 const protocolNodes = [
   ["ERC-8004", "identity"],
@@ -11,7 +11,7 @@ export function AsciiMarketSignal() {
   return (
     <div className="market-ascii-composition">
       <div className="market-ascii-logo-wrap">
-        <AsciiImageSignal src="/logo/PNG/BNB Chain_Symbol_Yellow.png" />
+        <AsciiBnbMark />
         <span aria-hidden="true">BNB CHAIN / SIGNAL 56</span>
       </div>
 

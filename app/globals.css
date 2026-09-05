@@ -280,7 +280,7 @@ body {
   line-height: 0.94;
   letter-spacing: 0.018em;
   white-space: pre;
-  text-shadow: 0 0 14px rgb(255 233 0 / 35%);
+  text-shadow: 0 0 10px rgb(255 233 0 / 28%);
 }
 
 .market-ascii-line {
