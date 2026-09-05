@@ -422,7 +422,7 @@ describe("AgentValidationActions", () => {
     expect(steps.slice(1).every((step) => !step.hasAttribute("aria-current"))).toBe(true);
   });
 
-  it("renders only one Quote verified header badge", () => {
+  it("does not promote legacy passport quote evidence into current readiness", () => {
     const agent = {
       agentId: "303779",
       name: "Marketplace Grid Planner",
@@ -439,6 +439,7 @@ describe("AgentValidationActions", () => {
 
     render(<AgentProfile agent={agent as never} passport={passport as never} />);
 
-    expect(screen.getAllByText("Quote verified")).toHaveLength(1);
+    expect(screen.queryByText("Quote verified")).not.toBeInTheDocument();
+    expect(screen.queryByText("Ready to quote")).not.toBeInTheDocument();
   });
 });
