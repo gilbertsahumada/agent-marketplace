@@ -6,6 +6,8 @@ import type { HireJobDetail } from "@/src/business/entities/hire-job";
 import { explorerUrl, jobStatusLabel } from "./hire-job-rows";
 import { Breadcrumb } from "./page-primitives";
 import { AddressLink } from "./address-link";
+import { JobAgentCell } from "./job-agent-cell";
+import type { JobAgentResolution } from "@/src/business/entities/job-agent-resolution";
 
 const UTC_DATE_TIME = new Intl.DateTimeFormat("en", {
   day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", timeZone: "UTC",
@@ -29,7 +31,7 @@ function LedgerCardTitle({ children }: { children: ReactNode }) {
 // State comes from Commerce logs and getJob(); it is never a hash-verified
 // deliverable, and the copy says so. "Hired via this marketplace" means a
 // chain-verified hire event exists: the hire started here, nothing more.
-export function HireJobLedgerPage({ job }: { job: HireJobDetail }) {
+export function HireJobLedgerPage({ job, agentResolution }: { job: HireJobDetail; agentResolution?: JobAgentResolution | undefined }) {
   const explorer = explorerUrl(job.chainId);
   const facts: Array<[string, string]> = [
     ["Buyer", job.buyer],
@@ -56,6 +58,9 @@ export function HireJobLedgerPage({ job }: { job: HireJobDetail }) {
       <Card className="mt-8">
         <CardHeader><LedgerCardTitle>Indexed job state</LedgerCardTitle><CardDescription>Read from the Commerce contract by the observation Worker.</CardDescription></CardHeader>
         <CardContent className="space-y-4 text-sm">
+          <div className="grid gap-1 border-b border-border pb-3 sm:grid-cols-[10rem_1fr]">
+            <span className="text-muted-foreground">Agent</span><JobAgentCell resolution={agentResolution} />
+          </div>
           {facts.map(([label, value]) => (
             <div className="grid gap-1 border-b border-white/[0.06] pb-3 sm:grid-cols-[10rem_1fr]" key={label}>
               <span className="text-zinc-500">{label}</span>
