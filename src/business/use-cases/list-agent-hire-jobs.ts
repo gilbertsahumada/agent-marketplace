@@ -1,8 +1,7 @@
 import type { HireAddress, HireJob, HireJobsScope, HireLedger } from "../entities/hire-job.ts";
 import type { MarketplaceAgent } from "../entities/marketplace-agent.ts";
 
-const ADDRESS = /^0x[0-9a-fA-F]{40}$/;
-const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
+import { providerIdentity } from "../../../shared/agent-identity.ts";
 
 export interface AgentHireJobs {
   jobs: HireJob[];
@@ -25,8 +24,8 @@ export class ListAgentHireJobs {
     const scope: HireJobsScope = provider === null ? "agent" : "wallet";
     try {
       const page = provider === null
-        ? await this.ledger.listJobsByAgent({ chainId: 56, agentId: input.agent.agentId })
-        : await this.ledger.listJobsByProvider({ chainId: 56, provider });
+        ? await this.ledger.listJobsByAgent({ chainId: input.agent.chainId, agentId: input.agent.agentId })
+        : await this.ledger.listJobsByProvider({ chainId: input.agent.chainId, provider });
       if (page === null) return null;
       return { jobs: page.jobs, nextBefore: page.nextBefore, scope };
     } catch {
@@ -36,8 +35,6 @@ export class ListAgentHireJobs {
 }
 
 export function providerWallet(agent: MarketplaceAgent): HireAddress | null {
-  const candidate = agent.onchainIdentity.agentWallet;
-  return candidate !== null && ADDRESS.test(candidate) && candidate.toLowerCase() !== ZERO_ADDRESS
-    ? candidate as HireAddress
-    : null;
+  const identity = providerIdentity({ agentWallet: agent.onchainIdentity.agentWallet });
+  return identity ? agent.onchainIdentity.agentWallet as HireAddress : null;
 }
