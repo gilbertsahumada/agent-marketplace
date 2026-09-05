@@ -96,6 +96,19 @@ describe("catalog quote-capability scheduler", () => {
     await expect(env.DB.prepare("SELECT compatibilityState, consecutiveFailures FROM catalog_seller_capabilities WHERE agentKey=?").bind(candidate.agentKey).first()).resolves.toMatchObject({ compatibilityState: "compatible", consecutiveFailures: 0 });
     await expect(env.DB.prepare("SELECT COUNT(*) AS total FROM catalog_quote_requests").first()).resolves.toMatchObject({ total: 0 });
   });
+  it("gives maintenance a turn at a shared origin while bootstrap remains pending", async () => {
+    const maintenance = await insertCandidate("40", "0".repeat(64), "shared-origin", "failed");
+    await env.DB.prepare("UPDATE catalog_seller_capabilities SET compatibilityState='unavailable' WHERE agentKey=?").bind(maintenance.agentKey).run();
+    for (let n = 41; n < 45; n++) await insertCandidate(String(n), String(n).padStart(64, "0"), "shared-origin");
+    const send = vi.fn().mockResolvedValue(undefined);
+    for (const nowMs of [NOW, NOW + 60_000]) {
+      const before = send.mock.calls.length;
+      await enqueueDueCatalogCapabilities(env.DB as unknown as D1DatabaseLike, { send }, { nowMs, limit: 1, concurrency: 1, bootstrapLimit: 2 });
+      expect(send.mock.calls.length - before).toBe(1);
+    }
+    expect(send).toHaveBeenCalledWith(expect.objectContaining({ agentKey: maintenance.agentKey }));
+    expect(send.mock.calls.some(([message]) => message.agentKey !== maintenance.agentKey)).toBe(true);
+  });
   it("claims due work once and limits one queued probe per origin", async () => {
     await insertCandidate("42");
     await insertCandidate("43", "f".repeat(64), "seller-origin");
@@ -157,7 +170,7 @@ describe("catalog quote-capability scheduler", () => {
       await expect(env.DB.prepare(`SELECT state, consecutiveFailures, nextProbeAt
         FROM catalog_seller_capabilities WHERE agentKey = ?`).bind(candidate.agentKey).first())
         .resolves.toMatchObject({
-          state: "failed",
+          state: "discovered",
           consecutiveFailures: index + 1,
           nextProbeAt: at + minutes * 60_000,
         });
@@ -167,5 +180,16 @@ describe("catalog quote-capability scheduler", () => {
       .resolves.toMatchObject({ total: 0 });
     await expect(env.DB.prepare("SELECT COUNT(*) AS total FROM catalog_quote_attempts").first())
       .resolves.toMatchObject({ total: 0 });
+  });
+  it.each(["ready", "failed"] as const)("does not replace prior %s quote evidence with a discovery error", async (state) => {
+    const candidate = await insertCandidate("42", ENDPOINT_KEY, "seller-origin", state, NOW + 86_400_000);
+    await env.DB.prepare("UPDATE catalog_seller_capabilities SET lastAttemptId='prior-quote', lastErrorCode=? WHERE agentKey=?").bind(state === "failed" ? "QUOTE_REJECTED" : null, candidate.agentKey).run();
+    await runCatalogCapabilityProbe(work(candidate.agentKey), env as unknown as Env, loadConfig({ CLOUDFLARE_WORKERS_PLAN: "paid" }), {
+      now: () => NOW,
+      fetchImpl: vi.fn(async () => new Response(null, { status: 404 })) as typeof fetch,
+    });
+    expect(await env.DB.prepare("SELECT state, lastAttemptId, lastErrorCode, compatibilityErrorCode FROM catalog_seller_capabilities WHERE agentKey=?").bind(candidate.agentKey).first()).toMatchObject({
+      state, lastAttemptId: "prior-quote", lastErrorCode: state === "failed" ? "QUOTE_REJECTED" : null, compatibilityErrorCode: "SELLER_UNSAFE_URL",
+    });
   });
 });
