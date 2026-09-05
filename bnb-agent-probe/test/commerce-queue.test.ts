@@ -38,6 +38,18 @@ function message(body: unknown, attempts = 1) {
 }
 
 describe("Commerce indexer queue wiring", () => {
+  it("only enqueues identity discovery when explicitly enabled and a chain has RPC", async () => {
+    const worker = createWorker({ now: () => NOW, runScheduled: vi.fn() });
+    const env = activeEnv({ AGENT_IDENTITY_INDEX_ENABLED: "1", COMMERCE_INDEX_ENABLED: "0", BSC_RPC_URL: "https://rpc.example/bsc" });
+    await worker.scheduled({ scheduledTime: NOW, cron: "*/10 * * * *" }, env, context);
+    expect(env.WP2_QUEUE.send.mock.calls.map(([body]) => body)).toEqual([
+      { schemaVersion: 1, scheduledTime: NOW },
+      { schemaVersion: 1, kind: "index_identities", chainId: 56, enqueuedAt: NOW },
+    ]);
+    const tick = message({ schemaVersion: 1, kind: "index_identities", chainId: 56, enqueuedAt: NOW });
+    await worker.queue({ messages: [tick] }, activeEnv(), context);
+    expect(tick.ack).toHaveBeenCalledOnce();
+  });
   it("enqueues one cursor tick per chain with an RPC URL after the phase tick", async () => {
     const worker = createWorker({ now: () => NOW, runScheduled: vi.fn() });
     const bothChains = activeEnv({ BSC_RPC_URL: "https://rpc.example/bsc", BSC_TESTNET_RPC_URL: "https://rpc.example/testnet" });
