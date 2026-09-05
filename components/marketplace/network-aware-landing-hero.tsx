@@ -7,6 +7,7 @@ import { useAccount, useChainId } from "wagmi";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { AsciiBnbMark } from "./ascii-bnb-mark";
+import { AsciiClouds } from "./ascii-clouds";
 import { CountUp } from "./count-up";
 import type { EvidenceStepViewModel, LedgerPulseViewModel } from "./presentation-types";
 
@@ -137,6 +138,7 @@ export function NetworkAwareLandingHero({ mainnet, testnet, ledgerPulse = null }
 
   return (
     <section className="hero-grid border-b border-border/60">
+      <AsciiClouds />
       <div className="mx-auto grid max-w-[1480px] gap-12 px-5 py-16 sm:px-8 sm:py-20 lg:grid-cols-[0.94fr_1.06fr] lg:items-center lg:px-12 lg:py-28">
         <div className="relative">
           <p className="hero-kicker hero-enter font-eyebrow text-signal" style={{ "--enter": 0 } as CSSProperties}>BNB Agent Marketplace</p>

@@ -1,19 +1,17 @@
 "use client";
 
 import { useEffect, useRef, type CSSProperties } from "react";
-import { BNB_ASCII_MARK, rasterizeAsciiMark } from "./bnb-ascii-mark";
+import { BNB_ASCII_MARK } from "./bnb-ascii-mark";
 
 const REVEAL_MS = 1_500;
-const SPIN_SECONDS_PER_TURN = 16;
 const FRAME_MS = 1_000 / 30;
 const NOISE = ".:-=+*#";
 
 // The server renders the finished mark, so the page never shows a
-// placeholder. On the client the same glyphs first resolve out of noise from
-// the centre outward, then the symbol turns slowly about its vertical axis,
-// re-rasterized each frame from the SVG outline. Everything is written to
-// the row text nodes directly: React renders this component exactly once.
-// A pointer over the field lights the glyphs near it through CSS variables.
+// placeholder. On the client the same glyphs resolve once out of noise from
+// the centre outward, written to the row text nodes directly (React renders
+// this component exactly once), then the mark holds still. A pointer over
+// the field lights the glyphs near it through CSS variables.
 export function AsciiBnbMark({ lines = BNB_ASCII_MARK, animate = true }: { lines?: readonly string[]; animate?: boolean }) {
   const preRef = useRef<HTMLPreElement>(null);
   const fieldRef = useRef<HTMLDivElement>(null);
@@ -38,15 +36,10 @@ export function AsciiBnbMark({ lines = BNB_ASCII_MARK, animate = true }: { lines
       return REVEAL_MS * (0.12 + 0.78 * distance + Math.random() * 0.1);
     }));
 
-    let visible = true;
     let cancelled = false;
     let lastFrame = 0;
     let frame = 0;
     const started = performance.now();
-    const observer = typeof IntersectionObserver === "function"
-      ? new IntersectionObserver((entries) => { visible = entries[0]?.isIntersecting ?? true; })
-      : null;
-    observer?.observe(pre);
 
     const write = (next: readonly string[]) => {
       for (let row = 0; row < rows.length; row += 1) {
@@ -57,20 +50,18 @@ export function AsciiBnbMark({ lines = BNB_ASCII_MARK, animate = true }: { lines
 
     const tick = (now: number) => {
       if (cancelled) return;
+      const elapsed = now - started;
+      if (elapsed >= REVEAL_MS) {
+        write(lines);
+        return;
+      }
       frame = window.requestAnimationFrame(tick);
       if (now - lastFrame < FRAME_MS) return;
       lastFrame = now;
-      const elapsed = now - started;
-      if (elapsed < REVEAL_MS) {
-        write(lines.map((line, row) => Array.from(line, (character, column) => {
-          if (character === " " || elapsed >= resolveAt[row]![column]!) return character;
-          return NOISE[Math.floor(Math.random() * NOISE.length)]!;
-        }).join("")));
-        return;
-      }
-      if (!visible || document.hidden) return;
-      const angle = ((elapsed - REVEAL_MS) / 1_000 / SPIN_SECONDS_PER_TURN) * Math.PI * 2;
-      write(rasterizeAsciiMark({ columns, rotationY: angle, supersample: 3 }));
+      write(lines.map((line, row) => Array.from(line, (character, column) => {
+        if (character === " " || elapsed >= resolveAt[row]![column]!) return character;
+        return NOISE[Math.floor(Math.random() * NOISE.length)]!;
+      }).join("")));
     };
     frame = window.requestAnimationFrame(tick);
 
@@ -89,7 +80,6 @@ export function AsciiBnbMark({ lines = BNB_ASCII_MARK, animate = true }: { lines
     return () => {
       cancelled = true;
       window.cancelAnimationFrame(frame);
-      observer?.disconnect();
       field.removeEventListener("pointermove", onMove);
       field.removeEventListener("pointerleave", onLeave);
       write(lines);

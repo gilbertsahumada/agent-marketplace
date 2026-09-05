@@ -185,6 +185,23 @@ body {
   z-index: 1;
 }
 
+.hero-clouds {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  width: 100%;
+  height: 100%;
+  font-family: var(--font-space-mono), monospace;
+  mask-image: radial-gradient(ellipse 80% 90% at 50% 45%, black 30%, transparent 100%);
+  pointer-events: none;
+  animation: hero-clouds-in 1.8s ease-out both;
+}
+
+@keyframes hero-clouds-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
 .hero-kicker {
   font-size: 0.75rem;
   font-weight: 700;
