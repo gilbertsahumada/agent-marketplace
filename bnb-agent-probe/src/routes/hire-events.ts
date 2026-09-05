@@ -19,6 +19,7 @@ import {
   type HireChainPhase,
   hireEvents,
 } from "../db/schema";
+import { providerIdentity } from "../../../shared/agent-identity";
 import {
   BSC_COMMERCE,
   BSC_REGISTRY,
@@ -226,7 +227,7 @@ async function verifyChainPhase(
     throw new HireEventRejected("JOB_STATUS_INCOMPATIBLE");
   }
   const wallet = readAddress(walletRead);
-  const provider = wallet && !isAddressEqual(wallet, ZERO_ADDRESS) ? wallet : readAddress(ownerRead);
+  const provider = providerIdentity({ agentWallet: wallet, owner: readAddress(ownerRead), allowOwnerFallback: true })?.wallet;
   if (!provider || isAddressEqual(provider, ZERO_ADDRESS) || !isAddressEqual(provider, job.provider)) {
     throw new HireEventRejected("AGENT_MISMATCH");
   }

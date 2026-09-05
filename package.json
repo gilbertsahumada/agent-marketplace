@@ -11,6 +11,14 @@
     "node": ">=20.9.0"
   },
   "scripts": {
+    "worker:start": "npm --prefix bnb-agent-probe run worker -- start local",
+    "worker:migrate:local": "npm --prefix bnb-agent-probe run worker -- migrate local",
+    "worker:migrate:staging": "npm --prefix bnb-agent-probe run worker -- migrate staging",
+    "worker:migrate:prod": "npm --prefix bnb-agent-probe run worker -- migrate prod",
+    "worker:deploy:staging": "npm --prefix bnb-agent-probe run worker -- deploy staging",
+    "worker:deploy:prod": "npm --prefix bnb-agent-probe run worker -- deploy prod",
+    "worker:release:staging": "npm --prefix bnb-agent-probe run worker -- release staging",
+    "worker:release:prod": "npm --prefix bnb-agent-probe run worker -- release prod",
     "dev": "next dev --webpack",
     "start": "next start",
     "build": "npm run build:cli && npm run build:web",

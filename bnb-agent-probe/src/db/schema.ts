@@ -822,7 +822,25 @@ export const catalogDirectedTracking = sqliteTable(
   ],
 );
 
+export const agentIdentities = sqliteTable("agent_identities", {
+  chainId: integer().notNull(),
+  registryAddress: text().notNull(),
+  agentId: text().notNull(),
+  wallet: text(),
+  source: text(),
+  blockNumber: integer().notNull(),
+  observedAt: integer().notNull(),
+  nextCheckAt: integer().notNull().default(0),
+}, table => [
+  primaryKey({ columns: [table.chainId, table.registryAddress, table.agentId] }),
+  index("idx_agent_identities_wallet").on(table.chainId, table.registryAddress, table.wallet),
+  index("idx_agent_identities_refresh").on(table.chainId, table.registryAddress, table.nextCheckAt),
+  check("agent_identities_chain", sql`${table.chainId} IN (56, 97)`),
+  check("agent_identities_source", sql`${table.source} IN ('agentWallet', 'ownerOf')`),
+]);
+
 export const schema = {
+  agentIdentities,
   probeTargets,
   probeObservations,
   funnelSnapshots,

@@ -2,6 +2,66 @@
 
 Bounded Cloudflare Worker + D1 observation layer for BSC marketplace evidence.
 
+Job-to-agent identity resolution, migration **0023**, and opt-in background indexing:
+see [identity index operations](src/identity/README.md).
+
+## Worker operations
+
+From the **repository root**, after installing the root and Worker dependencies:
+
+```sh
+npm run worker:start                 # start local Worker; no migration
+npm run worker:migrate:local         # apply local D1 migrations only
+npm run worker:migrate:staging       # back up and migrate staging only
+npm run worker:deploy:staging        # deploy only; refuses unapplied migrations
+npm run worker:release:staging       # migrate and deploy staging safely
+```
+
+`worker:start` stays in the foreground at `http://127.0.0.1:8787`; Ctrl+C stops
+it. Local migrations and local dev share `.wrangler/state`. This runs **only the
+Worker**, not the Next.js frontend. The equivalent production commands end in
+`:prod`, but remain blocked until production is explicitly configured.
+
+Inspect without running any subprocess, migration, export or deployment:
+
+```sh
+npm run worker:migrate:staging -- --plan
+npm run worker:deploy:staging -- --plan
+npm run worker:release:staging -- --plan
+```
+
+Remote releases first export the entire selected D1 database into a unique private
+directory under `bnb-agent-probe/.release-backups/` and check the export is nonempty.
+Backups are ignored by Git and retained even on failure; treat their contents as
+sensitive. Any failed backup, migration, or migration-ledger verification prevents
+deployment. No pending migrations is a normal success, not an error. Wrangler runs
+non-interactively after this wrapper's production confirmation; the ledger check
+also catches an apparent CLI success that failed to apply migrations.
+
+Production requires typing the Worker name at the prompt. For an explicitly approved
+non-interactive combined production release, use
+`npm run worker:release:prod -- --confirm-production`.
+The checked-in production D1 ID is a placeholder and its health origin is unset:
+**production is blocked** until both the real D1 binding in `wrangler.jsonc` and
+`prod` in `release-origins.json` are configured. Production selects the top-level
+Wrangler environment explicitly; staging selects `--env staging`. Local never uses
+`--remote`. Remote commands require the usual Wrangler/Cloudflare authentication.
+
+`release-origins.json` contains the health-check origin for each target. Keep it in
+sync with the Worker URL/custom domain. Remote deploy uses `--keep-vars` so variables
+not declared in the file (such as an explicitly enabled identity index flag) are
+not silently removed; values explicitly set in Wrangler config still apply.
+The identity index is enabled explicitly in staging and disabled in other checked-in
+environments; remote deploy uses the selected environment's declared value.
+
+Migration + deployment is **not atomic**. If deployment or the subsequent health
+check fails, successful migrations remain applied and the command exits with an
+error. Inspect the Worker/database before retrying; no automatic schema rollback is
+attempted. Use backward-compatible additive migrations and deploy destructive schema
+changes in separate, reviewed phases. A healthy endpoint can report `degraded`:
+the existing smoke contract checks availability/configuration, not every indexer's
+freshness. CI's full tests remain a separate release prerequisite.
+
 WP2 ships the schema, lease, curated manifest, bounded trust8004 client,
 single-phase HEADER/SWEEP/PROBE rotation, Free Queue dispatch, kill switch and
 sanitized `GET /health`. WP3 is fail-closed to BSC Agent `303779` and the exact

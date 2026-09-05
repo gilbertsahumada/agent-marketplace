@@ -37,6 +37,8 @@ import { syncCatalogObservation } from "../data/observation/catalog-observation-
 import { getVerifiedHireEvents } from "../data/observation/hire-event-feed.ts";
 import { getHireActivity, getHireJob, getHireJobs, getHireLedgerSummary } from "../data/observation/hire-ledger-feed.ts";
 import { ListAgentHireJobs } from "./use-cases/list-agent-hire-jobs.ts";
+import { ResolveJobAgents } from "./use-cases/resolve-job-agents.ts";
+import { WorkerAgentIdentityRepository } from "../data/observation/agent-identity-feed.ts";
 import type { HireLedger } from "./entities/hire-job.ts";
 import { syncHireEvent } from "../data/observation/hire-event-sync.ts";
 import {
@@ -119,6 +121,7 @@ const hireLedger: HireLedger = {
 };
 export const getHireLedger = hireLedger;
 export const listAgentHireJobs = new ListAgentHireJobs(hireLedger);
+export const resolveJobAgents = new ResolveJobAgents(new WorkerAgentIdentityRepository());
 export const validateMarketplaceAgent = new ValidateMarketplaceAgent(agentValidationRepository);
 export const getFunnelEvidence = new GetFunnelEvidence(funnelEvidenceRepository);
 export const getWorkerObservations = workerObservationFeed;

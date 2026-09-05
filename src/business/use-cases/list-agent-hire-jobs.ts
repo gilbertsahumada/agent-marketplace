@@ -1,8 +1,7 @@
 import type { HireActivity, HireAddress, HireJob, HireJobPage, HireJobsScope, HireLedger } from "../entities/hire-job.ts";
 import type { MarketplaceAgent } from "../entities/marketplace-agent.ts";
 
-const ADDRESS = /^0x[0-9a-fA-F]{40}$/;
-const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
+import { providerIdentity } from "../../../shared/agent-identity.ts";
 
 export interface AgentHireJobs {
   jobs: HireJob[];
@@ -28,19 +27,19 @@ export class ListAgentHireJobs {
     const scope: HireJobsScope = provider === null ? "agent" : "wallet";
     // The required read starts first; the optional window follows and runs
     // alongside it.
-    const page = this.jobs(provider, input.agent.agentId);
-    const activity = this.activity(provider, input.agent.agentId);
+    const page = this.jobs(provider, input.agent);
+    const activity = this.activity(provider, input.agent);
     const [jobs, window] = await Promise.all([page, activity]);
     if (jobs === null) return null;
     return { jobs: jobs.jobs, nextBefore: jobs.nextBefore, scope, activity: window };
   }
 
   // Never rejects: a ledger that throws is an unavailable ledger (null).
-  private async jobs(provider: HireAddress | null, agentId: string): Promise<HireJobPage | null> {
+  private async jobs(provider: HireAddress | null, agent: MarketplaceAgent): Promise<HireJobPage | null> {
     try {
       return provider === null
-        ? await this.ledger.listJobsByAgent({ chainId: 56, agentId })
-        : await this.ledger.listJobsByProvider({ chainId: 56, provider });
+        ? await this.ledger.listJobsByAgent({ chainId: agent.chainId, agentId: agent.agentId })
+        : await this.ledger.listJobsByProvider({ chainId: agent.chainId, provider });
     } catch {
       return null;
     }
@@ -49,11 +48,11 @@ export class ListAgentHireJobs {
   // Read alongside the list, never rejects: a failed window is null. The
   // default window (HIRE_ACTIVITY_DEFAULT_DAYS) is the Worker's own, so no
   // `days` is sent: the read shares its cache entry with the /jobs page.
-  private async activity(provider: HireAddress | null, agentId: string): Promise<HireActivity | null> {
+  private async activity(provider: HireAddress | null, agent: MarketplaceAgent): Promise<HireActivity | null> {
     try {
       return await this.ledger.activity(provider === null
-        ? { chainId: 56, agentId }
-        : { chainId: 56, provider });
+        ? { chainId: agent.chainId, agentId: agent.agentId }
+        : { chainId: agent.chainId, provider });
     } catch {
       return null;
     }
@@ -61,8 +60,6 @@ export class ListAgentHireJobs {
 }
 
 export function providerWallet(agent: MarketplaceAgent): HireAddress | null {
-  const candidate = agent.onchainIdentity.agentWallet;
-  return candidate !== null && ADDRESS.test(candidate) && candidate.toLowerCase() !== ZERO_ADDRESS
-    ? candidate as HireAddress
-    : null;
+  const identity = providerIdentity({ agentWallet: agent.onchainIdentity.agentWallet });
+  return identity ? agent.onchainIdentity.agentWallet as HireAddress : null;
 }

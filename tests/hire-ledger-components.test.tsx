@@ -274,6 +274,22 @@ describe("HireLedgerPage", () => {
     expect(screen.queryByRole("link", { name: "Job #56695" })).not.toBeInTheDocument();
   });
 
+  it("searches resolved agent names and IDs and links to their profile", () => {
+    render(createElement(HireLedgerPage, { chainId: 56, summary: summary(), page, agentResolutions: {
+      "56:56696": { status: "wallet_match", coverage: "partial", evidence: [], agents: [{
+        chainId: 56, registryAddress: "0x8004a169fb4a3325136eb29fa0ceb6d2e539a432",
+        agentId: "303779", name: "Grid Agent", profileAvailable: true,
+      }] },
+    } }));
+    const search = screen.getByRole("textbox", { name: "Search this page" });
+    for (const value of ["grid agent", "#303779"]) {
+      fireEvent.change(search, { target: { value } });
+      expect(screen.getByRole("link", { name: "Grid Agent · #303779" })).toHaveAttribute("href", "/agents/303779");
+      expect(screen.queryByRole("link", { name: "Job #56695" })).not.toBeInTheDocument();
+      expect(screen.getByText("56,697")).toBeInTheDocument();
+    }
+  });
+
   it.each([
     ["idle", "Waiting for new blocks"],
     ["initialized", "Index initialized"],

@@ -18,9 +18,11 @@ const ledger = vi.hoisted(() => ({
 }));
 const mainnetJobStatus = vi.hoisted(() => vi.fn());
 const testnetTracking = vi.hoisted(() => vi.fn());
+const resolveAgents = vi.hoisted(() => vi.fn().mockResolvedValue({}));
 
 vi.mock("@/src/business/composition", () => ({
   getHireLedger: ledger,
+  resolveJobAgents: { execute: resolveAgents },
   getMainnetErc8183JobStatus: { execute: mainnetJobStatus },
   getErc8183TestnetJobTracking: { execute: testnetTracking },
 }));
@@ -134,14 +136,17 @@ describe("/jobs ledger page", () => {
     expect(html).not.toContain("Indexed ledger temporarily unavailable");
   });
 
-  it("links verified job attribution to marketplace agent profiles", async () => {
+  it("uses the batch resolver and displays names with profile links", async () => {
     ledger.listRecentJobs.mockResolvedValue({ chainId: 56, jobs: [job("99", { marketplace: true }), job("98")], nextBefore: null });
-    ledger.getJob.mockResolvedValue({ ...job("99"), hireEvents: [{ agentId: "303779" }, { agentId: "303779" }] });
+    resolveAgents.mockResolvedValueOnce({ "56:99": { status: "registered", coverage: "partial", evidence: [], agents: [{
+      agentId: "303779", name: "Grid Agent", chainId: 56, registryAddress: "0x8004a169fb4a3325136eb29fa0ceb6d2e539a432", profileAvailable: true,
+    }] } });
     const html = await render();
-    expect(ledger.getJob).toHaveBeenCalledWith({ chainId: 56, jobId: "99" });
-    expect(ledger.getJob).not.toHaveBeenCalledWith({ chainId: 56, jobId: "98" });
+    expect(resolveAgents).toHaveBeenCalledTimes(1);
+    expect(resolveAgents.mock.calls[0]?.[0]).toHaveLength(2);
+    expect(ledger.getJob).not.toHaveBeenCalled();
     expect(html).toContain('href="/agents/303779"');
-    expect(html).toContain("Agent #303779");
+    expect(html).toContain("Grid Agent · #303779");
   });
 
   it("retains job rows if profile enrichment fails", async () => {

@@ -9,6 +9,7 @@ const ZERO = "0x0000000000000000000000000000000000000000";
 
 function agent(identity: { agentWallet: string | null; owner: string | null }, owner: string | null = null): MarketplaceAgent {
   return {
+    chainId: 56,
     agentId: "303779",
     owner,
     onchainIdentity: { ...identity },
