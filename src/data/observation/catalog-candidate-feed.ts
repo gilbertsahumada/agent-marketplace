@@ -205,6 +205,13 @@ function candidate(value: unknown, schemaVersion: 1 | 2): CatalogCandidate {
     throw new Error("CATALOG_FEED_INVALID");
   }
   const state = stateValue === null ? undefined : {
+    ...(stateValue.compatibilityState !== undefined && ["pending", "compatible", "unsupported", "unavailable"].includes(String(stateValue.compatibilityState)) ? {
+      compatibilityState: stateValue.compatibilityState as NonNullable<NonNullable<CatalogCandidate["state"]>["compatibilityState"]>,
+      compatibilityCheckedAt: integer(stateValue.compatibilityCheckedAt ?? null, true),
+      compatibilityExpiresAt: integer(stateValue.compatibilityExpiresAt ?? null, true),
+      compatibilityErrorCode: string(stateValue.compatibilityErrorCode ?? null, true),
+      schemaHash: string(stateValue.schemaHash ?? null, true),
+    } : {}),
     operationalStatus: string(stateValue.operationalStatus)! as NonNullable<CatalogCandidate["state"]>["operationalStatus"],
     freshness: string(stateValue.freshness)! as NonNullable<CatalogCandidate["state"]>["freshness"],
     commerceStatus: string(stateValue.commerceStatus)! as NonNullable<CatalogCandidate["state"]>["commerceStatus"],
@@ -268,7 +275,9 @@ function facets(value: unknown): CatalogFacetCounts {
   const categories = record(item.categories);
   const reachabilityValue = item.reachability;
   const reachability = reachabilityValue === undefined ? undefined : record(reachabilityValue);
-  if (CATALOG_STATUSES.some((status) => !Number.isSafeInteger(statuses[status]) || Number(statuses[status]) < 0)
+  const protocols = item.protocols === undefined ? undefined : record(item.protocols);
+  if (protocols && ["a2a", "mcp", "erc8183_http"].some((key) => !Number.isSafeInteger(protocols[key]) || Number(protocols[key]) < 0)) throw new Error("CATALOG_FEED_INVALID");
+  if (CATALOG_STATUSES.some((status) => statuses[status] === undefined && ["requestable", "quote_failed", "completed_jobs"].includes(status) ? false : !Number.isSafeInteger(statuses[status]) || Number(statuses[status]) < 0)
     || MARKETPLACE_CATEGORIES.some((category) => !Number.isSafeInteger(categories[category]) || Number(categories[category]) < 0)
     || (reachability !== undefined && ["live", "historical", "never", "browser_observed"].some((key) => (
       !Number.isSafeInteger(reachability[key]) || Number(reachability[key]) < 0
@@ -276,7 +285,8 @@ function facets(value: unknown): CatalogFacetCounts {
     throw new Error("CATALOG_FEED_INVALID");
   }
   return {
-    statuses: Object.fromEntries(CATALOG_STATUSES.map((status) => [status, Number(statuses[status])])) as CatalogFacetCounts["statuses"],
+    ...(protocols ? { protocols: { a2a: Number(protocols.a2a), mcp: Number(protocols.mcp), erc8183_http: Number(protocols.erc8183_http) } } : {}),
+    statuses: Object.fromEntries(CATALOG_STATUSES.filter((status) => statuses[status] !== undefined).map((status) => [status, Number(statuses[status])])) as CatalogFacetCounts["statuses"],
     categories: Object.fromEntries(MARKETPLACE_CATEGORIES.map((category) => [category, Number(categories[category])])) as CatalogFacetCounts["categories"],
     ...(reachability ? {
       reachability: {
@@ -355,13 +365,17 @@ export async function getCatalogCandidatePage(input: {
   quote?: Array<"verified" | "expired" | "missing">;
   latestFailure?: boolean;
   inventory?: "operational" | "registry";
+  scope?: "hiring" | "evaluation";
   cursor?: string;
   includeFacets?: boolean;
+  fresh?: boolean;
   env?: Readonly<Record<string, string | undefined>>;
 }): Promise<CatalogCandidatePage | null> {
   const base = catalogUrl("/catalog-agents", input.env ?? process.env);
   if (!base) return null;
-  const statuses = input.statuses?.length ? input.statuses : [input.status ?? "declared"];
+  // An explicit empty UI selection means the operational catalogue, not a
+  // hidden requestable filter. Omitted status retains the API's default.
+  const statuses = input.statuses?.length ? input.statuses : [input.status ?? (input.statuses !== undefined || input.inventory === "registry" ? "declared" : "requestable")];
   for (const status of statuses) base.searchParams.append("status", status);
   if (input.cursor) base.searchParams.set("cursor", input.cursor);
   else base.searchParams.set("page", String(input.page));
@@ -375,17 +389,19 @@ export async function getCatalogCandidatePage(input: {
   for (const quote of input.quote ?? []) base.searchParams.append("quote", quote);
   if (input.latestFailure !== undefined) base.searchParams.set("latestFailure", String(input.latestFailure));
   if (input.inventory) base.searchParams.set("inventory", input.inventory);
+  if (input.scope) base.searchParams.set("scope", input.scope);
   if (input.includeFacets) base.searchParams.set("facets", "true");
   try {
-    return await cache.get(`catalog:${base}`, CACHE_TTL_MS, async () => {
+    const read = async () => {
       const response = await fetch(base, {
         cache: "no-store",
-        headers: { accept: "application/json" },
+        headers: catalogReadHeaders(input.env ?? process.env, input.fresh === true),
         signal: AbortSignal.timeout(5_000),
       });
       if (!response.ok) throw new Error("CATALOG_FEED_UNAVAILABLE");
       return parseCatalogCandidatePage(await response.json());
-    });
+    };
+    return await (input.fresh ? read() : cache.get(`catalog:${base}`, CACHE_TTL_MS, read));
   } catch {
     return null;
   }
@@ -399,19 +415,31 @@ export async function getCatalogCandidate(input: {
   const url = catalogUrl("/catalog-agent", input.env ?? process.env);
   if (!url) return null;
   url.searchParams.set("agentId", input.agentId);
+  const env = input.env ?? process.env;
+  // Detail is a bounded single-agent read. Never restore stale eligibility after
+  // a mutation merely because a different frontend instance handled the write.
+  const fresh = Boolean(env.BUYER_OBSERVATION_SECRET?.trim());
   try {
-    return await cache.get(`catalog:${url}`, CACHE_TTL_MS, async () => {
+    const read = async () => {
       const response = await fetch(url, {
         cache: "no-store",
-        headers: { accept: "application/json" },
+        headers: catalogReadHeaders(env, fresh),
         signal: AbortSignal.timeout(5_000),
       });
       if (!response.ok) throw new Error("CATALOG_FEED_UNAVAILABLE");
       return parseCatalogCandidateDetail(await response.json(), input.agentId);
-    });
+    };
+    return await (fresh ? read() : cache.get(`catalog:${url}`, CACHE_TTL_MS, read));
   } catch {
     return null;
   }
+}
+
+function catalogReadHeaders(env: Readonly<Record<string, string | undefined>>, fresh: boolean): Record<string, string> {
+  const secret = env.BUYER_OBSERVATION_SECRET?.trim();
+  return { accept: "application/json", ...(fresh && secret ? {
+    authorization: `Bearer ${secret}`, "x-marketplace-refresh": "1",
+  } : {}) };
 }
 
 export function parseCatalogCandidateDetail(value: unknown, agentId: string): CatalogCandidate {
