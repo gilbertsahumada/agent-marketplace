@@ -231,7 +231,7 @@ export async function healthResponse(
   try {
     const utcDate = new Date(now).toISOString().slice(0, 10);
     const dailyBudgetKey = `daily_budget_${utcDate.replaceAll("-", "")}`;
-    const runtimeKeys = [...RUNTIME_KEYS, dailyBudgetKey];
+    const runtimeKeys = [...RUNTIME_KEYS, dailyBudgetKey, "catalog_sweep_hour"];
     const rows = await readRuntimeStates(
       createDatabase(db as unknown as D1DatabaseLike), runtimeKeys,
     ) as RuntimeRow[];
@@ -247,6 +247,11 @@ export async function healthResponse(
         const row = latest[0];
         return {
           available: options.quoteQueueAvailable === true,
+          sweep: (() => {
+            const metrics = rows.find(entry => entry.key === "catalog_sweep_hour");
+            if (!metrics?.textValue) return null;
+            return { windowStart: metrics.integerValue, updatedAt: metrics.updatedAt, unit: "physical executions", counters: JSON.parse(metrics.textValue), note: "UTC-hour counters; not unique agents or a queue backlog. Compare enqueued/completed with queue wait and errors." };
+          })(),
           pending: count("discovered") + count("stale") + count("failed"),
           ready: count("ready"),
           stale: count("stale"),
