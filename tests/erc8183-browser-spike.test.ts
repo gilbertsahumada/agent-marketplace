@@ -309,6 +309,8 @@ describe("receipts and recovery", () => {
       ),
     ).toThrow(/does not match/);
     expect(() => validateRecoveredJobForResume(job(), hirePlan(), "900")).not.toThrow();
+    expect(() => validateRecoveredJobForResume(job({ description: "Another quote" }), hirePlan(), "900")).toThrow(/does not match/);
+    expect(() => validateRecoveredJobForResume(job({ buyer: getAddress("0x9999999999999999999999999999999999999999") }), hirePlan(), "900")).toThrow(/does not match/);
     expect(parseBrowserJournal({
       ...restored,
       lastConfirmedStep: "wallet_has_the_key",
@@ -325,7 +327,8 @@ describe("receipts and recovery", () => {
       transactions: {},
       lastConfirmedStep: "created",
     });
-    expect([...values.values()]).toHaveLength(1);
+    expect([...values.values()]).toHaveLength(2);
+    expect([...values.keys()].some(key => key.endsWith(`:job:${BUYER.toLowerCase()}:900`))).toBe(true);
   });
 });
 
