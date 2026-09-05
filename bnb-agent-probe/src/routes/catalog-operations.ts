@@ -24,6 +24,9 @@ export async function catalogOperationsResponse(
       batchSize: config.catalogProbeBatchSize,
       concurrency: config.catalogProbeConcurrency,
       validationRequestsPerDay: config.catalogValidationRequestsPerDay,
+      validationRequestsPerCallerDay: config.catalogValidationRequestsPerCallerDay,
+      validationRequestsPerAgentDay: config.catalogValidationRequestsPerAgentDay,
+      validationRequestsPerOriginDay: config.catalogValidationRequestsPerOriginDay,
       projectedQueueOperationsPerDay: config.projectedDailyBudget?.queueOperations ?? null,
       ingest: {
         discoveryPageSize: config.catalogDiscoveryPageSize,

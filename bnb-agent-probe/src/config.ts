@@ -20,8 +20,13 @@ export interface WorkerConfig {
   catalogResponseCacheSeconds: number;
   catalogProbeBatchSize: number;
   catalogProbeConcurrency: number;
+  /** Maximum due sellers enqueued for the dedicated quote-capability queue per tick. */
+  catalogQuoteBatchSize: number;
+  catalogQuoteConcurrency: number;
   catalogValidationRequestsPerDay: number;
   catalogValidationRequestsPerCallerDay: number;
+  catalogValidationRequestsPerAgentDay: number;
+  catalogValidationRequestsPerOriginDay: number;
   hireEventsPerCallerDay: number;
   commerceIndexEnabled: boolean;
   commerceIndexBlocksPerRun: number;
@@ -157,8 +162,12 @@ const FREE_PROFILE: Profile = {
     probeBatchSize: 1,
     catalogProbeBatchSize: 1,
     catalogProbeConcurrency: 2,
+    catalogQuoteBatchSize: 1,
+    catalogQuoteConcurrency: 1,
     catalogValidationRequestsPerDay: 100,
     catalogValidationRequestsPerCallerDay: 10,
+    catalogValidationRequestsPerAgentDay: 25,
+    catalogValidationRequestsPerOriginDay: 25,
     hireEventsPerCallerDay: 20,
     commerceIndexBlocksPerRun: 500,
     commerceIndexFinalityBlocks: 15,
@@ -197,8 +206,12 @@ const FREE_PROFILE: Profile = {
     probeBatchSize: 1,
     catalogProbeBatchSize: 4,
     catalogProbeConcurrency: 2,
+    catalogQuoteBatchSize: 4,
+    catalogQuoteConcurrency: 2,
     catalogValidationRequestsPerDay: 500,
     catalogValidationRequestsPerCallerDay: 500,
+    catalogValidationRequestsPerAgentDay: 500,
+    catalogValidationRequestsPerOriginDay: 500,
     hireEventsPerCallerDay: 200,
     commerceIndexBlocksPerRun: 50_000,
     commerceIndexFinalityBlocks: 200,
@@ -238,8 +251,12 @@ const PAID_PROFILE: Profile = {
     probeBatchSize: 10,
     catalogProbeBatchSize: 4,
     catalogProbeConcurrency: 2,
+    catalogQuoteBatchSize: 4,
+    catalogQuoteConcurrency: 2,
     catalogValidationRequestsPerDay: 1_000,
     catalogValidationRequestsPerCallerDay: 100,
+    catalogValidationRequestsPerAgentDay: 250,
+    catalogValidationRequestsPerOriginDay: 250,
     hireEventsPerCallerDay: 200,
     commerceIndexBlocksPerRun: 2_000,
     commerceIndexFinalityBlocks: 15,
@@ -277,8 +294,12 @@ const PAID_PROFILE: Profile = {
     probeBatchSize: 100,
     catalogProbeBatchSize: 100,
     catalogProbeConcurrency: 4,
+    catalogQuoteBatchSize: 100,
+    catalogQuoteConcurrency: 4,
     catalogValidationRequestsPerDay: 10_000,
     catalogValidationRequestsPerCallerDay: 1_000,
+    catalogValidationRequestsPerAgentDay: 10_000,
+    catalogValidationRequestsPerOriginDay: 10_000,
     hireEventsPerCallerDay: 2_000,
     commerceIndexBlocksPerRun: 50_000,
     commerceIndexFinalityBlocks: 200,
@@ -316,8 +337,12 @@ const NUMERIC_FIELDS = {
   PROBE_BATCH_SIZE: "probeBatchSize",
   CATALOG_PROBE_BATCH_SIZE: "catalogProbeBatchSize",
   CATALOG_PROBE_CONCURRENCY: "catalogProbeConcurrency",
+  CATALOG_QUOTE_BATCH_SIZE: "catalogQuoteBatchSize",
+  CATALOG_QUOTE_CONCURRENCY: "catalogQuoteConcurrency",
   CATALOG_VALIDATION_REQUESTS_PER_DAY: "catalogValidationRequestsPerDay",
   CATALOG_VALIDATION_REQUESTS_PER_CALLER_DAY: "catalogValidationRequestsPerCallerDay",
+  CATALOG_VALIDATION_REQUESTS_PER_AGENT_DAY: "catalogValidationRequestsPerAgentDay",
+  CATALOG_VALIDATION_REQUESTS_PER_ORIGIN_DAY: "catalogValidationRequestsPerOriginDay",
   HIRE_EVENTS_PER_CALLER_DAY: "hireEventsPerCallerDay",
   COMMERCE_INDEX_BLOCKS_PER_RUN: "commerceIndexBlocksPerRun",
   COMMERCE_INDEX_FINALITY_BLOCKS: "commerceIndexFinalityBlocks",
@@ -384,8 +409,12 @@ function parseInteger(field: keyof typeof NUMERIC_FIELDS, raw: string, maximum: 
     "PROBE_BATCH_SIZE",
     "CATALOG_PROBE_BATCH_SIZE",
     "CATALOG_PROBE_CONCURRENCY",
+    "CATALOG_QUOTE_BATCH_SIZE",
+    "CATALOG_QUOTE_CONCURRENCY",
     "CATALOG_VALIDATION_REQUESTS_PER_DAY",
     "CATALOG_VALIDATION_REQUESTS_PER_CALLER_DAY",
+    "CATALOG_VALIDATION_REQUESTS_PER_AGENT_DAY",
+    "CATALOG_VALIDATION_REQUESTS_PER_ORIGIN_DAY",
     "HIRE_EVENTS_PER_CALLER_DAY",
     "COMMERCE_INDEX_BLOCKS_PER_RUN",
     "COMMERCE_INDEX_FINALITY_BLOCKS",
@@ -577,6 +606,18 @@ export function loadConfig(env: Partial<Env>): WorkerConfig {
       values.catalogValidationRequestsPerDay,
     );
   }
+  if (source.CATALOG_VALIDATION_REQUESTS_PER_AGENT_DAY === undefined) {
+    values.catalogValidationRequestsPerAgentDay = Math.min(
+      values.catalogValidationRequestsPerAgentDay,
+      values.catalogValidationRequestsPerDay,
+    );
+  }
+  if (source.CATALOG_VALIDATION_REQUESTS_PER_ORIGIN_DAY === undefined) {
+    values.catalogValidationRequestsPerOriginDay = Math.min(
+      values.catalogValidationRequestsPerOriginDay,
+      values.catalogValidationRequestsPerDay,
+    );
+  }
 
   if (values.trust8004RequestsPerRun > values.externalSubrequestsPerRun) {
     throw new ConfigError(
@@ -595,6 +636,18 @@ export function loadConfig(env: Partial<Env>): WorkerConfig {
   if (values.catalogValidationRequestsPerCallerDay > values.catalogValidationRequestsPerDay) {
     throw new ConfigError(
       "CATALOG_VALIDATION_REQUESTS_PER_CALLER_DAY",
+      "must not exceed CATALOG_VALIDATION_REQUESTS_PER_DAY",
+    );
+  }
+  if (values.catalogValidationRequestsPerAgentDay > values.catalogValidationRequestsPerDay) {
+    throw new ConfigError(
+      "CATALOG_VALIDATION_REQUESTS_PER_AGENT_DAY",
+      "must not exceed CATALOG_VALIDATION_REQUESTS_PER_DAY",
+    );
+  }
+  if (values.catalogValidationRequestsPerOriginDay > values.catalogValidationRequestsPerDay) {
+    throw new ConfigError(
+      "CATALOG_VALIDATION_REQUESTS_PER_ORIGIN_DAY",
       "must not exceed CATALOG_VALIDATION_REQUESTS_PER_DAY",
     );
   }

@@ -52,7 +52,7 @@ const TOOL_DOCS: ToolDoc[] = [
   "categories": [{ "category": "grid_trading", "count": 1, … }, …]
 }`,
     notes: [
-      "availability=hireable currently requires quote evidence observed in the last 60 seconds, so it is stricter than the Passport state and often empty between probe runs. Discover with availability=all and read the Passport per agent.",
+      "availability=hireable is retained as a compatibility alias for Ready to quote: it uses the marketplace's 24-hour capability evidence, not a transactable buyer quote. A fresh quote is still required before prepare/funding.",
     ],
   },
   {
@@ -105,7 +105,7 @@ const TOOL_DOCS: ToolDoc[] = [
   {
     name: "request_quote",
     summary:
-      "Request a fresh ERC-8183 quote from the network's admitted seller. The server validates the quote against its allowlist (seller, contracts, token, budget ceiling, expiry) before returning it. Free — signs nothing.",
+      "Request a fresh ERC-8183 quote from a compatible seller. The server validates the quote against its allowlist (seller, contracts, token, budget ceiling, expiry) before returning it. Free — signs nothing.",
     params: [
       { name: "network", type: "enum", required: true, description: "testnet or mainnet." },
     ],
@@ -273,8 +273,8 @@ guardrails: spend ceiling 1 raw, key received by server: false
 dry run complete — quote validated, plan verified against the pinned allowlist, nothing signed.`}</CodeBlock>
         <p>
           With <InlineCode>AGENT_BUYER_PRIVATE_KEY</InlineCode> set (a funded Testnet key that never
-          leaves the process), the same command signs and sends the five transactions. The sequence
-          is verified end to end against the deployed Testnet contracts on a fork — a real
+          leaves the process), the same command signs and sends the required four or five
+          transactions. The sequence is verified end to end against the deployed Testnet contracts on a fork — a real
           production quote and prepared plan, then:
         </p>
         <CodeBlock title="fork-verified transaction sequence (deployed contracts, real plan)">{`1 createJob: success   → jobId 874
@@ -311,9 +311,9 @@ dry run complete — quote validated, plan verified against the pinned allowlist
                 <td className="px-3 py-2 text-zinc-400">Prepare returns <em>what to sign</em> — the intents, deadlines and guardrails — never a signature.</td>
               </tr>
               <tr className="border-b border-white/[0.06]">
-                <td className="px-3 py-2 text-zinc-400">Sign + send 5 transactions</td>
+                <td className="px-3 py-2 text-zinc-400">Authorize + send 4–5 calls</td>
                 <td className="whitespace-nowrap px-3 py-2 font-mono text-zinc-200">buyer&apos;s wallet → chain</td>
-                <td className="px-3 py-2 text-zinc-400">The key never leaves the buyer; the marketplace is not in the money path.</td>
+                <td className="px-3 py-2 text-zinc-400">The plan is not sent during review; the key never leaves the buyer. A compatible wallet may batch the calls.</td>
               </tr>
               <tr>
                 <td className="px-3 py-2 text-zinc-400">Track · Result · Ledger</td>

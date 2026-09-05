@@ -51,7 +51,7 @@ describe("AgentValidationActions", () => {
 
     expect(validateEndpointInBrowser).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: /validate from browser/i }));
-    await screen.findByText("cors blocked");
+    await screen.findByText("Browser blocked by CORS");
     expect(screen.getByText(/not proof that the agent is unreachable/i)).toBeInTheDocument();
     expect(screen.getByText(/saved as browser-reported evidence/i)).toBeInTheDocument();
   });
@@ -256,7 +256,7 @@ describe("AgentValidationActions", () => {
       endpoint: "https://seller.example/mcp",
     }]} />);
 
-    expect(screen.getByText(/Shared: protocol valid · scheduled Worker/)).toBeInTheDocument();
+    expect(screen.getByText(/Shared: Endpoint response verified · scheduled Worker/)).toBeInTheDocument();
     expect(screen.getByText(/HTTP 200 · 340 ms/)).toBeInTheDocument();
     expect(screen.queryByText(/no browser result was recorded/i)).not.toBeInTheDocument();
   });
@@ -297,7 +297,7 @@ describe("AgentValidationActions", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /validate through marketplace/i }));
 
-    expect(await screen.findByText(/MCP protocol valid · HTTP 200 · 340 ms · 2 attempts/i)).toBeInTheDocument();
+    expect(await screen.findByText(/MCP endpoint response verified · HTTP 200 · 340 ms · 2 attempts/i)).toBeInTheDocument();
   });
 
   it("keeps a non-terminal validation retryable after the bounded polling window", async () => {

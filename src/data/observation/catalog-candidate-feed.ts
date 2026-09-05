@@ -17,9 +17,21 @@ const OPERATIONAL_STATUSES = ["pending", "browser_observed", "platform_reachable
 const FRESHNESS = ["never", "live", "historical", "stale"] as const;
 const COMMERCE_STATUSES = ["none", "declared", "admission_pending", "admitted", "suspended"] as const;
 const QUOTE_STATUSES = ["not_supported", "not_requested", "verified_fresh", "verified_historical", "rejected"] as const;
+const CAPABILITY_STATES = ["unsupported", "discovered", "ready", "stale", "failed", "suspended"] as const;
 const BUYER_ACTIONS = ["unavailable", "check_availability", "request_quote", "prepare_hire"] as const;
 const VALIDATION_KINDS = ["reachability", "protocol", "quote", "chain"] as const;
 const VERIFICATION_LEVELS = ["user_observed", "platform_observed", "cryptographic", "onchain"] as const;
+
+/**
+ * The catalogue is cached briefly to protect the public feed. Validation and
+ * quote actions write a new observation out of band, so those write routes
+ * call this hook before asking the browser to refresh its server-rendered
+ * card. Without it, a successful check could remain invisible for the cache
+ * TTL (or until a hard reload).
+ */
+export function invalidateCatalogCandidateCache(): void {
+  cache.clear();
+}
 
 function record(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("CATALOG_FEED_INVALID");
@@ -162,7 +174,34 @@ function candidate(value: unknown, schemaVersion: 1 | 2): CatalogCandidate {
     || !FRESHNESS.includes(stateValue.freshness as typeof FRESHNESS[number])
     || !COMMERCE_STATUSES.includes(stateValue.commerceStatus as typeof COMMERCE_STATUSES[number])
     || !QUOTE_STATUSES.includes(stateValue.quoteStatus as typeof QUOTE_STATUSES[number])
-    || !BUYER_ACTIONS.includes(stateValue.buyerAction as typeof BUYER_ACTIONS[number]))) {
+    || !BUYER_ACTIONS.includes(stateValue.buyerAction as typeof BUYER_ACTIONS[number])
+    || (stateValue.capabilityState !== undefined
+      && !CAPABILITY_STATES.includes(stateValue.capabilityState as typeof CAPABILITY_STATES[number]))
+    || (stateValue.capabilityEndpointKey !== undefined && stateValue.capabilityEndpointKey !== null
+      && !/^[a-f0-9]{64}$/.test(String(stateValue.capabilityEndpointKey)))
+    || (stateValue.capabilityTransport !== undefined && stateValue.capabilityTransport !== null
+      && !["a2a", "mcp", "erc8183_http"].includes(String(stateValue.capabilityTransport)))
+    || (stateValue.capabilityLastAttemptAt !== undefined && stateValue.capabilityLastAttemptAt !== null
+      && !Number.isSafeInteger(stateValue.capabilityLastAttemptAt))
+    || (stateValue.capabilityLastErrorCode !== undefined && stateValue.capabilityLastErrorCode !== null
+      && (typeof stateValue.capabilityLastErrorCode !== "string"
+        || !/^[A-Z][A-Z0-9_]{2,63}$/.test(stateValue.capabilityLastErrorCode)))
+    || (stateValue.capabilityExpiresAt !== undefined && stateValue.capabilityExpiresAt !== null
+      && !Number.isSafeInteger(stateValue.capabilityExpiresAt))
+    || (stateValue.quoteRequestCount !== undefined
+      && (!Number.isSafeInteger(stateValue.quoteRequestCount) || Number(stateValue.quoteRequestCount) < 0))
+    || (stateValue.quoteSuccessCount !== undefined
+      && (!Number.isSafeInteger(stateValue.quoteSuccessCount) || Number(stateValue.quoteSuccessCount) < 0))
+    || (stateValue.lastQuoteAttemptAt !== undefined && stateValue.lastQuoteAttemptAt !== null
+      && !Number.isSafeInteger(stateValue.lastQuoteAttemptAt))
+    || (stateValue.jobCount !== undefined
+      && (!Number.isSafeInteger(stateValue.jobCount) || Number(stateValue.jobCount) < 0))
+    || (stateValue.completedJobCount !== undefined
+      && (!Number.isSafeInteger(stateValue.completedJobCount) || Number(stateValue.completedJobCount) < 0))
+    || (stateValue.fundedJobCount !== undefined
+      && (!Number.isSafeInteger(stateValue.fundedJobCount) || Number(stateValue.fundedJobCount) < 0))
+    || (stateValue.submittedJobCount !== undefined
+      && (!Number.isSafeInteger(stateValue.submittedJobCount) || Number(stateValue.submittedJobCount) < 0)))) {
     throw new Error("CATALOG_FEED_INVALID");
   }
   const state = stateValue === null ? undefined : {
@@ -175,6 +214,19 @@ function candidate(value: unknown, schemaVersion: 1 | 2): CatalogCandidate {
     canRequestInfrastructureValidation: boolean(stateValue.canRequestInfrastructureValidation),
     canRequestQuote: boolean(stateValue.canRequestQuote),
     canPrepareHire: boolean(stateValue.canPrepareHire),
+    ...(stateValue.capabilityState === undefined ? {} : { capabilityState: stateValue.capabilityState as Exclude<NonNullable<CatalogCandidate["state"]>["capabilityState"], undefined> }),
+    ...(stateValue.capabilityEndpointKey === undefined ? {} : { capabilityEndpointKey: string(stateValue.capabilityEndpointKey, true) }),
+    ...(stateValue.capabilityTransport === undefined ? {} : { capabilityTransport: stateValue.capabilityTransport as "a2a" | "mcp" | "erc8183_http" | null }),
+    ...(stateValue.capabilityLastAttemptAt === undefined ? {} : { capabilityLastAttemptAt: stateValue.capabilityLastAttemptAt as number | null }),
+    ...(stateValue.capabilityLastErrorCode === undefined ? {} : { capabilityLastErrorCode: string(stateValue.capabilityLastErrorCode, true) }),
+    ...(stateValue.capabilityExpiresAt === undefined ? {} : { capabilityExpiresAt: stateValue.capabilityExpiresAt as number | null }),
+    ...(stateValue.quoteRequestCount === undefined ? {} : { quoteRequestCount: Number(stateValue.quoteRequestCount) }),
+    ...(stateValue.quoteSuccessCount === undefined ? {} : { quoteSuccessCount: Number(stateValue.quoteSuccessCount) }),
+    ...(stateValue.lastQuoteAttemptAt === undefined ? {} : { lastQuoteAttemptAt: stateValue.lastQuoteAttemptAt as number | null }),
+    ...(stateValue.jobCount === undefined ? {} : { jobCount: Number(stateValue.jobCount) }),
+    ...(stateValue.completedJobCount === undefined ? {} : { completedJobCount: Number(stateValue.completedJobCount) }),
+    ...(stateValue.fundedJobCount === undefined ? {} : { fundedJobCount: Number(stateValue.fundedJobCount) }),
+    ...(stateValue.submittedJobCount === undefined ? {} : { submittedJobCount: Number(stateValue.submittedJobCount) }),
     blockingReasons: Array.isArray(stateValue.blockingReasons)
       ? stateValue.blockingReasons.map((reason) => string(reason)!)
       : (() => { throw new Error("CATALOG_FEED_INVALID"); })(),
@@ -214,13 +266,26 @@ function facets(value: unknown): CatalogFacetCounts {
   const item = record(value);
   const statuses = record(item.statuses);
   const categories = record(item.categories);
+  const reachabilityValue = item.reachability;
+  const reachability = reachabilityValue === undefined ? undefined : record(reachabilityValue);
   if (CATALOG_STATUSES.some((status) => !Number.isSafeInteger(statuses[status]) || Number(statuses[status]) < 0)
-    || MARKETPLACE_CATEGORIES.some((category) => !Number.isSafeInteger(categories[category]) || Number(categories[category]) < 0)) {
+    || MARKETPLACE_CATEGORIES.some((category) => !Number.isSafeInteger(categories[category]) || Number(categories[category]) < 0)
+    || (reachability !== undefined && ["live", "historical", "never", "browser_observed"].some((key) => (
+      !Number.isSafeInteger(reachability[key]) || Number(reachability[key]) < 0
+    )))) {
     throw new Error("CATALOG_FEED_INVALID");
   }
   return {
     statuses: Object.fromEntries(CATALOG_STATUSES.map((status) => [status, Number(statuses[status])])) as CatalogFacetCounts["statuses"],
     categories: Object.fromEntries(MARKETPLACE_CATEGORIES.map((category) => [category, Number(categories[category])])) as CatalogFacetCounts["categories"],
+    ...(reachability ? {
+      reachability: {
+        live: Number(reachability.live),
+        historical: Number(reachability.historical),
+        never: Number(reachability.never),
+        browser_observed: Number(reachability.browser_observed),
+      },
+    } : {}),
   };
 }
 

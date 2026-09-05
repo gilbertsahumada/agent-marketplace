@@ -2,7 +2,7 @@
 import "@testing-library/jest-dom/vitest";
 import type { AnchorHTMLAttributes } from "react";
 import { createElement } from "react";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import axe from "axe-core";
 import type { HireActivity, HireJob, HireJobDetail, HireJobEvent, HireLedgerSummary } from "../src/business/entities/hire-job.ts";
@@ -226,11 +226,11 @@ describe("HireLedgerPage", () => {
   it("names the two counts as activity and reports a succeeded index run", async () => {
     render(createElement(HireLedgerPage, { chainId: 56, summary: summary(), page }));
 
-    expect(screen.getByRole("heading", { level: 2, name: "All Commerce jobs" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { level: 2, name: "Hired via this marketplace" })).toBeInTheDocument();
-    expect(screen.getByText(/Jobs with a chain-verified hire event recorded by this marketplace/)).toBeInTheDocument();
-    expect(screen.queryByText(/Processed through|^Protocol$/)).not.toBeInTheDocument();
-    expect(screen.getByText(/last run succeeded/)).toBeInTheDocument();
+    expect(screen.getByText("Protocol jobs indexed")).toBeInTheDocument();
+    expect(screen.getByText("Attributed to marketplace")).toBeInTheDocument();
+    expect(screen.getByText(/Marketplace attribution confirms a recorded hire event/)).toBeInTheDocument();
+    expect(screen.queryByText("My jobs")).not.toBeInTheDocument();
+    expect(screen.getByText(/Last run succeeded/)).toBeInTheDocument();
     expect(screen.queryByText(/last run ok/)).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Older jobs" })).toHaveAttribute("href", "/jobs?chainId=56&before=56695");
     expect(screen.queryByRole("link", { name: "Newest jobs" })).not.toBeInTheDocument();
@@ -240,9 +240,18 @@ describe("HireLedgerPage", () => {
   it("maps a failed index run and offers the way back to the newest page", () => {
     render(createElement(HireLedgerPage, { chainId: 56, summary: summary({ lastIndexRun: { status: "error", at: NOW } }), page: { ...page, nextBefore: null }, before: "56695" }));
 
-    expect(screen.getByText(/last run failed/)).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Jobs before #56695" })).toBeInTheDocument();
+    expect(screen.getByText(/Last run failed/)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Indexed jobs before #56695" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Newest jobs" })).toHaveAttribute("href", "/jobs?chainId=56");
+  });
+
+  it.each([
+    ["idle", "Waiting for new blocks"],
+    ["initialized", "Index initialized"],
+  ])("does not label an %s index run as failed", (status, label) => {
+    render(createElement(HireLedgerPage, { chainId: 56, summary: summary({ lastIndexRun: { status, at: NOW } }), page }));
+    expect(screen.getByText(new RegExp(label))).toBeInTheDocument();
+    expect(screen.queryByText(/Last run failed/)).not.toBeInTheDocument();
   });
 
   it("keeps the recent jobs when only the counts are unavailable", () => {
@@ -257,9 +266,8 @@ describe("HireLedgerPage", () => {
   it("keeps the counts when only the recent jobs are unavailable", () => {
     render(createElement(HireLedgerPage, { chainId: 56, summary: summary(), page: null }));
 
-    expect(screen.getByText("Recent jobs temporarily unavailable.")).toBeInTheDocument();
+    expect(screen.getByText("Indexed ledger temporarily unavailable.")).toBeInTheDocument();
     expect(screen.getByText("56,697")).toBeInTheDocument();
-    expect(screen.queryByText("Indexed ledger temporarily unavailable.")).not.toBeInTheDocument();
     expect(screen.queryByText(/Counts temporarily unavailable/)).not.toBeInTheDocument();
   });
 
@@ -267,9 +275,8 @@ describe("HireLedgerPage", () => {
     render(createElement(HireLedgerPage, { chainId: 56, summary: null, page: null, activity: null }));
 
     expect(screen.getByText("Indexed ledger temporarily unavailable.")).toBeInTheDocument();
-    expect(screen.queryByText(/Counts temporarily unavailable/)).not.toBeInTheDocument();
+    expect(screen.getByText(/Counts temporarily unavailable/)).toBeInTheDocument();
     expect(screen.queryByText(/Recent jobs temporarily unavailable/)).not.toBeInTheDocument();
-    expect(screen.queryByText(/Recent activity temporarily unavailable/)).not.toBeInTheDocument();
   });
 
   it("shows the last 30 days as phase totals plus a per-day table with the indexing note", async () => {
@@ -281,10 +288,9 @@ describe("HireLedgerPage", () => {
     expect(totals).toHaveTextContent("Settled1");
     expect(totals).toHaveTextContent("Refunded1");
     const table = screen.getByRole("table", { name: "Phase events per UTC day" });
-    expect(table).toBeInTheDocument();
-    expect(screen.getAllByRole("columnheader").map((cell) => cell.textContent)).toEqual(["Day", "Created", "Funded", "Submitted", "Settled", "Refunded"]);
-    expect(screen.getByRole("rowheader", { name: "2026-09-01" })).toBeInTheDocument();
-    expect(screen.getByRole("rowheader", { name: "2026-09-02" })).toBeInTheDocument();
+    expect(within(table).getAllByRole("columnheader").map((cell) => cell.textContent)).toEqual(["Day", "Created", "Funded", "Submitted", "Settled", "Refunded"]);
+    expect(within(table).getByRole("rowheader", { name: "2026-09-01" })).toBeInTheDocument();
+    expect(within(table).getByRole("rowheader", { name: "2026-09-02" })).toBeInTheDocument();
     expect(screen.getByText("Counts phase events indexed since the ledger started; earlier jobs are present by state only.")).toBeInTheDocument();
     expect(document.body.textContent).not.toMatch(/proven/i);
     expect((await axe.run(document.body)).violations).toEqual([]);
@@ -294,7 +300,7 @@ describe("HireLedgerPage", () => {
     render(createElement(HireLedgerPage, { chainId: 56, summary: summary(), page, activity: activity({ byDay: [], totals: { created: 0, funded: 0, submitted: 0, settled: 0, refunded: 0 } }) }));
 
     expect(screen.getByRole("heading", { level: 2, name: "Last 30 days" })).toBeInTheDocument();
-    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+    expect(screen.queryByRole("table", { name: "Phase events per UTC day" })).not.toBeInTheDocument();
     expect(screen.getByText("No phase events indexed in this window.")).toBeInTheDocument();
     expect(screen.getByText(/Counts phase events indexed since the ledger started/)).toBeInTheDocument();
   });

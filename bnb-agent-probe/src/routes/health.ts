@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import type { WorkerConfig } from "../config";
 import type { D1Database } from "../types";
 import type { D1DatabaseLike } from "../db/client";
@@ -44,9 +45,8 @@ type SafeSummary = {
 };
 
 type HealthOptions = {
-  // Derived from the presence of the per-chain RPC secret; the URL itself
-  // never reaches this route.
-  rpcConfigured?: { 56: boolean; 97: boolean };
+  readonly quoteQueueAvailable?: boolean;
+  readonly rpcConfigured?: { readonly 56: boolean; readonly 97: boolean };
 };
 
 type DailyBudget = {
@@ -235,6 +235,26 @@ export async function healthResponse(
     const rows = await readRuntimeStates(
       createDatabase(db as unknown as D1DatabaseLike), runtimeKeys,
     ) as RuntimeRow[];
+    const quoteQueue = config.catalogV2WritesEnabled
+      ? await (async () => {
+        const quoteDb = createDatabase(db as unknown as D1DatabaseLike);
+        const [counts, latest] = await Promise.all([
+          quoteDb.all<{ state: string; total: number }>(sql`SELECT state, COUNT(*) AS total FROM catalog_seller_capabilities GROUP BY state`),
+          quoteDb.all<{ lastAttemptAt: number | null; nextProbeAt: number | null }>(sql`SELECT MAX(lastAttemptAt) AS lastAttemptAt, MIN(CASE WHEN state IN ('discovered','stale','failed') THEN nextProbeAt END) AS nextProbeAt FROM catalog_seller_capabilities`),
+        ]);
+        const count = (state: string) => Number(counts.find((row) => row.state === state)?.total ?? 0);
+        const row = latest[0];
+        return {
+          available: options.quoteQueueAvailable === true,
+          pending: count("discovered") + count("stale") + count("failed"),
+          ready: count("ready"),
+          stale: count("stale"),
+          failed: count("failed"),
+          lastProcessedAt: row?.lastAttemptAt ?? null,
+          nextProbeAt: row?.nextProbeAt ?? null,
+        };
+      })()
+      : { available: options.quoteQueueAvailable === true, pending: 0, ready: 0, stale: 0, failed: 0, lastProcessedAt: null, nextProbeAt: null };
     const byKey = new Map(rows.map((row) => [row.key, row]));
     const summaryRows = [
       byKey.get("last_header_summary"),
@@ -278,6 +298,8 @@ export async function healthResponse(
         sweepLimit: config.sweepLimit,
         sweepPagesPerRun: config.sweepPagesPerRun,
         probeBatchSize: config.probeBatchSize,
+        catalogQuoteBatchSize: config.catalogQuoteBatchSize,
+        catalogQuoteConcurrency: config.catalogQuoteConcurrency,
         trust8004RequestsPerRun: config.trust8004RequestsPerRun,
         externalSubrequestsPerRun: config.externalSubrequestsPerRun,
         d1QueriesPerRun: config.d1QueriesPerRun,
@@ -317,6 +339,7 @@ export async function healthResponse(
           },
         },
       },
+      quoteQueue,
     }, 200);
   } catch {
     return json({ status: "unavailable", d1: { available: false } }, 503);

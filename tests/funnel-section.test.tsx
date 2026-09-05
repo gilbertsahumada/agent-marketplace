@@ -38,9 +38,9 @@ describe("FunnelSection", () => {
     expect(screen.queryByText("0")).not.toBeInTheDocument();
   });
 
-  it("keeps the hireable definition and escrow close without figures", () => {
+  it("keeps the ready-to-quote definition and escrow close without figures", () => {
     render(<FunnelSection funnel={null} />);
-    const trigger = screen.getByRole("button", { name: "What “Hireable now” means here" });
+    const trigger = screen.getByRole("button", { name: "What “Ready to quote” means here" });
     fireEvent.click(trigger);
     expect(screen.getByText("What it does not mean")).toBeInTheDocument();
     expect(screen.getByText(/It sits in ERC-8183 escrow\./)).toBeInTheDocument();

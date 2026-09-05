@@ -3,6 +3,7 @@ import "server-only";
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
 
 import { callerFingerprint as fingerprintCaller } from "./caller-fingerprint.ts";
+import { invalidateCatalogCandidateCache } from "./catalog-candidate-feed.ts";
 
 type Environment = Readonly<Record<string, string | undefined>>;
 
@@ -307,6 +308,7 @@ export async function requestCatalogValidation(
       "The validation service returned an invalid status",
     );
   }
+  if (status === "completed") invalidateCatalogCandidateCache();
   return { status, reused, validationId };
 }
 
@@ -371,6 +373,7 @@ export async function getCatalogValidationStatus(
     || hasResult !== (result !== null)) {
     throw new CatalogValidationRequestError("CATALOG_VALIDATION_INVALID_RESPONSE", 502);
   }
+  if (status === "completed" && hasResult) invalidateCatalogCandidateCache();
   return {
     status: status as CatalogValidationStatusResult["status"],
     attemptCount,

@@ -258,7 +258,7 @@ describe("public catalog application adapter", () => {
 
     expect(agent).toMatchObject({
       agentId: "42", name: "Normalized 42", categoryEvaluation: "evaluated",
-      hireability: { status: "protocol_discovered", canHire: false },
+      hireability: { status: "protocol_discovered", canHire: true },
     });
     expect(source.getById).toHaveBeenCalledWith("42");
   });

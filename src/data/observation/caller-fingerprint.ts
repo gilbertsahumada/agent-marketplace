@@ -5,7 +5,7 @@ import { createHmac } from "node:crypto";
 // HMAC of it, keyed by the shared buyer-observation secret, is forwarded, and
 // each purpose has its own prefix so two budgets never share a bucket.
 export function callerFingerprint(
-  purpose: "catalog-validation-caller" | "hire-event-caller",
+  purpose: "catalog-validation-caller" | "hire-event-caller" | "quote-request-caller",
   caller: string | undefined,
   secret: string,
 ): string {

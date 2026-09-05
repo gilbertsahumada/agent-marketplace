@@ -243,7 +243,7 @@ describe("PR 16 marketplace evidence boundaries", () => {
       provenance: "observed",
     });
     expect(card.evidence.find(({ kind }) => kind === "reachable")?.detail)
-      .toContain("returned a protocol-valid response, but it is older than the 15-minute monitoring window");
+      .toContain("returned a verified endpoint response, but it is older than the 15-minute monitoring window");
   });
 
   it("does not treat a recent quote on a removed target as current", () => {
@@ -537,7 +537,7 @@ describe("PR 16 marketplace evidence boundaries", () => {
     process.env.ERC8183_MAINNET_DEMO_ENABLED = "true";
     try {
       expect(determineHireability(marketplaceData("not_qualified", "current"), Date.parse(GENERATED_AT))).toMatchObject({
-        canHire: false,
+        canHire: true,
         status: "protocol_discovered",
       });
       expect(determineHireability(marketplaceData("qualified", "stale"), Date.parse(GENERATED_AT))).toMatchObject({
@@ -553,7 +553,7 @@ describe("PR 16 marketplace evidence boundaries", () => {
       explicit.verification!.selection = "operator_explicit";
       explicit.verification!.operator = "third_party";
       expect(determineHireability(explicit, Date.parse(GENERATED_AT))).toMatchObject({
-        canHire: false,
+        canHire: true,
         status: "protocol_discovered",
       });
     } finally {
@@ -569,7 +569,7 @@ describe("PR 16 marketplace evidence boundaries", () => {
       canHire: false,
       evidence: { source: "marketplace-readiness", kind: "observed", observedAt: GENERATED_AT },
     });
-    expect(result.reason).toContain("older than 60 seconds");
+    expect(result.reason).toContain("outside its release validity window");
   });
 
   it("keeps the last qualified quote visible after the release snapshot expires", () => {

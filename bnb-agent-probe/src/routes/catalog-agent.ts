@@ -1,6 +1,6 @@
 import type { D1DatabaseLike } from "../db/client";
 import { createDatabase, readCatalogAgentEvidence } from "../db/orm";
-import { deriveCatalogEvidenceState } from "../catalog/evidence-policy";
+import { deriveCatalogEvidenceState, selectBestCapability, type CapabilityFact } from "../catalog/evidence-policy";
 import { CATALOG_API_VERSION, publicCatalogDetails, publicCatalogObservation } from "../catalog/api-contract";
 import type { D1Database } from "../types";
 
@@ -37,10 +37,32 @@ export async function catalogAgentResponse(
       headers: { "cache-control": "no-store", "x-content-type-options": "nosniff" },
     });
   }
+  const capabilityRow = selectBestCapability(evidence.capabilities.map((capability) => {
+    const { transport: rawTransport, ...rest } = capability;
+    const transport = rawTransport === "a2a" || rawTransport === "mcp" || rawTransport === "erc8183_http"
+      ? rawTransport as CapabilityFact["transport"] : undefined;
+    return {
+      ...rest,
+      state: capability.state as CapabilityFact["state"],
+      ...(transport ? { transport } : {}),
+    };
+  }), nowMs);
   const state = deriveCatalogEvidenceState({
     endpoints: evidence.endpoints,
     observations: evidence.observations,
     admission: evidence.admission,
+    capability: capabilityRow ? {
+      ...(capabilityRow.endpointKey ? { endpointKey: capabilityRow.endpointKey } : {}),
+      ...(capabilityRow.transport ? { transport: capabilityRow.transport } : {}),
+      state: capabilityRow.state,
+      lastSuccessAt: capabilityRow.lastSuccessAt ?? null,
+      capabilityExpiresAt: capabilityRow.capabilityExpiresAt ?? null,
+      lastAttemptAt: capabilityRow.lastAttemptAt ?? null,
+      consecutiveFailures: capabilityRow.consecutiveFailures ?? 0,
+      lastErrorCode: capabilityRow.lastErrorCode ?? null,
+    } : null,
+    quoteStats: evidence.quoteStats,
+    jobStats: evidence.jobStats,
     nowMs,
   });
   const serializeObservation = publicCatalogObservation;
@@ -93,11 +115,20 @@ export async function catalogAgentResponse(
       latestBrowserEvidence: latestBrowserEvidence ? serializeObservation(latestBrowserEvidence) : null,
     }];
   });
-  const admittedEndpointKey = evidence.admission?.endpointKey ?? null;
+  const capableEndpointKey = capabilityRow?.endpointKey ?? null;
   const quoteObservation = evidence.observations.find((observation) => observation.validationKind === "quote"
     && observation.verificationLevel === "cryptographic"
+    && (() => {
+      try {
+        const details = observation.detailsJson ? JSON.parse(observation.detailsJson) as unknown : null;
+        return !details || typeof details !== "object" || Array.isArray(details)
+          || (details as Record<string, unknown>).quoteKind !== "capability_probe";
+      } catch {
+        return true;
+      }
+    })()
     && observation.endpointKey !== null
-    && (admittedEndpointKey === null || observation.endpointKey === admittedEndpointKey)
+    && (capableEndpointKey === null || observation.endpointKey === capableEndpointKey)
     && currentOperationalEndpointKeys.has(observation.endpointKey)) ?? null;
   const chainObservations = evidence.observations.filter((observation) => observation.validationKind === "chain"
     && observation.verificationLevel === "onchain");
@@ -107,6 +138,19 @@ export async function catalogAgentResponse(
     agentId,
     agent: evidence.agent,
     platformAttemptCount: evidence.platformAttemptCount,
+    capabilities: evidence.capabilities.map((capability) => ({
+      endpointKey: capability.endpointKey,
+      transport: capability.transport,
+      state: capability.state,
+      lastSuccessAt: capability.lastSuccessAt,
+      capabilityExpiresAt: capability.capabilityExpiresAt,
+      nextProbeAt: capability.nextProbeAt,
+      consecutiveFailures: capability.consecutiveFailures,
+      lastAttemptAt: capability.lastAttemptAt,
+      lastErrorCode: capability.lastErrorCode,
+    })),
+    quoteStats: evidence.quoteStats,
+    jobStats: evidence.jobStats,
     declarations: evidence.declarations.map((declaration) => ({
       ...evidence.endpoints.find((endpoint) => endpoint.endpointKey === declaration.endpointKey),
       priority: declaration.priority,
@@ -130,7 +174,6 @@ export async function catalogAgentResponse(
     },
     ingest: evidence.ingestTask,
     platformAttemptCount: evidence.platformAttemptCount,
-    admission: evidence.admission,
     state,
     capabilities: state,
     resources,

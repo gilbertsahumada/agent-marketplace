@@ -95,15 +95,13 @@ describe("/jobs ledger page", () => {
     expect(ledger.summary).toHaveBeenCalledWith({ chainId: 56 });
     expect(ledger.listRecentJobs).toHaveBeenCalledWith({ chainId: 56 });
     expect(html).toContain("56,697");
-    expect(html).toContain("Hired via this marketplace");
-    expect(html).toContain("Indexed through block 119000000");
+    expect(html).toContain("Attributed to marketplace");
+    expect(html).toContain("Index cursor 119000000");
     expect(html).toContain('href="/jobs/mainnet/56696"');
     expect(html).toContain('href="/jobs?chainId=56&amp;before=56695"');
-    expect(html).toContain('data-my-jobs="56"');
-    // The only "track record" on the page is the disclaimer that this is not one.
+    expect(html).not.toContain('data-my-jobs="56"');
     expect(html).not.toMatch(/proven/i);
-    expect(html.match(/track record/gi)).toHaveLength(1);
-    expect(html).toContain("not a track record");
+    expect(html).toContain("not deliverable quality");
   });
 
   it("reads the last 30 days of phase events for the chain and renders the totals with the indexing note", async () => {
@@ -119,8 +117,7 @@ describe("/jobs ledger page", () => {
     expect(html).toContain("2026-09-02");
     expect(html).toContain("Counts phase events indexed since the ledger started; earlier jobs are present by state only.");
     expect(html).not.toContain("Recent activity temporarily unavailable");
-    expect(html).not.toMatch(/proven/i);
-    expect(html.match(/track record/gi)).toHaveLength(1);
+    expect(html).not.toMatch(/proven|track record/i);
   });
 
   it("scopes the activity window to ?provider= and reports it unavailable on its own", async () => {
@@ -131,7 +128,7 @@ describe("/jobs ledger page", () => {
 
     expect(ledger.activity).toHaveBeenCalledWith({ chainId: 97, days: 30, provider: BUYER });
     expect(html).toContain("Recent activity temporarily unavailable.");
-    expect(html).toContain("Hired via this marketplace");
+    expect(html).toContain("Attributed to marketplace");
     expect(html).not.toContain("Indexed ledger temporarily unavailable");
   });
 
@@ -143,8 +140,8 @@ describe("/jobs ledger page", () => {
 
     expect(ledger.listRecentJobs).toHaveBeenCalledWith({ chainId: 97, before: "600" });
     expect(html).toContain('href="/jobs/testnet/551"');
-    expect(html).toContain("Jobs before #600");
-    expect(html).not.toContain("Older jobs");
+    expect(html).toContain("before #600");
+    expect(html).not.toContain('href="/jobs?chainId=97&amp;before=');
     // aria-current sits on the Testnet link and only there.
     expect(html).toMatch(/<a aria-current="page"[^>]*href="\/jobs\?chainId=97"[^>]*>BSC Testnet<\/a>/);
     expect(html).not.toMatch(/<a aria-current="page"[^>]*href="\/jobs\?chainId=56"/);
@@ -159,7 +156,8 @@ describe("/jobs ledger page", () => {
     expect(ledger.listRecentJobs).toHaveBeenCalledWith({ chainId: 56 });
     expect(html).not.toContain("Jobs before #");
     expect(html).toContain("Indexed ledger temporarily unavailable");
-    expect(html).not.toContain("Protocol");
+    expect(html).toContain("Unavailable");
+    expect(html).not.toContain("tabular-nums\">0");
   });
 
   it.each(["1", "abc", "56 ", ""])("404s ?chainId=%s instead of coercing it to Mainnet", async (chainId) => {

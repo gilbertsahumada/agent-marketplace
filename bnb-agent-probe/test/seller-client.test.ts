@@ -4,6 +4,7 @@ import {
   SellerProbeError,
   probeA2aSeller,
   probeErc8183HttpSeller,
+  probeMcpSeller,
 } from "../src/lib/seller-client";
 
 const ENDPOINT = "https://seller.example.com/grid";
@@ -360,5 +361,100 @@ describe("Workers ERC-8183 HTTP seller probe", () => {
       now: () => clock,
       expectedHttpStatus: HTTP_STATUS_EXPECTATION,
     })).rejects.toMatchObject({ code: "SELLER_TIMEOUT" });
+  });
+});
+
+describe("Workers MCP seller quote probe", () => {
+  const mcpTerms = {
+    deliverables: "A deterministic plan",
+    quality_standards: "No transaction execution",
+    evaluation_required: true as const,
+    evaluator_type: "uma_oov3" as const,
+  };
+
+  function exactQuoteTool(inputSchema: unknown = {
+    type: "object",
+    properties: { task_description: { type: "string" }, terms: { type: "object" } },
+    required: ["task_description", "terms"],
+  }) {
+    return { name: "request_quote", inputSchema };
+  }
+
+  function mcpFetch(tools: unknown[], result: Record<string, unknown> = {
+    structuredContent: { request_hash: "0x01" },
+  }) {
+    return vi.fn<typeof fetch>(async (_url, init) => {
+      const request = JSON.parse(String(init?.body)) as { id: string; method: string; params?: unknown };
+      if (request.method === "initialize") {
+        return json({ jsonrpc: "2.0", id: request.id, result: { protocolVersion: "2025-06-18" } }, {
+          headers: { "content-type": "application/json", "mcp-session-id": "session-1" },
+        });
+      }
+      if (request.method === "tools/list") {
+        return json({ jsonrpc: "2.0", id: request.id, result: { tools } });
+      }
+      return json({ jsonrpc: "2.0", id: request.id, result });
+    });
+  }
+
+  it("requires an exact quote tool and sends the canonical request fields unchanged", async () => {
+    const fetchImpl = mcpFetch([exactQuoteTool()]);
+    const quote = await probeMcpSeller({
+      endpoint: "https://seller.example.com/mcp",
+      request: { task_description: "Task", terms: mcpTerms },
+      taskDescription: "Task",
+      terms: mcpTerms,
+      timeoutMs: 5_000,
+      maxResponseBytes: 32_768,
+      fetch: fetchImpl,
+    });
+
+    expect(quote).toMatchObject({ quote: { request_hash: "0x01" } });
+    expect(JSON.parse(String(fetchImpl.mock.calls[2]?.[1]?.body))).toMatchObject({
+      method: "tools/call",
+      params: { name: "request_quote", arguments: { task_description: "Task", terms: mcpTerms } },
+    });
+    expect(fetchImpl.mock.calls[1]?.[1]?.headers).toMatchObject({ "mcp-session-id": "session-1" });
+  });
+
+  it("accepts a standard MCP text content item containing the quote envelope", async () => {
+    await expect(probeMcpSeller({
+      endpoint: "https://seller.example.com/mcp",
+      request: { task_description: "Task", terms: mcpTerms },
+      taskDescription: "Task",
+      terms: mcpTerms,
+      timeoutMs: 5_000,
+      maxResponseBytes: 32_768,
+      fetch: mcpFetch([exactQuoteTool()], { content: [{ type: "text", text: JSON.stringify({ request_hash: "0x02" }) }] }),
+    })).resolves.toMatchObject({ quote: { request_hash: "0x02" } });
+  });
+
+  it.each([
+    [[{ name: "search", inputSchema: { type: "object", properties: {}, required: [] } }], "MCP_QUOTE_TOOL_REQUIRED"],
+    [[exactQuoteTool(null)], "MCP_QUOTE_SCHEMA_INVALID"],
+    [[exactQuoteTool({ type: "object", properties: { task_description: {}, terms: {} }, required: ["task_description"] })], "MCP_QUOTE_SCHEMA_INVALID"],
+  ] as const)("does not make a generic or schema-incompatible MCP server quote-capable", async (tools, code) => {
+    await expect(probeMcpSeller({
+      endpoint: "https://seller.example.com/mcp",
+      request: { task_description: "Task", terms: mcpTerms },
+      taskDescription: "Task",
+      terms: mcpTerms,
+      timeoutMs: 5_000,
+      maxResponseBytes: 32_768,
+      fetch: mcpFetch([...tools]),
+    })).rejects.toMatchObject({ code });
+  });
+
+  it("rejects an uncorrelated JSON-RPC response", async () => {
+    const fetchImpl = vi.fn<typeof fetch>(async () => json({ jsonrpc: "2.0", id: "wrong", result: {} }));
+    await expect(probeMcpSeller({
+      endpoint: "https://seller.example.com/mcp",
+      request: { task_description: "Task", terms: mcpTerms },
+      taskDescription: "Task",
+      terms: mcpTerms,
+      timeoutMs: 5_000,
+      maxResponseBytes: 32_768,
+      fetch: fetchImpl,
+    })).rejects.toMatchObject({ code: "MCP_JSONRPC_INVALID" });
   });
 });

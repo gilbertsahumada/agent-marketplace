@@ -8,6 +8,13 @@ export type CatalogStatus = (typeof CATALOG_STATUSES)[number];
 export interface CatalogFacetCounts {
   statuses: Record<CatalogStatus, number>;
   categories: Record<MarketplaceCategory, number>;
+  /** Reachability facets are optional while older catalog feeds roll forward. */
+  reachability?: {
+    live: number;
+    historical: number;
+    never: number;
+    browser_observed: number;
+  };
 }
 
 export interface CatalogCandidateDeclaration {
@@ -48,7 +55,7 @@ export function isCatalogOperationalDeclaration(declaration: CatalogCandidateDec
 export function isCatalogSellerDeclaration(declaration: CatalogCandidateDeclaration): boolean {
   const protocol = declaration.validationProtocol ?? declaration.protocol;
   return isCatalogOperationalDeclaration(declaration)
-    && (protocol === "a2a" || protocol === "erc8183_http");
+    && (protocol === "a2a" || protocol === "mcp" || protocol === "erc8183_http");
 }
 
 export interface CatalogCandidateObservation {
@@ -102,12 +109,26 @@ export interface CatalogCandidate {
       | "invalid_declaration" | "unsafe" | "unsupported";
     freshness: "never" | "live" | "historical" | "stale";
     commerceStatus: "none" | "declared" | "admission_pending" | "admitted" | "suspended";
+    capabilityState?: "unsupported" | "discovered" | "ready" | "stale" | "failed" | "suspended";
+    /** Endpoint and transport currently selected by the capability ledger. */
+    capabilityEndpointKey?: string | null;
+    capabilityTransport?: "a2a" | "mcp" | "erc8183_http" | null;
+    capabilityLastAttemptAt?: number | null;
+    capabilityLastErrorCode?: string | null;
+    capabilityExpiresAt?: number | null;
     quoteStatus: "not_supported" | "not_requested" | "verified_fresh" | "verified_historical" | "rejected";
     buyerAction: "unavailable" | "check_availability" | "request_quote" | "prepare_hire";
     canRequestBrowserValidation: boolean;
     canRequestInfrastructureValidation: boolean;
     canRequestQuote: boolean;
     canPrepareHire: boolean;
+    quoteRequestCount?: number;
+    quoteSuccessCount?: number;
+    lastQuoteAttemptAt?: number | null;
+    jobCount?: number;
+    completedJobCount?: number;
+    fundedJobCount?: number;
+    submittedJobCount?: number;
     blockingReasons: string[];
   };
   declarations: CatalogCandidateDeclaration[];

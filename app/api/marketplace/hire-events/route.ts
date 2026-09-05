@@ -36,14 +36,16 @@ function input(raw: unknown): HireEventInput {
   }
   const value = raw as Record<string, unknown>;
   const phase = value.phase as HireEventInput["phase"];
-  if (Object.keys(value).sort().join(",") !== KEYS.join(",")
+  const keys = Object.keys(value).filter((key) => key !== "quoteRequestId").sort().join(",");
+  const quoteRequestId = value.quoteRequestId;
+  if (keys !== KEYS.join(",")
     || (value.chainId !== 56 && value.chainId !== 97)
     || typeof value.agentId !== "string" || !AGENT_ID.test(value.agentId)
     || typeof phase !== "string" || !(TELEMETRY_PHASES.has(phase) || CHAIN_PHASES.has(phase))) {
     throw new InvalidMarketplaceInputError("Hire event contract is invalid");
   }
   if (TELEMETRY_PHASES.has(phase)) {
-    if (value.jobId !== null || value.txHash !== null) {
+    if (value.jobId !== null || value.txHash !== null || quoteRequestId !== undefined) {
       throw new InvalidMarketplaceInputError("Telemetry phases carry no job or transaction");
     }
     return { agentId: value.agentId, chainId: value.chainId, phase, jobId: null, txHash: null };
@@ -52,7 +54,14 @@ function input(raw: unknown): HireEventInput {
     || typeof value.txHash !== "string" || !TX_HASH.test(value.txHash)) {
     throw new InvalidMarketplaceInputError("Chain phases require a job id and a transaction hash");
   }
-  return { agentId: value.agentId, chainId: value.chainId, phase, jobId: value.jobId, txHash: value.txHash };
+  if (quoteRequestId !== undefined
+    && (!Number.isSafeInteger(quoteRequestId) || Number(quoteRequestId) < 1)) {
+    throw new InvalidMarketplaceInputError("quoteRequestId must be a positive request id");
+  }
+  return {
+    agentId: value.agentId, chainId: value.chainId, phase, jobId: value.jobId, txHash: value.txHash,
+    ...(quoteRequestId === undefined ? {} : { quoteRequestId: quoteRequestId as number }),
+  };
 }
 
 export async function POST(request: Request) {

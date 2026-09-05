@@ -86,10 +86,6 @@ beforeEach(async () => {
   await env.DB.prepare(`INSERT INTO catalog_agent_endpoints (
     agentKey, endpointKey, declarationState, firstSeenAt, lastSeenAt
   ) VALUES ('eip155:56:42', ?, 'current', ?, ?)`).bind(ENDPOINT_KEY, NOW, NOW).run();
-  await env.DB.prepare(`INSERT INTO catalog_agent_admission (
-    agentKey, state, commerceTransport, endpointKey, chainId, provider, validatedAt, configurationVersion
-  ) VALUES ('eip155:56:42', 'candidate', 'a2a', ?, 56, NULL, NULL, 'test-v2')`)
-    .bind(ENDPOINT_KEY).run();
 });
 
 describe("catalog signed quote evidence", () => {
@@ -130,15 +126,28 @@ describe("catalog signed quote evidence", () => {
     expect(JSON.stringify(storedResults)).not.toContain("provider_sig");
     expect(JSON.stringify(storedResults)).not.toContain("envelope");
     expect(await env.DB.prepare(`SELECT state, commerceTransport, endpointKey, provider, validatedAt
-      FROM catalog_agent_admission WHERE agentKey = 'eip155:56:42'`).first()).toMatchObject({
-      state: "admitted",
-      commerceTransport: "a2a",
-      endpointKey: ENDPOINT_KEY,
-      provider: PROVIDER,
-      validatedAt: NOW,
-    });
+      FROM catalog_agent_admission WHERE agentKey = 'eip155:56:42'`).first()).toBeNull();
     expect(await env.DB.prepare(`SELECT marketplaceConfigured FROM catalog_agents
-      WHERE agentKey = 'eip155:56:42'`).first()).toMatchObject({ marketplaceConfigured: 1 });
+      WHERE agentKey = 'eip155:56:42'`).first()).toMatchObject({ marketplaceConfigured: 0 });
+    expect(await env.DB.prepare(`SELECT state, transport, endpointKey, capabilityExpiresAt
+      FROM catalog_seller_capabilities WHERE agentKey = 'eip155:56:42'`).first()).toMatchObject({
+      state: "ready",
+      transport: "a2a",
+      endpointKey: ENDPOINT_KEY,
+      capabilityExpiresAt: NOW + 24 * 60 * 60 * 1_000,
+    });
+    expect(await env.DB.prepare(`SELECT kind, status, artifactHash
+      FROM catalog_quote_requests WHERE agentKey = 'eip155:56:42'`).first()).toMatchObject({
+      kind: "buyer_quote",
+      status: "succeeded",
+      artifactHash: expect.stringMatching(/^[0-9a-f]{64}$/),
+    });
+    expect(await env.DB.prepare(`SELECT executor, status, outcome
+      FROM catalog_quote_attempts`).first()).toMatchObject({
+      executor: "browser",
+      status: "succeeded",
+      outcome: "quote_verified",
+    });
 
     const replay = await catalogQuoteEvidenceResponse(request(acceptedEnvelope()), env.DB as unknown as D1Database, options);
     expect(replay.status).toBe(200);
@@ -188,11 +197,6 @@ describe("catalog signed quote evidence", () => {
     await env.DB.prepare(`INSERT INTO catalog_agent_endpoints (
       agentKey, endpointKey, declarationState, firstSeenAt, lastSeenAt
     ) VALUES ('eip155:56:43', ?, 'current', ?, ?)`).bind(ENDPOINT_KEY, NOW, NOW).run();
-    await env.DB.prepare(`INSERT INTO catalog_agent_admission (
-      agentKey, state, commerceTransport, endpointKey, chainId, provider, validatedAt, configurationVersion
-    ) VALUES ('eip155:56:43', 'candidate', 'a2a', ?, 56, NULL, NULL, 'test-v2')`)
-      .bind(ENDPOINT_KEY).run();
-
     const verifyQuote = vi.fn(async () => ({ valid: true as const, method: "eip191" as const, signer: PROVIDER }));
     const options = {
       nowMs: NOW,

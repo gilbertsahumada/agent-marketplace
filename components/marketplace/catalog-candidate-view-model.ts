@@ -1,4 +1,5 @@
 import {
+  isCatalogOperationalDeclaration,
   isCatalogOperationalObservation,
   type CatalogCandidate,
 } from "@/src/business/entities/catalog-candidate";
@@ -10,9 +11,35 @@ const FAILURE_OUTCOMES = new Set([
   "http_error", "timeout", "network_error", "invalid_response", "unsafe_url", "quote_rejected", "unreachable", "error",
 ]);
 
+function isBuyerQuoteObservation(observation: CatalogCandidate["observations"][number]): boolean {
+  if (observation.validationKind !== "quote") return true;
+  return !isCapabilityProbeObservation(observation);
+}
+
+function observationDetails(observation: CatalogCandidate["observations"][number]): Record<string, unknown> | null {
+  if (observation.details && typeof observation.details === "object" && !Array.isArray(observation.details)) {
+    return observation.details as Record<string, unknown>;
+  }
+  const serialized = (observation as CatalogCandidate["observations"][number] & { detailsJson?: unknown }).detailsJson;
+  if (typeof serialized !== "string") return null;
+  try {
+    const parsed: unknown = JSON.parse(serialized);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? parsed as Record<string, unknown> : null;
+  } catch {
+    return null;
+  }
+}
+
+function isCapabilityProbeObservation(observation: CatalogCandidate["observations"][number]): boolean {
+  return observation.validationKind === "quote"
+    && observationDetails(observation)?.quoteKind === "capability_probe";
+}
+
 const BLOCKING_REASON_COPY: Record<string, string> = {
   NO_ELIGIBLE_OPERATIONAL_ENDPOINT: "No supported operational endpoint is available for marketplace hiring.",
-  COMMERCE_NOT_ADMITTED: "This seller has not been admitted to the marketplace hiring flow.",
+  NO_QUOTE_TRANSPORT: "No compatible negotiation transport is available for requesting a quote.",
+  MCP_QUOTE_TOOL_REQUIRED: "This MCP endpoint is reachable, but it does not expose the required quote tool yet.",
   FRESH_QUOTE_REQUIRED: "A fresh seller quote is required before preparing the transaction.",
   CURRENT_CHAIN_CHECK_REQUIRED: "Current onchain checks are required before preparing the transaction.",
   CATALOG_STATE_UNAVAILABLE: "Current marketplace capability data is unavailable for this agent.",
@@ -74,13 +101,20 @@ export function catalogCandidateCard(
   const browser = candidate.observations
     .filter((observation) => observation.source === "browser_reported")
     .sort((left, right) => right.observedAt - left.observedAt || right.id - left.id);
+  const capableEndpointKey = candidate.state?.capabilityState === undefined
+    ? candidate.admission?.endpointKey ?? null
+    : candidate.state.capabilityEndpointKey ?? null;
+  const capabilityObservation = candidate.observations
+    .filter((observation) => isCapabilityProbeObservation(observation)
+      && observation.outcome === "quote_verified"
+      && isCatalogOperationalObservation(candidate, observation)
+      && (capableEndpointKey === null || observation.endpointKey === capableEndpointKey))
+    .sort((left, right) => right.observedAt - left.observedAt || right.id - left.id)[0];
   const quote = candidate.observations
-    .filter((observation) => (observation.validationKind === "quote"
+    .filter((observation) => isBuyerQuoteObservation(observation) && (observation.validationKind === "quote"
       && observation.verificationLevel === "cryptographic"
       && isCatalogOperationalObservation(candidate, observation)
-      && (candidate.admission?.endpointKey === null
-        || candidate.admission?.endpointKey === undefined
-        || observation.endpointKey === candidate.admission.endpointKey))
+      && (capableEndpointKey === null || observation.endpointKey === capableEndpointKey))
       || (observation.validationKind === undefined
         && PLATFORM_SOURCES.has(observation.source)
         && isCatalogOperationalObservation(candidate, observation)
@@ -91,17 +125,31 @@ export function catalogCandidateCard(
   const transport = platform.find((observation) => observation.outcome === "protocol_valid"
     || observation.outcome === "quote_verified"
     || (observation.protocol !== "erc8183" && FAILURE_OUTCOMES.has(observation.outcome)))
+    ?? capabilityObservation
     ?? (quote?.validationKind === "quote" && quote.verificationLevel === "cryptographic" ? quote : undefined);
-  const freshTransport = (transport?.outcome === "protocol_valid" || transport?.outcome === "quote_verified")
-    && transport.expiresAt !== null && transport.expiresAt > now;
-  const staleTransport = (transport?.outcome === "protocol_valid" || transport?.outcome === "quote_verified")
-    && !freshTransport;
+  const capabilityReady = candidate.state?.capabilityState === "ready"
+    && candidate.state.capabilityExpiresAt !== null
+    && candidate.state.capabilityExpiresAt !== undefined
+    && candidate.state.capabilityExpiresAt > now;
+  const capabilityStale = candidate.state?.capabilityState === "stale"
+    || (candidate.state?.capabilityState === "ready"
+      && (candidate.state.capabilityExpiresAt === null
+        || candidate.state.capabilityExpiresAt === undefined
+        || candidate.state.capabilityExpiresAt <= now));
+  const capabilityReachable = capabilityReady
+    && (capabilityObservation !== undefined || candidate.state?.capabilityLastAttemptAt != null);
+  const freshTransport = capabilityReachable || ((transport?.outcome === "protocol_valid" || transport?.outcome === "quote_verified")
+    && transport.expiresAt !== null && transport.expiresAt > now);
+  const staleTransport = !capabilityReachable && (capabilityStale || ((transport?.outcome === "protocol_valid" || transport?.outcome === "quote_verified")
+    && !freshTransport));
   const freshQuote = quote?.outcome === "quote_verified"
     && quote.expiresAt !== null && quote.expiresAt > now;
+  const jobCount = candidate.state?.jobCount ?? 0;
+  const completedJobCount = candidate.state?.completedJobCount ?? 0;
   // v2 state is the only commerce authority.  `marketplaceConfigured` is a
   // compatibility column and must never make an agent hireable by itself.
   const canRequestQuote = candidate.state?.canRequestQuote === true;
-  const latest = platform[0];
+  const latest = platform[0] ?? capabilityObservation;
   const evidence: EvidenceStepViewModel[] = [
     {
       kind: "declared",
@@ -117,13 +165,17 @@ export function catalogCandidateCard(
       status: freshTransport ? "verified" : transport && FAILURE_OUTCOMES.has(transport.outcome) ? "failed" : "unknown",
       provenance: transport ? "observed" : browser.length > 0 ? "unavailable" : "not_probed",
       detail: freshTransport
-        ? transport.outcome === "quote_verified"
+        ? capabilityReachable
+          ? `The marketplace verified a ${candidate.state?.capabilityTransport?.toUpperCase() ?? transport?.protocol.toUpperCase() ?? "seller"} negotiation response. Quote capacity is ready for 24 hours.`
+          : transport?.outcome === "quote_verified"
           ? transport.source === "browser_reported"
             ? `A browser-submitted signed quote was verified over ${transport.protocol.toUpperCase()}.`
             : `A platform quote request returned a verified response over ${transport.protocol.toUpperCase()}.`
-          : `A platform probe returned a protocol-valid ${transport.protocol.toUpperCase()} response.`
-        : staleTransport
-          ? `The last platform probe returned a protocol-valid ${transport.protocol.toUpperCase()} response, but it is stale. Last checked ${time(transport.observedAt)}.`
+          : `A platform probe verified a ${transport?.protocol.toUpperCase() ?? "seller"} endpoint response.`
+      : staleTransport
+          ? capabilityStale
+            ? `The last seller capability check succeeded, but its 24-hour Ready-to-quote window has expired.`
+            : `The last platform probe verified a ${transport?.protocol.toUpperCase() ?? "seller"} endpoint response, but it is stale. Last checked ${transport ? time(transport.observedAt) : "previously"}.`
         : transport && FAILURE_OUTCOMES.has(transport.outcome)
           ? `The latest platform attempt failed (${transport.errorCode ?? transport.outcome}).`
           : browser.length > 0
@@ -139,7 +191,7 @@ export function catalogCandidateCard(
       detail: freshQuote
         ? "A signed ERC-8183 quote was verified and remains inside its declared validity window."
         : quote?.outcome === "quote_verified"
-          ? "A signed ERC-8183 quote was verified previously and is now stale; requesting a quote runs validation again."
+          ? "A signed ERC-8183 quote was verified previously but is now expired; request a fresh quote before authorizing a transaction."
           : quote && FAILURE_OUTCOMES.has(quote.outcome)
             ? `The latest marketplace quote attempt failed (${quote.errorCode ?? quote.outcome}).`
             : "No signed ERC-8183 quote has been verified by the marketplace.",
@@ -148,9 +200,12 @@ export function catalogCandidateCard(
     {
       kind: "job",
       label: "Job proven",
-      status: "unknown",
+      status: completedJobCount > 0 ? "verified" : jobCount > 0 ? "current" : "unknown",
       provenance: "onchain",
-      detail: "No completed onchain job is linked to this indexed candidate.",
+      detail: jobCount > 0
+        ? `${jobCount} indexed ERC-8183 job${jobCount === 1 ? "" : "s"}; ${completedJobCount} result${completedJobCount === 1 ? "" : "s"} verified. Funding and completion are tracked separately.`
+        : "No indexed ERC-8183 job is linked to this candidate yet.",
+      ...(jobCount > 0 ? { source: "commerce_jobs + chain-verified hire events" } : {}),
     },
   ];
 
@@ -159,17 +214,38 @@ export function catalogCandidateCard(
     name: candidate.name ?? `Agent #${candidate.agentId}`,
     description: candidate.description ?? "No description declared.",
     ...(candidate.imageUrl ? { imageUrl: candidate.imageUrl } : {}),
-    operator: candidate.admission?.state === "admitted" ? "marketplace" : "third_party",
+    operator: capabilityReady ? "marketplace" : "third_party",
     quoteRequestAvailable: canRequestQuote,
+    ...(candidate.state?.quoteRequestCount === undefined ? {} : { quoteRequestCount: candidate.state.quoteRequestCount }),
+    ...(candidate.state?.quoteSuccessCount === undefined ? {} : { quoteSuccessCount: candidate.state.quoteSuccessCount }),
+    ...(candidate.state?.lastQuoteAttemptAt === undefined ? {} : {
+      lastQuoteAttemptAt: candidate.state.lastQuoteAttemptAt === null ? null : time(candidate.state.lastQuoteAttemptAt),
+    }),
+    ...(candidate.state?.jobCount === undefined ? {} : { jobCount: candidate.state.jobCount }),
+    ...(candidate.state?.completedJobCount === undefined ? {} : { completedJobCount: candidate.state.completedJobCount }),
+    ...(candidate.state?.capabilityState === undefined ? {} : { capabilityState: candidate.state.capabilityState }),
+    ...(candidate.state?.capabilityExpiresAt === undefined ? {} : {
+      capabilityExpiresAt: candidate.state.capabilityExpiresAt === null ? null : time(candidate.state.capabilityExpiresAt),
+    }),
     buyerAction: candidate.state?.buyerAction ?? "unavailable",
     blockingReasons: candidate.state?.blockingReasons ?? ["CATALOG_STATE_UNAVAILABLE"],
     categories: candidate.categories,
     protocols: declaredProtocols(candidate),
     href: `/hire/${candidate.agentId}`,
-    hireability: canRequestQuote ? (freshQuote ? "hireable" : "quote_stale") : "listed_only",
+    hireability: candidate.state?.canPrepareHire === true && freshQuote
+      ? "hireable"
+      : candidate.declarations.some((declaration) => isCatalogOperationalDeclaration(declaration)
+        && (declaration.validationProtocol ?? declaration.protocol) === "mcp")
+        && !candidate.declarations.some((declaration) => isCatalogOperationalDeclaration(declaration)
+          && (declaration.validationProtocol ?? declaration.protocol) !== "mcp")
+        ? "mcp_only"
+        : candidate.state?.quoteStatus === "verified_historical"
+          || (quote?.outcome === "quote_verified" && !freshQuote)
+          ? "quote_stale"
+          : "listed_only",
     evidence,
     passportState: freshQuote && candidate.state?.canPrepareHire === true ? "hireable"
-      : platform.length > 0 ? "evaluated" : "registered",
+      : platform.length > 0 || capabilityObservation !== undefined || candidate.state?.capabilityState === "ready" ? "evaluated" : "registered",
     monitoring: latest ? {
       state: "probed",
       source: "worker",

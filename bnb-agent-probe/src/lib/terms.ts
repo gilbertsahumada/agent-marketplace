@@ -60,6 +60,40 @@ export interface ProbeRequestTemplate {
   readonly qualityStandards: string;
 }
 
+export interface BuyerQuoteBrief {
+  readonly objective: string;
+  readonly deliverable: string;
+  readonly acceptanceCriteria: string;
+}
+
+const BRIEF_TEXT_MAX = 500;
+
+/** Canonical request shared by A2A, HTTP and MCP quote transports. */
+export function buildBuyerQuoteRequest(brief: BuyerQuoteBrief): ProbeRequestTemplate {
+  const values = [brief.objective, brief.deliverable, brief.acceptanceCriteria];
+  if (values.some((value) => typeof value !== "string" || value.trim().length < 1 || value.length > BRIEF_TEXT_MAX)) {
+    throw new Error("BUYER_BRIEF_INVALID");
+  }
+  const taskDescription = `MARKETPLACE_QUOTE_V1:${JSON.stringify({
+    objective: brief.objective.trim(),
+    deliverable: brief.deliverable.trim(),
+    acceptanceCriteria: brief.acceptanceCriteria.trim(),
+  })}`;
+  const deliverables = brief.deliverable.trim();
+  const qualityStandards = brief.acceptanceCriteria.trim();
+  const request = new NegotiationRequest({
+    taskDescription,
+    terms: new TermSpecification({ deliverables, qualityStandards }),
+  });
+  return {
+    category: null,
+    request,
+    requestHash: request.computeHash().toLowerCase(),
+    deliverables,
+    qualityStandards,
+  };
+}
+
 export function buildReadinessProbeRequest(category: ProbeCategory | null): ProbeRequestTemplate {
   if (category !== null) return buildProbeRequest(category);
   const deliverables = "Return a deterministic text readiness receipt";

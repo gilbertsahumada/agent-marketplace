@@ -18,6 +18,7 @@ import { catalogCandidateCard } from "./catalog-candidate-view-model";
 import { CatalogNavigationProvider } from "./catalog-navigation";
 import { CatalogQuickFilters } from "./catalog-quick-filters";
 import { CatalogSearch } from "./catalog-search";
+import { CatalogReturnRefresh } from "./catalog-return-refresh";
 
 function CatalogMetric({ label, value }: { label: string; value: number | undefined }) {
   return (
@@ -179,6 +180,7 @@ export function CatalogPage({
   return (
     <main id="main-content" className="mx-auto w-full max-w-[96rem] flex-1 px-4 py-6 sm:px-6 lg:px-8">
       <h1 className="sr-only">Agents</h1>
+      <CatalogReturnRefresh />
       <CatalogNavigationProvider navigationKey={JSON.stringify(query)}>
         <div className={allView ? "" : "grid gap-6 lg:h-[calc(100dvh-7rem)] lg:min-h-[30rem] lg:grid-cols-[17rem_minmax(0,1fr)]"}>
           {!allView && (
@@ -204,7 +206,7 @@ export function CatalogPage({
               agents={cards}
               emptyContent={emptyContent}
               filters={!allView ? (
-                <CatalogQuickFilters categories={selectedCategories} {...(filterCounts ? { counts: filterCounts } : {})} {...(query.q ? { q: query.q } : {})} reachability={selectedReachability} statuses={selectedStatuses} />
+                <CatalogQuickFilters key="catalog-quick-filters" categories={selectedCategories} {...(filterCounts ? { counts: filterCounts } : {})} {...(query.q ? { q: query.q } : {})} reachability={selectedReachability} statuses={selectedStatuses} />
               ) : undefined}
               registry={allView}
               toolbar={searchForm}

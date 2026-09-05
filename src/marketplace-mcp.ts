@@ -224,7 +224,7 @@ export function marketplaceMcpTools(options: MarketplaceMcpOptions = {}): Market
     {
       name: "request_quote",
       description: [
-        "Request a fresh ERC-8183 quote from the network's admitted seller. The server validates the",
+        "Request a fresh ERC-8183 quote from a compatible seller. The server validates the",
         "quote against its allowlist (seller, contracts, token, budget ceiling, expiry) before returning",
         "it. Keep the returned 'envelope' byte-identical: the hire prepare step re-verifies the seller's",
         "signature over it. Requesting a quote is free and signs nothing. Returns 404",

@@ -147,9 +147,9 @@ describe("PR40 review: card badge and compare hireability labels", () => {
       passportState: "registered",
     } }));
 
-    expect(screen.getByText("Never probed")).toBeInTheDocument();
+    expect(screen.getAllByText("Not checked yet")).toHaveLength(2);
     expect(screen.queryByText("Hireable on Mainnet")).not.toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /view agent/i })).toHaveAttribute("href", "/hire/45650");
+    expect(screen.getByRole("button", { name: "Not available" })).toBeDisabled();
   });
 
   // C2 — compare must render the shared human label, not the raw enum.
@@ -166,14 +166,14 @@ describe("PR40 review: card badge and compare hireability labels", () => {
   });
 
   // C3 — compare must reflect quote-on-request availability like the card does.
-  it("renders Quote on request in compare for an admitted seller with a declared A2A endpoint", () => {
+  it("renders Ready to quote in compare for a seller with a declared A2A endpoint", () => {
     const first = marketplaceAgent();
     const second = { ...marketplaceAgent(), agentId: "45381", name: "Aave powered by HeyAnon" };
     second.operator = "marketplace";
     second.services = [{ name: "A2A", endpoint: "https://seller.example", version: null, tools: [], capabilities: [] }];
     renderCompare(first, second);
 
-    expect(screen.getByText("Quote on request")).toBeInTheDocument();
-    expect(hireabilityCells()[1]).toBe("Quote on request");
+    expect(screen.getByText("Ready to quote")).toBeInTheDocument();
+    expect(hireabilityCells()[1]).toBe("Ready to quote");
   });
 });

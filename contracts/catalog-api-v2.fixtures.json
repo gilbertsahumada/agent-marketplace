@@ -28,21 +28,17 @@
         "registeredAt": 1788000000000,
         "blockNumber": "123",
         "priority": 80,
-        "admission": {
-          "state": "candidate",
-          "endpointKey": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-        },
         "state": {
           "operationalStatus": "platform_reachable",
           "freshness": "live",
-          "commerceStatus": "admission_pending",
+          "commerceStatus": "declared",
           "quoteStatus": "not_requested",
           "buyerAction": "request_quote",
           "canRequestBrowserValidation": true,
           "canRequestInfrastructureValidation": true,
           "canRequestQuote": true,
           "canPrepareHire": false,
-          "blockingReasons": ["COMMERCE_NOT_ADMITTED"]
+          "blockingReasons": ["FRESH_QUOTE_REQUIRED"]
         },
         "declarations": [
           {
@@ -100,21 +96,17 @@
       "blockNumber": "123",
       "priority": 80
     },
-    "admission": {
-      "state": "candidate",
-      "endpointKey": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-    },
     "state": {
       "operationalStatus": "platform_reachable",
       "freshness": "live",
-      "commerceStatus": "admission_pending",
+      "commerceStatus": "declared",
       "quoteStatus": "not_requested",
       "buyerAction": "request_quote",
       "canRequestBrowserValidation": true,
       "canRequestInfrastructureValidation": true,
       "canRequestQuote": true,
       "canPrepareHire": false,
-      "blockingReasons": ["COMMERCE_NOT_ADMITTED"]
+      "blockingReasons": ["FRESH_QUOTE_REQUIRED"]
     },
     "declarations": [
       {

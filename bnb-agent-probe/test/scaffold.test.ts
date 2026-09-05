@@ -48,9 +48,19 @@ describe("WP1 Wrangler scaffold", () => {
       }),
     ]);
     expect(wrangler.queues).toEqual({
-      producers: [{ binding: "WP2_QUEUE", queue: "bnb-agent-probe" }],
+      producers: [
+        { binding: "WP2_QUEUE", queue: "bnb-agent-probe" },
+        { binding: "CATALOG_QUOTE_QUEUE", queue: "bnb-agent-catalog-quotes" },
+      ],
       consumers: [{
         queue: "bnb-agent-probe",
+        max_batch_size: 1,
+        max_batch_timeout: 1,
+        max_retries: 3,
+        max_concurrency: 1,
+        retry_delay: 60,
+      }, {
+        queue: "bnb-agent-catalog-quotes",
         max_batch_size: 1,
         max_batch_timeout: 1,
         max_retries: 3,
@@ -86,9 +96,6 @@ describe("WP1 Wrangler scaffold", () => {
       expect(vars?.CATALOG_PROBE_ENABLED).toBeDefined();
       expect(vars?.COMMERCE_INDEX_ENABLED).toBeDefined();
     }
-    // Staging is the rollout environment: migration 0022 is applied there and
-    // both chain RPC secrets exist. Production and validation stay off until
-    // the staging cursor has been observed advancing.
     expect(wrangler.env?.staging?.vars?.COMMERCE_INDEX_ENABLED).toBe("1");
     expect(wrangler.vars?.COMMERCE_INDEX_ENABLED).toBe("0");
     expect(wrangler.env?.validation?.vars?.COMMERCE_INDEX_ENABLED).toBe("0");
@@ -128,13 +135,23 @@ describe("WP1 Wrangler scaffold", () => {
     expect(staging?.vars?.PRODUCER_KILL_SWITCH).toBe("0");
     expect(staging?.triggers).toEqual({ crons: ["* * * * *"] });
     expect(staging?.queues).toEqual({
-      producers: [{ binding: "WP2_QUEUE", queue: "bnb-agent-probe-staging" }],
+      producers: [
+        { binding: "WP2_QUEUE", queue: "bnb-agent-probe-staging" },
+        { binding: "CATALOG_QUOTE_QUEUE", queue: "bnb-agent-catalog-quotes-staging" },
+      ],
       consumers: [{
         queue: "bnb-agent-probe-staging",
         max_batch_size: 1,
         max_batch_timeout: 1,
         max_retries: 3,
         max_concurrency: 1,
+        retry_delay: 60,
+      }, {
+        queue: "bnb-agent-catalog-quotes-staging",
+        max_batch_size: 1,
+        max_batch_timeout: 1,
+        max_retries: 3,
+        max_concurrency: 2,
         retry_delay: 60,
       }],
     });
@@ -168,9 +185,19 @@ describe("WP1 Wrangler scaffold", () => {
         producers: [{
           binding: "WP2_QUEUE",
           queue: "bnb-agent-probe-validation-20260828",
+        }, {
+          binding: "CATALOG_QUOTE_QUEUE",
+          queue: "bnb-agent-catalog-quotes-validation-20260828",
         }],
         consumers: [{
           queue: "bnb-agent-probe-validation-20260828",
+          max_batch_size: 1,
+          max_batch_timeout: 1,
+          max_retries: 3,
+          max_concurrency: 1,
+          retry_delay: 60,
+        }, {
+          queue: "bnb-agent-catalog-quotes-validation-20260828",
           max_batch_size: 1,
           max_batch_timeout: 1,
           max_retries: 3,

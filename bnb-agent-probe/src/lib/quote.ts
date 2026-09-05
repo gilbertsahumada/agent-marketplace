@@ -40,6 +40,14 @@ export interface ProbeQuoteContext {
   readonly policyAllowlisted: boolean;
   readonly nowSeconds: number;
   readonly probeCategory?: ProbeCategory | null;
+  /** Buyer quote requests may supply a canonical request instead of a probe template. */
+  readonly expectedRequest?: NegotiationRequest;
+  readonly expectedRequestHash?: string;
+  readonly expectedDeliverables?: string;
+  readonly expectedQualityStandards?: string;
+  /** Optional marketplace spend ceiling. Capability probes and legacy
+   * verification callers may omit it; buyer quotes always provide it. */
+  readonly maximumPriceRaw?: bigint;
 }
 
 export type ProbeQuoteVerdict =
@@ -69,9 +77,16 @@ export async function validateProbeQuote(
   context: ProbeQuoteContext,
   verify: QuoteVerifier = verifyQuoteSignature,
 ): Promise<ProbeQuoteVerdict> {
-  const expected = buildReadinessProbeRequest(
-    context.probeCategory === undefined ? "grid_trading" : context.probeCategory,
-  );
+  const expected = context.expectedRequest
+    ? {
+        request: context.expectedRequest,
+        requestHash: (context.expectedRequestHash ?? context.expectedRequest.computeHash()).toLowerCase(),
+        deliverables: context.expectedDeliverables ?? context.expectedRequest.terms.deliverables,
+        qualityStandards: context.expectedQualityStandards ?? context.expectedRequest.terms.qualityStandards,
+      }
+    : buildReadinessProbeRequest(
+      context.probeCategory === undefined ? "grid_trading" : context.probeCategory,
+    );
   const request = record(envelope.request, "QUOTE_REQUEST");
   let computedRequestHash: string;
   try {
@@ -134,6 +149,9 @@ export async function validateProbeQuote(
   ) throw new QuoteValidationError("QUOTE_TERMS");
   if (!terms.price || !/^[1-9]\d*$/.test(terms.price)) {
     throw new QuoteValidationError("QUOTE_PRICE");
+  }
+  if (context.maximumPriceRaw !== undefined && BigInt(terms.price) > context.maximumPriceRaw) {
+    throw new QuoteValidationError("QUOTE_PRICE_LIMIT");
   }
   const currency = address(terms.currency, "QUOTE_CURRENCY");
   if (currency !== getAddress(context.paymentToken)) throw new QuoteValidationError("QUOTE_CURRENCY");

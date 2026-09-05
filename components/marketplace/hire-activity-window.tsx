@@ -17,34 +17,34 @@ export function HireActivityWindow({ activity }: { activity: HireActivity }) {
   const title = `Last ${activity.days} days`;
   const totalsLabel = `Phase totals, last ${activity.days} days`;
   return (
-    <section aria-labelledby="recent-activity" className="rounded-xl border border-white/10 bg-white/[0.015] px-5 py-4">
-      <h2 className="text-sm font-medium text-zinc-300" id="recent-activity">{title}</h2>
-      <ul aria-label={totalsLabel} className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-sm sm:grid-cols-5">
+    <section aria-labelledby="recent-activity" className="border-b border-border/60 pb-6">
+      <h2 className="text-xl font-medium" id="recent-activity">{title}</h2>
+      <ul aria-label={totalsLabel} className="mt-4 flex flex-wrap gap-x-10 gap-y-4">
         {HIRE_PHASES.map((phase) => (
           <li className="flex flex-col" key={phase}>
-            <span className="text-xs text-zinc-500">{hirePhaseLabel(phase)}</span>
-            <span className="font-stat text-zinc-200">{activity.totals[phase].toLocaleString("en")}</span>
+            <span className="text-sm text-muted-foreground">{hirePhaseLabel(phase)}</span>
+            <span className="mt-1 text-2xl tabular-nums">{activity.totals[phase].toLocaleString("en")}</span>
           </li>
         ))}
       </ul>
       {activity.byDay.length > 0 ? (
         <div className="mt-4 overflow-x-auto">
-          <table className="w-full text-left text-sm">
+          <table className="jobs-table max-w-3xl">
             <caption className="sr-only">Phase events per UTC day</caption>
             <thead>
-              <tr className="text-xs text-zinc-500">
-                <th className="py-1 pr-4 font-medium" scope="col">Day</th>
+              <tr>
+                <th scope="col">Day</th>
                 {HIRE_PHASES.map((phase) => (
-                  <th className="py-1 pr-4 text-right font-medium" key={phase} scope="col">{hirePhaseLabel(phase)}</th>
+                  <th key={phase} scope="col">{hirePhaseLabel(phase)}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {activity.byDay.map((row) => (
-                <tr className="border-t border-white/10" key={row.day}>
-                  <th className="py-1.5 pr-4 font-normal text-zinc-300" scope="row">{row.day}</th>
+                <tr key={row.day}>
+                  <th scope="row">{row.day}</th>
                   {HIRE_PHASES.map((phase) => (
-                    <td className="font-stat py-1.5 pr-4 text-right text-zinc-200" key={phase}>{row[phase].toLocaleString("en")}</td>
+                    <td className="tabular-nums" key={phase}>{row[phase].toLocaleString("en")}</td>
                   ))}
                 </tr>
               ))}
@@ -52,9 +52,9 @@ export function HireActivityWindow({ activity }: { activity: HireActivity }) {
           </table>
         </div>
       ) : (
-        <p className="mt-4 text-sm text-zinc-500">No phase events indexed in this window.</p>
+        <p className="mt-4 text-sm text-muted-foreground">No phase events indexed in this window.</p>
       )}
-      <p className="mt-3 text-xs text-zinc-500">{ACTIVITY_NOTE}</p>
+      <p className="mt-3 text-sm text-muted-foreground">{ACTIVITY_NOTE}</p>
     </section>
   );
 }
