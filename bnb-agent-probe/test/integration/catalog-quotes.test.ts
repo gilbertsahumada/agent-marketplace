@@ -7,6 +7,7 @@ import {
   catalogQuoteFallbackResponse,
   createCatalogQuoteRequestResponse,
   catalogNegotiationInputResponse,
+  catalogQuoteHistoryResponse,
 } from "../../src/routes/catalog-quotes";
 import { clearCatalogFixtures } from "./catalog-fixtures";
 
@@ -47,11 +48,32 @@ beforeEach(async () => {
 });
 
 describe("buyer quote request ledger", () => {
+  it("keeps imported observations out of recorded request totals and pages", async () => {
+    await createCatalogQuoteRequestResponse(createRequest(), env.DB as unknown as D1Database, { nowMs: NOW });
+    await env.DB.prepare(`INSERT INTO catalog_quote_requests (requestHash, agentKey, endpointKey, transport, kind, status, callerKey, createdAt, metadataJson) VALUES ('imported', 'eip155:56:42', ?, 'a2a', 'buyer_quote', 'succeeded', 'migration', ?, '{"evidenceMigrated":1}')`).bind(ENDPOINT_KEY, NOW).run();
+    const response = await catalogQuoteHistoryResponse(new Request("https://worker.test/catalog-quotes/42?page=1"), env.DB as unknown as D1Database, "42", NOW);
+    const body = await response.json() as { counts: Record<string, number>; requests: unknown[] };
+    expect(body.counts).toMatchObject({ buyerRequests: 1, importedObservations: 1, buyerVerified: 0 });
+    expect(body.requests).toHaveLength(1);
+  });
+  it("pages five logical quotes at a time with totals across pages", async () => {
+    for (let n = 0; n < 7; n++) await createCatalogQuoteRequestResponse(createRequest(), env.DB as unknown as D1Database, { nowMs: NOW + n * 61_000, caller: "pagination" });
+    const read = async (page: number) => (await catalogQuoteHistoryResponse(new Request(`https://worker.test/catalog-quotes/42?page=${page}`), env.DB as unknown as D1Database, "42", NOW)).json() as Promise<{ requests: { id: number }[]; counts: { requests: number }; pagination: { hasMore: boolean } }>;
+    const first = await read(1), second = await read(2);
+    expect(first.requests).toHaveLength(5);
+    expect(second.requests).toHaveLength(2);
+    expect(first.counts.requests).toBe(7);
+    expect(second.counts.requests).toBe(7);
+    expect(second.pagination.hasMore).toBe(false);
+    expect(new Set([...first.requests, ...second.requests].map(row => row.id)).size).toBe(7);
+  });
   it("discovers parameters, binds the server contract, and persists only the hash", async () => {
     const contract = { taskDescriptionPrefix: "SERVICE_V1:", inputSchema: { type: "object", required: ["topic"], properties: { topic: { type: "string" } } }, terms: { deliverables: "Report", quality_standards: "Cited", evaluation_required: true, evaluator_type: "uma_oov3" } };
     vi.stubGlobal("fetch", vi.fn(async () => Response.json({ url: "https://seller.example.com/a2a", skills: [{ id: "negotiate" }], capabilities: { extensions: [{ uri: "https://marketplace.trust8004.xyz/extensions/negotiation-input/v1", params: contract }] } })));
     const discovered = await catalogNegotiationInputResponse(env.DB as unknown as D1Database, "42");
     expect(discovered.status).toBe(200);
+    const compatibility = await env.DB.prepare("SELECT compatibilityState, schemaHash, compatibilityExpiresAt FROM catalog_seller_capabilities WHERE agentKey='eip155:56:42'").first();
+    expect(compatibility).toMatchObject({ compatibilityState: "compatible", schemaHash: expect.any(String), compatibilityExpiresAt: expect.any(Number) });
     const { contractHash } = await discovered.json() as { contractHash: string };
     const create = (hash: string, parameters: unknown) => createCatalogQuoteRequestResponse(new Request("https://worker.test/catalog-quotes/42", {
       method: "POST", body: JSON.stringify({ schemaVersion: 2, endpointKey: ENDPOINT_KEY, contractHash: hash, parameters }),
