@@ -17,7 +17,7 @@ import type {
   HostedSellerMessage,
   HostedSellerReply,
 } from "../business/entities/hosted-erc8183-seller.ts";
-import { HostedSellerJobNotReadyError, HostedSellerUnavailableError } from "../business/errors/hosted-seller-errors.ts";
+import { HostedSellerJobNotReadyError, HostedSellerUnavailableError, InvalidHostedSellerRequestError } from "../business/errors/hosted-seller-errors.ts";
 import { gridSellerAgentCard } from "../business/policies/grid-seller-policy.ts";
 import { GRID_NEGOTIATION_TERMS, buildGridPlan, parseGridTaskDescription } from "../business/policies/grid-plan-policy.ts";
 import type { HostedErc8183SellerRepository } from "../data/repositories/hosted-erc8183-seller-repository.ts";
@@ -133,19 +133,24 @@ export class MainnetGridSellerRepository implements HostedErc8183SellerRepositor
 
   async handleMessage(message: HostedSellerMessage): Promise<HostedSellerReply> {
     assertRequestBudget();
-    const current = await this.loadRuntime();
     if ("taskDescription" in message) {
-      parseGridTaskDescription(message.taskDescription);
+      try {
+        parseGridTaskDescription(message.taskDescription);
+      } catch {
+        throw new InvalidHostedSellerRequestError("Grid requires GRID_PLAN_V1 with pair, lowerPrice, upperPrice, capital and gridCount.");
+      }
       if (
         message.terms.deliverables !== GRID_NEGOTIATION_TERMS.deliverables ||
         message.terms.quality_standards !== GRID_NEGOTIATION_TERMS.qualityStandards
       ) throw new HostedSellerJobNotReadyError("The Grid negotiation terms are not supported");
+      const current = await this.loadRuntime();
       const quote = await current.negotiation.negotiate({
         task_description: message.taskDescription,
         terms: message.terms,
       });
       return { ...quote.toDict(), provider_address: current.seller };
     }
+    const current = await this.loadRuntime();
     const key = message.jobId.toString();
     const existing = inflight.get(key);
     if (existing) return existing;

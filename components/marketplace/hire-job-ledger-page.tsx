@@ -5,6 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader } from "@/components/ui/
 import type { HireJobDetail } from "@/src/business/entities/hire-job";
 import { explorerUrl, jobStatusLabel } from "./hire-job-rows";
 import { Breadcrumb } from "./page-primitives";
+import { AddressLink } from "./address-link";
 
 const UTC_DATE_TIME = new Intl.DateTimeFormat("en", {
   day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", timeZone: "UTC",
@@ -58,7 +59,7 @@ export function HireJobLedgerPage({ job }: { job: HireJobDetail }) {
           {facts.map(([label, value]) => (
             <div className="grid gap-1 border-b border-white/[0.06] pb-3 sm:grid-cols-[10rem_1fr]" key={label}>
               <span className="text-zinc-500">{label}</span>
-              <span className="font-hash break-all text-xs text-zinc-200">{value}</span>
+              <span className="font-hash break-all text-xs text-zinc-200">{["Buyer", "Provider", "Evaluator"].includes(label) ? <AddressLink address={value} chainId={job.chainId} full /> : value}</span>
             </div>
           ))}
         </CardContent>

@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { GitFork } from "lucide-react";
 import type { ReactNode } from "react";
 import { MobileNav, PrimaryNav } from "./site-nav";
 import { WalletConnectButton } from "./wallet-connect-button";
@@ -37,14 +36,22 @@ function Header() {
 function Footer() {
   return (
     <footer className="mt-auto border-t border-border/60 bg-card/40">
-      <div className="mx-auto grid max-w-[1480px] gap-8 px-5 py-12 sm:px-8 md:grid-cols-[1fr_auto] lg:px-12">
-        <Brand />
-        <div className="flex flex-wrap items-start gap-x-5 gap-y-3 text-sm text-muted-foreground md:justify-end">
+      <div className="mx-auto grid max-w-[1480px] grid-cols-2 gap-8 px-5 py-8 sm:px-8 md:grid-cols-[1fr_auto_auto] md:gap-12 lg:px-12">
+        <div className="col-span-2 flex flex-col items-start gap-3 md:col-span-1 md:self-end">
+          <Brand />
+          <p className="text-xs text-muted-foreground">Built on BNB Chain. Identity data by <a className="underline underline-offset-2 hover:text-foreground" href="https://trust8004.xyz" rel="noreferrer" target="_blank">Trust8004</a>.</p>
+        </div>
+        <nav aria-label="Footer marketplace" className="flex flex-col items-start gap-2 text-sm text-muted-foreground">
+          <p className="mb-1 font-medium text-foreground">Marketplace</p>
           <Link className="hover:text-foreground" href="/agents">Agents</Link>
+          <Link className="hover:text-foreground" href="/jobs">Jobs</Link>
           <Link className="hover:text-foreground" href="/compare">Compare</Link>
           <Link className="hover:text-foreground" href="/validate">Validate my agent</Link>
-          <Link className="hover:text-foreground" href="/evidence/verification">Methodology</Link>
+        </nav>
+        <nav aria-label="Footer resources" className="flex flex-col items-start gap-2 text-sm text-muted-foreground">
+          <p className="mb-1 font-medium text-foreground">Resources</p>
           <Link className="hover:text-foreground" href="/docs">Docs</Link>
+          <Link className="hover:text-foreground" href="/evidence/verification">Methodology</Link>
           <Link className="hover:text-foreground" href="/jobs/testnet/551">Public proof</Link>
           <a
             aria-label="BNB Agent Marketplace on GitHub"
@@ -53,28 +60,9 @@ function Footer() {
             rel="noreferrer"
             target="_blank"
           >
-            <GitFork aria-hidden="true" className="size-4" />
             GitHub
           </a>
-        </div>
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-border/60 pt-6 text-xs text-muted-foreground md:col-span-2">
-          <img
-            alt="Built on BNB Chain"
-            className="h-3.5 w-auto opacity-50"
-            src="/logo/SVG/BNB Chain_Logo_White.svg"
-          />
-          <p>
-            Reputation data powered by{" "}
-            <a
-              className="text-zinc-400 underline decoration-zinc-700 underline-offset-2 hover:text-white"
-              href="https://trust8004.xyz"
-              rel="noreferrer"
-              target="_blank"
-            >
-              trust8004.xyz
-            </a>
-          </p>
-        </div>
+        </nav>
       </div>
     </footer>
   );

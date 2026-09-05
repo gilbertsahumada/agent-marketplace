@@ -59,6 +59,15 @@ function reply(data: Record<string, unknown>, id = "response"): Response {
 }
 
 describe("Workers A2A seller probe", () => {
+  it("distinguishes a responding seller HTTP 500 from a connection failure", async () => {
+    const fetchImpl = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(json(card()))
+      .mockResolvedValueOnce(json({ error: "internal" }, { status: 500 }));
+    await expect(probeA2aSeller({
+      endpoint: ENDPOINT, request: REQUEST, timeoutMs: 5000,
+      maxResponseBytes: 32768, fetch: fetchImpl,
+    })).rejects.toThrow("SELLER_SERVER_ERROR");
+  });
   it("invokes a Worker fetch dependency without using its input object as the receiver", async () => {
     const input = {
       endpoint: ENDPOINT,

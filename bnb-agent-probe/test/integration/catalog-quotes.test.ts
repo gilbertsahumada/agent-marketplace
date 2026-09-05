@@ -1,16 +1,18 @@
 import { env } from "cloudflare:workers";
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { loadConfig } from "../../src/config";
 import type { D1Database, Env } from "../../src/types";
 import {
   catalogQuoteFallbackResponse,
   createCatalogQuoteRequestResponse,
+  catalogNegotiationInputResponse,
 } from "../../src/routes/catalog-quotes";
 import { clearCatalogFixtures } from "./catalog-fixtures";
 
 const NOW = 1_800_000_000_000;
 const ENDPOINT_KEY = "e".repeat(64);
+afterEach(() => vi.unstubAllGlobals());
 
 function brief() {
   return {
@@ -45,6 +47,24 @@ beforeEach(async () => {
 });
 
 describe("buyer quote request ledger", () => {
+  it("discovers parameters, binds the server contract, and persists only the hash", async () => {
+    const contract = { taskDescriptionPrefix: "SERVICE_V1:", inputSchema: { type: "object", required: ["topic"], properties: { topic: { type: "string" } } }, terms: { deliverables: "Report", quality_standards: "Cited", evaluation_required: true, evaluator_type: "uma_oov3" } };
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({ url: "https://seller.example.com/a2a", skills: [{ id: "negotiate" }], capabilities: { extensions: [{ uri: "https://marketplace.trust8004.xyz/extensions/negotiation-input/v1", params: contract }] } })));
+    const discovered = await catalogNegotiationInputResponse(env.DB as unknown as D1Database, "42");
+    expect(discovered.status).toBe(200);
+    const { contractHash } = await discovered.json() as { contractHash: string };
+    const create = (hash: string, parameters: unknown) => createCatalogQuoteRequestResponse(new Request("https://worker.test/catalog-quotes/42", {
+      method: "POST", body: JSON.stringify({ schemaVersion: 2, endpointKey: ENDPOINT_KEY, contractHash: hash, parameters }),
+    }), env.DB as unknown as D1Database, { nowMs: NOW });
+    expect((await create("f".repeat(64), { topic: "private-buyer-topic" })).status).toBe(409);
+    expect((await create(contractHash, { extra: true })).status).toBe(409);
+    const accepted = await create(contractHash, { topic: "private-buyer-topic" });
+    expect(accepted.status).toBe(201);
+    await expect(accepted.json()).resolves.toMatchObject({ request: { task_description: 'SERVICE_V1:{"topic":"private-buyer-topic"}' } });
+    const rows = await env.DB.prepare("SELECT * FROM catalog_quote_requests").all();
+    expect(rows.results).toHaveLength(1);
+    expect(JSON.stringify(rows.results)).not.toContain("private-buyer-topic");
+  });
   it("lets a discovered candidate request a quote without legacy admission and deduplicates it for 60 seconds", async () => {
     const first = await createCatalogQuoteRequestResponse(
       createRequest(),

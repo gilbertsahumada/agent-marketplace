@@ -1,16 +1,16 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { CheckCircle2, CircleAlert, Clock3, LoaderCircle, RadioTower, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { SellerParameters, initialSellerParameters } from "./seller-parameters";
+import { buildContractRequest, normalizeNegotiationContract, type NegotiationContract } from "@/src/shared/negotiation-input";
 import { cn } from "@/lib/utils";
 import { markCatalogForRefresh } from "./catalog-return-refresh";
 import { Erc8183MarketplaceHire, type MainnetQuoteResponse } from "@/components/spikes/erc8183-browser-spike";
 
 type Phase = "idle" | "registering" | "connecting" | "negotiating" | "verifying" | "fallback" | "succeeded" | "failed";
 
-const textareaClassName = "mt-1 min-h-20 w-full rounded-md border border-white/10 bg-black/20 px-3 py-2 text-sm text-zinc-100 outline-none transition-colors placeholder:text-zinc-600 focus:border-primary focus-visible:ring-2 focus-visible:ring-primary/30";
 
 const phaseCopy: Record<Phase, string> = {
   idle: "Ready to request",
@@ -114,6 +114,8 @@ async function browserQuote(target: string, transport: string, request: Record<s
       redirect: "manual",
     });
     const value = asRecord(await parse(response));
+    if (!response.ok) throw new Error(`HTTP_${response.status}`);
+    if (value?.jsonrpc !== "2.0" || value.id !== id || value.error !== undefined) throw new Error("A2A_QUOTE_INVALID");
     const result = asRecord(value?.result);
     const parts = Array.isArray(result?.parts) ? result.parts : [];
     const part = parts.map(asRecord).find((entry) => entry?.kind === "data" && asRecord(entry.data));
@@ -201,9 +203,30 @@ function shouldUseWorkerFallback(error: unknown): boolean {
 }
 
 export function QuoteRequestPanel({ agentId, agentName, onSuccess }: { agentId: string; agentName?: string; onSuccess?: () => void }) {
-  const [objective, setObjective] = useState("Produce a deterministic plan for my request");
-  const [deliverable, setDeliverable] = useState("A JSON plan with assumptions and next actions");
-  const [acceptanceCriteria, setAcceptanceCriteria] = useState("No transaction execution, deterministic output, and all assumptions listed");
+  return <SellerQuoteSession key={agentId} agentId={agentId} {...(agentName ? { agentName } : {})} {...(onSuccess ? { onSuccess } : {})} />;
+}
+
+function SellerQuoteSession({ agentId, agentName, onSuccess }: { agentId: string; agentName?: string; onSuccess?: () => void }) {
+  const [discovery, setDiscovery] = useState<{ contract: NegotiationContract; endpointKey: string; contractHash: string } | null>(null);
+  const [discoveryError, setDiscoveryError] = useState<string | null>(null);
+  const [reload, setReload] = useState(0);
+  const [parameters, setParameters] = useState<Record<string, unknown>>({});
+  const [showErrors, setShowErrors] = useState(false);
+  useEffect(() => {
+    const controller = new AbortController();
+    setDiscovery(null); setDiscoveryError(null);
+    void fetch(`/api/marketplace/agents/${agentId}/quotes/input`, { signal: controller.signal, cache: "no-store" })
+      .then(async response => {
+        const value = asRecord(await response.json());
+        if (!response.ok || !value) throw new Error(String(value?.error ?? "NEGOTIATION_DISCOVERY_FAILED"));
+        const contract = normalizeNegotiationContract(value.contract);
+        if (typeof value.endpointKey !== "string" || typeof value.contractHash !== "string") throw new Error("NEGOTIATION_DISCOVERY_FAILED");
+        if (controller.signal.aborted) return;
+        setParameters(initialSellerParameters(contract.inputSchema));
+        setDiscovery({ contract, endpointKey: value.endpointKey, contractHash: value.contractHash });
+      }).catch(error => { if (!controller.signal.aborted) setDiscoveryError(error instanceof Error ? error.message : "NEGOTIATION_DISCOVERY_FAILED"); });
+    return () => controller.abort();
+  }, [agentId, reload]);
   const [phase, setPhase] = useState<Phase>("idle");
   const [message, setMessage] = useState<string | null>(null);
   const [quote, setQuote] = useState<MainnetQuoteResponse | null>(null);
@@ -216,11 +239,15 @@ export function QuoteRequestPanel({ agentId, agentName, onSuccess }: { agentId: 
   }
 
   async function requestQuote() {
+    if (!discovery) return;
+    try { buildContractRequest(discovery.contract, parameters); }
+    catch { setShowErrors(true); setMessage("Complete the seller's required parameters."); return; }
+    setShowErrors(false);
     setQuote(null); setQuoteRequestId(null); setMessage(null); setPhase("registering");
     try {
       const start = await fetch(`/api/marketplace/agents/${agentId}/quotes`, {
         method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ objective, deliverable, acceptanceCriteria }),
+        body: JSON.stringify({ schemaVersion: 2, parameters, endpointKey: discovery.endpointKey, contractHash: discovery.contractHash }),
       });
       const registered = asRecord(await parse(start));
       if (!start.ok || !registered) throw new Error(typeof registered?.error === "string" ? registered.error : "QUOTE_REGISTRATION_FAILED");
@@ -280,6 +307,9 @@ export function QuoteRequestPanel({ agentId, agentName, onSuccess }: { agentId: 
         ? "Quote service is temporarily unavailable. Try again later."
         : /EXPIRED/i.test(code) ? "Quote expired. Request again."
           : /RATE_LIMIT|rate_limit/i.test(code) ? "Too many attempts. Please try again later."
+            : /SCHEMA_CHANGED/i.test(code) ? "Requirements changed. Reload the seller parameters."
+            : /SERVER_ERROR|HTTP_5/i.test(code) ? "The seller responded but could not create a quote."
+            : /HTTP_4|PARAMETERS_INVALID/i.test(code) ? "The seller rejected these parameters. Review your request."
             : /UNREACHABLE|TIMEOUT/i.test(code) ? "Could not reach the seller. Retry the connection check."
               : "Could not verify a quote. Please try again.");
     }
@@ -297,13 +327,14 @@ export function QuoteRequestPanel({ agentId, agentName, onSuccess }: { agentId: 
           {phaseCopy[phase]}
         </span>
       </div>
-      <div className="mt-4 grid gap-3 sm:grid-cols-3">
-        <label className="text-xs text-zinc-400">Objective<Input className="mt-1" maxLength={500} onChange={(event) => setObjective(event.target.value)} value={objective} /></label>
-        <label className="text-xs text-zinc-400">Expected deliverable<textarea className={textareaClassName} maxLength={500} onChange={(event) => setDeliverable(event.target.value)} value={deliverable} /></label>
-        <label className="text-xs text-zinc-400">Acceptance criteria<textarea className={textareaClassName} maxLength={500} onChange={(event) => setAcceptanceCriteria(event.target.value)} value={acceptanceCriteria} /></label>
+      <div className="mt-4">
+        {discovery ? <SellerParameters schema={discovery.contract.inputSchema} value={parameters} onChange={value => { setParameters(value); setQuote(null); setQuoteRequestId(null); setPhase("idle"); setMessage(null); }} disabled={busy} showErrors={showErrors} />
+          : discoveryError ? <p role="status" className="text-sm text-muted-foreground">{/UNSUPPORTED|UNAVAILABLE|REQUIRED/i.test(discoveryError) ? "Compatible negotiation parameters are not published by this seller." : "Could not load the seller's requirements."}</p>
+          : <p role="status" className="flex items-center gap-2 text-sm text-muted-foreground"><LoaderCircle className="size-4 animate-spin motion-reduce:animate-none" />Loading seller parameters</p>}
       </div>
       <div className="mt-4 flex flex-wrap items-center gap-3">
-        <Button className="cursor-pointer" disabled={busy} onClick={requestQuote} type="button"><ShieldCheck className="size-4" />{phase === "succeeded" ? "Request again" : "Request quote"}</Button>
+        <Button className="cursor-pointer" disabled={busy || !discovery} onClick={requestQuote} type="button"><ShieldCheck className="size-4" />{phase === "succeeded" ? "Request again" : "Request quote"}</Button>
+        <Button variant="outline" size="sm" disabled={busy} onClick={() => { setQuote(null); setQuoteRequestId(null); setPhase("idle"); setMessage(null); setShowErrors(false); setReload(value => value + 1); }} type="button">Reload parameters</Button>
         <span className="inline-flex items-center gap-1.5 text-xs text-zinc-500"><RadioTower className="size-3.5" />No signature</span>
       </div>
       {message ? <p aria-live="polite" className={cn("mt-3 text-sm", phase === "failed" ? "text-red-300" : "text-emerald-300")}>{message}</p> : null}

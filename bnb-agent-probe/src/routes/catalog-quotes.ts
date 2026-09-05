@@ -1,4 +1,4 @@
-import { and, count, desc, eq, gt, gte, inArray, lt } from "drizzle-orm";
+import { and, count, desc, eq, gt, gte, inArray, lt, sql } from "drizzle-orm";
 import { NegotiationRequest, buildJobDescription, verifyQuoteSignature } from "@bnbagent/sdk/erc8183";
 import { formatUnits, parseAbi, type PublicClient } from "viem";
 import { createDatabase } from "../db/orm";
@@ -16,7 +16,8 @@ import type { WorkerConfig } from "../config";
 import { createCountedBscClient, readProbeChainContext, type ProbeChainContext } from "../lib/chain";
 import { validateProbeQuote, QuoteValidationError } from "../lib/quote";
 import { buildBuyerQuoteRequest } from "../lib/terms";
-import { probeA2aSeller, probeErc8183HttpSeller, probeMcpSeller, SellerProbeError } from "../lib/seller-client";
+import { discoverNegotiationInput, probeA2aSeller, probeErc8183HttpSeller, probeMcpSeller, SellerProbeError } from "../lib/seller-client";
+import { buildContractRequest } from "../../../src/shared/negotiation-input";
 import { callerKey } from "../lib/caller-key";
 
 const MAX_BODY_BYTES = 16 * 1_024;
@@ -213,6 +214,42 @@ async function updateAttempt(
   }).where(eq(catalogQuoteAttempts.id, attemptId));
 }
 
+async function discoveryAllowance(d1: D1Database, key: string, limit: number, nowMs: number): Promise<boolean> {
+  const row = await createDatabase(d1 as never).get(sql`INSERT INTO runtime_state (key, integerValue, updatedAt) VALUES (${`negotiation-discovery:${key}`}, 1, ${nowMs})
+    ON CONFLICT(key) DO UPDATE SET
+      integerValue = CASE WHEN updatedAt <= ${nowMs - 60_000} THEN 1 ELSE integerValue + 1 END,
+      updatedAt = CASE WHEN updatedAt <= ${nowMs - 60_000} THEN excluded.updatedAt ELSE updatedAt END
+    WHERE updatedAt <= ${nowMs - 60_000} OR integerValue < ${limit} RETURNING integerValue`);
+  return row != null;
+}
+
+export async function catalogNegotiationInputResponse(d1: D1Database, agentId: string, options: { caller?: string; nowMs?: number } = {}): Promise<Response> {
+  if (!AGENT_ID.test(agentId)) return json({ error: "invalid_request" }, 400);
+  const nowMs = options.nowMs ?? Date.now();
+  if (!await discoveryAllowance(d1, "global", 120, nowMs)
+    || !await discoveryAllowance(d1, await sha256(options.caller ?? "anonymous"), 10, nowMs)) return json({ error: "quote_rate_limited" }, 429, { "retry-after": "60" });
+  const db = createDatabase(d1 as never);
+  const endpoints = await db.select({ endpointKey: catalogAgentEndpoints.endpointKey }).from(catalogAgentEndpoints)
+    .innerJoin(catalogEndpoints, eq(catalogEndpoints.endpointKey, catalogAgentEndpoints.endpointKey))
+    .where(and(eq(catalogAgentEndpoints.agentKey, `eip155:56:${agentId}`), eq(catalogAgentEndpoints.declarationState, "current"),
+      eq(catalogEndpoints.role, "operational"), eq(catalogEndpoints.eligibility, "eligible"), eq(catalogEndpoints.safety, "safe"),
+      inArray(catalogEndpoints.validationProtocol, ["a2a", "mcp", "erc8183_http"])))
+    .orderBy(desc(catalogAgentEndpoints.priority), catalogAgentEndpoints.endpointKey).limit(4);
+  const results = await Promise.all(endpoints.map(async ({ endpointKey }) => {
+    const target = await targetFor(db, agentId, endpointKey);
+    if (!target) return { error: "quote_transport_unavailable" };
+    if (!await discoveryAllowance(d1, await sha256(new URL(target.endpoint).origin), 25, nowMs)) return { error: "quote_rate_limited" };
+    try {
+      const contract = await discoverNegotiationInput({ ...target, request: {}, fetch, timeoutMs: 5000, maxResponseBytes: 32768 });
+      return { contract, contractHash: await sha256(contract), endpointKey: target.endpointKey, transport: target.transport };
+    } catch (error) {
+      return { error: error instanceof Error && ERROR_CODE.test(error.message) ? error.message : "NEGOTIATION_DISCOVERY_FAILED" };
+    }
+  }));
+  const found = results.find(result => result.contract);
+  return found ? json(found) : json({ error: results.find(result => result.error !== "quote_transport_unavailable")?.error ?? "quote_transport_unavailable" }, 409);
+}
+
 export async function createCatalogQuoteRequestResponse(
   request: Request,
   d1: D1Database,
@@ -222,8 +259,12 @@ export async function createCatalogQuoteRequestResponse(
   const agentId = url.pathname.split("/").at(-1) ?? "";
   if (!AGENT_ID.test(agentId)) return json({ error: "invalid_request" }, 400);
   const input = await body(request);
-  const template = input ? briefInput(input) : null;
-  if (!template) return json({ error: "invalid_brief" }, 400);
+  let template = input ? briefInput(input) : null;
+  const structured = input?.schemaVersion === 2;
+  if (!template && !structured) return json({ error: "invalid_brief" }, 400);
+  if (structured && (Object.keys(input!).sort().join(",") !== "contractHash,endpointKey,parameters,schemaVersion"
+    || typeof input!.endpointKey !== "string" || !/^[a-f0-9]{64}$/.test(input!.endpointKey)
+    || typeof input!.contractHash !== "string" || !/^[a-f0-9]{64}$/.test(input!.contractHash))) return json({ error: "invalid_parameters" }, 400);
   const db = createDatabase(d1 as never);
   // If the scheduler has recently proved a capability, keep a buyer request
   // on that same endpoint. This prevents a multi-endpoint seller from showing
@@ -240,11 +281,10 @@ export async function createCatalogQuoteRequestResponse(
   const target = await targetFor(
     db,
     agentId,
-    readyCapability[0]?.endpointKey,
-    readyCapability[0] ? undefined : ["a2a", "erc8183_http"],
+    structured ? input!.endpointKey as string : readyCapability[0]?.endpointKey,
+    structured || readyCapability[0] ? undefined : ["a2a", "erc8183_http"],
   );
   if (!target) return json({ error: "quote_transport_unavailable" }, 409);
-  const requestHash = template.requestHash;
   const caller = options.caller ?? "anonymous";
   const limited = await quoteRateLimit(db, {
     agentKey: target.agentKey,
@@ -255,8 +295,24 @@ export async function createCatalogQuoteRequestResponse(
   if (limited) return json({ error: "quote_rate_limited", code: limited.code, retryAfterSeconds: limited.retryAfterSeconds }, 429, {
     "retry-after": String(limited.retryAfterSeconds),
   });
+  if (structured) {
+    try {
+      const contract = await discoverNegotiationInput({ ...target, request: {}, fetch, timeoutMs: 5000, maxResponseBytes: 32768 });
+      if (await sha256(contract) !== input!.contractHash) return json({ error: "NEGOTIATION_SCHEMA_CHANGED" }, 409);
+      const value = buildContractRequest(contract, input!.parameters);
+      const negotiated = NegotiationRequest.fromDict(value);
+      template = { category: null, request: negotiated, requestHash: negotiated.computeHash().toLowerCase(), deliverables: String(value.terms.deliverables), qualityStandards: String(value.terms.quality_standards) };
+    } catch (error) {
+      const code = error instanceof Error && ERROR_CODE.test(error.message) ? error.message : "NEGOTIATION_DISCOVERY_FAILED";
+      return json({ error: code }, 409);
+    }
+  }
+  if (!template) return json({ error: "invalid_parameters" }, 400);
+  const requestHash = template.requestHash;
   const existing = await db.select().from(catalogQuoteRequests).where(and(
     eq(catalogQuoteRequests.agentKey, target.agentKey),
+    eq(catalogQuoteRequests.endpointKey, target.endpointKey),
+    eq(catalogQuoteRequests.callerKey, caller),
     eq(catalogQuoteRequests.requestHash, requestHash),
     lt(catalogQuoteRequests.createdAt, options.nowMs + 1),
   )).orderBy(desc(catalogQuoteRequests.createdAt), desc(catalogQuoteRequests.id)).limit(1);

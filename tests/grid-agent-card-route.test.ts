@@ -39,5 +39,10 @@ describe("Grid Agent Card route", () => {
     ]);
     expect(card.description).toMatch(/no trading or custody/i);
     expect(card.description).toMatch(/not an official BNB reference agent/i);
+    const contract = card.capabilities.extensions[0].params;
+    expect(contract.inputSchema.required).toEqual(["pair", "lowerPrice", "upperPrice", "capital", "gridCount"]);
+    expect(contract.inputSchema.properties.gridCount).toMatchObject({ minimum: 2, maximum: 100 });
+    expect(contract.taskDescriptionPrefix).toBe("GRID_PLAN_V1:");
+    expect(contract.terms.deliverables).toMatch(/Grid plan/);
   });
 });

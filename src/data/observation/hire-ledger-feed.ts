@@ -318,6 +318,7 @@ export async function getHireJobs(input: {
   const url = catalogUrl("/commerce-jobs", input.env ?? process.env);
   if (!url) return null;
   url.searchParams.set("chainId", String(input.chainId));
+  url.searchParams.set("limit", "25");
   if (input.buyer !== undefined) url.searchParams.set("buyer", queryAddress(input.buyer));
   if (input.provider !== undefined) url.searchParams.set("provider", queryAddress(input.provider));
   if (input.agentId !== undefined) url.searchParams.set("agentId", input.agentId);

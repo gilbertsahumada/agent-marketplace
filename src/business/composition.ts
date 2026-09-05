@@ -128,6 +128,7 @@ export const recordCatalogObservation = syncCatalogObservation;
 export const recordHireEvent = syncHireEvent;
 // Quote request ports keep Next route handlers free of infrastructure imports.
 export { fallbackBuyerQuote, getBuyerQuoteHistory, reportBuyerQuoteFailure, startBuyerQuote, submitBuyerQuoteResult };
+export { getBuyerNegotiationInput } from "../data/observation/quote-request-sync.ts";
 export {
   CatalogValidationRequestError,
   loadCatalogValidationStatus as getCatalogValidationStatus,

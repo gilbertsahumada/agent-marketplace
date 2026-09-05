@@ -216,7 +216,7 @@ describe("hire ledger feed", () => {
     await expect(getHireJob({ chainId: 56, jobId: "56696", env: ENV })).resolves.toMatchObject({ jobId: "56696" });
     await expect(getHireLedgerSummary({ chainId: 56, env: ENV })).resolves.toMatchObject({ protocol: { jobs: 10 } });
     expect(requested).toEqual([
-      `https://probe.example.workers.dev/commerce-jobs?chainId=56&buyer=${BUYER.toLowerCase()}&before=100`,
+      `https://probe.example.workers.dev/commerce-jobs?chainId=56&limit=25&buyer=${BUYER.toLowerCase()}&before=100`,
       "https://probe.example.workers.dev/commerce-jobs/56/56696",
       "https://probe.example.workers.dev/commerce-summary?chainId=56",
     ]);
@@ -240,8 +240,8 @@ describe("hire ledger feed", () => {
     await expect(getHireJobs({ chainId: 56, buyer: badChecksum, before: "7", env: ENV })).resolves.toMatchObject({ jobs: [{ jobId: "56696" }] });
     await expect(getHireActivity({ chainId: 56, provider: badChecksum, env: ENV })).resolves.toMatchObject({ days: 30 });
     expect(requested).toEqual([
-      `https://probe.example.workers.dev/commerce-jobs?chainId=56&provider=${badChecksum.toLowerCase()}`,
-      `https://probe.example.workers.dev/commerce-jobs?chainId=56&buyer=${badChecksum.toLowerCase()}&before=7`,
+      `https://probe.example.workers.dev/commerce-jobs?chainId=56&limit=25&provider=${badChecksum.toLowerCase()}`,
+      `https://probe.example.workers.dev/commerce-jobs?chainId=56&limit=25&buyer=${badChecksum.toLowerCase()}&before=7`,
       `https://probe.example.workers.dev/commerce-activity?chainId=56&provider=${badChecksum.toLowerCase()}`,
     ]);
     for (const url of requested) expect(url).not.toMatch(/0x[0-9a-f]*[A-F]/);

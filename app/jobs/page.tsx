@@ -45,12 +45,26 @@ export default async function JobsPage({ searchParams }: { searchParams: Promise
     // requested without an explicit `days` so it shares one cache entry.
     getHireLedger.activity({ chainId, ...scope }),
   ]);
+  // Only use chain-verified hire attribution; a provider wallet is not an
+  // ERC-8004 agent ID and can represent multiple agents.
+  const agentProfiles: Record<string, string[]> = {};
+  await Promise.all((page?.jobs ?? []).filter((job) => job.marketplace).map(async (job) => {
+    try {
+      const detail = await getHireLedger.getJob({ chainId, jobId: job.jobId });
+      const ids = [...new Set(detail?.hireEvents.map((event) => event.agentId) ?? [])];
+      if (ids.length) agentProfiles[job.jobId] = ids;
+    } catch {
+      // Profile enrichment must never hide otherwise available ledger rows.
+    }
+  }));
   return (
     <HireLedgerPage
       activity={activity}
+      key={`${chainId}:${provider ?? "all"}:${before ?? "newest"}`}
       chainId={chainId}
       page={page}
       summary={summary}
+      agentProfiles={agentProfiles}
       {...cursor}
       {...(provider === undefined ? {} : { provider })}
     />
