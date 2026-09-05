@@ -101,6 +101,16 @@ export async function commerceJobsListResponse(request: Request, d1: D1Database)
     )`);
   }
   if (status !== null) conditions.push(eq(commerceJobs.status, STATUS_NAMES.indexOf(status as typeof STATUS_NAMES[number])));
+  // Scope aggregates exclude pagination. Do not scan the global ledger on
+  // every page: the global /commerce-summary uses the indexer's counters.
+  const totals = buyer !== null || provider !== null || agentId !== null
+    ? await db.select({
+      total: sql<number>`count(*)`,
+      completed: sql<number>`coalesce(sum(case when ${commerceJobs.status} = 3 then 1 else 0 end), 0)`,
+      funded: sql<number>`coalesce(sum(case when ${commerceJobs.status} = 1 then 1 else 0 end), 0)`,
+      submitted: sql<number>`coalesce(sum(case when ${commerceJobs.status} = 2 then 1 else 0 end), 0)`,
+    }).from(commerceJobs).where(and(...conditions)).get()
+    : undefined;
   if (beforeJobId !== null) conditions.push(lt(commerceJobs.jobId, beforeJobId));
   const rows = await db.select({
     chainId: commerceJobs.chainId,
@@ -125,6 +135,7 @@ export async function commerceJobsListResponse(request: Request, d1: D1Database)
     chainId,
     jobs: page.map(publicJob),
     nextBefore: rows.length > limit && last !== undefined ? String(last.jobId) : null,
+    ...(totals ? { totals } : {}),
   }, { status: 200, headers: CACHE_HEADERS });
 }
 
