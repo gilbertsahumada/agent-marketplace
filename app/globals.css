@@ -631,6 +631,38 @@ body {
   width: 0.55rem;
   height: 0.55rem;
   box-shadow: 0 0 0 7px rgb(255 233 0 / 11%);
+  transition: box-shadow 400ms ease, background-color 400ms ease;
+}
+
+.market-steps li[data-active="true"] .market-step-dot {
+  box-shadow: 0 0 0 7px rgb(255 233 0 / 22%), 0 0 16px rgb(255 233 0 / 60%);
+}
+
+.market-steps li[data-active="true"]::before {
+  background: linear-gradient(90deg, #ffe900, #2c2e35 70%);
+}
+
+.market-scene {
+  min-height: calc(8 * 1.15em);
+  margin: 0 0 1.1rem;
+  overflow: hidden;
+  color: rgb(255 233 0 / 42%);
+  font-family: var(--font-space-mono), monospace;
+  font-size: 0.66rem;
+  font-weight: 600;
+  line-height: 1.15;
+  white-space: pre;
+  transition: color 500ms ease, text-shadow 500ms ease;
+}
+
+.market-scene span {
+  display: block;
+  min-height: 1.15em;
+}
+
+.market-steps li[data-active="true"] .market-scene {
+  color: rgb(255 233 0 / 92%);
+  text-shadow: 0 0 10px rgb(255 233 0 / 30%);
 }
 
 @keyframes log-scan {
