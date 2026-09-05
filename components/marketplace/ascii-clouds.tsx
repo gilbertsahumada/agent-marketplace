@@ -12,7 +12,7 @@ import { useEffect, useRef } from "react";
 const GLYPHS = " ·:+*";
 const CELL = 14;
 const FRAME_MS = 1_000 / 18;
-const THRESHOLD = 0.48;
+const THRESHOLD = 0.4;
 
 function hash(x: number, y: number): number {
   const n = Math.sin(x * 127.1 + y * 311.7) * 43_758.5453;
@@ -37,11 +37,14 @@ function valueNoise(x: number, y: number): number {
 
 // Three octaves; the sum stays within [0, 0.875].
 export function cloudDensity(x: number, y: number, time: number): number {
-  const drift = time * 0.03;
+  // A steady wind from the left plus a slow swell, so the field both drifts
+  // and reshapes instead of sliding as one sheet.
+  const wind = time * 0.11;
+  const swell = time * 0.045;
   return (
-    0.5 * valueNoise(x + drift, y + drift * 0.35)
-    + 0.25 * valueNoise(x * 2.1 + 5.2 - drift * 0.6, y * 2.1 + 1.3)
-    + 0.125 * valueNoise(x * 4.3 + 9.1, y * 4.3 + 7.7 + drift * 0.4)
+    0.5 * valueNoise(x - wind, y + swell * 0.35)
+    + 0.25 * valueNoise(x * 2.1 + 5.2 - wind * 1.4, y * 2.1 + 1.3 - swell * 0.5)
+    + 0.125 * valueNoise(x * 4.3 + 9.1 - wind * 0.7, y * 4.3 + 7.7 + swell)
   ) / 0.875;
 }
 
@@ -88,7 +91,7 @@ export function AsciiClouds({ className = "hero-clouds" }: { className?: string 
           const density = cloudDensity(column * 0.09, row * 0.14, time);
           const glyph = glyphFor(density);
           if (glyph === " ") continue;
-          context.fillStyle = `rgb(255 233 0 / ${(0.12 + (density - THRESHOLD) * 1.1).toFixed(3)})`;
+          context.fillStyle = `rgb(255 233 0 / ${(0.1 + (density - THRESHOLD) * 0.95).toFixed(3)})`;
           context.fillText(glyph, column * CELL, row * CELL);
         }
       }

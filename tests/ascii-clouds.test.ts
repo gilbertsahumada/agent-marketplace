@@ -20,8 +20,8 @@ describe("ASCII clouds", () => {
 
   it("maps low density to empty cells and higher density to denser glyphs", () => {
     expect(glyphFor(0)).toBe(" ");
-    expect(glyphFor(0.4)).toBe(" ");
-    expect(glyphFor(0.5)).toBe("·");
+    expect(glyphFor(0.39)).toBe(" ");
+    expect(glyphFor(0.42)).toBe("·");
     expect(glyphFor(1)).toBe("*");
   });
 
