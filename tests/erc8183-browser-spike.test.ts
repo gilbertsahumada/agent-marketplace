@@ -21,6 +21,7 @@ import {
   exactApprovalRequired,
   parseBrowserJournal,
   recoverBrowserJournal,
+  recoverFundedBrowserJournal,
   resumeRequirements,
   validateRecoveredJobForResume,
 } from "../src/data/erc8183/browser-wallet-adapter.ts";
@@ -329,6 +330,17 @@ describe("receipts and recovery", () => {
     });
     expect([...values.values()]).toHaveLength(2);
     expect([...values.keys()].some(key => key.endsWith(`:job:${BUYER.toLowerCase()}:900`))).toBe(true);
+  });
+
+  it("recovers funded history independently of quote expiry and never trusts stored receipts", () => {
+    const saved = { schemaVersion: 1 as const, chainId: 97 as const, buyer: BUYER, seller: ERC8183_TESTNET.seller,
+      jobId: "900", quoteRequestId: 17, transactions: { fund: `0x${"12".repeat(32)}` as Hash }, lastConfirmedStep: "funded" as const };
+    const current = job({ status: "FUNDED", quoteExpiresAt: 1 });
+    expect(recoverFundedBrowserJournal(current, saved, BUYER)).toMatchObject({ quoteRequestId: 17, jobId: "900", transactions: {} });
+    for (const change of [
+      { buyer: ERC8183_TESTNET.seller }, { provider: BUYER }, { jobId: "901" },
+      { evaluator: BUYER }, { policy: BUYER }, { quotedToken: BUYER }, { budgetRaw: "2" }, { status: "OPEN" as const },
+    ]) expect(() => recoverFundedBrowserJournal({ ...current, ...change }, saved, BUYER)).toThrow(/does not match/);
   });
 });
 
