@@ -1,8 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { CheckCircle2, CircleAlert, Clock3, Copy, ExternalLink, FileClock, LoaderCircle } from "lucide-react";
+import { CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, CircleAlert, Clock3, Copy, ExternalLink, FileClock, LoaderCircle, RotateCw } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Table, TableHeader, TableHead, TableBody, TableRow, TableCell } from "@/components/ui/table";
+import { subscribeMarketplaceEvidence } from "./catalog-return-refresh";
 import { relativeAge } from "./relative-time";
 
 type QuoteAttempt = {
@@ -31,7 +34,8 @@ type QuoteRequest = {
 };
 
 type QuoteHistoryResponse = {
-  counts?: { requests: number; buyerRequests?: number; buyerSucceeded?: number; capabilityProbes?: number; succeeded: number; rejected: number; failed: number; expired?: number };
+  pagination?: { page: number; total: number; hasMore: boolean };
+  counts?: { requests: number; buyerRequests?: number; buyerVerified?: number; buyerSucceeded?: number; capabilityProbes?: number; importedObservations?: number; succeeded: number; rejected: number; failed: number; expired?: number };
   requests?: QuoteRequest[];
 };
 
@@ -53,19 +57,20 @@ function providerUrl(value: string): string | null {
 }
 
 function CopyReference({ value, label }: { value: string; label: string }) {
-  const copy = () => {
-    if (typeof navigator !== "undefined" && navigator.clipboard) void navigator.clipboard.writeText(value);
+  const [result, setResult] = useState<"idle" | "copied" | "failed">("idle");
+  const copy = async () => {
+    try { await navigator.clipboard.writeText(value); setResult("copied"); }
+    catch { setResult("failed"); }
   };
   return (
-    <button
-      aria-label={`Copy ${label}`}
-      className="inline-flex size-6 cursor-pointer items-center justify-center rounded text-zinc-500 transition-colors hover:bg-white/[0.06] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+    <span className="inline-flex items-center gap-1"><Button variant="ghost" size="icon-xs"
+      aria-label={result === "copied" ? `${label} copied` : `Copy ${label}`}
       onClick={copy}
       title={`Copy ${label}`}
       type="button"
     >
-      <Copy aria-hidden="true" className="size-3" />
-    </button>
+      {result === "copied" ? <CheckCircle2 aria-hidden="true" /> : <Copy aria-hidden="true" />}
+    </Button><span role="status" className="text-xs">{result === "copied" ? "Copied" : result === "failed" ? "Could not copy" : ""}</span></span>
   );
 }
 
@@ -79,14 +84,18 @@ function statusStyle(status: string): { label: string; className: string; icon: 
 export function QuoteHistory({ agentId }: { agentId: string }) {
   const [data, setData] = useState<QuoteHistoryResponse | null>(null);
   const [error, setError] = useState(false);
+  const [page, setPage] = useState(1);
+  const [reload, setReload] = useState(0);
+  useEffect(() => subscribeMarketplaceEvidence(agentId, () => { setPage(1); setReload(value => value + 1); }), [agentId]);
 
   useEffect(() => {
     let active = true;
+    setError(false); setData(null);
     // Test environments and older embedded shells may not expose fetch. Keep
     // the profile renderable in that case; the server-rendered state remains
     // authoritative and the history simply stays unavailable.
     const request = typeof fetch === "function"
-      ? fetch(`/api/marketplace/agents/${agentId}/quotes`, { cache: "no-store" })
+      ? fetch(`/api/marketplace/agents/${agentId}/quotes?page=${page}`, { cache: "no-store" })
       : null;
     if (!request || typeof (request as Promise<Response>).then !== "function") {
       return () => { active = false; };
@@ -99,27 +108,31 @@ export function QuoteHistory({ agentId }: { agentId: string }) {
       })
       .catch(() => { if (active) setError(true); });
     return () => { active = false; };
-  }, [agentId]);
+  }, [agentId, page, reload]);
 
   const requests = data?.requests ?? [];
   return (
     <section aria-labelledby="quote-history-title" className="rounded-xl border border-white/10 bg-white/[0.015]">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 px-4 py-4 sm:px-5">
+      <details className="group/history" open>
+      <summary className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-3 rounded-xl px-4 py-4 hover:bg-accent/30 focus-visible:outline-2 focus-visible:outline-ring sm:px-5 [&::-webkit-details-marker]:hidden">
         <h2 className="flex items-center gap-2 text-base font-medium text-white" id="quote-history-title">
           <FileClock aria-hidden="true" className="size-4 text-zinc-500" />Quote history
         </h2>
-        <div className="flex flex-wrap gap-2 text-xs">
+        <div className="ml-auto flex flex-wrap items-center gap-2 text-xs">
           <Badge variant="outline">{data?.counts?.buyerRequests ?? data?.counts?.requests ?? "—"} quotes requested</Badge>
           {data?.counts?.capabilityProbes !== undefined ? <Badge variant="outline">{data.counts.capabilityProbes} capacity checks</Badge> : null}
-          <Badge className="border-emerald-400/30 text-emerald-300" variant="outline">{data?.counts?.buyerSucceeded ?? data?.counts?.succeeded ?? "—"} verified</Badge>
+          <Badge className="border-emerald-400/30 text-emerald-300" variant="outline">{data?.counts?.buyerVerified ?? data?.counts?.buyerSucceeded ?? data?.counts?.succeeded ?? "—"} verified historically</Badge>
+          {data?.counts?.importedObservations ? <Badge variant="outline">{data.counts.importedObservations} imported observations</Badge> : null}
+          <ChevronDown aria-hidden="true" className="ml-1 size-4 shrink-0 text-muted-foreground transition-transform group-open/history:rotate-180 motion-reduce:transition-none" />
         </div>
-      </div>
-      {error ? <p className="px-4 py-5 text-sm text-zinc-500 sm:px-5">Quote history is temporarily unavailable.</p> : null}
+      </summary>
+      <div className="border-t border-white/10">
+      {error ? <div className="flex items-center justify-between gap-3 px-4 py-5 text-sm text-muted-foreground sm:px-5"><p>Quote history unavailable.</p><Button variant="outline" size="sm" type="button" onClick={() => setReload(value => value + 1)}><RotateCw aria-hidden="true" data-icon="inline-start" />Retry</Button></div> : null}
       {!error && data === null ? <p className="flex items-center gap-2 px-4 py-5 text-sm text-zinc-500 sm:px-5"><LoaderCircle aria-hidden="true" className="size-4 animate-spin" />Loading quote history…</p> : null}
       {!error && data !== null && requests.length === 0 ? <p className="px-4 py-5 text-sm text-zinc-500 sm:px-5">No quote requests yet. A compatible seller can be asked for one above.</p> : null}
       {requests.length > 0 ? (
-        <ol className="divide-y divide-white/10">
-          {requests.map((request) => {
+        <Table containerLabel="Quote history table"><TableHeader><TableRow>{["Request", "Status", "Transport", "Date", "Details"].map(column => <TableHead className="px-5" scope="col" key={column}>{column}</TableHead>)}</TableRow></TableHeader><TableBody>
+          {requests.slice(0, 5).map((request) => {
             const style = statusStyle(request.status);
             const Icon = style.icon;
             // The Worker returns attempts newest-first. Keeping the first one
@@ -127,18 +140,18 @@ export function QuoteHistory({ agentId }: { agentId: string }) {
             const latestAttempt = request.attempts[0];
             const created = new Date(request.createdAt).toISOString();
             return (
-              <li className="flex flex-wrap items-center gap-3 px-4 py-3 sm:px-5" key={request.id}>
-                <Icon aria-hidden="true" className={`size-4 shrink-0 ${style.label === "Processing" ? "animate-spin" : ""} ${style.className.split(" ").at(-1) ?? "text-zinc-400"}`} />
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Badge className={style.className} variant="outline">{style.label}</Badge>
-                    <span className="text-xs text-zinc-500">{request.kind === "capability_probe" ? "Capacity check" : "Buyer quote"}</span>
-                    <span className="text-xs uppercase tracking-wide text-zinc-600">{request.transport}</span>
+              <TableRow key={request.id}>
+                <TableCell className="px-5 py-4"><span className="font-medium">#{request.id}</span><span className="block text-xs text-muted-foreground">{request.kind === "capability_probe" ? "Capacity check" : "Buyer quote"}</span></TableCell>
+                <TableCell className="px-5"><Badge className={style.className} variant="outline"><Icon aria-hidden="true" className={style.label === "Processing" ? "animate-spin motion-reduce:animate-none" : ""} />{style.label}</Badge></TableCell>
+                <TableCell className="px-5 uppercase text-xs text-muted-foreground">{request.transport.replace("erc8183_http", "HTTP")}</TableCell>
+                <TableCell className="px-5">
                     <time className="inline-flex items-center gap-1 text-xs text-zinc-500" dateTime={created} title={created}>
                       <Clock3 aria-hidden="true" className="size-3" />{relativeAge(created)}
                     </time>
-                  </div>
-                  <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-zinc-600">
+                </TableCell>
+                <TableCell className="px-5"><details className="group/quote">
+                  <summary className="flex w-fit cursor-pointer list-none items-center gap-2 rounded-md border border-input px-3 py-1.5 text-xs font-medium hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring">View details<ChevronDown aria-hidden="true" className="size-3 transition-transform group-open/quote:rotate-180 motion-reduce:transition-none" /></summary>
+                  <div className="mt-3 flex max-w-80 flex-col gap-2 whitespace-normal text-xs text-muted-foreground">
                     {request.requestHash ? (
                       <span className="inline-flex min-w-0 items-center gap-1">
                         <code className="truncate" title={request.requestHash}>Request {shortHash(request.requestHash)}</code>
@@ -165,14 +178,13 @@ export function QuoteHistory({ agentId }: { agentId: string }) {
                           target={providerUrl(request.provider) ? "_blank" : undefined}
                           title={request.provider}
                         >
-                          Provider {shortHash(request.provider)}
+                          Provider {shortHash(request.provider)}{providerUrl(request.provider) ? <ExternalLink aria-hidden="true" className="ml-1 inline size-3" /> : null}
                         </a>
                         <CopyReference label="provider address" value={request.provider} />
                       </span>
                     ) : null}
                   </div>
-                </div>
-                <span className="text-right text-xs text-zinc-600">
+                <span className="mt-2 block text-xs text-muted-foreground">
                   {latestAttempt ? (
                     <>
                       <span className="block uppercase tracking-wide">{latestAttempt.outcome === "fallback" ? "Worker fallback" : latestAttempt.executor}</span>
@@ -180,11 +192,19 @@ export function QuoteHistory({ agentId }: { agentId: string }) {
                     </>
                   ) : "—"}
                 </span>
-              </li>
+                </details></TableCell>
+              </TableRow>
             );
           })}
-        </ol>
+        </TableBody></Table>
       ) : null}
+      {data && ((data.pagination?.total ?? 0) > 5 || page > 1) ? <nav aria-label="Quotes pagination" className="flex items-center justify-between gap-3 border-t border-border px-5 py-3 text-sm">
+        <Button variant="outline" size="sm" type="button" disabled={page === 1} onClick={() => setPage(value => value - 1)}><ChevronLeft aria-hidden="true" data-icon="inline-start" />Previous</Button>
+        <span className="text-muted-foreground">Page {page} of {Math.max(1, Math.ceil((data.pagination?.total ?? 0) / 5))}</span>
+        <Button variant="outline" size="sm" type="button" disabled={!data.pagination?.hasMore} onClick={() => setPage(value => value + 1)}>Next<ChevronRight aria-hidden="true" data-icon="inline-end" /></Button>
+      </nav> : null}
+      </div>
+      </details>
     </section>
   );
 }
