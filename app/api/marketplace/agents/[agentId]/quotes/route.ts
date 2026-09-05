@@ -17,6 +17,13 @@ async function readJson(request: Request): Promise<Record<string, unknown>> {
 }
 
 function brief(value: Record<string, unknown>) {
+  if (value.schemaVersion === 2) {
+    if (Object.keys(value).sort().join(",") !== "contractHash,endpointKey,parameters,schemaVersion"
+      || typeof value.endpointKey !== "string" || !/^[a-f0-9]{64}$/.test(value.endpointKey)
+      || typeof value.contractHash !== "string" || !/^[a-f0-9]{64}$/.test(value.contractHash)
+      || !value.parameters || typeof value.parameters !== "object" || Array.isArray(value.parameters)) throw new InvalidMarketplaceInputError("Seller parameters are invalid");
+    return { schemaVersion: 2 as const, endpointKey: value.endpointKey, contractHash: value.contractHash, parameters: value.parameters as Record<string, unknown> };
+  }
   if (Object.keys(value).sort().join(",") !== "acceptanceCriteria,deliverable,objective"
     || [value.objective, value.deliverable, value.acceptanceCriteria].some((entry) => (
       typeof entry !== "string" || entry.trim().length < 1 || entry.length > MAX

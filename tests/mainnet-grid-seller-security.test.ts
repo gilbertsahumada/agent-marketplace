@@ -6,6 +6,18 @@ import { ERC1967_IMPLEMENTATION_SLOT, ERC8183_MAINNET } from "../src/mainnet/con
 import { MainnetGridSellerRepository, mainnetGridNetwork } from "../src/mainnet/grid-seller-repository.ts";
 import { mainnetImplementationPinsMatch } from "../src/mainnet/implementation-pins.ts";
 import { areMainnetWritesEnabled } from "../src/mainnet/mainnet-write-gate.ts";
+import { InvalidHostedSellerRequestError } from "../src/business/errors/hosted-seller-errors.ts";
+
+it("rejects unsupported negotiation input before initializing the signer or RPC", async () => {
+  const loadRuntime = vi.fn();
+  const repository = new MainnetGridSellerRepository(loadRuntime);
+  await expect(repository.handleMessage({
+    skill: "negotiate",
+    taskDescription: 'MARKETPLACE_QUOTE_V1:{"objective":"a plan"}',
+    terms: {},
+  })).rejects.toBeInstanceOf(InvalidHostedSellerRequestError);
+  expect(loadRuntime).not.toHaveBeenCalled();
+});
 
 const SELLER = getAddress("0x1111111111111111111111111111111111111111");
 

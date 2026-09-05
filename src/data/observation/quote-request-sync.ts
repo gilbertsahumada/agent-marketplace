@@ -46,6 +46,12 @@ export interface BuyerQuoteBrief {
   deliverable: string;
   acceptanceCriteria: string;
 }
+export interface SellerParameterRequest {
+  schemaVersion: 2;
+  endpointKey: string;
+  contractHash: string;
+  parameters: Record<string, unknown>;
+}
 
 function urlFor(env: Environment, path: string): URL | null {
   return privateWorkerUrl(env, path);
@@ -78,7 +84,7 @@ async function requestWorker(
 
 export async function startBuyerQuote(
   agentId: string,
-  brief: BuyerQuoteBrief,
+  brief: BuyerQuoteBrief | SellerParameterRequest,
   options: { env?: Environment; fetchImpl?: typeof fetch; caller?: string } = {},
 ) {
   const result = await requestWorker(`/catalog-quotes/${agentId}`, {
@@ -90,6 +96,10 @@ export async function startBuyerQuote(
   // count and the detail history must not wait for the 30-second feed cache.
   if (result && result.status >= 200 && result.status < 300) invalidateCatalogCandidateCache();
   return result;
+}
+
+export async function getBuyerNegotiationInput(agentId: string, options: { env?: Environment; fetchImpl?: typeof fetch; caller?: string } = {}) {
+  return requestWorker(`/catalog-quotes/${agentId}/input`, { method: "GET" }, options);
 }
 
 export async function submitBuyerQuoteResult(

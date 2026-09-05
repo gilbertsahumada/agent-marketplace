@@ -1,5 +1,43 @@
 import { isSyntacticallyPublicHttpsUrl } from "../trust8004/safe-url";
 import { a2aBaseEndpoint } from "../trust8004/candidates";
+import { NEGOTIATION_INPUT_EXTENSION, normalizeNegotiationContract, type NegotiationContract } from "../../../src/shared/negotiation-input";
+
+/** Only reads declarations: never negotiates or calls a seller tool. */
+export async function discoverNegotiationInput(input: A2aProbeInput & { transport: string }): Promise<NegotiationContract> {
+  if (!isSyntacticallyPublicHttpsUrl(input.endpoint)) throw new SellerProbeError("SELLER_UNSAFE_URL");
+  const deadline = (input.now ?? performance.now.bind(performance))() + input.timeoutMs;
+  const usage = { bytes: 0 };
+  if (input.transport === "mcp") {
+    const target = new URL(input.endpoint);
+    const mcpInput = { ...input, taskDescription: "", terms: { deliverables: "", quality_standards: "", evaluation_required: true as const, evaluator_type: "uma_oov3" as const } };
+    const initialized = await fetchMcpJson(target, { jsonrpc: "2.0", id: crypto.randomUUID(), method: "initialize", params: {
+      protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "trust8004-marketplace", version: "1.0" },
+    } }, mcpInput, deadline, usage);
+    const listed = await fetchMcpJson(target, { jsonrpc: "2.0", id: crypto.randomUUID(), method: "tools/list", params: {} }, mcpInput, deadline, usage, initialized.sessionId);
+    const tools = isRecord(listed.result) && Array.isArray(listed.result.tools) ? listed.result.tools : [];
+    const tool = tools.find(value => isRecord(value) && ["negotiate_erc8183_job", "request_quote"].includes(String(value.name)));
+    if (!isRecord(tool)) throw new SellerProbeError("MCP_QUOTE_TOOL_REQUIRED");
+    return normalizeNegotiationContract({ encoding: "request", inputSchema: tool.inputSchema });
+  }
+  if (input.transport === "a2a") {
+    const url = new URL(a2aBaseEndpoint(input.endpoint));
+    url.pathname = `${url.pathname.replace(/\/+$/, "")}/.well-known/agent-card.json`;
+    const card = await fetchJson(url, { headers: { accept: "application/json" } }, input, deadline, usage);
+    parseMessageUrl(card.url, new URL(a2aBaseEndpoint(input.endpoint)));
+    if (!parseSkills(card.skills).some(skill => NEGOTIATION_SKILLS.includes(skill as typeof NEGOTIATION_SKILLS[number]))) throw new SellerProbeError("A2A_REQUIRED_SKILLS");
+    const extensions = isRecord(card.capabilities) && Array.isArray(card.capabilities.extensions) ? card.capabilities.extensions : [];
+    const extension = extensions.find(value => isRecord(value) && value.uri === NEGOTIATION_INPUT_EXTENSION);
+    if (!isRecord(extension)) throw new SellerProbeError("NEGOTIATION_PARAMETERS_UNAVAILABLE");
+    return normalizeNegotiationContract(extension.params);
+  }
+  if (input.transport !== "erc8183_http") throw new SellerProbeError("NEGOTIATION_TRANSPORT_UNSUPPORTED");
+  const url = new URL(input.endpoint);
+  url.pathname = url.pathname.replace(/\/+$/, "").replace(/\/(health|status|negotiate)$/, "") + "/status";
+  const status = await fetchJson(url, { headers: { accept: "application/json" } }, input, deadline, usage);
+  // Explicit marketplace convention. A healthy HTTP endpoint alone is not a schema.
+  if (!isRecord(status.negotiationInput)) throw new SellerProbeError("NEGOTIATION_PARAMETERS_UNAVAILABLE");
+  return normalizeNegotiationContract(status.negotiationInput);
+}
 
 const MAX_AGGREGATE_RESPONSE_BYTES = 64 * 1_024;
 const NEGOTIATION_SKILLS = ["negotiate-erc8183-job", "negotiate"] as const;
@@ -293,7 +331,7 @@ async function fetchJson(
   if (response.type === "opaqueredirect" || (response.status >= 300 && response.status < 400)) {
     throw new SellerProbeError("SELLER_REDIRECT");
   }
-  if (response.status >= 500) throw new SellerProbeError("SELLER_UNREACHABLE");
+  if (response.status >= 500) throw new SellerProbeError("SELLER_SERVER_ERROR");
   if (!response.ok) throw new SellerProbeError("SELLER_HTTP_4XX");
   const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
   if (!contentType.includes("application/json")) throw new SellerProbeError("SELLER_INVALID_JSON");

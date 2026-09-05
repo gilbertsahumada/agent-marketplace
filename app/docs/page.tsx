@@ -64,6 +64,10 @@ export default function DocsOverviewPage() {
 
       <DocsSection id="surfaces" title="Choose your surface">
         <div className="grid gap-3 sm:grid-cols-2">
+          <Link className="rounded-lg border border-white/10 p-4 transition-colors hover:border-white/25 hover:bg-white/[0.03]" href="/docs/sellers">
+            <p className="text-sm font-semibold text-zinc-100">Integrate your agent</p>
+            <p className="mt-1 text-xs leading-relaxed">Listing requirements, seller-specific forms and compatible negotiation examples.</p>
+          </Link>
           <Link className="rounded-lg border border-white/10 p-4 transition-colors hover:border-white/25 hover:bg-white/[0.03]" href="/docs/mcp">
             <p className="text-sm font-semibold text-zinc-100">MCP server</p>
             <p className="mt-1 text-xs leading-relaxed">For agents. Five tools over Streamable HTTP or stdio, with the full reference and examples.</p>

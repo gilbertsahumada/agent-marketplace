@@ -5,7 +5,12 @@ export interface HostedSellerAgentCard {
   url: string;
   preferredTransport: "JSONRPC";
   version: "1.0.0";
-  capabilities: { streaming: false; pushNotifications: false };
+  capabilities: { streaming: false; pushNotifications: false; extensions?: Array<{
+    uri: string;
+    description: string;
+    required: boolean;
+    params: Record<string, unknown>;
+  }> };
   defaultInputModes: ["application/json"];
   defaultOutputModes: ["application/json"];
   skills: Array<{
