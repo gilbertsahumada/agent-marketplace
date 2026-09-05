@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { CatalogUnavailable } from "@/components/marketplace/catalog-unavailable";
 import { HireJobLedgerPage } from "@/components/marketplace/hire-job-ledger-page";
 import { TestnetJobTracker } from "@/components/marketplace/testnet-job-tracker";
-import { getErc8183TestnetJobTracking, getHireLedger } from "@/src/business/composition";
+import { getErc8183TestnetJobTracking, getHireLedger, resolveJobAgents } from "@/src/business/composition";
 import {
   Erc8183DemoJobNotFoundError,
   Erc8183SpikeDisabledError,
@@ -22,7 +22,9 @@ export const dynamic = "force-dynamic";
 export default async function TestnetJobPage({ params }: { params: Promise<{ jobId: string }> }) {
   const { jobId } = await params;
   try {
-    return <TestnetJobTracker tracking={await getErc8183TestnetJobTracking.execute({ jobId })} />;
+    const tracking = await getErc8183TestnetJobTracking.execute({ jobId });
+    const agents = tracking.job ? await resolveJobAgents.execute([{ chainId: 97, jobId, provider: tracking.job.provider }]) : {};
+    return <TestnetJobTracker tracking={tracking} agentResolution={agents[`97:${jobId}`]} />;
   } catch (error) {
     if (
       error instanceof Erc8183DemoJobNotFoundError
@@ -39,7 +41,10 @@ export default async function TestnetJobPage({ params }: { params: Promise<{ job
         if (ledgerError instanceof MarketplaceDataUnavailableError) return <CatalogUnavailable retryHref={`/jobs/testnet/${jobId}`} />;
         throw ledgerError;
       }
-      if (ledger !== null) return <HireJobLedgerPage job={ledger} />;
+      if (ledger !== null) {
+        const agents = await resolveJobAgents.execute([ledger]);
+        return <HireJobLedgerPage job={ledger} agentResolution={agents[`97:${jobId}`]} />;
+      }
       notFound();
     }
     if (error instanceof InvalidErc8183SpikeInputError) notFound();

@@ -1,4 +1,5 @@
 import { ConfigError, loadConfig, type WorkerConfig } from "./config";
+import type { D1DatabaseLike } from "./db/client";
 import type { CommerceIndexSummary, CommerceIndexWork } from "./phases/commerce-index";
 import type { CatalogCapabilityProbeSummary, CatalogCapabilityWork } from "./phases/catalog-capability";
 import type {
@@ -127,6 +128,7 @@ async function cachedCatalogResponse(
 }
 
 type QueueWork =
+  | { kind: "index_identities"; chainId: 56 | 97; enqueuedAt: number }
   | { kind: "scheduled"; scheduledTime: number }
   | { kind: "catalog_validation"; validationId: number; enqueuedAt: number }
   | CatalogCapabilityWork
@@ -143,6 +145,10 @@ function queueWork(body: unknown, currentTime: number): QueueWork {
   const value = body as Record<string, unknown>;
   const enqueuedAtValid = nonNegativeInteger(value.enqueuedAt)
     && value.enqueuedAt <= currentTime + QUEUE_MAX_FUTURE_SKEW_MS;
+  if (value.schemaVersion === 1 && value.kind === "index_identities"
+    && (value.chainId === 56 || value.chainId === 97) && enqueuedAtValid) {
+    return { kind: "index_identities", chainId: value.chainId, enqueuedAt: value.enqueuedAt as number };
+  }
   if (value.schemaVersion === 2
     && value.kind === "catalog_capability_probe"
     && typeof value.agentKey === "string"
@@ -372,6 +378,12 @@ export function createWorker(dependencies: WorkerDependencies = {}): WorkerEntry
           ? catalogQuoteBrowserResultResponse(request, env.DB, attemptId, options)
           : catalogQuoteFallbackResponse(request, env.DB, attemptId, options);
       }
+      if (request.method === "GET" && url.pathname === "/job-agent-identities") {
+        const { jobAgentIdentitiesResponse } = await import("./routes/job-agent-identities");
+        return cachedCatalogResponse(request, config.catalogResponseCacheSeconds > 0 ? 30 : 0, () => (
+          jobAgentIdentitiesResponse(request, env.DB as unknown as D1DatabaseLike)
+        ));
+      }
       if (request.method === "GET" && url.pathname === "/commerce-jobs") {
         const { commerceJobsListResponse } = await import("./routes/commerce-jobs");
         return cachedCatalogResponse(request, config.catalogResponseCacheSeconds > 0 ? 30 : 0, () => (
@@ -389,6 +401,12 @@ export function createWorker(dependencies: WorkerDependencies = {}): WorkerEntry
         return cachedCatalogResponse(request, config.catalogResponseCacheSeconds > 0 ? 30 : 0, () => (
           commerceSummaryResponse(request, env.DB)
         ));
+      }
+      if (request.method === "GET" && url.pathname === "/commerce-activity") {
+        const { COMMERCE_ACTIVITY_CACHE_SECONDS, commerceActivityResponse } = await import("./routes/commerce-jobs");
+        // Same window as the route's own cache-control, so the rewrite is a no-op.
+        const seconds = config.catalogResponseCacheSeconds > 0 ? COMMERCE_ACTIVITY_CACHE_SECONDS : 0;
+        return cachedCatalogResponse(request, seconds, () => commerceActivityResponse(request, env.DB, now()));
       }
       if (request.method === "GET" && url.pathname === "/hire-events") {
         const { hireEventsListResponse } = await import("./routes/hire-events");
@@ -520,6 +538,13 @@ export function createWorker(dependencies: WorkerDependencies = {}): WorkerEntry
       if (env.WP2_QUEUE === undefined) throw new Error("WP2_QUEUE_BINDING_REQUIRED");
       await env.WP2_QUEUE.send({ schemaVersion: 1, scheduledTime: controller.scheduledTime });
       logger.info("wp2.cron.enqueued", { scheduledTime: controller.scheduledTime });
+      if (env.AGENT_IDENTITY_INDEX_ENABLED === "1") {
+        for (const chainId of [56, 97] as const) {
+          if (chainId === 56 ? env.BSC_RPC_URL : env.BSC_TESTNET_RPC_URL) {
+            await env.WP2_QUEUE.send({ schemaVersion: 1, kind: "index_identities", chainId, enqueuedAt: now() });
+          }
+        }
+      }
       if (config.commerceIndexEnabled) {
         // One cursor-driven index_range per chain that has an RPC URL; the
         // consumer reads from the chain cursor to the safe head.
@@ -557,6 +582,21 @@ export function createWorker(dependencies: WorkerDependencies = {}): WorkerEntry
         kind: work.kind,
         ...queueWorkDetails(work),
       });
+      if (work.kind === "index_identities") {
+        if (env.AGENT_IDENTITY_INDEX_ENABLED !== "1") { message.ack(); return; }
+        const rpcUrl = work.chainId === 56 ? env.BSC_RPC_URL : env.BSC_TESTNET_RPC_URL;
+        if (!rpcUrl) throw new Error("IDENTITY_INDEX_RPC_REQUIRED");
+        const { runIdentityIndex, identityIndexReader } = await import("./identity/indexer");
+        try {
+          const summary = await runIdentityIndex(env.DB as unknown as D1DatabaseLike, work.chainId, identityIndexReader(rpcUrl, work.chainId), now());
+          logger.info("identity.index.completed", summary);
+        } catch (error) {
+          logger.error("identity.index.failed", { chainId: work.chainId, attempt: message.attempts, errorCode: "IDENTITY_INDEX_FAILED" });
+          throw error;
+        }
+        message.ack();
+        return;
+      }
       if (work.kind === "catalog_capability_probe") {
         if (!config.catalogProbeEnabled || !config.catalogV2WritesEnabled) {
           message.ack();
@@ -691,6 +731,7 @@ const defaultRunCommerceIndex = async (work: CommerceIndexWork, env: Env, config
 
 function queueWorkDetails(work: QueueWork): Record<string, unknown> {
   switch (work.kind) {
+    case "index_identities": return { chainId: work.chainId };
     case "scheduled": return { scheduledTime: work.scheduledTime };
     case "catalog_validation": return { validationId: work.validationId };
     case "catalog_capability_probe": return { agentKey: work.agentKey, endpointKey: work.endpointKey };

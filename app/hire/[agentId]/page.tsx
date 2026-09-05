@@ -38,6 +38,7 @@ export default async function HirePage({ params, searchParams }: { params: Promi
       agent={agent}
       catalogCandidate={catalogCandidate}
       hireFlow={hireFlow}
+      hireActivity={hireJobsResult?.activity ?? null}
       hireFlowAvailable={canRequestQuote}
       hireJobs={hireJobs}
       jobsChainId={jobsChainId}

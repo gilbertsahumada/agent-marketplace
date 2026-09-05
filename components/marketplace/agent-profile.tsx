@@ -14,7 +14,7 @@ import type { ReactNode } from "react";
 import type { MarketplaceAgent } from "@/src/business/entities/marketplace-agent";
 import type { AgentEvidencePassport } from "@/src/business/entities/evidence-passport";
 import type { MainnetJobProof } from "@/src/business/entities/mainnet-job-proof";
-import type { HireChainId, HireJob } from "@/src/business/entities/hire-job";
+import type { HireActivity, HireChainId, HireJob } from "@/src/business/entities/hire-job";
 import { Badge } from "@/components/ui/badge";
 import { Breadcrumb } from "./page-primitives";
 import { AgentAvatar } from "./agent-avatar";
@@ -90,6 +90,7 @@ export function AgentProfile({
   jobsNewestHref,
   jobsChainId = 56,
   hireJobsTotals,
+  hireActivity = null,
   jobProofs = EMPTY_JOBS,
 }: {
   jobsOlderHref?: string;
@@ -105,6 +106,8 @@ export function AgentProfile({
   hireJobs?: readonly HireJob[] | null;
   hireJobsMore?: boolean;
   hireJobsScope?: "wallet" | "agent";
+  // last 30 days of phase events in that scope; null or absent hides the line.
+  hireActivity?: HireActivity | null;
   jobProofs?: readonly MainnetJobProof[];
 }) {
   const displayName = marketplaceAgentDisplayName(agent.name);
@@ -255,7 +258,7 @@ export function AgentProfile({
       <div className="mt-5 flex flex-col gap-5">
         {hireFlow ? <section className="scroll-mt-6" id="hire-flow">{hireFlow}</section> : <HiringUnavailable model={journey} notice={hireNotice} validationAvailable={canCheckAvailability} />}
       </div>
-      <JobHistory provider={agent.onchainIdentity?.agentWallet ?? null} agentId={agent.agentId} chainId={jobsChainId} {...(hireJobsTotals ? { totals: hireJobsTotals } : {})} hireActivity={passport.checks.hireActivity} hireJobs={hireJobs} jobs={jobProofs} more={hireJobsMore} scope={hireJobsScope} {...(jobsOlderHref ? { olderHref: jobsOlderHref } : {})} {...(jobsNewestHref ? { newestHref: jobsNewestHref } : {})} />
+      <JobHistory activity={hireActivity} provider={agent.onchainIdentity?.agentWallet ?? null} agentId={agent.agentId} chainId={jobsChainId} {...(hireJobsTotals ? { totals: hireJobsTotals } : {})} hireActivity={passport.checks.hireActivity} hireJobs={hireJobs} jobs={jobProofs} more={hireJobsMore} scope={hireJobsScope} {...(jobsOlderHref ? { olderHref: jobsOlderHref } : {})} {...(jobsNewestHref ? { newestHref: jobsNewestHref } : {})} />
       <div className="mt-5"><QuoteHistory agentId={agent.agentId} /></div>
       <div className="mt-5">
         {canCheckAvailability ? (

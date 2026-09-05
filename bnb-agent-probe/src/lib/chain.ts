@@ -11,7 +11,7 @@ import {
 } from "viem";
 import { bsc } from "viem/chains";
 
-const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
+import { IDENTITY_REGISTRIES, providerIdentity } from "../../../shared/agent-identity";
 const MAX_BLOCK_AGE_SECONDS = 120;
 const MAX_FUTURE_BLOCK_SKEW_SECONDS = 10;
 const MAX_RPC_RESPONSE_BYTES = 64 * 1_024;
@@ -23,14 +23,14 @@ export const READ_ONLY_RPC_METHODS: ReadonlySet<string> = new Set([
   "eth_getTransactionReceipt",
 ]);
 
-export const BSC_REGISTRY = getAddress("0x8004A169FB4a3325136EB29fA0ceB6D2e539a432");
+export const BSC_REGISTRY = getAddress(IDENTITY_REGISTRIES[56]);
 export const BSC_COMMERCE = getAddress("0xEa4DAa3100A767e86FDed867729ae7446476EBA6");
 export const BSC_ROUTER = getAddress("0x51895229E12F9876011789B04f8698af06cCD6DA");
 export const BSC_POLICY = getAddress("0x9C01845705b3078Aa2e8cfF7520a6376FD766dE5");
 export const BSC_PAYMENT_TOKEN = getAddress("0xcE24439F2D9C6a2289F741120FE202248B666666");
 // BSC Testnet (97) deployment used by the browser hire demo and the agent-buyer
 // demo. Only hire-event verification reads it; probes stay Mainnet-only.
-export const BSC_TESTNET_REGISTRY = getAddress("0x8004A818BFB912233c491871b3d84c89A494BD9e");
+export const BSC_TESTNET_REGISTRY = getAddress(IDENTITY_REGISTRIES[97]);
 export const BSC_TESTNET_COMMERCE = getAddress("0xa206c0517b6371c6638cd9e4a42cc9f02a33b0de");
 
 const registryAbi = parseAbi([
@@ -188,10 +188,8 @@ export async function readProbeChainContext(
   if (typeof agentWallet !== "string" || typeof owner !== "string") {
     throw new BscProbeError("BSC_IDENTITY");
   }
-  const normalizedAgentWallet = getAddress(agentWallet);
-  const normalizedOwner = getAddress(owner);
-  const useOwner = isAddressEqual(normalizedAgentWallet, ZERO_ADDRESS);
-  if (useOwner && isAddressEqual(normalizedOwner, ZERO_ADDRESS)) throw new BscProbeError("BSC_IDENTITY");
+  const identity = providerIdentity({ agentWallet: getAddress(agentWallet), owner: getAddress(owner), allowOwnerFallback: true });
+  if (!identity) throw new BscProbeError("BSC_IDENTITY");
   if (
     typeof paymentToken !== "string"
     || !isAddress(paymentToken)
@@ -202,8 +200,8 @@ export async function readProbeChainContext(
   if (policyAllowlisted !== true) throw new BscProbeError("BSC_POLICY");
   if (tokenDecimals !== 18) throw new BscProbeError("BSC_TOKEN_DECIMALS");
   return {
-    provider: useOwner ? normalizedOwner : normalizedAgentWallet,
-    walletSource: useOwner ? "ownerOf" : "agentWallet",
+    provider: getAddress(identity.wallet),
+    walletSource: identity.source,
     blockNumber: block.number,
     blockTimestamp: block.timestamp,
     commerce: BSC_COMMERCE,

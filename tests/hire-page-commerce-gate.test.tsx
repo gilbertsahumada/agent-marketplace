@@ -3,9 +3,11 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { CatalogCandidate } from "../src/business/entities/catalog-candidate.ts";
 
-const { executePassport, executeConfig, renderDemo, redirectRoute, executeJobs } = vi.hoisted(() => ({
+const { executePassport, executeConfig, executeHireJobs, profileProps, renderDemo, redirectRoute } = vi.hoisted(() => ({
   executePassport: vi.fn(),
   executeConfig: vi.fn(),
+  executeHireJobs: vi.fn(),
+  profileProps: vi.fn(),
   renderDemo: vi.fn(),
   redirectRoute: vi.fn(),
   executeJobs: vi.fn(async () => ({ jobs: [], nextBefore: null, scope: "wallet" })),
@@ -14,7 +16,7 @@ const { executePassport, executeConfig, renderDemo, redirectRoute, executeJobs }
 vi.mock("@/src/business/composition", () => ({
   getAgentEvidencePassport: { executeWithAgent: executePassport },
   getMainnetBrowserDemoConfig: { execute: executeConfig },
-  listAgentHireJobs: { execute: executeJobs },
+  listAgentHireJobs: { execute: executeHireJobs },
 }));
 
 vi.mock("@/components/spikes/erc8183-browser-spike", () => ({
@@ -33,17 +35,21 @@ vi.mock("@/components/marketplace/quote-request-panel", () => ({
 
 vi.mock("@/components/marketplace/agent-profile", () => ({
   marketplaceAgentDisplayName: (name: string) => name,
-  AgentProfile: ({ catalogCandidate, hireFlow }: {
+  AgentProfile: (props: {
     catalogCandidate: CatalogCandidate;
     hireFlow?: ReturnType<typeof createElement> | null;
-  }) => createElement("main", {},
-    catalogCandidate.state?.buyerAction === "check_availability"
-      && (catalogCandidate.state.canRequestBrowserValidation
-        || catalogCandidate.state.canRequestInfrastructureValidation)
-      ? createElement("a", { href: "#validation" }, "Hire agent")
-      : null,
-    hireFlow,
-  ),
+  }) => {
+    profileProps(props);
+    const { catalogCandidate, hireFlow } = props;
+    return createElement("main", {},
+      catalogCandidate.state?.buyerAction === "check_availability"
+        && (catalogCandidate.state.canRequestBrowserValidation
+          || catalogCandidate.state.canRequestInfrastructureValidation)
+        ? createElement("a", { href: "#validation" }, "Hire agent")
+        : null,
+      hireFlow,
+    );
+  },
 }));
 
 vi.mock("next/navigation", () => ({
@@ -128,10 +134,54 @@ async function render(candidateState: NonNullable<CatalogCandidate["state"]>) {
   return renderToStaticMarkup(page);
 }
 
+const INDEXED_JOB = {
+  chainId: 56 as const, jobId: "56696", buyer: "0x5ee75a1B1648C023e885E58bD3735Ae273f2cc52" as const,
+  provider: "0xA2a2012e52Fd075c0F3146e37E833E7294ee52B5" as const, budgetRaw: "10000000000000000", status: "COMPLETED" as const,
+  expiresAt: "2026-09-03T12:00:00.000Z", submittedAt: null, marketplace: true, updatedAt: "2026-09-03T12:00:00.000Z",
+};
+
+const ACTIVITY = {
+  chainId: 56 as const, days: 30, from: "2026-08-04T12:00:00.000Z", to: "2026-09-03T12:00:00.000Z",
+  byDay: [{ day: "2026-09-01", created: 1, funded: 1, submitted: 0, settled: 0, refunded: 0 }],
+  totals: { created: 1, funded: 1, submitted: 0, settled: 0, refunded: 0 },
+};
+
 describe("hire page normalized commerce gate", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     executeConfig.mockReturnValue({ agentId: 303779 });
+    executeHireJobs.mockResolvedValue({ jobs: [INDEXED_JOB], nextBefore: "56600", scope: "wallet", activity: ACTIVITY });
+  });
+
+  it("hands the indexed ledger page, its cursor, its scope and its activity window to the profile", async () => {
+    await render(state());
+
+    expect(executeHireJobs).toHaveBeenCalledWith({ agent: expect.objectContaining({ agentId: "303779" }), chainId: 56 });
+    expect(profileProps).toHaveBeenCalledWith(expect.objectContaining({
+      hireJobs: [expect.objectContaining({ jobId: "56696" })],
+      hireJobsMore: true,
+      hireJobsScope: "wallet",
+      hireActivity: ACTIVITY,
+    }));
+  });
+
+  it("passes a missing activity window as null without hiding the jobs", async () => {
+    executeHireJobs.mockResolvedValue({ jobs: [INDEXED_JOB], nextBefore: null, scope: "wallet", activity: null });
+
+    await render(state());
+
+    expect(profileProps).toHaveBeenCalledWith(expect.objectContaining({
+      hireJobs: [expect.objectContaining({ jobId: "56696" })],
+      hireActivity: null,
+    }));
+  });
+
+  it("tells the profile the ledger is unavailable rather than empty", async () => {
+    executeHireJobs.mockResolvedValue(null);
+
+    await render(state());
+
+    expect(profileProps).toHaveBeenCalledWith(expect.objectContaining({ hireJobs: null, hireJobsMore: false, hireJobsScope: "agent", hireActivity: null }));
   });
 
   it("redirects the former profile route to the canonical hire journey", async () => {
@@ -219,6 +269,6 @@ describe("hire page normalized commerce gate", () => {
   it("scopes history queries to Testnet without changing the seller identity", async () => {
     await render(state());
     await HirePage({ params: Promise.resolve({ agentId: "303779" }), searchParams: Promise.resolve({ jobsNetwork: "testnet", jobsBefore: "42" }) });
-    expect(executeJobs).toHaveBeenLastCalledWith({ agent: { agentId: "303779", name: "Marketplace Grid planner" }, chainId: 97, before: "42" });
+    expect(executeHireJobs).toHaveBeenLastCalledWith({ agent: { agentId: "303779", name: "Marketplace Grid planner" }, chainId: 97, before: "42" });
   });
 });

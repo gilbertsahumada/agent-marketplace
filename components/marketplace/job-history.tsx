@@ -3,14 +3,15 @@ import { useEffect, useRef, useState, type ComponentProps } from "react";
 import { BriefcaseBusiness, ChevronDown } from "lucide-react";
 import type { AgentEvidencePassport } from "@/src/business/entities/evidence-passport";
 import type { MainnetJobProof } from "@/src/business/entities/mainnet-job-proof";
-import type { HireChainId, HireJob } from "@/src/business/entities/hire-job";
+import type { HireActivity, HireChainId, HireJob } from "@/src/business/entities/hire-job";
 import { Badge } from "@/components/ui/badge";
 import { HireJobTableRow } from "./hire-job-rows";
 import { JobNetworkTabs } from "./job-network-tabs";
 import { HistoryPages } from "./history-pages";
 import { agentJobHistory, type JobHistoryTotals } from "./agent-job-history";
 
-function JobHistoryContent({ jobs, hireJobs, scope, olderHref, newestHref, chainId, agentId, totals, onNetworkChange, pending }: {
+function JobHistoryContent({ jobs, hireJobs, scope, olderHref, newestHref, chainId, agentId, totals, activity, onNetworkChange, pending }: {
+  activity?: HireActivity | null;
   onNetworkChange?: (network: string) => void;
   pending?: boolean;
   chainId: HireChainId;
@@ -44,6 +45,7 @@ function JobHistoryContent({ jobs, hireJobs, scope, olderHref, newestHref, chain
         </div>
       </summary>
       <div className="border-t border-white/10">
+        {activity?.chainId === chainId ? <p className="px-5 pt-3 text-xs text-muted-foreground">Last {activity.days} days: {activity.totals.created.toLocaleString("en")} created · {activity.totals.settled.toLocaleString("en")} settled</p> : null}
         <JobNetworkTabs agentId={agentId} chainId={chainId} walletScope={scope === "wallet"} onNetworkChange={onNetworkChange} pending={pending}>
         <HistoryPages emptyContent={hireJobs === null ? "Indexed ledger unavailable right now." : "No indexed jobs on this network."} columns={["Job", "Status", "Buyer", "Provider", "Updated", "Details"]} key={olderHref ?? newestHref ?? "newest"} label="Jobs" {...(olderHref ? { olderHref } : {})} {...(newestHref ? { newestHref } : {})}>
             {ordered.map((job) => (
@@ -79,9 +81,12 @@ export function JobHistory(props: JobHistoryProps) {
     let jobs: HireJob[] | null = null;
     let totals: JobHistoryTotals | undefined;
     let nextBefore: string | null = null;
+    let activity: HireActivity | null = null;
     try {
       if (chainId === 97 && !props.provider) throw new Error("No cross-chain wallet");
       const query = new URLSearchParams({ chainId: String(chainId), ...(props.provider ? { provider: props.provider } : { agentId: props.agentId }) });
+      const activityRead = fetch(`/api/marketplace/jobs/activity?${query}`, { cache: "no-store", signal: controller.signal })
+        .then(async response => response.ok ? await response.json() as HireActivity : null).catch(() => null);
       const response = await fetch(`/api/marketplace/jobs?${query}`, { cache: "no-store", signal: controller.signal });
       if (!response.ok) throw new Error("Ledger unavailable");
       const page = await response.json();
@@ -89,10 +94,12 @@ export function JobHistory(props: JobHistoryProps) {
       jobs = page.jobs;
       totals = page.totals;
       nextBefore = page.nextBefore ?? null;
+      const window = await activityRead;
+      if (window?.chainId === chainId && window.totals) activity = window;
     } catch { /* Unavailable is not zero jobs. */ }
     if (controller.signal.aborted) return;
     const { olderHref: _older, newestHref: _newest, totals: _totals, ...base } = props;
-    setLocalSelection({ source: props, value: { ...base, chainId, hireJobs: jobs, scope: props.provider ? "wallet" : "agent", more: nextBefore !== null,
+    setLocalSelection({ source: props, value: { ...base, chainId, activity, hireJobs: jobs, scope: props.provider ? "wallet" : "agent", more: nextBefore !== null,
       ...(totals ? { totals } : {}),
       ...(nextBefore ? { olderHref: `/hire/${props.agentId}?jobsNetwork=${network}&jobsBefore=${nextBefore}#erc8183-history` } : {}),
     } });

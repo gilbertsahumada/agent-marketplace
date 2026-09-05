@@ -25,6 +25,11 @@ descriptions below are historical implementation context, not the new selection
 contract. Provider-wallet activity, agent-attributed jobs, completed jobs and
 verified results must remain distinct.
 
+Worker operations are available from this directory: `npm run worker:start`,
+`npm run worker:migrate:staging`, `npm run worker:deploy:staging`, or the combined
+`npm run worker:release:staging`. Add `-- --plan` to inspect a remote operation
+without changes. See [release safeguards and production setup](bnb-agent-probe/README.md#worker-operations).
+
 This repository contains a new standalone marketplace being built for the Build the Era hackathon. It extends existing ERC-8004 indexing and reputation infrastructure from [trust8004.xyz](https://trust8004.xyz), while introducing a BSC-specific marketplace data model, four-category discovery, proof of hireability, and an ERC-8183 buyer journey.
 
 ## Product thesis

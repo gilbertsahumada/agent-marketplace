@@ -9,11 +9,14 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Pagination, PaginationContent, PaginationItem } from "@/components/ui/pagination";
 import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import type { HireAddress, HireChainId, HireJobPage, HireLedgerSummary } from "@/src/business/entities/hire-job";
+import type { HireActivity, HireAddress, HireChainId, HireJobPage, HireLedgerSummary } from "@/src/business/entities/hire-job";
+import { HireActivityWindow } from "./hire-activity-window";
 import { jobStatusLabel, networkSlug } from "./hire-job-rows";
 import { Breadcrumb } from "./page-primitives";
 import { AddressLink } from "./address-link";
 import { CatalogMetric } from "./catalog-metric";
+import { JobAgentCell } from "./job-agent-cell";
+import type { JobAgentResolution } from "@/src/business/entities/job-agent-resolution";
 
 const DATE = new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", timeZone: "UTC" });
 const STATUSES = ["OPEN", "FUNDED", "SUBMITTED", "COMPLETED", "REJECTED", "EXPIRED"] as const;
@@ -35,20 +38,27 @@ function indexRunLabel(status: string): string {
   }
 }
 
-export function HireLedgerPage({ chainId, summary, page, before, provider, agentProfiles = {} }: {
+export function HireLedgerPage({ chainId, summary, page, activity = null, before, provider, agentResolutions = {} }: {
   chainId: HireChainId;
   summary: HireLedgerSummary | null;
   page: HireJobPage | null;
+  // Trailing window of phase events in the same provider scope as the list;
+  // null when it could not be read.
+  activity?: HireActivity | null;
   before?: string;
+  // Scopes the job list and the activity window (not the counts) to one
+  // provider wallet.
   provider?: HireAddress;
-  agentProfiles?: Record<string, string[]>;
+  agentResolutions?: Record<string, JobAgentResolution>;
 }) {
   const scope = provider ? { provider } : {};
   const retryHref = jobsHref(chainId, { ...scope, ...(before ? { before } : {}) });
   const otherChain = chainId === 56 ? 97 : 56;
   const [search, setSearch] = useState("");
   const query = search.trim().toLowerCase().replace(/^#/, "");
-  const jobs = page?.jobs.filter((job) => [job.jobId, job.buyer, job.provider, job.status, job.marketplace ? "marketplace" : "unattributed"].some((value) => value.toLowerCase().includes(query))) ?? [];
+  const jobs = page?.jobs.filter((job) => [job.jobId, job.buyer, job.provider, job.status, job.marketplace ? "marketplace" : "unattributed",
+    ...(agentResolutions[`${chainId}:${job.jobId}`]?.agents.flatMap(agent => [agent.agentId, agent.name ?? ""]) ?? []),
+  ].some((value) => value.toLowerCase().includes(query))) ?? [];
   return (
     <main className="jobs-explorer mx-auto w-full max-w-[1480px] flex-1 px-5 py-8 sm:px-8 lg:px-12" id="main-content">
       <Breadcrumb current="Jobs" trail={[{ href: "/", label: "Home" }]} />
@@ -71,9 +81,13 @@ export function HireLedgerPage({ chainId, summary, page, before, provider, agent
         </div>
       </div>
 
+      {activity !== null
+        ? <div className="mt-6"><HireActivityWindow activity={activity} /></div>
+        : (summary !== null || page !== null) && <p className="mt-6 text-sm text-muted-foreground" role="status">Recent activity temporarily unavailable.</p>}
+
       <section className="mt-4" aria-label="Indexed jobs">
         <div className="mb-4 flex items-center gap-3">
-          <label className="relative block w-full min-w-0"><span className="sr-only">Search this page</span><Search aria-hidden="true" className="absolute top-1/2 left-4 size-4 -translate-y-1/2 text-zinc-500" /><Input className="catalog-search-input h-10 pl-11 focus-visible:ring-0" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search this page by job ID, wallet, state or origin" maxLength={120} disabled={!page?.jobs.length} /></label>
+          <label className="relative block w-full min-w-0"><span className="sr-only">Search this page</span><Search aria-hidden="true" className="absolute top-1/2 left-4 size-4 -translate-y-1/2 text-zinc-500" /><Input className="catalog-search-input h-10 pl-11 focus-visible:ring-0" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search this page by agent, job ID, wallet, state or origin" maxLength={120} disabled={!page?.jobs.length} /></label>
           <Button variant="outline" disabled={!search} onClick={() => setSearch("")}><RotateCcw aria-hidden="true" data-icon="inline-start" />Clear search</Button>
         </div>
         <Card className="jobs-card jobs-records gap-0 py-0">
@@ -85,7 +99,7 @@ export function HireLedgerPage({ chainId, summary, page, before, provider, agent
             <TableHeader><TableRow>{["Job", "Agent", "Current state", "Buyer", "Provider", "Origin", "Last observed"].map((label) => <TableHead scope="col" key={label}>{label}</TableHead>)}<TableHead scope="col"><span className="sr-only">Details</span></TableHead></TableRow></TableHeader>
             <TableBody>{jobs.map((job) => <TableRow key={job.jobId}>
               <TableHead scope="row"><Link className="font-hash hover:text-signal" href={`/jobs/${networkSlug(chainId)}/${job.jobId}`}><span className="sr-only">Job </span>#{job.jobId}</Link></TableHead>
-              <TableCell>{agentProfiles[job.jobId]?.length ? <div className="flex flex-col gap-1">{agentProfiles[job.jobId]?.map((id) => <Link key={id} className="text-signal hover:underline" href={`/agents/${id}`}>Agent #{id}</Link>)}</div> : <span className="text-muted-foreground" title="No verified marketplace agent association is available">—</span>}</TableCell>
+              <TableCell><JobAgentCell resolution={agentResolutions[`${chainId}:${job.jobId}`]} /></TableCell>
               <TableCell><Badge variant="outline" className={`jobs-state jobs-state--${job.status.toLowerCase()}`}>{jobStatusLabel(job.status)}</Badge></TableCell>
               <TableCell className="font-hash text-xs"><AddressLink address={job.buyer} chainId={chainId} /></TableCell>
               <TableCell className="font-hash text-xs"><AddressLink address={job.provider} chainId={chainId} /></TableCell>

@@ -6,8 +6,9 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { CatalogUnavailable } from "@/components/marketplace/catalog-unavailable";
 import { HireJobLedgerPage } from "@/components/marketplace/hire-job-ledger-page";
+import { JobAgentCell } from "@/components/marketplace/job-agent-cell";
 import { Breadcrumb } from "@/components/marketplace/page-primitives";
-import { getHireLedger, getMainnetErc8183JobStatus } from "@/src/business/composition";
+import { getHireLedger, getMainnetErc8183JobStatus, resolveJobAgents } from "@/src/business/composition";
 import {
   Erc8183DemoJobNotFoundError,
   Erc8183SpikeDisabledError,
@@ -39,11 +40,15 @@ export default async function MainnetJobPage({ params }: { params: Promise<{ job
         if (ledgerError instanceof MarketplaceDataUnavailableError) return <CatalogUnavailable retryHref={`/jobs/mainnet/${jobId}`} />;
         throw ledgerError;
       }
-      if (ledger !== null) return <HireJobLedgerPage job={ledger} />;
+      if (ledger !== null) {
+        const agents = await resolveJobAgents.execute([ledger]);
+        return <HireJobLedgerPage job={ledger} agentResolution={agents[`56:${jobId}`]} />;
+      }
       notFound();
     }
     throw error;
   }
+  const agents = await resolveJobAgents.execute([{ chainId: 56, jobId: job.jobId, provider: job.provider }]);
   return (
     <main id="main-content" className="mx-auto w-full max-w-5xl px-4 py-10 sm:px-6 lg:px-8 lg:py-14">
       <Breadcrumb current={`Job #${job.jobId}`} trail={[{ href: "/", label: "Home" }]} />
@@ -56,6 +61,9 @@ export default async function MainnetJobPage({ params }: { params: Promise<{ job
       <Card className="mt-8">
         <CardHeader><CardTitle>Verified job state</CardTitle><CardDescription>Contracts and lifecycle are read from BSC Mainnet.</CardDescription></CardHeader>
         <CardContent className="space-y-4 text-sm">
+          <div className="grid gap-1 border-b border-border pb-3 sm:grid-cols-[10rem_1fr]">
+            <span className="text-muted-foreground">Agent</span><JobAgentCell resolution={agents[`56:${job.jobId}`]} />
+          </div>
           {[
             ["Buyer", job.buyer], ["Seller", job.provider], ["Evaluator", job.evaluator], ["Policy", job.policy],
             ["Budget raw", job.budgetRaw], ["Deadline", job.deadline], ["Deliverable hash", job.deliverableHash],
