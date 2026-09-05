@@ -3,7 +3,7 @@ import "@testing-library/jest-dom/vitest";
 import { afterEach, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QuoteRequestPanel } from "../components/marketplace/quote-request-panel";
-vi.mock("../components/spikes/erc8183-browser-spike", () => ({ Erc8183MarketplaceHire: () => <div>Review enabled</div> }));
+vi.mock("../components/spikes/erc8183-browser-spike", () => ({ Erc8183MarketplaceHire: () => <div>Review enabled</div>, Erc8183SavedHire: () => null }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 it("does not imply earlier quotes or readiness when the marketplace service is unavailable", async () => {
