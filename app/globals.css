@@ -643,21 +643,23 @@ body {
 }
 
 .market-scene {
-  min-height: calc(8 * 1.15em);
-  margin: 0 0 1.1rem;
+  min-height: calc(9 * 1.3em + 0.9rem);
+  margin: auto 0 0;
+  padding-top: 0.9rem;
   overflow: hidden;
+  border-top: 1px dashed #2b2d34;
   color: rgb(255 233 0 / 42%);
   font-family: var(--font-space-mono), monospace;
   font-size: 0.66rem;
   font-weight: 600;
-  line-height: 1.15;
+  line-height: 1.3;
   white-space: pre;
   transition: color 500ms ease, text-shadow 500ms ease;
 }
 
 .market-scene span {
   display: block;
-  min-height: 1.15em;
+  min-height: 1.3em;
 }
 
 .market-steps li[data-active="true"] .market-scene {

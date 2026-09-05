@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { JOURNEY_SCENES } from "./journey-scenes";
 
-const STEP_MS = 3_000;
+const STEP_MS = 4_200;
 const FRAME_MS = 1_000 / 12;
 
 // The four journey steps with a small ASCII scene each. The server renders
@@ -66,14 +66,14 @@ export function JourneySteps() {
   return (
     <ol className="market-steps grid gap-8 sm:grid-cols-2 lg:grid-cols-4">
       {JOURNEY_SCENES.map(({ step, detail, frame }, index) => (
-        <li className="relative pt-7" data-active={active === index ? "true" : undefined} key={step}>
+        <li className="relative flex flex-col pt-7" data-active={active === index ? "true" : undefined} key={step}>
           <span className="market-step-dot" aria-hidden="true" />
+          <span className="font-stat text-[10px] text-signal">0{index + 1}</span>
+          <h3 className="mt-3 text-xl font-semibold text-foreground">{step}</h3>
+          <p className="mt-2 mb-5 max-w-xs text-sm leading-6 text-muted-foreground">{detail}</p>
           <pre className="market-scene" aria-hidden="true" ref={(node) => { preRefs.current[index] = node; }}>
             {frame(1).map((line, row) => <span key={row}>{line}</span>)}
           </pre>
-          <span className="font-stat text-[10px] text-signal">0{index + 1}</span>
-          <h3 className="mt-3 text-xl font-semibold text-foreground">{step}</h3>
-          <p className="mt-2 max-w-xs text-sm leading-6 text-muted-foreground">{detail}</p>
         </li>
       ))}
     </ol>
