@@ -116,6 +116,7 @@ export type Erc8183JournalStep =
   | "submitted";
 
 export interface Erc8183BrowserJournal {
+  quoteRequestId?: number;
   schemaVersion: 1;
   chainId: 56 | 97;
   buyer: Address;
