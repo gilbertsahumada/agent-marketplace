@@ -1,5 +1,5 @@
 "use client";
-import { useState, type ComponentProps } from "react";
+import { useEffect, useRef, useState, type ComponentProps } from "react";
 import { BriefcaseBusiness, ChevronDown } from "lucide-react";
 import type { AgentEvidencePassport } from "@/src/business/entities/evidence-passport";
 import type { MainnetJobProof } from "@/src/business/entities/mainnet-job-proof";
@@ -57,20 +57,32 @@ function JobHistoryContent({ jobs, hireJobs, scope, olderHref, newestHref, chain
   );
 }
 
-export function JobHistory(props: Omit<ComponentProps<typeof JobHistoryContent>, "onNetworkChange" | "pending"> & { provider?: string | null }) {
-  const [selection, setSelection] = useState(props);
-  const [pending, setPending] = useState(false);
+type JobHistoryProps = Omit<ComponentProps<typeof JobHistoryContent>, "onNetworkChange" | "pending"> & { provider?: string | null };
+
+export function JobHistory(props: JobHistoryProps) {
+  // A local tab response belongs only to the server snapshot it started from.
+  // New cursor pages and refreshes remain authoritative without remounting the
+  // surrounding quote session or requiring a second render to clear old rows.
+  const [localSelection, setLocalSelection] = useState<{ source: JobHistoryProps; value: JobHistoryProps } | null>(null);
+  const [pendingSource, setPendingSource] = useState<JobHistoryProps | null>(null);
+  const request = useRef<AbortController | null>(null);
+  const selection = localSelection?.source === props ? localSelection.value : props;
+  const pending = pendingSource === props;
+  useEffect(() => () => request.current?.abort(), [props]);
   async function changeNetwork(network: string) {
     const chainId = network === "testnet" ? 97 : 56;
     if (pending || chainId === selection.chainId) return;
-    setPending(true);
+    request.current?.abort();
+    const controller = new AbortController();
+    request.current = controller;
+    setPendingSource(props);
     let jobs: HireJob[] | null = null;
     let totals: JobHistoryTotals | undefined;
     let nextBefore: string | null = null;
     try {
       if (chainId === 97 && !props.provider) throw new Error("No cross-chain wallet");
       const query = new URLSearchParams({ chainId: String(chainId), ...(props.provider ? { provider: props.provider } : { agentId: props.agentId }) });
-      const response = await fetch(`/api/marketplace/jobs?${query}`, { cache: "no-store" });
+      const response = await fetch(`/api/marketplace/jobs?${query}`, { cache: "no-store", signal: controller.signal });
       if (!response.ok) throw new Error("Ledger unavailable");
       const page = await response.json();
       if (!Array.isArray(page.jobs)) throw new Error("Invalid ledger");
@@ -78,17 +90,18 @@ export function JobHistory(props: Omit<ComponentProps<typeof JobHistoryContent>,
       totals = page.totals;
       nextBefore = page.nextBefore ?? null;
     } catch { /* Unavailable is not zero jobs. */ }
+    if (controller.signal.aborted) return;
     const { olderHref: _older, newestHref: _newest, totals: _totals, ...base } = props;
-    setSelection({ ...base, chainId, hireJobs: jobs, scope: props.provider ? "wallet" : "agent", more: nextBefore !== null,
+    setLocalSelection({ source: props, value: { ...base, chainId, hireJobs: jobs, scope: props.provider ? "wallet" : "agent", more: nextBefore !== null,
       ...(totals ? { totals } : {}),
       ...(nextBefore ? { olderHref: `/hire/${props.agentId}?jobsNetwork=${network}&jobsBefore=${nextBefore}#erc8183-history` } : {}),
-    });
+    } });
     const url = new URL(window.location.href);
     url.searchParams.set("jobsNetwork", network);
     url.searchParams.delete("jobsBefore");
     url.hash = "erc8183-history";
     window.history.replaceState(null, "", url);
-    setPending(false);
+    setPendingSource(null);
   }
   return <JobHistoryContent {...selection} pending={pending} onNetworkChange={network => void changeNetwork(network)} />;
 }
