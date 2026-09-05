@@ -1,7 +1,7 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { AsciiClouds, cloudDensity, glyphFor } from "@/components/marketplace/ascii-clouds";
+import { AsciiClouds, cloudDensity, glyphFor, shimmer } from "@/components/marketplace/ascii-clouds";
 
 describe("ASCII clouds", () => {
   it("keeps the noise field inside [0, 1] and drifting with time", () => {
@@ -16,6 +16,9 @@ describe("ASCII clouds", () => {
     expect(max).toBeLessThanOrEqual(1);
     expect(max - min).toBeGreaterThan(0.3);
     expect(cloudDensity(3, 2, 0)).not.toBe(cloudDensity(3, 2, 30));
+    // Twinkle stays small and oscillates, so it never flips whole regions.
+    expect(Math.abs(shimmer(4, 7, 1.3))).toBeLessThanOrEqual(0.07);
+    expect(shimmer(4, 7, 0)).not.toBe(shimmer(4, 7, 0.4));
   });
 
   it("maps low density to empty cells and higher density to denser glyphs", () => {

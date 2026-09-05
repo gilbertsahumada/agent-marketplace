@@ -11,7 +11,7 @@ import { useEffect, useRef } from "react";
 
 const GLYPHS = " ·:+*";
 const CELL = 14;
-const FRAME_MS = 1_000 / 18;
+const FRAME_MS = 1_000 / 24;
 const THRESHOLD = 0.4;
 
 function hash(x: number, y: number): number {
@@ -39,13 +39,19 @@ function valueNoise(x: number, y: number): number {
 export function cloudDensity(x: number, y: number, time: number): number {
   // A steady wind from the left plus a slow swell, so the field both drifts
   // and reshapes instead of sliding as one sheet.
-  const wind = time * 0.11;
-  const swell = time * 0.045;
+  const wind = time * 0.3;
+  const swell = time * 0.13;
   return (
     0.5 * valueNoise(x - wind, y + swell * 0.35)
-    + 0.25 * valueNoise(x * 2.1 + 5.2 - wind * 1.4, y * 2.1 + 1.3 - swell * 0.5)
-    + 0.125 * valueNoise(x * 4.3 + 9.1 - wind * 0.7, y * 4.3 + 7.7 + swell)
+    + 0.25 * valueNoise(x * 2.1 + 5.2 - wind * 1.6, y * 2.1 + 1.3 - swell * 0.6)
+    + 0.125 * valueNoise(x * 4.3 + 9.1 - wind * 2.2, y * 4.3 + 7.7 + swell * 1.4)
   ) / 0.875;
+}
+
+// Fast per-cell shimmer layered over the slow field, so glyphs twinkle at
+// the cloud edges instead of only sliding.
+export function shimmer(column: number, row: number, time: number): number {
+  return 0.07 * Math.sin(time * 4.2 + hash(column, row) * Math.PI * 2);
 }
 
 export function glyphFor(density: number): string {
@@ -88,7 +94,7 @@ export function AsciiClouds({ className = "hero-clouds" }: { className?: string 
       const rows = Math.ceil(height / CELL);
       for (let row = 0; row < rows; row += 1) {
         for (let column = 0; column < columns; column += 1) {
-          const density = cloudDensity(column * 0.09, row * 0.14, time);
+          const density = cloudDensity(column * 0.09, row * 0.14, time) + shimmer(column, row, time);
           const glyph = glyphFor(density);
           if (glyph === " ") continue;
           context.fillStyle = `rgb(255 233 0 / ${(0.1 + (density - THRESHOLD) * 0.95).toFixed(3)})`;
