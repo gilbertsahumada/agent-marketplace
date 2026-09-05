@@ -118,3 +118,26 @@ export interface VerificationDriftViewModel {
   observedOnlyTools: string[];
   toolsObservedAt: string | null;
 }
+
+// The hero's live ledger panel: indexed ERC-8183 Commerce state for BSC
+// Mainnet, built on the server so every string (including relative ages) is
+// fixed before the client component renders it. Counts are activity and
+// indexed state, never a claim about the quality of any job.
+export interface LedgerPulseJobViewModel {
+  jobId: string;
+  status: "OPEN" | "FUNDED" | "SUBMITTED" | "COMPLETED" | "REJECTED" | "EXPIRED";
+  href: string;
+  buyerShort: string;
+  updatedAgo: string;
+  marketplace: boolean;
+}
+
+export interface LedgerPulseViewModel {
+  network: string;
+  jobsIndexed: string;
+  jobsIndexedCount: number;
+  processedHere: string;
+  indexedThrough: { blockNumber: string; ago: string } | null;
+  window: { days: number; created: string; settled: string; refunded: string } | null;
+  recent: LedgerPulseJobViewModel[];
+}

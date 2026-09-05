@@ -1,7 +1,8 @@
 import { MarketplaceLanding } from "@/components/marketplace/landing-page";
 import type { CategoryCardViewModel, EvidenceStepViewModel, FunnelSectionViewModel } from "@/components/marketplace/presentation-types";
 import { catalogCandidateCard } from "@/components/marketplace/catalog-candidate-view-model";
-import { getCatalogCandidatePage, getFunnelEvidence, getMainnetJobProof, getPublicJobProof, listMarketplaceAgents } from "@/src/business/composition";
+import { ledgerPulseViewModel } from "@/components/marketplace/ledger-pulse-view-model";
+import { getCatalogCandidatePage, getFunnelEvidence, getHireLedger, getMainnetJobProof, getPublicJobProof, listMarketplaceAgents } from "@/src/business/composition";
 import type { FunnelEvidence } from "@/src/business/entities/funnel-evidence";
 
 export const dynamic = "force-dynamic";
@@ -60,11 +61,19 @@ function funnelSectionViewModel(evidence: FunnelEvidence | null): FunnelSectionV
   };
 }
 
+// A short trailing window: the hero reads as a pulse, /jobs keeps the 30-day view.
+const LEDGER_PULSE_DAYS = 7;
+
 export default async function HomePage() {
-  const [catalog, normalizedCatalog, proof] = await Promise.all([
+  // The ledger readers answer null when the observation Worker cannot be
+  // read; the hero then shows the indexer as unreachable instead of zeros.
+  const [catalog, normalizedCatalog, proof, ledgerSummary, ledgerActivity, ledgerPage] = await Promise.all([
     listMarketplaceAgents.execute({ view: "marketplace", page: 1, limit: 12 }),
     getCatalogCandidatePage({ status: "declared", page: 1, limit: 12 }),
     getPublicJobProof.execute({ jobId: "551" }),
+    getHireLedger.summary({ chainId: 56 }),
+    getHireLedger.activity({ chainId: 56, days: LEDGER_PULSE_DAYS }),
+    getHireLedger.listRecentJobs({ chainId: 56 }),
   ]);
   const mainnetProof = getMainnetJobProof.execute();
   const categories: CategoryCardViewModel[] = catalog.categories.map(({ category, count, status }) => ({
@@ -90,6 +99,7 @@ export default async function HomePage() {
     { kind: "job", label: "Job proven", status: "verified", provenance: "onchain", detail: `Job #${mainnetProof.jobId} reached ${mainnetProof.finalState} on BSC Mainnet.`, timestamp: (mainnetProof.transactions.settle ?? mainnetProof.transactions.submit)?.timestamp ?? mainnetProof.capturedAt, ...txLink(mainnetProof.transactions.settle ?? mainnetProof.transactions.submit) },
   ] : null;
   const now = Date.now();
+  const ledgerPulse = ledgerPulseViewModel({ summary: ledgerSummary, activity: ledgerActivity, page: ledgerPage }, now);
   const featuredAgents = normalizedCatalog?.items.map((agent) => catalogCandidateCard(agent, now)) ?? [];
   const qualified = featuredAgents.find((agent) => agent.hireability === "hireable") ?? null;
   return (
@@ -98,6 +108,7 @@ export default async function HomePage() {
       demoEnabled={Reflect.get(process.env, "ERC8183_BROWSER_SPIKE_ENABLED") === "true"}
       featuredAgents={featuredAgents}
       funnel={funnelSectionViewModel(getFunnelEvidence.execute())}
+      ledgerPulse={ledgerPulse}
       publicProof={publicProof}
       {...(mainnetProof ? { proofSummary: {
         href: "/proof/mainnet",

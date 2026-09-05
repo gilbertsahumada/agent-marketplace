@@ -3,21 +3,16 @@ import { ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { CategoryCard } from "./category-card";
 import { FunnelSection } from "./funnel-section";
+import { JourneySteps } from "./journey-steps";
 import { NetworkAwareLandingHero } from "./network-aware-landing-hero";
-import type { AgentCardViewModel, CategoryCardViewModel, EvidenceStepViewModel, FunnelSectionViewModel } from "./presentation-types";
-
-const journey = [
-  ["Discover", "Filter the market by the outcome you need."],
-  ["Verify", "Inspect identity, endpoint, quote, and provenance."],
-  ["Hire", "Accept a fresh quote with funds held in escrow."],
-  ["Prove", "Track the result back to its onchain receipt."],
-] as const;
+import type { AgentCardViewModel, CategoryCardViewModel, EvidenceStepViewModel, FunnelSectionViewModel, LedgerPulseViewModel } from "./presentation-types";
 
 export function MarketplaceLanding({
   categories,
   demoEnabled,
   featuredAgents,
   funnel,
+  ledgerPulse = null,
   publicProof,
   proofSummary,
   qualifiedSeller,
@@ -26,6 +21,7 @@ export function MarketplaceLanding({
   demoEnabled: boolean;
   featuredAgents: AgentCardViewModel[];
   funnel: FunnelSectionViewModel | null;
+  ledgerPulse?: LedgerPulseViewModel | null;
   publicProof: EvidenceStepViewModel[];
   proofSummary?: { href: string; network: string; title: string; description: string; evidence: EvidenceStepViewModel[] };
   qualifiedSeller: { agentId: string; name: string } | null;
@@ -46,6 +42,7 @@ export function MarketplaceLanding({
   return (
     <main id="main-content">
       <NetworkAwareLandingHero
+        ledgerPulse={ledgerPulse}
         mainnet={{
           badge: proofSummary ? "Onchain proof" : "Mainnet hiring",
           network: proofSummary?.network ?? "BSC Mainnet · chain 56",
@@ -76,16 +73,7 @@ export function MarketplaceLanding({
       <section aria-labelledby="journey-heading" className="border-b border-border/60">
         <div className="mx-auto max-w-[1480px] px-5 py-16 sm:px-8 lg:px-12 lg:py-20">
           <h2 className="sr-only" id="journey-heading">From discovery to onchain proof</h2>
-          <ol className="market-steps grid gap-8 sm:grid-cols-2 lg:grid-cols-4">
-            {journey.map(([step, detail], index) => (
-              <li className="relative pt-7" key={step}>
-                <span className="market-step-dot" aria-hidden="true" />
-                <span className="font-stat text-[10px] text-signal">0{index + 1}</span>
-                <h3 className="mt-3 text-xl font-semibold text-foreground">{step}</h3>
-                <p className="mt-2 max-w-xs text-sm leading-6 text-muted-foreground">{detail}</p>
-              </li>
-            ))}
-          </ol>
+          <JourneySteps />
         </div>
       </section>
 

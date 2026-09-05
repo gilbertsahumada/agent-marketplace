@@ -1466,6 +1466,57 @@ describe("marketplace presentation rules", () => {
     consoleError.mockRestore();
   });
 
+  it("shows indexed Commerce state in the hero panel with links into the ledger", () => {
+    render(createElement(MarketplaceLanding, {
+      categories: [],
+      demoEnabled: true,
+      featuredAgents: [],
+      funnel: null,
+      ledgerPulse: {
+        network: "ERC-8183 Commerce · BSC Mainnet",
+        jobsIndexed: "56,716",
+        jobsIndexedCount: 56716,
+        processedHere: "1",
+        indexedThrough: { blockNumber: "120,146,010", ago: "12s ago" },
+        window: { days: 7, created: "1,048", settled: "730", refunded: "9" },
+        recent: [
+          { jobId: "56713", status: "COMPLETED", href: "/jobs/mainnet/56713", buyerShort: "0x5ee7…0b1c", updatedAgo: "2m ago", marketplace: true },
+          { jobId: "56712", status: "FUNDED", href: "/jobs/mainnet/56712", buyerShort: "0x1234…abcd", updatedAgo: "15m ago", marketplace: false },
+        ],
+      },
+      publicProof: [],
+      qualifiedSeller: null,
+    }));
+
+    expect(screen.getByText("LIVE")).toBeInTheDocument();
+    const pulse = screen.getByLabelText(/Indexed ERC-8183 Commerce state/);
+    expect(pulse).toHaveTextContent("56,716 jobs indexed");
+    expect(pulse).toHaveTextContent("1,048 created · 730 settled · 9 refunded");
+    expect(pulse).toHaveTextContent("block 120,146,010 · 12s ago");
+    expect(screen.getByRole("link", { name: /Job #56713 · buyer 0x5ee7…0b1c · hired here/ })).toHaveAttribute("href", "/jobs/mainnet/56713");
+    expect(screen.getByRole("link", { name: /Job #56712 · buyer 0x1234…abcd$/ })).toHaveAttribute("href", "/jobs/mainnet/56712");
+    expect(screen.getByRole("link", { name: "All indexed jobs" })).toHaveAttribute("href", "/jobs");
+    expect(screen.getByText("COMPLETED")).toBeInTheDocument();
+    expect(screen.getByLabelText("Indexed marketplace ledger feed").textContent).not.toMatch(/proven|track record/i);
+  });
+
+  it("marks the feed offline instead of showing zeros when the ledger cannot be read", () => {
+    render(createElement(MarketplaceLanding, {
+      categories: [],
+      demoEnabled: true,
+      featuredAgents: [],
+      funnel: null,
+      ledgerPulse: null,
+      publicProof: [],
+      qualifiedSeller: null,
+    }));
+
+    expect(screen.getByText("OFFLINE")).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent(/indexer unreachable/);
+    expect(screen.queryByRole("link", { name: "All indexed jobs" })).not.toBeInTheDocument();
+    expect(screen.queryByText(/jobs indexed/)).not.toBeInTheDocument();
+  });
+
   it("does not claim Mainnet has no seller while Grid has quote-capability evidence", () => {
     render(createElement(MarketplaceLanding, {
       categories: [],
