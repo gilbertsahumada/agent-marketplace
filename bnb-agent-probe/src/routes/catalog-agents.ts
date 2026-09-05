@@ -434,6 +434,26 @@ export async function catalogAgentsResponse(
       eq(catalogAgentEndpoints.declarationState,"current"),
       eq(catalogSellerCapabilities.state, state),
     )));
+  // Older discovery failures also set capability.state='failed'. Only a real
+  // failed negotiation attempt is evidence for the Quote failed filter.
+  const quoteFailedCondition = exists(db.select({ value: sql`1` })
+    .from(catalogSellerCapabilities)
+    .innerJoin(catalogAgentEndpoints, and(
+      eq(catalogAgentEndpoints.agentKey, catalogSellerCapabilities.agentKey),
+      eq(catalogAgentEndpoints.endpointKey, catalogSellerCapabilities.endpointKey),
+    ))
+    .innerJoin(catalogQuoteAttempts, eq(catalogQuoteAttempts.id, catalogSellerCapabilities.lastAttemptId))
+    .innerJoin(catalogQuoteRequests, and(
+      eq(catalogQuoteRequests.id, catalogQuoteAttempts.requestId),
+      eq(catalogQuoteRequests.agentKey, catalogSellerCapabilities.agentKey),
+      eq(catalogQuoteRequests.endpointKey, catalogSellerCapabilities.endpointKey),
+    ))
+    .where(and(
+      eq(catalogSellerCapabilities.agentKey, catalogAgents.agentKey),
+      eq(catalogAgentEndpoints.declarationState, "current"),
+      eq(catalogSellerCapabilities.state, "failed"),
+      inArray(catalogQuoteAttempts.status, ["failed", "rejected"]),
+    )));
   const completedJobsCondition = exists(db.select({value:sql`1`}).from(hireEvents)
     .innerJoin(commerceJobs,and(eq(hireEvents.chainId,commerceJobs.chainId),eq(hireEvents.jobId,sql`CAST(${commerceJobs.jobId} AS TEXT)`)))
     .where(and(eq(hireEvents.agentId,catalogAgents.agentId),eq(hireEvents.chainId,catalogAgents.chainId),eq(hireEvents.provenance,"chain_verified"),eq(commerceJobs.status,3))));
@@ -460,7 +480,7 @@ export async function catalogAgentsResponse(
           : status === "mcp_only" ? and(mcpDeclarationExists, not(sellerDeclarationExists), not(quoteCapableCondition))!
           : status === "erc8183" ? erc8183Declaration
               : status === "requestable" ? requestableCondition
-              : status === "quote_failed" ? capabilityState("failed")
+              : status === "quote_failed" ? quoteFailedCondition
               : status === "completed_jobs" ? completedJobsCondition
               : status === "quote_capable" ? quoteCapableCondition
               // Keep the legacy query alias, but make it mean the same thing
@@ -554,7 +574,7 @@ export async function catalogAgentsResponse(
         erc8183: facetCount(statusCondition("erc8183")),
         hireable: facetCount(statusCondition("hireable")),
         requestable: facetCount(requestableCondition),
-        quoteFailed: facetCount(capabilityState("failed")),
+        quoteFailed: facetCount(quoteFailedCondition),
         completedJobs: facetCount(completedJobsCondition),
       }).from(catalogAgents).where(and(operationalBase, categoryCondition, protocolCondition, reachabilityCondition)),
       db.select({
