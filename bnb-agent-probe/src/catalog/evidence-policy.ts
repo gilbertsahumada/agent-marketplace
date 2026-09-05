@@ -47,6 +47,11 @@ export interface CapabilityFact {
   lastAttemptAt?: number | null;
   consecutiveFailures?: number;
   lastErrorCode?: string | null;
+  compatibilityState?: string;
+  schemaHash?: string | null;
+  compatibilityCheckedAt?: number | null;
+  compatibilityExpiresAt?: number | null;
+  compatibilityErrorCode?: string | null;
 }
 
 /**
@@ -59,7 +64,21 @@ export interface CapabilityFact {
 export function selectBestCapability<T extends CapabilityFact>(
   rows: readonly T[],
   nowMs: number,
+  context?: { endpoints: readonly EndpointFact[]; observations: readonly ObservationFact[] },
 ): T | null {
+  if (context) {
+    // SQL facets include an agent if ANY current endpoint is requestable.
+    // Select from precisely that set before ranking historical readiness.
+    const requestable = rows.filter(capability => deriveCatalogEvidenceState({ ...context, capability, admission: null, nowMs }).canRequestQuote);
+    if (requestable.length > 0) return selectBestCapability(requestable, nowMs);
+    // Keep blocked evidence when no endpoint works, for an honest reason.
+  }
+  const compatible = rows.filter(row => row.compatibilityState === "compatible"
+    && Boolean(row.schemaHash) && (row.compatibilityExpiresAt ?? 0) > nowMs
+    && row.state !== "suspended" && row.state !== "unsupported");
+  const usableReady = compatible.find(row => row.state === "ready" && (row.capabilityExpiresAt ?? 0) > nowMs);
+  if (usableReady) return usableReady;
+  if (compatible.length > 0) return compatible[0]!;
   // `ready` is a time-bounded public projection. A row without an expiry is
   // legacy/incomplete evidence and must not be allowed to remain hireable
   // indefinitely; the migration marks those rows as discovered instead.
@@ -92,6 +111,10 @@ export function selectBestCapability<T extends CapabilityFact>(
 }
 
 export interface CatalogEvidenceState {
+  compatibilityState: string;
+  compatibilityCheckedAt: number | null;
+  compatibilityExpiresAt: number | null;
+  compatibilityErrorCode: string | null;
   operationalStatus: OperationalStatus;
   freshness: Freshness;
   commerceStatus: CommerceStatus;
@@ -196,9 +219,6 @@ export function deriveCatalogEvidenceState(input: {
     role === "operational" && eligibility === "eligible"
     && (validationProtocol === "a2a" || validationProtocol === "mcp" || validationProtocol === "erc8183_http"));
   const hasEligibleCommerceDeclaration = eligibleCommerce.length > 0;
-  const hasNonMcpCommerceDeclaration = eligibleCommerce.some(({ validationProtocol }) =>
-    validationProtocol === "a2a" || validationProtocol === "erc8183_http");
-  const hasMcpCommerceDeclaration = eligibleCommerce.some(({ validationProtocol }) => validationProtocol === "mcp");
   const fallbackCapability: CapabilityFact | null = hasEligibleCommerceDeclaration
     ? { state: "discovered" }
     : null;
@@ -233,25 +253,21 @@ export function deriveCatalogEvidenceState(input: {
     && observation.verificationLevel === "onchain"
     && (commerceEndpointKey === null || observation.endpointKey === null || observation.endpointKey === commerceEndpointKey)
     && observation.expiresAt !== null && observation.expiresAt > input.nowMs);
-  const capabilityIsReady = capabilityState === "ready"
-    && capabilityExpiresAt !== null
-    && capabilityExpiresAt !== undefined
-    && capabilityExpiresAt > input.nowMs;
-  const mcpQuoteSupported = hasMcpCommerceDeclaration
-    && capability?.transport === "mcp"
-    && capabilityIsReady;
-  const mcpQuoteUnsupported = capability?.transport === "mcp"
-    && capabilityState === "failed"
-    && ["MCP_TOOLS_INVALID", "MCP_QUOTE_TOOL_REQUIRED", "MCP_QUOTE_SCHEMA_INVALID"].includes(capability.lastErrorCode ?? "");
-  // A2A and ERC-8183 HTTP declarations are immediately actionable: a buyer
-  // may ask for a quote before the first marketplace probe. MCP is different:
-  // a generic MCP endpoint is not enough until its exact negotiation tool has
-  // been proven by a capability probe.
-  const canRequestQuote = (hasNonMcpCommerceDeclaration || mcpQuoteSupported)
+  // All transports use the same first-quote rule. No prior quote is required,
+  // but a declaration alone cannot promise a usable request form.
+  const requirementsUsable = capability?.compatibilityState === "compatible"
+    && Boolean(capability.schemaHash)
+    && (capability.compatibilityExpiresAt ?? 0) > input.nowMs
+    && eligibleCommerce.some(endpoint => endpoint.endpointKey === capability.endpointKey);
+  const latestNegotiationCheck = latestPlatformByEndpoint.get(capability?.endpointKey ?? "");
+  const connectionFailed = latestNegotiationCheck !== undefined
+    && latestNegotiationCheck.observedAt > (capability?.compatibilityCheckedAt ?? 0)
+    && FAILURE_OUTCOMES.has(latestNegotiationCheck.outcome);
+  const canRequestQuote = requirementsUsable && !connectionFailed
     && capabilityState !== "unsupported"
-    && capabilityState !== "suspended"
-    && !mcpQuoteUnsupported;
-  const canPrepareHire = canRequestQuote && quoteStatus === "verified_fresh" && freshOnchain;
+    && capabilityState !== "suspended";
+  // Public observations are not the current buyer's session-bound artifact.
+  const canPrepareHire = false;
   const canRequestBrowserValidation = eligible.length > 0;
   const canRequestInfrastructureValidation = eligible.length > 0;
   const buyerAction: BuyerAction = canPrepareHire ? "prepare_hire"
@@ -260,17 +276,22 @@ export function deriveCatalogEvidenceState(input: {
   const blockingReasons: string[] = [];
   if (eligible.length === 0) blockingReasons.push("NO_ELIGIBLE_OPERATIONAL_ENDPOINT");
   if (!canRequestQuote) blockingReasons.push(
-    hasMcpCommerceDeclaration && !hasNonMcpCommerceDeclaration
-      ? "MCP_QUOTE_TOOL_REQUIRED" : "NO_QUOTE_TRANSPORT",
+    !hasEligibleCommerceDeclaration ? "NO_QUOTE_TRANSPORT"
+      : connectionFailed ? "NEGOTIATION_ENDPOINT_CHECK_FAILED"
+        : capability?.compatibilityErrorCode ?? "NEGOTIATION_REQUIREMENTS_UNVERIFIED",
   );
   if (canRequestQuote && quoteStatus !== "verified_fresh") blockingReasons.push("FRESH_QUOTE_REQUIRED");
   if (quoteStatus === "verified_fresh" && !freshOnchain) blockingReasons.push("CURRENT_CHAIN_CHECK_REQUIRED");
 
   return {
+    compatibilityState: capability?.compatibilityState ?? "pending",
+    compatibilityCheckedAt: capability?.compatibilityCheckedAt ?? null,
+    compatibilityExpiresAt: capability?.compatibilityExpiresAt ?? null,
+    compatibilityErrorCode: capability?.compatibilityErrorCode ?? null,
     operationalStatus,
     freshness: freshness(successful, input.nowMs),
     commerceStatus,
-    capabilityState,
+    capabilityState: capabilityState === "ready" && !canRequestQuote ? "stale" : capabilityState,
     ...(capability?.endpointKey ? { capabilityEndpointKey: capability.endpointKey } : {}),
     ...(capability?.transport ? { capabilityTransport: capability.transport } : {}),
     capabilityExpiresAt,

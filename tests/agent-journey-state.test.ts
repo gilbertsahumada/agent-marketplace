@@ -17,12 +17,13 @@ const state = (overrides: Record<string, unknown> = {}) => ({
   canRequestInfrastructureValidation: true,
   canRequestQuote: true,
   canPrepareHire: false,
+  compatibilityState: "compatible" as const,
   blockingReasons: [],
   ...overrides,
 });
 
 describe("deriveAgentJourney", () => {
-  it("requires a connection check even if old capability and quote evidence are ready", () => {
+  it("uses endpoint-specific backend eligibility over an unrelated aggregate failed probe", () => {
     const journey = deriveAgentJourney({
       ...base,
       hireFlowAvailable: true,
@@ -33,9 +34,9 @@ describe("deriveAgentJourney", () => {
         canPrepareHire: true,
       }),
     });
-    expect(journey.quote).toMatchObject({ state: "locked", label: "Check connection first" });
-    expect(journey.hire).toMatchObject({ state: "locked", label: "Retry availability" });
-    expect(journey.nextAction).toMatch(/check availability/i);
+    expect(journey.quote).toMatchObject({ state: "verified", label: "Ready to quote" });
+    expect(journey.hire).toMatchObject({ state: "current", label: "Start hiring" });
+    expect(journey.nextAction).toMatch(/fresh quote/i);
   });
 
   it("makes a fresh platform observation visible while keeping quote and hiring distinct", () => {
@@ -43,7 +44,7 @@ describe("deriveAgentJourney", () => {
 
     expect(journey.declared).toMatchObject({ state: "verified", label: "Declared" });
     expect(journey.availability).toMatchObject({ state: "verified", label: "Reachable now" });
-    expect(journey.quote).toMatchObject({ state: "current", label: "Request quote" });
+    expect(journey.quote).toMatchObject({ state: "current", label: "Inputs verified" });
     expect(journey.hire).toMatchObject({ state: "current", label: "Request a quote to hire" });
     expect(journey.nextAction).toMatch(/seller quote|fresh quote/i);
   });
@@ -87,7 +88,7 @@ describe("deriveAgentJourney", () => {
       }),
     });
 
-    expect(journey.quote).toMatchObject({ state: "current", label: "Request quote" });
+    expect(journey.quote).toMatchObject({ state: "current", label: "Inputs verified" });
     expect(journey.hire).toMatchObject({ state: "current", label: "Request a quote to hire" });
     expect(journey.nextAction).toMatch(/seller quote|fresh quote|request a quote/i);
   });
@@ -100,7 +101,7 @@ describe("deriveAgentJourney", () => {
       provenJobs: 2,
     });
 
-    expect(journey.hire).toMatchObject({ state: "verified", label: "Ready to hire" });
+    expect(journey.hire).toMatchObject({ state: "current", label: "Start hiring" });
     expect(journey.jobs).toMatchObject({ state: "verified", label: "2 result-verified jobs" });
     expect(journey.nextAction).toMatch(/fresh quote/i);
   });
@@ -126,7 +127,7 @@ describe("deriveAgentJourney", () => {
       }),
     });
 
-    expect(journey.quote).toMatchObject({ state: "attention", label: "Quote expired" });
+    expect(journey.quote).toMatchObject({ state: "current", label: "Inputs verified" });
     expect(journey.hire).toMatchObject({ state: "current", label: "Start hiring" });
     expect(journey.nextAction).toMatch(/fresh quote/i);
   });
@@ -142,9 +143,9 @@ describe("deriveAgentJourney", () => {
       }),
     });
 
-    expect(journey.quote).toMatchObject({ state: "attention", label: "Quote rejected" });
-    expect(journey.hire).toMatchObject({ state: "locked", label: "Hiring unavailable" });
-    expect(journey.nextAction).toMatch(/listed for discovery/i);
+    expect(journey.quote).toMatchObject({ state: "locked", label: "Requirements unverified" });
+    expect(journey.hire).toMatchObject({ state: "locked", label: "Check compatibility" });
+    expect(journey.nextAction).toMatch(/check compatibility/i);
   });
 
   it("does not imply a check exists when no eligible validation endpoint is available", () => {
@@ -158,8 +159,8 @@ describe("deriveAgentJourney", () => {
 
     expect(journey.declared).toMatchObject({ state: "locked", label: "Not indexed" });
     expect(journey.availability).toMatchObject({ state: "locked", label: "Not checked" });
-    expect(journey.quote).toMatchObject({ state: "locked", label: "Quote unavailable" });
-    expect(journey.hire).toMatchObject({ state: "locked", label: "Hiring unavailable" });
+    expect(journey.quote).toMatchObject({ state: "locked", label: "Requirements unverified" });
+    expect(journey.hire).toMatchObject({ state: "locked", label: "Check compatibility" });
     expect(journey.jobs).toMatchObject({ state: "locked", label: "No jobs yet" });
   });
 
@@ -168,5 +169,14 @@ describe("deriveAgentJourney", () => {
       .toBe("1 result-verified job");
     expect(deriveAgentJourney({ ...base, state: state(), provenJobs: 3 }).jobs.label)
       .toBe("3 result-verified jobs");
+  });
+  it("does not infer usable parameters from declaration-only legacy capability", () => {
+    const model = deriveAgentJourney({ ...base, state: state({ compatibilityState: undefined }) });
+    expect(model.quote.label).toBe("Requirements unverified");
+    expect(model.hire.label).toBe("Check compatibility");
+  });
+  it("distinguishes unsupported requirements from temporary discovery failure", () => {
+    expect(deriveAgentJourney({ ...base, state: state({ canRequestQuote: false, compatibilityState: "unsupported" }) }).quote.label).toBe("Integration required");
+    expect(deriveAgentJourney({ ...base, state: state({ canRequestQuote: false, compatibilityState: "unavailable" }) }).quote.label).toBe("Compatibility unavailable");
   });
 });

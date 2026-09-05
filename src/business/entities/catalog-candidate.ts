@@ -1,12 +1,13 @@
 import type { MarketplaceCategory } from "./marketplace-agent.ts";
 
 export const CATALOG_STATUSES = [
-  "declared", "pending", "a2a", "mcp", "mcp_only", "erc8183", "quote_capable", "hireable", "failed",
+  "declared", "pending", "a2a", "mcp", "mcp_only", "erc8183", "quote_capable", "hireable", "failed", "requestable", "quote_failed", "completed_jobs",
 ] as const;
 export type CatalogStatus = (typeof CATALOG_STATUSES)[number];
 
 export interface CatalogFacetCounts {
-  statuses: Record<CatalogStatus, number>;
+  statuses: Record<Exclude<CatalogStatus, "requestable" | "quote_failed" | "completed_jobs">, number> & Partial<Record<"requestable" | "quote_failed" | "completed_jobs", number>>;
+  protocols?: Partial<Record<"a2a" | "mcp" | "erc8183_http", number>>;
   categories: Record<MarketplaceCategory, number>;
   /** Reachability facets are optional while older catalog feeds roll forward. */
   reachability?: {
@@ -110,6 +111,11 @@ export interface CatalogCandidate {
     freshness: "never" | "live" | "historical" | "stale";
     commerceStatus: "none" | "declared" | "admission_pending" | "admitted" | "suspended";
     capabilityState?: "unsupported" | "discovered" | "ready" | "stale" | "failed" | "suspended";
+    compatibilityState?: "pending" | "compatible" | "unsupported" | "unavailable";
+    compatibilityCheckedAt?: number | null;
+    compatibilityExpiresAt?: number | null;
+    compatibilityErrorCode?: string | null;
+    schemaHash?: string | null;
     /** Endpoint and transport currently selected by the capability ledger. */
     capabilityEndpointKey?: string | null;
     capabilityTransport?: "a2a" | "mcp" | "erc8183_http" | null;

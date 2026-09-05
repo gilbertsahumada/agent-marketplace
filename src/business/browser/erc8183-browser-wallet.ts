@@ -6,7 +6,9 @@ export {
   detectBrowserHireMode,
   executeBrowserHire,
   loadBrowserJournal,
+  normalizeBrowserAddress,
   recoverBrowserJournal,
+  recoverFundedBrowserJournal,
   saveBrowserJournal,
 } from "../../data/erc8183/browser-wallet-adapter.ts";
 export type { BrowserHireMode, Erc8183BrowserDeployment } from "../../data/erc8183/browser-wallet-adapter.ts";

@@ -374,7 +374,7 @@ export async function readCatalogAgentEvidence(
       lastAttemptAt: sql<number | null>`MAX(${catalogQuoteAttempts.startedAt})`,
     }).from(catalogQuoteRequests)
       .leftJoin(catalogQuoteAttempts, eq(catalogQuoteAttempts.requestId, catalogQuoteRequests.id))
-      .where(and(eq(catalogQuoteRequests.agentKey, agentKey), eq(catalogQuoteRequests.kind, "buyer_quote"))),
+      .where(and(eq(catalogQuoteRequests.agentKey, agentKey), eq(catalogQuoteRequests.kind, "buyer_quote"), sql`${catalogQuoteRequests.callerKey} <> 'migration'`)),
     db.select({
       total: countDistinct(sql`CAST(${commerceJobs.jobId} AS TEXT)`),
       completed: sql<number>`COUNT(DISTINCT CASE WHEN ${commerceJobs.status} = 3 THEN CAST(${commerceJobs.jobId} AS TEXT) END)`,

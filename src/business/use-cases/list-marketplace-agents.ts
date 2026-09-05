@@ -49,6 +49,7 @@ export type ListMarketplaceAgentsInput =
   | (BaseListInput & { view: "all" })
   | (BaseListInput & {
     view: "marketplace";
+    scope?: "hiring" | "evaluation";
     category?: MarketplaceCategory;
     categories?: MarketplaceCategory[];
     availability?: MarketplaceAvailability;
@@ -93,7 +94,7 @@ function sortAgents(agents: MarketplaceAgent[], sort: MarketplaceDataSort | unde
 function hasAdvancedCatalogFilters(input: Extract<ListMarketplaceAgentsInput, { view: "marketplace" }>): boolean {
   const categories = input.categories ?? (input.category ? [input.category] : []);
   const statuses = input.statuses ?? [];
-  return categories.length > 1
+  return input.scope !== undefined || categories.length > 1
     || (statuses.length > 0 && !(statuses.length === 1 && statuses[0] === "declared"))
     || (input.protocols?.length ?? 0) > 0
     || (input.reachability?.length ?? 0) > 0
@@ -166,6 +167,7 @@ export class ListMarketplaceAgents {
         ...(input.quote?.length ? { quote: input.quote } : {}),
         ...(input.latestFailure === undefined ? {} : { latestFailure: input.latestFailure }),
         inventory: "operational",
+        ...(input.scope ? { scope: input.scope, statuses: statusValues ?? [] } : {}),
       });
       if (catalog) {
         const fetchedAt = new Date(catalog.generatedAt).toISOString();

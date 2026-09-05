@@ -21,6 +21,7 @@ export interface Env {
   WP2_QUEUE?: QueueProducer;
   /** Dedicated queue for seller capability/quote probes. */
   CATALOG_QUOTE_QUEUE?: QueueProducer;
+  CATALOG_COMPATIBILITY_BOOTSTRAP_BATCH_SIZE?: string;
   CLOUDFLARE_WORKERS_PLAN?: string;
   KILL_SWITCH?: string;
   PRODUCER_KILL_SWITCH?: string;

@@ -16,11 +16,12 @@ const switchChain = vi.fn();
 const connect = vi.fn();
 const connectors = vi.fn<() => Connector[]>(() => []);
 const disconnect = vi.fn();
+const connectionState = vi.hoisted(() => ({ isPending: false }));
 
 vi.mock("wagmi", () => ({
   useAccount: () => account(),
   useChainId: () => chainId(),
-  useConnect: () => ({ connect, connectors: connectors(), error: null }),
+  useConnect: () => ({ connect, connectors: connectors(), error: null, isPending: connectionState.isPending }),
   useDisconnect: () => ({ disconnect }),
   useSwitchChain: () => ({ switchChain }),
 }));
@@ -36,9 +37,18 @@ function renderButton() {
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  connectionState.isPending = false;
 });
 
 describe("header wallet connect button", () => {
+  it("shows a busy wallet button while waiting for connection", async () => {
+    account.mockReturnValue({ isConnected: false });
+    chainId.mockReturnValue(56);
+    connectionState.isPending = true;
+    renderButton();
+    expect(await screen.findByRole("button", { name: "Connecting…" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Connecting…" })).toHaveAttribute("aria-busy", "true");
+  });
   it("invites the visitor to connect when no wallet is attached", async () => {
     account.mockReturnValue({ address: undefined, isConnected: false, connector: undefined });
     chainId.mockReturnValue(56);

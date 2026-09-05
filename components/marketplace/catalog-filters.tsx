@@ -6,18 +6,18 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Field, FieldGroup, FieldLabel, FieldLegend, FieldSet } from "@/components/ui/field";
 import type { MarketplaceCategory } from "@/src/business/entities/marketplace-agent";
 import type { CatalogFacetCounts, CatalogStatus } from "@/src/business/entities/catalog-candidate";
-import type { MarketplaceReachability } from "@/src/business/use-cases/list-marketplace-agents";
+import type { MarketplaceReachability, MarketplaceProtocol } from "@/src/business/use-cases/list-marketplace-agents";
 import { useCatalogNavigation } from "./catalog-navigation";
 
 const statusFilters: Array<{ value: CatalogStatus; label: string }> = [
-  { value: "declared", label: "Declared endpoints" },
-  { value: "pending", label: "Pending validation" },
-  { value: "a2a", label: "A2A reachable" },
-  { value: "mcp", label: "MCP reachable" },
-  { value: "erc8183", label: "ERC-8183 declared" },
+  { value: "requestable", label: "Can request quote" },
   { value: "quote_capable", label: "Ready to quote" },
-  { value: "hireable", label: "Ready to hire" },
-  { value: "failed", label: "Latest probe failed" },
+  { value: "declared", label: "Declared endpoints" },
+  { value: "pending", label: "Compatibility pending" },
+  { value: "erc8183", label: "ERC-8183 declared" },
+  { value: "quote_failed", label: "Quote failed" },
+  { value: "failed", label: "Endpoint check failed" },
+  { value: "completed_jobs", label: "Completed jobs" },
 ];
 
 const categoryFilters: Array<{ value: MarketplaceCategory; label: string }> = [
@@ -27,10 +27,11 @@ const categoryFilters: Array<{ value: MarketplaceCategory; label: string }> = [
   { value: "health_factor_monitoring", label: "Health factor monitoring" },
 ];
 
-export function CatalogFilters({ statuses, categories, reachability, counts, q, idPrefix = "catalog" }: {
+export function CatalogFilters({ statuses, categories, reachability, protocols = [], counts, q, idPrefix = "catalog" }: {
   statuses: CatalogStatus[];
   categories: MarketplaceCategory[];
   reachability: MarketplaceReachability[];
+  protocols?: MarketplaceProtocol[];
   counts?: CatalogFacetCounts;
   q?: string;
   idPrefix?: string;
@@ -41,11 +42,13 @@ export function CatalogFilters({ statuses, categories, reachability, counts, q, 
     nextStatuses: CatalogStatus[],
     nextCategories: MarketplaceCategory[],
     nextReachability: MarketplaceReachability[],
+    nextProtocols: MarketplaceProtocol[] = protocols,
   ) => {
     const params = new URLSearchParams({ view: "marketplace" });
     for (const status of nextStatuses) params.append("status", status);
     for (const category of nextCategories) params.append("category", category);
     for (const value of nextReachability) params.append("reachability", value);
+    for (const value of nextProtocols) params.append("protocol", value);
     if (q) params.set("q", q);
     navigate(`/agents?${params.toString()}`);
   };
@@ -66,6 +69,20 @@ export function CatalogFilters({ statuses, categories, reachability, counts, q, 
         </Button>
       </div>
 
+      <FieldSet className="border-b border-white/10 px-4 py-4">
+        <FieldLegend variant="label">Transport</FieldLegend>
+        <FieldGroup data-slot="checkbox-group">
+          {([['a2a', 'A2A'], ['erc8183_http', 'HTTP'], ['mcp', 'MCP']] as const).map(([value,label]) => (
+            <Field key={value} orientation="horizontal">
+              <Checkbox id={`${idPrefix}-protocol-${value}`} disabled={pending} checked={protocols.includes(value)} onCheckedChange={(checked) => apply(statuses,categories,reachability,checked ? [...protocols,value] : protocols.filter((protocol) => protocol !== value))} />
+              <FieldLabel htmlFor={`${idPrefix}-protocol-${value}`} className="flex cursor-pointer items-center justify-between gap-3 text-sm font-normal text-zinc-300">
+                {label}
+                {typeof counts?.protocols?.[value] === "number" && <span className="font-stat text-xs tabular-nums text-zinc-500">{counts.protocols[value]!.toLocaleString("en-US")}</span>}
+              </FieldLabel>
+            </Field>
+          ))}
+        </FieldGroup>
+      </FieldSet>
       <details className="group border-b border-white/10 px-4 py-4" open>
         <summary className="flex cursor-pointer list-none items-center justify-between text-sm font-medium text-white [&::-webkit-details-marker]:hidden">
           Evidence
@@ -107,7 +124,7 @@ export function CatalogFilters({ statuses, categories, reachability, counts, q, 
                 />
                 <FieldLabel className="flex cursor-pointer items-center justify-between gap-3 text-sm font-normal text-zinc-300" htmlFor={id}>
                   <span>{filter.label}</span>
-                  {counts && <span aria-hidden="true" className="font-stat text-xs tabular-nums text-zinc-500">{counts.statuses[filter.value].toLocaleString("en-US")}</span>}
+                  {typeof counts?.statuses[filter.value] === "number" && <span aria-hidden="true" className="font-stat text-xs tabular-nums text-zinc-500">{counts.statuses[filter.value]!.toLocaleString("en-US")}</span>}
                 </FieldLabel>
               </Field>
             );

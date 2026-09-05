@@ -24,7 +24,8 @@ import type {
 import type { PublicJobProof } from "../src/business/entities/public-job-proof.ts";
 import { GATE1_JOB_514_MANIFEST } from "../src/data/proofs/gate1-job-514.ts";
 import { GATE6A_JOB_551_MANIFEST } from "../src/data/proofs/gate6a-job-551.ts";
-import { Erc8183MainnetDemo, Erc8183TestnetDemo, Erc8183TransactionList, hireConfirmationLabel, sharedEvidenceSyncMessage } from "../components/spikes/erc8183-browser-spike.tsx";
+import { Erc8183MainnetDemo, Erc8183MarketplaceHire, Erc8183SavedHire, Erc8183TestnetDemo, Erc8183TransactionList, hireConfirmationLabel, sharedEvidenceSyncMessage } from "../components/spikes/erc8183-browser-spike.tsx";
+import { ERC8183_MAINNET } from "../src/mainnet/contracts.ts";
 import { Providers } from "../app/providers.tsx";
 import { VerificationDrift } from "../components/marketplace/verification-drift.tsx";
 import { EvidencePassportCard } from "../components/marketplace/evidence-passport-card.tsx";
@@ -321,7 +322,7 @@ function mainnetPlan(quote: ReturnType<typeof mainnetQuote>) {
   };
 }
 
-function mainnetJob(status: "SUBMITTED" | "COMPLETED") {
+function mainnetJob(status: "FUNDED" | "SUBMITTED" | "COMPLETED") {
   return {
     chainId: 56,
     jobId: "42",
@@ -643,7 +644,7 @@ describe("marketplace presentation rules", () => {
     } }));
 
     expect(screen.getByText("Reachable only")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "View details" })).toHaveAttribute("href", "/hire/113284");
+    expect(screen.getByRole("link", { name: "Check compatibility" })).toHaveAttribute("href", "/hire/113284#hire-flow");
     expect(screen.queryByRole("link", { name: /hire agent|request quote/i })).not.toBeInTheDocument();
   });
 
@@ -743,7 +744,7 @@ describe("marketplace presentation rules", () => {
       passport: evidencePassport("registered"),
     }));
 
-    expect(screen.getByRole("heading", { name: "Hiring unavailable" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Check compatibility" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /hire agent/i })).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: /Identity & reputation/i }))
       .toHaveAttribute("href", "https://trust8004.xyz/agents/56:303779");
@@ -783,10 +784,10 @@ describe("marketplace presentation rules", () => {
     expect(screen.getByRole("heading", { name: "Marketplace Grid Planner" })).toBeInTheDocument();
     expect(screen.queryByText("Readiness at a glance")).not.toBeInTheDocument();
     expect(screen.getByText("Identity declared")).toBeInTheDocument();
-    expect(screen.getByText("0 completed jobs")).toBeInTheDocument();
+    expect(screen.getByText("Job totals unavailable")).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Hire agent" })).not.toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "ERC-8183 job history", hidden: true })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /Job #700/i })).toHaveAttribute("href", "/jobs/mainnet/700");
+    expect(screen.getByRole("link", { name: "View job 700" })).toHaveAttribute("href", "/jobs/mainnet/700");
     expect(screen.getByRole("link", { name: /Identity & reputation/i }))
       .toHaveAttribute("href", "https://trust8004.xyz/agents/56:303779");
     expect(screen.queryByRole("heading", { name: "Indexed Evidence Passport" })).not.toBeInTheDocument();
@@ -794,7 +795,7 @@ describe("marketplace presentation rules", () => {
     expect(screen.queryByText("Verified hire activity")).not.toBeInTheDocument();
   });
 
-  it("lists the latest chain-verified hire phase in the hiring workspace without counting it as a proven job", () => {
+  it("does not present old free-text hire events as current indexed state or invent totals", () => {
     const agent = marketplaceAgent();
     agent.agentId = "303779";
     const passport = evidencePassport("hireable");
@@ -807,10 +808,10 @@ describe("marketplace presentation rules", () => {
 
     render(createElement(AgentProfile, { agent, hireJobs: [], passport }));
 
-    expect(screen.getByText("Verified hire activity")).toBeInTheDocument();
-    expect(screen.getByText(/Latest chain-verified hire phase: funded \(Job 812/)).toBeInTheDocument();
-    expect(screen.getByText("0 completed jobs")).toBeInTheDocument();
-    expect(screen.getByText("No indexed jobs yet.")).toBeInTheDocument();
+    expect(screen.queryByText("Verified hire activity")).not.toBeInTheDocument();
+    expect(screen.queryByText(/Latest chain-verified hire phase: funded \(Job 812/)).not.toBeInTheDocument();
+    expect(screen.getByText("Job totals unavailable")).toBeInTheDocument();
+    expect(screen.getByText("No indexed jobs on this network.")).toBeInTheDocument();
   });
 
   const hireJob = (jobId: string, status: "FUNDED" | "SUBMITTED" | "COMPLETED" = "FUNDED") => ({
@@ -832,10 +833,10 @@ describe("marketplace presentation rules", () => {
     }));
 
     expect(screen.getByText("Last 30 days: 4 created · 2 settled")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "ERC-8183 job history" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Provider wallet jobs" })).toBeInTheDocument();
     // Scoped to the job history: the avatar fallback elsewhere on the profile
     // is a pre-existing, unrelated finding.
-    const history = screen.getByRole("heading", { name: "ERC-8183 job history" }).closest("details");
+    const history = screen.getByRole("heading", { name: "Provider wallet jobs" }).closest("details");
     expect(history).not.toBeNull();
     expect((await axe.run(history as HTMLElement)).violations).toEqual([]);
 
@@ -1001,7 +1002,7 @@ describe("marketplace presentation rules", () => {
     const totals = screen.getByLabelText("Catalog totals");
     expect(within(totals).getByText("ERC-8004 registered")).toBeInTheDocument();
     expect(within(totals).getByText("80,058")).toBeInTheDocument();
-    expect(within(totals).getByText("Operational candidates")).toBeInTheDocument();
+    expect(within(totals).getByText("Can request quote")).toBeInTheDocument();
     expect(within(totals).getByText("30,006")).toBeInTheDocument();
     expect(screen.queryByRole("navigation", { name: "Catalog scope" })).not.toBeInTheDocument();
     expect(screen.getByTestId("catalog-summary")).toContainElement(totals);
@@ -1097,13 +1098,14 @@ describe("marketplace presentation rules", () => {
       data: page,
       query: {
         view: "marketplace",
-        statuses: ["declared", "a2a"],
+        statuses: ["declared"],
+        protocols: ["a2a"],
         categories: ["grid_trading", "rebalancing"],
       },
     }));
 
     expect(screen.getAllByRole("checkbox", { name: "Declared endpoints" }).every((item) => item.getAttribute("data-state") === "checked")).toBe(true);
-    expect(screen.getAllByRole("checkbox", { name: "A2A reachable" }).every((item) => item.getAttribute("data-state") === "checked")).toBe(true);
+    expect(screen.getAllByRole("checkbox", { name: "A2A" }).every((item) => item.getAttribute("data-state") === "checked")).toBe(true);
     expect(screen.getAllByRole("checkbox", { name: "Grid trading" }).every((item) => item.getAttribute("data-state") === "checked")).toBe(true);
     expect(screen.getAllByRole("checkbox", { name: "Rebalancing" }).every((item) => item.getAttribute("data-state") === "checked")).toBe(true);
     expect(screen.getAllByRole("button", { name: "Clear filters" })).toHaveLength(3);
@@ -1160,6 +1162,15 @@ describe("marketplace presentation rules", () => {
     expect(routerPush).toHaveBeenCalledWith("/agents?view=marketplace");
   });
 
+  it("removes the final quick status without replacing it or dropping other groups", async () => {
+    const user = userEvent.setup();
+    routerPush.mockClear();
+    const page: MarketplaceAgentPage = { view: "marketplace", items: [], pagination: { page: 1, pageSize: 12, total: 0, totalPages: 0 }, categories: [], catalogCoverage: "partial", fetchedAt: "2026-08-17T00:00:00.000Z" };
+    render(createElement(CatalogPage, { data: page, query: { view: "marketplace", statuses: ["requestable"], protocols: ["mcp"], q: "grid" } }));
+    await user.click(screen.getByRole("button", { name: /^Can request quote/ }));
+    expect(routerPush).toHaveBeenCalledWith("/agents?view=marketplace&protocol=mcp&q=grid");
+  });
+
   it("shows result skeletons while applying a second evidence filter", async () => {
     const user = userEvent.setup();
     const page: MarketplaceAgentPage = {
@@ -1173,9 +1184,9 @@ describe("marketplace presentation rules", () => {
     routerPush.mockClear();
     render(createElement(CatalogPage, { data: page, query: { view: "marketplace", statuses: ["declared"] } }));
 
-    await user.click(screen.getAllByRole("checkbox", { name: "A2A reachable" })[0]!);
+    await user.click(screen.getAllByRole("checkbox", { name: "A2A" })[0]!);
 
-    expect(routerPush).toHaveBeenCalledWith("/agents?view=marketplace&status=declared&status=a2a");
+    expect(routerPush).toHaveBeenCalledWith("/agents?view=marketplace&status=declared&protocol=a2a");
     expect(screen.getByRole("status", { name: "Loading agents" })).toBeInTheDocument();
     expect(screen.queryByText("V3 Pools powered by HeyAnon")).not.toBeInTheDocument();
   });
@@ -1198,8 +1209,8 @@ describe("marketplace presentation rules", () => {
 
     expect(screen.getAllByRole("checkbox", { name: "Reachable now" }).every((item) => item.getAttribute("data-state") === "checked")).toBe(true);
     expect(screen.getByRole("button", { name: /Reachable now/ })).toHaveAttribute("aria-pressed", "true");
-    await user.click(screen.getByRole("button", { name: /^MCP/ }));
-    expect(routerPush).toHaveBeenCalledWith("/agents?view=marketplace&status=declared&status=mcp&reachability=live");
+    await user.click(screen.getAllByRole("checkbox", { name: "MCP" })[0]!);
+    expect(routerPush).toHaveBeenCalledWith("/agents?view=marketplace&status=declared&reachability=live&protocol=mcp");
   });
 
   it("searches while typing with one focus border and preserves active filters", () => {
@@ -1632,7 +1643,55 @@ describe("marketplace presentation rules", () => {
     expect(screen.getByRole("button", { name: /wallet approval/i })).toBeDisabled();
   });
 
-  it.each(["SUBMITTED", "COMPLETED"] as const)("allows a new hire after a fresh quote when the saved job is %s", async (status) => {
+  it("resumes original funded job with an expired, different quote without preparing or sending transactions", async () => {
+    const user = userEvent.setup();
+    const buyer = "0x7777777777777777777777777777777777777777" as const;
+    walletState.address = buyer;
+    localStorage.setItem("bnb-agent-marketplace:erc8183-browser:56:303779:v1", JSON.stringify({
+      schemaVersion: 1, chainId: 56, buyer, seller: MAINNET_DEMO_CONFIG.seller,
+      jobId: "42", quoteRequestId: 17, transactions: {}, lastConfirmedStep: "funded",
+    }));
+    const quote = mainnetQuote({ quoteExpiresAt: Math.floor(Date.now() / 1_000) - 60, priceRaw: "2" });
+    const previousJob = { ...mainnetJob("FUNDED"), evaluator: quote.router };
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(jsonResponse({ job: previousJob })));
+    vi.stubGlobal("fetch", fetchMock);
+    render(createElement(Providers, { children: createElement(Erc8183MarketplaceHire, { quote: { ...quote, chainId: 56, observationSync: { status: "synced" } }, quoteRequestId: 99 }) }));
+    const resume = await screen.findByRole("button", { name: "Resume job #42" });
+    expect(resume).toBeEnabled();
+    await user.click(resume);
+    expect(screen.queryByText(/Recovered chain state|older job|not funded/)).not.toBeInTheDocument();
+    await waitFor(() => expect(document.body.textContent).toContain("Resumed job #42 · FUNDED"));
+    await user.click(screen.getByRole("button", { name: "Retry seller notification" }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
+    expect(fetchMock.mock.calls.map(call => String(call[0]))).toEqual([
+      "/api/marketplace/agents/303779/hire/jobs/42?quoteRequestId=17",
+      "/api/marketplace/agents/303779/hire/jobs/42?quoteRequestId=17",
+      "/api/marketplace/agents/303779/hire/notify",
+    ]);
+    expect(JSON.parse(fetchMock.mock.calls[2]?.[1]?.body as string)).toEqual({ buyer, jobId: "42", quoteRequestId: 17 });
+    expect(walletState.switchChainAsync).not.toHaveBeenCalled();
+    expect(screen.queryByText("Confirmed onchain")).not.toBeInTheDocument();
+  });
+
+  it("offers saved funded recovery after reload without any buyer quote", async () => {
+    walletState.address = "0x7777777777777777777777777777777777777777";
+    localStorage.setItem("bnb-agent-marketplace:erc8183-browser:56:303779:v1", JSON.stringify({
+      schemaVersion: 1, chainId: 56, buyer: walletState.address, seller: MAINNET_DEMO_CONFIG.seller,
+      jobId: "42", quoteRequestId: 17, transactions: {}, lastConfirmedStep: "funded",
+    }));
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ job: { ...mainnetJob("FUNDED"),
+      evaluator: ERC8183_MAINNET.router, policy: ERC8183_MAINNET.policy, quotedToken: ERC8183_MAINNET.token } }));
+    vi.stubGlobal("fetch", fetchMock);
+    render(createElement(Providers, { children: createElement(Erc8183SavedHire, { agentId: "303779" }) }));
+    await userEvent.click(await screen.findByRole("button", { name: "Resume job #42" }));
+    expect(await screen.findByText(/Resumed job #42 · FUNDED/)).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(String(fetchMock.mock.calls[0]?.[0])).toContain("quoteRequestId=17");
+    expect(screen.queryByRole("button", { name: /request quote|prepare hire/i })).not.toBeInTheDocument();
+  });
+
+  it.each(["FUNDED", "SUBMITTED", "COMPLETED"] as const)("does not restore a saved %s job into a new quote", async (status) => {
+    vi.spyOn(navigator, "sendBeacon").mockReturnValue(true);
     const user = userEvent.setup();
     const buyer = "0x7777777777777777777777777777777777777777" as const;
     walletState.address = buyer;
@@ -1647,17 +1706,42 @@ describe("marketplace presentation rules", () => {
     }));
     const quote = mainnetQuote({ quoteExpiresAt: Math.floor(Date.now() / 1_000) + 600 });
     const fetchMock = vi.fn()
-      .mockResolvedValueOnce(jsonResponse({ job: mainnetJob(status) }))
       .mockResolvedValueOnce(jsonResponse(quote))
       .mockResolvedValueOnce(jsonResponse(mainnetPlan(quote)));
     vi.stubGlobal("fetch", fetchMock);
-    renderMainnetDemo();
+    const view = renderMainnetDemo();
 
-    expect(await screen.findByText(`Current state: ${status}`)).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Resume job #42" })).toBeEnabled();
+    expect(screen.queryByText(`Current state: ${status}`)).not.toBeInTheDocument();
+    expect(fetchMock).not.toHaveBeenCalled();
     await user.click(screen.getByRole("button", { name: /get fresh quote/i }));
     expect(localStorage.getItem("bnb-agent-marketplace:erc8183-browser:56:303779:v1")).not.toBeNull();
     await user.click(await screen.findByRole("button", { name: /prepare hire as/i }));
     expect(await screen.findByRole("button", { name: /begin \d+ wallet approval/i })).toBeEnabled();
+    expect(screen.queryByText("Confirmed onchain")).not.toBeInTheDocument();
+    fetchMock.mockResolvedValueOnce(jsonResponse({ job: { ...mainnetJob(status), description: quote.description, evaluator: quote.router, budgetRaw: quote.priceRaw, quotedPriceRaw: quote.priceRaw } }));
+    await user.click(screen.getByRole("button", { name: "Resume job #42" }));
+    expect(await screen.findByText(new RegExp(`Resumed job #42 · ${status}`))).toBeInTheDocument();
+    expect(screen.queryByText("Confirmed onchain")).not.toBeInTheDocument();
+    if (status === "FUNDED") {
+      const fundedJob = { ...mainnetJob(status), description: quote.description, evaluator: quote.router, budgetRaw: quote.priceRaw, quotedPriceRaw: quote.priceRaw };
+      fetchMock.mockResolvedValueOnce(jsonResponse({ job: fundedJob }))
+        .mockResolvedValueOnce(jsonResponse({ error: { message: "Seller unavailable" } }, 503));
+      const beforeRetry = fetchMock.mock.calls.length;
+      await user.click(screen.getByRole("button", { name: "Retry seller notification" }));
+      expect(await screen.findByText(/Seller unavailable/)).toBeInTheDocument();
+      expect(fetchMock.mock.calls.slice(beforeRetry).map(call => String(call[0]))).toEqual([
+        "/api/marketplace/jobs/mainnet/42", "/api/marketplace/demo/erc8183-mainnet/notify",
+      ]);
+    }
+    walletState.address = "0x8888888888888888888888888888888888888888";
+    view.rerender(createElement(Providers, { children: createElement(Erc8183MainnetDemo, { config: MAINNET_DEMO_CONFIG, agentName: "Marketplace Grid Planner" }) }));
+    expect(screen.queryByText(new RegExp(`Resumed job #42 · ${status}`))).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Resume job #42" })).toBeDisabled();
+    view.unmount();
+    renderMainnetDemo();
+    expect(screen.queryByText("Confirmed onchain")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Resume job #42" })).toBeDisabled();
   });
 
   it.each([

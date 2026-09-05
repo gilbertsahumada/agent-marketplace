@@ -2,6 +2,7 @@ import {
   createPublicClient,
   createWalletClient,
   custom,
+  encodeFunctionData,
   getAddress,
   http,
   isAddressEqual,
@@ -94,6 +95,10 @@ function journalKey(deployment: Erc8183BrowserDeployment): string {
 
 function viemChain(deployment: Erc8183BrowserDeployment): Chain {
   return deployment.chainId === 56 ? bsc : bscTestnet;
+}
+
+export function normalizeBrowserAddress(value: string): Address {
+  return getAddress(value);
 }
 
 function sameAddress(left: string, right: string): boolean {
@@ -207,6 +212,7 @@ export function parseBrowserJournal(
     return {
       schemaVersion: 1,
       chainId: deployment.chainId,
+      ...(Number.isSafeInteger(candidate.quoteRequestId) && Number(candidate.quoteRequestId) > 0 ? { quoteRequestId: Number(candidate.quoteRequestId) } : {}),
       buyer,
       seller,
       jobId: candidate.jobId ?? null,
@@ -239,6 +245,7 @@ export function saveBrowserJournal(
   deployment: Erc8183BrowserDeployment = TESTNET_BROWSER_DEPLOYMENT,
 ): void {
   storage.setItem(journalKey(deployment), JSON.stringify(journal));
+  if (journal.jobId) storage.setItem(`${journalKey(deployment)}:job:${journal.buyer.toLowerCase()}:${journal.jobId}`, JSON.stringify(journal));
 }
 
 export function clearBrowserJournal(
@@ -344,6 +351,7 @@ export function validateRecoveredJobForResume(
   if (
     job.chainId !== deployment.chainId ||
     job.jobId !== expectedJobId ||
+    job.description !== plan.quote.description ||
     !sameAddress(job.buyer, plan.buyer) ||
     !sameAddress(job.provider, plan.seller) ||
     !sameAddress(job.evaluator, deployment.router) ||
@@ -383,6 +391,27 @@ export function recoverBrowserJournal(
   return journal;
 }
 
+/** Read-only recovery of an already funded execution; never creates a payment plan. */
+export function recoverFundedBrowserJournal(
+  job: Erc8183JobFacts,
+  saved: Erc8183BrowserJournal,
+  buyer: string,
+  deployment: Erc8183BrowserDeployment = TESTNET_BROWSER_DEPLOYMENT,
+): Erc8183BrowserJournal {
+  if (saved.chainId !== deployment.chainId || job.chainId !== deployment.chainId ||
+    job.jobId !== saved.jobId || !sameAddress(saved.buyer, buyer) || !sameAddress(job.buyer, buyer) ||
+    !sameAddress(saved.seller, deployment.seller) || !sameAddress(job.provider, deployment.seller) ||
+    !sameAddress(job.evaluator, deployment.router) || !sameAddress(job.policy, deployment.policy) ||
+    !job.quotedToken || !sameAddress(job.quotedToken, deployment.token) ||
+    !job.quotedPriceRaw || !/^[1-9]\d*$/.test(job.quotedPriceRaw) || job.budgetRaw !== job.quotedPriceRaw ||
+    !["FUNDED", "SUBMITTED", "COMPLETED"].includes(job.status)) {
+    throw new InvalidErc8183SpikeInputError("Recovered chain state does not match the saved funded hire");
+  }
+  // Cached hashes/receipts are history, not proof of this read. Keep them in storage only.
+  const { receipts: _receipts, ...reference } = saved;
+  return { ...reference, transactions: {}, lastConfirmedStep: "funded" };
+}
+
 export function resumeRequirements(job: Erc8183JobFacts | null, budgetRaw: string) {
   const budget = BigInt(budgetRaw);
   return {
@@ -417,6 +446,7 @@ export async function executeBrowserHire(
     recoveredJob?: Erc8183JobFacts | null;
     onProgress?: (progress: BrowserHireProgress) => void;
     deployment?: Erc8183BrowserDeployment;
+    quoteRequestId?: number;
   } = {},
 ): Promise<BrowserHireExecution> {
   const deployment = options.deployment ?? TESTNET_BROWSER_DEPLOYMENT;
@@ -430,6 +460,7 @@ export async function executeBrowserHire(
   }
   const onProgress = options.onProgress ?? (() => undefined);
   let journal = options.journal ?? {
+    ...(options.quoteRequestId ? { quoteRequestId: options.quoteRequestId } : {}),
     schemaVersion: 1,
     chainId: deployment.chainId,
     buyer: account,
@@ -455,11 +486,11 @@ export async function executeBrowserHire(
   const chain = viemChain(deployment);
   const publicClient = createPublicClient({ chain, transport: http(deployment.rpcUrl) });
   const walletClient = createWalletClient({ account, chain, transport: custom(provider) });
-  const confirm = async (hash: Hash, expectedContract: Address): Promise<{ receipt: TransactionReceipt; confirmedAt: string }> => {
+  const confirm = async (hash: Hash, expectedContract: Address, expectedInput: `0x${string}`): Promise<{ receipt: TransactionReceipt; confirmedAt: string }> => {
     const receipt = await publicClient.waitForTransactionReceipt({ hash });
     assertSuccessfulReceipt(receipt);
     const transaction = await publicClient.getTransaction({ hash });
-    if (!transaction.to || !sameAddress(transaction.to, expectedContract)) {
+    if (!transaction.to || !sameAddress(transaction.to, expectedContract) || !sameAddress(transaction.from, account) || transaction.input.toLowerCase() !== expectedInput.toLowerCase()) {
       throw new InvalidErc8183SpikeInputError("Confirmed transaction targeted an unexpected contract");
     }
     const block = await publicClient.getBlock({ blockNumber: receipt.blockNumber });
@@ -538,7 +569,7 @@ export async function executeBrowserHire(
     if (batched) return batched;
   }
   if (jobId === null && journal.transactions.createJob) {
-    const confirmed = await confirm(journal.transactions.createJob, deployment.commerce);
+    const confirmed = await confirm(journal.transactions.createJob, deployment.commerce, encodeFunctionData({ abi: agenticCommerceBrowserAbi, functionName: "createJob", args: [plan.seller, deployment.router, BigInt(plan.deadline), plan.quote.description, deployment.router] }));
     jobId = extractConfirmedJobId(confirmed.receipt, deployment.commerce);
     journal = withProgress(journal, "created", { kind: "createJob", hash: journal.transactions.createJob, ...confirmed }, jobId.toString(), onProgress, deployment);
   }
@@ -552,7 +583,7 @@ export async function executeBrowserHire(
     });
     const hash = await walletClient.writeContract(simulation.request);
     journal = withProgress(journal, journal.lastConfirmedStep, { kind: "createJob", hash }, null, onProgress, deployment);
-    const confirmed = await confirm(hash, deployment.commerce);
+    const confirmed = await confirm(hash, deployment.commerce, encodeFunctionData({ abi: agenticCommerceBrowserAbi, functionName: "createJob", args: [plan.seller, deployment.router, BigInt(plan.deadline), plan.quote.description, deployment.router] }));
     jobId = extractConfirmedJobId(confirmed.receipt, deployment.commerce);
     journal = withProgress(journal, "created", { kind: "createJob", hash, ...confirmed }, jobId.toString(), onProgress, deployment);
   }
@@ -567,7 +598,7 @@ export async function executeBrowserHire(
       args: [jobId, deployment.policy],
     });
     const hash = await walletClient.writeContract(simulation.request);
-    const confirmed = await confirm(hash, deployment.router);
+    const confirmed = await confirm(hash, deployment.router, encodeFunctionData({ abi: evaluatorRouterBrowserAbi, functionName: "registerJob", args: [jobId, deployment.policy] }));
     journal = withProgress(journal, "registered", { kind: "registerJob", hash, ...confirmed }, jobId.toString(), onProgress, deployment);
   }
   if (!isAlreadyBudgeted(recovered, budget)) {
@@ -579,7 +610,7 @@ export async function executeBrowserHire(
       args: [jobId, budget, "0x"],
     });
     const hash = await walletClient.writeContract(simulation.request);
-    const confirmed = await confirm(hash, deployment.commerce);
+    const confirmed = await confirm(hash, deployment.commerce, encodeFunctionData({ abi: agenticCommerceBrowserAbi, functionName: "setBudget", args: [jobId, budget, "0x"] }));
     journal = withProgress(journal, "budgeted", { kind: "setBudget", hash, ...confirmed }, jobId.toString(), onProgress, deployment);
   }
   if (!isAlreadyFunded(recovered)) {
@@ -592,7 +623,7 @@ export async function executeBrowserHire(
         args: [deployment.commerce, budget],
       });
       const hash = await walletClient.writeContract(simulation.request);
-      const confirmed = await confirm(hash, deployment.token);
+      const confirmed = await confirm(hash, deployment.token, encodeFunctionData({ abi: paymentTokenBrowserAbi, functionName: "approve", args: [deployment.commerce, budget] }));
       journal = withProgress(journal, "approved", { kind: "approve", hash, ...confirmed }, jobId.toString(), onProgress, deployment);
     }
     const simulation = await publicClient.simulateContract({
@@ -603,7 +634,7 @@ export async function executeBrowserHire(
       args: [jobId, budget, "0x"],
     });
     const hash = await walletClient.writeContract(simulation.request);
-    const confirmed = await confirm(hash, deployment.commerce);
+    const confirmed = await confirm(hash, deployment.commerce, encodeFunctionData({ abi: agenticCommerceBrowserAbi, functionName: "fund", args: [jobId, budget, "0x"] }));
     journal = withProgress(journal, "funded", { kind: "fund", hash, ...confirmed }, jobId.toString(), onProgress, deployment);
   }
   return { jobId: jobId.toString(), journal, mode: "sequential" };

@@ -238,9 +238,10 @@ export async function healthResponse(
     const quoteQueue = config.catalogV2WritesEnabled
       ? await (async () => {
         const quoteDb = createDatabase(db as unknown as D1DatabaseLike);
-        const [counts, latest] = await Promise.all([
+        const [counts, latest, compatibility] = await Promise.all([
           quoteDb.all<{ state: string; total: number }>(sql`SELECT state, COUNT(*) AS total FROM catalog_seller_capabilities GROUP BY state`),
           quoteDb.all<{ lastAttemptAt: number | null; nextProbeAt: number | null }>(sql`SELECT MAX(lastAttemptAt) AS lastAttemptAt, MIN(CASE WHEN state IN ('discovered','stale','failed') THEN nextProbeAt END) AS nextProbeAt FROM catalog_seller_capabilities`),
+          quoteDb.all<{ state: string; endpoints: number; agents: number; lastCheckedAt: number | null }>(sql`SELECT compatibilityState AS state, COUNT(*) AS endpoints, COUNT(DISTINCT agentKey) AS agents, MAX(compatibilityCheckedAt) AS lastCheckedAt FROM catalog_seller_capabilities GROUP BY compatibilityState`),
         ]);
         const count = (state: string) => Number(counts.find((row) => row.state === state)?.total ?? 0);
         const row = latest[0];
@@ -250,8 +251,10 @@ export async function healthResponse(
           ready: count("ready"),
           stale: count("stale"),
           failed: count("failed"),
-          lastProcessedAt: row?.lastAttemptAt ?? null,
+          lastQuoteAttemptAt: row?.lastAttemptAt ?? null,
+          lastProcessedAt: Math.max(row?.lastAttemptAt ?? 0, ...compatibility.map((entry) => entry.lastCheckedAt ?? 0)) || null,
           nextProbeAt: row?.nextProbeAt ?? null,
+          compatibility: { unit: "endpoints", states: compatibility, note: "Pending is not incompatible; agent counts across states may overlap." },
         };
       })()
       : { available: options.quoteQueueAvailable === true, pending: 0, ready: 0, stale: 0, failed: 0, lastProcessedAt: null, nextProbeAt: null };
@@ -324,6 +327,12 @@ export async function healthResponse(
       dailyBudget: currentDailyBudget,
       lastPhase,
       lastScheduler,
+      lastSchedulerUpdatedAt: lastSchedulerRow?.updatedAt ?? null,
+      lastSchedulerErrorIsHistorical: lastScheduler?.errorCode !== undefined && !schedulerDegraded,
+      // This summary is written on lease acquisition failure, before any
+      // discovery phase. Do not mislabel it as a failed seller check.
+      lastSchedulerErrorStage: lastScheduler?.errorCode !== undefined ? "acquire_lease" : null,
+      lastPhaseUpdatedAt: latestPhaseRow?.updatedAt ?? null,
       commerceIndex: {
         enabled: config.commerceIndexEnabled,
         chains: {

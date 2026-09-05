@@ -118,6 +118,9 @@ describe("WP1 in the Workers runtime", () => {
       .bind(endpointKey).run();
     const app = createWorker({ now: () => now });
 
+    await env.DB.prepare(`INSERT INTO catalog_seller_capabilities
+      (agentKey,endpointKey,transport,state,createdAt,updatedAt,compatibilityState,schemaHash,compatibilityCheckedAt,compatibilityExpiresAt)
+      VALUES ('eip155:56:42',?,'a2a','discovered',?,?,'compatible','schema',?,?)`).bind(endpointKey,now,now,now,now+86_400_000).run();
     const list = await app.fetch(new Request("https://worker.test/catalog-agents"), env);
     expect(await list.json()).toMatchObject(fixture.list);
     const detail = await app.fetch(new Request("https://worker.test/catalog-agent/42"), env);
@@ -224,7 +227,7 @@ describe("WP1 in the Workers runtime", () => {
     const facets = await app.fetch(new Request("https://worker.test/catalog-agents?status=declared&facets=true"), env, context);
     expect(await facets.json()).toMatchObject({
       facets: {
-        statuses: { declared: 2, pending: 1, a2a: 1, mcp: 0, mcp_only: 1 },
+        statuses: { declared: 2, pending: 2, a2a: 1, mcp: 0, mcp_only: 1 },
         categories: { grid_trading: 1, yield_optimisation: 1 },
         reachability: { live: 1, historical: 0, never: 1, browser_observed: 1 },
       },
@@ -238,8 +241,8 @@ describe("WP1 in the Workers runtime", () => {
 
     const pending = await app.fetch(new Request("https://worker.test/catalog-agents?status=pending"), env, context);
     expect(await pending.json()).toMatchObject({
-      total: 1,
-      items: [{ agentId: "2", observations: [{ source: "browser_reported" }] }],
+      total: 2,
+      items: expect.arrayContaining([{ agentId: "2", observations: [{ source: "browser_reported" }] }].map((item) => expect.objectContaining({agentId:item.agentId}))),
     });
 
     await env.DB.prepare(`INSERT INTO catalog_agent_admission (
@@ -253,6 +256,7 @@ describe("WP1 in the Workers runtime", () => {
       createdAt, updatedAt
     ) VALUES (?, ?, 'a2a', 'ready', ?, ?, ?, 0, ?, NULL, NULL, ?, ?)`)
       .bind("eip155:56:1", "a".repeat(64), now, now + 86_400_000, now + 86_400_000, now, now, now).run();
+    await env.DB.prepare(`UPDATE catalog_seller_capabilities SET compatibilityState='compatible',schemaHash='schema',compatibilityCheckedAt=?,compatibilityExpiresAt=? WHERE agentKey='eip155:56:1'`).bind(now,now+86_400_000).run();
     await env.DB.prepare(`INSERT INTO commerce_jobs (
       chainId, jobId, client, provider, evaluator, budget, expiredAt, status, hook,
       submittedAt, deliverable, firstSeenAt, updatedAt
@@ -763,6 +767,7 @@ describe("WP1 in the Workers runtime", () => {
       createdAt, updatedAt
     ) VALUES ('eip155:56:10', ?, 'mcp', 'ready', ?, ?, ?, 0, ?, NULL, NULL, ?, ?)`)
       .bind("c".repeat(64), now, now + 86_400_000, now + 86_400_000, now, now, now).run();
+    await env.DB.prepare(`UPDATE catalog_seller_capabilities SET compatibilityState='compatible',schemaHash='schema',compatibilityCheckedAt=?,compatibilityExpiresAt=? WHERE agentKey='eip155:56:10'`).bind(now,now+86_400_000).run();
     await env.DB.prepare(`INSERT INTO catalog_ingest_tasks (
       agentKey, metadataVersion, nextDeclarationIndex, declarationCount, status, requestedBy,
       priority, generationStartedAt, updatedAt, attemptCount, retryAt

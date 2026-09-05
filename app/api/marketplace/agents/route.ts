@@ -22,7 +22,7 @@ import { integerParameter, marketplaceErrorResponse } from "@/src/presentation/h
 const SORTS = new Set<MarketplaceSort>(MARKETPLACE_DATA_SORTS);
 const AVAILABILITIES = new Set<MarketplaceAvailability>(MARKETPLACE_AVAILABILITIES);
 const MARKETPLACE_ONLY_QUERY_KEYS = new Set([
-  "availability", "category", "status", "protocol", "reachability", "commerce", "quote", "latestFailure",
+  "availability", "category", "status", "protocol", "reachability", "commerce", "quote", "latestFailure", "scope",
 ]);
 
 function parseValues<const T extends readonly string[]>(
@@ -59,6 +59,8 @@ export async function GET(request: Request) {
   try {
     const params = new URL(request.url).searchParams;
     const view = params.get("view") ?? "marketplace";
+    const scope = params.get("scope");
+    if (scope !== null && scope !== "hiring" && scope !== "evaluation") throw new InvalidMarketplaceInputError("scope must be hiring or evaluation");
     if (view !== "all" && view !== "marketplace") throw new InvalidMarketplaceInputError("view must be all or marketplace");
     if (view === "all" && [...params.keys()].some((key) => MARKETPLACE_ONLY_QUERY_KEYS.has(key))) {
       throw new InvalidMarketplaceInputError("catalog filters require view=marketplace");
@@ -95,6 +97,7 @@ export async function GET(request: Request) {
         }
         const availability = availabilityValue as MarketplaceAvailability | null;
         return {
+          ...(scope ? { scope } : {}),
           ...(categories.length === 1 ? { category: categories[0] } : {}),
           ...(categories.length > 1 ? { categories } : {}),
           ...(statuses.length > 0 ? { statuses } : {}),

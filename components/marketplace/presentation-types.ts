@@ -51,6 +51,7 @@ export interface AgentCardViewModel {
   blockingReasons?: string[];
   categories: MarketplaceCategory[];
   protocols?: AgentProtocolLabel[];
+  negotiationProtocol?: AgentProtocolLabel;
   href: string;
   hireability: "hireable" | "mcp_only" | "quote_stale" | "wallet_ambiguous" | "listed_only";
   evidence: EvidenceStepViewModel[];
@@ -59,7 +60,7 @@ export interface AgentCardViewModel {
   passportState: "registered" | "evaluated" | "hireable" | "job_proven" | "attention";
   monitoring?: {
     state: "feed_unavailable" | "no_endpoint_declared" | "not_monitored" | "never_probed" | "probed";
-    source?: "worker" | "release_snapshot";
+    source?: "worker" | "release_snapshot" | "negotiation_discovery";
     attemptCount?: number;
     lastAttemptAt?: string;
     latestOutcome?: WorkerProbeOutcome;

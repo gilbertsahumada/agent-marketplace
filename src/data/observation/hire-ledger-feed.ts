@@ -10,6 +10,7 @@ import {
   type HireJobEvent,
   type HireJobPage,
   type HireJobStatus,
+  type HireJobTotals,
   type HireLedgerCounts,
   type HireLedgerSummary,
 } from "../../business/entities/hire-job.ts";
@@ -165,7 +166,18 @@ export function parseHireJobPage(value: unknown, chain: HireChainId): HireJobPag
     chainId: chainId(data.chainId, chain),
     jobs: data.jobs.map((entry) => job(entry, chain)),
     nextBefore: data.nextBefore as string | null,
+    ...(data.totals === undefined ? {} : { totals: parseJobTotals(data.totals) }),
   };
+}
+
+function parseJobTotals(value: unknown): HireJobTotals {
+  const raw = record(value);
+  for (const key of ["total", "completed", "funded", "submitted"] as const) {
+    if (typeof raw[key] !== "number" || !Number.isSafeInteger(raw[key]) || raw[key] < 0) invalid();
+  }
+  const totals = { total: raw.total, completed: raw.completed, funded: raw.funded, submitted: raw.submitted } as HireJobTotals;
+  if (totals.completed + totals.funded + totals.submitted > totals.total) invalid();
+  return totals;
 }
 
 export function parseHireJobDetail(value: unknown, chain: HireChainId): HireJobDetail {

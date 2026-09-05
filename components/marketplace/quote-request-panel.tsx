@@ -1,13 +1,18 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { CheckCircle2, CircleAlert, Clock3, LoaderCircle, RadioTower, ShieldCheck } from "lucide-react";
+import { useRouter } from "next/navigation";
+import Link from "next/link";
+import { CheckCircle2, CircleAlert, Clock3, LoaderCircle, RadioTower, ShieldCheck, FileInput, LockKeyhole } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SellerParameters, initialSellerParameters } from "./seller-parameters";
+import { sellerParameterExample } from "./seller-parameter-examples";
+import { QuoteDetails } from "./quote-details";
+import { compatibilityMessage } from "@/src/shared/compatibility-message";
 import { buildContractRequest, normalizeNegotiationContract, type NegotiationContract } from "@/src/shared/negotiation-input";
 import { cn } from "@/lib/utils";
 import { markCatalogForRefresh } from "./catalog-return-refresh";
-import { Erc8183MarketplaceHire, type MainnetQuoteResponse } from "@/components/spikes/erc8183-browser-spike";
+import { Erc8183MarketplaceHire, Erc8183SavedHire, type MainnetQuoteResponse } from "@/components/spikes/erc8183-browser-spike";
 
 type Phase = "idle" | "registering" | "connecting" | "negotiating" | "verifying" | "fallback" | "succeeded" | "failed";
 
@@ -133,11 +138,19 @@ async function browserQuote(target: string, transport: string, request: Record<s
     });
     const initValue = asRecord(await parse(init));
     if (!init.ok || !initValue || initValue.jsonrpc !== "2.0" || initValue.id !== initializeId || initValue.error !== undefined) throw new Error("MCP_INITIALIZE_FAILED");
+    const protocolVersion = asRecord(initValue.result)?.protocolVersion;
+    if (protocolVersion !== "2025-06-18") throw new Error("MCP_PROTOCOL_VERSION_UNSUPPORTED");
     const session = init.headers.get("mcp-session-id");
+    const sessionHeaders = { ...headers, accept: "application/json, text/event-stream", "mcp-protocol-version": protocolVersion, ...(session ? { "mcp-session-id": session } : {}) };
+    const initialized = await browserFetch(target, {
+      method: "POST", headers: sessionHeaders, redirect: "manual",
+      body: JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }),
+    });
+    if (!initialized.ok) throw new Error("MCP_INITIALIZE_FAILED");
     const toolsId = crypto.randomUUID();
     const toolResponse = await browserFetch(target, {
       method: "POST",
-      headers: { ...headers, accept: "application/json, text/event-stream", ...(session ? { "mcp-session-id": session } : {}) },
+      headers: sessionHeaders,
       body: JSON.stringify({ jsonrpc: "2.0", id: toolsId, method: "tools/list", params: {} }),
       redirect: "manual",
     });
@@ -149,7 +162,7 @@ async function browserQuote(target: string, transport: string, request: Record<s
     const callId = crypto.randomUUID();
     const called = await browserFetch(target, {
       method: "POST",
-      headers: { ...headers, accept: "application/json, text/event-stream", ...(session ? { "mcp-session-id": session } : {}) },
+      headers: sessionHeaders,
       body: JSON.stringify({ jsonrpc: "2.0", id: callId, method: "tools/call", params: { name: tool.name, arguments: { task_description: request.task_description, terms: request.terms } } }),
       redirect: "manual",
     });
@@ -202,17 +215,20 @@ function shouldUseWorkerFallback(error: unknown): boolean {
   return code === "BROWSER_NETWORK_ERROR" || code === "BROWSER_TIMEOUT" || code === "TIMEOUT";
 }
 
-export function QuoteRequestPanel({ agentId, agentName, onSuccess }: { agentId: string; agentName?: string; onSuccess?: () => void }) {
-  return <SellerQuoteSession key={agentId} agentId={agentId} {...(agentName ? { agentName } : {})} {...(onSuccess ? { onSuccess } : {})} />;
+export function QuoteRequestPanel({ agentId, agentName, onSuccess, checkCompatibilityFirst = false }: { agentId: string; agentName?: string; onSuccess?: () => void; checkCompatibilityFirst?: boolean }) {
+  return <SellerQuoteSession key={agentId} agentId={agentId} checkCompatibilityFirst={checkCompatibilityFirst} {...(agentName ? { agentName } : {})} {...(onSuccess ? { onSuccess } : {})} />;
 }
 
-function SellerQuoteSession({ agentId, agentName, onSuccess }: { agentId: string; agentName?: string; onSuccess?: () => void }) {
+function SellerQuoteSession({ agentId, agentName, onSuccess, checkCompatibilityFirst }: { agentId: string; agentName?: string; onSuccess?: () => void; checkCompatibilityFirst: boolean }) {
+  const router = useRouter();
+  const [inspectionRequested, setInspectionRequested] = useState(!checkCompatibilityFirst);
   const [discovery, setDiscovery] = useState<{ contract: NegotiationContract; endpointKey: string; contractHash: string } | null>(null);
   const [discoveryError, setDiscoveryError] = useState<string | null>(null);
   const [reload, setReload] = useState(0);
   const [parameters, setParameters] = useState<Record<string, unknown>>({});
   const [showErrors, setShowErrors] = useState(false);
   useEffect(() => {
+    if (!inspectionRequested) return;
     const controller = new AbortController();
     setDiscovery(null); setDiscoveryError(null);
     void fetch(`/api/marketplace/agents/${agentId}/quotes/input`, { signal: controller.signal, cache: "no-store" })
@@ -224,13 +240,30 @@ function SellerQuoteSession({ agentId, agentName, onSuccess }: { agentId: string
         if (controller.signal.aborted) return;
         setParameters(initialSellerParameters(contract.inputSchema));
         setDiscovery({ contract, endpointKey: value.endpointKey, contractHash: value.contractHash });
-      }).catch(error => { if (!controller.signal.aborted) setDiscoveryError(error instanceof Error ? error.message : "NEGOTIATION_DISCOVERY_FAILED"); });
+        markCatalogForRefresh(agentId);
+        router.refresh();
+      }).catch(error => {
+        if (controller.signal.aborted) return;
+        setDiscoveryError(error instanceof Error ? error.message : "NEGOTIATION_DISCOVERY_FAILED");
+        markCatalogForRefresh(agentId);
+        router.refresh();
+      });
     return () => controller.abort();
-  }, [agentId, reload]);
+  }, [agentId, reload, inspectionRequested]);
   const [phase, setPhase] = useState<Phase>("idle");
   const [message, setMessage] = useState<string | null>(null);
   const [quote, setQuote] = useState<MainnetQuoteResponse | null>(null);
   const [quoteRequestId, setQuoteRequestId] = useState<number | null>(null);
+  const busy = !["idle", "succeeded", "failed"].includes(phase);
+  const discovering = inspectionRequested && !discovery && !discoveryError;
+  const [elapsed, setElapsed] = useState(0);
+  useEffect(() => {
+    if (!busy && !discovering) return;
+    const startedAt = Date.now();
+    setElapsed(0);
+    const timer = window.setInterval(() => setElapsed(Math.floor((Date.now() - startedAt) / 1000)), 1000);
+    return () => window.clearInterval(timer);
+  }, [busy, discovering]);
 
   function verifiedQuote(value: unknown): MainnetQuoteResponse | null {
     const candidate = asRecord(value);
@@ -286,7 +319,7 @@ function SellerQuoteSession({ agentId, agentName, onSuccess }: { agentId: string
         const verified = verifiedQuote(fallbackValue.quote);
         const requestId = typeof fallbackValue.requestId === "number" ? fallbackValue.requestId : null;
         if (!verified || requestId === null) throw new Error("QUOTE_RESPONSE_INVALID");
-        setPhase("succeeded"); setQuote(verified); setQuoteRequestId(requestId); setMessage("Verified by the marketplace Worker"); markCatalogForRefresh(); onSuccess?.(); return;
+        setPhase("succeeded"); setQuote(verified); setQuoteRequestId(requestId); setMessage(null); markCatalogForRefresh(agentId); router.refresh(); onSuccess?.(); return;
       }
       if (!envelope) throw new Error("QUOTE_EMPTY_RESPONSE");
       setPhase("verifying");
@@ -299,10 +332,12 @@ function SellerQuoteSession({ agentId, agentName, onSuccess }: { agentId: string
       const verified = verifiedQuote(resultValue.quote);
       const requestId = typeof resultValue.requestId === "number" ? resultValue.requestId : null;
       if (!verified || requestId === null) throw new Error("QUOTE_RESPONSE_INVALID");
-      setPhase("succeeded"); setQuote(verified); setQuoteRequestId(requestId); setMessage("Verified and shared with the marketplace"); markCatalogForRefresh(); onSuccess?.();
+      setPhase("succeeded"); setQuote(verified); setQuoteRequestId(requestId); setMessage(null); markCatalogForRefresh(agentId); router.refresh(); onSuccess?.();
     } catch (error) {
       const code = error instanceof Error ? error.message : "";
       setPhase("failed");
+      markCatalogForRefresh(agentId);
+      router.refresh();
       setMessage(code === "quote_service_unavailable"
         ? "Quote service is temporarily unavailable. Try again later."
         : /EXPIRED/i.test(code) ? "Quote expired. Request again."
@@ -315,40 +350,67 @@ function SellerQuoteSession({ agentId, agentName, onSuccess }: { agentId: string
     }
   }
 
-  const busy = !["idle", "succeeded", "failed"].includes(phase);
+  if (!inspectionRequested) return <section className="rounded-xl border border-border bg-card p-5" aria-labelledby="quote-request-title">
+    <h2 id="quote-request-title" className="text-lg font-medium">Check hiring compatibility</h2>
+    <p className="mt-2 text-sm text-muted-foreground">Check the seller's connection and required inputs. No wallet needed.</p>
+    <Button className="mt-4" onClick={() => setInspectionRequested(true)} type="button"><ShieldCheck aria-hidden="true" data-icon="inline-start" />Check compatibility</Button>
+  </section>;
+  const example = discovery ? sellerParameterExample(discovery.contract) : null;
   return (
-    <section aria-labelledby="quote-request-title" className="rounded-xl border border-primary/20 bg-primary/[0.03] p-5" id="quote-request">
+    <div className="flex flex-col gap-5">
+    <section aria-labelledby="quote-request-title" className="rounded-xl border border-border bg-card p-5" id="quote-request">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 className="text-lg font-medium text-white" id="quote-request-title">Request quote</h2>
+          <h2 className="text-lg font-medium text-white" id="quote-request-title">{discovery ? "Request quote" : "Quote requirements"}</h2>
         </div>
         <span role="status" aria-live="polite" className={cn("inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs", phase === "succeeded" ? "border-emerald-400/30 text-emerald-300" : phase === "failed" ? "border-red-400/30 text-red-300" : "border-white/10 text-zinc-400")}>
-          {busy ? <LoaderCircle className="size-3.5 animate-spin" /> : phase === "succeeded" ? <CheckCircle2 className="size-3.5" /> : phase === "failed" ? <CircleAlert className="size-3.5" /> : <Clock3 className="size-3.5" />}
-          {phaseCopy[phase]}
+          {discovering ? <LoaderCircle aria-hidden="true" className="size-3.5 animate-spin motion-reduce:animate-none" /> : busy ? null : phase === "succeeded" ? <CheckCircle2 aria-hidden="true" className="size-3.5" /> : phase === "failed" ? <CircleAlert aria-hidden="true" className="size-3.5" /> : <Clock3 aria-hidden="true" className="size-3.5" />}
+          {!discovery ? discoveryError ? discoveryError === "quote_service_unavailable" ? "Temporarily unavailable" : compatibilityMessage(discoveryError).title : "Checking compatibility" : phaseCopy[phase]}
+          {busy || discovering ? <span aria-hidden="true">· {elapsed}s</span> : null}
         </span>
       </div>
       <div className="mt-4">
-        {discovery ? <SellerParameters schema={discovery.contract.inputSchema} value={parameters} onChange={value => { setParameters(value); setQuote(null); setQuoteRequestId(null); setPhase("idle"); setMessage(null); }} disabled={busy} showErrors={showErrors} />
-          : discoveryError ? <p role="status" className="text-sm text-muted-foreground">{/UNSUPPORTED|UNAVAILABLE|REQUIRED/i.test(discoveryError) ? "Compatible negotiation parameters are not published by this seller." : "Could not load the seller's requirements."}</p>
-          : <p role="status" className="flex items-center gap-2 text-sm text-muted-foreground"><LoaderCircle className="size-4 animate-spin motion-reduce:animate-none" />Loading seller parameters</p>}
+        {example ? <Button className="mb-4" variant="outline" size="sm" disabled={busy || discovering} type="button" onClick={() => {
+          setParameters(example); setQuote(null); setQuoteRequestId(null); setPhase("idle"); setShowErrors(false);
+          setMessage("Example loaded. Review the values before requesting a quote.");
+        }}><FileInput aria-hidden="true" data-icon="inline-start" />Load example</Button> : null}
+        {discovery ? <SellerParameters schema={discovery.contract.inputSchema} value={parameters} example={example} onChange={value => { setParameters(value); setQuote(null); setQuoteRequestId(null); setPhase("idle"); setMessage(null); }} disabled={busy} showErrors={showErrors} />
+          : discoveryError ? <p role="status" className="text-sm text-muted-foreground">{discoveryError === "quote_service_unavailable" ? "Cannot connect to the marketplace quote service. Requirements could not be checked." : compatibilityMessage(discoveryError).detail}</p>
+          : null}
       </div>
       <div className="mt-4 flex flex-wrap items-center gap-3">
-        <Button className="cursor-pointer" disabled={busy || !discovery} onClick={requestQuote} type="button"><ShieldCheck className="size-4" />{phase === "succeeded" ? "Request again" : "Request quote"}</Button>
-        <Button variant="outline" size="sm" disabled={busy} onClick={() => { setQuote(null); setQuoteRequestId(null); setPhase("idle"); setMessage(null); setShowErrors(false); setReload(value => value + 1); }} type="button">Reload parameters</Button>
-        <span className="inline-flex items-center gap-1.5 text-xs text-zinc-500"><RadioTower className="size-3.5" />No signature</span>
+        {discovery ? <Button className="cursor-pointer" disabled={busy} aria-busy={busy} onClick={requestQuote} type="button">{busy ? <LoaderCircle aria-hidden="true" data-icon="inline-start" className="motion-safe:animate-spin" /> : <ShieldCheck aria-hidden="true" data-icon="inline-start" />}{busy ? phaseCopy[phase] : phase === "succeeded" ? "Request again" : "Request quote"}</Button> : null}
+        {!discovering ? <Button variant="outline" size="sm" disabled={busy} onClick={() => { setQuote(null); setQuoteRequestId(null); setPhase("idle"); setMessage(null); setShowErrors(false); setReload(value => value + 1); }} type="button">Reload parameters</Button> : null}
+        {discoveryError && <Button asChild variant="outline" size="sm"><Link href="/docs/sellers#requirements">Seller integration guide</Link></Button>}
+        {discovery ? <span className="inline-flex items-center gap-1.5 text-xs text-zinc-500"><RadioTower className="size-3.5" />No signature</span> : null}
       </div>
       {message ? <p aria-live="polite" className={cn("mt-3 text-sm", phase === "failed" ? "text-red-300" : "text-emerald-300")}>{message}</p> : null}
-      {quote ? <dl className="mt-4 grid gap-3 rounded-lg border border-emerald-400/20 bg-emerald-400/[0.04] p-4 text-sm sm:grid-cols-3"><div><dt className="text-zinc-500">Status</dt><dd className="mt-1 text-emerald-300">Quote verified</dd></div><div><dt className="text-zinc-500">Price</dt><dd className="mt-1 break-all text-zinc-200">{quote.priceDisplay ?? quote.priceRaw ?? "Signed terms"} {quote.tokenSymbol ?? ""}</dd></div><div><dt className="text-zinc-500">Request hash</dt><dd className="mt-1 break-all font-mono text-xs text-zinc-300">{typeof quote.envelope.request_hash === "string" ? quote.envelope.request_hash : "Recorded"}</dd></div></dl> : null}
+      {quote && typeof quote.envelope.request_hash === "string" ? <QuoteDetails key={quote.envelope.request_hash} requestHash={quote.envelope.request_hash} /> : null}
+    </section>
+    <section aria-labelledby="hire-checkout-title" className="rounded-xl border border-border bg-card p-5 transition-colors duration-300 motion-reduce:transition-none">
+      <h2 id="hire-checkout-title" className="mb-4 flex items-center gap-2 text-lg font-medium"><ShieldCheck aria-hidden="true" className="size-5" />Hire agent</h2>
       {quote && quoteRequestId !== null ? (
-        <div className="mt-5 border-t border-white/10 pt-5">
+        <div className="motion-safe:animate-in motion-safe:fade-in motion-safe:duration-300">
           <Erc8183MarketplaceHire
+            key={quoteRequestId}
             {...(agentName ? { agentName } : {})}
             onQuoteExpired={() => { setQuote(null); setQuoteRequestId(null); setPhase("idle"); setMessage("Quote expired. Request another quote to continue."); }}
             quote={quote}
             quoteRequestId={quoteRequestId}
           />
         </div>
-      ) : null}
+      ) : <div aria-label="Hiring locked until quote verified">
+        <Erc8183SavedHire agentId={agentId} />
+        <p className="mb-4 text-sm text-muted-foreground">Request a verified quote to unlock hiring.</p>
+        <ol className="flex flex-col divide-y divide-border rounded-lg border border-border">
+          {["Review", "Authorize & fund", "Track"].map((label, index) => <li key={label} className="relative flex items-center gap-3 px-4 py-4 text-muted-foreground">
+            {index < 2 ? <span aria-hidden="true" className="absolute bottom-0 left-8 top-12 w-px bg-border" /> : null}
+            <span aria-hidden="true" className="flex size-8 items-center justify-center rounded-full border border-border">{index + 2}</span>
+            <span className="text-sm">{label}</span><LockKeyhole aria-label="Locked" className="ml-auto size-4" />
+          </li>)}
+        </ol>
+      </div>}
     </section>
+    </div>
   );
 }

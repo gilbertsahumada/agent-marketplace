@@ -158,7 +158,8 @@ function sharedObservationLine(
   );
 }
 
-export function AgentValidationActions({ agentId, targets, initialObservations = [] }: {
+export function AgentValidationActions({ agentId, targets, initialObservations = [], embedded = false }: {
+  embedded?: boolean;
   agentId: string;
   targets: ValidationTarget[];
   initialObservations?: ValidationObservationSummary[];
@@ -385,25 +386,27 @@ export function AgentValidationActions({ agentId, targets, initialObservations =
     }
   }
 
+  const Container = embedded ? "div" : Card;
+  const Content = embedded ? "div" : CardContent;
   return (
-    <Card className="marketplace-surface mt-5 scroll-mt-6" id="validation">
-      <CardHeader>
+    <Container className={embedded ? "" : "marketplace-surface mt-5 scroll-mt-6"} id={embedded ? undefined : "validation"}>
+      {!embedded && <CardHeader>
         <CardTitle>Connection check</CardTitle>
         <p className="max-w-3xl text-sm leading-relaxed text-zinc-400">
           Browser checks are local. Marketplace checks update the shared status.
         </p>
-      </CardHeader>
-      <CardContent className="space-y-4">
+      </CardHeader>}
+      <Content className="flex flex-col gap-4">
         {targets.length === 0 ? (
           <p className="text-sm text-zinc-500">This registration has no endpoint the browser can validate.</p>
         ) : (
-          <ul className="grid gap-3">
+          <ul className={embedded ? "divide-y divide-border" : "grid gap-3"}>
             {targets.map((target) => {
               const key = targetKey(target);
               const state = results[key];
               const infrastructureState = infrastructure[key];
               return (
-                <li aria-busy={pending === key || infrastructureState?.state === "pending"} className="rounded-xl border border-white/10 bg-white/[0.02] p-4" key={key}>
+                <li aria-busy={pending === key || infrastructureState?.state === "pending"} className={embedded ? "px-5 py-4" : "rounded-xl border border-white/10 bg-white/[0.02] p-4"} key={key}>
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
@@ -494,7 +497,7 @@ export function AgentValidationActions({ agentId, targets, initialObservations =
             })}
           </ul>
         )}
-      </CardContent>
-    </Card>
+      </Content>
+    </Container>
   );
 }

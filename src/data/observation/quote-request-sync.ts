@@ -54,7 +54,10 @@ export interface SellerParameterRequest {
 }
 
 function urlFor(env: Environment, path: string): URL | null {
-  return privateWorkerUrl(env, path);
+  const [pathname, query] = path.split("?");
+  const url = privateWorkerUrl(env, pathname!);
+  if (url && query) url.search = query;
+  return url;
 }
 
 async function requestWorker(
@@ -155,9 +158,9 @@ export async function fallbackBuyerQuote(
 
 export async function getBuyerQuoteHistory(
   agentId: string,
-  options: { env?: Environment; fetchImpl?: typeof fetch } = {},
+  options: { env?: Environment; fetchImpl?: typeof fetch; page?: number } = {},
 ) {
-  return requestWorker(`/catalog-quotes/${agentId}`, { method: "GET" }, options);
+  return requestWorker(`/catalog-quotes/${agentId}${options.page ? `?page=${options.page}` : ""}`, { method: "GET" }, options);
 }
 
 /**

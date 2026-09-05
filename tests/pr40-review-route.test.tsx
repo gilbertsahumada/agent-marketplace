@@ -4,6 +4,8 @@ const executeList = vi.fn();
 const executeMainnetProof = vi.fn();
 const workerObservations = vi.fn();
 const catalogCandidatePage = vi.fn();
+const refreshCookie = vi.fn();
+vi.mock("next/headers", () => ({ cookies: async () => ({ get: refreshCookie }) }));
 
 vi.mock("@/src/business/composition", () => ({
   listMarketplaceAgents: { execute: executeList },
@@ -38,6 +40,7 @@ function renderPage(params: Record<string, string>) {
 describe("agents page category handling", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    refreshCookie.mockReturnValue(undefined);
     executeList.mockImplementation(({ view }: { view: "all" | "marketplace" }) => Promise.resolve(emptyPage(view)));
     executeMainnetProof.mockReturnValue(null);
     catalogCandidatePage.mockResolvedValue(null);
@@ -50,9 +53,21 @@ describe("agents page category handling", () => {
     return executeList.mock.calls.map((call) => call[0]).filter((input) => input.limit !== 1);
   }
 
+  it("requests fresh catalog and metrics after a buyer mutation", async () => {
+    refreshCookie.mockReturnValue({ value: "1" });
+    await renderPage({});
+    expect(catalogCandidatePage).toHaveBeenCalledWith(expect.objectContaining({ fresh: true, limit: 24 }));
+    expect(catalogCandidatePage).toHaveBeenCalledWith(expect.objectContaining({ fresh: true, limit: 1 }));
+  });
+
   function catalogDataCalls() {
     return catalogCandidatePage.mock.calls.map((call) => call[0]).filter((input) => input.limit !== 1);
   }
+
+  it("does not silently select a status after clearing filters", async () => {
+    await renderPage({ view: "marketplace" });
+    expect(catalogDataCalls()[0]).toMatchObject({ statuses: [] });
+  });
 
   function queryCategories(query: Record<string, unknown>): string[] {
     if (Array.isArray(query.categories)) return query.categories as string[];
@@ -90,15 +105,14 @@ describe("agents page category handling", () => {
     expect(executeList).not.toHaveBeenCalled();
   });
 
-  it("R4: a known category in the marketplace view filters with limit 12", async () => {
-    const el = await renderPage({ view: "marketplace", category: "grid_trading" });
-    expect(queryCategories(el.props.query)).toEqual(["grid_trading"]);
+  it("R4: scoped inventory never falls back to unchecked declarations", async () => {
+    const el = await renderPage({ view: "marketplace", status: "declared", category: "grid_trading" });
+    expect(el.props.retryHref).toContain("scope=hiring");
     const catalogCalls = catalogDataCalls();
     expect(catalogCalls).toHaveLength(1);
-    expect(catalogFilter(catalogCalls[0]!)).toEqual({ categories: ["grid_trading"], statuses: [] });
-    expect(listDataCalls()).toEqual([
-      expect.objectContaining({ view: "marketplace", page: 1, limit: 12, category: "grid_trading" }),
-    ]);
+    expect(catalogFilter(catalogCalls[0]!)).toEqual({ categories: ["grid_trading"], statuses: ["declared"] });
+    expect(catalogCalls[0]).toMatchObject({ scope: "hiring" });
+    expect(listDataCalls()).toEqual([]);
   });
 
   it("R5: forwards live reachability to the catalog feed", async () => {

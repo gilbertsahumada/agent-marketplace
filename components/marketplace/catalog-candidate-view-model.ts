@@ -95,8 +95,10 @@ export function catalogCandidateCard(
   candidate: CatalogCandidate,
   now = Date.now(),
 ): AgentCardViewModel {
+  const selectedEndpoint = candidate.state?.canRequestQuote ? candidate.state.capabilityEndpointKey : null;
   const platform = candidate.observations
-    .filter((observation) => isPlatformReachabilityObservation(candidate, observation))
+    .filter((observation) => isPlatformReachabilityObservation(candidate, observation)
+      && (!selectedEndpoint || observation.endpointKey === selectedEndpoint))
     .sort((left, right) => right.observedAt - left.observedAt || right.id - left.id);
   const browser = candidate.observations
     .filter((observation) => observation.source === "browser_reported")
@@ -128,6 +130,7 @@ export function catalogCandidateCard(
     ?? capabilityObservation
     ?? (quote?.validationKind === "quote" && quote.verificationLevel === "cryptographic" ? quote : undefined);
   const capabilityReady = candidate.state?.capabilityState === "ready"
+    && candidate.state.canRequestQuote === true
     && candidate.state.capabilityExpiresAt !== null
     && candidate.state.capabilityExpiresAt !== undefined
     && candidate.state.capabilityExpiresAt > now;
@@ -138,7 +141,7 @@ export function catalogCandidateCard(
         || candidate.state.capabilityExpiresAt <= now));
   const capabilityReachable = capabilityReady
     && (capabilityObservation !== undefined || candidate.state?.capabilityLastAttemptAt != null);
-  const freshTransport = capabilityReachable || ((transport?.outcome === "protocol_valid" || transport?.outcome === "quote_verified")
+  const freshTransport = candidate.state?.canRequestQuote === true || capabilityReachable || ((transport?.outcome === "protocol_valid" || transport?.outcome === "quote_verified")
     && transport.expiresAt !== null && transport.expiresAt > now);
   const staleTransport = !capabilityReachable && (capabilityStale || ((transport?.outcome === "protocol_valid" || transport?.outcome === "quote_verified")
     && !freshTransport));
@@ -150,6 +153,9 @@ export function catalogCandidateCard(
   // compatibility column and must never make an agent hireable by itself.
   const canRequestQuote = candidate.state?.canRequestQuote === true;
   const latest = platform[0] ?? capabilityObservation;
+  const discoveryCheckedAt = candidate.state?.canRequestQuote && candidate.state.compatibilityState === "compatible"
+    ? candidate.state.compatibilityCheckedAt ?? null : null;
+  const discoveryIsLatest = discoveryCheckedAt !== null && (!latest || discoveryCheckedAt >= latest.observedAt);
   const evidence: EvidenceStepViewModel[] = [
     {
       kind: "declared",
@@ -163,8 +169,10 @@ export function catalogCandidateCard(
       kind: "reachable",
       label: "Reachable",
       status: freshTransport ? "verified" : transport && FAILURE_OUTCOMES.has(transport.outcome) ? "failed" : "unknown",
-      provenance: transport ? "observed" : browser.length > 0 ? "unavailable" : "not_probed",
-      detail: freshTransport
+      provenance: discoveryIsLatest || transport ? "observed" : browser.length > 0 ? "unavailable" : "not_probed",
+      detail: discoveryIsLatest
+        ? "The selected negotiation endpoint responded and its required inputs were verified. This is a compatibility check, not a separate HTTP health measurement."
+        : freshTransport
         ? capabilityReachable
           ? `The marketplace verified a ${candidate.state?.capabilityTransport?.toUpperCase() ?? transport?.protocol.toUpperCase() ?? "seller"} negotiation response. Quote capacity is ready for 24 hours.`
           : transport?.outcome === "quote_verified"
@@ -181,29 +189,32 @@ export function catalogCandidateCard(
           : browser.length > 0
             ? "A browser submitted evidence, but browser-reported results never qualify platform reachability."
             : "No platform probe has been recorded yet.",
-      ...(transport ? { timestamp: time(transport.observedAt), source: `${transport.source} observation` } : {}),
+      ...(discoveryIsLatest ? { timestamp: time(discoveryCheckedAt!), source: "Negotiation discovery" }
+        : transport ? { timestamp: time(transport.observedAt), source: `${transport.source} observation` } : {}),
     },
     {
       kind: "quote",
-      label: "Quote verified",
-      status: freshQuote ? "verified" : quote && FAILURE_OUTCOMES.has(quote.outcome) ? "failed" : "unknown",
-      provenance: quote ? "observed" : "not_probed",
-      detail: freshQuote
-        ? "A signed ERC-8183 quote was verified and remains inside its declared validity window."
+      label: "Ready to quote",
+      status: capabilityReady ? "verified" : quote && FAILURE_OUTCOMES.has(quote.outcome) ? "failed" : "unknown",
+      provenance: capabilityReady || quote ? "observed" : "not_probed",
+      detail: capabilityReady
+        ? "Quote capability and current negotiation requirements are verified. Public capability lasts 24 hours; a new buyer-session quote is still required before funding."
         : quote?.outcome === "quote_verified"
-          ? "A signed ERC-8183 quote was verified previously but is now expired; request a fresh quote before authorizing a transaction."
+          ? "A signed quote was verified previously, but current public negotiation capability is not verified. A historical artifact cannot authorize a new buyer's transaction."
           : quote && FAILURE_OUTCOMES.has(quote.outcome)
             ? `The latest marketplace quote attempt failed (${quote.errorCode ?? quote.outcome}).`
             : "No signed ERC-8183 quote has been verified by the marketplace.",
-      ...(quote ? { timestamp: time(quote.observedAt), source: `${quote.source} observation` } : {}),
+      ...(capabilityReady && candidate.state?.capabilityLastAttemptAt != null
+        ? { timestamp: time(candidate.state.capabilityLastAttemptAt), source: "Verified quote capability" }
+        : quote ? { timestamp: time(quote.observedAt), source: `${quote.source} observation` } : {}),
     },
     {
       kind: "job",
-      label: "Job proven",
+      label: "Jobs",
       status: completedJobCount > 0 ? "verified" : jobCount > 0 ? "current" : "unknown",
       provenance: "onchain",
       detail: jobCount > 0
-        ? `${jobCount} indexed ERC-8183 job${jobCount === 1 ? "" : "s"}; ${completedJobCount} result${completedJobCount === 1 ? "" : "s"} verified. Funding and completion are tracked separately.`
+        ? `${jobCount} indexed ERC-8183 job${jobCount === 1 ? "" : "s"}; ${completedJobCount} completed. Completion does not imply result verification.`
         : "No indexed ERC-8183 job is linked to this candidate yet.",
       ...(jobCount > 0 ? { source: "commerce_jobs + chain-verified hire events" } : {}),
     },
@@ -214,7 +225,7 @@ export function catalogCandidateCard(
     name: candidate.name ?? `Agent #${candidate.agentId}`,
     description: candidate.description ?? "No description declared.",
     ...(candidate.imageUrl ? { imageUrl: candidate.imageUrl } : {}),
-    operator: capabilityReady ? "marketplace" : "third_party",
+    operator: candidate.marketplaceConfigured ? "marketplace" : "third_party",
     quoteRequestAvailable: canRequestQuote,
     ...(candidate.state?.quoteRequestCount === undefined ? {} : { quoteRequestCount: candidate.state.quoteRequestCount }),
     ...(candidate.state?.quoteSuccessCount === undefined ? {} : { quoteSuccessCount: candidate.state.quoteSuccessCount }),
@@ -231,6 +242,7 @@ export function catalogCandidateCard(
     blockingReasons: candidate.state?.blockingReasons ?? ["CATALOG_STATE_UNAVAILABLE"],
     categories: candidate.categories,
     protocols: declaredProtocols(candidate),
+    ...(candidate.state?.capabilityTransport ? { negotiationProtocol: candidate.state.capabilityTransport === "a2a" ? "A2A" as const : candidate.state.capabilityTransport === "mcp" ? "MCP" as const : "ERC-8183 HTTP" as const } : {}),
     href: `/hire/${candidate.agentId}`,
     hireability: candidate.state?.canPrepareHire === true && freshQuote
       ? "hireable"
@@ -246,7 +258,11 @@ export function catalogCandidateCard(
     evidence,
     passportState: freshQuote && candidate.state?.canPrepareHire === true ? "hireable"
       : platform.length > 0 || capabilityObservation !== undefined || candidate.state?.capabilityState === "ready" ? "evaluated" : "registered",
-    monitoring: latest ? {
+    monitoring: discoveryIsLatest ? {
+      state: "probed",
+      source: "negotiation_discovery",
+      lastAttemptAt: time(discoveryCheckedAt!),
+    } : latest ? {
       state: "probed",
       source: "worker",
       attemptCount: candidate.platformAttemptCount ?? platform.length,

@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { loadConfig } from "../../src/config";
 import { createWorker } from "../../src/index";
 import type { D1Database, Env } from "../../src/types";
+import { commerceJobsListResponse } from "../../src/routes/commerce-jobs";
 
 const NOW = 1_788_000_000_000;
 const BUYER = "0x5ee75a1B1648C023e885E58bD3735Ae273f2cc52";
@@ -39,6 +40,33 @@ beforeEach(async () => {
 });
 
 describe("Commerce GET routes through the worker", () => {
+  it("bypasses catalog caching only for an authenticated frontend refresh", async () => {
+    const app = createWorker({ now: () => NOW });
+    const base = { ...env, CATALOG_RESPONSE_CACHE_SECONDS: "30", BUYER_OBSERVATION_SECRET: "refresh-test-secret" } as unknown as Env;
+    const url = "https://refresh-worker.test/catalog-agents?status=declared&limit=1";
+    const initial = { prepares: 0 };
+    const warm = await app.fetch(new Request(url), counted(base, initial), createExecutionContext());
+    expect(warm.status).toBe(200);
+    expect(initial.prepares).toBeGreaterThan(0);
+    const unauthenticated = { prepares: 0 };
+    await app.fetch(new Request(url, { headers: { "x-marketplace-refresh": "1", authorization: "Bearer wrong" } }), counted(base, unauthenticated), createExecutionContext());
+    expect(unauthenticated.prepares).toBe(0);
+    const authenticated = { prepares: 0 };
+    const fresh = await app.fetch(new Request(url, { headers: { "x-marketplace-refresh": "1", authorization: "Bearer refresh-test-secret" } }), counted(base, authenticated), createExecutionContext());
+    expect(fresh.status).toBe(200);
+    expect(authenticated.prepares).toBeGreaterThan(0);
+    expect(fresh.headers.get("cache-control")).toContain("no-store");
+  });
+  it("keeps scope totals independent of cursor and network", async () => {
+    await seedJobs();
+    const first = await commerceJobsListResponse(new Request(`https://worker.test/commerce-jobs?chainId=56&provider=${SELLER}&limit=1`), env.DB);
+    const older = await commerceJobsListResponse(new Request(`https://worker.test/commerce-jobs?chainId=56&provider=${SELLER}&limit=1&before=802`), env.DB);
+    const otherChain = await commerceJobsListResponse(new Request(`https://worker.test/commerce-jobs?chainId=97&provider=${SELLER}`), env.DB);
+    const totals = { total: 2, completed: 0, funded: 1, submitted: 0 };
+    expect(await first.json()).toMatchObject({ totals, jobs: [{ jobId: "802" }] });
+    expect(await older.json()).toMatchObject({ totals, jobs: [{ jobId: "801" }] });
+    expect(await otherChain.json()).toMatchObject({ totals: { total: 0, completed: 0, funded: 0, submitted: 0 } });
+  });
   it.each([
     "/commerce-jobs?chainId=56&chainId=56",
     "/commerce-jobs?chainId=56&limit=1&limit=1",
