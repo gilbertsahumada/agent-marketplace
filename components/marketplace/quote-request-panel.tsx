@@ -12,7 +12,7 @@ import { compatibilityMessage } from "@/src/shared/compatibility-message";
 import { buildContractRequest, normalizeNegotiationContract, type NegotiationContract } from "@/src/shared/negotiation-input";
 import { cn } from "@/lib/utils";
 import { markCatalogForRefresh } from "./catalog-return-refresh";
-import { Erc8183MarketplaceHire, type MainnetQuoteResponse } from "@/components/spikes/erc8183-browser-spike";
+import { Erc8183MarketplaceHire, Erc8183SavedHire, type MainnetQuoteResponse } from "@/components/spikes/erc8183-browser-spike";
 
 type Phase = "idle" | "registering" | "connecting" | "negotiating" | "verifying" | "fallback" | "succeeded" | "failed";
 
@@ -400,6 +400,7 @@ function SellerQuoteSession({ agentId, agentName, onSuccess, checkCompatibilityF
           />
         </div>
       ) : <div aria-label="Hiring locked until quote verified">
+        <Erc8183SavedHire agentId={agentId} />
         <p className="mb-4 text-sm text-muted-foreground">Request a verified quote to unlock hiring.</p>
         <ol className="flex flex-col divide-y divide-border rounded-lg border border-border">
           {["Review", "Authorize & fund", "Track"].map((label, index) => <li key={label} className="relative flex items-center gap-3 px-4 py-4 text-muted-foreground">
