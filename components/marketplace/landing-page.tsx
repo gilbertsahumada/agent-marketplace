@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { CategoryCard } from "./category-card";
 import { FunnelSection } from "./funnel-section";
 import { NetworkAwareLandingHero } from "./network-aware-landing-hero";
-import type { AgentCardViewModel, CategoryCardViewModel, EvidenceStepViewModel, FunnelSectionViewModel } from "./presentation-types";
+import type { AgentCardViewModel, CategoryCardViewModel, EvidenceStepViewModel, FunnelSectionViewModel, LedgerPulseViewModel } from "./presentation-types";
 
 const journey = [
   ["Discover", "Filter the market by the outcome you need."],
@@ -18,6 +18,7 @@ export function MarketplaceLanding({
   demoEnabled,
   featuredAgents,
   funnel,
+  ledgerPulse = null,
   publicProof,
   proofSummary,
   qualifiedSeller,
@@ -26,6 +27,7 @@ export function MarketplaceLanding({
   demoEnabled: boolean;
   featuredAgents: AgentCardViewModel[];
   funnel: FunnelSectionViewModel | null;
+  ledgerPulse?: LedgerPulseViewModel | null;
   publicProof: EvidenceStepViewModel[];
   proofSummary?: { href: string; network: string; title: string; description: string; evidence: EvidenceStepViewModel[] };
   qualifiedSeller: { agentId: string; name: string } | null;
@@ -46,6 +48,7 @@ export function MarketplaceLanding({
   return (
     <main id="main-content">
       <NetworkAwareLandingHero
+        ledgerPulse={ledgerPulse}
         mainnet={{
           badge: proofSummary ? "Onchain proof" : "Mainnet hiring",
           network: proofSummary?.network ?? "BSC Mainnet · chain 56",
