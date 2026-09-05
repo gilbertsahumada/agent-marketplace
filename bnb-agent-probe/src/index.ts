@@ -324,6 +324,12 @@ export function createWorker(dependencies: WorkerDependencies = {}): WorkerEntry
           timeoutMs: config.probeTimeoutMs,
         });
       }
+      if (request.method === "GET" && /^\/catalog-quotes\/[1-9]\d{0,19}\/input$/.test(url.pathname)) {
+        if (env.BUYER_OBSERVATION_SECRET === undefined) return errorResponse("not_found", 404);
+        if (!await bearerMatches(request.headers.get("authorization"), env.BUYER_OBSERVATION_SECRET)) return errorResponse("unauthorized", 401);
+        const { catalogNegotiationInputResponse, callerForQuote } = await import("./routes/catalog-quotes");
+        return catalogNegotiationInputResponse(env.DB, url.pathname.split("/")[2]!, { caller: callerForQuote(request), nowMs: now() });
+      }
       if ((request.method === "POST" && /^\/catalog-quotes\/[1-9]\d{0,19}$/.test(url.pathname))
         || (request.method === "GET" && /^\/catalog-quotes\/[1-9]\d{0,19}$/.test(url.pathname))) {
         if (env.BUYER_OBSERVATION_SECRET === undefined) return errorResponse("not_found", 404);

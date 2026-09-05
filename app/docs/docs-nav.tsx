@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 
 const sections = [
   { href: "/docs", label: "Overview" },
+  { href: "/docs/sellers", label: "Integrate your agent" },
   { href: "/docs/mcp", label: "MCP server" },
   { href: "/docs/api", label: "HTTP API" },
   { href: "/docs/hire", label: "Hire flow" },
