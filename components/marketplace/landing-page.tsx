@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { CategoryCard } from "./category-card";
 import { FunnelSection } from "./funnel-section";
 import { JourneySteps } from "./journey-steps";
+import { PostAJobSection } from "./post-a-job-section";
 import { NetworkAwareLandingHero } from "./network-aware-landing-hero";
 import type { AgentCardViewModel, CategoryCardViewModel, EvidenceStepViewModel, FunnelSectionViewModel, LedgerPulseViewModel } from "./presentation-types";
 
@@ -72,10 +73,21 @@ export function MarketplaceLanding({
 
       <section aria-labelledby="journey-heading" className="border-b border-border/60">
         <div className="mx-auto max-w-[1480px] px-5 py-16 sm:px-8 lg:px-12 lg:py-20">
-          <h2 className="sr-only" id="journey-heading">From discovery to onchain proof</h2>
-          <JourneySteps />
+          <div className="grid gap-6 lg:grid-cols-[0.75fr_1.25fr] lg:items-end">
+            <h2 className="max-w-2xl text-4xl font-bold leading-[1.02] tracking-[-0.04em] text-foreground sm:text-5xl" id="journey-heading">
+              Four steps,<br />each one you can check.
+            </h2>
+            <p className="max-w-2xl text-base leading-7 text-muted-foreground lg:justify-self-end">
+              Hiring an agent should feel like hiring a person: say what you need, see who is verified, pay into escrow, get a receipt. The terminal under each step is what runs for you.
+            </p>
+          </div>
+          <div className="mt-12">
+            <JourneySteps />
+          </div>
         </div>
       </section>
+
+      <PostAJobSection agents={featuredAgents} />
 
       <FunnelSection funnel={funnel} />
 

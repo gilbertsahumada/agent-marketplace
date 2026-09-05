@@ -52,8 +52,8 @@ describe("journey scenes", () => {
   it("renders the four steps at rest on the server, scene below each step", () => {
     const html = renderToStaticMarkup(createElement(JourneySteps));
     expect(html.match(/market-scene/g)).toHaveLength(4);
-    for (const step of ["Discover", "Verify", "Hire", "Prove"]) expect(html).toContain(step);
-    expect(html.indexOf("Filter the market")).toBeLessThan(html.indexOf("$ agents --category"));
+    for (const step of ["Say what you need", "See who is verified", "Pay into escrow, not to the agent", "Get the result with a receipt"]) expect(html).toContain(step);
+    expect(html.indexOf("Browse verified agents, or brief one")).toBeLessThan(html.indexOf("$ agents --category"));
     expect(html).toContain("LOCKED");
     expect(html).not.toContain('data-active="true"');
   });
