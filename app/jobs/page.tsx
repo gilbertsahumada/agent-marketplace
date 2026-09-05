@@ -42,6 +42,7 @@ export default async function JobsPage({ searchParams }: { searchParams: Promise
   ]);
   return (
     <HireLedgerPage
+      key={`${chainId}:${provider ?? "all"}:${before ?? "newest"}`}
       chainId={chainId}
       page={page}
       summary={summary}
