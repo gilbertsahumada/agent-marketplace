@@ -38,7 +38,10 @@ function brief(value: Record<string, unknown>) {
 export async function GET(_request: Request, context: { params: Promise<{ agentId: string }> }) {
   try {
     const { agentId } = await context.params;
-    const result = await getBuyerQuoteHistory(agentId);
+    const params = new URL(_request.url).searchParams;
+    const page = params.get("page");
+    if ([...params.keys()].some(key => key !== "page") || params.getAll("page").length > 1 || (page !== null && !/^[1-9]\d{0,5}$/.test(page))) throw new InvalidMarketplaceInputError("Invalid history page");
+    const result = await getBuyerQuoteHistory(agentId, page ? { page: Number(page) } : {});
     if (!result) return NextResponse.json({ error: "quote_service_unavailable" }, { status: 503 });
     return NextResponse.json(result.body, { status: result.status, headers: { "cache-control": "no-store" } });
   } catch (error) { return marketplaceErrorResponse(error); }
