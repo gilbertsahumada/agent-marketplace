@@ -46,12 +46,17 @@ export async function catalogAgentResponse(
       state: capability.state as CapabilityFact["state"],
       ...(transport ? { transport } : {}),
     };
-  }), nowMs);
+  }), nowMs, { endpoints: evidence.endpoints, observations: evidence.observations });
   const state = deriveCatalogEvidenceState({
     endpoints: evidence.endpoints,
     observations: evidence.observations,
     admission: evidence.admission,
     capability: capabilityRow ? {
+      compatibilityState: capabilityRow.compatibilityState,
+      schemaHash: capabilityRow.schemaHash,
+      compatibilityCheckedAt: capabilityRow.compatibilityCheckedAt,
+      compatibilityExpiresAt: capabilityRow.compatibilityExpiresAt,
+      compatibilityErrorCode: capabilityRow.compatibilityErrorCode,
       ...(capabilityRow.endpointKey ? { endpointKey: capabilityRow.endpointKey } : {}),
       ...(capabilityRow.transport ? { transport: capabilityRow.transport } : {}),
       state: capabilityRow.state,
