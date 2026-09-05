@@ -85,6 +85,24 @@ describe("/jobs ledger page", () => {
     expect(html).toContain("not deliverable quality");
   });
 
+  it("links verified job attribution to marketplace agent profiles", async () => {
+    ledger.listRecentJobs.mockResolvedValue({ chainId: 56, jobs: [job("99", { marketplace: true }), job("98")], nextBefore: null });
+    ledger.getJob.mockResolvedValue({ ...job("99"), hireEvents: [{ agentId: "303779" }, { agentId: "303779" }] });
+    const html = await render();
+    expect(ledger.getJob).toHaveBeenCalledWith({ chainId: 56, jobId: "99" });
+    expect(ledger.getJob).not.toHaveBeenCalledWith({ chainId: 56, jobId: "98" });
+    expect(html).toContain('href="/agents/303779"');
+    expect(html).toContain("Agent #303779");
+  });
+
+  it("retains job rows if profile enrichment fails", async () => {
+    ledger.listRecentJobs.mockResolvedValue({ chainId: 56, jobs: [job("99", { marketplace: true })], nextBefore: null });
+    ledger.getJob.mockRejectedValue(new Error("Unavailable"));
+    const html = await render();
+    expect(html).toContain('href="/jobs/mainnet/99"');
+    expect(html).not.toContain('href="/agents/');
+  });
+
   it("switches to Testnet by query and hides the pager when there is no older page", async () => {
     ledger.summary.mockResolvedValue(summary(97));
     ledger.listRecentJobs.mockResolvedValue({ chainId: 97, jobs: [{ ...job("551"), chainId: 97 }], nextBefore: null });
@@ -93,7 +111,7 @@ describe("/jobs ledger page", () => {
 
     expect(ledger.listRecentJobs).toHaveBeenCalledWith({ chainId: 97, before: "600" });
     expect(html).toContain('href="/jobs/testnet/551"');
-    expect(html).toContain("before #600");
+    expect(html).not.toContain("before #600");
     expect(html).not.toContain('href="/jobs?chainId=97&amp;before=');
     // aria-current sits on the Testnet link and only there.
     expect(html).toMatch(/<a aria-current="page"[^>]*href="\/jobs\?chainId=97"[^>]*>BSC Testnet<\/a>/);
@@ -130,7 +148,9 @@ describe("/jobs ledger page", () => {
     expect(ledger.listJobsByProvider).toHaveBeenCalledWith({ chainId: 56, provider: BUYER, before: "600" });
     expect(ledger.listRecentJobs).not.toHaveBeenCalled();
     expect(ledger.summary).toHaveBeenCalledWith({ chainId: 56 });
-    expect(html).toContain("Jobs sold by 0x5ee7…cc52");
+    expect(html).not.toContain("Jobs sold by ");
+    expect(html).toContain('href="https://bscscan.com/address/0x5ee75a1B1648C023e885E58bD3735Ae273f2cc52"');
+    expect(html).toContain("0x5ee7…cc52");
     expect(html).toMatch(/<a[^>]*href="\/jobs\?chainId=56"[^>]*>All jobs<\/a>/);
     expect(html).toContain('href="/jobs/mainnet/56696"');
     // Pager and network selector keep the provider scope.

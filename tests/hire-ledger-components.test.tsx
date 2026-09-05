@@ -5,6 +5,7 @@ import { createElement } from "react";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import axe from "axe-core";
+import { AddressLink } from "../components/marketplace/address-link";
 import type { HireJob, HireJobDetail, HireJobEvent, HireLedgerSummary } from "../src/business/entities/hire-job.ts";
 
 const walletState = vi.hoisted(() => ({ address: null as `0x${string}` | null }));
@@ -204,6 +205,17 @@ describe("hire ledger components", () => {
   });
 });
 
+describe("AddressLink", () => {
+  it.each([56, 97] as const)("links addresses to the correct explorer on chain %s", (chainId) => {
+    const address = "0x1111111111111111111111111111111111111111";
+    render(createElement(AddressLink, { address, chainId }));
+    const link = screen.getByRole("link");
+    expect(link).toHaveAttribute("href", `https://${chainId === 97 ? "testnet." : ""}bscscan.com/address/${address}`);
+    expect(link).toHaveAttribute("target", "_blank");
+    expect(link).toHaveAttribute("rel", "noopener noreferrer");
+  });
+});
+
 describe("HireLedgerPage", () => {
   const page = { chainId: 56 as const, jobs: [job("56696", { marketplace: true }), job("56695")], nextBefore: "56695" };
 
@@ -225,8 +237,25 @@ describe("HireLedgerPage", () => {
     render(createElement(HireLedgerPage, { chainId: 56, summary: summary({ lastIndexRun: { status: "error", at: NOW } }), page: { ...page, nextBefore: null }, before: "56695" }));
 
     expect(screen.getByText(/Last run failed/)).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Indexed jobs before #56695" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: /Indexed jobs before/ })).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Newest jobs" })).toHaveAttribute("href", "/jobs?chainId=56");
+  });
+
+  it("searches loaded jobs and clears the filter without changing index totals", () => {
+    render(createElement(HireLedgerPage, { chainId: 56, summary: summary(), page }));
+    const search = screen.getByRole("textbox", { name: "Search this page" });
+    fireEvent.change(search, { target: { value: "#56696" } });
+    expect(screen.getByRole("link", { name: "Job #56696" })).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Job #56695" })).not.toBeInTheDocument();
+    expect(screen.getByText("56,697")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Older jobs" })).toHaveAttribute("href", "/jobs?chainId=56&before=56695");
+    fireEvent.change(search, { target: { value: "no-match" } });
+    expect(screen.getByText(/No matching records on this page/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Clear search" }));
+    expect(screen.getByRole("link", { name: "Job #56695" })).toBeInTheDocument();
+    fireEvent.change(search, { target: { value: "MARKETPLACE" } });
+    expect(screen.getByRole("link", { name: "Job #56696" })).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Job #56695" })).not.toBeInTheDocument();
   });
 
   it.each([
