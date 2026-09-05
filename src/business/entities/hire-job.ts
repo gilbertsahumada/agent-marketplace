@@ -52,6 +52,15 @@ export interface HireJobPage {
   chainId: HireChainId;
   jobs: HireJob[];
   nextBefore: string | null;
+  /** All rows in this query scope, independent of the page cursor. */
+  totals?: HireJobTotals;
+}
+
+export interface HireJobTotals {
+  total: number;
+  completed: number;
+  funded: number;
+  submitted: number;
 }
 
 // How an agent's indexed jobs were looked up: by its provider wallet, or only
