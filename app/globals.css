@@ -667,6 +667,133 @@ body {
   text-shadow: 0 0 10px rgb(255 233 0 / 30%);
 }
 
+.post-job__brief,
+.post-job__agents {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: #101115;
+}
+
+.post-job__bar {
+  display: flex;
+  min-height: 48px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0 1.1rem;
+  border-bottom: 1px solid #282a31;
+  color: #c8c9ce;
+  font-family: var(--font-space-mono), monospace;
+  font-size: 0.6875rem;
+}
+
+.post-job__count {
+  color: #ffe900;
+}
+
+.post-job__fields {
+  display: grid;
+  gap: 1.1rem;
+  margin: 0;
+  padding: 1.4rem 1.1rem 0.4rem;
+}
+
+.post-job__fields dt {
+  color: #696b74;
+  font-family: var(--font-space-mono), monospace;
+  font-size: 0.6rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.post-job__fields dd {
+  margin: 0.35rem 0 0;
+  max-width: 34rem;
+  color: #e6e6ea;
+  font-size: 1.05rem;
+  line-height: 1.5;
+}
+
+.post-job__meta {
+  display: grid;
+  gap: 1rem;
+  padding-top: 1rem;
+  border-top: 1px dashed #2b2d34;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.post-job__meta dd {
+  color: #ffe900;
+  font-family: var(--font-space-mono), monospace;
+  font-size: 0.85rem;
+}
+
+.post-job__note,
+.post-job__empty {
+  margin: auto 0 0;
+  padding: 1rem 1.1rem 1.2rem;
+  color: #8c8e97;
+  font-size: 0.8rem;
+  line-height: 1.55;
+}
+
+.post-job__list {
+  margin: 0;
+  padding: 0.4rem 0 0;
+  list-style: none;
+}
+
+.post-job__list a {
+  display: grid;
+  align-items: center;
+  gap: 0.35rem 0.9rem;
+  padding: 0.95rem 1.1rem;
+  border-bottom: 1px dashed #272930;
+  color: inherit;
+  grid-template-columns: minmax(0, 1fr) auto;
+  text-decoration: none;
+}
+
+.post-job__list a:hover,
+.post-job__list a:focus-visible {
+  background: #15161b;
+}
+
+.post-job__agent-name {
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.post-job__agent-id,
+.post-job__agent-state {
+  color: #8c8e97;
+  font-family: var(--font-space-mono), monospace;
+  font-size: 0.66rem;
+}
+
+.post-job__agent-state {
+  grid-column: 1;
+  color: #ffe900;
+}
+
+.post-job__list svg {
+  width: 1rem;
+  height: 1rem;
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  color: #8c8e97;
+}
+
+.post-job__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-top: auto;
+  padding: 1.1rem;
+}
+
 @keyframes log-scan {
   0%, 14%, 100% { opacity: 0.42; }
   28%, 52% { opacity: 1; }

@@ -135,9 +135,11 @@ export function proveFrame(progress: number, noise: Noise = Math.random): string
   ]);
 }
 
+// Step copy speaks to the person hiring; the scene underneath shows what
+// runs for them.
 export const JOURNEY_SCENES = [
-  { step: "Discover", detail: "Filter the market by the outcome you need.", frame: discoverFrame },
-  { step: "Verify", detail: "Inspect identity, endpoint, quote, and provenance.", frame: verifyFrame },
-  { step: "Hire", detail: "Accept a fresh quote with funds held in escrow.", frame: hireFrame },
-  { step: "Prove", detail: "Track the result back to its onchain receipt.", frame: proveFrame },
+  { step: "Say what you need", detail: "Browse verified agents, or brief one with the outcome you want, in plain words.", frame: discoverFrame },
+  { step: "See who is verified", detail: "Identity, endpoint, a fresh signed quote and provenance are checked before you pay.", frame: verifyFrame },
+  { step: "Pay into escrow, not to the agent", detail: "Your funds sit in ERC-8183 escrow until the work is delivered.", frame: hireFrame },
+  { step: "Get the result with a receipt", detail: "Every job ends with an on-chain record you can inspect.", frame: proveFrame },
 ] as const;
