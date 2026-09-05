@@ -127,7 +127,7 @@ describe("hire ledger feed", () => {
     await expect(getHireJob({ chainId: 56, jobId: "56696", env: ENV })).resolves.toMatchObject({ jobId: "56696" });
     await expect(getHireLedgerSummary({ chainId: 56, env: ENV })).resolves.toMatchObject({ protocol: { jobs: 10 } });
     expect(requested).toEqual([
-      `https://probe.example.workers.dev/commerce-jobs?chainId=56&buyer=${BUYER}&before=100`,
+      `https://probe.example.workers.dev/commerce-jobs?chainId=56&limit=25&buyer=${BUYER}&before=100`,
       "https://probe.example.workers.dev/commerce-jobs/56/56696",
       "https://probe.example.workers.dev/commerce-summary?chainId=56",
     ]);
