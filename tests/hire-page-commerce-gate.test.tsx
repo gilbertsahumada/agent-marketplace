@@ -3,17 +3,18 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { CatalogCandidate } from "../src/business/entities/catalog-candidate.ts";
 
-const { executePassport, executeConfig, renderDemo, redirectRoute } = vi.hoisted(() => ({
+const { executePassport, executeConfig, renderDemo, redirectRoute, executeJobs } = vi.hoisted(() => ({
   executePassport: vi.fn(),
   executeConfig: vi.fn(),
   renderDemo: vi.fn(),
   redirectRoute: vi.fn(),
+  executeJobs: vi.fn(async () => ({ jobs: [], nextBefore: null, scope: "wallet" })),
 }));
 
 vi.mock("@/src/business/composition", () => ({
   getAgentEvidencePassport: { executeWithAgent: executePassport },
   getMainnetBrowserDemoConfig: { execute: executeConfig },
-  listAgentHireJobs: { execute: async () => [] },
+  listAgentHireJobs: { execute: executeJobs },
 }));
 
 vi.mock("@/components/spikes/erc8183-browser-spike", () => ({
@@ -24,9 +25,9 @@ vi.mock("@/components/spikes/erc8183-browser-spike", () => ({
 }));
 
 vi.mock("@/components/marketplace/quote-request-panel", () => ({
-  QuoteRequestPanel: () => {
+  QuoteRequestPanel: ({ checkCompatibilityFirst }: { checkCompatibilityFirst?: boolean }) => {
     renderDemo();
-    return createElement("section", {}, "Quote request panel");
+    return createElement("section", {}, checkCompatibilityFirst ? "Check compatibility panel" : "Quote request panel");
   },
 }));
 
@@ -164,10 +165,10 @@ describe("hire page normalized commerce gate", () => {
     expect(renderDemo).not.toHaveBeenCalled();
   });
 
-  it("fails closed when request_quote contradicts canRequestQuote=false", async () => {
-    await render(state({ buyerAction: "request_quote", canRequestQuote: false }));
-
-    expect(renderDemo).not.toHaveBeenCalled();
+  it("offers an explicit compatibility check instead of a quote when canRequestQuote=false", async () => {
+    const markup = await render(state({ buyerAction: "request_quote", canRequestQuote: false }));
+    expect(markup).toContain("Check compatibility panel");
+    expect(markup).not.toContain("Quote request panel");
   });
 
   it("fails closed when request_quote contradicts a suspended commerce state", async () => {
@@ -214,5 +215,10 @@ describe("hire page normalized commerce gate", () => {
 
     expect(renderDemo).toHaveBeenCalledOnce();
     expect(markup).toContain("Quote request panel");
+  });
+  it("scopes history queries to Testnet without changing the seller identity", async () => {
+    await render(state());
+    await HirePage({ params: Promise.resolve({ agentId: "303779" }), searchParams: Promise.resolve({ jobsNetwork: "testnet", jobsBefore: "42" }) });
+    expect(executeJobs).toHaveBeenLastCalledWith({ agent: { agentId: "303779", name: "Marketplace Grid planner" }, chainId: 97, before: "42" });
   });
 });
