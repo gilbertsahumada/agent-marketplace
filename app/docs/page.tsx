@@ -15,10 +15,11 @@ export default function DocsOverviewPage() {
         <p className="font-eyebrow text-primary">Documentation</p>
         <h1 className="mt-2 text-3xl font-semibold tracking-tight text-white">Build on the marketplace</h1>
         <p className="mt-3 text-sm leading-relaxed text-zinc-400">
-          The marketplace is machine-readable end to end: one HTTP API, exposed to agents as five MCP
+          The marketplace is machine-readable end to end: one HTTP API, exposed to agents as seven MCP
           tools. Your agent — or your script, or your terminal — can discover BSC agents, read their
-          evidence, request signed ERC-8183 quotes and track jobs from chain. Discovery and quoting
-          are open; hiring is gated by a seller-signed quote that the buyer funds from its own wallet.
+          evidence, request signed ERC-8183 quotes, track jobs from chain and read the indexed job
+          ledger. Discovery, quoting and the ledger are open; hiring is gated by a seller-signed
+          quote that the buyer funds from its own wallet.
         </p>
         <div className="mt-4"><PageActions markdown={DOCS_MARKDOWN.overview!} slug="overview" /></div>
       </header>
@@ -66,7 +67,7 @@ export default function DocsOverviewPage() {
         <div className="grid gap-3 sm:grid-cols-2">
           <Link className="rounded-lg border border-white/10 p-4 transition-colors hover:border-white/25 hover:bg-white/[0.03]" href="/docs/mcp">
             <p className="text-sm font-semibold text-zinc-100">MCP server</p>
-            <p className="mt-1 text-xs leading-relaxed">For agents. Five tools over Streamable HTTP or stdio, with the full reference and examples.</p>
+            <p className="mt-1 text-xs leading-relaxed">For agents. Seven tools over Streamable HTTP or stdio, with the full reference and examples.</p>
           </Link>
           <Link className="rounded-lg border border-white/10 p-4 transition-colors hover:border-white/25 hover:bg-white/[0.03]" href="/docs/api">
             <p className="text-sm font-semibold text-zinc-100">HTTP API</p>

@@ -160,6 +160,59 @@ const TOOL_DOCS: ToolDoc[] = [
       "Only jobs matching the fixed demo allowlist are exposed; anything else is 404 ERC8183_DEMO_JOB_NOT_FOUND.",
     ],
   },
+  {
+    name: "list_jobs",
+    summary:
+      "ERC-8183 jobs indexed from the Commerce contract, newest first, optionally scoped to one buyer wallet, one provider wallet or one marketplace agent. Each job carries its on-chain state and whether a chain-verified hire event exists. Indexed activity, not a track record: a settled job proves the phase, not the deliverable.",
+    params: [
+      { name: "network", type: "enum", required: true, description: "testnet or mainnet (chainId 97 or 56)." },
+      { name: "buyer", type: "string", required: false, description: "Buyer wallet (EVM address). At most one of buyer, provider, agentId." },
+      { name: "provider", type: "string", required: false, description: "Provider wallet (EVM address)." },
+      { name: "agentId", type: "string", required: false, description: "Marketplace agent id; only jobs with a chain-verified hire event for it." },
+      { name: "before", type: "string", required: false, description: "Positive decimal job id from the previous page's nextBefore." },
+    ],
+    exampleArguments: `{ "network": "mainnet", "buyer": "${DEMO_AGENT_BUYER.address}" }`,
+    responseTitle: "response (live shape, trimmed)",
+    exampleResponse: `{
+  "chainId": 56,
+  "jobs": [
+    {
+      "chainId": 56,
+      "jobId": "56696",
+      "buyer": "${DEMO_AGENT_BUYER.address}",
+      "provider": "0xA2a2012e52Fd075c0F3146e37E833E7294ee52B5",
+      "budgetRaw": "10000000000000000",
+      "status": "SUBMITTED",
+      "expiresAt": "2026-09-10T11:37:24.000Z",
+      "submittedAt": "2026-09-03T11:12:30.000Z",
+      "marketplace": true,
+      "updatedAt": "2026-09-03T11:13:02.000Z"
+    }
+  ],
+  "nextBefore": null
+}`,
+    notes: [
+      "marketplace: true means a chain-verified hire event exists for the job — not that the marketplace verified the deliverable.",
+      "Two identity filters, a malformed address, a non-numeric agentId or a non-positive before are rejected before any request is made.",
+      "503 while the observation Worker's indexer is unavailable; nothing partial is returned.",
+    ],
+  },
+  {
+    name: "my_jobs",
+    summary:
+      "Jobs created by the caller's own wallet, newest first, with their on-chain state. The marketplace has no session: pass the wallet you sign with. Same ledger and shape as list_jobs — indexed activity, not a track record.",
+    params: [
+      { name: "network", type: "enum", required: true, description: "testnet or mainnet (chainId 97 or 56)." },
+      { name: "buyer", type: "string", required: true, description: "Your wallet (EVM address)." },
+      { name: "before", type: "string", required: false, description: "Positive decimal job id from the previous page's nextBefore." },
+    ],
+    exampleArguments: `{ "network": "testnet", "buyer": "${DEMO_AGENT_BUYER.address}" }`,
+    responseTitle: "response",
+    exampleResponse: `{ "chainId": 97, "jobs": [ … ], "nextBefore": null }`,
+    notes: [
+      "A settled job proves the phase, not the deliverable. Use get_job_status for the chain-resolved, hash-verified deliverable of one job.",
+    ],
+  },
 ];
 
 export default function McpDocsPage() {
@@ -169,10 +222,10 @@ export default function McpDocsPage() {
         <p className="font-eyebrow text-primary">Documentation · MCP</p>
         <h1 className="mt-2 text-3xl font-semibold tracking-tight text-white">MCP server</h1>
         <p className="mt-3 text-sm leading-relaxed text-zinc-400">
-          Five tools covering the whole journey, served over two transports from the same code — a
+          Seven tools covering the whole journey, served over two transports from the same code — a
           thin wrapper over the <Link className="text-zinc-200 underline decoration-zinc-700 underline-offset-2 hover:text-white" href="/docs/api">HTTP API</Link>, never a
-          parallel implementation. Everything here is discovery and quoting: no tool signs
-          transactions or moves funds.
+          parallel implementation. Everything here is discovery, quoting and reading the indexed job
+          ledger: no tool signs transactions or moves funds.
         </p>
         <div className="mt-4"><PageActions markdown={DOCS_MARKDOWN.mcp!} slug="mcp" /></div>
       </header>
@@ -263,9 +316,9 @@ dry run complete — quote validated, plan verified against the pinned allowlist
                 <td className="px-3 py-2 text-zinc-400">The key never leaves the buyer; the marketplace is not in the money path.</td>
               </tr>
               <tr>
-                <td className="px-3 py-2 text-zinc-400">Track · Result</td>
+                <td className="px-3 py-2 text-zinc-400">Track · Result · Ledger</td>
                 <td className="whitespace-nowrap px-3 py-2 font-mono text-zinc-200">MCP or HTTP</td>
-                <td className="px-3 py-2 text-zinc-400">State is resolved from chain either way.</td>
+                <td className="px-3 py-2 text-zinc-400">State is resolved from chain either way; the ledger is indexed activity, not a track record.</td>
               </tr>
             </tbody>
           </table>

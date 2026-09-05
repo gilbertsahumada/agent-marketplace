@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { ArrowLeft, ArrowRight, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import type { HireAddress, HireChainId, HireJobPage, HireLedgerCounts, HireLedgerSummary } from "@/src/business/entities/hire-job";
+import type { HireActivity, HireAddress, HireChainId, HireJobPage, HireLedgerCounts, HireLedgerSummary } from "@/src/business/entities/hire-job";
 import { shortAddress } from "@/lib/bsc-chains";
+import { HireActivityWindow } from "./hire-activity-window";
 import { HireJobRows, jobStatusLabel } from "./hire-job-rows";
 import { MyHireJobs } from "./my-hire-jobs";
 import { Breadcrumb, PageIntro } from "./page-primitives";
@@ -59,16 +60,20 @@ function indexRunLabel(status: string): string {
 // chain-verified hire event exists, so the hire started here). Both are
 // activity counts; a settled job proves the phase, not the deliverable. Each
 // read degrades on its own, so a failed list never hides good counts.
-export function HireLedgerPage({ chainId, summary, page, before, provider }: {
+export function HireLedgerPage({ chainId, summary, page, activity = null, before, provider }: {
   chainId: HireChainId;
   summary: HireLedgerSummary | null;
   page: HireJobPage | null;
+  // Trailing window of phase events in the same provider scope as the list;
+  // null when it could not be read.
+  activity?: HireActivity | null;
   before?: string;
-  // Scopes the job list (not the counts) to one provider wallet.
+  // Scopes the job list (and the activity window, not the counts) to one
+  // provider wallet.
   provider?: HireAddress;
 }) {
   const otherChain: HireChainId = chainId === 56 ? 97 : 56;
-  const nothingRead = summary === null && page === null;
+  const nothingRead = summary === null && page === null && activity === null;
   const scope = provider === undefined ? {} : { provider };
   const listHeading = provider !== undefined
     ? `Jobs sold by ${shortAddress(provider)}${before === undefined ? "" : ` before #${before}`}`
@@ -120,6 +125,12 @@ export function HireLedgerPage({ chainId, summary, page, before, provider }: {
         </>
       ) : nothingRead ? null : (
         <div className="mt-8"><SectionUnavailable>Counts temporarily unavailable.</SectionUnavailable></div>
+      )}
+
+      {activity !== null ? (
+        <div className="mt-6"><HireActivityWindow activity={activity} /></div>
+      ) : nothingRead ? null : (
+        <div className="mt-6"><SectionUnavailable>Recent activity temporarily unavailable.</SectionUnavailable></div>
       )}
 
       {page !== null ? (

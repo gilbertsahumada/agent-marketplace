@@ -5,7 +5,7 @@ import { createElement } from "react";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import axe from "axe-core";
-import type { HireJob, HireJobDetail, HireJobEvent, HireLedgerSummary } from "../src/business/entities/hire-job.ts";
+import type { HireActivity, HireJob, HireJobDetail, HireJobEvent, HireLedgerSummary } from "../src/business/entities/hire-job.ts";
 
 const walletState = vi.hoisted(() => ({ address: null as `0x${string}` | null }));
 
@@ -58,6 +58,22 @@ function summary(overrides: Partial<HireLedgerSummary> = {}): HireLedgerSummary 
     protocol: { jobs: 56_697, byStatus: { ...zero, SUBMITTED: 56_000, COMPLETED: 697 } },
     marketplace: { jobs: 2, byStatus: { ...zero, SUBMITTED: 1, FUNDED: 1 } },
     lastIndexRun: { status: "ok", at: NOW },
+    ...overrides,
+  };
+}
+
+function activity(overrides: Partial<HireActivity> = {}): HireActivity {
+  const zero = { created: 0, funded: 0, submitted: 0, settled: 0, refunded: 0 };
+  return {
+    chainId: 56,
+    days: 30,
+    from: "2026-08-04T12:00:00.000Z",
+    to: NOW,
+    byDay: [
+      { day: "2026-09-01", ...zero, created: 1_234, funded: 2 },
+      { day: "2026-09-02", ...zero, settled: 1, refunded: 1 },
+    ],
+    totals: { ...zero, created: 1_234, funded: 2, settled: 1, refunded: 1 },
     ...overrides,
   };
 }
@@ -248,11 +264,49 @@ describe("HireLedgerPage", () => {
   });
 
   it("collapses to one notice when nothing could be read", () => {
-    render(createElement(HireLedgerPage, { chainId: 56, summary: null, page: null }));
+    render(createElement(HireLedgerPage, { chainId: 56, summary: null, page: null, activity: null }));
 
     expect(screen.getByText("Indexed ledger temporarily unavailable.")).toBeInTheDocument();
     expect(screen.queryByText(/Counts temporarily unavailable/)).not.toBeInTheDocument();
     expect(screen.queryByText(/Recent jobs temporarily unavailable/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Recent activity temporarily unavailable/)).not.toBeInTheDocument();
+  });
+
+  it("shows the last 30 days as phase totals plus a per-day table with the indexing note", async () => {
+    render(createElement(HireLedgerPage, { chainId: 56, summary: summary(), page, activity: activity() }));
+
+    expect(screen.getByRole("heading", { level: 2, name: "Last 30 days" })).toBeInTheDocument();
+    const totals = screen.getByRole("list", { name: "Phase totals, last 30 days" });
+    expect(totals).toHaveTextContent("Created1,234");
+    expect(totals).toHaveTextContent("Settled1");
+    expect(totals).toHaveTextContent("Refunded1");
+    const table = screen.getByRole("table", { name: "Phase events per UTC day" });
+    expect(table).toBeInTheDocument();
+    expect(screen.getAllByRole("columnheader").map((cell) => cell.textContent)).toEqual(["Day", "Created", "Funded", "Submitted", "Settled", "Refunded"]);
+    expect(screen.getByRole("rowheader", { name: "2026-09-01" })).toBeInTheDocument();
+    expect(screen.getByRole("rowheader", { name: "2026-09-02" })).toBeInTheDocument();
+    expect(screen.getByText("Counts phase events indexed since the ledger started; earlier jobs are present by state only.")).toBeInTheDocument();
+    expect(document.body.textContent).not.toMatch(/proven/i);
+    expect((await axe.run(document.body)).violations).toEqual([]);
+  });
+
+  it("omits the per-day table when no phase events fell in the window", () => {
+    render(createElement(HireLedgerPage, { chainId: 56, summary: summary(), page, activity: activity({ byDay: [], totals: { created: 0, funded: 0, submitted: 0, settled: 0, refunded: 0 } }) }));
+
+    expect(screen.getByRole("heading", { level: 2, name: "Last 30 days" })).toBeInTheDocument();
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+    expect(screen.getByText("No phase events indexed in this window.")).toBeInTheDocument();
+    expect(screen.getByText(/Counts phase events indexed since the ledger started/)).toBeInTheDocument();
+  });
+
+  it("reports an unavailable activity window on its own without touching the counts or the jobs", () => {
+    render(createElement(HireLedgerPage, { chainId: 56, summary: summary(), page, activity: null }));
+
+    expect(screen.getByText("Recent activity temporarily unavailable.")).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: /Last 30 days/ })).not.toBeInTheDocument();
+    expect(screen.getByText("56,697")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Job #56696/ })).toBeInTheDocument();
+    expect(screen.queryByText("Indexed ledger temporarily unavailable.")).not.toBeInTheDocument();
   });
 });
 

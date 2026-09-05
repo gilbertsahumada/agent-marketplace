@@ -71,6 +71,21 @@ export interface HireLedgerSummary {
   lastIndexRun: { status: string; at: string } | null;
 }
 
+// Phase events per UTC day over a trailing window, for one chain, one provider
+// wallet or one marketplace agent. Counts events the indexer saw since it
+// started; jobs backfilled by state alone contribute nothing, so an old job
+// present in the list may be absent here. Activity, never a track record.
+export type HireActivityCounts = Record<VerifiedHirePhase, number>;
+
+export interface HireActivity {
+  chainId: HireChainId;
+  days: number;
+  from: string;
+  to: string;
+  byDay: Array<{ day: string } & HireActivityCounts>;
+  totals: HireActivityCounts;
+}
+
 // Two failure contracts, on purpose. The list readers and the summary answer
 // null when the ledger is unavailable; callers render the page as without
 // them (HTTP maps null to 503). `getJob` answers null only when the ledger has
@@ -85,4 +100,7 @@ export interface HireLedger {
   listJobsByAgent(input: { chainId: HireChainId; agentId: string; before?: string }): Promise<HireJobPage | null>;
   getJob(input: { chainId: HireChainId; jobId: string }): Promise<HireJobDetail | null>;
   summary(input: { chainId: HireChainId }): Promise<HireLedgerSummary | null>;
+  // Trailing window of phase events (30 days by default, 1..90), scoped to at
+  // most one of provider/agentId; null when it cannot be read.
+  activity(input: { chainId: HireChainId; days?: number; provider?: HireAddress; agentId?: string }): Promise<HireActivity | null>;
 }

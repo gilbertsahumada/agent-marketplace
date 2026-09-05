@@ -1,7 +1,7 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { HireJob, HireJobDetail, HireLedgerSummary } from "../src/business/entities/hire-job.ts";
+import type { HireActivity, HireJob, HireJobDetail, HireLedgerSummary } from "../src/business/entities/hire-job.ts";
 import {
   Erc8183DemoJobNotFoundError,
   Erc8183SpikeUnavailableError,
@@ -14,6 +14,7 @@ const ledger = vi.hoisted(() => ({
   listJobsByProvider: vi.fn(),
   getJob: vi.fn(),
   summary: vi.fn(),
+  activity: vi.fn(),
 }));
 const mainnetJobStatus = vi.hoisted(() => vi.fn());
 const testnetTracking = vi.hoisted(() => vi.fn());
@@ -60,12 +61,30 @@ function summary(chainId: 56 | 97 = 56): HireLedgerSummary {
   };
 }
 
+function activity(chainId: 56 | 97 = 56): HireActivity {
+  const zero = { created: 0, funded: 0, submitted: 0, settled: 0, refunded: 0 };
+  return {
+    chainId,
+    days: 30,
+    from: "2026-08-04T12:00:00.000Z",
+    to: NOW,
+    byDay: [
+      { day: "2026-09-01", ...zero, created: 3, funded: 2 },
+      { day: "2026-09-02", ...zero, settled: 1 },
+    ],
+    totals: { ...zero, created: 3, funded: 2, settled: 1 },
+  };
+}
+
 async function render(searchParams: Record<string, string> = {}): Promise<string> {
   return renderToStaticMarkup(await JobsPage({ searchParams: Promise.resolve(searchParams) }));
 }
 
 describe("/jobs ledger page", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    ledger.activity.mockResolvedValue(null);
+  });
 
   it("shows protocol and marketplace totals with recent jobs, defaulting to Mainnet", async () => {
     ledger.summary.mockResolvedValue(summary());
@@ -85,6 +104,35 @@ describe("/jobs ledger page", () => {
     expect(html).not.toMatch(/proven/i);
     expect(html.match(/track record/gi)).toHaveLength(1);
     expect(html).toContain("not a track record");
+  });
+
+  it("reads the last 30 days of phase events for the chain and renders the totals with the indexing note", async () => {
+    ledger.summary.mockResolvedValue(summary());
+    ledger.listRecentJobs.mockResolvedValue({ chainId: 56, jobs: [], nextBefore: null });
+    ledger.activity.mockResolvedValue(activity());
+
+    const html = await render();
+
+    expect(ledger.activity).toHaveBeenCalledWith({ chainId: 56, days: 30 });
+    expect(html).toContain("Last 30 days");
+    expect(html).toContain("2026-09-01");
+    expect(html).toContain("2026-09-02");
+    expect(html).toContain("Counts phase events indexed since the ledger started; earlier jobs are present by state only.");
+    expect(html).not.toContain("Recent activity temporarily unavailable");
+    expect(html).not.toMatch(/proven/i);
+    expect(html.match(/track record/gi)).toHaveLength(1);
+  });
+
+  it("scopes the activity window to ?provider= and reports it unavailable on its own", async () => {
+    ledger.summary.mockResolvedValue(summary());
+    ledger.listJobsByProvider.mockResolvedValue({ chainId: 56, jobs: [], nextBefore: null });
+
+    const html = await render({ chainId: "97", provider: BUYER });
+
+    expect(ledger.activity).toHaveBeenCalledWith({ chainId: 97, days: 30, provider: BUYER });
+    expect(html).toContain("Recent activity temporarily unavailable.");
+    expect(html).toContain("Hired via this marketplace");
+    expect(html).not.toContain("Indexed ledger temporarily unavailable");
   });
 
   it("switches to Testnet by query and hides the pager when there is no older page", async () => {

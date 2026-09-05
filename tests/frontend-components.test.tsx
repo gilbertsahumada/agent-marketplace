@@ -763,6 +763,33 @@ describe("marketplace presentation rules", () => {
     expect(screen.queryByRole("link", { name: "All indexed jobs" })).not.toBeInTheDocument();
   });
 
+  it("adds a 30-day phase subtitle to the hire activity only when the window was read", async () => {
+    const agent = marketplaceAgent();
+    const zero = { created: 0, funded: 0, submitted: 0, settled: 0, refunded: 0 };
+    const hireActivity = {
+      chainId: 56 as const, days: 30, from: "2026-08-04T12:00:00.000Z", to: "2026-09-03T12:00:00.000Z",
+      byDay: [{ day: "2026-09-01", ...zero, created: 4, settled: 2 }],
+      totals: { ...zero, created: 4, settled: 2 },
+    };
+    const { rerender } = render(createElement(AgentProfile, {
+      agent, hireActivity, hireJobs: [hireJob("56696", "SUBMITTED")], hireJobsScope: "wallet", passport: evidencePassport("registered"),
+    }));
+
+    expect(screen.getByText("Last 30 days: 4 created · 2 settled")).toBeInTheDocument();
+    expect(screen.getByText("1 more indexed")).toBeInTheDocument();
+    // Scoped to the section: the avatar fallback elsewhere on the profile is
+    // a pre-existing, unrelated finding.
+    const section = screen.getByRole("heading", { name: "Hire activity" }).closest("section");
+    expect(section).not.toBeNull();
+    expect((await axe.run(section as HTMLElement)).violations).toEqual([]);
+
+    rerender(createElement(AgentProfile, { agent, hireActivity: null, hireJobs: [hireJob("56696", "SUBMITTED")], passport: evidencePassport("registered") }));
+    expect(screen.queryByText(/Last 30 days/)).not.toBeInTheDocument();
+
+    rerender(createElement(AgentProfile, { agent, hireJobs: [hireJob("56696", "SUBMITTED")], passport: evidencePassport("registered") }));
+    expect(screen.queryByText(/Last 30 days/)).not.toBeInTheDocument();
+  });
+
   it("explains an empty ledger per lookup scope without touching the proven count", () => {
     const agent = marketplaceAgent();
     const { rerender } = render(createElement(AgentProfile, { agent, hireJobs: [], hireJobsScope: "wallet", passport: evidencePassport("registered") }));

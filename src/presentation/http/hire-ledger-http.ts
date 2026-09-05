@@ -4,6 +4,8 @@ import { InvalidMarketplaceInputError, MarketplaceDataUnavailableError } from ".
 
 // Same cache window as the Worker routes behind these responses.
 export const LEDGER_CACHE_HEADERS = { "cache-control": "public, max-age=30, stale-while-revalidate=60" };
+// The activity window is served by the Worker with a longer window of its own.
+export const ACTIVITY_CACHE_HEADERS = { "cache-control": "public, max-age=60, stale-while-revalidate=300" };
 
 export function chainIdParameter(value: string | null): HireChainId {
   if (value === "56") return 56;
@@ -20,6 +22,19 @@ export function addressParameter(value: string | null, name: string): HireAddres
 export function jobIdParameter(value: string | null, name: string): string | undefined {
   if (value === null) return undefined;
   if (!/^(?:0|[1-9]\d{0,15})$/.test(value)) throw new InvalidMarketplaceInputError(`${name} must be a job id`);
+  return value;
+}
+
+// Decimal 1..90 with no leading zero; absent means the Worker's default.
+export function daysParameter(value: string | null): number | undefined {
+  if (value === null) return undefined;
+  if (!/^[1-9]\d?$/.test(value) || Number(value) > 90) throw new InvalidMarketplaceInputError("days must be between 1 and 90");
+  return Number(value);
+}
+
+export function agentIdParameter(value: string | null): string | undefined {
+  if (value === null) return undefined;
+  if (!/^[1-9]\d{0,19}$/.test(value)) throw new InvalidMarketplaceInputError("agentId must be a positive integer");
   return value;
 }
 

@@ -8,12 +8,14 @@ const ledger = vi.hoisted(() => ({
   listJobsByAgent: vi.fn(),
   getJob: vi.fn(),
   summary: vi.fn(),
+  activity: vi.fn(),
 }));
 
 vi.mock("@/src/business/composition", () => ({ getHireLedger: ledger }));
 
 const jobs = await import("../app/api/marketplace/jobs/route.ts");
 const summary = await import("../app/api/marketplace/jobs/summary/route.ts");
+const activity = await import("../app/api/marketplace/jobs/activity/route.ts");
 const mainnetLedger = await import("../app/api/marketplace/jobs/mainnet/[jobId]/ledger/route.ts");
 const testnetLedger = await import("../app/api/marketplace/jobs/testnet/[jobId]/ledger/route.ts");
 
@@ -56,7 +58,7 @@ describe("hire ledger controllers", () => {
     const response = await jobs.GET(new Request(`http://local/api/marketplace/jobs?${query}`));
     expect(response.status).toBe(400);
     expect((await response.json()).error.code).toBe("InvalidMarketplaceInputError");
-    for (const reader of [ledger.listRecentJobs, ledger.listJobsByBuyer, ledger.listJobsByProvider, ledger.listJobsByAgent, ledger.summary]) {
+    for (const reader of [ledger.listRecentJobs, ledger.listJobsByBuyer, ledger.listJobsByProvider, ledger.listJobsByAgent, ledger.summary, ledger.activity]) {
       expect(reader).not.toHaveBeenCalled();
     }
   });
@@ -100,5 +102,48 @@ describe("hire ledger controllers", () => {
       expect(response.status).toBe(503);
       expect((await response.json()).error.code).toBe("MarketplaceDataUnavailableError");
     }
+  });
+
+  it("serves the activity window with the Worker's 60 s cache window", async () => {
+    const window = { chainId: 56, days: 30, from: "2026-08-04T00:00:00.000Z", to: "2026-09-03T12:00:00.000Z", byDay: [], totals: { created: 1, funded: 0, submitted: 0, settled: 0, refunded: 0 } };
+    ledger.activity.mockResolvedValue(window);
+
+    const response = await activity.GET(new Request("http://local/api/marketplace/jobs/activity?chainId=56"));
+    expect(response.status).toBe(200);
+    expect(response.headers.get("cache-control")).toBe("public, max-age=60, stale-while-revalidate=300");
+    expect(await response.json()).toEqual(window);
+    expect(ledger.activity).toHaveBeenCalledWith({ chainId: 56 });
+
+    await activity.GET(new Request(`http://local/api/marketplace/jobs/activity?chainId=97&days=7&provider=${BUYER}`));
+    expect(ledger.activity).toHaveBeenLastCalledWith({ chainId: 97, days: 7, provider: BUYER });
+    await activity.GET(new Request("http://local/api/marketplace/jobs/activity?chainId=56&days=90&agentId=303779"));
+    expect(ledger.activity).toHaveBeenLastCalledWith({ chainId: 56, days: 90, agentId: "303779" });
+  });
+
+  it.each([
+    "",
+    "chainId=1",
+    "chainId=56&days=0",
+    "chainId=56&days=91",
+    "chainId=56&days=abc",
+    "chainId=56&days=7.5",
+    "chainId=56&days=07",
+    `chainId=56&provider=${BUYER}&agentId=303779`,
+    "chainId=56&provider=0x12",
+    "chainId=56&agentId=0",
+    "chainId=56&buyer=0x12",
+    "chainId=56&days=7&days=8",
+  ])("rejects activity ?%s with 400 before reading the ledger", async (query) => {
+    const response = await activity.GET(new Request(`http://local/api/marketplace/jobs/activity?${query}`));
+    expect(response.status).toBe(400);
+    expect((await response.json()).error.code).toBe("InvalidMarketplaceInputError");
+    expect(ledger.activity).not.toHaveBeenCalled();
+  });
+
+  it("answers 503 when the activity window is unavailable", async () => {
+    ledger.activity.mockResolvedValue(null);
+    const response = await activity.GET(new Request("http://local/api/marketplace/jobs/activity?chainId=56&days=30"));
+    expect(response.status).toBe(503);
+    expect((await response.json()).error.code).toBe("MarketplaceDataUnavailableError");
   });
 });

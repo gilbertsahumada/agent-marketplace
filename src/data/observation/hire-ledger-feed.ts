@@ -1,5 +1,7 @@
 import { AsyncTtlCache } from "../cache/async-ttl-cache.ts";
 import type {
+  HireActivity,
+  HireActivityCounts,
   HireAddress,
   HireChainId,
   HireJob,
@@ -14,7 +16,8 @@ import type { VerifiedHireEvent, VerifiedHirePhase } from "../../business/entiti
 import { MarketplaceDataUnavailableError } from "../../business/errors/marketplace-errors.ts";
 import { catalogUrl } from "./catalog-candidate-feed.ts";
 
-// Reads the Worker's Commerce indexer (`/commerce-jobs`, `/commerce-summary`).
+// Reads the Worker's Commerce indexer (`/commerce-jobs`, `/commerce-summary`,
+// `/commerce-activity`).
 // Same posture as the hire-event feed: strict allowlist parsers, a short cache
 // matching the Worker's own, and nothing partial ever renders as on-chain
 // state. Lists and the summary answer null on any failure; the single-job
@@ -24,6 +27,9 @@ import { catalogUrl } from "./catalog-candidate-feed.ts";
 // Clock read through the global so tests can drive it with fake timers.
 const cache = new AsyncTtlCache(() => Date.now());
 const CACHE_TTL_MS = 30_000;
+// The activity window is served by the Worker with a 60 s window of its own.
+const ACTIVITY_TTL_MS = 60_000;
+const MAX_ACTIVITY_DAYS = 90;
 const MISS_TTL_MS = 10_000;
 const MAX_MISSES = 256;
 const misses = new Map<string, number>();
@@ -35,6 +41,7 @@ const AGENT_ID = /^[1-9]\d{0,19}$/;
 const JOB_ID = /^(?:0|[1-9]\d{0,15})$/;
 const BLOCK_NUMBER = /^\d{1,20}$/;
 const DECIMAL = /^\d{1,78}$/;
+const UTC_DAY = /^\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])$/;
 
 type Env = Readonly<Record<string, string | undefined>>;
 
@@ -201,6 +208,45 @@ export function parseHireLedgerSummary(value: unknown, chain: HireChainId): Hire
   };
 }
 
+function activityDays(value: unknown): number {
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 1 || value > MAX_ACTIVITY_DAYS) invalid();
+  return value;
+}
+
+// Exactly the five phases, each a non-negative integer; an unknown phase is a
+// contract drift, not something to pass through.
+function activityCounts(entry: unknown): HireActivityCounts {
+  const value = record(entry);
+  for (const key of Object.keys(value)) {
+    if (!PHASES.includes(key as VerifiedHirePhase)) invalid();
+  }
+  const result = {} as HireActivityCounts;
+  for (const phase of PHASES) {
+    const count = value[phase];
+    if (typeof count !== "number" || !Number.isSafeInteger(count) || count < 0) invalid();
+    result[phase] = count;
+  }
+  return result;
+}
+
+export function parseHireActivity(value: unknown, chain: HireChainId): HireActivity {
+  const data = record(value);
+  if (data.schemaVersion !== 1 || !Array.isArray(data.byDay)) invalid();
+  if (typeof data.from !== "number" || typeof data.to !== "number" || data.from > data.to) invalid();
+  return {
+    chainId: chainId(data.chainId, chain),
+    days: activityDays(data.days),
+    from: timestamp(data.from),
+    to: timestamp(data.to),
+    byDay: data.byDay.map((entry) => {
+      const { day, ...counts } = record(entry);
+      if (typeof day !== "string" || !UTC_DAY.test(day)) invalid();
+      return { day, ...activityCounts(counts) };
+    }),
+    totals: activityCounts(data.totals),
+  };
+}
+
 class HireLedgerMissError extends Error {
   constructor() {
     super("HIRE_LEDGER_NOT_FOUND");
@@ -223,8 +269,8 @@ function rememberMiss(key: string): void {
 
 // Successful reads are cached for the Worker's own window; failures are not,
 // so the next call retries. A 404 surfaces as HireLedgerMissError.
-async function read<T>(key: string, url: URL, parse: (value: unknown) => T): Promise<T> {
-  return cache.get(key, CACHE_TTL_MS, async () => {
+async function read<T>(key: string, url: URL, parse: (value: unknown) => T, ttlMs = CACHE_TTL_MS): Promise<T> {
+  return cache.get(key, ttlMs, async () => {
     const response = await fetch(url, {
       cache: "no-store",
       headers: { accept: "application/json" },
@@ -236,9 +282,9 @@ async function read<T>(key: string, url: URL, parse: (value: unknown) => T): Pro
   });
 }
 
-async function readOrNull<T>(key: string, url: URL, parse: (value: unknown) => T): Promise<T | null> {
+async function readOrNull<T>(key: string, url: URL, parse: (value: unknown) => T, ttlMs = CACHE_TTL_MS): Promise<T | null> {
   try {
-    return await read(key, url, parse);
+    return await read(key, url, parse, ttlMs);
   } catch {
     return null;
   }
@@ -302,4 +348,27 @@ export async function getHireLedgerSummary(input: { chainId: HireChainId; env?: 
   if (!url) return null;
   url.searchParams.set("chainId", String(input.chainId));
   return readOrNull(`commerce-summary:${url}`, url, (value) => parseHireLedgerSummary(value, input.chainId));
+}
+
+// Phase events per UTC day over the trailing window (the Worker defaults to
+// 30 days). At most one identity filter, like the job list; every failure,
+// including an unconfigured origin, answers null.
+export async function getHireActivity(input: {
+  chainId: HireChainId;
+  days?: number;
+  provider?: HireAddress;
+  agentId?: string;
+  env?: Env;
+}): Promise<HireActivity | null> {
+  if (input.provider !== undefined && input.agentId !== undefined) return null;
+  if (input.provider !== undefined && !ADDRESS.test(input.provider)) return null;
+  if (input.agentId !== undefined && !AGENT_ID.test(input.agentId)) return null;
+  if (input.days !== undefined && (!Number.isSafeInteger(input.days) || input.days < 1 || input.days > MAX_ACTIVITY_DAYS)) return null;
+  const url = catalogUrl("/commerce-activity", input.env ?? process.env);
+  if (!url) return null;
+  url.searchParams.set("chainId", String(input.chainId));
+  if (input.days !== undefined) url.searchParams.set("days", String(input.days));
+  if (input.provider !== undefined) url.searchParams.set("provider", input.provider);
+  if (input.agentId !== undefined) url.searchParams.set("agentId", input.agentId);
+  return readOrNull(`commerce-activity:${url}`, url, (value) => parseHireActivity(value, input.chainId), ACTIVITY_TTL_MS);
 }

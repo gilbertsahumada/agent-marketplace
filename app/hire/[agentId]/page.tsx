@@ -49,6 +49,7 @@ export default async function HirePage({ params }: { params: Promise<{ agentId: 
       catalogCandidate={catalogCandidate}
       hireFlow={hireFlow}
       hireFlowAvailable={selectedConfig !== null}
+      hireActivity={hireJobs?.activity ?? null}
       hireJobs={hireJobs?.jobs ?? null}
       hireJobsMore={hireJobs !== null && hireJobs.nextBefore !== null}
       hireJobsScope={hireJobs?.scope ?? "agent"}

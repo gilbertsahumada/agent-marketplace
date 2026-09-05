@@ -11,6 +11,8 @@ export const metadata: Metadata = {
 
 export const dynamic = "force-dynamic";
 
+const ACTIVITY_DAYS = 30;
+
 // Same input rules as /api/marketplace/jobs: a chainId other than 56/97 is a
 // missing page, not Mainnet; a cursor that is not a positive job id is ignored.
 function chainIdParameter(value: string | string[] | undefined): HireChainId {
@@ -34,14 +36,19 @@ export default async function JobsPage({ searchParams }: { searchParams: Promise
   const provider = providerParameter(params.provider);
   const before = typeof params.before === "string" && /^[1-9]\d{0,15}$/.test(params.before) ? params.before : undefined;
   const cursor = before === undefined ? {} : { before };
-  const [summary, page] = await Promise.all([
+  const scope = provider === undefined ? {} : { provider };
+  const [summary, page, activity] = await Promise.all([
     getHireLedger.summary({ chainId }),
     provider === undefined
       ? getHireLedger.listRecentJobs({ chainId, ...cursor })
       : getHireLedger.listJobsByProvider({ chainId, provider, ...cursor }),
+    // The activity window follows the provider scope of the list, not the
+    // cursor: it is always the trailing 30 days.
+    getHireLedger.activity({ chainId, days: ACTIVITY_DAYS, ...scope }),
   ]);
   return (
     <HireLedgerPage
+      activity={activity}
       chainId={chainId}
       page={page}
       summary={summary}

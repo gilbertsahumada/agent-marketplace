@@ -264,6 +264,7 @@ export const commerceJobEvents = sqliteTable(
   (table) => [
     uniqueIndex("commerce_job_events_log").on(table.chainId, table.txHash, table.logIndex),
     index("idx_commerce_job_events_job").on(table.chainId, table.jobId, table.blockNumber),
+    index("idx_commerce_job_events_time").on(table.chainId, table.blockTimestamp),
     check("commerce_job_events_chain", sql`${table.chainId} IN (56, 97)`),
     check("commerce_job_events_job", sql`${table.jobId} >= 0`),
     check(

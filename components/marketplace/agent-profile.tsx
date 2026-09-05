@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import type { MarketplaceAgent } from "@/src/business/entities/marketplace-agent";
 import type { AgentEvidencePassport } from "@/src/business/entities/evidence-passport";
 import type { MainnetJobProof } from "@/src/business/entities/mainnet-job-proof";
-import type { HireAddress, HireJob } from "@/src/business/entities/hire-job";
+import type { HireActivity, HireAddress, HireJob } from "@/src/business/entities/hire-job";
 import { Badge } from "@/components/ui/badge";
 import { Breadcrumb } from "./page-primitives";
 import { AgentAvatar } from "./agent-avatar";
@@ -45,8 +45,11 @@ const INDEXED_CLARIFIER = "Indexed activity is on-chain state; only proven count
 // the agent as activity, never as proof of the deliverable. A job that is both
 // proven and indexed is counted once, under "proven". `hireJobs === null` means
 // the ledger could not be read; `[]` means it answered with no jobs.
-function HireActivity({ hireActivity, jobs, hireJobs, hireJobsMore, hireJobsScope, providerWallet }: {
-  hireActivity: AgentEvidencePassport["checks"]["hireActivity"];
+function HireActivitySection({ verifiedHire, activity, jobs, hireJobs, hireJobsMore, hireJobsScope, providerWallet }: {
+  verifiedHire: AgentEvidencePassport["checks"]["hireActivity"];
+  // Trailing 30-day window of phase events in the same scope as hireJobs;
+  // null when the window was not read, in which case nothing is shown.
+  activity: HireActivity | null;
   jobs: readonly MainnetJobProof[];
   hireJobs: readonly HireJob[] | null;
   hireJobsMore: boolean;
@@ -64,9 +67,16 @@ function HireActivity({ hireActivity, jobs, hireJobs, hireJobsMore, hireJobsScop
   return (
     <section aria-labelledby="erc8183-history" className="mt-8 rounded-xl border border-white/10 bg-white/[0.015]">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 px-4 py-4 sm:px-5">
-        <h2 className="flex items-center gap-2 text-base font-medium text-white" id="erc8183-history">
-          <BriefcaseBusiness aria-hidden="true" className="size-4 text-zinc-500" />Hire activity
-        </h2>
+        <div>
+          <h2 className="flex items-center gap-2 text-base font-medium text-white" id="erc8183-history">
+            <BriefcaseBusiness aria-hidden="true" className="size-4 text-zinc-500" />Hire activity
+          </h2>
+          {activity !== null ? (
+            <p className="mt-1 text-xs text-zinc-500">
+              {`Last ${activity.days} days: ${activity.totals.created.toLocaleString("en")} created · ${activity.totals.settled.toLocaleString("en")} settled`}
+            </p>
+          ) : null}
+        </div>
         <div className="flex flex-wrap gap-2">
           <Badge variant="outline">{jobs.length} proven</Badge>
           {ledgerUnavailable ? null : (
@@ -77,11 +87,11 @@ function HireActivity({ hireActivity, jobs, hireJobs, hireJobsMore, hireJobsScop
           )}
         </div>
       </div>
-      {hireActivity.status === "verified" ? (
+      {verifiedHire.status === "verified" ? (
         <dl className="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-b border-white/10 px-4 py-3 text-sm sm:px-5">
           <dt className="text-zinc-500">Verified hire activity</dt>
-          <dd className="min-w-0 break-all text-zinc-300">{hireActivity.detail}</dd>
-          {hireActivity.observedAt ? <dd className="text-zinc-500">{utcDate(hireActivity.observedAt)}</dd> : null}
+          <dd className="min-w-0 break-all text-zinc-300">{verifiedHire.detail}</dd>
+          {verifiedHire.observedAt ? <dd className="text-zinc-500">{utcDate(verifiedHire.observedAt)}</dd> : null}
         </dl>
       ) : null}
       {ordered.length === 0 && indexed.length === 0 && !ledgerUnavailable ? (
@@ -144,6 +154,7 @@ export function AgentProfile({
   hireJobs = null,
   hireJobsMore = false,
   hireJobsScope = "agent",
+  hireActivity = null,
 }: {
   agent: MarketplaceAgent;
   passport: AgentEvidencePassport;
@@ -158,6 +169,8 @@ export function AgentProfile({
   hireJobsMore?: boolean;
   // how the ledger was queried: by provider wallet or by agent id.
   hireJobsScope?: HireJobsScope;
+  // last 30 days of phase events in that scope; null or absent hides the line.
+  hireActivity?: HireActivity | null;
 }) {
   const displayName = marketplaceAgentDisplayName(agent.name);
   const current = catalogCandidate ? catalogCandidateCard(catalogCandidate) : null;
@@ -285,13 +298,14 @@ export function AgentProfile({
         {hireFlow ? <section className="scroll-mt-6" id="hire-flow">{hireFlow}</section> : <HiringUnavailable model={journey} notice={hireNotice} validationAvailable={canCheckAvailability} />}
       </div>
 
-      <HireActivity
-        hireActivity={passport.checks.hireActivity}
+      <HireActivitySection
+        activity={hireActivity}
         hireJobs={hireJobs}
         hireJobsMore={hireJobsMore}
         hireJobsScope={hireJobsScope}
         jobs={jobProofs}
         providerWallet={hireJobsMore && hireJobsScope === "wallet" ? providerWallet(agent) : null}
+        verifiedHire={passport.checks.hireActivity}
       />
     </main>
   );

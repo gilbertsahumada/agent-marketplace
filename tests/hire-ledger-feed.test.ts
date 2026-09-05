@@ -1,8 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  getHireActivity,
   getHireJob,
   getHireJobs,
   getHireLedgerSummary,
+  parseHireActivity,
   parseHireJobDetail,
   parseHireJobPage,
   parseHireLedgerSummary,
@@ -49,6 +51,21 @@ function summary(overrides: Record<string, unknown> = {}) {
     protocol: { jobs: 10, byStatus },
     marketplace: { jobs: 1, byStatus: { ...byStatus, OPEN: 0, FUNDED: 1, SUBMITTED: 0, COMPLETED: 0 } },
     lastIndexRun: { status: "ok", at: NOW },
+    ...overrides,
+  };
+}
+
+const ZERO_PHASES = { created: 0, funded: 0, submitted: 0, settled: 0, refunded: 0 };
+const DAY_MS = 86_400_000;
+
+function activity(overrides: Record<string, unknown> = {}) {
+  return {
+    schemaVersion: 1, chainId: 56, days: 30, from: NOW - 30 * DAY_MS, to: NOW,
+    byDay: [
+      { day: "2026-08-30", ...ZERO_PHASES, created: 2, funded: 1 },
+      { day: "2026-08-31", ...ZERO_PHASES, settled: 1 },
+    ],
+    totals: { ...ZERO_PHASES, created: 2, funded: 1, settled: 1 },
     ...overrides,
   };
 }
@@ -112,6 +129,77 @@ describe("hire ledger feed", () => {
     });
     expect(parseHireLedgerSummary(summary({ indexedThrough: null, lastIndexRun: null }), 56)).toMatchObject({ indexedThrough: null, lastIndexRun: null });
     expect(() => parseHireLedgerSummary(summary({ protocol: { jobs: 1, byStatus: { OPEN: 1 } } }), 56)).toThrow("HIRE_LEDGER_FEED_INVALID");
+  });
+
+  it("parses the activity window, converts its bounds to ISO and drops unknown fields", () => {
+    expect(parseHireActivity(activity({ extra: "dropped" }), 56)).toEqual({
+      chainId: 56,
+      days: 30,
+      from: new Date(NOW - 30 * DAY_MS).toISOString(),
+      to: new Date(NOW).toISOString(),
+      byDay: [
+        { day: "2026-08-30", created: 2, funded: 1, submitted: 0, settled: 0, refunded: 0 },
+        { day: "2026-08-31", created: 0, funded: 0, submitted: 0, settled: 1, refunded: 0 },
+      ],
+      totals: { created: 2, funded: 1, submitted: 0, settled: 1, refunded: 0 },
+    });
+    expect(parseHireActivity(activity({ byDay: [] }), 56).byDay).toEqual([]);
+  });
+
+  it.each<[string, unknown]>([
+    ["schema", activity({ schemaVersion: 2 })],
+    ["chain", activity({ chainId: 97 })],
+    ["days below range", activity({ days: 0 })],
+    ["days above range", activity({ days: 91 })],
+    ["fractional days", activity({ days: 7.5 })],
+    ["bounds", activity({ from: NOW, to: NOW - DAY_MS })],
+    ["byDay", activity({ byDay: null })],
+    ["day string", activity({ byDay: [{ day: "2026-8-30", ...ZERO_PHASES }] })],
+    ["day string with time", activity({ byDay: [{ day: "2026-08-30T00:00:00Z", ...ZERO_PHASES }] })],
+    ["negative count", activity({ totals: { ...ZERO_PHASES, created: -1 } })],
+    ["fractional count", activity({ totals: { ...ZERO_PHASES, created: 1.5 } })],
+    ["string count", activity({ totals: { ...ZERO_PHASES, created: "1" } })],
+    ["missing phase", activity({ totals: { created: 1, funded: 0, submitted: 0, settled: 0 } })],
+    ["unknown phase", activity({ totals: { ...ZERO_PHASES, clicked: 1 } })],
+    ["unknown phase per day", activity({ byDay: [{ day: "2026-08-30", ...ZERO_PHASES, disputed: 1 }] })],
+  ])("rejects malformed activity (%s) instead of returning partial counts", (_label, value) => {
+    expect(() => parseHireActivity(value, 56)).toThrow("HIRE_LEDGER_FEED_INVALID");
+  });
+
+  it("builds the activity URL per scope and refuses bad input before any request", async () => {
+    const requested: string[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      requested.push(String(input));
+      return Response.json(activity());
+    }));
+    await expect(getHireActivity({ chainId: 56, env: ENV })).resolves.toMatchObject({ totals: { created: 2 } });
+    await expect(getHireActivity({ chainId: 56, days: 7, provider: SELLER, env: ENV })).resolves.toMatchObject({ days: 30 });
+    await expect(getHireActivity({ chainId: 56, days: 90, agentId: "303779", env: ENV })).resolves.toMatchObject({ chainId: 56 });
+    expect(requested).toEqual([
+      "https://probe.example.workers.dev/commerce-activity?chainId=56",
+      `https://probe.example.workers.dev/commerce-activity?chainId=56&days=7&provider=${SELLER}`,
+      "https://probe.example.workers.dev/commerce-activity?chainId=56&days=90&agentId=303779",
+    ]);
+    await expect(getHireActivity({ chainId: 56, provider: SELLER, agentId: "303779", env: ENV })).resolves.toBeNull();
+    await expect(getHireActivity({ chainId: 56, provider: "0x12" as never, env: ENV })).resolves.toBeNull();
+    await expect(getHireActivity({ chainId: 56, agentId: "0", env: ENV })).resolves.toBeNull();
+    await expect(getHireActivity({ chainId: 56, days: 0, env: ENV })).resolves.toBeNull();
+    await expect(getHireActivity({ chainId: 56, days: 91, env: ENV })).resolves.toBeNull();
+    await expect(getHireActivity({ chainId: 56, days: 1.5, env: ENV })).resolves.toBeNull();
+    expect(requested).toHaveLength(3);
+  });
+
+  it.each<[string, () => Promise<Response>, Record<string, string | undefined>]>([
+    ["missing origin", async () => Response.json(activity()), {}],
+    ["non-https origin", async () => Response.json(activity()), { OBSERVATIONS_URL: "http://probe.example/observations" }],
+    ["upstream failure", async () => new Response(null, { status: 503 }), ENV],
+    ["not found", async () => new Response(null, { status: 404 }), ENV],
+    ["malformed payload", async () => Response.json({ schemaVersion: 1 }), ENV],
+    ["wrong chain", async () => Response.json(activity({ chainId: 56 })), ENV],
+    ["transport error", async () => { throw new Error("offline"); }, ENV],
+  ])("activity fails closed to null on %s", async (_label, response, env) => {
+    vi.stubGlobal("fetch", vi.fn(response));
+    await expect(getHireActivity({ chainId: 97, env })).resolves.toBeNull();
   });
 
   it("builds the three Worker URLs and refuses two identity filters before any request", async () => {
@@ -192,6 +280,29 @@ describe("hire ledger feed cache", () => {
     expect(fetchMock.mock.calls[0]?.[1]?.signal).toBeInstanceOf(AbortSignal);
     vi.advanceTimersByTime(30_001);
     await getHireJobs({ chainId: 56, before: "30001", env: ENV });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("serves a repeat activity read within 60 s from cache, longer than the 30 s job window", async () => {
+    const fetchMock = vi.fn<typeof fetch>(async () => Response.json(activity()));
+    vi.stubGlobal("fetch", fetchMock);
+    await getHireActivity({ chainId: 56, days: 60, env: ENV });
+    vi.advanceTimersByTime(30_001);
+    await getHireActivity({ chainId: 56, days: 60, env: ENV });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0]?.[1]?.signal).toBeInstanceOf(AbortSignal);
+    vi.advanceTimersByTime(30_000);
+    await getHireActivity({ chainId: 56, days: 60, env: ENV });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not cache an activity failure: the next call refetches", async () => {
+    const fetchMock = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response(null, { status: 503 }))
+      .mockResolvedValueOnce(Response.json(activity()));
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(getHireActivity({ chainId: 56, days: 61, env: ENV })).resolves.toBeNull();
+    await expect(getHireActivity({ chainId: 56, days: 61, env: ENV })).resolves.toMatchObject({ days: 30 });
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 

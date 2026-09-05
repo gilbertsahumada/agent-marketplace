@@ -132,14 +132,20 @@ const INDEXED_JOB = {
   expiresAt: "2026-09-03T12:00:00.000Z", submittedAt: null, marketplace: true, updatedAt: "2026-09-03T12:00:00.000Z",
 };
 
+const ACTIVITY = {
+  chainId: 56 as const, days: 30, from: "2026-08-04T12:00:00.000Z", to: "2026-09-03T12:00:00.000Z",
+  byDay: [{ day: "2026-09-01", created: 1, funded: 1, submitted: 0, settled: 0, refunded: 0 }],
+  totals: { created: 1, funded: 1, submitted: 0, settled: 0, refunded: 0 },
+};
+
 describe("hire page normalized commerce gate", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     executeConfig.mockReturnValue({ agentId: 303779 });
-    executeHireJobs.mockResolvedValue({ jobs: [INDEXED_JOB], nextBefore: "56600", scope: "wallet" });
+    executeHireJobs.mockResolvedValue({ jobs: [INDEXED_JOB], nextBefore: "56600", scope: "wallet", activity: ACTIVITY });
   });
 
-  it("hands the indexed ledger page, its cursor and its scope to the profile", async () => {
+  it("hands the indexed ledger page, its cursor, its scope and its activity window to the profile", async () => {
     await render(state());
 
     expect(executeHireJobs).toHaveBeenCalledWith({ agent: expect.objectContaining({ agentId: "303779" }) });
@@ -147,6 +153,18 @@ describe("hire page normalized commerce gate", () => {
       hireJobs: [expect.objectContaining({ jobId: "56696" })],
       hireJobsMore: true,
       hireJobsScope: "wallet",
+      hireActivity: ACTIVITY,
+    }));
+  });
+
+  it("passes a missing activity window as null without hiding the jobs", async () => {
+    executeHireJobs.mockResolvedValue({ jobs: [INDEXED_JOB], nextBefore: null, scope: "wallet", activity: null });
+
+    await render(state());
+
+    expect(profileProps).toHaveBeenCalledWith(expect.objectContaining({
+      hireJobs: [expect.objectContaining({ jobId: "56696" })],
+      hireActivity: null,
     }));
   });
 
@@ -155,7 +173,7 @@ describe("hire page normalized commerce gate", () => {
 
     await render(state());
 
-    expect(profileProps).toHaveBeenCalledWith(expect.objectContaining({ hireJobs: null, hireJobsMore: false, hireJobsScope: "agent" }));
+    expect(profileProps).toHaveBeenCalledWith(expect.objectContaining({ hireJobs: null, hireJobsMore: false, hireJobsScope: "agent", hireActivity: null }));
   });
 
   it("redirects the former profile route to the canonical hire journey", async () => {

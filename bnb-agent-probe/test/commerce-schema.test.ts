@@ -67,6 +67,19 @@ describe("Commerce index schema", () => {
     expect(is(model?.config.columns[2], SQL)).toBe(true);
   });
 
+  it("indexes the event ledger by chain and block time for the per-day activity window (migration 0023)", () => {
+    const db = migratedDatabase();
+    const columns = db.prepare("PRAGMA index_info(idx_commerce_job_events_time)").all() as Array<{ seqno: number; name: string }>;
+    expect(columns.map((column) => column.name)).toEqual(["chainId", "blockTimestamp"]);
+    const created = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'index' AND name = ?")
+      .get("idx_commerce_job_events_time") as { sql: string };
+    expect(created.sql.replaceAll(/\s+/g, " ")).toBe("CREATE INDEX idx_commerce_job_events_time ON commerce_job_events (chainId, blockTimestamp)");
+    db.close();
+
+    const model = getTableConfig(commerceJobEvents).indexes.find((index) => index.config.name === "idx_commerce_job_events_time");
+    expect(model?.config.columns.map((column) => (is(column, Column) ? column.name : undefined))).toEqual(["chainId", "blockTimestamp"]);
+  });
+
   it("documents the rollback order for the deployer: triggers, then indexes, then tables", () => {
     const header = migration.slice(0, migration.indexOf("CREATE TABLE"));
     expect(header).toMatch(/[Rr]ollback/);

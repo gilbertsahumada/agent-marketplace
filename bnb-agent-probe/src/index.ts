@@ -316,6 +316,13 @@ export function createWorker(dependencies: WorkerDependencies = {}): WorkerEntry
           commerceSummaryResponse(request, env.DB)
         ));
       }
+      if (request.method === "GET" && url.pathname === "/commerce-activity") {
+        const { commerceActivityResponse } = await import("./routes/commerce-jobs");
+        // Day buckets move slowly; a minute matches the route's own max-age.
+        return cachedCatalogResponse(request, config.catalogResponseCacheSeconds > 0 ? 60 : 0, () => (
+          commerceActivityResponse(request, env.DB, now())
+        ));
+      }
       if (request.method === "GET" && url.pathname === "/hire-events") {
         const { hireEventsListResponse } = await import("./routes/hire-events");
         // Short fixed window: verified hire history changes rarely, but the
