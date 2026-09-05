@@ -13,8 +13,10 @@ export interface InputSchema {
   pattern?: string;
   enum?: Array<string | number | boolean>;
   const?: string | number | boolean;
+  examples?: unknown[];
 }
 export interface NegotiationContract {
+  capabilityProbeParameters?: Record<string, unknown>;
   encoding: "prefixed-json" | "request";
   inputSchema: InputSchema;
   taskDescriptionPrefix?: string;
@@ -65,20 +67,31 @@ function schema(value: unknown, depth = 0, budget = { fields: 0 }): InputSchema 
     if (key === "enum") result.enum = values;
     else result.const = values[0];
   }
+  if (Array.isArray(value.examples)) {
+    const examples = value.examples.slice(0, 3).filter(example => validateParameters(result, example));
+    if (examples.length) result.examples = examples;
+  }
   return result;
 }
 export function normalizeNegotiationContract(value: unknown): NegotiationContract {
   if (!record(value)) return fail();
   const inputSchema = schema(value.inputSchema);
   if (inputSchema.type !== "object") return fail();
+  const sample = value.capabilityProbeParameters;
+  if (sample !== undefined && (!record(sample) || !validateParameters(inputSchema, sample))) return fail();
+  const probe = sample === undefined ? {} : { capabilityProbeParameters: sample as Record<string, unknown> };
   if (value.encoding === "request") {
     if (inputSchema.properties?.task_description?.type !== "string" || inputSchema.properties?.terms?.type !== "object"
       || !["task_description", "terms"].every(key => inputSchema.required?.includes(key))
       || Object.keys(inputSchema.properties).some(key => !["task_description", "terms"].includes(key))) return fail();
-    return { encoding: "request", inputSchema };
+    const contract: NegotiationContract = { encoding: "request", inputSchema, ...probe };
+    if (contract.capabilityProbeParameters) buildContractRequest(contract, contract.capabilityProbeParameters);
+    return contract;
   }
   if (typeof value.taskDescriptionPrefix !== "string" || !/^[A-Z][A-Z0-9_]{0,63}:$/.test(value.taskDescriptionPrefix) || !validTerms(value.terms)) return fail();
-  return { encoding: "prefixed-json", inputSchema, taskDescriptionPrefix: value.taskDescriptionPrefix, terms: value.terms };
+  const contract: NegotiationContract = { encoding: "prefixed-json", inputSchema, taskDescriptionPrefix: value.taskDescriptionPrefix, terms: value.terms, ...probe };
+  if (contract.capabilityProbeParameters) buildContractRequest(contract, contract.capabilityProbeParameters);
+  return contract;
 }
 function validTerms(value: unknown): value is Record<string, unknown> {
   return record(value) && Object.keys(value).sort().join(",") === "deliverables,evaluation_required,evaluator_type,quality_standards"
