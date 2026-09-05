@@ -3,11 +3,13 @@ import { and, eq, inArray, isNull, lte, or, sql } from "drizzle-orm";
 import { createDatabase, type CatalogSellerCapabilityRow } from "../db/orm";
 import { catalogAgentEndpoints, catalogAgents, catalogEndpoints, catalogQuoteAttempts, catalogQuoteRequests, catalogSellerCapabilities } from "../db/schema";
 import type { D1DatabaseLike } from "../db/client";
-import { buildReadinessProbeRequest, PROBE_CATEGORIES, type ProbeCategory } from "../lib/terms";
-import { probeA2aSeller, probeErc8183HttpSeller, probeMcpSeller, SellerProbeError } from "../lib/seller-client";
+import { discoverNegotiationInput, probeA2aSeller, probeErc8183HttpSeller, probeMcpSeller, SellerProbeError } from "../lib/seller-client";
+import { NegotiationRequest } from "@bnbagent/sdk/erc8183";
+import { buildContractRequest } from "../../../src/shared/negotiation-input";
+import { recordCompatibility, COMPATIBILITY_TTL_MS } from "../catalog/compatibility";
 import type { Env, QueueProducer } from "../types";
 import type { WorkerConfig } from "../config";
-import { persistQuoteResult, readContext, targetFor } from "../routes/catalog-quotes";
+import { persistQuoteResult, readContext, targetFor, sha256 } from "../routes/catalog-quotes";
 
 const CLAIM_LEASE_MS = 5 * 60 * 1_000;
 const AGENT_KEY = /^eip155:56:[1-9]\d{0,19}$/;
@@ -48,15 +50,6 @@ function errorCode(error: unknown): string {
   return "SELLER_UNREACHABLE";
 }
 
-function probeCategory(categoriesJson: string): ProbeCategory | null {
-  try {
-    const values: unknown = JSON.parse(categoriesJson);
-    return Array.isArray(values)
-      ? PROBE_CATEGORIES.find((category) => values.includes(category)) ?? null
-      : null;
-  } catch { return null; }
-}
-
 function capabilityPayload(row: Pick<CatalogSellerCapabilityRow, "agentKey" | "endpointKey">, enqueuedAt: number): CatalogCapabilityWork {
   return {
     schemaVersion: 2,
@@ -75,12 +68,20 @@ function capabilityPayload(row: Pick<CatalogSellerCapabilityRow, "agentKey" | "e
 export async function enqueueDueCatalogCapabilities(
   dbBinding: D1DatabaseLike,
   queue: QueueProducer,
-  input: { readonly nowMs: number; readonly limit: number; readonly concurrency?: number },
+  input: { readonly nowMs: number; readonly limit: number; readonly concurrency?: number; readonly bootstrapLimit?: number },
 ): Promise<CatalogCapabilityQueueSummary> {
   if (!Number.isSafeInteger(input.limit) || input.limit < 1) throw new Error("CATALOG_QUOTE_BATCH_SIZE");
   const concurrency = input.concurrency ?? input.limit;
+  const bootstrapLimit = input.bootstrapLimit ?? 0;
+  if (!Number.isSafeInteger(bootstrapLimit) || bootstrapLimit < 0 || bootstrapLimit > 100) throw new Error("CATALOG_COMPATIBILITY_BOOTSTRAP_BATCH_SIZE");
   if (!Number.isSafeInteger(concurrency) || concurrency < 1) throw new Error("CATALOG_QUOTE_CONCURRENCY");
   const db = createDatabase(dbBinding);
+  // Repair stale scheduling markers from earlier discovery runs without
+  // manufacturing new quote evidence or extending its expiry.
+  await db.run(sql`UPDATE catalog_seller_capabilities SET state='ready', updatedAt=${input.nowMs}
+    WHERE state='stale' AND compatibilityState='compatible'
+      AND compatibilityExpiresAt > ${input.nowMs} AND capabilityExpiresAt > ${input.nowMs}
+      AND lastSuccessAt IS NOT NULL AND consecutiveFailures=0 AND lastErrorCode IS NULL`);
   await db.update(catalogSellerCapabilities).set({
     state: "stale",
     nextProbeAt: input.nowMs,
@@ -89,10 +90,11 @@ export async function enqueueDueCatalogCapabilities(
     eq(catalogSellerCapabilities.state, "ready"),
     lte(catalogSellerCapabilities.capabilityExpiresAt, input.nowMs),
   ));
-  const due = await db.select({
+  const selectDue = (bootstrap: boolean | null, window: number) => db.select({
     agentKey: catalogSellerCapabilities.agentKey,
     endpointKey: catalogSellerCapabilities.endpointKey,
     originKey: catalogEndpoints.originKey,
+    compatibilityState: catalogSellerCapabilities.compatibilityState,
   }).from(catalogSellerCapabilities)
     .innerJoin(catalogAgents, eq(catalogAgents.agentKey, catalogSellerCapabilities.agentKey))
     .innerJoin(catalogAgentEndpoints, and(
@@ -106,24 +108,42 @@ export async function enqueueDueCatalogCapabilities(
       eq(catalogEndpoints.eligibility, "eligible"),
     ))
     .where(and(
+      bootstrap === null ? undefined : bootstrap
+        ? eq(catalogSellerCapabilities.compatibilityState, "pending")
+        : sql`${catalogSellerCapabilities.compatibilityState} <> 'pending'`,
       eq(catalogAgents.indexState, "current"),
-      inArray(catalogSellerCapabilities.state, ["discovered", "stale", "failed"]),
+      inArray(catalogSellerCapabilities.state, ["discovered", "ready", "stale", "failed"]),
       or(isNull(catalogSellerCapabilities.nextProbeAt), lte(catalogSellerCapabilities.nextProbeAt, input.nowMs)),
     ))
-    .orderBy(catalogSellerCapabilities.nextProbeAt, catalogSellerCapabilities.updatedAt, catalogSellerCapabilities.agentKey)
-    .limit(input.limit);
+    .orderBy(
+      sql`CASE WHEN ${catalogEndpoints.lastAttemptOutcome} = 'protocol_valid' THEN 0 ELSE 1 END`,
+      sql`CASE WHEN ${catalogSellerCapabilities.transport} = 'erc8183_http' THEN 0 ELSE 1 END`,
+      catalogSellerCapabilities.nextProbeAt, catalogSellerCapabilities.updatedAt, catalogSellerCapabilities.agentKey)
+    // Read beyond the dispatch budget so one shared host cannot consume the
+    // entire candidate window before origin deduplication.
+    .limit(Math.min(1000, window * 10));
+  // Independent candidate windows: retries on reachable hosts must not crowd
+  // first-time discovery out of the bounded SQL result (or vice versa).
+  const due = bootstrapLimit > 0
+    ? (await Promise.all([selectDue(true, bootstrapLimit), selectDue(false, input.limit)])).flat()
+    : await selectDue(null, input.limit);
   // A single origin can host many catalogued agents. Keep one capability
   // probe per origin in a tick and cap the total number of queued probes. The
   // five-minute claim lease prevents a second tick from re-queuing the same
   // endpoint while the queue consumer is still working.
   const selected: typeof due = [];
   const origins = new Set<string>();
+  let bootstrapSelected = 0;
+  let maintenanceSelected = 0;
   for (const row of due) {
+    const bootstrap = bootstrapLimit > 0 && row.compatibilityState === "pending";
+    if (bootstrap ? bootstrapSelected >= bootstrapLimit : maintenanceSelected >= Math.min(input.limit, concurrency)) continue;
     const origin = row.originKey ?? row.endpointKey;
     if (origins.has(origin)) continue;
     origins.add(origin);
     selected.push(row);
-    if (selected.length >= Math.min(input.limit, concurrency)) break;
+    if (bootstrap) bootstrapSelected += 1;
+    else maintenanceSelected += 1;
   }
   let enqueued = 0;
   let skipped = 0;
@@ -134,7 +154,7 @@ export async function enqueueDueCatalogCapabilities(
     }).where(and(
       eq(catalogSellerCapabilities.agentKey, row.agentKey),
       eq(catalogSellerCapabilities.endpointKey, row.endpointKey),
-      inArray(catalogSellerCapabilities.state, ["discovered", "stale", "failed"]),
+      inArray(catalogSellerCapabilities.state, ["discovered", "ready", "stale", "failed"]),
       or(isNull(catalogSellerCapabilities.nextProbeAt), lte(catalogSellerCapabilities.nextProbeAt, input.nowMs)),
     )).returning({ agentKey: catalogSellerCapabilities.agentKey });
     if (claimed.length === 0) {
@@ -220,8 +240,27 @@ export async function runCatalogCapabilityProbe(
   if (!target) {
     return { status: "skipped", agentKey: work.agentKey, endpointKey: work.endpointKey, requestId: null, attemptId: null, errorCode: "NO_QUOTE_TRANSPORT", durationMs: Math.max(0, now() - startedAt) };
   }
-  const template = buildReadinessProbeRequest(probeCategory(target.categoriesJson));
-  const requestObject = template.request.toDict() as Record<string, unknown>;
+  let contract;
+  try {
+    contract = await discoverNegotiationInput({ ...target, request: {}, fetch: dependencies.fetchImpl ?? fetch, timeoutMs: 5000, maxResponseBytes: 32768 });
+    const schemaHash = await sha256(contract);
+    await recordCompatibility(db, target, now(), { schemaHash });
+  } catch (error) {
+    const code = errorCode(error);
+    await recordCompatibility(db, target, now(), { errorCode: code });
+    const failures = capability.consecutiveFailures + 1;
+    const delays = config.catalogFailureBackoffMinutes;
+    const delay = delays[Math.min(failures - 1, delays.length - 1)] ?? 60;
+    await db.update(catalogSellerCapabilities).set({ state: "failed", consecutiveFailures: failures, lastErrorCode: code, nextProbeAt: now() + delay * 60000 }).where(and(eq(catalogSellerCapabilities.agentKey, work.agentKey), eq(catalogSellerCapabilities.endpointKey, work.endpointKey)));
+    return { status: "skipped", agentKey: work.agentKey, endpointKey: work.endpointKey, requestId: null, attemptId: null, errorCode: code, durationMs: Math.max(0, now() - startedAt) };
+  }
+  if (!contract.capabilityProbeParameters) {
+    await db.update(catalogSellerCapabilities).set({ nextProbeAt: now() + COMPATIBILITY_TTL_MS }).where(and(eq(catalogSellerCapabilities.agentKey, work.agentKey), eq(catalogSellerCapabilities.endpointKey, work.endpointKey)));
+    return { status: "skipped", agentKey: work.agentKey, endpointKey: work.endpointKey, requestId: null, attemptId: null, errorCode: "BUYER_INPUT_REQUIRED", durationMs: Math.max(0, now() - startedAt) };
+  }
+  const requestObject = buildContractRequest(contract, contract.capabilityProbeParameters);
+  const negotiation = NegotiationRequest.fromDict(requestObject);
+  const template = { requestHash: negotiation.computeHash().toLowerCase() };
   const requestRows = await db.insert(catalogQuoteRequests).values({
     requestHash: template.requestHash,
     agentKey: target.agentKey,
