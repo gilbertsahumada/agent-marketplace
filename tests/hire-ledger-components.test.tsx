@@ -237,7 +237,7 @@ describe("HireLedgerPage", () => {
     render(createElement(HireLedgerPage, { chainId: 56, summary: summary({ lastIndexRun: { status: "error", at: NOW } }), page: { ...page, nextBefore: null }, before: "56695" }));
 
     expect(screen.getByText(/Last run failed/)).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Indexed jobs before #56695" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: /Indexed jobs before/ })).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Newest jobs" })).toHaveAttribute("href", "/jobs?chainId=56");
   });
 
