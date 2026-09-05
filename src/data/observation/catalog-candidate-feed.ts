@@ -323,7 +323,7 @@ export function parseCatalogCandidatePage(value: unknown): CatalogCandidatePage 
 }
 
 export function catalogUrl(
-  pathname: "/catalog-agents" | "/catalog-agent" | "/hire-events" | "/commerce-jobs" | "/commerce-summary" | `/commerce-jobs/${56 | 97}/${string}`,
+  pathname: "/catalog-agents" | "/catalog-agent" | "/hire-events" | "/commerce-jobs" | "/commerce-summary" | "/job-agent-identities" | `/commerce-jobs/${56 | 97}/${string}`,
   env: Readonly<Record<string, string | undefined>>,
 ): URL | null {
   const observations = env.OBSERVATIONS_URL?.trim();
