@@ -12,7 +12,13 @@ const NAVIGATION_TIMEOUT_MS = 15_000;
 
 const CatalogNavigationContext = createContext<CatalogNavigationValue | null>(null);
 
-export function CatalogNavigationProvider({ children, navigationKey }: { children: ReactNode; navigationKey: string }) {
+export function catalogScopedHref(href: string, scope?: "hiring" | "evaluation") {
+  const url = new URL(href, "https://marketplace.invalid");
+  if (scope && url.pathname === "/agents" && url.searchParams.get("view") !== "all" && !url.searchParams.has("scope")) url.searchParams.set("scope", scope);
+  return `${url.pathname}${url.search}${url.hash}`;
+}
+
+export function CatalogNavigationProvider({ children, navigationKey, scope }: { children: ReactNode; navigationKey: string; scope?: "hiring" | "evaluation" }) {
   const router = useRouter();
   const [targetHref, setTargetHref] = useState<string | null>(null);
   const [transitionPending, startTransition] = useTransition();
@@ -26,9 +32,10 @@ export function CatalogNavigationProvider({ children, navigationKey }: { childre
   }, [targetHref]);
 
   const navigate = useCallback((href: string, method: "push" | "replace" = "push") => {
-    setTargetHref(href);
-    startTransition(() => router[method](href));
-  }, [router]);
+    const scopedHref = catalogScopedHref(href, scope);
+    setTargetHref(scopedHref);
+    startTransition(() => router[method](scopedHref));
+  }, [router, scope]);
 
   const value = useMemo<CatalogNavigationValue>(() => ({
     navigate,
