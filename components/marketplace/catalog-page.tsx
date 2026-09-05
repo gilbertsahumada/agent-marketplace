@@ -20,16 +20,7 @@ import { CatalogQuickFilters } from "./catalog-quick-filters";
 import { CatalogSearch } from "./catalog-search";
 import { CatalogReturnRefresh } from "./catalog-return-refresh";
 
-function CatalogMetric({ label, value }: { label: string; value: number | undefined }) {
-  return (
-    <div className="min-w-32">
-      <p className="text-xs text-zinc-500">{label}</p>
-      <p className="font-stat mt-1 text-xl font-medium tracking-tight text-white">
-        {typeof value === "number" ? value.toLocaleString("en-US") : "—"}
-      </p>
-    </div>
-  );
-}
+import { CatalogMetric } from "./catalog-metric";
 
 function dataCapturedAt(data: MarketplaceAgentPage | undefined, catalog: CatalogCandidatePage | undefined) {
   const value = catalog ? new Date(catalog.generatedAt) : data?.fetchedAt ? new Date(data.fetchedAt) : null;
