@@ -105,6 +105,11 @@ that ranking; each uses its own dispatch budget. This prevents a window full of
 failed retries from starving never-inspected sellers. A shared per-tick origin
 set and five-minute endpoint claims remain in force. Existing concurrency and
 backoff limits are not increased. Due ready rows are eligible for refresh too.
+The two cohorts alternate priority each scheduler minute so a shared host with
+a large discovery backlog cannot permanently exclude due maintenance.
+Discovery errors update compatibility, not quote outcome. `Quote failed` and
+its facet require an actual failed or rejected negotiation attempt; legacy
+discovery-only failures do not qualify.
 
 Health reports `lastPhaseUpdatedAt`, `lastSchedulerUpdatedAt`,
 `lastSchedulerErrorIsHistorical`, `lastSchedulerErrorStage`, and separates
