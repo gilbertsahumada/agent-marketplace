@@ -124,9 +124,14 @@ export async function enqueueDueCatalogCapabilities(
     .limit(Math.min(1000, window * 10));
   // Independent candidate windows: retries on reachable hosts must not crowd
   // first-time discovery out of the bounded SQL result (or vice versa).
-  const due = bootstrapLimit > 0
-    ? (await Promise.all([selectDue(true, bootstrapLimit), selectDue(false, input.limit)])).flat()
-    : await selectDue(null, input.limit);
+  const cohorts = bootstrapLimit > 0
+    ? await Promise.all([selectDue(true, bootstrapLimit), selectDue(false, input.limit)])
+    : [await selectDue(null, input.limit)];
+  // Share an origin's slot across first-time checks and maintenance instead of
+  // letting a large bootstrap backlog monopolize that host indefinitely.
+  // Rotation is deterministic for the one-minute scheduler and adds no writes.
+  if (bootstrapLimit > 0 && Math.floor(input.nowMs / 60_000) % 2 === 1) cohorts.reverse();
+  const due = cohorts.flat();
   // A single origin can host many catalogued agents. Keep one capability
   // probe per origin in a tick and cap the total number of queued probes. The
   // five-minute claim lease prevents a second tick from re-queuing the same
@@ -251,7 +256,9 @@ export async function runCatalogCapabilityProbe(
     const failures = capability.consecutiveFailures + 1;
     const delays = config.catalogFailureBackoffMinutes;
     const delay = delays[Math.min(failures - 1, delays.length - 1)] ?? 60;
-    await db.update(catalogSellerCapabilities).set({ state: "failed", consecutiveFailures: failures, lastErrorCode: code, nextProbeAt: now() + delay * 60000 }).where(and(eq(catalogSellerCapabilities.agentKey, work.agentKey), eq(catalogSellerCapabilities.endpointKey, work.endpointKey)));
+    // Requirements discovery is not a quote attempt. recordCompatibility owns
+    // its error; preserve the independent signed-quote state and last error.
+    await db.update(catalogSellerCapabilities).set({ consecutiveFailures: failures, nextProbeAt: now() + delay * 60000 }).where(and(eq(catalogSellerCapabilities.agentKey, work.agentKey), eq(catalogSellerCapabilities.endpointKey, work.endpointKey)));
     return { status: "skipped", agentKey: work.agentKey, endpointKey: work.endpointKey, requestId: null, attemptId: null, errorCode: code, durationMs: Math.max(0, now() - startedAt) };
   }
   if (!contract.capabilityProbeParameters) {
