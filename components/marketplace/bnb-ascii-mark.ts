@@ -80,6 +80,10 @@ function covered(px: number, py: number): boolean {
   return inside;
 }
 
+const SYMBOL_CENTER_X = (SYMBOL_BOUNDS.left + SYMBOL_BOUNDS.right) / 2;
+// Below this |cos| the symbol is seen edge-on and draws nothing.
+const EDGE_ON = 0.04;
+
 export interface AsciiMarkOptions {
   /** Character columns across the symbol. */
   columns: number;
@@ -89,23 +93,40 @@ export interface AsciiMarkOptions {
   ramp?: string;
   /** Samples per cell edge; coverage is measured over supersample² points. */
   supersample?: number;
+  /**
+   * Rotation about the symbol's vertical axis, in radians: the outline is
+   * foreshortened to cos(rotationY) of its width, which reads as a coin
+   * turning. The symbol is mirror-symmetric, so the back face equals the front.
+   */
+  rotationY?: number;
 }
 
-export function rasterizeAsciiMark({ columns, cellAspect = 0.65, ramp = " .:-=+*#", supersample = 6 }: AsciiMarkOptions): readonly string[] {
+export function asciiMarkRows(columns: number, cellAspect = 0.65): number {
   const width = SYMBOL_BOUNDS.right - SYMBOL_BOUNDS.left;
   const height = SYMBOL_BOUNDS.bottom - SYMBOL_BOUNDS.top;
-  const rows = Math.round(columns * cellAspect * (height / width));
+  return Math.round(columns * cellAspect * (height / width));
+}
+
+export function rasterizeAsciiMark({ columns, cellAspect = 0.65, ramp = " .:-=+*#", supersample = 6, rotationY = 0 }: AsciiMarkOptions): readonly string[] {
+  const width = SYMBOL_BOUNDS.right - SYMBOL_BOUNDS.left;
+  const height = SYMBOL_BOUNDS.bottom - SYMBOL_BOUNDS.top;
+  const rows = asciiMarkRows(columns, cellAspect);
+  const foreshorten = Math.cos(rotationY);
   const lines: string[] = [];
 
   for (let row = 0; row < rows; row += 1) {
     let line = "";
     for (let column = 0; column < columns; column += 1) {
       let hits = 0;
-      for (let a = 0; a < supersample; a += 1) {
-        for (let b = 0; b < supersample; b += 1) {
-          const px = SYMBOL_BOUNDS.left + ((column + (a + 0.5) / supersample) / columns) * width;
-          const py = SYMBOL_BOUNDS.top + ((row + (b + 0.5) / supersample) / rows) * height;
-          if (covered(px, py)) hits += 1;
+      if (Math.abs(foreshorten) >= EDGE_ON) {
+        for (let a = 0; a < supersample; a += 1) {
+          for (let b = 0; b < supersample; b += 1) {
+            const px = SYMBOL_BOUNDS.left + ((column + (a + 0.5) / supersample) / columns) * width;
+            const py = SYMBOL_BOUNDS.top + ((row + (b + 0.5) / supersample) / rows) * height;
+            // Inverse of the foreshortening: which source column projects here.
+            const sourceX = SYMBOL_CENTER_X + (px - SYMBOL_CENTER_X) / foreshorten;
+            if (covered(sourceX, py)) hits += 1;
+          }
         }
       }
       const coverage = hits / (supersample * supersample);

@@ -1475,6 +1475,7 @@ describe("marketplace presentation rules", () => {
       ledgerPulse: {
         network: "ERC-8183 Commerce · BSC Mainnet",
         jobsIndexed: "56,716",
+        jobsIndexedCount: 56716,
         processedHere: "1",
         indexedThrough: { blockNumber: "120,146,010", ago: "12s ago" },
         window: { days: 7, created: "1,048", settled: "730", refunded: "9" },

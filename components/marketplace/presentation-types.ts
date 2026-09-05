@@ -135,6 +135,7 @@ export interface LedgerPulseJobViewModel {
 export interface LedgerPulseViewModel {
   network: string;
   jobsIndexed: string;
+  jobsIndexedCount: number;
   processedHere: string;
   indexedThrough: { blockNumber: string; ago: string } | null;
   window: { days: number; created: string; settled: string; refunded: string } | null;

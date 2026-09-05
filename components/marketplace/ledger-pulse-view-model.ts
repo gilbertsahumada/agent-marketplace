@@ -16,6 +16,7 @@ export function ledgerPulseViewModel(
   return {
     network: "ERC-8183 Commerce · BSC Mainnet",
     jobsIndexed: COUNT.format(summary.protocol.jobs),
+    jobsIndexedCount: summary.protocol.jobs,
     processedHere: COUNT.format(summary.marketplace.jobs),
     indexedThrough: summary.indexedThrough
       ? { blockNumber: COUNT.format(Number(summary.indexedThrough.blockNumber)), ago: relativeAge(summary.indexedThrough.at, now) }

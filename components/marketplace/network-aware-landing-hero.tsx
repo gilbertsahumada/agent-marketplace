@@ -7,6 +7,7 @@ import { useAccount, useChainId } from "wagmi";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { AsciiBnbMark } from "./ascii-bnb-mark";
+import { CountUp } from "./count-up";
 import type { EvidenceStepViewModel, LedgerPulseViewModel } from "./presentation-types";
 
 export interface LandingHeroPresentation {
@@ -41,7 +42,7 @@ function LedgerPulse({ pulse }: { pulse: LedgerPulseViewModel | null }) {
     <dl className="market-pulse" aria-label="Indexed ERC-8183 Commerce state on BSC Mainnet">
       <div className="market-pulse__hero">
         <dt className="market-pulse__eyebrow">{pulse.network}</dt>
-        <dd className="market-pulse__figure"><strong>{pulse.jobsIndexed}</strong> jobs indexed</dd>
+        <dd className="market-pulse__figure"><strong><CountUp formatted={pulse.jobsIndexed} value={pulse.jobsIndexedCount} /></strong> jobs indexed</dd>
       </div>
       {pulse.window ? (
         <div className="market-pulse__line">
@@ -93,7 +94,7 @@ function LiveMarketplacePanel({ presentation, pulse }: { presentation: LandingHe
         {pulse !== null && pulse.recent.length > 0 ? (
           <ol className="market-log" aria-label="Most recently updated indexed jobs">
             {pulse.recent.map((job, index) => (
-              <li className="market-log__row" style={{ "--row-delay": `${index * 0.72}s` } as CSSProperties} key={job.jobId}>
+              <li className="market-log__row" style={{ "--row-delay": `${index * 0.72}s`, "--row-index": index } as CSSProperties} key={job.jobId}>
                 <span className="market-log__time">{job.updatedAgo}</span>
                 <span className="market-log__action">{job.status}</span>
                 <Link href={job.href}>
@@ -138,15 +139,15 @@ export function NetworkAwareLandingHero({ mainnet, testnet, ledgerPulse = null }
     <section className="hero-grid border-b border-border/60">
       <div className="mx-auto grid max-w-[1480px] gap-12 px-5 py-16 sm:px-8 sm:py-20 lg:grid-cols-[0.94fr_1.06fr] lg:items-center lg:px-12 lg:py-28">
         <div className="relative">
-          <p className="hero-kicker font-eyebrow text-signal">BNB Agent Marketplace</p>
-          <h1 className="mt-5 max-w-3xl text-[clamp(3rem,4vw,5rem)] font-bold leading-[0.96] tracking-[-0.05em] text-foreground">
+          <p className="hero-kicker hero-enter font-eyebrow text-signal" style={{ "--enter": 0 } as CSSProperties}>BNB Agent Marketplace</p>
+          <h1 className="hero-enter mt-5 max-w-3xl text-[clamp(3rem,4vw,5rem)] font-bold leading-[0.96] tracking-[-0.05em] text-foreground" style={{ "--enter": 1 } as CSSProperties}>
             Find the agent.<br />Verify the work.
           </h1>
-          <p className="mt-7 max-w-xl text-base leading-7 text-muted-foreground sm:text-lg">
+          <p className="hero-enter mt-7 max-w-xl text-base leading-7 text-muted-foreground sm:text-lg" style={{ "--enter": 2 } as CSSProperties}>
             Discover, compare, and hire AI agents on BNB Chain. Every claim stays attached to evidence you can inspect.
           </p>
 
-          <div className="mt-9 flex flex-col gap-3 min-[430px]:flex-row">
+          <div className="hero-enter mt-9 flex flex-col gap-3 min-[430px]:flex-row" style={{ "--enter": 3 } as CSSProperties}>
             <Button asChild className="h-12 rounded-md px-6 text-sm font-semibold" size="lg">
               <Link href="/agents?view=marketplace">
                 Explore verified agents
@@ -158,7 +159,7 @@ export function NetworkAwareLandingHero({ mainnet, testnet, ledgerPulse = null }
             </Button>
           </div>
 
-          <div className="mt-7 flex flex-wrap gap-x-6 gap-y-2 text-xs text-muted-foreground">
+          <div className="hero-enter mt-7 flex flex-wrap gap-x-6 gap-y-2 text-xs text-muted-foreground" style={{ "--enter": 4 } as CSSProperties}>
             <span className="inline-flex items-center gap-2"><Check aria-hidden="true" className="text-signal" /> Onchain identity</span>
             <span className="inline-flex items-center gap-2"><Check aria-hidden="true" className="text-signal" /> Fresh signed quotes</span>
             <span className="inline-flex items-center gap-2"><Check aria-hidden="true" className="text-signal" /> Escrowed hires</span>

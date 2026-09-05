@@ -1,3 +1,4 @@
+import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { AsciiBnbMark } from "@/components/marketplace/ascii-bnb-mark";
@@ -39,11 +40,23 @@ describe("BNB ASCII mark", () => {
     }
   });
 
-  it("renders server-side as an image with one span per glyph", () => {
-    const html = renderToStaticMarkup(AsciiBnbMark({ lines: ["#.#", " # "] }));
+  it("turns about its vertical axis by foreshortening, vanishing edge-on and matching itself at a half turn", () => {
+    const front = rasterizeAsciiMark({ columns: 24 });
+    expect(rasterizeAsciiMark({ columns: 24, rotationY: 0 })).toEqual(front);
+    expect(rasterizeAsciiMark({ columns: 24, rotationY: Math.PI })).toEqual(front);
+    expect(rasterizeAsciiMark({ columns: 24, rotationY: Math.PI / 2 }).join("")).toBe("");
+    const quarter = rasterizeAsciiMark({ columns: 24, rotationY: Math.PI / 3 });
+    const width = (lines: readonly string[]) => Math.max(...lines.map((line) => line.trimEnd().length - (line.length - line.trimStart().length)));
+    expect(width(quarter)).toBeLessThan(width(front));
+    expect(quarter).toHaveLength(front.length);
+  });
+
+  it("renders server-side as an image with the finished glyphs, one row per line", () => {
+    const html = renderToStaticMarkup(createElement(AsciiBnbMark, { lines: ["#.#", " # "] }));
     expect(html).toContain('role="img"');
     expect(html).toContain('aria-label="BNB Chain symbol rendered as ASCII"');
-    expect(html.match(/market-ascii-char/g)).toHaveLength(4);
     expect(html.match(/market-ascii-line/g)).toHaveLength(2);
+    expect(html).toContain("#.#");
+    expect(html).not.toContain("market-ascii-char");
   });
 });
