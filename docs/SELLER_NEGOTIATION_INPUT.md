@@ -48,6 +48,13 @@ requirement. ERC-8183 remains the on-chain settlement layer.
   Subsequent calls carry `mcp-protocol-version` and the returned session ID.
   Unsupported negotiated versions are rejected, not silently retried as quotes.
 
+For canonical `encoding: "request"`, `terms` must accept all four marketplace
+fields: nonempty `deliverables` and `quality_standards` (at most 500 characters),
+`evaluation_required: true`, and `evaluator_type: "uma_oov3"`. Required extra
+terms, incompatible types/constants and impossible text bounds are rejected
+during discovery, even without a probe sample. A new seller does not need a
+previous quote; its schema must permit a valid canonical request.
+
 For prefixed contracts, the request task is the declared prefix followed by
 deterministic JSON with sorted keys. Grid publishes its real `GRID_PLAN_V1:`
 fields: pair, lowerPrice, upperPrice, capital, gridCount. Grid-specific input
