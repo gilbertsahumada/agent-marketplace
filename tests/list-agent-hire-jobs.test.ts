@@ -29,6 +29,15 @@ function ledger(overrides: Partial<HireLedger> = {}): HireLedger {
 }
 
 describe("ListAgentHireJobs", () => {
+  it("scopes Testnet wallet activity without attributing the Mainnet numeric agent ID", async () => {
+    const store = ledger();
+    await new ListAgentHireJobs(store).execute({ agent: agent({ agentWallet: WALLET, owner: OWNER }), chainId: 97, before: "99" });
+    expect(store.listJobsByProvider).toHaveBeenCalledWith({ chainId: 97, provider: WALLET, before: "99" });
+    const unknown = ledger();
+    const result = await new ListAgentHireJobs(unknown).execute({ agent: agent({ agentWallet: null, owner: null }), chainId: 97 });
+    expect(result).toBeNull();
+    expect(unknown.listJobsByAgent).not.toHaveBeenCalled();
+  });
   it("uses only the registry agent wallet as the ERC-8183 provider", () => {
     expect(providerWallet(agent({ agentWallet: WALLET, owner: OWNER }))).toBe(WALLET);
     expect(providerWallet(agent({ agentWallet: ZERO, owner: OWNER }))).toBeNull();
