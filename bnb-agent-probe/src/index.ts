@@ -559,6 +559,10 @@ export function createWorker(dependencies: WorkerDependencies = {}): WorkerEntry
           bootstrapLimit: Number(env.CATALOG_COMPATIBILITY_BOOTSTRAP_BATCH_SIZE ?? "0"),
         });
         logger.info("catalog.quote.queue.enqueued", { ...summary, scheduledTime: controller.scheduledTime });
+        try {
+          const { recordSweepMetrics } = await import("./catalog/sweep-metrics");
+          await recordSweepMetrics(env.DB as never, now(), { ticks: 1, selected: summary.selected ?? summary.enqueued + summary.skipped, enqueued: summary.enqueued, claimOrSendFailed: summary.skipped });
+        } catch { logger.error("catalog.sweep.metrics.unavailable", { stage: "producer" }); }
       }
     },
 
@@ -611,6 +615,10 @@ export function createWorker(dependencies: WorkerDependencies = {}): WorkerEntry
         try {
           summary = await runner(work, env, config);
         } catch (error) {
+          try {
+            const { recordSweepMetrics } = await import("./catalog/sweep-metrics");
+            await recordSweepMetrics(env.DB as never, now(), { consumerErrors: 1 });
+          } catch { logger.error("catalog.sweep.metrics.unavailable", { stage: "consumer_error" }); }
           logger.error("catalog.quote.queue.failed", {
             attempt: message.attempts,
             errorCode: queueErrorCode(error),
@@ -621,6 +629,18 @@ export function createWorker(dependencies: WorkerDependencies = {}): WorkerEntry
         }
         message.ack();
         logger.info("catalog.quote.queue.completed", summary);
+        try {
+          const { recordSweepMetrics, needsProviderChange } = await import("./catalog/sweep-metrics");
+          const compatible = summary.status === "succeeded" || summary.errorCode === "BUYER_INPUT_REQUIRED";
+          const blocked = summary.errorCode !== null && needsProviderChange(summary.errorCode) && summary.errorCode !== "BUYER_INPUT_REQUIRED";
+          await recordSweepMetrics(env.DB as never, now(), {
+            completed: 1, durationMs: summary.durationMs,
+            queueWaitMs: Math.max(0, now() - work.enqueuedAt - summary.durationMs),
+            compatible: compatible ? 1 : 0, providerBlocked: blocked ? 1 : 0,
+            transientFailure: !compatible && !blocked && summary.errorCode !== null ? 1 : 0,
+            quoteSucceeded: summary.status === "succeeded" ? 1 : 0,
+          });
+        } catch { logger.error("catalog.sweep.metrics.unavailable", { stage: "consumer" }); }
         return;
       }
       if (work.kind === "index_range" || work.kind === "index_jobs") {
