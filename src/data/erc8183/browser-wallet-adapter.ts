@@ -97,6 +97,10 @@ function viemChain(deployment: Erc8183BrowserDeployment): Chain {
   return deployment.chainId === 56 ? bsc : bscTestnet;
 }
 
+export function normalizeBrowserAddress(value: string): Address {
+  return getAddress(value);
+}
+
 function sameAddress(left: string, right: string): boolean {
   return isAddressEqual(getAddress(left), getAddress(right));
 }
@@ -385,6 +389,27 @@ export function recoverBrowserJournal(
   };
   saveBrowserJournal(journal, storage, deployment);
   return journal;
+}
+
+/** Read-only recovery of an already funded execution; never creates a payment plan. */
+export function recoverFundedBrowserJournal(
+  job: Erc8183JobFacts,
+  saved: Erc8183BrowserJournal,
+  buyer: string,
+  deployment: Erc8183BrowserDeployment = TESTNET_BROWSER_DEPLOYMENT,
+): Erc8183BrowserJournal {
+  if (saved.chainId !== deployment.chainId || job.chainId !== deployment.chainId ||
+    job.jobId !== saved.jobId || !sameAddress(saved.buyer, buyer) || !sameAddress(job.buyer, buyer) ||
+    !sameAddress(saved.seller, deployment.seller) || !sameAddress(job.provider, deployment.seller) ||
+    !sameAddress(job.evaluator, deployment.router) || !sameAddress(job.policy, deployment.policy) ||
+    !job.quotedToken || !sameAddress(job.quotedToken, deployment.token) ||
+    !job.quotedPriceRaw || !/^[1-9]\d*$/.test(job.quotedPriceRaw) || job.budgetRaw !== job.quotedPriceRaw ||
+    !["FUNDED", "SUBMITTED", "COMPLETED"].includes(job.status)) {
+    throw new InvalidErc8183SpikeInputError("Recovered chain state does not match the saved funded hire");
+  }
+  // Cached hashes/receipts are history, not proof of this read. Keep them in storage only.
+  const { receipts: _receipts, ...reference } = saved;
+  return { ...reference, transactions: {}, lastConfirmedStep: "funded" };
 }
 
 export function resumeRequirements(job: Erc8183JobFacts | null, budgetRaw: string) {
