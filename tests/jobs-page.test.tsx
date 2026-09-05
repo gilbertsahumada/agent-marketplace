@@ -130,7 +130,9 @@ describe("/jobs ledger page", () => {
     expect(ledger.listJobsByProvider).toHaveBeenCalledWith({ chainId: 56, provider: BUYER, before: "600" });
     expect(ledger.listRecentJobs).not.toHaveBeenCalled();
     expect(ledger.summary).toHaveBeenCalledWith({ chainId: 56 });
-    expect(html).toContain("Jobs sold by 0x5ee7…cc52");
+    expect(html).toContain("Jobs sold by ");
+    expect(html).toContain('href="https://bscscan.com/address/0x5ee75a1B1648C023e885E58bD3735Ae273f2cc52"');
+    expect(html).toContain("0x5ee7…cc52");
     expect(html).toMatch(/<a[^>]*href="\/jobs\?chainId=56"[^>]*>All jobs<\/a>/);
     expect(html).toContain('href="/jobs/mainnet/56696"');
     // Pager and network selector keep the provider scope.

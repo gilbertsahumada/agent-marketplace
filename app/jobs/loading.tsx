@@ -12,9 +12,9 @@ export default function JobsLoading() {
       <Skeleton className="mb-6 h-5 w-32" />
       <Skeleton className="mt-3 h-10 w-64" />
       <Skeleton className="mt-4 h-5 w-full max-w-2xl" />
-      <div className="mt-8 flex gap-8 border-y border-border py-6">
-        <Skeleton className="h-12 w-52" />
-        <Skeleton className="h-12 w-52" />
+      <div className="marketplace-surface mt-8 flex items-center gap-5 rounded-xl p-3 sm:gap-7">
+        <Skeleton className="h-10 w-36" />
+        <Skeleton className="h-10 w-40" />
       </div>
       <div className="mt-8 overflow-hidden rounded-xl border border-white/10">
         <Skeleton className="h-14 rounded-none" />
