@@ -19,6 +19,7 @@ import { buildBuyerQuoteRequest } from "../lib/terms";
 import { discoverNegotiationInput, probeA2aSeller, probeErc8183HttpSeller, probeMcpSeller, SellerProbeError } from "../lib/seller-client";
 import { buildContractRequest } from "../../../src/shared/negotiation-input";
 import { callerKey } from "../lib/caller-key";
+import { recordCompatibility } from "../catalog/compatibility";
 
 const MAX_BODY_BYTES = 16 * 1_024;
 const MAX_BRIEF_LENGTH = 500;
@@ -65,7 +66,7 @@ function canonicalJson(value: unknown): string {
   throw new Error("QUOTE_CANONICAL_INVALID");
 }
 
-async function sha256(value: unknown): Promise<string> {
+export async function sha256(value: unknown): Promise<string> {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(canonicalJson(value)));
   return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
@@ -241,9 +242,13 @@ export async function catalogNegotiationInputResponse(d1: D1Database, agentId: s
     if (!await discoveryAllowance(d1, await sha256(new URL(target.endpoint).origin), 25, nowMs)) return { error: "quote_rate_limited" };
     try {
       const contract = await discoverNegotiationInput({ ...target, request: {}, fetch, timeoutMs: 5000, maxResponseBytes: 32768 });
-      return { contract, contractHash: await sha256(contract), endpointKey: target.endpointKey, transport: target.transport };
+      const contractHash = await sha256(contract);
+      await recordCompatibility(db, target, nowMs, { schemaHash: contractHash });
+      return { contract, contractHash, endpointKey: target.endpointKey, transport: target.transport };
     } catch (error) {
-      return { error: error instanceof Error && ERROR_CODE.test(error.message) ? error.message : "NEGOTIATION_DISCOVERY_FAILED" };
+      const errorCode = error instanceof Error && ERROR_CODE.test(error.message) ? error.message : "NEGOTIATION_DISCOVERY_FAILED";
+      await recordCompatibility(db, target, nowMs, { errorCode });
+      return { error: errorCode };
     }
   }));
   const found = results.find(result => result.contract);
@@ -298,7 +303,9 @@ export async function createCatalogQuoteRequestResponse(
   if (structured) {
     try {
       const contract = await discoverNegotiationInput({ ...target, request: {}, fetch, timeoutMs: 5000, maxResponseBytes: 32768 });
-      if (await sha256(contract) !== input!.contractHash) return json({ error: "NEGOTIATION_SCHEMA_CHANGED" }, 409);
+      const schemaHash = await sha256(contract);
+      await recordCompatibility(db, target, options.nowMs, { schemaHash });
+      if (schemaHash !== input!.contractHash) return json({ error: "NEGOTIATION_SCHEMA_CHANGED" }, 409);
       const value = buildContractRequest(contract, input!.parameters);
       const negotiated = NegotiationRequest.fromDict(value);
       template = { category: null, request: negotiated, requestHash: negotiated.computeHash().toLowerCase(), deliverables: String(value.terms.deliverables), qualityStandards: String(value.terms.quality_standards) };
@@ -764,7 +771,11 @@ export async function catalogQuoteFallbackResponse(request: Request, d1: D1Datab
 }
 
 export async function catalogQuoteHistoryResponse(request: Request, d1: D1Database, agentId: string, nowMs = Date.now()): Promise<Response> {
-  if (!AGENT_ID.test(agentId) || new URL(request.url).search !== "") return json({ error: "invalid_request" }, 400);
+  const params = new URL(request.url).searchParams;
+  const pageValue = params.get("page");
+  if (!AGENT_ID.test(agentId) || [...params.keys()].some(key => key !== "page") || params.getAll("page").length > 1
+    || (pageValue !== null && !/^[1-9]\d{0,5}$/.test(pageValue))) return json({ error: "invalid_request" }, 400);
+  const page = pageValue === null ? null : Number(pageValue);
   const db = createDatabase(d1 as never);
   // Page logical requests first. A browser-first request may have a failed
   // browser attempt followed by a Worker fallback, so applying LIMIT to a
@@ -783,8 +794,8 @@ export async function catalogQuoteHistoryResponse(request: Request, d1: D1Databa
     errorCode: catalogQuoteRequests.errorCode,
     resultObservationId: catalogQuoteRequests.resultObservationId,
   }).from(catalogQuoteRequests)
-    .where(eq(catalogQuoteRequests.agentKey, `eip155:56:${agentId}`))
-    .orderBy(desc(catalogQuoteRequests.createdAt), desc(catalogQuoteRequests.id)).limit(100);
+    .where(and(eq(catalogQuoteRequests.agentKey, `eip155:56:${agentId}`), sql`${catalogQuoteRequests.callerKey} <> 'migration'`))
+    .orderBy(desc(catalogQuoteRequests.createdAt), desc(catalogQuoteRequests.id)).limit(page === null ? 100 : 5).offset(page === null ? 0 : (page - 1) * 5);
   const requestIds = requestRows.map((row) => row.id);
   const attempts = requestIds.length === 0 ? [] : await db.select({
     id: catalogQuoteAttempts.id,
@@ -842,25 +853,32 @@ export async function catalogQuoteHistoryResponse(request: Request, d1: D1Databa
     requests.set(row.id, current);
   }
   const allRequests = [...requests.values()];
-  const buyerRequests = allRequests.filter((entry) => entry.kind === "buyer_quote");
-  const capabilityProbes = allRequests.filter((entry) => entry.kind === "capability_probe");
-  const byStatus = (rows: typeof allRequests, status: string) => rows.filter((entry) => entry.status === status).length;
+  const effectiveStatus = sql<string>`CASE WHEN ${catalogQuoteRequests.status} = 'succeeded' AND ${catalogQuoteRequests.quoteExpiresAt} <= ${nowMs} THEN 'expired' ELSE ${catalogQuoteRequests.status} END`;
+  const totals = await db.select({ kind: catalogQuoteRequests.kind, status: effectiveStatus, total: count(), verified: sql<number>`SUM(CASE WHEN ${catalogQuoteRequests.status} = 'succeeded' THEN 1 ELSE 0 END)` }).from(catalogQuoteRequests)
+    .where(and(eq(catalogQuoteRequests.agentKey, `eip155:56:${agentId}`), sql`${catalogQuoteRequests.callerKey} <> 'migration'`)).groupBy(catalogQuoteRequests.kind, effectiveStatus);
+  const migrated = await db.select({ total: count() }).from(catalogQuoteRequests).where(and(eq(catalogQuoteRequests.agentKey, `eip155:56:${agentId}`), eq(catalogQuoteRequests.callerKey, "migration")));
+  const buyerRequests = totals.filter((entry) => entry.kind === "buyer_quote");
+  const capabilityProbes = totals.filter((entry) => entry.kind === "capability_probe");
+  const sum = (rows: typeof totals) => rows.reduce((total, row) => total + row.total, 0);
+  const byStatus = (rows: typeof totals, status: string) => sum(rows.filter((entry) => entry.status === status));
   return json({ schemaVersion: 1, agentId, counts: {
+    importedObservations: Number(migrated[0]?.total ?? 0),
     // Keep the aggregate fields for older clients, but expose kind-specific
     // totals so a capacity probe is never presented as a buyer quote.
-    requests: allRequests.length,
-    succeeded: byStatus(allRequests, "succeeded"),
-    rejected: byStatus(allRequests, "rejected"),
-    failed: byStatus(allRequests, "failed"),
-    expired: byStatus(allRequests, "expired"),
-    buyerRequests: buyerRequests.length,
+    requests: sum(totals),
+    succeeded: byStatus(totals, "succeeded"),
+    rejected: byStatus(totals, "rejected"),
+    failed: byStatus(totals, "failed"),
+    expired: byStatus(totals, "expired"),
+    buyerRequests: sum(buyerRequests),
     buyerSucceeded: byStatus(buyerRequests, "succeeded"),
+    buyerVerified: buyerRequests.reduce((total, row) => total + Number(row.verified), 0),
     buyerRejected: byStatus(buyerRequests, "rejected"),
     buyerFailed: byStatus(buyerRequests, "failed"),
     buyerExpired: byStatus(buyerRequests, "expired"),
-    capabilityProbes: capabilityProbes.length,
+    capabilityProbes: sum(capabilityProbes),
     capabilitySucceeded: byStatus(capabilityProbes, "succeeded"),
-  }, requests: allRequests });
+  }, requests: allRequests, ...(page === null ? {} : { pagination: { page, pageSize: 5, total: sum(totals), hasMore: page * 5 < sum(totals) } }) });
 }
 
 export function callerForQuote(request: Request): string {
