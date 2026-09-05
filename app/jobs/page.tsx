@@ -34,15 +34,21 @@ export default async function JobsPage({ searchParams }: { searchParams: Promise
   const provider = providerParameter(params.provider);
   const before = typeof params.before === "string" && /^[1-9]\d{0,15}$/.test(params.before) ? params.before : undefined;
   const cursor = before === undefined ? {} : { before };
-  const [summary, page] = await Promise.all([
+  const scope = provider === undefined ? {} : { provider };
+  const [summary, page, activity] = await Promise.all([
     getHireLedger.summary({ chainId }),
     provider === undefined
       ? getHireLedger.listRecentJobs({ chainId, ...cursor })
       : getHireLedger.listJobsByProvider({ chainId, provider, ...cursor }),
+    // The activity window follows the provider scope of the list, not the
+    // cursor: always the default trailing window (HIRE_ACTIVITY_DEFAULT_DAYS),
+    // requested without an explicit `days` so it shares one cache entry.
+    getHireLedger.activity({ chainId, ...scope }),
   ]);
   const agentResolutions = await resolveJobAgents.execute(page?.jobs ?? []);
   return (
     <HireLedgerPage
+      activity={activity}
       key={`${chainId}:${provider ?? "all"}:${before ?? "newest"}`}
       chainId={chainId}
       page={page}

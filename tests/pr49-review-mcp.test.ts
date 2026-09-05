@@ -80,7 +80,7 @@ describe("createMarketplaceMcpServer over an in-memory transport", () => {
   }
 
   // PR49 review F6a (coverage gap): server wiring for tools/list was untested.
-  it("F6a: tools/list returns exactly the five journey tools with object input schemas", async () => {
+  it("F6a: tools/list returns exactly the seven journey tools with object input schemas", async () => {
     const client = await connect();
     const { tools } = await client.listTools();
     expect(tools.map((tool) => tool.name)).toEqual([
@@ -89,6 +89,8 @@ describe("createMarketplaceMcpServer over an in-memory transport", () => {
       "compare_agents",
       "request_quote",
       "get_job_status",
+      "list_jobs",
+      "my_jobs",
     ]);
     for (const tool of tools) {
       expect(tool.inputSchema.type, `${tool.name} inputSchema`).toBe("object");

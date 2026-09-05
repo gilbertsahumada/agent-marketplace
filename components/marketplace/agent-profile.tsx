@@ -12,7 +12,7 @@ import type { ReactNode } from "react";
 import type { MarketplaceAgent } from "@/src/business/entities/marketplace-agent";
 import type { AgentEvidencePassport } from "@/src/business/entities/evidence-passport";
 import type { MainnetJobProof } from "@/src/business/entities/mainnet-job-proof";
-import type { HireJob } from "@/src/business/entities/hire-job";
+import type { HireActivity, HireJob } from "@/src/business/entities/hire-job";
 import { Badge } from "@/components/ui/badge";
 import { Breadcrumb } from "./page-primitives";
 import { AgentAvatar } from "./agent-avatar";
@@ -81,8 +81,11 @@ function EvidenceSummaryItem({
   );
 }
 
-function JobHistory({ hireActivity, jobs, hireJobs, more, scope }: {
+function JobHistory({ hireActivity, activity, jobs, hireJobs, more, scope }: {
   hireActivity: AgentEvidencePassport["checks"]["hireActivity"];
+  // Trailing 30-day window of phase events in the same scope as hireJobs;
+  // null when the window was not read, in which case no subtitle is shown.
+  activity: HireActivity | null;
   jobs: readonly MainnetJobProof[];
   hireJobs: readonly HireJob[] | null;
   more: boolean;
@@ -101,9 +104,16 @@ function JobHistory({ hireActivity, jobs, hireJobs, more, scope }: {
   return (
     <details className="group mt-5 rounded-xl border border-white/10 bg-white/[0.015]">
       <summary className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-3 px-4 py-4 sm:px-5">
-        <h2 className="flex items-center gap-2 text-base font-medium text-white" id="erc8183-history">
-          <BriefcaseBusiness aria-hidden="true" className="size-4 text-zinc-500" />ERC-8183 job history
-        </h2>
+        <div>
+          <h2 className="flex items-center gap-2 text-base font-medium text-white" id="erc8183-history">
+            <BriefcaseBusiness aria-hidden="true" className="size-4 text-zinc-500" />ERC-8183 job history
+          </h2>
+          {activity !== null ? (
+            <p className="mt-1 text-xs text-zinc-500">
+              {`Last ${activity.days} days: ${activity.totals.created.toLocaleString("en")} created · ${activity.totals.settled.toLocaleString("en")} settled`}
+            </p>
+          ) : null}
+        </div>
         <div className="flex flex-wrap gap-2">
           {hireJobs !== null ? <>
             <Badge variant="outline">{allJobIds.size}{more ? "+" : ""} {allJobIds.size === 1 ? "job" : "jobs"}</Badge>
@@ -169,6 +179,7 @@ export function AgentProfile({
   hireJobs = null,
   hireJobsMore = false,
   hireJobsScope = "agent",
+  hireActivity = null,
   jobProofs = EMPTY_JOBS,
 }: {
   agent: MarketplaceAgent;
@@ -180,6 +191,8 @@ export function AgentProfile({
   hireJobs?: readonly HireJob[] | null;
   hireJobsMore?: boolean;
   hireJobsScope?: "wallet" | "agent";
+  // last 30 days of phase events in that scope; null or absent hides the line.
+  hireActivity?: HireActivity | null;
   jobProofs?: readonly MainnetJobProof[];
 }) {
   const displayName = marketplaceAgentDisplayName(agent.name);
@@ -347,7 +360,7 @@ export function AgentProfile({
       </div>
 
       <QuoteHistory agentId={agent.agentId} />
-      <JobHistory hireActivity={passport.checks.hireActivity} hireJobs={hireJobs} jobs={jobProofs} more={hireJobsMore} scope={hireJobsScope} />
+      <JobHistory activity={hireActivity} hireActivity={passport.checks.hireActivity} hireJobs={hireJobs} jobs={jobProofs} more={hireJobsMore} scope={hireJobsScope} />
     </main>
   );
 }

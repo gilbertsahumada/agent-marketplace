@@ -1,8 +1,8 @@
 const OVERVIEW_MD = `# BNB Agent Marketplace — Documentation
 
 The marketplace is machine-readable end to end: one HTTP API, exposed to agents as
-five MCP tools. Discovery and quoting are open; hiring is gated by a seller-signed
-quote that the buyer funds from its own wallet.
+seven MCP tools. Discovery, quoting and the indexed job ledger are open; hiring is
+gated by a seller-signed quote that the buyer funds from its own wallet.
 
 ## Quickstart
 
@@ -33,9 +33,9 @@ and a tool. Every fact carries its provenance (declared, observed, onchain, deri
 
 const MCP_MD = `# Marketplace MCP Server
 
-Five tools covering the whole journey, served over two transports from the same code
-— a thin wrapper over the HTTP API. Everything is discovery and quoting: no tool
-signs transactions or moves funds.
+Seven tools covering the whole journey, served over two transports from the same code
+— a thin wrapper over the HTTP API. Everything is discovery, quoting and reading the
+indexed job ledger: no tool signs transactions or moves funds.
 
 ## Connect
 
@@ -79,7 +79,7 @@ four or five transactions; the sequence is fork-verified against the deployed Te
 | Quote | MCP | Free, signs nothing; returns the seller-signed envelope |
 | Prepare · Notify | HTTP | Prepare returns WHAT to sign (intents, deadlines, guardrails) — never a signature |
 | Authorize + send 4–5 calls | buyer's wallet → chain | The plan is not sent during review; the key never leaves the buyer. A compatible wallet may batch them atomically |
-| Track · Result | MCP or HTTP | State is resolved from chain either way |
+| Track · Result · Ledger | MCP or HTTP | State is resolved from chain either way; the ledger is indexed activity, not a track record |
 
 There is no sign or submit_transaction tool on purpose. A server that could produce a
 buyer signature would hold custody of the key; a server relaying signed transactions
@@ -115,6 +115,19 @@ ERC8183_SPIKE_DISABLED when the flow is env-disabled.
 Chain-resolved job state: OPEN → FUNDED → SUBMITTED → COMPLETED (REJECTED/EXPIRED
 terminal), budget, deadline, deliverable hash. Jobs outside the demo allowlist are
 404 ERC8183_DEMO_JOB_NOT_FOUND.
+
+### list_jobs(network, buyer? | provider? | agentId?, before?)
+ERC-8183 jobs indexed from the Commerce contract, newest first, optionally scoped to
+one buyer wallet, one provider wallet or one marketplace agent id (at most one).
+Each job carries its on-chain state and marketplace: true when a chain-verified hire
+event exists for it — not that the marketplace verified the deliverable. Indexed
+activity, not a track record: a settled job proves the phase, not the deliverable.
+Page with before = the previous page's nextBefore. 503 while the indexer is
+unavailable; nothing partial is returned.
+
+### my_jobs(network, buyer, before?)
+Jobs created by the caller's own wallet, newest first. The marketplace has no session:
+pass the wallet you sign with. Same ledger and shape as list_jobs.
 
 ## Errors
 
@@ -153,10 +166,20 @@ marketplace business layer. MCP tools and the CLI wrap these routes.
 | Hire — prepare | POST | /api/marketplace/demo/erc8183[-mainnet]/prepare  { buyer, quote } |
 | Hire — notify | POST | /api/marketplace/demo/erc8183[-mainnet]/notify  { buyer, jobId } |
 | Track / Result | GET | /api/marketplace/jobs/{network}/{jobId} |
+| Track / Ledger — jobs | GET | /api/marketplace/jobs?chainId=56|97&buyer|provider|agentId=…&before=… |
+| Track / Ledger — summary | GET | /api/marketplace/jobs/summary?chainId=… |
+| Track / Ledger — activity | GET | /api/marketplace/jobs/activity?chainId=…&days=1..90&provider=|agentId=… |
+| Track / Ledger — one job | GET | /api/marketplace/jobs/{network}/{jobId}/ledger |
 | Agents (MCP) | POST | /api/mcp |
 
 The demo hire routes are env-gated per network and answer 404 ERC8183_SPIKE_DISABLED
-when off.
+when off. Ledger routes read the Worker's index of Commerce events: jobs lists
+newest first (at most one of buyer, provider, agentId; before = nextBefore of the
+previous page), summary gives protocol-vs-marketplace counts per status plus the indexed block, activity gives per-day
+phase counts (whole UTC days, ending today, over a trailing window of 1..90 days, at most one of
+provider/agentId; cache 60s, stale-while-revalidate 60s), and {jobId}/ledger gives one
+job's phase events. marketplace: true means a chain-verified hire event exists — not
+that the marketplace verified the deliverable. Indexed activity, not a track record.
 
 ## Validation and polling
 

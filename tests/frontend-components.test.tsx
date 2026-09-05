@@ -813,6 +813,39 @@ describe("marketplace presentation rules", () => {
     expect(screen.getByText("No indexed jobs yet.")).toBeInTheDocument();
   });
 
+  const hireJob = (jobId: string, status: "FUNDED" | "SUBMITTED" | "COMPLETED" = "FUNDED") => ({
+    chainId: 56 as const, jobId, buyer: `0x${"11".repeat(20)}` as `0x${string}`, provider: `0x${"22".repeat(20)}` as `0x${string}`,
+    budgetRaw: "10000000000000000", status, expiresAt: "2026-09-10T11:37:24.000Z", submittedAt: null,
+    marketplace: status !== "FUNDED", updatedAt: "2026-09-03T11:12:30.000Z",
+  });
+
+  it("adds a 30-day phase subtitle to the job history only when the window was read", async () => {
+    const agent = marketplaceAgent();
+    const zero = { created: 0, funded: 0, submitted: 0, settled: 0, refunded: 0 };
+    const hireActivity = {
+      chainId: 56 as const, days: 30, from: "2026-08-04T12:00:00.000Z", to: "2026-09-03T12:00:00.000Z",
+      byDay: [{ day: "2026-09-01", ...zero, created: 4, settled: 2 }],
+      totals: { ...zero, created: 4, settled: 2 },
+    };
+    const { rerender } = render(createElement(AgentProfile, {
+      agent, hireActivity, hireJobs: [hireJob("56696", "SUBMITTED")], hireJobsScope: "wallet", passport: evidencePassport("registered"),
+    }));
+
+    expect(screen.getByText("Last 30 days: 4 created · 2 settled")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "ERC-8183 job history" })).toBeInTheDocument();
+    // Scoped to the job history: the avatar fallback elsewhere on the profile
+    // is a pre-existing, unrelated finding.
+    const history = screen.getByRole("heading", { name: "ERC-8183 job history" }).closest("details");
+    expect(history).not.toBeNull();
+    expect((await axe.run(history as HTMLElement)).violations).toEqual([]);
+
+    rerender(createElement(AgentProfile, { agent, hireActivity: null, hireJobs: [hireJob("56696", "SUBMITTED")], passport: evidencePassport("registered") }));
+    expect(screen.queryByText(/Last 30 days/)).not.toBeInTheDocument();
+
+    rerender(createElement(AgentProfile, { agent, hireJobs: [hireJob("56696", "SUBMITTED")], passport: evidencePassport("registered") }));
+    expect(screen.queryByText(/Last 30 days/)).not.toBeInTheDocument();
+  });
+
   it("states the number of wallet confirmations only once the wallet has answered", () => {
     expect(hireConfirmationLabel(null, 5)).toBeNull();
     expect(hireConfirmationLabel("batched", 5)).toBe("One wallet confirmation");

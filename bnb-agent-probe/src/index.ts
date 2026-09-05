@@ -391,6 +391,12 @@ export function createWorker(dependencies: WorkerDependencies = {}): WorkerEntry
           commerceSummaryResponse(request, env.DB)
         ));
       }
+      if (request.method === "GET" && url.pathname === "/commerce-activity") {
+        const { COMMERCE_ACTIVITY_CACHE_SECONDS, commerceActivityResponse } = await import("./routes/commerce-jobs");
+        // Same window as the route's own cache-control, so the rewrite is a no-op.
+        const seconds = config.catalogResponseCacheSeconds > 0 ? COMMERCE_ACTIVITY_CACHE_SECONDS : 0;
+        return cachedCatalogResponse(request, seconds, () => commerceActivityResponse(request, env.DB, now()));
+      }
       if (request.method === "GET" && url.pathname === "/hire-events") {
         const { hireEventsListResponse } = await import("./routes/hire-events");
         // Short fixed window: verified hire history changes rarely, but the

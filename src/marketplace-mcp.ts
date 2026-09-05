@@ -56,6 +56,39 @@ function agentIdString(value: string, name: string): string {
   return value;
 }
 
+function optionalString(args: ToolArguments, name: string, pattern: RegExp, expectation: string): string | undefined {
+  const value = args[name];
+  if (value === undefined) return undefined;
+  if (typeof value !== "string" || !pattern.test(value)) throw new Error(`${name} must be ${expectation}`);
+  return value;
+}
+
+const EVM_ADDRESS = /^0x[0-9a-fA-F]{40}$/;
+// Mirrors src/presentation/http/hire-ledger-http.ts (jobIdParameter and
+// agentIdParameter) so the tool refuses exactly what the route would 400.
+// Mirrored, not imported: this module stays free of Next.js.
+const LEDGER_CURSOR = /^[1-9]\d{0,15}$/;
+const LEDGER_AGENT_ID = /^[1-9]\d{0,19}$/;
+const CHAIN_IDS: Record<(typeof NETWORKS)[number], string> = { mainnet: "56", testnet: "97" };
+
+// Query for GET /api/marketplace/jobs. One identity filter at most: the route
+// rejects two, and the tool refuses before any request leaves the process.
+function ledgerJobsPath(args: ToolArguments, network: (typeof NETWORKS)[number]): string {
+  const buyer = optionalString(args, "buyer", EVM_ADDRESS, "an EVM address (0x + 40 hex characters)");
+  const provider = optionalString(args, "provider", EVM_ADDRESS, "an EVM address (0x + 40 hex characters)");
+  const agentId = optionalString(args, "agentId", LEDGER_AGENT_ID, "a numeric agent id");
+  const before = optionalString(args, "before", LEDGER_CURSOR, "a positive decimal job id");
+  if ([buyer, provider, agentId].filter((value) => value !== undefined).length > 1) {
+    throw new Error("Use at most one of buyer, provider or agentId");
+  }
+  const query = new URLSearchParams({ chainId: CHAIN_IDS[network] });
+  if (buyer !== undefined) query.set("buyer", buyer);
+  if (provider !== undefined) query.set("provider", provider);
+  if (agentId !== undefined) query.set("agentId", agentId);
+  if (before !== undefined) query.set("before", before);
+  return `/api/marketplace/jobs?${query.toString()}`;
+}
+
 async function readJson(response: Response): Promise<unknown> {
   const declaredLength = Number(response.headers.get("content-length") ?? "0");
   if (declaredLength > MAX_RESPONSE_BYTES) throw new Error("Marketplace response is too large");
@@ -235,6 +268,59 @@ export function marketplaceMcpTools(options: MarketplaceMcpOptions = {}): Market
         const jobId = requiredString(args, "jobId");
         if (!/^[1-9]\d*$/.test(jobId)) throw new Error("jobId must be a positive decimal integer");
         return call(`/api/marketplace/jobs/${network}/${jobId}`);
+      },
+    },
+    {
+      name: "list_jobs",
+      description: [
+        "List ERC-8183 jobs indexed from the Commerce contract, newest first, optionally scoped to one",
+        "buyer wallet, one provider wallet or one marketplace agent id. Each job carries its on-chain",
+        "state (OPEN, FUNDED, SUBMITTED, COMPLETED, REJECTED, EXPIRED) and 'marketplace: true' when a",
+        "chain-verified hire event exists for it — it does not mean the marketplace verified the",
+        "deliverable. This is indexed activity, not a track record: a settled job proves the phase,",
+        "not the deliverable. Page with 'before' = the nextBefore of the previous page.",
+      ].join(" "),
+      inputSchema: {
+        type: "object",
+        properties: {
+          network: { type: "string", enum: [...NETWORKS] },
+          buyer: { type: "string", description: "Buyer wallet (EVM address). At most one of buyer, provider, agentId." },
+          provider: { type: "string", description: "Provider wallet (EVM address)" },
+          agentId: { type: "string", description: "Marketplace agent id (numeric); only jobs with a chain-verified hire event for it" },
+          before: { type: "string", description: "Positive decimal job id; returns older jobs" },
+        },
+        required: ["network"],
+        additionalProperties: false,
+      },
+      handler: async (args) => {
+        const network = optionalEnum(args, "network", NETWORKS);
+        if (!network) throw new Error(`network must be one of: ${NETWORKS.join(", ")}`);
+        return call(ledgerJobsPath(args, network));
+      },
+    },
+    {
+      name: "my_jobs",
+      description: [
+        "List the jobs created by the caller's own wallet, newest first, with their on-chain state.",
+        "The marketplace has no session: pass the wallet address you sign with. Same ledger and",
+        "shape as list_jobs — indexed activity, not a track record: a settled job proves the phase,",
+        "not the deliverable.",
+      ].join(" "),
+      inputSchema: {
+        type: "object",
+        properties: {
+          network: { type: "string", enum: [...NETWORKS] },
+          buyer: { type: "string", description: "Your wallet (EVM address)" },
+          before: { type: "string", description: "Positive decimal job id; returns older jobs" },
+        },
+        required: ["network", "buyer"],
+        additionalProperties: false,
+      },
+      handler: async (args) => {
+        const network = optionalEnum(args, "network", NETWORKS);
+        if (!network) throw new Error(`network must be one of: ${NETWORKS.join(", ")}`);
+        const buyer = requiredString(args, "buyer");
+        return call(ledgerJobsPath({ buyer, before: args.before }, network));
       },
     },
   ];

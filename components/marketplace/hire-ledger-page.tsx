@@ -9,7 +9,8 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Pagination, PaginationContent, PaginationItem } from "@/components/ui/pagination";
 import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import type { HireAddress, HireChainId, HireJobPage, HireLedgerSummary } from "@/src/business/entities/hire-job";
+import type { HireActivity, HireAddress, HireChainId, HireJobPage, HireLedgerSummary } from "@/src/business/entities/hire-job";
+import { HireActivityWindow } from "./hire-activity-window";
 import { jobStatusLabel, networkSlug } from "./hire-job-rows";
 import { Breadcrumb } from "./page-primitives";
 import { AddressLink } from "./address-link";
@@ -37,11 +38,16 @@ function indexRunLabel(status: string): string {
   }
 }
 
-export function HireLedgerPage({ chainId, summary, page, before, provider, agentResolutions = {} }: {
+export function HireLedgerPage({ chainId, summary, page, activity = null, before, provider, agentResolutions = {} }: {
   chainId: HireChainId;
   summary: HireLedgerSummary | null;
   page: HireJobPage | null;
+  // Trailing window of phase events in the same provider scope as the list;
+  // null when it could not be read.
+  activity?: HireActivity | null;
   before?: string;
+  // Scopes the job list and the activity window (not the counts) to one
+  // provider wallet.
   provider?: HireAddress;
   agentResolutions?: Record<string, JobAgentResolution>;
 }) {
@@ -74,6 +80,10 @@ export function HireLedgerPage({ chainId, summary, page, before, provider, agent
           </div>)}
         </div>
       </div>
+
+      {activity !== null
+        ? <div className="mt-6"><HireActivityWindow activity={activity} /></div>
+        : (summary !== null || page !== null) && <p className="mt-6 text-sm text-muted-foreground" role="status">Recent activity temporarily unavailable.</p>}
 
       <section className="mt-4" aria-label="Indexed jobs">
         <div className="mb-4 flex items-center gap-3">

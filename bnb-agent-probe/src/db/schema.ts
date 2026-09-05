@@ -9,6 +9,12 @@ import {
   uniqueIndex,
 } from "drizzle-orm/sqlite-core";
 
+// The on-chain job phases shared by hire_events and commerce_job_events. Their
+// CHECK constraints below spell the same list out as SQL so the generated
+// migrations stay literal; keep the three in step.
+export const HIRE_CHAIN_PHASES = ["created", "funded", "submitted", "settled", "refunded"] as const;
+export type HireChainPhase = (typeof HIRE_CHAIN_PHASES)[number];
+
 export const probeTargets = sqliteTable(
   "probe_targets",
   {
@@ -350,6 +356,7 @@ export const commerceJobEvents = sqliteTable(
   (table) => [
     uniqueIndex("commerce_job_events_log").on(table.chainId, table.txHash, table.logIndex),
     index("idx_commerce_job_events_job").on(table.chainId, table.jobId, table.blockNumber),
+    index("idx_commerce_job_events_time").on(table.chainId, table.blockTimestamp),
     check("commerce_job_events_chain", sql`${table.chainId} IN (56, 97)`),
     check("commerce_job_events_job", sql`${table.jobId} >= 0`),
     check(

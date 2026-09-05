@@ -11,6 +11,13 @@ export type HireJobStatus = Erc8183JobFacts["status"];
 export type HireChainId = 56 | 97;
 export type HireAddress = `0x${string}`;
 
+// The activity window's cache decision, shared by the data layer's TTL and the
+// HTTP cache-control header so the two never drift apart.
+export const HIRE_ACTIVITY_CACHE_SECONDS = 60;
+// The Worker's own default window. Callers wanting it send no `days` at all,
+// so the default read is one cache entry, not one per spelling.
+export const HIRE_ACTIVITY_DEFAULT_DAYS = 30;
+
 export interface HireJob {
   chainId: HireChainId;
   jobId: string;
@@ -71,6 +78,21 @@ export interface HireLedgerSummary {
   lastIndexRun: { status: string; at: string } | null;
 }
 
+// Phase events per UTC day over a trailing window, for one chain, one provider
+// wallet or one marketplace agent. Counts events the indexer saw since it
+// started; jobs backfilled by state alone contribute nothing, so an old job
+// present in the list may be absent here. Activity, never a track record.
+export type HireActivityCounts = Record<VerifiedHirePhase, number>;
+
+export interface HireActivity {
+  chainId: HireChainId;
+  days: number;
+  from: string;
+  to: string;
+  byDay: Array<{ day: string } & HireActivityCounts>;
+  totals: HireActivityCounts;
+}
+
 // Two failure contracts, on purpose. The list readers and the summary answer
 // null when the ledger is unavailable; callers render the page as without
 // them (HTTP maps null to 503). `getJob` answers null only when the ledger has
@@ -85,4 +107,8 @@ export interface HireLedger {
   listJobsByAgent(input: { chainId: HireChainId; agentId: string; before?: string }): Promise<HireJobPage | null>;
   getJob(input: { chainId: HireChainId; jobId: string }): Promise<HireJobDetail | null>;
   summary(input: { chainId: HireChainId }): Promise<HireLedgerSummary | null>;
+  // Trailing window of phase events (HIRE_ACTIVITY_DEFAULT_DAYS when `days` is
+  // omitted, 1..90), scoped to at most one of provider/agentId; null when it
+  // cannot be read.
+  activity(input: { chainId: HireChainId; days?: number; provider?: HireAddress; agentId?: string }): Promise<HireActivity | null>;
 }

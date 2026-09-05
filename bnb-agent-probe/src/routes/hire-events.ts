@@ -12,7 +12,13 @@ import { bsc, bscTestnet } from "viem/chains";
 
 import type { D1DatabaseLike } from "../db/client";
 import { createDatabase } from "../db/orm";
-import { catalogObservations, catalogQuoteRequests, hireEvents } from "../db/schema";
+import {
+  catalogObservations,
+  catalogQuoteRequests,
+  HIRE_CHAIN_PHASES,
+  type HireChainPhase,
+  hireEvents,
+} from "../db/schema";
 import { providerIdentity } from "../../../shared/agent-identity";
 import {
   BSC_COMMERCE,
@@ -31,9 +37,8 @@ const TX_HASH = /^0x[0-9a-fA-F]{64}$/;
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 
 export const HIRE_TELEMETRY_PHASES = ["clicked", "quoted", "quote_rejected"] as const;
-export const HIRE_CHAIN_PHASES = ["created", "funded", "submitted", "settled", "refunded"] as const;
+export { HIRE_CHAIN_PHASES, type HireChainPhase };
 export type HireTelemetryPhase = (typeof HIRE_TELEMETRY_PHASES)[number];
-export type HireChainPhase = (typeof HIRE_CHAIN_PHASES)[number];
 export type HireChainId = 56 | 97;
 
 // Commerce events that prove a phase happened in the reported transaction.

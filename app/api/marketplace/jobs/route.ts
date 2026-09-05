@@ -2,6 +2,7 @@ import { getHireLedger } from "@/src/business/composition";
 import { InvalidMarketplaceInputError } from "@/src/business/errors/marketplace-errors";
 import {
   addressParameter,
+  agentIdParameter,
   allowlistedQuery,
   chainIdParameter,
   jobIdParameter,
@@ -20,10 +21,7 @@ export async function GET(request: Request) {
     const chainId = chainIdParameter(url.searchParams.get("chainId"));
     const buyer = addressParameter(url.searchParams.get("buyer"), "buyer");
     const provider = addressParameter(url.searchParams.get("provider"), "provider");
-    const agentId = url.searchParams.get("agentId") ?? undefined;
-    if (agentId !== undefined && !/^[1-9]\d{0,19}$/.test(agentId)) {
-      throw new InvalidMarketplaceInputError("agentId must be a positive integer");
-    }
+    const agentId = agentIdParameter(url.searchParams.get("agentId"));
     const before = jobIdParameter(url.searchParams.get("before"), "before");
     if ([buyer, provider, agentId].filter((value) => value !== undefined).length > 1) {
       throw new InvalidMarketplaceInputError("Use at most one of buyer, provider or agentId");

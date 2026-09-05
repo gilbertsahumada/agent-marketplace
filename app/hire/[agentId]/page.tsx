@@ -36,6 +36,7 @@ export default async function HirePage({ params }: { params: Promise<{ agentId: 
       agent={agent}
       catalogCandidate={catalogCandidate}
       hireFlow={hireFlow}
+      hireActivity={hireJobsResult?.activity ?? null}
       hireFlowAvailable={canRequestQuote}
       hireJobs={hireJobs}
       hireJobsMore={hireJobsResult?.nextBefore != null}
