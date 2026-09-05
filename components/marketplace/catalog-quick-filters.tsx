@@ -1,10 +1,10 @@
 "use client";
 
-import { BadgeCheck, RadioTower, RotateCcw, ShieldCheck, Waypoints } from "lucide-react";
+import { RadioTower, RotateCcw, ShieldCheck, FileCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { CatalogFacetCounts, CatalogStatus } from "@/src/business/entities/catalog-candidate";
 import type { MarketplaceCategory } from "@/src/business/entities/marketplace-agent";
-import type { MarketplaceReachability } from "@/src/business/use-cases/list-marketplace-agents";
+import type { MarketplaceReachability, MarketplaceProtocol } from "@/src/business/use-cases/list-marketplace-agents";
 import { useCatalogNavigation } from "./catalog-navigation";
 
 type QuickFilter = {
@@ -16,23 +16,24 @@ type QuickFilter = {
 };
 
 const quickFilters: QuickFilter[] = [
+  { label: "Can request quote", icon: FileCheck, status: "requestable", countKey: "requestable" },
   { label: "Ready to quote", icon: ShieldCheck, status: "quote_capable", countKey: "quote_capable" },
   { label: "Reachable now", icon: RadioTower, reachability: "live" },
-  { label: "A2A", icon: Waypoints, status: "a2a", countKey: "a2a" },
-  { label: "MCP", icon: Waypoints, status: "mcp", countKey: "mcp" },
-  { label: "ERC-8183", icon: BadgeCheck, status: "erc8183", countKey: "erc8183" },
+  { label: "Compatibility pending", icon: RadioTower, status: "pending", countKey: "pending" },
 ];
 
 export function CatalogQuickFilters({
   statuses,
   categories,
   reachability,
+  protocols = [],
   counts,
   q,
 }: {
   statuses: CatalogStatus[];
   categories: MarketplaceCategory[];
   reachability: MarketplaceReachability[];
+  protocols?: MarketplaceProtocol[];
   counts?: CatalogFacetCounts;
   q?: string;
 }) {
@@ -43,6 +44,7 @@ export function CatalogQuickFilters({
     for (const status of nextStatuses) params.append("status", status);
     for (const category of categories) params.append("category", category);
     for (const value of nextReachability) params.append("reachability", value);
+    for (const value of protocols) params.append("protocol", value);
     if (q) params.set("q", q);
     navigate(`/agents?${params.toString()}`);
   };
@@ -91,7 +93,7 @@ export function CatalogQuickFilters({
       })}
       <Button
         className="h-8 w-auto shrink-0 cursor-pointer gap-1.5 rounded-md px-2.5 text-xs whitespace-nowrap"
-        disabled={pending || (statuses.length === 0 && categories.length === 0 && reachability.length === 0 && !q)}
+        disabled={pending || (statuses.length === 0 && categories.length === 0 && reachability.length === 0 && protocols.length === 0 && !q)}
         onClick={() => navigate("/agents?view=marketplace")}
         type="button"
         variant="outline"
