@@ -1,12 +1,13 @@
 import { and, eq, inArray, isNull, lte, or, sql } from "drizzle-orm";
 
 import { createDatabase, type CatalogSellerCapabilityRow } from "../db/orm";
-import { catalogAgentEndpoints, catalogAgents, catalogEndpoints, catalogQuoteAttempts, catalogQuoteRequests, catalogSellerCapabilities } from "../db/schema";
+import { catalogQuoteAttempts, catalogQuoteRequests, catalogSellerCapabilities } from "../db/schema";
 import type { D1DatabaseLike } from "../db/client";
 import { discoverNegotiationInput, probeA2aSeller, probeErc8183HttpSeller, probeMcpSeller, SellerProbeError } from "../lib/seller-client";
 import { NegotiationRequest } from "@bnbagent/sdk/erc8183";
 import { buildContractRequest } from "../../../src/shared/negotiation-input";
 import { recordCompatibility, COMPATIBILITY_TTL_MS } from "../catalog/compatibility";
+import { needsProviderChange } from "../catalog/sweep-metrics";
 import type { Env, QueueProducer } from "../types";
 import type { WorkerConfig } from "../config";
 import { persistQuoteResult, readContext, targetFor, sha256 } from "../routes/catalog-quotes";
@@ -26,6 +27,7 @@ export interface CatalogCapabilityWork {
 }
 
 export interface CatalogCapabilityQueueSummary {
+  readonly selected?: number;
   readonly enqueued: number;
   readonly skipped: number;
   readonly pending: number;
@@ -90,38 +92,34 @@ export async function enqueueDueCatalogCapabilities(
     eq(catalogSellerCapabilities.state, "ready"),
     lte(catalogSellerCapabilities.capabilityExpiresAt, input.nowMs),
   ));
-  const selectDue = (bootstrap: boolean | null, window: number) => db.select({
-    agentKey: catalogSellerCapabilities.agentKey,
-    endpointKey: catalogSellerCapabilities.endpointKey,
-    originKey: catalogEndpoints.originKey,
-    compatibilityState: catalogSellerCapabilities.compatibilityState,
-  }).from(catalogSellerCapabilities)
-    .innerJoin(catalogAgents, eq(catalogAgents.agentKey, catalogSellerCapabilities.agentKey))
-    .innerJoin(catalogAgentEndpoints, and(
-      eq(catalogAgentEndpoints.agentKey, catalogSellerCapabilities.agentKey),
-      eq(catalogAgentEndpoints.endpointKey, catalogSellerCapabilities.endpointKey),
-      eq(catalogAgentEndpoints.declarationState, "current"),
-    ))
-    .innerJoin(catalogEndpoints, and(
-      eq(catalogEndpoints.endpointKey, catalogSellerCapabilities.endpointKey),
-      eq(catalogEndpoints.role, "operational"),
-      eq(catalogEndpoints.eligibility, "eligible"),
-    ))
-    .where(and(
-      bootstrap === null ? undefined : bootstrap
-        ? eq(catalogSellerCapabilities.compatibilityState, "pending")
-        : sql`${catalogSellerCapabilities.compatibilityState} <> 'pending'`,
-      eq(catalogAgents.indexState, "current"),
-      inArray(catalogSellerCapabilities.state, ["discovered", "ready", "stale", "failed"]),
-      or(isNull(catalogSellerCapabilities.nextProbeAt), lte(catalogSellerCapabilities.nextProbeAt, input.nowMs)),
-    ))
-    .orderBy(
-      sql`CASE WHEN ${catalogEndpoints.lastAttemptOutcome} = 'protocol_valid' THEN 0 ELSE 1 END`,
-      sql`CASE WHEN ${catalogSellerCapabilities.transport} = 'erc8183_http' THEN 0 ELSE 1 END`,
-      catalogSellerCapabilities.nextProbeAt, catalogSellerCapabilities.updatedAt, catalogSellerCapabilities.agentKey)
-    // Read beyond the dispatch budget so one shared host cannot consume the
-    // entire candidate window before origin deduplication.
-    .limit(Math.min(1000, window * 10));
+  const selectDue = (bootstrap: boolean | null, window: number) => db.all<{
+    agentKey: string; endpointKey: string; originKey: string; compatibilityState: string;
+  }>(sql`
+    WITH ranked AS (
+      SELECT c.agentKey, c.endpointKey, COALESCE(e.originKey, e.endpointKey) AS originKey,
+        c.compatibilityState,
+        CASE WHEN e.lastAttemptOutcome='protocol_valid' THEN 0 ELSE 1 END AS onlineRank,
+        CASE WHEN c.transport='erc8183_http' THEN 0 ELSE 1 END AS transportRank,
+        c.nextProbeAt, c.updatedAt,
+        ROW_NUMBER() OVER (
+          PARTITION BY COALESCE(e.originKey, e.endpointKey)
+          ORDER BY CASE WHEN e.lastAttemptOutcome='protocol_valid' THEN 0 ELSE 1 END,
+            CASE WHEN c.transport='erc8183_http' THEN 0 ELSE 1 END,
+            c.nextProbeAt, c.updatedAt, c.agentKey, c.endpointKey
+        ) AS originRank
+      FROM catalog_seller_capabilities c
+      JOIN catalog_agents a ON a.agentKey=c.agentKey AND a.indexState='current'
+      JOIN catalog_agent_endpoints ae ON ae.agentKey=c.agentKey AND ae.endpointKey=c.endpointKey AND ae.declarationState='current'
+      JOIN catalog_endpoints e ON e.endpointKey=c.endpointKey AND e.role='operational' AND e.eligibility='eligible'
+      WHERE c.state IN ('discovered','ready','stale','failed')
+        AND (c.nextProbeAt IS NULL OR c.nextProbeAt <= ${input.nowMs})
+        AND ${bootstrap === null ? sql`1=1` : bootstrap ? sql`c.compatibilityState='pending'` : sql`c.compatibilityState<>'pending'`}
+    )
+    SELECT agentKey, endpointKey, originKey, compatibilityState FROM ranked
+    WHERE originRank=1
+    ORDER BY onlineRank, transportRank, nextProbeAt, updatedAt, agentKey, endpointKey
+    LIMIT ${Math.min(1000, window * 10)}
+  `);
   // Independent candidate windows: retries on reachable hosts must not crowd
   // first-time discovery out of the bounded SQL result (or vice versa).
   const cohorts = bootstrapLimit > 0
@@ -186,6 +184,7 @@ export async function enqueueDueCatalogCapabilities(
   `);
   const count = (state: string) => Number(counts.find((row) => row.state === state)?.total ?? 0);
   return {
+    selected: selected.length,
     enqueued,
     skipped,
     pending: count("discovered"),
@@ -255,7 +254,8 @@ export async function runCatalogCapabilityProbe(
     await recordCompatibility(db, target, now(), { errorCode: code });
     const failures = capability.consecutiveFailures + 1;
     const delays = config.catalogFailureBackoffMinutes;
-    const delay = delays[Math.min(failures - 1, delays.length - 1)] ?? 60;
+    // Structural/access blockers need provider action, not frequent automatic retries.
+    const delay = needsProviderChange(code) ? 10080 : delays[Math.min(failures - 1, delays.length - 1)] ?? 60;
     // Requirements discovery is not a quote attempt. recordCompatibility owns
     // its error; preserve the independent signed-quote state and last error.
     await db.update(catalogSellerCapabilities).set({ consecutiveFailures: failures, nextProbeAt: now() + delay * 60000 }).where(and(eq(catalogSellerCapabilities.agentKey, work.agentKey), eq(catalogSellerCapabilities.endpointKey, work.endpointKey)));
