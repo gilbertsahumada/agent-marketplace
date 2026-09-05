@@ -13,6 +13,7 @@ import { bsc, bscTestnet } from "viem/chains";
 import type { D1DatabaseLike } from "../db/client";
 import { createDatabase } from "../db/orm";
 import { catalogObservations, catalogQuoteRequests, hireEvents } from "../db/schema";
+import { providerIdentity } from "../../../shared/agent-identity";
 import {
   BSC_COMMERCE,
   BSC_REGISTRY,
@@ -221,7 +222,7 @@ async function verifyChainPhase(
     throw new HireEventRejected("JOB_STATUS_INCOMPATIBLE");
   }
   const wallet = readAddress(walletRead);
-  const provider = wallet && !isAddressEqual(wallet, ZERO_ADDRESS) ? wallet : readAddress(ownerRead);
+  const provider = providerIdentity({ agentWallet: wallet, owner: readAddress(ownerRead), allowOwnerFallback: true })?.wallet;
   if (!provider || isAddressEqual(provider, ZERO_ADDRESS) || !isAddressEqual(provider, job.provider)) {
     throw new HireEventRejected("AGENT_MISMATCH");
   }
