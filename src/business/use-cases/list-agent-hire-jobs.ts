@@ -1,4 +1,4 @@
-import type { HireAddress, HireJob, HireJobsScope, HireLedger } from "../entities/hire-job.ts";
+import type { HireAddress, HireChainId, HireJob, HireJobsScope, HireLedger } from "../entities/hire-job.ts";
 import type { MarketplaceAgent } from "../entities/marketplace-agent.ts";
 
 const ADDRESS = /^0x[0-9a-fA-F]{40}$/;
@@ -10,6 +10,7 @@ export interface AgentHireJobs {
   // callers show that the list is capped, they do not page here.
   nextBefore: string | null;
   scope: HireJobsScope;
+  totals?: { total: number; completed: number; funded: number; submitted: number };
 }
 
 // Jobs sold by an agent, by its registry agent wallet when the marketplace
@@ -20,15 +21,18 @@ export interface AgentHireJobs {
 export class ListAgentHireJobs {
   constructor(private readonly ledger: HireLedger) {}
 
-  async execute(input: { agent: MarketplaceAgent }): Promise<AgentHireJobs | null> {
+  async execute(input: { agent: MarketplaceAgent; before?: string; chainId?: HireChainId }): Promise<AgentHireJobs | null> {
     const provider = providerWallet(input.agent);
+    const chainId = input.chainId ?? 56;
+    // A Mainnet registration ID must never be reused as a Testnet identity.
+    if (chainId !== 56 && provider === null) return null;
     const scope: HireJobsScope = provider === null ? "agent" : "wallet";
     try {
       const page = provider === null
-        ? await this.ledger.listJobsByAgent({ chainId: 56, agentId: input.agent.agentId })
-        : await this.ledger.listJobsByProvider({ chainId: 56, provider });
+        ? await this.ledger.listJobsByAgent({ chainId, agentId: input.agent.agentId, ...(input.before ? { before: input.before } : {}) })
+        : await this.ledger.listJobsByProvider({ chainId, provider, ...(input.before ? { before: input.before } : {}) });
       if (page === null) return null;
-      return { jobs: page.jobs, nextBefore: page.nextBefore, scope };
+      return { jobs: page.jobs, nextBefore: page.nextBefore, scope, ...(page.totals ? { totals: page.totals } : {}) };
     } catch {
       return null;
     }
