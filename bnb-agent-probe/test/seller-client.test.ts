@@ -399,6 +399,7 @@ describe("Workers MCP seller quote probe", () => {
           headers: { "content-type": "application/json", "mcp-session-id": "session-1" },
         });
       }
+      if (request.method === "notifications/initialized") return new Response(null, { status: 202 });
       if (request.method === "tools/list") {
         return json({ jsonrpc: "2.0", id: request.id, result: { tools } });
       }
@@ -419,11 +420,12 @@ describe("Workers MCP seller quote probe", () => {
     });
 
     expect(quote).toMatchObject({ quote: { request_hash: "0x01" } });
-    expect(JSON.parse(String(fetchImpl.mock.calls[2]?.[1]?.body))).toMatchObject({
+    expect(JSON.parse(String(fetchImpl.mock.calls[3]?.[1]?.body))).toMatchObject({
       method: "tools/call",
       params: { name: "request_quote", arguments: { task_description: "Task", terms: mcpTerms } },
     });
     expect(fetchImpl.mock.calls[1]?.[1]?.headers).toMatchObject({ "mcp-session-id": "session-1" });
+    expect(JSON.parse(String(fetchImpl.mock.calls[1]?.[1]?.body))).toEqual({ jsonrpc: "2.0", method: "notifications/initialized" });
   });
 
   it("accepts a standard MCP text content item containing the quote envelope", async () => {
