@@ -9,6 +9,7 @@ import {
   parseHireJobPage,
   parseHireLedgerSummary,
 } from "../src/data/observation/hire-ledger-feed.ts";
+import { HIRE_ACTIVITY_CACHE_SECONDS } from "../src/business/entities/hire-job.ts";
 import { MarketplaceDataUnavailableError } from "../src/business/errors/marketplace-errors.ts";
 
 const ENV = { OBSERVATIONS_URL: "https://probe.example.workers.dev/observations" };
@@ -177,7 +178,7 @@ describe("hire ledger feed", () => {
     await expect(getHireActivity({ chainId: 56, days: 90, agentId: "303779", env: ENV })).resolves.toMatchObject({ chainId: 56 });
     expect(requested).toEqual([
       "https://probe.example.workers.dev/commerce-activity?chainId=56",
-      `https://probe.example.workers.dev/commerce-activity?chainId=56&days=7&provider=${SELLER}`,
+      `https://probe.example.workers.dev/commerce-activity?chainId=56&days=7&provider=${SELLER.toLowerCase()}`,
       "https://probe.example.workers.dev/commerce-activity?chainId=56&days=90&agentId=303779",
     ]);
     await expect(getHireActivity({ chainId: 56, provider: SELLER, agentId: "303779", env: ENV })).resolves.toBeNull();
@@ -215,7 +216,7 @@ describe("hire ledger feed", () => {
     await expect(getHireJob({ chainId: 56, jobId: "56696", env: ENV })).resolves.toMatchObject({ jobId: "56696" });
     await expect(getHireLedgerSummary({ chainId: 56, env: ENV })).resolves.toMatchObject({ protocol: { jobs: 10 } });
     expect(requested).toEqual([
-      `https://probe.example.workers.dev/commerce-jobs?chainId=56&buyer=${BUYER}&before=100`,
+      `https://probe.example.workers.dev/commerce-jobs?chainId=56&buyer=${BUYER.toLowerCase()}&before=100`,
       "https://probe.example.workers.dev/commerce-jobs/56/56696",
       "https://probe.example.workers.dev/commerce-summary?chainId=56",
     ]);
@@ -223,6 +224,27 @@ describe("hire ledger feed", () => {
     await expect(getHireJobs({ chainId: 56, agentId: "0x1", env: ENV })).resolves.toBeNull();
     await expect(getHireJob({ chainId: 56, jobId: "abc", env: ENV })).resolves.toBeNull();
     expect(requested).toHaveLength(3);
+  });
+
+  // The Worker validates addresses with a strict EIP-55 check; the marketplace
+  // accepts any 0x + 40 hex input and hands it over lowercased, so a wrongly
+  // cased address is still a valid query, not a 400 the caller cannot explain.
+  it("lowercases buyer and provider filters before building the Worker URL", async () => {
+    const badChecksum = "0xa2A2012E52fd075C0f3146E37e833e7294EE52b5";
+    const requested: string[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      requested.push(String(input));
+      return String(input).includes("/commerce-activity") ? Response.json(activity()) : Response.json(page());
+    }));
+    await expect(getHireJobs({ chainId: 56, provider: badChecksum, env: ENV })).resolves.toMatchObject({ jobs: [{ jobId: "56696" }] });
+    await expect(getHireJobs({ chainId: 56, buyer: badChecksum, before: "7", env: ENV })).resolves.toMatchObject({ jobs: [{ jobId: "56696" }] });
+    await expect(getHireActivity({ chainId: 56, provider: badChecksum, env: ENV })).resolves.toMatchObject({ days: 30 });
+    expect(requested).toEqual([
+      `https://probe.example.workers.dev/commerce-jobs?chainId=56&provider=${badChecksum.toLowerCase()}`,
+      `https://probe.example.workers.dev/commerce-jobs?chainId=56&buyer=${badChecksum.toLowerCase()}&before=7`,
+      `https://probe.example.workers.dev/commerce-activity?chainId=56&provider=${badChecksum.toLowerCase()}`,
+    ]);
+    for (const url of requested) expect(url).not.toMatch(/0x[0-9a-f]*[A-F]/);
   });
 
   it("rejects a detail response for a different job than the one requested", async () => {
@@ -283,7 +305,8 @@ describe("hire ledger feed cache", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
-  it("serves a repeat activity read within 60 s from cache, longer than the 30 s job window", async () => {
+  it("serves a repeat activity read within HIRE_ACTIVITY_CACHE_SECONDS from cache, longer than the 30 s job window", async () => {
+    expect(HIRE_ACTIVITY_CACHE_SECONDS).toBe(60);
     const fetchMock = vi.fn<typeof fetch>(async () => Response.json(activity()));
     vi.stubGlobal("fetch", fetchMock);
     await getHireActivity({ chainId: 56, days: 60, env: ENV });
@@ -291,7 +314,11 @@ describe("hire ledger feed cache", () => {
     await getHireActivity({ chainId: 56, days: 60, env: ENV });
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(fetchMock.mock.calls[0]?.[1]?.signal).toBeInstanceOf(AbortSignal);
-    vi.advanceTimersByTime(30_000);
+    // Just inside the window is still served from cache; the window's end is not.
+    vi.advanceTimersByTime(HIRE_ACTIVITY_CACHE_SECONDS * 1000 - 30_001 - 1);
+    await getHireActivity({ chainId: 56, days: 60, env: ENV });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    vi.advanceTimersByTime(1);
     await getHireActivity({ chainId: 56, days: 60, env: ENV });
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });

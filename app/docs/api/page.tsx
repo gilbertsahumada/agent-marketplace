@@ -25,7 +25,7 @@ const ROUTES: { journey: string; method: string; path: string; purpose: string }
   { journey: "Track / Result", method: "GET", path: "/api/marketplace/jobs/{network}/{jobId}", purpose: "Chain-resolved job state and hash-verified deliverable." },
   { journey: "Track / Ledger — jobs", method: "GET", path: "/api/marketplace/jobs?chainId=56|97&buyer|provider|agentId=…&before=…", purpose: "Indexed on-chain jobs, newest first (at most one identity filter; before = previous nextBefore). Activity, not a track record. Cache 30/60." },
   { journey: "Track / Ledger — summary", method: "GET", path: "/api/marketplace/jobs/summary?chainId=…", purpose: "Protocol-wide vs marketplace-processed job counts per status, plus the block the indexer has reached." },
-  { journey: "Track / Ledger — activity", method: "GET", path: "/api/marketplace/jobs/activity?chainId=…", purpose: "Per-day phase counts for the activity chart. Cache 60/300." },
+  { journey: "Track / Ledger — activity", method: "GET", path: "/api/marketplace/jobs/activity?chainId=…&days=1..90&provider=|agentId=…", purpose: "Per-day phase counts (whole UTC days, ending today) over the trailing window; at most one of provider/agentId. Indexed activity. Cache 60/60." },
   { journey: "Track / Ledger — one job", method: "GET", path: "/api/marketplace/jobs/{network}/{jobId}/ledger", purpose: "One job's indexed ledger: state, phase events and the marketplace's chain-verified hire events for it." },
   { journey: "Agents (MCP)", method: "POST", path: "/api/mcp", purpose: "The seven MCP tools over stateless Streamable HTTP." },
 ];

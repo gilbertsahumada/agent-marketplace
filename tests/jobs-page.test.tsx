@@ -111,7 +111,9 @@ describe("/jobs ledger page", () => {
 
     const html = await render();
 
-    expect(ledger.activity).toHaveBeenCalledWith({ chainId: 56, days: 30 });
+    // No explicit days: the default window is the Worker's default, so the
+    // page and the agent profile share one cached read.
+    expect(ledger.activity).toHaveBeenCalledWith({ chainId: 56 });
     expect(html).toContain("Last 30 days");
     expect(html).toContain("2026-09-01");
     expect(html).toContain("2026-09-02");
@@ -126,7 +128,7 @@ describe("/jobs ledger page", () => {
 
     const html = await render({ chainId: "97", provider: BUYER });
 
-    expect(ledger.activity).toHaveBeenCalledWith({ chainId: 97, days: 30, provider: BUYER });
+    expect(ledger.activity).toHaveBeenCalledWith({ chainId: 97, provider: BUYER });
     expect(html).toContain("Recent activity temporarily unavailable.");
     expect(html).toContain("Attributed to marketplace");
     expect(html).not.toContain("Indexed ledger temporarily unavailable");

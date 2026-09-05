@@ -1,9 +1,8 @@
-import type { HireActivity, HireAddress, HireJob, HireJobsScope, HireLedger } from "../entities/hire-job.ts";
+import type { HireActivity, HireAddress, HireJob, HireJobPage, HireJobsScope, HireLedger } from "../entities/hire-job.ts";
 import type { MarketplaceAgent } from "../entities/marketplace-agent.ts";
 
 const ADDRESS = /^0x[0-9a-fA-F]{40}$/;
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
-const ACTIVITY_DAYS = 30;
 
 export interface AgentHireJobs {
   jobs: HireJob[];
@@ -11,8 +10,8 @@ export interface AgentHireJobs {
   // callers show that the list is capped, they do not page here.
   nextBefore: string | null;
   scope: HireJobsScope;
-  // Phase events over the last 30 days in the same scope; null when that
-  // window could not be read, which never hides the jobs.
+  // Phase events over the last HIRE_ACTIVITY_DEFAULT_DAYS in the same scope;
+  // null when that window could not be read, which never hides the jobs.
   activity: HireActivity | null;
 }
 
@@ -27,24 +26,34 @@ export class ListAgentHireJobs {
   async execute(input: { agent: MarketplaceAgent }): Promise<AgentHireJobs | null> {
     const provider = providerWallet(input.agent);
     const scope: HireJobsScope = provider === null ? "agent" : "wallet";
+    // The required read starts first; the optional window follows and runs
+    // alongside it.
+    const page = this.jobs(provider, input.agent.agentId);
     const activity = this.activity(provider, input.agent.agentId);
+    const [jobs, window] = await Promise.all([page, activity]);
+    if (jobs === null) return null;
+    return { jobs: jobs.jobs, nextBefore: jobs.nextBefore, scope, activity: window };
+  }
+
+  // Never rejects: a ledger that throws is an unavailable ledger (null).
+  private async jobs(provider: HireAddress | null, agentId: string): Promise<HireJobPage | null> {
     try {
-      const page = provider === null
-        ? await this.ledger.listJobsByAgent({ chainId: 56, agentId: input.agent.agentId })
+      return provider === null
+        ? await this.ledger.listJobsByAgent({ chainId: 56, agentId })
         : await this.ledger.listJobsByProvider({ chainId: 56, provider });
-      if (page === null) return null;
-      return { jobs: page.jobs, nextBefore: page.nextBefore, scope, activity: await activity };
     } catch {
       return null;
     }
   }
 
-  // Read alongside the list, never rejects: a failed window is null.
+  // Read alongside the list, never rejects: a failed window is null. The
+  // default window (HIRE_ACTIVITY_DEFAULT_DAYS) is the Worker's own, so no
+  // `days` is sent: the read shares its cache entry with the /jobs page.
   private async activity(provider: HireAddress | null, agentId: string): Promise<HireActivity | null> {
     try {
       return await this.ledger.activity(provider === null
-        ? { chainId: 56, days: ACTIVITY_DAYS, agentId }
-        : { chainId: 56, days: ACTIVITY_DAYS, provider });
+        ? { chainId: 56, agentId }
+        : { chainId: 56, provider });
     } catch {
       return null;
     }

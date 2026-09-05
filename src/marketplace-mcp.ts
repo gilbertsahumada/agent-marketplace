@@ -64,7 +64,11 @@ function optionalString(args: ToolArguments, name: string, pattern: RegExp, expe
 }
 
 const EVM_ADDRESS = /^0x[0-9a-fA-F]{40}$/;
-const JOB_ID = /^[1-9]\d*$/;
+// Mirrors src/presentation/http/hire-ledger-http.ts (jobIdParameter and
+// agentIdParameter) so the tool refuses exactly what the route would 400.
+// Mirrored, not imported: this module stays free of Next.js.
+const LEDGER_CURSOR = /^[1-9]\d{0,15}$/;
+const LEDGER_AGENT_ID = /^[1-9]\d{0,19}$/;
 const CHAIN_IDS: Record<(typeof NETWORKS)[number], string> = { mainnet: "56", testnet: "97" };
 
 // Query for GET /api/marketplace/jobs. One identity filter at most: the route
@@ -72,8 +76,8 @@ const CHAIN_IDS: Record<(typeof NETWORKS)[number], string> = { mainnet: "56", te
 function ledgerJobsPath(args: ToolArguments, network: (typeof NETWORKS)[number]): string {
   const buyer = optionalString(args, "buyer", EVM_ADDRESS, "an EVM address (0x + 40 hex characters)");
   const provider = optionalString(args, "provider", EVM_ADDRESS, "an EVM address (0x + 40 hex characters)");
-  const agentId = optionalString(args, "agentId", /^\d+$/, "a numeric agent id");
-  const before = optionalString(args, "before", JOB_ID, "a positive decimal job id");
+  const agentId = optionalString(args, "agentId", LEDGER_AGENT_ID, "a numeric agent id");
+  const before = optionalString(args, "before", LEDGER_CURSOR, "a positive decimal job id");
   if ([buyer, provider, agentId].filter((value) => value !== undefined).length > 1) {
     throw new Error("Use at most one of buyer, provider or agentId");
   }

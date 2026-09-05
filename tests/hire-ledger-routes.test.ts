@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { HIRE_ACTIVITY_CACHE_SECONDS } from "../src/business/entities/hire-job.ts";
 import { MarketplaceDataUnavailableError } from "../src/business/errors/marketplace-errors.ts";
 
 const ledger = vi.hoisted(() => ({
@@ -41,6 +42,12 @@ describe("hire ledger controllers", () => {
     expect(ledger.listJobsByBuyer).toHaveBeenCalledWith({ chainId: 97, buyer: BUYER, before: "100" });
     await jobs.GET(new Request(`http://local/api/marketplace/jobs?chainId=56&provider=${BUYER}`));
     expect(ledger.listJobsByProvider).toHaveBeenCalledWith({ chainId: 56, provider: BUYER });
+    // A wrongly cased (invalid EIP-55) address is still 0x + 40 hex: the route
+    // accepts it and the data layer normalises it, never a 503 for a bad case.
+    const badChecksum = "0x5EE75A1b1648c023E885e58Bd3735aE273F2CC52";
+    const mixed = await jobs.GET(new Request(`http://local/api/marketplace/jobs?chainId=56&provider=${badChecksum}`));
+    expect(mixed.status).toBe(200);
+    expect(ledger.listJobsByProvider).toHaveBeenLastCalledWith({ chainId: 56, provider: badChecksum });
     await jobs.GET(new Request("http://local/api/marketplace/jobs?chainId=56&agentId=303779"));
     expect(ledger.listJobsByAgent).toHaveBeenCalledWith({ chainId: 56, agentId: "303779" });
   });
@@ -110,7 +117,8 @@ describe("hire ledger controllers", () => {
 
     const response = await activity.GET(new Request("http://local/api/marketplace/jobs/activity?chainId=56"));
     expect(response.status).toBe(200);
-    expect(response.headers.get("cache-control")).toBe("public, max-age=60, stale-while-revalidate=300");
+    expect(response.headers.get("cache-control")).toBe(`public, max-age=${HIRE_ACTIVITY_CACHE_SECONDS}, stale-while-revalidate=${HIRE_ACTIVITY_CACHE_SECONDS}`);
+    expect(response.headers.get("cache-control")).toBe("public, max-age=60, stale-while-revalidate=60");
     expect(await response.json()).toEqual(window);
     expect(ledger.activity).toHaveBeenCalledWith({ chainId: 56 });
 

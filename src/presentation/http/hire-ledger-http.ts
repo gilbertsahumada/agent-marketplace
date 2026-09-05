@@ -1,11 +1,14 @@
 import { NextResponse } from "next/server";
-import type { HireAddress, HireChainId } from "../../business/entities/hire-job.ts";
+import { HIRE_ACTIVITY_CACHE_SECONDS, type HireAddress, type HireChainId } from "../../business/entities/hire-job.ts";
 import { InvalidMarketplaceInputError, MarketplaceDataUnavailableError } from "../../business/errors/marketplace-errors.ts";
 
 // Same cache window as the Worker routes behind these responses.
 export const LEDGER_CACHE_HEADERS = { "cache-control": "public, max-age=30, stale-while-revalidate=60" };
-// The activity window is served by the Worker with a longer window of its own.
-export const ACTIVITY_CACHE_HEADERS = { "cache-control": "public, max-age=60, stale-while-revalidate=300" };
+// The activity window: one decision (HIRE_ACTIVITY_CACHE_SECONDS) feeds both
+// this header and the data layer's TTL.
+export const ACTIVITY_CACHE_HEADERS = {
+  "cache-control": `public, max-age=${HIRE_ACTIVITY_CACHE_SECONDS}, stale-while-revalidate=${HIRE_ACTIVITY_CACHE_SECONDS}`,
+};
 
 export function chainIdParameter(value: string | null): HireChainId {
   if (value === "56") return 56;

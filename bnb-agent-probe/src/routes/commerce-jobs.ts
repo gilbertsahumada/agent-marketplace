@@ -3,7 +3,14 @@ import { getAddress, isAddress } from "viem";
 
 import type { D1DatabaseLike } from "../db/client";
 import { createDatabase, readRuntimeStates, type CommerceJobRow } from "../db/orm";
-import { commerceJobCounts, commerceJobEvents, commerceJobs, hireEvents } from "../db/schema";
+import {
+  commerceJobCounts,
+  commerceJobEvents,
+  commerceJobs,
+  HIRE_CHAIN_PHASES,
+  type HireChainPhase,
+  hireEvents,
+} from "../db/schema";
 import { commerceCursorKey, commerceSummaryKey } from "../phases/commerce-index";
 import type { D1Database } from "../types";
 
@@ -202,24 +209,32 @@ export async function commerceJobResponse(request: Request, d1: D1Database): Pro
   }, { status: 200, headers: CACHE_HEADERS });
 }
 
-const PHASES = ["created", "funded", "submitted", "settled", "refunded"] as const;
-type Phase = typeof PHASES[number];
+type Phase = HireChainPhase;
 const ACTIVITY_DEFAULT_DAYS = 30;
 const ACTIVITY_MAX_DAYS = 90;
 const DAY_MS = 24 * 60 * 60 * 1_000;
+// Day buckets move slowly; the worker's response cache and the browser share
+// this window so the two cache-control headers agree.
+export const COMMERCE_ACTIVITY_CACHE_SECONDS = 60;
 const ACTIVITY_CACHE_HEADERS = {
-  "cache-control": "public, max-age=60, stale-while-revalidate=300",
+  "cache-control": `public, max-age=${COMMERCE_ACTIVITY_CACHE_SECONDS}, stale-while-revalidate=${COMMERCE_ACTIVITY_CACHE_SECONDS}`,
   "x-content-type-options": "nosniff",
 };
 
 function emptyPhaseCounts(): Record<Phase, number> {
-  return Object.fromEntries(PHASES.map((phase) => [phase, 0])) as Record<Phase, number>;
+  return Object.fromEntries(HIRE_CHAIN_PHASES.map((phase) => [phase, 0])) as Record<Phase, number>;
 }
 
-// Phase events per UTC day for one chain over a trailing window, optionally
-// for one provider wallet or for the jobs a marketplace agent has
-// chain-verified hire events on. Only events the indexer saw are counted:
-// jobs backfilled from state have no ledger rows.
+function startOfUtcDay(ms: number): number {
+  return Math.floor(ms / DAY_MS) * DAY_MS;
+}
+
+// Phase events per UTC day for one chain over the last `days` calendar days
+// ending today, optionally for one provider wallet or for the jobs a
+// marketplace agent has chain-verified hire events on. `from` is the UTC
+// midnight opening the oldest day so every bucket but today is complete;
+// today runs up to `to`, the clock reading. Only events the indexer saw are
+// counted: jobs backfilled from state have no ledger rows.
 export async function commerceActivityResponse(request: Request, d1: D1Database, nowMs: number): Promise<Response> {
   const url = new URL(request.url);
   if (!queryKeysAllowed(url, new Set(["chainId", "days", "provider", "agentId"]))) return invalidRequest();
@@ -234,7 +249,7 @@ export async function commerceActivityResponse(request: Request, d1: D1Database,
   if (agentId !== null && !AGENT_ID.test(agentId)) return invalidRequest();
   const days = daysRaw === null ? ACTIVITY_DEFAULT_DAYS : Number(daysRaw);
   const to = nowMs;
-  const from = to - days * DAY_MS;
+  const from = startOfUtcDay(nowMs) - (days - 1) * DAY_MS;
 
   const db = createDatabase(d1 as unknown as D1DatabaseLike);
   const providerFilter = provider === null
@@ -261,7 +276,7 @@ export async function commerceActivityResponse(request: Request, d1: D1Database,
   const byDay = new Map<string, Record<Phase, number>>();
   const totals = emptyPhaseCounts();
   for (const row of rows) {
-    if (!(PHASES as readonly string[]).includes(row.phase)) continue;
+    if (!(HIRE_CHAIN_PHASES as readonly string[]).includes(row.phase)) continue;
     const phase = row.phase as Phase;
     const counts = byDay.get(row.day) ?? emptyPhaseCounts();
     counts[phase] += Number(row.total);

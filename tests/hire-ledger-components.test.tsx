@@ -277,6 +277,10 @@ describe("HireLedgerPage", () => {
     expect(screen.getByText("Indexed ledger temporarily unavailable.")).toBeInTheDocument();
     expect(screen.getByText(/Counts temporarily unavailable/)).toBeInTheDocument();
     expect(screen.queryByText(/Recent jobs temporarily unavailable/)).not.toBeInTheDocument();
+    // The ledger-level notice already covers the activity window: one status
+    // region, not two.
+    expect(screen.queryByText("Recent activity temporarily unavailable.")).not.toBeInTheDocument();
+    expect(screen.getAllByRole("status")).toHaveLength(1);
   });
 
   it("shows the last 30 days as phase totals plus a per-day table with the indexing note", async () => {
@@ -308,7 +312,7 @@ describe("HireLedgerPage", () => {
   it("reports an unavailable activity window on its own without touching the counts or the jobs", () => {
     render(createElement(HireLedgerPage, { chainId: 56, summary: summary(), page, activity: null }));
 
-    expect(screen.getByText("Recent activity temporarily unavailable.")).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("Recent activity temporarily unavailable.");
     expect(screen.queryByRole("heading", { name: /Last 30 days/ })).not.toBeInTheDocument();
     expect(screen.getByText("56,697")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /Job #56696/ })).toBeInTheDocument();

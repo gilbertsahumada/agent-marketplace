@@ -141,6 +141,20 @@ describe("marketplace mcp server", () => {
       .rejects.toThrow("agentId must be a numeric agent id");
     await expect(listJobs.handler({ network: "mainnet", before: "0" }))
       .rejects.toThrow("before must be a positive decimal job id");
+    // Same rules as the HTTP route: agentId is 1..20 digits without a leading
+    // zero, before is at most 16 digits.
+    await expect(listJobs.handler({ network: "mainnet", agentId: "0" }))
+      .rejects.toThrow("agentId must be a numeric agent id");
+    await expect(listJobs.handler({ network: "mainnet", agentId: "012" }))
+      .rejects.toThrow("agentId must be a numeric agent id");
+    await expect(listJobs.handler({ network: "mainnet", agentId: "1".repeat(21) }))
+      .rejects.toThrow("agentId must be a numeric agent id");
+    await expect(listJobs.handler({ network: "mainnet", before: "1".repeat(17) }))
+      .rejects.toThrow("before must be a positive decimal job id");
+    await expect(listJobs.handler({ network: "mainnet", before: "01" }))
+      .rejects.toThrow("before must be a positive decimal job id");
+    await expect(tool("my_jobs", fetch).handler({ network: "mainnet", buyer: BUYER, before: "1".repeat(17) }))
+      .rejects.toThrow("before must be a positive decimal job id");
     await expect(listJobs.handler({ buyer: BUYER }))
       .rejects.toThrow("network must be one of");
     const myJobs = tool("my_jobs", fetch);

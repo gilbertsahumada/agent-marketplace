@@ -168,7 +168,7 @@ marketplace business layer. MCP tools and the CLI wrap these routes.
 | Track / Result | GET | /api/marketplace/jobs/{network}/{jobId} |
 | Track / Ledger — jobs | GET | /api/marketplace/jobs?chainId=56|97&buyer|provider|agentId=…&before=… |
 | Track / Ledger — summary | GET | /api/marketplace/jobs/summary?chainId=… |
-| Track / Ledger — activity | GET | /api/marketplace/jobs/activity?chainId=… |
+| Track / Ledger — activity | GET | /api/marketplace/jobs/activity?chainId=…&days=1..90&provider=|agentId=… |
 | Track / Ledger — one job | GET | /api/marketplace/jobs/{network}/{jobId}/ledger |
 | Agents (MCP) | POST | /api/mcp |
 
@@ -176,7 +176,8 @@ The demo hire routes are env-gated per network and answer 404 ERC8183_SPIKE_DISA
 when off. Ledger routes read the Worker's index of Commerce events: jobs lists
 newest first (at most one of buyer, provider, agentId; before = nextBefore of the
 previous page), summary gives protocol-vs-marketplace counts per status plus the indexed block, activity gives per-day
-phase counts (cache 60s, stale-while-revalidate 300s), and {jobId}/ledger gives one
+phase counts (whole UTC days, ending today, over a trailing window of 1..90 days, at most one of
+provider/agentId; cache 60s, stale-while-revalidate 60s), and {jobId}/ledger gives one
 job's phase events. marketplace: true means a chain-verified hire event exists — not
 that the marketplace verified the deliverable. Indexed activity, not a track record.
 

@@ -2,12 +2,18 @@ import { env } from "cloudflare:workers";
 import { createExecutionContext } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
 
+import { HIRE_CHAIN_PHASES } from "../../src/db/schema";
 import { createWorker } from "../../src/index";
-import { commerceActivityResponse } from "../../src/routes/commerce-jobs";
+import { COMMERCE_ACTIVITY_CACHE_SECONDS, commerceActivityResponse } from "../../src/routes/commerce-jobs";
 import type { D1Database, Env } from "../../src/types";
 
 const NOW = 1_788_000_000_000; // 2026-08-29T10:40:00.000Z
 const DAY = 86_400_000;
+// The window is whole UTC days ending today: `from` is the UTC midnight that
+// starts the oldest of the `days` calendar days, `to` is the clock reading.
+const TODAY = Date.UTC(2026, 7, 29);
+const FROM_30 = TODAY - 29 * DAY; // 2026-07-31T00:00:00.000Z
+const FROM_90 = TODAY - 89 * DAY; // 2026-06-01T00:00:00.000Z
 const BUYER = "0x5ee75a1B1648C023e885E58bD3735Ae273f2cc52";
 const SELLER = "0xA2a2012e52Fd075c0F3146e37E833E7294ee52B5";
 const OTHER = "0x1111111111111111111111111111111111111111";
@@ -66,8 +72,8 @@ async function seedLedger(): Promise<void> {
   await seedEvent(56, 901, "settled", NOW - 1);
   await seedEvent(56, 902, "created", NOW - 5 * DAY);
   await seedEvent(56, 904, "created", NOW - 5 * DAY + 1);
-  await seedEvent(56, 904, "funded", NOW - 30 * DAY); // exactly `from` of the default window: included
-  await seedEvent(56, 904, "funded", NOW - 30 * DAY - 1); // one millisecond older: excluded
+  await seedEvent(56, 904, "funded", FROM_30); // exactly `from` of the default window: included
+  await seedEvent(56, 904, "funded", FROM_30 - 1); // one millisecond older, the previous UTC day: excluded
   await seedEvent(56, 902, "refunded", NOW - 40 * DAY); // outside 30 days, inside 90
   await seedEvent(56, 902, "settled", NOW); // `to` is exclusive
   await seedEvent(97, 903, "created", NOW - 1_000);
@@ -97,17 +103,19 @@ describe("commerceActivityResponse", () => {
     await seedLedger();
     const response = await activity("chainId=56");
     expect(response.status).toBe(200);
-    expect(response.headers.get("cache-control")).toBe("public, max-age=60, stale-while-revalidate=300");
+    expect(COMMERCE_ACTIVITY_CACHE_SECONDS).toBe(60);
+    expect(response.headers.get("cache-control")).toBe("public, max-age=60, stale-while-revalidate=60");
     expect(response.headers.get("x-content-type-options")).toBe("nosniff");
     const body = await response.json() as Body;
+    expect(Object.keys(body.totals)).toEqual([...HIRE_CHAIN_PHASES]);
     expect(body).toEqual({
       schemaVersion: 1,
       chainId: 56,
       days: 30,
-      from: NOW - 30 * DAY,
+      from: FROM_30,
       to: NOW,
       byDay: [
-        day("2026-07-30", { funded: 1 }),
+        day("2026-07-31", { funded: 1 }),
         day("2026-08-24", { created: 2 }),
         day("2026-08-28", { created: 1 }),
         day("2026-08-29", { funded: 1, submitted: 1, settled: 1 }),
@@ -120,21 +128,33 @@ describe("commerceActivityResponse", () => {
     await seedLedger();
     const wide = await (await activity("chainId=56&days=90")).json() as Body;
     expect(wide.days).toBe(90);
-    expect(wide.from).toBe(NOW - 90 * DAY);
+    expect(wide.from).toBe(FROM_90);
     expect(wide.byDay[0]).toEqual(day("2026-07-20", { refunded: 1 }));
     // The funded event one millisecond before the default `from` now falls inside the window.
-    expect(wide.byDay[1]).toEqual(day("2026-07-30", { funded: 2 }));
-    expect(wide.byDay).toHaveLength(5);
+    expect(wide.byDay[1]).toEqual(day("2026-07-30", { funded: 1 }));
+    expect(wide.byDay[2]).toEqual(day("2026-07-31", { funded: 1 }));
+    expect(wide.byDay).toHaveLength(6);
     expect(wide.totals).toEqual({ created: 3, funded: 3, submitted: 1, settled: 1, refunded: 1 });
 
     const narrow = await (await activity("chainId=56&days=1")).json() as Body;
     expect(narrow.days).toBe(1);
-    expect(narrow.from).toBe(NOW - DAY);
-    expect(narrow.byDay).toEqual([
-      day("2026-08-28", { created: 1 }),
-      day("2026-08-29", { funded: 1, submitted: 1, settled: 1 }),
-    ]);
-    expect(narrow.totals).toEqual({ created: 1, funded: 1, submitted: 1, settled: 1, refunded: 0 });
+    // days=1 is today alone, from its UTC midnight: yesterday's 23:59:59 event is out.
+    expect(narrow.from).toBe(TODAY);
+    expect(narrow.byDay).toEqual([day("2026-08-29", { funded: 1, submitted: 1, settled: 1 })]);
+    expect(narrow.totals).toEqual({ created: 0, funded: 1, submitted: 1, settled: 1, refunded: 0 });
+  });
+
+  it("counts the oldest day of the window in full, from its first to its last millisecond", async () => {
+    await seedJob(56, 901, SELLER);
+    const oldest = TODAY - DAY; // days=2 at mid-day: yesterday is the oldest bucket
+    await seedEvent(56, 901, "created", oldest);
+    await seedEvent(56, 901, "funded", oldest + DAY - 1);
+    await seedEvent(56, 901, "settled", oldest - 1);
+    const body = await (await activity("chainId=56&days=2")).json() as Body;
+    expect(body.from).toBe(oldest);
+    expect(body.to).toBe(NOW);
+    expect(body.byDay).toEqual([day("2026-08-28", { created: 1, funded: 1 })]);
+    expect(body.totals).toEqual({ created: 1, funded: 1, submitted: 0, settled: 0, refunded: 0 });
   });
 
   it("scopes to one chain and reports an empty window as no days and zero totals", async () => {
@@ -201,7 +221,7 @@ describe("GET /commerce-activity through the worker", () => {
       createExecutionContext(),
     );
     expect(response.status).toBe(200);
-    expect(response.headers.get("cache-control")).toBe("public, max-age=60, stale-while-revalidate=300");
+    expect(response.headers.get("cache-control")).toBe("public, max-age=60, stale-while-revalidate=60");
     expect(response.headers.get("x-content-type-options")).toBe("nosniff");
     const body = await response.json() as Body;
     expect(body.to).toBe(NOW);

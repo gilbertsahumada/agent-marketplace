@@ -11,6 +11,13 @@ export type HireJobStatus = Erc8183JobFacts["status"];
 export type HireChainId = 56 | 97;
 export type HireAddress = `0x${string}`;
 
+// The activity window's cache decision, shared by the data layer's TTL and the
+// HTTP cache-control header so the two never drift apart.
+export const HIRE_ACTIVITY_CACHE_SECONDS = 60;
+// The Worker's own default window. Callers wanting it send no `days` at all,
+// so the default read is one cache entry, not one per spelling.
+export const HIRE_ACTIVITY_DEFAULT_DAYS = 30;
+
 export interface HireJob {
   chainId: HireChainId;
   jobId: string;
@@ -100,7 +107,8 @@ export interface HireLedger {
   listJobsByAgent(input: { chainId: HireChainId; agentId: string; before?: string }): Promise<HireJobPage | null>;
   getJob(input: { chainId: HireChainId; jobId: string }): Promise<HireJobDetail | null>;
   summary(input: { chainId: HireChainId }): Promise<HireLedgerSummary | null>;
-  // Trailing window of phase events (30 days by default, 1..90), scoped to at
-  // most one of provider/agentId; null when it cannot be read.
+  // Trailing window of phase events (HIRE_ACTIVITY_DEFAULT_DAYS when `days` is
+  // omitted, 1..90), scoped to at most one of provider/agentId; null when it
+  // cannot be read.
   activity(input: { chainId: HireChainId; days?: number; provider?: HireAddress; agentId?: string }): Promise<HireActivity | null>;
 }

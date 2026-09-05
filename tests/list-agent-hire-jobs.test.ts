@@ -52,14 +52,31 @@ describe("ListAgentHireJobs", () => {
       .resolves.toEqual({ jobs: [{ jobId: "56696" }], nextBefore: null, scope: "wallet", activity: ACTIVITY });
     expect(known.listJobsByProvider).toHaveBeenCalledWith({ chainId: 56, provider: WALLET });
     expect(known.listJobsByAgent).not.toHaveBeenCalled();
-    expect(known.activity).toHaveBeenCalledWith({ chainId: 56, days: 30, provider: WALLET });
+    // The default window is the Worker's own default: no explicit days, so the
+    // cached read is the same one the /jobs page makes.
+    expect(known.activity).toHaveBeenCalledWith({ chainId: 56, provider: WALLET });
 
     const unknown = ledger();
     await expect(new ListAgentHireJobs(unknown).execute({ agent: agent({ agentWallet: null, owner: null }) }))
       .resolves.toEqual({ jobs: [{ jobId: "56696" }], nextBefore: null, scope: "agent", activity: ACTIVITY });
     expect(unknown.listJobsByAgent).toHaveBeenCalledWith({ chainId: 56, agentId: "303779" });
     expect(unknown.listJobsByProvider).not.toHaveBeenCalled();
-    expect(unknown.activity).toHaveBeenCalledWith({ chainId: 56, days: 30, agentId: "303779" });
+    expect(unknown.activity).toHaveBeenCalledWith({ chainId: 56, agentId: "303779" });
+  });
+
+  // The jobs list is the required read; the activity window is optional and
+  // must never be started ahead of it.
+  it("starts the required jobs read before the optional activity read", async () => {
+    const known = ledger();
+    await new ListAgentHireJobs(known).execute({ agent: agent({ agentWallet: WALLET, owner: null }) });
+    const jobsOrder = vi.mocked(known.listJobsByProvider).mock.invocationCallOrder[0]!;
+    const activityOrder = vi.mocked(known.activity).mock.invocationCallOrder[0]!;
+    expect(jobsOrder).toBeLessThan(activityOrder);
+
+    const unknown = ledger();
+    await new ListAgentHireJobs(unknown).execute({ agent: agent({ agentWallet: null, owner: null }) });
+    expect(vi.mocked(unknown.listJobsByAgent).mock.invocationCallOrder[0]!)
+      .toBeLessThan(vi.mocked(unknown.activity).mock.invocationCallOrder[0]!);
   });
 
   it("keeps an empty ledger page apart from an unavailable ledger and passes the cursor through", async () => {

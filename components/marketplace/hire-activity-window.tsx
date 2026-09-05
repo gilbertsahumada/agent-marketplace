@@ -1,15 +1,10 @@
 import type { HireActivity } from "@/src/business/entities/hire-job";
-import type { VerifiedHirePhase } from "@/src/business/entities/verified-hire-event";
+import { HIRE_PHASES, type VerifiedHirePhase } from "@/src/business/entities/verified-hire-event";
 
-export const HIRE_PHASES: readonly VerifiedHirePhase[] = ["created", "funded", "submitted", "settled", "refunded"];
 const PHASE_LABELS: Record<VerifiedHirePhase, string> = {
   created: "Created", funded: "Funded", submitted: "Submitted", settled: "Settled", refunded: "Refunded",
 };
-export const ACTIVITY_NOTE = "Counts phase events indexed since the ledger started; earlier jobs are present by state only.";
-
-export function hirePhaseLabel(phase: VerifiedHirePhase): string {
-  return PHASE_LABELS[phase];
-}
+const ACTIVITY_NOTE = "Counts phase events indexed since the ledger started; earlier jobs are present by state only.";
 
 // Trailing window of phase events: totals per phase, then one row per UTC day
 // that had any. Activity only; a settled count proves phases, not deliverables.
@@ -22,7 +17,7 @@ export function HireActivityWindow({ activity }: { activity: HireActivity }) {
       <ul aria-label={totalsLabel} className="mt-4 flex flex-wrap gap-x-10 gap-y-4">
         {HIRE_PHASES.map((phase) => (
           <li className="flex flex-col" key={phase}>
-            <span className="text-sm text-muted-foreground">{hirePhaseLabel(phase)}</span>
+            <span className="text-sm text-muted-foreground">{PHASE_LABELS[phase]}</span>
             <span className="mt-1 text-2xl tabular-nums">{activity.totals[phase].toLocaleString("en")}</span>
           </li>
         ))}
@@ -35,7 +30,7 @@ export function HireActivityWindow({ activity }: { activity: HireActivity }) {
               <tr>
                 <th scope="col">Day</th>
                 {HIRE_PHASES.map((phase) => (
-                  <th key={phase} scope="col">{hirePhaseLabel(phase)}</th>
+                  <th key={phase} scope="col">{PHASE_LABELS[phase]}</th>
                 ))}
               </tr>
             </thead>

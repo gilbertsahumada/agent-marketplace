@@ -64,7 +64,7 @@ export function HireLedgerPage({ chainId, summary, page, activity = null, before
 
       {activity !== null
         ? <div className="mt-6"><HireActivityWindow activity={activity} /></div>
-        : <p className="mt-6 text-sm text-muted-foreground" role="status">Recent activity temporarily unavailable.</p>}
+        : (summary !== null || page !== null) && <p className="mt-6 text-sm text-muted-foreground" role="status">Recent activity temporarily unavailable.</p>}
 
       <section className="mt-8" aria-labelledby="recent-jobs">
         <div className="mb-5 flex flex-wrap items-baseline gap-3">

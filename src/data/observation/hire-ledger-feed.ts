@@ -1,18 +1,19 @@
 import { AsyncTtlCache } from "../cache/async-ttl-cache.ts";
-import type {
-  HireActivity,
-  HireActivityCounts,
-  HireAddress,
-  HireChainId,
-  HireJob,
-  HireJobDetail,
-  HireJobEvent,
-  HireJobPage,
-  HireJobStatus,
-  HireLedgerCounts,
-  HireLedgerSummary,
+import {
+  HIRE_ACTIVITY_CACHE_SECONDS,
+  type HireActivity,
+  type HireActivityCounts,
+  type HireAddress,
+  type HireChainId,
+  type HireJob,
+  type HireJobDetail,
+  type HireJobEvent,
+  type HireJobPage,
+  type HireJobStatus,
+  type HireLedgerCounts,
+  type HireLedgerSummary,
 } from "../../business/entities/hire-job.ts";
-import type { VerifiedHireEvent, VerifiedHirePhase } from "../../business/entities/verified-hire-event.ts";
+import { HIRE_PHASES, type VerifiedHireEvent, type VerifiedHirePhase } from "../../business/entities/verified-hire-event.ts";
 import { MarketplaceDataUnavailableError } from "../../business/errors/marketplace-errors.ts";
 import { catalogUrl } from "./catalog-candidate-feed.ts";
 
@@ -27,14 +28,14 @@ import { catalogUrl } from "./catalog-candidate-feed.ts";
 // Clock read through the global so tests can drive it with fake timers.
 const cache = new AsyncTtlCache(() => Date.now());
 const CACHE_TTL_MS = 30_000;
-// The activity window is served by the Worker with a 60 s window of its own.
-const ACTIVITY_TTL_MS = 60_000;
+// The activity window's cache decision lives with the entity so the HTTP
+// header and this TTL agree.
+const ACTIVITY_TTL_MS = HIRE_ACTIVITY_CACHE_SECONDS * 1000;
 const MAX_ACTIVITY_DAYS = 90;
 const MISS_TTL_MS = 10_000;
 const MAX_MISSES = 256;
 const misses = new Map<string, number>();
 const STATUS_NAMES: readonly HireJobStatus[] = ["OPEN", "FUNDED", "SUBMITTED", "COMPLETED", "REJECTED", "EXPIRED"];
-const PHASES: readonly VerifiedHirePhase[] = ["created", "funded", "submitted", "settled", "refunded"];
 const ADDRESS = /^0x[0-9a-fA-F]{40}$/;
 const TX_HASH = /^0x[0-9a-fA-F]{64}$/;
 const AGENT_ID = /^[1-9]\d{0,19}$/;
@@ -107,7 +108,7 @@ function job(entry: unknown, chain: HireChainId): HireJob {
 
 function event(entry: unknown): HireJobEvent {
   const value = record(entry);
-  if (!PHASES.includes(value.phase as VerifiedHirePhase) || typeof value.eventName !== "string") invalid();
+  if (!HIRE_PHASES.includes(value.phase as VerifiedHirePhase) || typeof value.eventName !== "string") invalid();
   if (typeof value.txHash !== "string" || !TX_HASH.test(value.txHash)) invalid();
   if (typeof value.logIndex !== "number" || !Number.isSafeInteger(value.logIndex) || value.logIndex < 0) invalid();
   if (typeof value.blockNumber !== "string" || !BLOCK_NUMBER.test(value.blockNumber)) invalid();
@@ -128,7 +129,7 @@ function event(entry: unknown): HireJobEvent {
 function verifiedEvent(entry: unknown, chain: HireChainId, jobId: string): VerifiedHireEvent {
   const value = record(entry);
   if (typeof value.agentId !== "string" || !AGENT_ID.test(value.agentId)) invalid();
-  if (!PHASES.includes(value.phase as VerifiedHirePhase)) invalid();
+  if (!HIRE_PHASES.includes(value.phase as VerifiedHirePhase)) invalid();
   if (typeof value.txHash !== "string" || !TX_HASH.test(value.txHash)) invalid();
   if (typeof value.blockNumber !== "string" || !BLOCK_NUMBER.test(value.blockNumber)) invalid();
   return {
@@ -218,10 +219,10 @@ function activityDays(value: unknown): number {
 function activityCounts(entry: unknown): HireActivityCounts {
   const value = record(entry);
   for (const key of Object.keys(value)) {
-    if (!PHASES.includes(key as VerifiedHirePhase)) invalid();
+    if (!HIRE_PHASES.includes(key as VerifiedHirePhase)) invalid();
   }
   const result = {} as HireActivityCounts;
-  for (const phase of PHASES) {
+  for (const phase of HIRE_PHASES) {
     const count = value[phase];
     if (typeof count !== "number" || !Number.isSafeInteger(count) || count < 0) invalid();
     result[phase] = count;
@@ -290,6 +291,14 @@ async function readOrNull<T>(key: string, url: URL, parse: (value: unknown) => T
   }
 }
 
+// The Worker checks addresses with a strict EIP-55 test, which rejects a
+// mixed-case address whose checksum does not match. The marketplace accepts any
+// 0x + 40 hex input, so filters go out lowercased: still the same account, and
+// a form the Worker always accepts.
+function queryAddress(value: HireAddress): string {
+  return value.toLowerCase();
+}
+
 // At most one identity filter; the Worker rejects two with 400, the reader
 // refuses before any request.
 export async function getHireJobs(input: {
@@ -309,8 +318,8 @@ export async function getHireJobs(input: {
   const url = catalogUrl("/commerce-jobs", input.env ?? process.env);
   if (!url) return null;
   url.searchParams.set("chainId", String(input.chainId));
-  if (input.buyer !== undefined) url.searchParams.set("buyer", input.buyer);
-  if (input.provider !== undefined) url.searchParams.set("provider", input.provider);
+  if (input.buyer !== undefined) url.searchParams.set("buyer", queryAddress(input.buyer));
+  if (input.provider !== undefined) url.searchParams.set("provider", queryAddress(input.provider));
   if (input.agentId !== undefined) url.searchParams.set("agentId", input.agentId);
   if (input.before !== undefined) url.searchParams.set("before", input.before);
   return readOrNull(`commerce-jobs:${url}`, url, (value) => parseHireJobPage(value, input.chainId));
@@ -350,8 +359,9 @@ export async function getHireLedgerSummary(input: { chainId: HireChainId; env?: 
   return readOrNull(`commerce-summary:${url}`, url, (value) => parseHireLedgerSummary(value, input.chainId));
 }
 
-// Phase events per UTC day over the trailing window (the Worker defaults to
-// 30 days). At most one identity filter, like the job list; every failure,
+// Phase events per UTC day over the trailing window. `days` is sent only when
+// given (absent means the Worker's default, so the default read shares one
+// cache entry). At most one identity filter, like the job list; every failure,
 // including an unconfigured origin, answers null.
 export async function getHireActivity(input: {
   chainId: HireChainId;
@@ -368,7 +378,7 @@ export async function getHireActivity(input: {
   if (!url) return null;
   url.searchParams.set("chainId", String(input.chainId));
   if (input.days !== undefined) url.searchParams.set("days", String(input.days));
-  if (input.provider !== undefined) url.searchParams.set("provider", input.provider);
+  if (input.provider !== undefined) url.searchParams.set("provider", queryAddress(input.provider));
   if (input.agentId !== undefined) url.searchParams.set("agentId", input.agentId);
   return readOrNull(`commerce-activity:${url}`, url, (value) => parseHireActivity(value, input.chainId), ACTIVITY_TTL_MS);
 }
