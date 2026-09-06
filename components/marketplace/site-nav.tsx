@@ -7,6 +7,7 @@ import { useEffect, useRef, useState } from "react";
 import { WalletConnectButton } from "./wallet-connect-button";
 
 const navigation = [
+  { href: "/ask", label: "Ask" },
   { href: "/agents", label: "Agents" },
   { href: "/compare", label: "Compare" },
   { href: "/jobs", label: "Jobs" },

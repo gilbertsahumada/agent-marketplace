@@ -30,6 +30,13 @@ export default function HireDocsPage() {
 
       <DocsSection id="sequence" title="The sequence">
         <FlowDiagram steps={["request_quote", "verify locally", "prepare", "authorize 4–5 calls", "notify", "track"]} />
+        <SubHeading id="say-what-you-need">0 · Say what you need</SubHeading>
+        <p>
+          Describe your requirement in plain language at{" "}
+          <Link className="text-zinc-200 underline decoration-zinc-700 underline-offset-2 hover:text-white" href="/ask">/ask</Link>{" "}
+          or via <InlineCode>POST /api/marketplace/concierge</InlineCode>. The concierge searches the catalogue,
+          drafts your brief and proposes seller parameters. Review every field before proceeding to the quote.
+        </p>
         <SubHeading id="quote">1 · Request a quote</SubHeading>
         <p>
           <InlineCode>POST /api/marketplace/demo/erc8183[-mainnet]/quote</InlineCode> (or the <InlineCode>request_quote</InlineCode> MCP

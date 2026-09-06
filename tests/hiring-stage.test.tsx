@@ -56,4 +56,16 @@ describe("hiring stage", () => {
     expect(listed).toContain("See Grid Bot");
     expect(renderToStaticMarkup(createElement(HiringStage))).not.toContain("Get a quote");
   });
+
+  it("swaps the auto-typed brief for the supplied node without touching the timeline or CTA", () => {
+    const html = renderToStaticMarkup(createElement(HiringStage, {
+      agent: { name: "Grid Planner", agentId: "303779", href: "/hire/303779", quoteCapable: true },
+      brief: createElement("p", null, "chat here"),
+    }));
+    expect(html).toContain("chat here");
+    expect(html).not.toContain(BRIEF.objective);
+    expect(html.match(/data-state="done"/g)).toHaveLength(4);
+    expect(html).toContain("Get a quote from Grid Planner");
+    expect(html).toContain("ask the concierge");
+  });
 });

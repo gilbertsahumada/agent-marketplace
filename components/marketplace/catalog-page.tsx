@@ -9,7 +9,8 @@ import {
   type MarketplaceSort,
 } from "@/src/business/use-cases/list-marketplace-agents";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { buttonVariants } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { CatalogFilters } from "./catalog-filters";
 import { CatalogResults } from "./catalog-results";
 import { PaginationLinks } from "./page-primitives";
@@ -47,6 +48,7 @@ export function CatalogPage({
   registryTotal: providedRegistryTotal,
   operationalTotal: providedOperationalTotal,
   filterCounts,
+  conciergeEnabled = false,
 }: {
   data?: MarketplaceAgentPage;
   catalog?: CatalogCandidatePage;
@@ -68,6 +70,7 @@ export function CatalogPage({
   registryTotal?: number;
   operationalTotal?: number;
   filterCounts?: CatalogFacetCounts;
+  conciergeEnabled?: boolean;
 }) {
   if (!data && !catalog) throw new Error("CATALOG_PAGE_DATA_REQUIRED");
   const allView = query.view === "all";
@@ -193,6 +196,18 @@ export function CatalogPage({
     <main id="main-content" className="mx-auto w-full max-w-[96rem] flex-1 px-4 py-6 sm:px-6 lg:px-8">
       <h1 className="sr-only">Agents</h1>
       <CatalogReturnRefresh />
+      {conciergeEnabled && (
+        <form action="/ask" aria-label="Ask the concierge" className="marketplace-surface mb-6 flex items-center gap-2 rounded-xl p-3" method="get">
+          <label className="sr-only" htmlFor="concierge-entry-q">What do you need?</label>
+          <Input
+            id="concierge-entry-q"
+            maxLength={1200}
+            name="q"
+            placeholder="What do you need? e.g. a grid on BNB/USDT between 500 and 700"
+          />
+          <Button type="submit">Ask</Button>
+        </form>
+      )}
       <CatalogNavigationProvider {...(query.network ? { network: query.network } : {})} navigationKey={JSON.stringify(query)} {...(query.scope ? { scope: query.scope } : {})}>
       <CatalogNetworkTabs network={network} href={hrefForPage(currentPage)}>
         <div className={allView ? "" : "grid gap-6 lg:h-[calc(100dvh-7rem)] lg:min-h-[30rem] lg:grid-cols-[17rem_minmax(0,1fr)]"}>

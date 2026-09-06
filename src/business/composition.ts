@@ -28,6 +28,9 @@ import { GetAgentEvidencePassport } from "./use-cases/get-agent-evidence-passpor
 import { ValidateMarketplaceAgent } from "./use-cases/validate-marketplace-agent.ts";
 import { NotifyQualifiedMainnetFundedJob, PrepareQualifiedMainnetHire, RequestQualifiedMainnetQuote } from "./use-cases/qualified-mainnet-hire.ts";
 import { GetFunnelEvidence } from "./use-cases/get-funnel-evidence.ts";
+import { AskConcierge } from "./use-cases/ask-concierge.ts";
+import { OpenAiCompatibleModel, isConciergeConfigured } from "../data/llm/openai-compatible-model.ts";
+import { InProcessConciergeAdmission } from "../data/llm/concierge-admission.ts";
 import { requestQuoteWithObservationSync } from "../data/observation/on-demand-observation-sync.ts";
 import {
   getCatalogCandidate as loadCatalogCandidate,
@@ -43,6 +46,7 @@ import type { HireLedger } from "./entities/hire-job.ts";
 import { syncHireEvent } from "../data/observation/hire-event-sync.ts";
 import {
   fallbackBuyerQuote,
+  getBuyerNegotiationInput,
   getBuyerQuoteHistory,
   reportBuyerQuoteFailure,
   startBuyerQuote,
@@ -130,8 +134,17 @@ export const getCatalogCandidatePage = loadCatalogCandidatePage;
 export const recordCatalogObservation = syncCatalogObservation;
 export const recordHireEvent = syncHireEvent;
 // Quote request ports keep Next route handlers free of infrastructure imports.
-export { fallbackBuyerQuote, getBuyerQuoteHistory, reportBuyerQuoteFailure, startBuyerQuote, submitBuyerQuoteResult };
-export { getBuyerNegotiationInput } from "../data/observation/quote-request-sync.ts";
+export { fallbackBuyerQuote, getBuyerNegotiationInput, getBuyerQuoteHistory, reportBuyerQuoteFailure, startBuyerQuote, submitBuyerQuoteResult };
+// Concierge: turns a plain-language need into a brief, candidate agents and
+// validated quote parameters. Active whenever CONCIERGE_API_KEY is set.
+export const askConcierge = new AskConcierge({
+  model: new OpenAiCompatibleModel({}),
+  admission: new InProcessConciergeAdmission({}),
+  agents: listMarketplaceAgents,
+  passports: getAgentEvidencePassport,
+  negotiationInput: getBuyerNegotiationInput,
+});
+export { isConciergeConfigured };
 export {
   CatalogValidationRequestError,
   loadCatalogValidationStatus as getCatalogValidationStatus,

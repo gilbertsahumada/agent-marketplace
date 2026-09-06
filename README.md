@@ -516,6 +516,18 @@ the build/test boundary fails if any client import graph can reach the variable.
 
 See the [ERC-8183 Gate 1 interaction diagram](diagrams/erc8183-gate1-flow.html).
 
+## Configuration
+
+### Concierge (optional)
+
+The concierge is a plain-language hiring assistant. It is active only when
+`CONCIERGE_API_KEY` is set. Configure these environment variables:
+
+- `CONCIERGE_API_KEY` — bearer token for the LLM endpoint (required to enable).
+- `CONCIERGE_BASE_URL` — OpenAI-compatible endpoint (default: DashScope international). DashScope China region: `https://dashscope.aliyuncs.com/compatible-mode/v1`. DeepSeek: `https://api.deepseek.com/v1`.
+- `CONCIERGE_MODEL` — model name (default: `qwen-plus`). DeepSeek: `deepseek-chat`. Open-source Qwen3 models requiring thinking disabled are not supported.
+- `CONCIERGE_DAILY_CAP` — global requests per UTC day per instance (default: 300).
+
 ## Documentation
 
 This README is the repository's tracked project overview. Detailed working

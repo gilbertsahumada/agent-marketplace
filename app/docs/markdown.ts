@@ -180,6 +180,7 @@ marketplace business layer. MCP tools and the CLI wrap these routes.
 | Discover | GET | /api/marketplace/agents?view=marketplace&q&category&availability&page&limit |
 | Understand | GET | /api/marketplace/agents/{agentId}/passport |
 | Compare | GET | /api/marketplace/compare?agentId=…&agentId=… |
+| Humans (Concierge) | POST | /api/marketplace/concierge |
 | Validate — legacy | POST | /api/marketplace/validate  { agentId } |
 | Validate — infrastructure | POST | /api/marketplace/validate  { agentId, endpointKey, validationKind: protocol } |
 | Validate — poll | GET | /api/marketplace/validate/{requestId} |
@@ -280,6 +281,28 @@ Mainnet/Testnet job-history selection changes queries and explorer links, not th
 agent registration or quote settlement network. Wallet jobs are not exclusively
 attributed to one agent; Completed and Result verified are different facts.
 
+## Concierge
+
+Turn a plain-language need into a structured hiring brief and seller parameters.
+Send a conversational history to \`POST /api/marketplace/concierge\`; the model
+searches the catalogue, retrieves seller contracts, drafts the brief and proposes
+parameters. Drafts only; the signed quote sets the price.
+
+Request: \`{ "schemaVersion": 1, "messages": [{ "role": "user" | "assistant", "content": "..." }] }\`.
+Messages must alternate and end with user; at most 12 messages total, user messages ≤ 1200
+characters, assistant messages ≤ 4000 characters, body ≤ 16 KiB.
+
+Response: \`{ "schemaVersion": 1, "message": "...", "question": "..." | null, "brief": { "objective": "...", "deliverable": "...", "acceptanceCriteria": "..." } | null, "agents": [{ "agentId": "...", "name": "...", "canHire": true | false, ... }], "proposal": { "agentId": "...", "contractHash": "...", "parameters": {...}, "fields": [...] } | null, "steps": [{ "tool": "search_agents" | "get_passport" | "get_quote_input", "summary": "..." }], "model": "..." }\`.
+
+Limits: up to 4 model rounds, 6 tool calls per request, 35 seconds wall-clock time.
+Agents returned are only those from the catalogue search in the same request;
+parameters are validated against the seller contract retrieved in the same request.
+
+Errors: 400 invalid request (malformed JSON, schema version, message format);
+413 payload too large; 429 rate limited (check Retry-After header; per-caller
+window 6 requests/min, 2 concurrent, plus global 300/day default); 503 concierge
+not configured or upstream model unavailable; 405 method not allowed (use POST).
+
 ## Errors
 
 Machine-facing failures: { "error": { "code", "message" } }.
@@ -308,6 +331,12 @@ const HIRE_MD = `# ERC-8183 Hire Flow
 
 How a buyer with a wallet — human or agent — executes the hire without the UI. A
 valid signed quote is the ONLY gate; non-custodial; financial facts resolve from chain.
+
+## Start from the concierge
+
+A buyer can describe a plain-language need at \`/ask\` or via \`POST /api/marketplace/concierge\`.
+The concierge drafts a brief and proposes parameters for a matching agent from the catalogue.
+Review every field; the signed quote sets the price. The flow then continues unchanged below.
 
 ## Sequence
 

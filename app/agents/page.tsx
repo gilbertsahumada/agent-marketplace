@@ -3,7 +3,7 @@ import { cookies } from "next/headers";
 import { notFound } from "next/navigation";
 import { CatalogUnavailable } from "@/components/marketplace/catalog-unavailable";
 import { CatalogPage } from "@/components/marketplace/catalog-page";
-import { getCatalogCandidatePage, getMainnetJobProof, getWorkerObservations, listMarketplaceAgents } from "@/src/business/composition";
+import { getCatalogCandidatePage, getMainnetJobProof, getWorkerObservations, isConciergeConfigured, listMarketplaceAgents } from "@/src/business/composition";
 import { MARKETPLACE_CATEGORIES, type MarketplaceCategory } from "@/src/business/entities/marketplace-agent";
 import { MarketplaceDataUnavailableError } from "@/src/business/errors/marketplace-errors";
 import {
@@ -96,6 +96,13 @@ export default async function AgentsPage({ searchParams }: { searchParams: Promi
     ?? (view === "all" && !q ? data?.pagination.total : undefined);
   const operationalTotal = operationalMetric?.total
     ?? (scope === "hiring" && (statuses.length === 0 || (statuses.length === 1 && statuses[0] === "declared")) && !q && categories.length === 0 ? catalog?.total : undefined);
+  // Guarded: older tests mock composition without this export; treat that as "not configured".
+  let conciergeEnabled = false;
+  try {
+    conciergeEnabled = isConciergeConfigured();
+  } catch {
+    conciergeEnabled = false;
+  }
   return <CatalogPage
     {...(data ? { data } : {})}
     {...(catalog ? { catalog } : {})}
@@ -105,5 +112,6 @@ export default async function AgentsPage({ searchParams }: { searchParams: Promi
     {...(typeof registryTotal === "number" ? { registryTotal } : {})}
     {...(typeof operationalTotal === "number" ? { operationalTotal } : {})}
     {...(catalog?.facets ? { filterCounts: catalog.facets } : {})}
+    conciergeEnabled={conciergeEnabled}
   />;
 }

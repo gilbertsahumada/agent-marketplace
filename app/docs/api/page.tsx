@@ -10,6 +10,7 @@ const ROUTES: { journey: string; method: string; path: string; purpose: string }
   { journey: "Discover", method: "GET", path: "/api/marketplace/agents?view=marketplace", purpose: "Search the catalogue: q, category, availability, page, limit." },
   { journey: "Understand", method: "GET", path: "/api/marketplace/agents/{agentId}/passport", purpose: "The agent's Evidence Passport." },
   { journey: "Compare", method: "GET", path: "/api/marketplace/compare?agentId=…&agentId=…", purpose: "2–3 agents side by side (repeated agentId params)." },
+  { journey: "Humans (Concierge)", method: "POST", path: "/api/marketplace/concierge", purpose: "Turn a plain-language need into a brief, candidate agents and seller parameters. Drafts only; the signed quote sets the price." },
   { journey: "Validate — legacy", method: "POST", path: "/api/marketplace/validate", purpose: "Compatibility validation with { agentId }; synchronous legacy evidence, no polling." },
   { journey: "Validate — infrastructure", method: "POST", path: "/api/marketplace/validate", purpose: "Endpoint-scoped Worker/D1 validation with { agentId, endpointKey, validationKind }." },
   { journey: "Validate — poll", method: "GET", path: "/api/marketplace/validate/{requestId}", purpose: "Poll the opaque infrastructure request for status, attempts and committed result." },

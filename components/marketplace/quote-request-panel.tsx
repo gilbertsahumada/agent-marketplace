@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { CheckCircle2, CircleAlert, Clock3, LoaderCircle, RadioTower, ShieldCheck, FileInput, LockKeyhole } from "lucide-react";
@@ -9,7 +9,8 @@ import { SellerParameters, initialSellerParameters } from "./seller-parameters";
 import { sellerParameterExample } from "./seller-parameter-examples";
 import { QuoteDetails } from "./quote-details";
 import { compatibilityMessage } from "@/src/shared/compatibility-message";
-import { buildContractRequest, normalizeNegotiationContract, type NegotiationContract } from "@/src/shared/negotiation-input";
+import { buildContractRequest, normalizeNegotiationContract, validateParameters, type NegotiationContract } from "@/src/shared/negotiation-input";
+import { takeConciergeHandoff, type ConciergeHandoff } from "./concierge-handoff";
 import { cn } from "@/lib/utils";
 import { markCatalogForRefresh } from "./catalog-return-refresh";
 import { Erc8183MarketplaceHire, Erc8183SavedHire, type MainnetQuoteResponse } from "@/components/spikes/erc8183-browser-spike";
@@ -227,6 +228,8 @@ function SellerQuoteSession({ agentId, agentName, onSuccess, checkCompatibilityF
   const [reload, setReload] = useState(0);
   const [parameters, setParameters] = useState<Record<string, unknown>>({});
   const [showErrors, setShowErrors] = useState(false);
+  const handoffRef = useRef<ConciergeHandoff | null>(null);
+  const [handoffNote, setHandoffNote] = useState(false);
   useEffect(() => {
     if (!inspectionRequested) return;
     const controller = new AbortController();
@@ -239,6 +242,14 @@ function SellerQuoteSession({ agentId, agentName, onSuccess, checkCompatibilityF
         if (typeof value.endpointKey !== "string" || typeof value.contractHash !== "string") throw new Error("NEGOTIATION_DISCOVERY_FAILED");
         if (controller.signal.aborted) return;
         setParameters(initialSellerParameters(contract.inputSchema));
+        if (typeof window !== "undefined") {
+          handoffRef.current ??= takeConciergeHandoff(window.sessionStorage, agentId);
+          const handoff = handoffRef.current;
+          if (handoff && handoff.contractHash === value.contractHash && validateParameters(contract.inputSchema, handoff.parameters)) {
+            setParameters(handoff.parameters);
+            setHandoffNote(true);
+          }
+        }
         setDiscovery({ contract, endpointKey: value.endpointKey, contractHash: value.contractHash });
         markCatalogForRefresh(agentId);
         router.refresh();
@@ -375,7 +386,16 @@ function SellerQuoteSession({ agentId, agentName, onSuccess, checkCompatibilityF
           setParameters(example); setQuote(null); setQuoteRequestId(null); setPhase("idle"); setShowErrors(false);
           setMessage("Example loaded. Review the values before requesting a quote.");
         }}><FileInput aria-hidden="true" data-icon="inline-start" />Load example</Button> : null}
-        {discovery ? <SellerParameters schema={discovery.contract.inputSchema} value={parameters} example={example} onChange={value => { setParameters(value); setQuote(null); setQuoteRequestId(null); setPhase("idle"); setMessage(null); }} disabled={busy} showErrors={showErrors} />
+        {discovery ? <>
+          <SellerParameters schema={discovery.contract.inputSchema} value={parameters} example={example} onChange={value => { setParameters(value); setQuote(null); setQuoteRequestId(null); setPhase("idle"); setMessage(null); }} disabled={busy} showErrors={showErrors} />
+          {handoffNote ? <p role="status" className="mt-3 text-xs text-muted-foreground">Filled by the concierge from your brief. Review each field before requesting a quote.</p> : null}
+          {handoffNote && handoffRef.current?.brief ? <details className="mt-2 text-xs text-muted-foreground">
+            <summary className="cursor-pointer">Your brief</summary>
+            <p className="mt-1">What I need: {handoffRef.current.brief.objective}</p>
+            <p>What I get back: {handoffRef.current.brief.deliverable}</p>
+            <p>How I will judge it: {handoffRef.current.brief.acceptanceCriteria}</p>
+          </details> : null}
+        </>
           : discoveryError ? <p role="status" className="text-sm text-muted-foreground">{discoveryError === "quote_service_unavailable" ? "Cannot connect to the marketplace quote service. Requirements could not be checked." : compatibilityMessage(discoveryError).detail}</p>
           : null}
       </div>
