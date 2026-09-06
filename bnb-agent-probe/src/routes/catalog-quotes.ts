@@ -244,7 +244,7 @@ export async function catalogNegotiationInputResponse(d1: D1Database, agentId: s
     try {
       const contract = await discoverNegotiationInput({ ...target, request: {}, fetch, timeoutMs: 5000, maxResponseBytes: 32768 });
       const contractHash = await sha256(contract);
-      await recordCompatibility(db, target, nowMs, { schemaHash: contractHash });
+      await recordCompatibility(db, target, nowMs, { schemaHash: contractHash, provenance: contract.provenance });
       return { contract, contractHash, endpointKey: target.endpointKey, transport: target.transport };
     } catch (error) {
       const errorCode = error instanceof Error && ERROR_CODE.test(error.message) ? error.message : "NEGOTIATION_DISCOVERY_FAILED";
@@ -305,7 +305,7 @@ export async function createCatalogQuoteRequestResponse(
     try {
       const contract = await discoverNegotiationInput({ ...target, request: {}, fetch, timeoutMs: 5000, maxResponseBytes: 32768 });
       const schemaHash = await sha256(contract);
-      await recordCompatibility(db, target, options.nowMs, { schemaHash });
+      await recordCompatibility(db, target, options.nowMs, { schemaHash, provenance: contract.provenance });
       if (schemaHash !== input!.contractHash) return json({ error: "NEGOTIATION_SCHEMA_CHANGED" }, 409);
       const value = buildContractRequest(contract, input!.parameters);
       const negotiated = NegotiationRequest.fromDict(value);
