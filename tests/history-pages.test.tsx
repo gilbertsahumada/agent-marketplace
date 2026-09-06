@@ -3,9 +3,28 @@ import "@testing-library/jest-dom/vitest";
 import { afterEach, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { HistoryPages } from "../components/marketplace/history-pages";
+import { HireActivityWindow } from "../components/marketplace/hire-activity-window";
 import { QuoteHistory } from "../components/marketplace/quote-history";
 import { markCatalogForRefresh } from "../components/marketplace/catalog-return-refresh";
 afterEach(() => { cleanup(); vi.useRealTimers(); vi.unstubAllGlobals(); });
+it("keeps daily activity secondary and collapsed by default", () => {
+  const { container } = render(<HireActivityWindow activity={{ chainId: 56, days: 30, from: "", to: "", totals: { created: 1, funded: 0, submitted: 0, settled: 0, refunded: 0 }, byDay: [] }} />);
+  expect(container.querySelector("details")).not.toHaveAttribute("open");
+  expect(container.querySelector("summary")).toHaveTextContent("Activity summary · Last 30 days");
+});
+it("opens quote details below the summary row across the full table", async () => {
+  vi.stubGlobal("fetch", vi.fn(async () => Response.json({ requests: [{ id: 720, status: "rejected", errorCode: "QUOTE_SIGNATURE", transport: "a2a", createdAt: Date.now(), attempts: [{ id: "a", executor: "browser", durationMs: 4003, httpStatus: null, errorCode: "QUOTE_SIGNATURE" }] }] })));
+  render(<QuoteHistory agentId="204789" />);
+  const trigger = await screen.findByRole("button", { name: "View details for quote 720" });
+  expect(trigger).toHaveAttribute("aria-expanded", "false");
+  fireEvent.click(trigger);
+  const message = screen.getByText("The quote signature could not be verified. Hiring remains blocked.");
+  expect(message.closest("td")).toHaveAttribute("colspan", "5");
+  expect(message.closest("tr")).not.toBe(trigger.closest("tr"));
+  expect(trigger).toHaveAttribute("aria-expanded", "true");
+  fireEvent.click(trigger);
+  expect(screen.queryByText("The quote signature could not be verified. Hiring remains blocked.")).not.toBeInTheDocument();
+});
 it("polls processing quotes and stops after an interrupted result", async () => {
   vi.useFakeTimers();
   const request = vi.fn()
