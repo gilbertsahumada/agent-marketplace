@@ -1,7 +1,18 @@
 export type ClosureAction = "dispute" | "settle";
 export type ClosureBinding = { chainId: number; commerce: string; jobId: string; wallet: string; action: ClosureAction };
 export type ClosureFacts = { status: string; buyer: string; supported: boolean; disputed: boolean; verdict: number; now: bigint; reviewEndsAt: bigint };
-export type ClosureAttempt = ClosureBinding & { state: "signing" | "submitted" | "confirmed" | "reverted" | "uncertain"; hash?: string };
+export type ClosureAttempt = ClosureBinding & { state: "signing" | "submitted" | "confirmed" | "reverted" | "uncertain" | "rejected"; hash?: string; previousAttempts?: Omit<ClosureAttempt, "previousAttempts">[] };
+
+/** Only an explicit EIP-1193 rejection during send is safe to retry. */
+function signatureRejected(error: unknown): boolean {
+  const seen = new Set<unknown>();
+  for (let depth = 0; depth < 8 && error && typeof error === "object" && !seen.has(error); depth++) {
+    seen.add(error);
+    if ("code" in error && error.code === 4001) return true;
+    error = "cause" in error ? error.cause : null;
+  }
+  return false;
+}
 export interface ClosurePort {
   read(): Promise<ClosureFacts>;
   assertWallet(): Promise<void>;
@@ -41,7 +52,7 @@ export async function closeHireJob(binding: ClosureBinding, port: ClosurePort, m
       port.save(updated);
       return updated;
     }
-    if (saved) throw new Error("A closure attempt already exists; check it before sending another transaction");
+    if (saved && (saved.state !== "rejected" || saved.hash)) throw new Error("A closure attempt already exists; check it before sending another transaction");
     await port.assertWallet();
     assertClosureAllowed(binding, await port.read());
     await port.simulate();
@@ -49,18 +60,24 @@ export async function closeHireJob(binding: ClosureBinding, port: ClosurePort, m
     await port.assertWallet();
     assertClosureAllowed(binding, await port.read());
     let attempt: ClosureAttempt = { ...binding, state: "signing" };
+    if (saved) {
+      const { previousAttempts = [], ...previous } = saved;
+      attempt.previousAttempts = [...previousAttempts, previous];
+    }
     port.save(attempt); // Storage failure must stop BEFORE opening the wallet.
+    let sending = true;
     try {
       const hash = await port.send();
+      sending = false;
       attempt = { ...attempt, hash, state: "submitted" };
       port.save(attempt);
       const result = await port.verify(hash);
       attempt = { ...attempt, state: result === "pending" ? "uncertain" : result };
       port.save(attempt);
       return attempt;
-    } catch {
+    } catch (error) {
       // Even wallet/RPC errors can hide a broadcast; retain the attempt and never auto-resend.
-      attempt = { ...attempt, state: "uncertain" };
+      attempt = { ...attempt, state: sending && signatureRejected(error) ? "rejected" : "uncertain" };
       port.save(attempt);
       return attempt;
     }
