@@ -1,0 +1,45 @@
+import { describe, expect, it, vi } from "vitest";
+import { assertClosureAllowed, closeHireJob, type ClosureAttempt, type ClosureFacts, type ClosurePort } from "../src/business/use-cases/close-hire-job";
+const binding = { chainId: 56, commerce: "0xcommerce", jobId: "56719", wallet: "0xbuyer", action: "settle" as const };
+const facts: ClosureFacts = { status: "SUBMITTED", buyer: "0xbuyer", supported: true, disputed: false, verdict: 1, now: 20n, reviewEndsAt: 30n };
+function setup() {
+  let saved: ClosureAttempt | null = null;
+  const port: ClosurePort = { read: vi.fn(async () => facts), assertWallet: vi.fn(async () => {}), simulate: vi.fn(async () => {}), send: vi.fn(async () => "0xtx"), verify: vi.fn(async () => "confirmed" as const), load: () => saved, save: vi.fn(attempt => { saved = attempt; }), exclusive: run => run() };
+  return port;
+}
+describe("safe closure", () => {
+  it("simulates, checks state twice and persists before signing", async () => {
+    const port = setup();
+    expect((await closeHireJob(binding, port, "send")).state).toBe("confirmed");
+    expect(port.read).toHaveBeenCalledTimes(2);
+    expect(port.simulate).toHaveBeenCalledOnce();
+    expect(vi.mocked(port.save).mock.invocationCallOrder[0]).toBeLessThan(vi.mocked(port.send).mock.invocationCallOrder[0]!);
+    await expect(closeHireJob(binding, port, "send")).rejects.toThrow(/already exists/);
+    await closeHireJob(binding, port, "resume");
+    expect(port.send).toHaveBeenCalledOnce();
+  });
+  it("retains uncertain broadcasts and only verifies on resume", async () => {
+    const port = setup();
+    vi.mocked(port.verify).mockRejectedValueOnce(new Error("timeout"));
+    expect((await closeHireJob(binding, port, "send")).state).toBe("uncertain");
+    expect((await closeHireJob(binding, port, "resume")).state).toBe("confirmed");
+    expect(port.send).toHaveBeenCalledOnce();
+  });
+  it("blocks a wallet change and storage failure before sending", async () => {
+    const port = setup();
+    vi.mocked(port.assertWallet).mockResolvedValueOnce().mockRejectedValueOnce(new Error("changed"));
+    await expect(closeHireJob(binding, port, "send")).rejects.toThrow("changed");
+    expect(port.send).not.toHaveBeenCalled();
+    const broken = setup(); broken.save = () => { throw new Error("storage"); };
+    await expect(closeHireJob(binding, broken, "send")).rejects.toThrow("storage");
+    expect(broken.send).not.toHaveBeenCalled();
+  });
+  it("rejects wrong buyers, ended windows, terminal jobs and unsupported policies", () => {
+    expect(() => assertClosureAllowed({ ...binding, action: "dispute", wallet: "other" }, facts)).toThrow(/original buyer/);
+    expect(() => assertClosureAllowed({ ...binding, action: "dispute" }, { ...facts, now: 30n })).toThrow(/ended/);
+    expect(() => assertClosureAllowed(binding, { ...facts, status: "COMPLETED" })).toThrow(/awaiting closure/);
+    expect(() => assertClosureAllowed(binding, { ...facts, supported: false })).toThrow(/Unsupported/);
+    expect(() => assertClosureAllowed(binding, { ...facts, verdict: 0 })).toThrow(/no settlement/);
+    expect(() => assertClosureAllowed(binding, { ...facts, disputed: true, verdict: 2 })).not.toThrow();
+  });
+});
