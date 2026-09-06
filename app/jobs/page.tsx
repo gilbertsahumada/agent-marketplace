@@ -34,6 +34,7 @@ export default async function JobsPage({ searchParams }: { searchParams: Promise
   const provider = providerParameter(params.provider);
   const before = typeof params.before === "string" && /^[1-9]\d{0,15}$/.test(params.before) ? params.before : undefined;
   const cursor = before === undefined ? {} : { before };
+  const cursorTrail = typeof params.trail === "string" && /^(?:[1-9]\d{0,15})(?:,[1-9]\d{0,15})*$/.test(params.trail) ? params.trail.split(",").slice(0, 1000) : [];
   const scope = provider === undefined ? {} : { provider };
   const [summary, page, activity] = await Promise.all([
     getHireLedger.summary({ chainId }),
@@ -49,6 +50,7 @@ export default async function JobsPage({ searchParams }: { searchParams: Promise
   return (
     <HireLedgerPage
       activity={activity}
+      cursorTrail={cursorTrail}
       key={`${chainId}:${provider ?? "all"}:${before ?? "newest"}`}
       chainId={chainId}
       page={page}
