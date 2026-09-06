@@ -3,6 +3,8 @@ import { fallbackBuyerQuote } from "@/src/business/composition";
 import { InvalidMarketplaceInputError, MarketplacePayloadTooLargeError } from "@/src/business/errors/marketplace-errors";
 import { callerContext, marketplaceErrorResponse } from "@/src/presentation/http/marketplace-http";
 
+export const maxDuration = 75;
+
 async function readRequest(request: Request): Promise<{ task_description: string; terms: Record<string, unknown> }> {
   const length = request.headers.get("content-length");
   if (length && /^\d+$/.test(length) && Number(length) > 4_096) throw new MarketplacePayloadTooLargeError();
