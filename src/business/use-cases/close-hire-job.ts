@@ -54,7 +54,13 @@ export async function closeHireJob(binding: ClosureBinding, port: ClosurePort, m
         });
         updated.state = result === "pending" ? "uncertain" : result;
       } catch { updated.state = "uncertain"; }
-      port.save(updated);
+      try {
+        port.save(updated);
+      } catch {
+        // Retain replacement evidence even if persisting the final state fails.
+        updated = { ...updated, state: "uncertain" };
+        port.save(updated);
+      }
       return updated;
     }
     if (mode === "resume") {
@@ -87,12 +93,14 @@ export async function closeHireJob(binding: ClosureBinding, port: ClosurePort, m
       sending = false;
       attempt = { ...attempt, hash, state: "submitted" };
       port.save(attempt);
-      return await check(attempt);
     } catch (error) {
       // Even wallet/RPC errors can hide a broadcast; retain the attempt and never auto-resend.
       attempt = { ...attempt, state: sending && signatureRejected(error) ? "rejected" : "uncertain" };
       port.save(attempt);
       return attempt;
     }
+    // Verification owns the latest replacement metadata. Its persistence errors
+    // must not fall through the send handler and overwrite it with stale data.
+    return check(attempt);
   });
 }
