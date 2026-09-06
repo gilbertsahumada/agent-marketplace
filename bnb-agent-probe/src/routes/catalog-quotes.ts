@@ -106,6 +106,7 @@ export async function targetFor(
     .innerJoin(catalogEndpoints, eq(catalogEndpoints.endpointKey, catalogAgentEndpoints.endpointKey))
     .where(and(
       eq(catalogAgents.agentId, agentId),
+      eq(catalogAgents.chainId, 56),
       eq(catalogAgents.indexState, "current"),
       eq(catalogAgentEndpoints.declarationState, "current"),
       eq(catalogEndpoints.role, "operational"),
