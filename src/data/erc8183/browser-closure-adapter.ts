@@ -61,9 +61,27 @@ export async function executeBrowserClosure(input: { provider: unknown; wallet: 
     send: async () => w.sendTransaction({ account: wallet, to: address, data, value: 0n }),
     verify: async (hash, replacement) => {
       if (await p.getChainId() !== 56 || !await mainnetImplementationPinsMatch(p)) throw new Error("Wrong network or changed contracts");
-      const original = await p.getTransaction({ hash: hash as Hex });
-      const matches = (tx: typeof original) => !!tx.to && isAddressEqual(tx.to, address) && isAddressEqual(tx.from, wallet) && tx.input.toLowerCase() === data.toLowerCase() && tx.value === 0n;
+      const contextKey = `${key}:original:${hash.toLowerCase()}`;
+      type OriginalContext = { from: Address; to: Address | null; input: Hex; value: bigint; nonce: number };
+      const matches = (tx: OriginalContext) => !!tx.to && isAddressEqual(tx.to, address) && isAddressEqual(tx.from, wallet) && tx.input.toLowerCase() === data.toLowerCase() && tx.value === 0n;
+      let original: OriginalContext;
+      try {
+        original = await p.getTransaction({ hash: hash as Hex });
+      } catch (error) {
+        // A mined replacement may evict the original from RPC. Use only context
+        // observed and validated earlier for this exact attempt, never a guessed nonce.
+        const raw = localStorage.getItem(contextKey);
+        if (!raw || !port.load()?.replacementHash) throw error;
+        const stored = JSON.parse(raw);
+        if (stored.hash !== hash.toLowerCase() || stored.chainId !== 56 || stored.commerce !== pins.commerce ||
+          stored.jobId !== input.jobId || stored.action !== input.action || typeof stored.from !== "string" || stored.from.toLowerCase() !== wallet.toLowerCase() || stored.to !== address ||
+          stored.input !== data || stored.value !== "0" || !Number.isSafeInteger(stored.nonce) || stored.nonce < 0) throw new Error("Invalid original transaction context");
+        original = { from: wallet, to: address, input: data, value: 0n, nonce: stored.nonce };
+      }
       if (!matches(original)) throw new Error("Receipt does not belong to this closure");
+      if (Number.isSafeInteger(original.nonce) && original.nonce >= 0) {
+        localStorage.setItem(contextKey, JSON.stringify({ ...binding, hash: hash.toLowerCase(), from: wallet, to: address, input: data, value: "0", nonce: original.nonce }));
+      }
       const receipt = await p.waitForTransactionReceipt({ hash: (port.load()?.replacementHash ?? hash) as Hex, timeout: 45_000, confirmations: 1,
         onReplaced: event => { replacement?.(event.transaction.hash); },
       });
