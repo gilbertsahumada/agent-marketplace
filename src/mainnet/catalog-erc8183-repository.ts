@@ -9,7 +9,7 @@ import {
   verifyQuoteSignature,
 } from "@bnbagent/sdk/erc8183";
 import { resolveNetwork } from "@bnbagent/sdk";
-import { formatUnits, getAddress, isAddressEqual, type Address } from "viem";
+import { formatUnits, getAddress, isAddressEqual, maxUint256, type Address } from "viem";
 import { fetchAgentCard, notifyFunded } from "../a2a.ts";
 import type {
   Erc8183BuyerFacts,
@@ -87,6 +87,8 @@ function networkConfig() {
  */
 export class CatalogErc8183Repository implements Erc8183SpikeRepository {
   private seller: Address;
+  // Historical reads use the contract range; payment preparation binds the verified price.
+  private maximumBudgetRaw = maxUint256;
   private clientPromise: Promise<ERC8183Client> | null = null;
 
   constructor(private readonly target: CatalogHireTarget) {
@@ -97,7 +99,7 @@ export class CatalogErc8183Repository implements Erc8183SpikeRepository {
     return {
       chainId: 56,
       agentId: this.target.agentId,
-      maximumBudgetRaw: ERC8183_MAINNET.maximumDemoBudgetRaw,
+      maximumBudgetRaw: this.maximumBudgetRaw,
       networkLabel: ERC8183_MAINNET.networkName,
       commerce: ERC8183_MAINNET.commerce,
       router: ERC8183_MAINNET.router,
@@ -146,7 +148,7 @@ export class CatalogErc8183Repository implements Erc8183SpikeRepository {
       const currency = response?.terms?.currency;
       if (
         response?.accepted !== true ||
-        typeof price !== "string" || !/^[1-9]\d*$/.test(price) ||
+        typeof price !== "string" || price.length > 78 || !/^[1-9]\d*$/.test(price) || BigInt(price) > maxUint256 ||
         typeof currency !== "string" ||
         envelope.chain_id !== 56 ||
         typeof envelope.verifying_contract !== "string" ||
@@ -197,6 +199,7 @@ export class CatalogErc8183Repository implements Erc8183SpikeRepository {
         quoteExpiresAt - negotiatedAt > MAX_QUOTE_TTL_SECONDS
       ) throw new Erc8183SpikeUnavailableError("Seller quote is stale or has an invalid expiry");
       this.seller = provider;
+      this.maximumBudgetRaw = BigInt(price);
       return {
         envelope,
         agentId: this.target.agentId,
