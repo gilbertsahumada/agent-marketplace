@@ -208,7 +208,7 @@ describe("/jobs ledger page", () => {
     expect(html).toMatch(/<a[^>]*href="\/jobs\?chainId=56"[^>]*>All jobs<\/a>/);
     expect(html).toContain('href="/jobs/mainnet/56696"');
     // Pager and network selector keep the provider scope.
-    expect(html).toContain(`href="/jobs?chainId=56&amp;provider=${BUYER}&amp;before=56600"`);
+    expect(html).toContain(`href="/jobs?chainId=56&amp;provider=${BUYER}&amp;before=56600&amp;trail=600"`);
     expect(html).toContain(`href="/jobs?chainId=97&amp;provider=${BUYER}"`);
     expect(html).not.toMatch(/proven/i);
   });
@@ -254,7 +254,7 @@ describe("/jobs/mainnet/[jobId] ledger fallback", () => {
     expect(html).toContain("Indexed Completed");
     expect(html).toContain("Hired via this marketplace");
     expect(html).toContain(`https://bscscan.com/tx/0x${"ab".repeat(32)}`);
-    expect(html).toContain("Not a hash-verified deliverable");
+    expect(html).toContain("Delivery &amp; closure");
   });
 
   it("still 404s when the ledger has no row", async () => {
@@ -285,7 +285,7 @@ describe("/jobs/testnet/[jobId] ledger fallback", () => {
     expect(testnetTracking).toHaveBeenCalledWith({ jobId: "551" });
     expect(ledger.getJob).toHaveBeenCalledWith({ chainId: 97, jobId: "551" });
     expect(html).toContain("ERC-8183 Job #551");
-    expect(html).toContain("chain 97");
+    expect(html).toContain("BNB Smart Chain Testnet");
     expect(html).toContain(`https://testnet.bscscan.com/tx/${TX}`);
     expect(html).not.toMatch(/proven/i);
   });

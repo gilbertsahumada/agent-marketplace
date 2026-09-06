@@ -1,5 +1,17 @@
 # Buyer checkout recovery
 
+## External delivery and closure (Mainnet)
+
+The no-store `GET /api/marketplace/jobs/mainnet/:jobId/delivery` report now powers a separate Delivery & closure panel. Ledger events supply transaction hints, not verification authority. Reads verify chain/implementation pins, buyer/provider, the successful Commerce receipt and its exact JobSubmitted job/provider/hash before extracting the URL from direct submit calldata.
+
+The chain-published URL uses public-HTTPS DNS-pinned transport, no credentials or redirects, an 8-second timeout and a 64-KiB limit. SDK DeliverableManifest checks bind the response to the job, chain, Commerce, Router, policy and hash. Missing manifest fields are never reconstructed. Content is rendered as escaped text, capped at 32,000 characters. Integrity is not a quality verdict.
+
+Closure is read independently from delivery availability. Only the pinned optimistic policy/evaluator pair receives the review-window/dispute/verdict interpretation. Elapsed time does not imply Completed: terminal state must come from Commerce. Unsupported policies and failed reads remain unknown.
+
+This panel is read-only. Wallet dispute and settlement submission remain pending. Wrapped submission transactions without a supported extraction path remain unavailable, rather than using guessed URLs. No migration or Worker redeployment is required; this is an application release. Tests cover hash/binding failures, legacy output, unsafe transport, receipt binding, escaped rendering and closure states.
+
+## Checkout recovery
+
 New quote requests mount a fresh checkout. Loading a page or changing the connected wallet does not restore transactions or report historical hire events against the current quote request.
 
 Saved browser progress is a recovery hint, not proof of payment. The previous job is shown with its buyer and recorded start time (or an explicit unavailable date). Recovery requires selecting **Resume job #…** with the original buyer wallet connected; it does not require a fresh quote or a prepared payment plan. This entry is available after a full reload, even when no buyer quote is active. Current chain facts must match the saved buyer, provider, network and job ID, the global evaluator/policy/token pins, and a positive funded budget matching the on-chain quoted price. Recovery never compares an old job with a new quote's description or price and never copies cached receipts into the active transaction list.

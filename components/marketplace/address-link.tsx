@@ -15,7 +15,7 @@ export function AddressLink({ address, chainId, full = false }: {
       target="_blank"
       rel="noopener noreferrer"
       title={address}
-      aria-label={`${address} on BscScan (${chainId === 56 ? "Mainnet" : "Testnet"}), opens in a new tab`}
+      aria-label={`${address} on explorer (${chainId === 56 ? "Mainnet" : "Testnet"}), opens in a new tab`}
       className="inline-flex max-w-full items-center gap-1.5 text-signal underline decoration-signal/30 underline-offset-4 hover:decoration-signal focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-signal"
     >
       <span className={full ? "break-all" : ""}>{full ? address : shortAddress(address)}</span>
