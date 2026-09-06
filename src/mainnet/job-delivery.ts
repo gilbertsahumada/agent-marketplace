@@ -1,7 +1,7 @@
 import "server-only";
 import { DeliverableManifest, JobDescription } from "@bnbagent/sdk/erc8183";
 import { isAddressEqual } from "viem";
-import { ERC8183_MAINNET as pins } from "./contracts";
+import { ERC8183_MAINNET as pins } from "./contracts.ts";
 
 export type Delivery = { status: "verified" | "mismatch" | "unsupported" | "unavailable" | "not_submitted"; content: string | null; url: string | null };
 export type JobClosure = "completed" | "rejected" | "expired" | "not_submitted" | "review_window" | "disputed" | "settlement_available" | "awaiting_policy" | "unsupported_policy" | "unavailable";
