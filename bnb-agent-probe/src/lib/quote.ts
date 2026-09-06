@@ -14,6 +14,7 @@ import {
 } from "viem";
 
 import { BscProbeError } from "./chain";
+import { quoteProvider } from "../../../src/shared/quote-provider";
 import { buildReadinessProbeRequest, type ProbeCategory } from "./terms";
 
 const MAX_QUOTE_AGE_SECONDS = 60;
@@ -130,7 +131,12 @@ export async function validateProbeQuote(
 
   if (!context.policyAllowlisted) throw new QuoteValidationError("QUOTE_CONTRACT_CONTEXT");
   if (envelope.chain_id !== 56) throw new QuoteValidationError("QUOTE_CHAIN");
-  const provider = address(envelope.provider_address, "QUOTE_PROVIDER");
+  // provider_address is convenience metadata, absent from the SDK's native
+  // NegotiationResult. Always verify the signature against the chain-resolved
+  // identity; never derive authority from this optional field or rewrite the quote.
+  let provider: Address;
+  try { provider = quoteProvider(envelope.provider_address, context.provider); }
+  catch { throw new QuoteValidationError("QUOTE_PROVIDER"); }
   if (provider !== getAddress(context.provider)) throw new QuoteValidationError("QUOTE_PROVIDER");
   const commerce = address(envelope.verifying_contract, "QUOTE_COMMERCE");
   if (commerce !== getAddress(context.commerce)) throw new QuoteValidationError("QUOTE_COMMERCE");
