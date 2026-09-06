@@ -188,7 +188,21 @@ describe("WP3 quote validation", () => {
     }))).rejects.toMatchObject({ code: "QUOTE_SIGNER" });
   });
 
-  it("rejects a validly signed buyer quote above the marketplace spend ceiling", async () => {
+  it("accepts the seller price above the former demo cap", async () => {
+    const quote = acceptedEnvelope();
+    ((quote.response as Record<string, unknown>).terms as Record<string, unknown>).price = "100000000000000000";
+    quote.response_hash = NegotiationResponse.fromDict(quote.response as Record<string, unknown>).computeHash();
+    await expect(validateProbeQuote(quote, context(), validVerifier())).resolves.toMatchObject({ priceRaw: "100000000000000000" });
+  });
+
+  it("rejects prices that cannot fit the on-chain uint256 budget", async () => {
+    const quote = acceptedEnvelope();
+    ((quote.response as Record<string, unknown>).terms as Record<string, unknown>).price = (2n ** 256n).toString();
+    quote.response_hash = NegotiationResponse.fromDict(quote.response as Record<string, unknown>).computeHash();
+    await expect(validateProbeQuote(quote, context(), validVerifier())).rejects.toMatchObject({ code: "QUOTE_PRICE" });
+  });
+
+  it("respects an explicitly supplied caller spend ceiling", async () => {
     const quote = acceptedEnvelope();
     ((quote.response as Record<string, unknown>).terms as Record<string, unknown>).price = "10000000000000001";
     quote.response_hash = NegotiationResponse.fromDict(quote.response as Record<string, unknown>).computeHash();
