@@ -8,6 +8,45 @@ function setup() {
   return port;
 }
 describe("safe closure", () => {
+  it("retains replacement metadata when persisting confirmation fails once", async () => {
+    const port = setup();
+    const persist = port.save;
+    let failed = false;
+    port.save = vi.fn(attempt => {
+      if (attempt.state === "confirmed" && !failed) {
+        failed = true;
+        throw new Error("storage temporarily unavailable");
+      }
+      persist(structuredClone(attempt));
+    });
+    vi.mocked(port.verify).mockImplementationOnce(async (_hash, replacement) => {
+      replacement?.("0xreplacement");
+      return "confirmed";
+    });
+    const result = await closeHireJob(binding, port, "send");
+    expect(result).toMatchObject({ state: "uncertain", hash: "0xtx", replacementHash: "0xreplacement", replacementHashes: ["0xreplacement"] });
+    expect(port.load()).toEqual(result);
+    expect(port.send).toHaveBeenCalledOnce();
+    await expect(closeHireJob(binding, port, "send")).rejects.toThrow(/already exists/);
+  });
+  it("does not overwrite persisted replacement evidence when storage stays unavailable", async () => {
+    const port = setup();
+    const persist = port.save;
+    let unavailable = false;
+    port.save = vi.fn(attempt => {
+      if (unavailable) throw new Error("storage unavailable");
+      persist(structuredClone(attempt));
+    });
+    vi.mocked(port.verify).mockImplementationOnce(async (_hash, replacement) => {
+      replacement?.("0xreplacement");
+      unavailable = true;
+      return "confirmed";
+    });
+    await expect(closeHireJob(binding, port, "send")).rejects.toThrow("storage unavailable");
+    expect(port.load()).toMatchObject({ state: "submitted", hash: "0xtx", replacementHash: "0xreplacement", replacementHashes: ["0xreplacement"] });
+    expect(port.send).toHaveBeenCalledOnce();
+    await expect(closeHireJob(binding, port, "send")).rejects.toThrow(/already exists/);
+  });
   it.each(["cancelled", "replaced"] as const)("allows an explicit retry after revalidating %s", async state => {
     const port = setup();
     vi.mocked(port.verify).mockResolvedValueOnce(state).mockResolvedValueOnce(state);
