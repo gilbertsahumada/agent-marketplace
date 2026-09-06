@@ -14,6 +14,7 @@ const MINIMUM_INTERVAL_MS = 1_100;
 const MAX_RESPONSE_BYTES = 16 * 1_024 * 1_024;
 
 interface CliOptions {
+  chainId: 56 | 97;
   output: string;
   checkpoint: string;
   resume: boolean;
@@ -24,11 +25,18 @@ function filenameTimestamp(timestamp: string): string {
 }
 
 export function parseCatalogSnapshotCliOptions(args: string[], generatedAt: string): CliOptions {
+  let chainId: 56 | 97 = 56;
   let output = resolve(`evidence/catalog-v2-bsc-${filenameTimestamp(generatedAt)}.json`);
   let checkpoint: string | undefined;
   let resume = false;
   for (let index = 0; index < args.length; index += 1) {
     const argument = args[index];
+    if (argument === "--chain") {
+      const value = args[++index];
+      if (value !== "56" && value !== "97") throw new Error("--chain must be 56 or 97");
+      chainId = Number(value) as 56 | 97;
+      continue;
+    }
     if (argument === "--resume") {
       resume = true;
       continue;
@@ -42,7 +50,7 @@ export function parseCatalogSnapshotCliOptions(args: string[], generatedAt: stri
     else checkpoint = resolve(value);
     index += 1;
   }
-  return { output, checkpoint: checkpoint ?? `${output}.checkpoint.json`, resume };
+  return { chainId, output, checkpoint: checkpoint ?? `${output}.checkpoint.json`, resume };
 }
 
 async function boundedJson(response: Response): Promise<unknown> {
@@ -91,7 +99,7 @@ function page(value: unknown, expectedOffset: number): CatalogSnapshotPage {
   return response as unknown as CatalogSnapshotPage;
 }
 
-function createPageFetcher(fetchImpl: typeof fetch = fetch): (offset: number, limit: number) => Promise<CatalogSnapshotPage> {
+function createPageFetcher(chainId: 56 | 97, fetchImpl: typeof fetch = fetch): (offset: number, limit: number) => Promise<CatalogSnapshotPage> {
   let lastRequestAt = Number.NEGATIVE_INFINITY;
   return async (offset, limit) => {
     const remaining = MINIMUM_INTERVAL_MS - (Date.now() - lastRequestAt);
@@ -99,7 +107,7 @@ function createPageFetcher(fetchImpl: typeof fetch = fetch): (offset: number, li
     lastRequestAt = Date.now();
     const url = new URL("/api/app/agents", BASE_URL);
     url.search = new URLSearchParams({
-      chainId: "56",
+      chainId: String(chainId),
       limit: String(limit),
       offset: String(offset),
       includeReputation: "false",
@@ -160,10 +168,11 @@ async function main(): Promise<void> {
   const options = parseCatalogSnapshotCliOptions(process.argv.slice(2), generatedAt);
   const resume = options.resume ? await readCheckpoint(options.checkpoint) : undefined;
   const snapshot = await runCatalogSnapshot({
+    chainId: options.chainId,
     generatedAt,
     pageSize: PAGE_SIZE,
     ...(resume ? { resume } : {}),
-    fetchPage: createPageFetcher(),
+    fetchPage: createPageFetcher(options.chainId),
     onCheckpoint: async (checkpoint) => {
       if (checkpoint.pages % 5 !== 0 && checkpoint.nextOffset !== checkpoint.expectedTotal) return;
       await writeAtomic(options.checkpoint, `${JSON.stringify(checkpoint)}\n`);
