@@ -39,6 +39,7 @@ import {
 import type { HireabilityStatus } from "@/src/business/entities/marketplace-agent";
 import { saveConciergeHandoff } from "./concierge-handoff";
 import { describeConciergeError, projectConciergeMessages } from "./concierge-request";
+import { useTypewriter } from "./use-typewriter";
 
 const HIREABILITY_LABEL: Record<HireabilityStatus, string> = {
   quote_verified: "ready to quote",
@@ -455,6 +456,8 @@ export function ConciergeChat({
 
   const lastIndex = messages.length - 1;
   const nearLimit = draft.length >= CONCIERGE_LIMITS.userChars - 200;
+  // The examples type themselves into the empty box, one after another.
+  const livePlaceholder = useTypewriter(STARTERS, empty && draft.length === 0 && !busy, placeholder);
 
   return (
     <section
@@ -528,7 +531,7 @@ export function ConciergeChat({
             maxLength={CONCIERGE_LIMITS.userChars}
             onChange={(event) => setDraft(event.target.value)}
             onKeyDown={onKeyDown}
-            placeholder={placeholder}
+            placeholder={livePlaceholder}
             ref={textarea}
             rows={1}
             value={draft}
