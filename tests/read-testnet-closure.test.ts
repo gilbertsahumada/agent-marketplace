@@ -30,3 +30,26 @@ it("rejects another job or unsupported evaluator", async () => {
   mock.read.mockResolvedValueOnce({ id: 515n, client: pins.seller, evaluator: pins.router, status: 2, submittedAt: 100n });
   await expect(readTestnetClosure("514")).rejects.toThrow("Unsupported");
 });
+it.each(["0", "-1", "514x", "1.5", "", "100000000000000000000"])("rejects malformed ID %s before RPC", async id => {
+  await expect(readTestnetClosure(id)).rejects.toThrow("Invalid job ID");
+  expect(mock.chain).not.toHaveBeenCalled();
+  expect(mock.read).not.toHaveBeenCalled();
+});
+it("rejects the correct job with an unsupported evaluator", async () => {
+  mock.read.mockResolvedValueOnce({ id: 514n, client: pins.seller, evaluator: pins.seller, status: 2, submittedAt: 100n });
+  await expect(readTestnetClosure("514")).rejects.toThrow("Unsupported");
+});
+it("rejects the correct job with an unbound policy", async () => {
+  const implementation = mock.read.getMockImplementation()!;
+  mock.read.mockImplementation(async args => args.functionName === "jobPolicy"
+    ? "0x0000000000000000000000000000000000000000" : implementation(args));
+  await expect(readTestnetClosure("514")).rejects.toThrow("Unsupported");
+});
+it("does not return actionable state when a policy read fails", async () => {
+  const implementation = mock.read.getMockImplementation()!;
+  mock.read.mockImplementation(async args => {
+    if (args.functionName === "disputed") throw new Error("RPC unavailable");
+    return implementation(args);
+  });
+  await expect(readTestnetClosure("514")).rejects.toThrow("RPC unavailable");
+});
