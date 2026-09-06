@@ -379,7 +379,7 @@ export function Erc8183MarketplaceHire({
     policy: quote.policy,
     token: quote.token,
     seller: quote.provider,
-    maximumBudgetRaw: BigInt(quote.maximumBudgetRaw ?? ERC8183_MAINNET.maximumDemoBudgetRaw.toString()),
+    maximumBudgetRaw: BigInt(quote.priceRaw),
   };
   return (
     <Erc8183BrowserDemo
@@ -412,7 +412,7 @@ export function Erc8183SavedHire({ agentId, onActiveChange }: { agentId: string;
       if (!reference.seller) return;
       const candidate: Erc8183BrowserDeployment = {
         ...ERC8183_MAINNET, agentId: Number(agentId), seller: normalizeBrowserAddress(reference.seller),
-        nativeCurrencyName: "BNB", nativeCurrencySymbol: "BNB", maximumBudgetRaw: ERC8183_MAINNET.maximumDemoBudgetRaw,
+        nativeCurrencyName: "BNB", nativeCurrencySymbol: "BNB", maximumBudgetRaw: (2n ** 256n) - 1n,
       };
       if (loadBrowserJournal(localStorage, candidate)?.jobId) setDeployment(candidate);
     } catch { /* An unreadable local reference never becomes an active hire. */ }
@@ -1101,7 +1101,7 @@ function Erc8183BrowserDemo({ mode, deployment, agentName, embedded = false, rec
             <CardContent>
               <dl className="space-y-4 text-xs leading-relaxed text-zinc-400">
                 <div><dt className="font-medium text-zinc-200">Custody</dt><dd className="mt-1">The injected wallet signs each buyer transaction. The server never receives the buyer private key.</dd></div>
-                <div><dt className="font-medium text-zinc-200">Spend and token authority</dt><dd className="mt-1">The allowlist caps a job at {deployment.maximumBudgetRaw.toString()} raw token units. Approval is the exact quote amount when needed, never unlimited, and targets only the configured Commerce contract.</dd></div>
+                <div><dt className="font-medium text-zinc-200">Spend and token authority</dt><dd className="mt-1">The seller sets the quoted price. Approval is the exact quote amount when needed, never unlimited, and targets only the configured Commerce contract.</dd></div>
                 <div><dt className="font-medium text-zinc-200">Before funding</dt><dd className="mt-1">Decline any wallet prompt to stop. No seller authority or escrow funding exists until the corresponding transactions confirm.</dd></div>
                 <div><dt className="font-medium text-zinc-200">After funding</dt><dd className="mt-1">The budget is committed to ERC-8183 escrow and subsequent outcomes are contract and policy governed. The seller cannot sign for the buyer. This demo does not expose a cancellation action after funding.</dd></div>
                 <div><dt className="font-medium text-zinc-200">Revocation</dt><dd className="mt-1">Any residual ERC-20 allowance can be set to zero through the token contract or wallet interface. Revoking allowance does not reverse funds already placed in escrow.</dd></div>
