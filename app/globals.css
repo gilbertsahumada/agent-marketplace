@@ -2,6 +2,9 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 
+/* Streamdown (AI Elements MessageResponse) ships Tailwind utilities in its bundle. */
+@source "../node_modules/streamdown/dist/*.js";
+
 .jobs-table { width: 100%; border-collapse: collapse; text-align: left; font-size: 14px; white-space: nowrap; }
 .jobs-table th, .jobs-table td { padding: 14px 18px; border-bottom: 1px solid var(--border); }
 .jobs-table th:first-child, .jobs-table td:first-child { padding-left: 24px; }
@@ -642,13 +645,13 @@ body {
   text-transform: uppercase;
 }
 
-.hiring-stage__brief dl {
+.hiring-stage__brief > dl {
   display: grid;
   gap: 1.1rem;
   margin: 0;
 }
 
-.hiring-stage__brief dt {
+.hiring-stage__brief > dl dt {
   color: #696b74;
   font-family: var(--font-space-mono), monospace;
   font-size: 0.6rem;
@@ -656,7 +659,7 @@ body {
   text-transform: uppercase;
 }
 
-.hiring-stage__brief dd {
+.hiring-stage__brief > dl dd {
   min-height: 3.2rem;
   margin: 0.35rem 0 0;
   max-width: 30rem;
@@ -968,6 +971,39 @@ body {
   box-shadow: none;
 }
 
+/* Concierge chat: the pulsing dot before the first token and the shimmer
+   that runs over an in-progress step, as chat apps do. */
+.concierge-dot {
+  width: 0.75rem;
+  height: 0.75rem;
+  border-radius: 9999px;
+  background: var(--foreground);
+  animation: concierge-dot 1.1s ease-in-out infinite;
+}
+
+@keyframes concierge-dot {
+  0%, 100% { transform: scale(0.8); opacity: 0.55; }
+  50% { transform: scale(1); opacity: 1; }
+}
+
+.concierge-shimmer {
+  background: linear-gradient(90deg, var(--muted-foreground) 0%, var(--foreground) 45%, var(--muted-foreground) 60%);
+  background-size: 220% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: concierge-shimmer 1.8s linear infinite;
+}
+
+.concierge-step-pulse {
+  animation: concierge-dot 1.1s ease-in-out infinite;
+}
+
+@keyframes concierge-shimmer {
+  from { background-position: 120% center; }
+  to { background-position: -100% center; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -989,299 +1025,4 @@ body {
   html {
     @apply font-sans;
   }
-}
-
-/* Concierge chat: a conversation in the body face, results as quiet cards.
-   Mono is reserved for the labels and the steps line. */
-.concierge {
-  display: flex;
-  flex-direction: column;
-  gap: 1.1rem;
-  padding: 1.4rem 1.5rem 1.2rem;
-  border: 1px solid color-mix(in oklab, var(--border) 80%, transparent);
-  border-radius: 16px;
-  background: #101115;
-}
-
-.concierge--compact {
-  gap: 0.85rem;
-  padding: 0;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-}
-
-.concierge__thread {
-  display: flex;
-  flex-direction: column;
-  gap: 0.9rem;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.concierge__thread:empty {
-  display: none;
-}
-
-.concierge__turn {
-  display: grid;
-  gap: 0.25rem;
-  max-width: 44rem;
-}
-
-.concierge__turn[data-role="user"] {
-  justify-self: end;
-  text-align: right;
-}
-
-.concierge__turn[data-role="user"] .concierge__text {
-  display: inline-block;
-  padding: 0.55rem 0.85rem;
-  border-radius: 12px 12px 4px 12px;
-  background: color-mix(in oklab, var(--signal) 14%, #16171c);
-  text-align: left;
-}
-
-.concierge__turn[data-role="assistant"] .concierge__text {
-  padding: 0.1rem 0 0 0.85rem;
-  border-left: 2px solid color-mix(in oklab, var(--signal) 55%, transparent);
-}
-
-.concierge__who {
-  font-family: var(--font-space-mono), ui-monospace, monospace;
-  font-size: 0.62rem;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--muted-foreground);
-}
-
-.concierge__text {
-  margin: 0;
-  font-size: 0.95rem;
-  line-height: 1.6;
-  color: var(--foreground);
-  white-space: pre-wrap;
-}
-
-.concierge__typing {
-  display: inline-flex;
-  gap: 0.3rem;
-  margin: 0;
-  padding: 0.45rem 0 0 0.85rem;
-  border-left: 2px solid color-mix(in oklab, var(--signal) 55%, transparent);
-}
-
-.concierge__typing i {
-  width: 0.4rem;
-  height: 0.4rem;
-  border-radius: 999px;
-  background: var(--signal);
-  animation: concierge-typing 1.1s ease-in-out infinite;
-}
-
-.concierge__typing i:nth-child(2) { animation-delay: 0.18s; }
-.concierge__typing i:nth-child(3) { animation-delay: 0.36s; }
-
-@keyframes concierge-typing {
-  0%, 60%, 100% { opacity: 0.25; transform: translateY(0); }
-  30% { opacity: 1; transform: translateY(-2px); }
-}
-
-.concierge__result {
-  display: flex;
-  flex-direction: column;
-  gap: 0.8rem;
-}
-
-.concierge__steps {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.35rem 1.2rem;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  font-family: var(--font-space-mono), ui-monospace, monospace;
-  font-size: 0.66rem;
-  color: var(--muted-foreground);
-}
-
-.concierge__steps li::before {
-  content: "✓ ";
-  color: var(--signal);
-}
-
-.concierge__card {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-  padding: 0.95rem 1.05rem;
-  border: 1px solid color-mix(in oklab, var(--border) 80%, transparent);
-  border-radius: 12px;
-  background: color-mix(in oklab, var(--card) 70%, transparent);
-}
-
-.concierge__card--ready {
-  border-color: color-mix(in oklab, var(--signal) 45%, transparent);
-  background: color-mix(in oklab, var(--signal) 6%, #131418);
-}
-
-.concierge__card--empty {
-  border-style: dashed;
-}
-
-.concierge__card-head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 0.35rem 0.9rem;
-}
-
-.concierge__card-title {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-  font-size: 0.95rem;
-}
-
-.concierge__eyebrow {
-  font-family: var(--font-space-mono), ui-monospace, monospace;
-  font-size: 0.64rem;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--signal);
-}
-
-.concierge__hint {
-  font-size: 0.75rem;
-  line-height: 1.45;
-  color: var(--muted-foreground);
-}
-
-.concierge__fields {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
-  gap: 0.6rem 1rem;
-  margin: 0;
-}
-
-.concierge__fields div {
-  display: grid;
-  gap: 0.15rem;
-}
-
-.concierge__fields dt {
-  font-size: 0.7rem;
-  color: var(--muted-foreground);
-}
-
-.concierge__fields dd {
-  margin: 0;
-  font-family: var(--font-space-mono), ui-monospace, monospace;
-  font-size: 0.86rem;
-  color: var(--foreground);
-}
-
-.concierge__actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.5rem 0.9rem;
-}
-
-.concierge__brief {
-  display: grid;
-  gap: 0.65rem;
-}
-
-.concierge__brief label {
-  display: grid;
-  gap: 0.3rem;
-}
-
-.concierge__brief label > span {
-  font-size: 0.72rem;
-  color: var(--muted-foreground);
-}
-
-.concierge__agents {
-  display: flex;
-  flex-direction: column;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.concierge__agent {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
-  align-items: center;
-  gap: 0.75rem;
-  padding: 0.5rem 0;
-  border-top: 1px solid color-mix(in oklab, var(--border) 60%, transparent);
-}
-
-.concierge__agent:first-child {
-  border-top: 0;
-  padding-top: 0;
-}
-
-.concierge__agent-name {
-  display: grid;
-  gap: 0.1rem;
-  min-width: 0;
-  font-size: 0.9rem;
-}
-
-.concierge__agent-meta {
-  font-size: 0.72rem;
-  color: var(--muted-foreground);
-}
-
-.concierge__agent-link {
-  font-size: 0.8rem;
-  color: var(--signal);
-}
-
-.concierge__question {
-  margin: 0;
-  padding: 0.7rem 0.9rem;
-  border-left: 3px solid var(--signal);
-  border-radius: 0 8px 8px 0;
-  background: color-mix(in oklab, var(--signal) 8%, transparent);
-  font-size: 0.92rem;
-  line-height: 1.5;
-}
-
-.concierge__composer {
-  display: grid;
-  gap: 0.5rem;
-}
-
-.concierge__composer-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-}
-
-.concierge__status {
-  margin: 0;
-  min-height: 1.25rem;
-  font-size: 0.78rem;
-  color: var(--muted-foreground);
-}
-
-.concierge__note {
-  margin: 0;
-  font-size: 0.72rem;
-  line-height: 1.5;
-  color: var(--muted-foreground);
-}
-
-@media (max-width: 640px) {
-  .concierge { padding: 1rem; }
-  .concierge__turn { max-width: 100%; }
-  .concierge__agent { grid-template-columns: minmax(0, 1fr) auto; }
-  .concierge__agent-link { grid-column: 1 / -1; }
 }

@@ -520,12 +520,13 @@ See the [ERC-8183 Gate 1 interaction diagram](diagrams/erc8183-gate1-flow.html).
 
 ### Concierge (optional)
 
-The concierge is a plain-language hiring assistant. It is active only when
+The concierge is a plain-language hiring assistant built on the AI SDK (streaming
+text and tool calls over any OpenAI-compatible host). It is active only when
 `CONCIERGE_API_KEY` is set. Configure these environment variables:
 
 - `CONCIERGE_API_KEY` — bearer token for the LLM endpoint (required to enable).
 - `CONCIERGE_BASE_URL` — OpenAI-compatible endpoint (default: DashScope international). DashScope China region: `https://dashscope.aliyuncs.com/compatible-mode/v1`. DeepSeek: `https://api.deepseek.com/v1`.
-- `CONCIERGE_MODEL` — model name (default: `qwen-plus`). DeepSeek: `deepseek-chat`. Open-source Qwen3 models requiring thinking disabled are not supported.
+- `CONCIERGE_MODEL` — model name (default: `qwen-plus`). DeepSeek: `deepseek-chat`. On DashScope hosts the request sets `enable_thinking: false`, so Qwen3 and DeepSeek V4 models answer without a thinking pass.
 - `CONCIERGE_DAILY_CAP` — global requests per UTC day per instance (default: 300).
 
 ## Documentation

@@ -1,24 +1,44 @@
 "use client";
 
+import { useChat } from "@ai-sdk/react";
+import { DefaultChatTransport, type ChatTransport } from "ai";
+import {
+  ArrowUpIcon,
+  CheckIcon,
+  CircleAlertIcon,
+  CopyIcon,
+  PenLineIcon,
+  RotateCcwIcon,
+  SearchIcon,
+  ShieldCheckIcon,
+  SlidersHorizontalIcon,
+  SquareIcon,
+  type LucideIcon,
+} from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
+import { Conversation, ConversationContent, ConversationScrollButton } from "@/components/ai-elements/conversation";
+import { Message, MessageContent, MessageResponse } from "@/components/ai-elements/message";
+import { Suggestion } from "@/components/ai-elements/suggestion";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { cn } from "@/lib/utils";
 import {
   CONCIERGE_LIMITS,
   CONCIERGE_SCHEMA_VERSION,
+  finalTextParts,
+  isConciergeToolError,
   type ConciergeAgentCard,
   type ConciergeBrief,
-  type ConciergeMessage,
-  type ConciergeProposal,
-  type ConciergeReply,
-  type ConciergeStep,
+  type ConciergeUIMessage,
+  type ProposeOutput,
+  type SearchAgentsResult,
 } from "@/src/business/entities/concierge";
 import type { HireabilityStatus } from "@/src/business/entities/marketplace-agent";
 import { saveConciergeHandoff } from "./concierge-handoff";
+import { describeConciergeError, projectConciergeMessages } from "./concierge-request";
 
 const HIREABILITY_LABEL: Record<HireabilityStatus, string> = {
   quote_verified: "ready to quote",
@@ -30,436 +50,528 @@ const HIREABILITY_LABEL: Record<HireabilityStatus, string> = {
   not_evaluated: "not evaluated",
 };
 
-const GENERIC_ERROR = "The concierge could not answer. Try again.";
+const STARTERS = [
+  "A grid on BNB/USDT between 500 and 700 with 1,000 USDT and 20 levels",
+  "Rebalance a small portfolio into BNB and USDT every week",
+  "Watch my Venus health factor and warn me before liquidation",
+];
 
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
+// The column every part of the chat lines up on, like a chat app: the
+// conversation, the composer and the note under it share one measure.
+const COLUMN = "mx-auto w-full max-w-3xl px-4 sm:px-6";
+
+type ConciergePart = ConciergeUIMessage["parts"][number];
+type ToolPart = Extract<ConciergePart, { type: `tool-${string}` }>;
+
+const EYEBROW = "font-mono text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground";
+
+function isToolPart(part: ConciergePart): part is ToolPart {
+  return part.type.startsWith("tool-");
 }
 
-function isConciergeBrief(value: unknown): value is ConciergeBrief {
-  return isPlainObject(value)
-    && typeof value.objective === "string"
-    && typeof value.deliverable === "string"
-    && typeof value.acceptanceCriteria === "string";
+interface StepView {
+  key: string;
+  state: "running" | "done" | "failed";
+  label: string;
+  icon: LucideIcon;
 }
 
-function isConciergeAgentCard(value: unknown): value is ConciergeAgentCard {
-  return isPlainObject(value)
-    && typeof value.agentId === "string"
-    && typeof value.name === "string"
-    && Array.isArray(value.categories)
-    && typeof value.hireability === "string"
-    && typeof value.canHire === "boolean"
-    && (value.summary === null || typeof value.summary === "string")
-    && typeof value.href === "string";
+// One glyph per kind of work, so a glance says what the concierge is doing.
+const STEP_ICON: Record<string, LucideIcon> = {
+  "tool-search_agents": SearchIcon,
+  "tool-get_passport": ShieldCheckIcon,
+  "tool-get_quote_input": SlidersHorizontalIcon,
+  "tool-propose": PenLineIcon,
+};
+
+// Turns a streamed tool part into a line a person can read, without the
+// tool's name or its JSON.
+function describeStep(part: ToolPart, streaming: boolean): StepView {
+  const step = describeStepText(part);
+  const icon = STEP_ICON[part.type] ?? PenLineIcon;
+  if (step.state === "running" && !streaming) {
+    // The turn is over (Stop, or a dropped stream) with this call unanswered.
+    const activity = step.label.replace(/…$/, "");
+    return { ...step, state: "failed", label: `Stopped while ${activity.charAt(0).toLowerCase()}${activity.slice(1)}`, icon };
+  }
+  return { ...step, icon: step.state === "failed" ? CircleAlertIcon : icon };
 }
 
-function isConciergeProposal(value: unknown): value is ConciergeProposal {
-  return isPlainObject(value)
-    && typeof value.agentId === "string"
-    && isPlainObject(value.parameters)
-    && typeof value.contractHash === "string"
-    && Array.isArray(value.fields);
+function describeStepText(part: ToolPart): Omit<StepView, "icon"> {
+  const key = part.toolCallId;
+  const running = part.state === "input-streaming" || part.state === "input-available";
+  if (part.type === "tool-search_agents") {
+    if (running) return { key, state: "running", label: "Searching the catalog…" };
+    if (part.state !== "output-available" || isConciergeToolError(part.output)) {
+      return { key, state: "failed", label: "The catalog did not answer" };
+    }
+    const { agents, label } = part.output;
+    return { key, state: "done", label: `Searched the catalog · ${agents.length} ${agents.length === 1 ? "agent" : "agents"} for “${label}”` };
+  }
+  if (part.type === "tool-get_passport") {
+    if (running) return { key, state: "running", label: "Reading the evidence passport…" };
+    if (part.state !== "output-available" || isConciergeToolError(part.output)) {
+      return { key, state: "failed", label: "The evidence passport is unavailable" };
+    }
+    return { key, state: "done", label: `Read the evidence passport of #${part.output.agentId}` };
+  }
+  if (part.type === "tool-get_quote_input") {
+    if (running) return { key, state: "running", label: "Reading the seller's parameters…" };
+    if (part.state !== "output-available" || isConciergeToolError(part.output)) {
+      return { key, state: "failed", label: "The seller's parameters are unavailable" };
+    }
+    return { key, state: "done", label: `Read the seller's parameters of #${part.output.agentId}` };
+  }
+  if (running) return { key, state: "running", label: "Drafting the proposal…" };
+  if (part.state !== "output-available") return { key, state: "failed", label: "The proposal could not be drafted" };
+  return { key, state: "done", label: "Drafted the proposal" };
 }
 
-function isConciergeStep(value: unknown): value is ConciergeStep {
-  return isPlainObject(value) && typeof value.tool === "string" && typeof value.summary === "string";
-}
-
-// Defensive: the route already validates its own output, but a client must
-// never trust a 200 body blindly. Anything short of this shape degrades to
-// the generic error copy instead of crashing the render.
-function parseConciergeReply(value: unknown): ConciergeReply | null {
-  if (!isPlainObject(value) || typeof value.message !== "string") return null;
-  if (value.question !== null && typeof value.question !== "string") return null;
-  if (value.brief !== null && !isConciergeBrief(value.brief)) return null;
-  if (!Array.isArray(value.agents) || !value.agents.every(isConciergeAgentCard)) return null;
-  if (value.proposal !== null && !isConciergeProposal(value.proposal)) return null;
-  if (!Array.isArray(value.steps) || !value.steps.every(isConciergeStep)) return null;
-
-  return {
-    schemaVersion: 1,
-    message: value.message,
-    question: (value.question as string | null) ?? null,
-    brief: (value.brief as ConciergeBrief | null) ?? null,
-    agents: value.agents as ConciergeAgentCard[],
-    proposal: (value.proposal as ConciergeProposal | null) ?? null,
-    steps: value.steps as ConciergeStep[],
-    model: typeof value.model === "string" ? value.model : "",
-  };
-}
-
-// Mirrors parseConciergeBrief / isValidConciergeBrief (concierge-handoff.ts):
-// a brief edited past the shared limit must degrade to null instead of being
-// saved as-is, otherwise takeConciergeHandoff rejects the whole hand-off
-// (parameters included) on the receiving end.
 function briefIsComplete(brief: ConciergeBrief | null): brief is ConciergeBrief {
-  return brief !== null
-    && [brief.objective, brief.deliverable, brief.acceptanceCriteria].every(
-      (field) => field.trim().length > 0 && field.length <= CONCIERGE_LIMITS.briefChars
-    );
-}
-
-function windowMessages(messages: ConciergeMessage[]): ConciergeMessage[] {
-  // The route rejects a history longer than CONCIERGE_LIMITS.messages, and
-  // requires it to start and end on a "user" turn, so pairs must be dropped
-  // from the front (never a lone message) to keep the alternation valid.
-  let windowed = messages;
-  while (windowed.length > CONCIERGE_LIMITS.messages) {
-    windowed = windowed.slice(2);
-  }
-  return windowed;
-}
-
-export interface ConciergeChatProps {
-  placeholder?: string;
-  initialPrompt?: string;
-  compact?: boolean;
-}
-
-// The chat only ever drafts: a brief, candidate agents and seller
-// parameters. Requesting the signed quote still happens on the seller's own
-// form (`quote-request-panel.tsx`), which is what actually locks price and
-// escrow — this component just hands it a starting point.
-export function ConciergeChat({ placeholder, initialPrompt, compact = false }: ConciergeChatProps) {
-  const router = useRouter();
-  const [messages, setMessages] = useState<ConciergeMessage[]>([]);
-  const [draft, setDraft] = useState("");
-  const [reply, setReply] = useState<ConciergeReply | null>(null);
-  const [briefDraft, setBriefDraft] = useState<ConciergeBrief | null>(null);
-  const [status, setStatus] = useState<"idle" | "sending" | "error">("idle");
-  const [error, setError] = useState<string | null>(null);
-  const abortRef = useRef<AbortController | null>(null);
-  const sentInitialRef = useRef(false);
-  const messagesRef = useRef(messages);
-  messagesRef.current = messages;
-
-  useEffect(() => () => abortRef.current?.abort(), []);
-
-  async function sendMessage(content: string) {
-    const trimmed = content.trim();
-    if (!trimmed || status === "sending") return;
-
-    abortRef.current?.abort();
-    const controller = new AbortController();
-    abortRef.current = controller;
-    // A newer send (a real user submit, or the re-armed StrictMode retry
-    // below) always replaces abortRef.current before this one settles; only
-    // a request that is still "current" when it fails should touch state —
-    // otherwise it would stomp on the request that superseded it.
-    const isCurrent = () => abortRef.current === controller;
-
-    const previousMessages = messagesRef.current;
-    const nextMessages: ConciergeMessage[] = [...previousMessages, { role: "user", content: trimmed }];
-    setMessages(nextMessages);
-    setDraft("");
-    setStatus("sending");
-    setError(null);
-
-    try {
-      const response = await fetch("/api/marketplace/concierge", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ schemaVersion: CONCIERGE_SCHEMA_VERSION, messages: windowMessages(nextMessages) }),
-        signal: controller.signal,
-      });
-
-      if (!response.ok) {
-        if (!isCurrent()) return;
-        // Roll back the optimistic user turn: leaving it in place would make
-        // the next send start with two consecutive "user" messages, which
-        // the route always rejects (it requires strict alternation).
-        setMessages(previousMessages);
-        if (response.status === 429) {
-          const retryAfter = response.headers.get("retry-after");
-          setError(
-            retryAfter && /^\d+$/.test(retryAfter)
-              ? `The concierge is busy. Try again in ${retryAfter} s.`
-              : "The concierge is busy. Try again in a moment."
-          );
-        } else if (response.status === 503) {
-          setError("The concierge is offline right now.");
-        } else {
-          setError(GENERIC_ERROR);
-        }
-        setStatus("error");
-        return;
-      }
-
-      const parsed = parseConciergeReply(await response.json());
-      if (!isCurrent()) return;
-      if (parsed === null) {
-        setMessages(previousMessages);
-        setError(GENERIC_ERROR);
-        setStatus("error");
-        return;
-      }
-
-      setReply(parsed);
-      if (parsed.brief !== null) setBriefDraft(parsed.brief);
-      setMessages((current) => [...current, { role: "assistant", content: parsed.message }]);
-      setStatus("idle");
-    } catch (caught) {
-      if (!isCurrent()) return; // superseded: the newer request owns state now
-      if (caught instanceof DOMException && caught.name === "AbortError") {
-        // Not superseded, so this abort came from the unmount-cleanup effect
-        // below rather than a newer send (React StrictMode runs that cleanup
-        // between its double-invoked mounts). Recover instead of leaving the
-        // chat stuck on "sending" with an optimistic turn that would break
-        // the next request's alternation.
-        setMessages(previousMessages);
-        setStatus("idle");
-        return;
-      }
-      setMessages(previousMessages);
-      setError(GENERIC_ERROR);
-      setStatus("error");
-    }
-  }
-
-  useEffect(() => {
-    if (!initialPrompt || sentInitialRef.current) return;
-    sentInitialRef.current = true;
-    void sendMessage(initialPrompt);
-    return () => {
-      // React StrictMode (next.config.ts reactStrictMode) mounts, cleans up
-      // and mounts again in development; the cleanup above aborts the first
-      // attempt, so this guard must reset too, or the second mount silently
-      // skips resending the initial prompt.
-      sentInitialRef.current = false;
-    };
-    // Runs once on mount for the given initialPrompt; sendMessage reads live
-    // state through refs, so it does not need to be a dependency here.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialPrompt]);
-
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    void sendMessage(draft);
-  }
-
-  function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
-    if (event.key === "Enter" && !event.shiftKey) {
-      event.preventDefault();
-      void sendMessage(draft);
-    }
-  }
-
-  function updateBriefField(field: keyof ConciergeBrief, value: string) {
-    setBriefDraft((current) => (current ? { ...current, [field]: value } : current));
-  }
-
-  function handleContinue(proposal: ConciergeProposal, agent: ConciergeAgentCard | null) {
-    const href = agent?.href ?? `/hire/${proposal.agentId}`;
-    try {
-      saveConciergeHandoff(window.sessionStorage, {
-        agentId: proposal.agentId,
-        contractHash: proposal.contractHash,
-        parameters: proposal.parameters,
-        brief: briefIsComplete(briefDraft) ? briefDraft : null,
-      });
-    } catch {
-      // Storage may throw (quota, private mode); still route the buyer on.
-    }
-    router.push(`${href}#quote-request`);
-  }
-
-  const proposalAgent = reply?.proposal ? reply.agents.find((candidate) => candidate.agentId === reply.proposal!.agentId) ?? null : null;
-  const firstAgent = reply?.agents[0] ?? null;
-  const sending = status === "sending";
-  // Results render only once the latest turn is answered, so a stale card
-  // never sits under a question that is still being processed.
-  const result = reply && !sending ? reply : null;
-  const hasAgents = result !== null && result.agents.length > 0;
-
-  return (
-    <div className={compact ? "concierge concierge--compact" : "concierge"}>
-      <ol aria-label="Conversation" className="concierge__thread">
-        {messages.map((message, index) => (
-          <li className="concierge__turn" data-role={message.role} key={`${message.role}-${index}`}>
-            <span className="concierge__who">{message.role === "user" ? "You" : "Concierge"}</span>
-            <p className="concierge__text">{message.content}</p>
-          </li>
-        ))}
-        {sending ? (
-          <li aria-hidden="true" className="concierge__turn" data-role="assistant">
-            <span className="concierge__who">Concierge</span>
-            <p className="concierge__typing"><i /><i /><i /></p>
-          </li>
-        ) : null}
-      </ol>
-
-      {result ? (
-        <div className="concierge__result">
-          {result.steps.length > 0 ? (
-            <ul aria-label="Steps" className="concierge__steps">
-              {result.steps.map((step, index) => (
-                <li key={`${step.tool}-${index}`}>{describeStep(step)}</li>
-              ))}
-            </ul>
-          ) : null}
-
-          {result.proposal ? (
-            <section aria-label="Proposed parameters" className="concierge__card concierge__card--ready">
-              <header className="concierge__card-head">
-                <span className="concierge__eyebrow">Ready for a quote</span>
-                <span className="concierge__card-title">
-                  <strong>{proposalAgent?.name ?? `Agent #${result.proposal.agentId}`}</strong>
-                  {proposalAgent ? <AgentBadge agent={proposalAgent} /> : null}
-                </span>
-              </header>
-              <dl className="concierge__fields">
-                {result.proposal.fields.map((field) => (
-                  <div key={field.key}>
-                    <dt>{field.title}</dt>
-                    <dd>{field.value}</dd>
-                  </div>
-                ))}
-              </dl>
-              <div className="concierge__actions">
-                <Button onClick={() => handleContinue(result.proposal!, proposalAgent)} type="button">
-                  Continue to quote with {proposalAgent?.name ?? result.proposal.agentId}
-                </Button>
-                <span className="concierge__hint">You review every field on the seller&apos;s form before the quote is requested.</span>
-              </div>
-            </section>
-          ) : null}
-
-          {hasAgents && briefDraft ? (
-            <section aria-label="Your brief" className="concierge__card">
-              <header className="concierge__card-head">
-                <span className="concierge__eyebrow">Your brief</span>
-                <span className="concierge__hint">Edit anything before you continue. It travels with the quote request.</span>
-              </header>
-              <div className="concierge__brief">
-                <label>
-                  <span>Objective</span>
-                  <Input
-                    maxLength={CONCIERGE_LIMITS.briefChars}
-                    onChange={(event) => updateBriefField("objective", event.target.value)}
-                    value={briefDraft.objective}
-                  />
-                </label>
-                <label>
-                  <span>Deliverable</span>
-                  <Textarea
-                    maxLength={CONCIERGE_LIMITS.briefChars}
-                    onChange={(event) => updateBriefField("deliverable", event.target.value)}
-                    rows={2}
-                    value={briefDraft.deliverable}
-                  />
-                </label>
-                <label>
-                  <span>Acceptance criteria</span>
-                  <Textarea
-                    maxLength={CONCIERGE_LIMITS.briefChars}
-                    onChange={(event) => updateBriefField("acceptanceCriteria", event.target.value)}
-                    rows={2}
-                    value={briefDraft.acceptanceCriteria}
-                  />
-                </label>
-              </div>
-            </section>
-          ) : null}
-
-          {hasAgents ? (
-            <section className="concierge__card">
-              <header className="concierge__card-head">
-                <span className="concierge__eyebrow">{result.proposal ? "Agents found" : "Agents for this brief"}</span>
-              </header>
-              <ol aria-label="Agents for this brief" className="concierge__agents">
-                {result.agents.map((agent) => (
-                  <li className="concierge__agent" key={agent.agentId}>
-                    <span className="concierge__agent-name">
-                      <strong>{agent.name}</strong>
-                      <span className="concierge__agent-meta">
-                        {agent.categories.map((category) => category.replaceAll("_", " ")).join(", ") || "not classified"}
-                        {" · "}
-                        {HIREABILITY_LABEL[agent.hireability]}
-                      </span>
-                    </span>
-                    <AgentBadge agent={agent} />
-                    <Link className="concierge__agent-link" href={agent.href}>Open<span className="sr-only"> {agent.name}</span></Link>
-                  </li>
-                ))}
-              </ol>
-              {!result.proposal && firstAgent ? (
-                <div className="concierge__actions">
-                  <Button asChild type="button" variant="outline">
-                    <Link href={firstAgent.href}>Open {firstAgent.name}</Link>
-                  </Button>
-                  <span className="concierge__hint">The seller&apos;s parameters were not available, so the form starts empty.</span>
-                </div>
-              ) : null}
-            </section>
-          ) : null}
-
-          {!hasAgents && !result.proposal ? (
-            <section aria-label="No matching agents" className="concierge__card concierge__card--empty">
-              <header className="concierge__card-head">
-                <span className="concierge__eyebrow">No matching agents</span>
-              </header>
-              <p className="concierge__text">
-                This marketplace lists agents for grid trading, rebalancing, yield optimisation and health-factor
-                monitoring. Describe a need in one of those areas, or browse the catalog.
-              </p>
-              <div className="concierge__actions">
-                <Button asChild size="sm" type="button" variant="outline">
-                  <Link href="/agents?view=marketplace">Browse verified agents</Link>
-                </Button>
-              </div>
-            </section>
-          ) : null}
-        </div>
-      ) : null}
-
-      {result?.question ? <p className="concierge__question">{result.question}</p> : null}
-
-      <form aria-label="Ask the concierge" className="concierge__composer" onSubmit={handleSubmit}>
-        <Textarea
-          aria-label="Message"
-          disabled={sending}
-          maxLength={CONCIERGE_LIMITS.userChars}
-          onChange={(event) => setDraft(event.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder={placeholder ?? "Describe what you need, in your own words."}
-          rows={compact ? 2 : 3}
-          value={draft}
-        />
-        <div className="concierge__composer-row">
-          <span className="concierge__hint">Enter to send · Shift+Enter for a new line</span>
-          <Button disabled={sending || draft.trim().length === 0} type="submit">
-            Ask
-          </Button>
-        </div>
-      </form>
-
-      <p aria-live="polite" className="concierge__status" role="status">
-        {sending ? "Asking the concierge…" : (error ?? "")}
-      </p>
-
-      <p className="concierge__note">
-        The concierge drafts. You review every field before a quote is requested; the signed quote sets the price and
-        the escrow holds your funds.
-      </p>
-    </div>
-  );
+  return brief !== null && [brief.objective, brief.deliverable, brief.acceptanceCriteria].every((field) => field.trim().length > 0);
 }
 
 function AgentBadge({ agent }: { agent: ConciergeAgentCard }) {
-  return <Badge variant={agent.canHire ? "default" : "secondary"}>{agent.canHire ? "verified" : "listed"}</Badge>;
+  return agent.canHire
+    ? <Badge className="border-emerald-400/30 bg-emerald-400/10 text-emerald-300" variant="outline">Verified</Badge>
+    : <Badge variant="outline">Listed</Badge>;
 }
 
-const STEP_LABEL: Record<ConciergeStep["tool"], string> = {
-  search_agents: "Searched the catalog",
-  get_passport: "Read the evidence passport",
-  get_quote_input: "Read the seller's parameters",
-};
+function Card({ label, tone = "default", children }: { label: string; tone?: "default" | "ready" | "empty"; children: ReactNode }) {
+  return (
+    <section
+      aria-label={label}
+      className={cn(
+        "flex w-full flex-col gap-4 rounded-3xl border p-5",
+        tone === "ready" && "border-primary/40 bg-primary/[0.06]",
+        tone === "empty" && "border-dashed border-border bg-transparent",
+        tone === "default" && "border-border bg-card/60",
+      )}
+    >
+      {children}
+    </section>
+  );
+}
 
-// Server summaries are terse ("passport for 303779"); the reader sees a
-// sentence, not a tool name.
-function describeStep(step: ConciergeStep): string {
-  const label = STEP_LABEL[step.tool] ?? step.tool;
-  const detail = step.summary.replace(/^(?:passport|quote input) for /, "#");
-  return `${label} · ${detail}`;
+function BriefField({ id, label, value, rows, onChange }: { id: string; label: string; value: string; rows: number; onChange: (value: string) => void }) {
+  return (
+    <label className="flex flex-col gap-1.5" htmlFor={id}>
+      <span className={EYEBROW}>{label}</span>
+      <Textarea
+        className="field-sizing-content max-h-40 min-h-0 resize-none rounded-xl bg-background/60 text-sm"
+        id={id}
+        maxLength={CONCIERGE_LIMITS.briefChars}
+        onChange={(event) => onChange(event.target.value)}
+        rows={rows}
+        value={value}
+      />
+    </label>
+  );
+}
+
+function ProposalCard({ id, output, compact }: { id: string; output: ProposeOutput; compact: boolean }) {
+  const router = useRouter();
+  const { proposal, agents } = output;
+  const agent = proposal ? agents.find((card) => card.agentId === proposal.agentId) ?? null : null;
+  const fallback = agents[0] ?? null;
+  const [brief, setBrief] = useState<ConciergeBrief | null>(output.brief);
+  const rows = compact ? 1 : 2;
+
+  const continueToQuote = () => {
+    if (!proposal || !agent) return;
+    // The quote panel rejects a half-empty brief together with everything
+    // else in the handoff; the parameters matter more, so the brief travels
+    // only when complete.
+    saveConciergeHandoff(window.sessionStorage, {
+      agentId: proposal.agentId,
+      contractHash: proposal.contractHash,
+      parameters: proposal.parameters,
+      brief: briefIsComplete(brief) ? brief : null,
+    });
+    router.push(`${agent.href}#quote-request`);
+  };
+
+  return (
+    <Card label={proposal ? "Proposed parameters" : "Your brief"} tone={proposal ? "ready" : "default"}>
+      <header className="flex flex-col gap-1">
+        <span className={cn(EYEBROW, proposal && "text-primary")}>{proposal ? "Ready for a quote" : "Your brief"}</span>
+        {agent ? (
+          <span className="flex items-center gap-2 text-base font-semibold">
+            {agent.name}
+            <AgentBadge agent={agent} />
+          </span>
+        ) : null}
+      </header>
+      {proposal ? (
+        <dl className="grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-3">
+          {proposal.fields.map((field) => (
+            <div className="flex min-w-0 flex-col gap-0.5" key={field.key}>
+              <dt className="truncate text-xs text-muted-foreground">{field.title}</dt>
+              <dd className="truncate font-mono text-sm tabular-nums" title={field.value}>{field.value}</dd>
+            </div>
+          ))}
+        </dl>
+      ) : null}
+      {brief ? (
+        <div className="grid gap-3 sm:grid-cols-3">
+          <BriefField id={`${id}-objective`} label="Objective" onChange={(objective) => setBrief({ ...brief, objective })} rows={rows} value={brief.objective} />
+          <BriefField id={`${id}-deliverable`} label="Deliverable" onChange={(deliverable) => setBrief({ ...brief, deliverable })} rows={rows} value={brief.deliverable} />
+          <BriefField id={`${id}-acceptance`} label="Acceptance criteria" onChange={(acceptanceCriteria) => setBrief({ ...brief, acceptanceCriteria })} rows={rows} value={brief.acceptanceCriteria} />
+        </div>
+      ) : null}
+      {proposal && agent ? (
+        <Button className="self-start rounded-full" onClick={continueToQuote} type="button">Continue to quote with {agent.name}</Button>
+      ) : fallback ? (
+        <Button asChild className="self-start rounded-full" variant="outline">
+          <Link href={fallback.href}>Open {fallback.name}</Link>
+        </Button>
+      ) : null}
+    </Card>
+  );
+}
+
+function AgentsCard({ agents }: { agents: ConciergeAgentCard[] }) {
+  return (
+    <Card label="Agents for this brief">
+      <span className={EYEBROW}>Agents that match</span>
+      <ol className="flex flex-col divide-y divide-border">
+        {agents.map((agent) => (
+          <li className="flex items-center justify-between gap-3 py-2.5 first:pt-0 last:pb-0" key={agent.agentId}>
+            <div className="flex min-w-0 flex-col gap-0.5">
+              <span className="flex items-center gap-2 text-sm font-semibold">
+                <span className="truncate">{agent.name}</span>
+                <AgentBadge agent={agent} />
+              </span>
+              <span className="truncate text-xs text-muted-foreground">
+                {[...agent.categories.map((category) => category.replaceAll("_", " ")), HIREABILITY_LABEL[agent.hireability]].join(" · ")}
+              </span>
+            </div>
+            <Button asChild className="rounded-full" size="sm" variant="ghost">
+              <Link href={agent.href}>Open</Link>
+            </Button>
+          </li>
+        ))}
+      </ol>
+    </Card>
+  );
+}
+
+function NoMatchCard() {
+  return (
+    // The reply already says what the catalog covers, in the person's
+    // language; the card only offers the way out.
+    <Card label="No matching agents" tone="empty">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <span className={EYEBROW}>No matching agents</span>
+        <Button asChild className="rounded-full" size="sm" variant="outline">
+          <Link href="/agents?view=marketplace">Browse verified agents</Link>
+        </Button>
+      </div>
+    </Card>
+  );
+}
+
+// The pulsing dot a chat shows before the first token arrives.
+function ThinkingDot() {
+  return <span aria-label="The concierge is thinking" className="concierge-dot my-2 block" role="status" />;
+}
+
+function Steps({ steps }: { steps: StepView[] }) {
+  return (
+    <ul aria-label="Steps" className="flex flex-col gap-1 text-[13px] text-muted-foreground">
+      {steps.map((step) => (
+        <li className={cn("flex items-center gap-2", step.state === "failed" && "text-amber-300")} key={step.key}>
+          <step.icon
+            aria-hidden="true"
+            className={cn("size-3.5 shrink-0", step.state === "running" && "concierge-step-pulse text-foreground")}
+          />
+          {step.state === "running" ? <span className="concierge-shimmer">{step.label}</span> : <span>{step.label}</span>}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+  useEffect(() => {
+    if (!copied) return;
+    const timer = window.setTimeout(() => setCopied(false), 1500);
+    return () => window.clearTimeout(timer);
+  }, [copied]);
+  return (
+    <Button
+      aria-label={copied ? "Copied" : "Copy"}
+      className="size-7 rounded-md text-muted-foreground hover:text-foreground"
+      onClick={() => {
+        void navigator.clipboard?.writeText(text).then(() => setCopied(true));
+      }}
+      size="icon"
+      type="button"
+      variant="ghost"
+    >
+      {copied ? <CheckIcon aria-hidden="true" className="size-3.5" /> : <CopyIcon aria-hidden="true" className="size-3.5" />}
+    </Button>
+  );
+}
+
+interface AssistantTurnProps {
+  message: ConciergeUIMessage;
+  streaming: boolean;
+  last: boolean;
+  compact: boolean;
+  onRetry: () => void;
+}
+
+function AssistantTurn({ message, streaming, last, compact, onRetry }: AssistantTurnProps) {
+  const toolParts = message.parts.filter(isToolPart);
+  const steps = toolParts.map((part) => describeStep(part, streaming));
+  // Only the text after the last tool call is the reply; narration before a
+  // tool call would duplicate the step rows.
+  const textParts = finalTextParts(message.parts).filter((part) => part.text.length > 0);
+  const text = textParts.map((part) => part.text).join("");
+  const proposePart = toolParts.find((part) => part.type === "tool-propose");
+  const propose = proposePart?.type === "tool-propose" && proposePart.state === "output-available" ? proposePart.output : null;
+  let lastSearch: SearchAgentsResult | null = null;
+  for (const part of toolParts) {
+    if (part.type === "tool-search_agents" && part.state === "output-available" && !isConciergeToolError(part.output)) {
+      lastSearch = part.output;
+    }
+  }
+  // The cards wait for the turn to finish: a search result is not the answer
+  // while the concierge is still reading parameters or drafting.
+  const showAgents = !streaming && !propose?.proposal && (propose?.agents ?? lastSearch?.agents ?? []).length > 0;
+  const showNoMatch = !streaming && lastSearch !== null && lastSearch.agents.length === 0 && !propose;
+
+  return (
+    <Message className="max-w-full gap-3" from="assistant">
+      {steps.length > 0 ? <Steps steps={steps} /> : null}
+      {textParts.length > 0 ? (
+        <MessageContent className="text-base leading-7">
+          {textParts.map((part, index) => (
+            <MessageResponse animated isAnimating={streaming} key={index}>{part.text}</MessageResponse>
+          ))}
+        </MessageContent>
+      ) : streaming ? (
+        <ThinkingDot />
+      ) : null}
+      {propose && (propose.proposal || propose.brief) ? <ProposalCard compact={compact} id={message.id} output={propose} /> : null}
+      {showAgents ? <AgentsCard agents={propose?.agents ?? lastSearch!.agents} /> : null}
+      {showNoMatch ? <NoMatchCard /> : null}
+      {!streaming && (text.length > 0 || last) ? (
+        <div
+          className={cn(
+            "-ml-1.5 flex items-center gap-0.5 transition-opacity",
+            last ? "opacity-100" : "opacity-0 focus-within:opacity-100 group-hover:opacity-100",
+          )}
+        >
+          {text.length > 0 ? <CopyButton text={text} /> : null}
+          {last ? (
+            <Button
+              aria-label="Retry"
+              className="size-7 rounded-md text-muted-foreground hover:text-foreground"
+              onClick={onRetry}
+              size="icon"
+              type="button"
+              variant="ghost"
+            >
+              <RotateCcwIcon aria-hidden="true" className="size-3.5" />
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
+    </Message>
+  );
+}
+
+function UserTurn({ message }: { message: ConciergeUIMessage }) {
+  const text = message.parts.filter((part) => part.type === "text").map((part) => part.text).join("");
+  return (
+    <Message className="max-w-[85%] sm:max-w-[70%]" from="user">
+      <MessageContent className="rounded-3xl rounded-br-lg bg-secondary px-5 py-3 text-base leading-7 whitespace-pre-wrap">{text}</MessageContent>
+    </Message>
+  );
+}
+
+export interface ConciergeChatProps {
+  initialPrompt?: string;
+  compact?: boolean;
+  placeholder?: string;
+  /** Test seam: replaces the HTTP transport to /api/marketplace/concierge. */
+  transport?: ChatTransport<ConciergeUIMessage>;
+}
+
+export function ConciergeChat({
+  initialPrompt,
+  compact = false,
+  placeholder = "Describe what you need",
+  transport,
+}: ConciergeChatProps) {
+  const chatTransport = useMemo(
+    () =>
+      transport
+      ?? new DefaultChatTransport<ConciergeUIMessage>({
+        api: "/api/marketplace/concierge",
+        // The route takes text only; tool outputs stay in the browser.
+        prepareSendMessagesRequest: ({ messages }) => ({
+          body: { schemaVersion: CONCIERGE_SCHEMA_VERSION, messages: projectConciergeMessages(messages) },
+        }),
+      }),
+    [transport],
+  );
+  const { messages, sendMessage, status, error, stop, regenerate } = useChat<ConciergeUIMessage>({ transport: chatTransport });
+  const [draft, setDraft] = useState("");
+  const sentInitial = useRef(false);
+  const textarea = useRef<HTMLTextAreaElement>(null);
+  const busy = status === "submitted" || status === "streaming";
+  const empty = messages.length === 0;
+
+  useEffect(() => {
+    const text = initialPrompt?.trim().slice(0, CONCIERGE_LIMITS.userChars);
+    if (!text || sentInitial.current) return;
+    sentInitial.current = true;
+    void sendMessage({ text });
+  }, [initialPrompt, sendMessage]);
+
+  const submit = (text: string) => {
+    const trimmed = text.trim().slice(0, CONCIERGE_LIMITS.userChars);
+    if (!trimmed || busy) return;
+    setDraft("");
+    void sendMessage({ text: trimmed });
+    textarea.current?.focus();
+  };
+
+  const onSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    submit(draft);
+  };
+
+  const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+      event.preventDefault();
+      submit(draft);
+    }
+  };
+
+  const lastIndex = messages.length - 1;
+  const nearLimit = draft.length >= CONCIERGE_LIMITS.userChars - 200;
+
+  return (
+    <section
+      aria-label="Concierge"
+      className={cn(
+        "flex min-h-0 flex-col",
+        compact ? "marketplace-surface h-[28rem] overflow-hidden rounded-2xl" : "h-full",
+      )}
+    >
+      {/* Above the composer: the greeting while the chat is empty, the
+          conversation afterwards. */}
+      <div className="flex min-h-0 flex-1 flex-col justify-end">
+        {empty ? (
+          <div className={cn(COLUMN, "pb-6 text-center", compact ? "pb-4" : "pb-6")}>
+            <h2 className={cn("font-semibold tracking-tight text-balance", compact ? "text-xl" : "text-3xl sm:text-4xl")}>
+              What do you need done?
+            </h2>
+          </div>
+        ) : (
+          <Conversation className="min-h-0 flex-1">
+            <ConversationContent className={cn(COLUMN, "gap-7 py-6", compact && "gap-5 py-4")}>
+              {messages.map((message, index) =>
+                message.role === "user" ? (
+                  <UserTurn key={message.id} message={message} />
+                ) : (
+                  <AssistantTurn
+                    compact={compact}
+                    key={message.id}
+                    last={index === lastIndex}
+                    message={message}
+                    onRetry={() => void regenerate()}
+                    streaming={busy && index === lastIndex}
+                  />
+                ),
+              )}
+              {status === "submitted" && messages[lastIndex]?.role === "user" ? (
+                <Message className="max-w-full" from="assistant">
+                  <ThinkingDot />
+                </Message>
+              ) : null}
+              {error ? (
+                <div className="flex flex-wrap items-center gap-3 text-sm text-amber-300" role="alert">
+                  <span>{describeConciergeError(error)}</span>
+                  <Button className="h-7 rounded-full border-amber-300/40 px-3 text-amber-200 hover:text-amber-100" onClick={() => void regenerate()} size="sm" type="button" variant="outline">
+                    Try again
+                  </Button>
+                </div>
+              ) : null}
+            </ConversationContent>
+            <ConversationScrollButton className="bottom-3" />
+          </Conversation>
+        )}
+      </div>
+
+      <form aria-label="Ask the concierge" className={cn(COLUMN, "shrink-0", compact && "px-4")} onSubmit={onSubmit}>
+        <div
+          className={cn(
+            "flex flex-col gap-2 rounded-[28px] border border-border bg-secondary/70 px-4 pt-3.5 pb-2.5 shadow-lg shadow-black/25",
+            "transition-[border-color,box-shadow,background-color] duration-200",
+            "focus-within:border-foreground/20 focus-within:bg-secondary focus-within:shadow-xl focus-within:shadow-black/30",
+          )}
+        >
+          <Textarea
+            aria-label="Your request"
+            autoFocus={!compact}
+            className={cn(
+              "field-sizing-content min-h-0 resize-none rounded-none border-0 bg-transparent p-0 text-base shadow-none",
+              "placeholder:text-muted-foreground/80 focus-visible:border-0 focus-visible:ring-0 focus-visible:outline-none dark:bg-transparent",
+              compact ? "max-h-32" : "max-h-52",
+            )}
+            maxLength={CONCIERGE_LIMITS.userChars}
+            onChange={(event) => setDraft(event.target.value)}
+            onKeyDown={onKeyDown}
+            placeholder={placeholder}
+            ref={textarea}
+            rows={1}
+            value={draft}
+          />
+          <div className="flex items-center justify-between gap-3">
+            <span aria-live="polite" className={cn("text-xs tabular-nums text-muted-foreground", !nearLimit && "invisible")}>
+              {draft.length}/{CONCIERGE_LIMITS.userChars}
+            </span>
+            {busy ? (
+              <Button aria-label="Stop" className="size-9 rounded-full bg-foreground text-background hover:bg-foreground/90" onClick={() => void stop()} size="icon" type="button">
+                <SquareIcon aria-hidden="true" className="size-3 fill-current" />
+              </Button>
+            ) : (
+              <Button aria-label="Send" className="size-9 rounded-full disabled:opacity-30" disabled={draft.trim().length === 0} size="icon" type="submit">
+                <ArrowUpIcon aria-hidden="true" className="size-4" />
+              </Button>
+            )}
+          </div>
+        </div>
+      </form>
+
+      {/* Below the composer. While the chat is empty this block shares the
+          free space with the greeting, so the composer sits mid-screen; on
+          the first message it gives that space up and the composer glides
+          to the bottom, the way a chat app does. */}
+      <div
+        className={cn(COLUMN, "flex flex-col items-center gap-4 pt-3 transition-[flex-grow] duration-500 ease-out", compact ? "pb-3" : "pb-4")}
+        style={{ flexBasis: 0, flexGrow: empty ? 1 : 0 }}
+      >
+        {empty ? (
+          <div aria-label="Examples" className="flex flex-wrap justify-center gap-2" role="group">
+            {STARTERS.map((starter) => (
+              <Suggestion
+                className="h-auto border-border bg-transparent px-3.5 py-1.5 text-[13px] font-normal whitespace-normal text-muted-foreground hover:bg-secondary hover:text-foreground"
+                key={starter}
+                onClick={submit}
+                suggestion={starter}
+              />
+            ))}
+          </div>
+        ) : null}
+        <p className="text-center text-xs text-muted-foreground">Drafts only. You review every field before a quote is requested.</p>
+      </div>
+    </section>
+  );
 }

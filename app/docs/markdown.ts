@@ -290,18 +290,24 @@ parameters. Drafts only; the signed quote sets the price.
 
 Request: \`{ "schemaVersion": 1, "messages": [{ "role": "user" | "assistant", "content": "..." }] }\`.
 Messages must alternate and end with user; at most 12 messages total, user messages ≤ 1200
-characters, assistant messages ≤ 4000 characters, body ≤ 16 KiB.
+characters, assistant messages ≤ 4000 characters, body ≤ 64 KiB.
 
-Response: \`{ "schemaVersion": 1, "message": "...", "question": "..." | null, "brief": { "objective": "...", "deliverable": "...", "acceptanceCriteria": "..." } | null, "agents": [{ "agentId": "...", "name": "...", "canHire": true | false, ... }], "proposal": { "agentId": "...", "contractHash": "...", "parameters": {...}, "fields": [...] } | null, "steps": [{ "tool": "search_agents" | "get_passport" | "get_quote_input", "summary": "..." }], "model": "..." }\`.
+Response: an [AI SDK UI message stream](https://ai-sdk.dev/docs/ai-sdk-ui/stream-protocol)
+(\`text/event-stream\`, header \`x-vercel-ai-ui-message-stream: v1\`): text deltas plus one
+typed part per tool call and its output. Tool outputs: \`search_agents\` → \`{ "label", "agents": [{ "agentId", "name", "canHire", ... }] }\`;
+\`get_passport\` and \`get_quote_input\` → the agent's indexed state or the seller's input schema;
+\`propose\` → \`{ "brief": {...} | null, "proposal": { "agentId", "contractHash", "parameters", "fields" } | null, "agents": [...], "rejected": [...] }\`.
+Consume it with \`useChat\` from \`@ai-sdk/react\` or \`readUIMessageStream\` from the \`ai\` package.
 
-Limits: up to 4 model rounds, 6 tool calls per request, 35 seconds wall-clock time.
-Agents returned are only those from the catalogue search in the same request;
-parameters are validated against the seller contract retrieved in the same request.
+Limits: up to 5 model steps (the last one is text-only), 6 catalogue lookups per request,
+35 seconds wall-clock time. Agents returned are only those from the catalogue search in the
+same request; parameters are validated against the seller contract retrieved in the same request.
 
-Errors: 400 invalid request (malformed JSON, schema version, message format);
-413 payload too large; 429 rate limited (check Retry-After header; per-caller
-window 6 requests/min, 2 concurrent, plus global 300/day default); 503 concierge
-not configured or upstream model unavailable; 405 method not allowed (use POST).
+Errors before the stream starts use the JSON shape below: 400 invalid request (malformed
+JSON, schema version, message format); 413 payload too large; 429 rate limited (check
+Retry-After header; per-caller window 6 requests/min, 2 concurrent, plus global 300/day
+default); 503 concierge not configured; 405 method not allowed (use POST). A model
+failure after the stream started arrives as an \`error\` chunk with a short message.
 
 ## Errors
 

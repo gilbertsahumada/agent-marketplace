@@ -29,7 +29,7 @@ import { ValidateMarketplaceAgent } from "./use-cases/validate-marketplace-agent
 import { NotifyQualifiedMainnetFundedJob, PrepareQualifiedMainnetHire, RequestQualifiedMainnetQuote } from "./use-cases/qualified-mainnet-hire.ts";
 import { GetFunnelEvidence } from "./use-cases/get-funnel-evidence.ts";
 import { AskConcierge } from "./use-cases/ask-concierge.ts";
-import { OpenAiCompatibleModel, isConciergeConfigured } from "../data/llm/openai-compatible-model.ts";
+import { createConciergeModel, isConciergeConfigured } from "../data/llm/concierge-model.ts";
 import { InProcessConciergeAdmission } from "../data/llm/concierge-admission.ts";
 import { requestQuoteWithObservationSync } from "../data/observation/on-demand-observation-sync.ts";
 import {
@@ -138,7 +138,7 @@ export { fallbackBuyerQuote, getBuyerNegotiationInput, getBuyerQuoteHistory, rep
 // Concierge: turns a plain-language need into a brief, candidate agents and
 // validated quote parameters. Active whenever CONCIERGE_API_KEY is set.
 export const askConcierge = new AskConcierge({
-  model: new OpenAiCompatibleModel({}),
+  model: () => createConciergeModel({}),
   admission: new InProcessConciergeAdmission({}),
   agents: listMarketplaceAgents,
   passports: getAgentEvidencePassport,

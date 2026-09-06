@@ -1,18 +1,37 @@
 import {
+  isStepCount,
+  jsonSchema,
+  readUIMessageStream,
+  streamText,
+  tool,
+  toUIMessageStream,
+  type JSONValue,
+  type LanguageModel,
+  type ModelMessage,
+  type TextStreamPart,
+  type ToolSet,
+  type UIMessageChunk,
+} from "ai";
+import {
   BANNED_COPY,
   CONCIERGE_LIMITS,
+  filterBannedCopy,
   parseConciergeBrief,
+  summarizeConciergeMessage,
+  type AgentToolInput,
   type ConciergeAdmission,
   type ConciergeAgentCard,
   type ConciergeMessage,
-  type ConciergeModel,
   type ConciergeProposal,
   type ConciergeReply,
-  type ConciergeStep,
-  type ModelChatMessage,
-  type ModelToolCall,
-  type ModelToolDefinition,
-  type ModelTurn,
+  type ConciergeUIMessage,
+  type PassportOutput,
+  type ProposeInput,
+  type ProposeOutput,
+  type ProposeRejection,
+  type QuoteInputOutput,
+  type SearchAgentsInput,
+  type SearchAgentsOutput,
 } from "../entities/concierge.ts";
 import {
   MARKETPLACE_CATEGORIES,
@@ -21,6 +40,7 @@ import {
   type MarketplaceCategory,
 } from "../entities/marketplace-agent.ts";
 import type { AgentEvidencePassport } from "../entities/evidence-passport.ts";
+import { MarketplaceDataUnavailableError } from "../errors/marketplace-errors.ts";
 import {
   MARKETPLACE_AVAILABILITIES,
   type ListMarketplaceAgentsInput,
@@ -28,13 +48,30 @@ import {
 } from "./list-marketplace-agents.ts";
 import { buildContractRequest, normalizeNegotiationContract, validateParameters, type NegotiationContract } from "../../shared/negotiation-input.ts";
 
+export interface ConciergeModelHandle {
+  languageModel: LanguageModel;
+  name: string;
+  providerOptions?: Record<string, Record<string, JSONValue>>;
+}
+
 export interface AskConciergeDependencies {
-  model: ConciergeModel;
+  /** Resolved per request; throws MarketplaceDataUnavailableError when not configured. */
+  model: () => ConciergeModelHandle;
   admission: ConciergeAdmission;
   agents: { execute(input: ListMarketplaceAgentsInput): Promise<MarketplaceAgentPage> };
   passports: { execute(input: { agentId: string }): Promise<AgentEvidencePassport> };
   negotiationInput: (agentId: string, options: { caller?: string }) => Promise<{ status: number; body: unknown } | null>;
-  now?: () => number;
+  /** Wall-clock budget for the whole turn; defaults to CONCIERGE_LIMITS.deadlineMs. */
+  deadlineMs?: number;
+}
+
+export interface AskConciergeInput {
+  messages: ConciergeMessage[];
+  /** Caller fingerprint forwarded to the Worker for its own budgets. */
+  caller: string;
+  /** Key for in-process admission; defaults to the caller. */
+  admissionKey?: string;
+  abortSignal?: AbortSignal;
 }
 
 interface ContractEntry {
@@ -42,6 +79,12 @@ interface ContractEntry {
   endpointKey: string;
   contractHash: string;
 }
+
+export const STREAM_ERROR_COPY = {
+  capacity: "The concierge is temporarily at capacity. Try again in a moment.",
+  timeout: "This took too long. Try again with a shorter request.",
+  generic: "The concierge could not answer. Try again.",
+} as const;
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -90,29 +133,34 @@ Rules:
   trading, rebalancing, yield optimisation, health factor monitoring) and a
   single short keyword such as "grid"; the catalog matches words literally,
   so long phrases return nothing.
-- Include the brief in propose when at least one agent matched, even if the
-  seller's schema is unavailable (then leave agentId and parameters out and
-  say so in one sentence). When nothing in the catalog fits, leave the brief
-  out and say in one sentence what the marketplace does cover.
-- Do not ask the user to confirm what they already said. Keep the message
-  under 90 words; the brief and the parameters carry the detail.
-- Answer in the language of the user's latest message, even when earlier
-  turns used another language.
 - Before proposing parameters for an agent, call get_quote_input for that
   agent and use its schema. Never invent a parameter shape.
 - You may call get_passport to read an agent's indexed state and on-chain
   activity before recommending it.
-- Ask at most one clarifying question, and only when a required parameter
-  cannot be inferred from what the user already said.
-- Always finish by calling the propose tool, even if you still have a
-  question or an incomplete brief.
+- Call the propose tool when at least one agent matched: it carries the
+  brief and, when the seller's schema is available and every required value
+  is known, the agentId and the parameters. Then write your reply. When
+  nothing in the catalog fits, skip propose and say in one sentence what the
+  marketplace does cover.
 - The brief has three short fields in the user's own words: objective,
   deliverable, and acceptance criteria. Keep each field under 500 characters.
+- Ask at most one clarifying question, and only when a required parameter
+  cannot be inferred from what the user already said.
+- Do not narrate tool calls: call the tools without any text first, and
+  write your reply only after the last tool result.
+- Do not ask the user to confirm what they already said. Keep the reply
+  under 90 words; the brief and the parameters carry the detail. Do not
+  repeat the parameters or the brief in the reply: the interface shows them.
+- The reply after propose says, in two or three sentences, what the
+  chosen agent does and what happens next: with parameters, that the
+  request is ready for a signed quote; without them, exactly which values
+  are still missing and how to give them.
+- Answer in the language of the user's latest message, even when earlier
+  turns used another language. Keep tool arguments in English.
 - Describe on-chain facts as indexed data or activity, never as proof of
   quality or of a result. Never use the words proven, track record or guarantee.
 - Never invent prices, fees or delivery times. The signed quote sets the
   price and the escrow holds the funds; you only draft the request.
-- Answer in the user's own language; keep tool arguments in English.
 - Example for a grid request: pair is an uppercase BASE/QUOTE pair (for
   example BNB/USDT), lowerPrice and upperPrice are decimal strings with the
   lower value first, capital is a simulated amount, and gridCount is an
@@ -120,158 +168,206 @@ Rules:
 
 export const LANGUAGE_REMINDER = "\n\n(Reply in the language of this message.)";
 
-export const CONCIERGE_TOOLS: ModelToolDefinition[] = [
-  {
-    name: "search_agents",
-    description: "Search the marketplace catalog for candidate agents by free text, category or availability.",
-    parameters: {
+const SEARCH_AGENTS_SCHEMA = {
+  type: "object",
+  properties: {
+    q: { type: "string", description: "Free text search, at most 120 characters." },
+    category: { type: "string", enum: [...MARKETPLACE_CATEGORIES] },
+    availability: { type: "string", enum: [...MARKETPLACE_AVAILABILITIES] },
+  },
+  required: [],
+  additionalProperties: false,
+} as const;
+
+const AGENT_ID_SCHEMA = {
+  type: "object",
+  properties: { agentId: { type: "string" } },
+  required: ["agentId"],
+  additionalProperties: false,
+} as const;
+
+const PROPOSE_SCHEMA = {
+  type: "object",
+  properties: {
+    brief: {
       type: "object",
       properties: {
-        q: { type: "string", description: "Free text search, at most 120 characters." },
-        category: { type: "string", enum: [...MARKETPLACE_CATEGORIES] },
-        availability: { type: "string", enum: [...MARKETPLACE_AVAILABILITIES] },
+        objective: { type: "string" },
+        deliverable: { type: "string" },
+        acceptanceCriteria: { type: "string" },
       },
-      required: [],
+      required: ["objective", "deliverable", "acceptanceCriteria"],
       additionalProperties: false,
     },
+    agentId: { type: "string" },
+    parameters: { type: "object" },
   },
-  {
-    name: "get_passport",
-    description: "Read the evidence passport (indexed state and on-chain activity) for an agent already returned by search_agents.",
-    parameters: {
-      type: "object",
-      properties: { agentId: { type: "string" } },
-      required: ["agentId"],
-      additionalProperties: false,
+  required: [],
+  additionalProperties: false,
+} as const;
+
+/** Tool names and descriptions the model sees; pinned by tests. */
+export const CONCIERGE_TOOL_DESCRIPTIONS = {
+  search_agents: "Search the marketplace catalog for candidate agents by free text, category or availability.",
+  get_passport: "Read the evidence passport (indexed state and on-chain activity) for an agent already returned by search_agents.",
+  get_quote_input: "Read the seller's negotiation input schema for an agent already returned by search_agents.",
+  propose: "Record the brief and, if ready, the agent and its seller parameters. Call it once, before writing your reply.",
+} as const;
+
+// Text streams word by word, so a banned claim that arrives split across two
+// deltas ("track " + "record") must still be caught: the tail of every text
+// block stays buffered until a later delta or text-end closes it.
+const COPY_FILTER_HOLDBACK = 24;
+
+function lastBreakBefore(text: string, position: number): number {
+  return Math.max(text.lastIndexOf(" ", position), text.lastIndexOf("\n", position));
+}
+
+export function copyFilterTransform<TOOLS extends ToolSet>(): TransformStream<TextStreamPart<TOOLS>, TextStreamPart<TOOLS>> {
+  const pending = new Map<string, string>();
+  return new TransformStream({
+    transform(part, controller) {
+      if (part.type === "text-delta") {
+        // Rewrite on the whole buffer, never on the emitted slice alone:
+        // the cut could otherwise land between the two words of a phrase.
+        // The holdback below keeps at least a word plus 24 characters
+        // pending, so a phrase still arriving is never split.
+        const buffered = filterBannedCopy((pending.get(part.id) ?? "") + part.text);
+        let cut = -1;
+        if (buffered.length > COPY_FILTER_HOLDBACK) {
+          const lastBreak = lastBreakBefore(buffered, buffered.length - COPY_FILTER_HOLDBACK);
+          // One more whole word stays buffered so a two-word phrase that
+          // straddles the break is filtered as a unit.
+          cut = lastBreak > 0 ? lastBreakBefore(buffered, lastBreak - 1) : -1;
+          // Text without spaces (Chinese, Japanese, a long URL) still has to
+          // stream: cut on characters once the holdback is well exceeded.
+          // Banned phrases are ASCII words, and the buffer was filtered whole.
+          if (buffered.length - cut - 1 > 2 * COPY_FILTER_HOLDBACK) cut = buffered.length - COPY_FILTER_HOLDBACK - 1;
+        }
+        if (cut > 0) {
+          controller.enqueue({ ...part, text: buffered.slice(0, cut + 1) });
+          pending.set(part.id, buffered.slice(cut + 1));
+        } else {
+          pending.set(part.id, buffered);
+        }
+        return;
+      }
+      if (part.type === "text-end") {
+        const buffered = pending.get(part.id);
+        pending.delete(part.id);
+        if (buffered) controller.enqueue({ type: "text-delta", id: part.id, text: filterBannedCopy(buffered) });
+      }
+      controller.enqueue(part);
     },
-  },
-  {
-    name: "get_quote_input",
-    description: "Read the seller's negotiation input schema for an agent already returned by search_agents.",
-    parameters: {
-      type: "object",
-      properties: { agentId: { type: "string" } },
-      required: ["agentId"],
-      additionalProperties: false,
+  });
+}
+
+function describeStreamError(error: unknown): string {
+  const candidate = error as { statusCode?: unknown; name?: unknown; lastError?: unknown } | null;
+  if (candidate && typeof candidate === "object") {
+    // A retried call surfaces as the SDK's RetryError; the upstream status
+    // lives on the last attempt.
+    if (candidate.lastError && typeof candidate.lastError === "object") return describeStreamError(candidate.lastError);
+    if (candidate.statusCode === 429) return STREAM_ERROR_COPY.capacity;
+    if (candidate.name === "AbortError" || candidate.name === "TimeoutError") return STREAM_ERROR_COPY.timeout;
+  }
+  return STREAM_ERROR_COPY.generic;
+}
+
+// The deadline (and a client disconnect) end streamText with an `abort`
+// chunk, which the chat has no words for. The deadline gets the timeout
+// copy as an error chunk instead; a disconnected client reads neither.
+function abortsAsErrors(): TransformStream<UIMessageChunk, UIMessageChunk> {
+  return new TransformStream({
+    transform(chunk, controller) {
+      controller.enqueue(chunk.type === "abort" ? { type: "error", errorText: STREAM_ERROR_COPY.timeout } : chunk);
     },
-  },
-  {
-    name: "propose",
-    description: "Finish the conversation: send the reply message, the brief, and, if ready, the agent and its seller parameters.",
-    parameters: {
-      type: "object",
-      properties: {
-        message: { type: "string" },
-        question: { type: "string" },
-        brief: {
-          type: "object",
-          properties: {
-            objective: { type: "string" },
-            deliverable: { type: "string" },
-            acceptanceCriteria: { type: "string" },
-          },
-          required: ["objective", "deliverable", "acceptanceCriteria"],
-          additionalProperties: false,
-        },
-        agentId: { type: "string" },
-        parameters: { type: "object" },
-      },
-      required: ["message"],
-      additionalProperties: false,
-    },
-  },
-];
+  });
+}
 
 export class AskConcierge {
   constructor(private readonly deps: AskConciergeDependencies) {}
 
-  async execute(input: { messages: ConciergeMessage[]; caller: string }): Promise<ConciergeReply> {
-    const release = this.deps.admission.acquire(input.caller);
-    try {
-      return await this.converse(input);
-    } finally {
+  /**
+   * Streams one concierge turn as AI SDK UI message chunks: text deltas plus
+   * every tool call and its output, which the chat renders as it arrives.
+   * Admission is taken before the model is called and released when the
+   * stream ends, aborts or fails.
+   */
+  stream(input: AskConciergeInput): ReadableStream<UIMessageChunk> {
+    const model = this.deps.model();
+    const release = this.deps.admission.acquire(input.admissionKey ?? input.caller);
+    let released = false;
+    const releaseOnce = () => {
+      if (released) return;
+      released = true;
       release();
+    };
+
+    try {
+      return this.converse(input, model, releaseOnce);
+    } catch (error) {
+      releaseOnce();
+      throw error;
     }
   }
 
-  private async converse(input: { messages: ConciergeMessage[]; caller: string }): Promise<ConciergeReply> {
-    const { model, agents, passports, negotiationInput } = this.deps;
+  /** Non-streaming entry point (eval script, tests): the finished turn flattened. */
+  async execute(input: AskConciergeInput): Promise<ConciergeReply> {
+    const model = this.deps.model();
+    const stream = this.stream(input);
+    let last: ConciergeUIMessage | undefined;
+    let failure: unknown;
+    for await (const message of readUIMessageStream<ConciergeUIMessage>({
+      stream,
+      onError: (error) => {
+        failure ??= error;
+      },
+    })) {
+      last = message;
+    }
+    if (failure !== undefined) {
+      throw new MarketplaceDataUnavailableError("concierge model");
+    }
+    return summarizeConciergeMessage(last ?? { parts: [] }, model.name);
+  }
+
+  private converse(input: AskConciergeInput, model: ConciergeModelHandle, release: () => void): ReadableStream<UIMessageChunk> {
+    const { agents, passports, negotiationInput } = this.deps;
     const caller = input.caller;
+
     // The language reminder rides on the latest user turn, where models
     // weigh it most; a long Spanish history otherwise keeps an English
     // follow-up answered in Spanish. It never reaches the client.
     const lastIndex = input.messages.length - 1;
-    const chat: ModelChatMessage[] = [
-      { role: "system", content: CONCIERGE_SYSTEM_PROMPT },
-      ...input.messages.map((message, index): ModelChatMessage => ({
-        role: message.role,
-        content: index === lastIndex && message.role === "user" ? `${message.content}${LANGUAGE_REMINDER}` : message.content,
-      })),
-    ];
+    const messages: ModelMessage[] = input.messages.map((message, index) => ({
+      role: message.role,
+      content: index === lastIndex && message.role === "user" ? `${message.content}${LANGUAGE_REMINDER}` : message.content,
+    }));
+
     const seenAgents = new Map<string, ConciergeAgentCard>();
     const contracts = new Map<string, ContractEntry>();
-    const steps: ConciergeStep[] = [];
-    let toolCallCount = 0;
+    // Quote-input fetches in flight, so a propose issued in the same model
+    // step (the SDK runs a step's tool calls concurrently) waits for the
+    // contract instead of seeing none.
+    const contractFetches = new Map<string, Promise<unknown>>();
+    let lookups = 0;
 
-    const buildTextReply = (text: string): ConciergeReply => applyCopyFilter({
-      schemaVersion: 1,
-      message: text,
-      question: null,
-      brief: null,
-      agents: [...seenAgents.values()],
-      proposal: null,
-      steps,
-      model: model.name,
-    });
-
-    const buildProposalReply = (args: Record<string, unknown>): ConciergeReply => {
-      const rawMessage = typeof args.message === "string" ? args.message : "Here is what I found.";
-      const rawQuestion = typeof args.question === "string" && args.question.trim().length > 0 ? args.question : null;
-      const brief = parseConciergeBrief(args.brief);
-
-      let proposal: ConciergeProposal | null = null;
-      const agentId = args.agentId;
-      if (typeof agentId === "string" && seenAgents.has(agentId)) {
-        const contractEntry = contracts.get(agentId);
-        if (contractEntry && isPlainObject(args.parameters) && encodable(contractEntry.contract, args.parameters)) {
-          const parameters = args.parameters;
-          const properties = contractEntry.contract.inputSchema.properties ?? {};
-          // Only the fields the model actually set: an omitted optional
-          // property must not render as "undefined" in the proposal card.
-          const fields = Object.keys(properties).filter((key) => parameters[key] !== undefined).map((key) => ({
-            key,
-            title: properties[key]?.title ?? key,
-            value: isPlainObject(parameters[key]) ? JSON.stringify(parameters[key]) : String(parameters[key]),
-          }));
-          proposal = { agentId, parameters, contractHash: contractEntry.contractHash, fields };
-        }
-      }
-
-      const orderedAgents = proposal
-        ? [seenAgents.get(proposal.agentId)!, ...[...seenAgents.values()].filter((card) => card.agentId !== proposal!.agentId)]
-        : [...seenAgents.values()];
-
-      return applyCopyFilter({
-        schemaVersion: 1,
-        message: rawMessage,
-        question: rawQuestion,
-        brief,
-        agents: orderedAgents,
-        proposal,
-        steps,
-        model: model.name,
-      });
+    const overBudget = (): { error: string } | null => {
+      lookups += 1;
+      return lookups > CONCIERGE_LIMITS.toolCalls ? { error: "TOOL_BUDGET_EXCEEDED" } : null;
     };
 
-    const searchAgents = async (args: Record<string, unknown>): Promise<unknown> => {
-      const q = typeof args.q === "string" ? args.q : undefined;
-      const category = typeof args.category === "string"
-        && (MARKETPLACE_CATEGORIES as readonly string[]).includes(args.category)
-        ? args.category as MarketplaceCategory
+    const searchAgents = async (input: SearchAgentsInput): Promise<SearchAgentsOutput> => {
+      const exhausted = overBudget();
+      if (exhausted) return exhausted;
+      const q = typeof input.q === "string" ? input.q.slice(0, 120) : undefined;
+      const category = typeof input.category === "string" && (MARKETPLACE_CATEGORIES as readonly string[]).includes(input.category)
+        ? input.category as MarketplaceCategory
         : undefined;
-      const availability: MarketplaceAvailability = typeof args.availability === "string"
-        && (MARKETPLACE_AVAILABILITIES as readonly string[]).includes(args.availability)
-        ? args.availability as MarketplaceAvailability
+      const availability: MarketplaceAvailability = typeof input.availability === "string"
+        && (MARKETPLACE_AVAILABILITIES as readonly string[]).includes(input.availability)
+        ? input.availability as MarketplaceAvailability
         : "all";
       let page: MarketplaceAgentPage;
       try {
@@ -289,13 +385,14 @@ export class AskConcierge {
       const cards = page.items.map(toAgentCard);
       for (const card of cards) seenAgents.set(card.agentId, card);
       // The search text is model-authored: keep it short and off the banned list.
-      const label = q && !BANNED_COPY.test(q) ? q.slice(0, 60) : "the request";
-      steps.push({ tool: "search_agents", summary: `${cards.length} agents for “${label}”` });
-      return { agents: cards };
+      const label = q && !BANNED_COPY.test(q) ? q.slice(0, 60) : category ?? "the request";
+      return { label, agents: cards };
     };
 
-    const getPassport = async (args: Record<string, unknown>): Promise<unknown> => {
-      const agentId = args.agentId;
+    const getPassport = async (input: AgentToolInput): Promise<PassportOutput> => {
+      const exhausted = overBudget();
+      if (exhausted) return exhausted;
+      const agentId = input.agentId;
       if (typeof agentId !== "string") return { error: "INVALID_ARGUMENTS" };
       if (!seenAgents.has(agentId)) return { error: "UNKNOWN_AGENT" };
       let passport: AgentEvidencePassport;
@@ -304,8 +401,8 @@ export class AskConcierge {
       } catch (error) {
         return toolErrorFrom(error);
       }
-      steps.push({ tool: "get_passport", summary: `passport for ${agentId}` });
       return {
+        agentId,
         state: passport.state,
         checks: {
           identity: { status: passport.checks.identity.status },
@@ -320,11 +417,20 @@ export class AskConcierge {
       };
     };
 
-    const getQuoteInput = async (args: Record<string, unknown>): Promise<unknown> => {
-      const agentId = args.agentId;
+    const getQuoteInput = async (input: AgentToolInput): Promise<QuoteInputOutput> => {
+      const exhausted = overBudget();
+      if (exhausted) return exhausted;
+      const agentId = input.agentId;
       if (typeof agentId !== "string") return { error: "INVALID_ARGUMENTS" };
       if (!seenAgents.has(agentId)) return { error: "UNKNOWN_AGENT" };
-      const response = await negotiationInput(agentId, { caller });
+      let response: Awaited<ReturnType<typeof negotiationInput>>;
+      const fetching = negotiationInput(agentId, { caller });
+      contractFetches.set(agentId, fetching.catch(() => undefined));
+      try {
+        response = await fetching;
+      } catch (error) {
+        return toolErrorFrom(error);
+      }
       if (!response || response.status < 200 || response.status >= 300 || !isPlainObject(response.body)) {
         return { error: "QUOTE_INPUT_UNAVAILABLE" };
       }
@@ -339,107 +445,134 @@ export class AskConcierge {
         return { error: "QUOTE_INPUT_UNAVAILABLE" };
       }
       contracts.set(agentId, { contract, endpointKey, contractHash });
-      steps.push({ tool: "get_quote_input", summary: `quote input for ${agentId}` });
-      return { inputSchema: contract.inputSchema, taskDescriptionPrefix: contract.taskDescriptionPrefix, terms: contract.terms };
+      return {
+        agentId,
+        inputSchema: contract.inputSchema,
+        ...(contract.taskDescriptionPrefix !== undefined ? { taskDescriptionPrefix: contract.taskDescriptionPrefix } : {}),
+        ...(contract.terms !== undefined ? { terms: contract.terms } : {}),
+      };
     };
 
-    const runTool = async (call: ModelToolCall): Promise<unknown> => {
-      let args: unknown;
-      try {
-        args = JSON.parse(call.arguments);
-      } catch {
-        return { error: "INVALID_ARGUMENTS" };
-      }
-      if (!isPlainObject(args)) return { error: "INVALID_ARGUMENTS" };
-      if (call.name === "search_agents") return searchAgents(args);
-      if (call.name === "get_passport") return getPassport(args);
-      if (call.name === "get_quote_input") return getQuoteInput(args);
-      return { error: "UNKNOWN_TOOL" };
-    };
+    const propose = async (input: ProposeInput): Promise<ProposeOutput> => {
+      const rejected: ProposeRejection[] = [];
+      const parsedBrief = parseConciergeBrief(input.brief);
+      if (input.brief !== undefined && !parsedBrief) rejected.push("invalid_brief");
+      // The brief is copy people read (and carry into the quote): the same
+      // rule as the reply applies to it.
+      const brief = parsedBrief
+        ? {
+          objective: filterBannedCopy(parsedBrief.objective),
+          deliverable: filterBannedCopy(parsedBrief.deliverable),
+          acceptanceCriteria: filterBannedCopy(parsedBrief.acceptanceCriteria),
+        }
+        : null;
 
-    const processTurn = async (turn: ModelTurn): Promise<ConciergeReply | null> => {
-      if (turn.kind === "text") return buildTextReply(turn.text);
-
-      let proposeArgs: Record<string, unknown> | null = null;
-      const toolResults: Array<{ id: string; content: string }> = [];
-      for (const call of turn.calls) {
-        let result: unknown;
-        // `propose` is the mandatory structured output, not a catalog lookup,
-        // so it never counts against the lookup budget below — otherwise a
-        // model that used up its 6 lookups could never submit a proposal,
-        // including the forced propose fallback once rounds run out.
-        if (call.name === "propose") {
-          let args: unknown;
-          try {
-            args = JSON.parse(call.arguments);
-          } catch {
-            args = undefined;
-          }
-          if (isPlainObject(args)) {
-            proposeArgs ??= args;
-            result = { ok: true };
-          } else {
-            result = { error: "INVALID_ARGUMENTS" };
-          }
+      let proposal: ConciergeProposal | null = null;
+      const agentId = input.agentId;
+      if (agentId !== undefined) {
+        if (typeof agentId !== "string" || !seenAgents.has(agentId)) {
+          rejected.push("unknown_agent");
         } else {
-          toolCallCount += 1;
-          if (toolCallCount > CONCIERGE_LIMITS.toolCalls) {
-            result = { error: "TOOL_BUDGET_EXCEEDED" };
+          await contractFetches.get(agentId);
+          const entry = contracts.get(agentId);
+          if (!entry) {
+            rejected.push("missing_quote_input");
+          } else if (!isPlainObject(input.parameters) || !encodable(entry.contract, input.parameters)) {
+            rejected.push("invalid_parameters");
           } else {
-            result = await runTool(call);
+            const parameters = input.parameters;
+            const properties = entry.contract.inputSchema.properties ?? {};
+            // Only the fields the model actually set: an omitted optional
+            // property must not render as "undefined" in the proposal card.
+            const fields = Object.keys(properties).filter((key) => parameters[key] !== undefined).map((key) => ({
+              key,
+              title: properties[key]?.title ?? key,
+              value: isPlainObject(parameters[key]) ? JSON.stringify(parameters[key]) : String(parameters[key]),
+            }));
+            proposal = { agentId, parameters, contractHash: entry.contractHash, fields };
           }
         }
-        toolResults.push({ id: call.id, content: JSON.stringify(result) });
       }
-      chat.push({ role: "assistant", content: turn.text, toolCalls: turn.calls });
-      for (const toolResult of toolResults) {
-        chat.push({ role: "tool", toolCallId: toolResult.id, content: toolResult.content });
-      }
-      return proposeArgs ? buildProposalReply(proposeArgs) : null;
+
+      const orderedAgents = proposal
+        ? [seenAgents.get(proposal.agentId)!, ...[...seenAgents.values()].filter((card) => card.agentId !== proposal!.agentId)]
+        : [...seenAgents.values()];
+
+      return { brief, proposal, agents: orderedAgents, rejected };
     };
 
-    // One shared deadline for the whole conversation (rounds + tool calls),
-    // well under the route's maxDuration, so a slow upstream ends this use
-    // case's own fallback reply instead of the platform killing the
-    // function mid-flight — which would skip the `finally { release() }` in
-    // execute() and leak the caller's admission slot.
-    const now = this.deps.now ?? Date.now;
-    const startedAt = now();
-    const withinDeadline = () => now() - startedAt < CONCIERGE_LIMITS.deadlineMs;
+    const tools = {
+      search_agents: tool({
+        description: CONCIERGE_TOOL_DESCRIPTIONS.search_agents,
+        inputSchema: jsonSchema<SearchAgentsInput>(SEARCH_AGENTS_SCHEMA),
+        execute: (input) => searchAgents(isPlainObject(input) ? input : {}),
+      }),
+      get_passport: tool({
+        description: CONCIERGE_TOOL_DESCRIPTIONS.get_passport,
+        inputSchema: jsonSchema<AgentToolInput>(AGENT_ID_SCHEMA),
+        execute: (input) => getPassport(isPlainObject(input) ? input : { agentId: "" }),
+      }),
+      get_quote_input: tool({
+        description: CONCIERGE_TOOL_DESCRIPTIONS.get_quote_input,
+        inputSchema: jsonSchema<AgentToolInput>(AGENT_ID_SCHEMA),
+        execute: (input) => getQuoteInput(isPlainObject(input) ? input : { agentId: "" }),
+      }),
+      propose: tool({
+        description: CONCIERGE_TOOL_DESCRIPTIONS.propose,
+        inputSchema: jsonSchema<ProposeInput>(PROPOSE_SCHEMA),
+        execute: (input) => propose(isPlainObject(input) ? input : {}),
+        // The model only needs to know what was kept; the cards go to the client.
+        toModelOutput: ({ output }) => ({
+          type: "json",
+          value: {
+            ok: output.rejected.length === 0,
+            rejected: output.rejected,
+            brief: output.brief !== null,
+            proposal: output.proposal ? { agentId: output.proposal.agentId, fields: output.proposal.fields } : null,
+          },
+        }),
+      }),
+    } satisfies ToolSet;
 
-    for (let round = 0; round < CONCIERGE_LIMITS.modelRounds; round += 1) {
-      if (!withinDeadline()) break;
-      // The last round forces propose so the conversation always ends in at
-      // most `modelRounds` model calls (not modelRounds + 1).
-      const isLastRound = round === CONCIERGE_LIMITS.modelRounds - 1;
-      const turn = await model.complete({ messages: chat, tools: CONCIERGE_TOOLS, ...(isLastRound ? { forceTool: "propose" } : {}) });
-      // A forced round that still answers with plain text ignored the
-      // forced tool choice, so it falls through to the fallback message
-      // below rather than surfacing that text as if it were a real reply.
-      if (isLastRound && turn.kind !== "tool_calls") break;
-      const reply = await processTurn(turn);
-      if (reply) return reply;
-    }
-
-    return applyCopyFilter({
-      schemaVersion: 1,
-      message: "I could not finish this request. Try again with more detail.",
-      question: null,
-      brief: null,
-      agents: [...seenAgents.values()],
-      proposal: null,
-      steps,
-      model: model.name,
+    const result = streamText({
+      model: model.languageModel,
+      instructions: CONCIERGE_SYSTEM_PROMPT,
+      messages,
+      tools,
+      stopWhen: isStepCount(CONCIERGE_LIMITS.modelSteps),
+      // The last step is text-only so the turn always ends in a reply the
+      // person can read, never in a dangling tool call; the same right after
+      // propose, so the proposal is always followed by the model's words.
+      prepareStep: ({ stepNumber, steps }) => {
+        // A rejected propose (bad parameters, missing quote input) leaves the
+        // tools open so the model can fix it while budget remains.
+        const proposed = steps.at(-1)?.toolResults.some(
+          (result) => result.toolName === "propose" && (result.output as ProposeOutput).rejected.length === 0,
+        ) ?? false;
+        return stepNumber >= CONCIERGE_LIMITS.modelSteps - 1 || proposed ? { toolChoice: "none" } : undefined;
+      },
+      temperature: 0.2,
+      maxOutputTokens: 1_500,
+      maxRetries: 1,
+      timeout: { totalMs: this.deps.deadlineMs ?? CONCIERGE_LIMITS.deadlineMs },
+      ...(input.abortSignal ? { abortSignal: input.abortSignal } : {}),
+      ...(model.providerOptions ? { providerOptions: model.providerOptions } : {}),
+      experimental_transform: () => copyFilterTransform<typeof tools>(),
+      onEnd: release,
+      onAbort: release,
+      // Never surface the underlying error: it may embed the request (prompt).
+      onError: ({ error }) => {
+        release();
+        const detail = error as { name?: unknown; statusCode?: unknown } | null;
+        console.error("[concierge] model call failed", detail?.name ?? "unknown", detail?.statusCode ?? "");
+      },
     });
-  }
-}
 
-// The client echoes `message` back as an assistant turn, which
-// parseConciergeMessages bounds to assistantChars, so bound it here too.
-function applyCopyFilter(reply: ConciergeReply): ConciergeReply {
-  return {
-    ...reply,
-    message: BANNED_COPY.test(reply.message) ? "Here is what I found." : reply.message.slice(0, CONCIERGE_LIMITS.assistantChars),
-    question: reply.question && BANNED_COPY.test(reply.question) ? null : reply.question,
-  };
+    return toUIMessageStream({
+      stream: result.stream,
+      // Reasoning restates the instructions and skips the copy filter.
+      sendReasoning: false,
+      onError: describeStreamError,
+    }).pipeThrough(abortsAsErrors());
+  }
 }
