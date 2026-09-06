@@ -259,3 +259,7 @@ provider-wallet activity, not independently attributed to that agent. Grid
 303779 had four tracked requests (two successful, two failed), plus 24 migrated
 quote observations. Its indexed job 56696 was Submitted. These facts explain
 the UI defects; query current data for demos rather than hardcoding this snapshot.
+
+## Seller-defined pricing
+
+The marketplace does not impose the Grid demo's 0.01 U price on other sellers. Sellers set their price in the signed quote. Buyers review the amount and authorize it in their wallet; requesting a quote never sends payment. Quotes must contain a positive uint256 amount and still pass identity, signature, request, chain, contract, token and expiry validation. Payment preparation binds the spending ceiling and any token approval to the exact verified quote amount, never an unlimited approval. Historical jobs retain their original budgets.
