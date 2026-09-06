@@ -36,5 +36,8 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: bnb-agent-probe/package-lock.json
+      # Worker imports shared source from ../src; resolve its root dependencies too.
+      - run: npm ci
+        working-directory: .
       - run: npm ci
       - run: npm run check
