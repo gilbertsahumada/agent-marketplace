@@ -7,6 +7,10 @@ quote flow is deployed. Public companion: `/docs/sellers#selection-policy`.
 
 ## Product promise
 
+### Network implementation boundary (2026-09-06)
+
+The local multinet change requires migration 0025. Agent identity keys and catalogue reads are isolated by chain (56/97); switching the network preserves filters and resets pagination. This is not a claim that Testnet discovery or quote execution has been configured: until those paths are implemented and verified, Testnet must explicitly report that limitation and must not inherit Mainnet agents, counters, readiness or hiring actions. Remote rollout remains unverified.
+
 Show fewer agents with a usable negotiation path, not every registered identity
 as purchasable inventory. New and established sellers follow the same rules.
 No past job, previous quote, manual manifest entry or marketplace ownership is
