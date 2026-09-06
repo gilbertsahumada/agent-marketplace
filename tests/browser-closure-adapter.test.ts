@@ -40,7 +40,7 @@ it("blocks Testnet wallet and changed implementations before signing", async () 
 it("does not confirm a successful receipt for another calldata", async () => {
   await executeBrowserClosure(input);
   mock.tx.mockResolvedValue({ from: wallet, to: pins.router, input: "0x", value: 0n });
-  await expect(executeBrowserClosure({ ...input, mode: "resume" })).rejects.toThrow(/does not belong/);
+  expect((await executeBrowserClosure({ ...input, mode: "resume" })).state).toBe("uncertain");
   expect(mock.send).toHaveBeenCalledOnce();
 });
 it("blocks concurrent tabs rather than queuing another send", async () => {
@@ -66,5 +66,37 @@ it("does not confirm or rebroadcast a replaced transaction", async () => {
   mock.receipt.mockResolvedValue({ status: "success", transactionHash: `0x${"bb".repeat(32)}` });
   expect((await executeBrowserClosure(input)).state).toBe("uncertain");
   await expect(executeBrowserClosure(input)).rejects.toThrow(/already exists/);
+  expect(mock.send).toHaveBeenCalledOnce();
+});
+it.each(["accelerated", "cancelled", "changed", "wrong nonce"])("verifies replacement: %s", async kind => {
+  const replacement = `0x${"bb".repeat(32)}`;
+  mock.send.mockImplementationOnce(async tx => {
+    const original = { from: wallet, to: tx.to, input: tx.data, value: 0n, nonce: 7 };
+    const next = kind === "cancelled" ? { ...original, to: wallet, input: "0x" } : kind === "changed" ? { ...original, input: "0x1234" } : kind === "wrong nonce" ? { ...original, nonce: 8 } : original;
+    mock.tx.mockImplementation(async ({ hash: requested }) => requested === hash ? original : next);
+    mock.job.mockResolvedValue({ status: 3 });
+    return hash;
+  });
+  mock.receipt.mockResolvedValue({ status: "success", transactionHash: replacement });
+  const result = await executeBrowserClosure(input);
+  expect(result.state).toBe(kind === "accelerated" ? "confirmed" : kind === "cancelled" ? "cancelled" : kind === "changed" ? "replaced" : "uncertain");
+  if (kind !== "wrong nonce") {
+    expect(result.replacementHash).toBe(replacement);
+    expect((await executeBrowserClosure({ ...input, mode: "resume" })).state).toBe(result.state);
+    expect(mock.receipt).toHaveBeenLastCalledWith(expect.objectContaining({ hash: replacement }));
+  }
+  expect(mock.send).toHaveBeenCalledOnce();
+});
+it("persists a replacement detected before timeout and resumes it without sending", async () => {
+  const replacement = `0x${"cc".repeat(32)}`;
+  mock.receipt.mockImplementationOnce(async options => {
+    options.onReplaced({ transaction: { hash: replacement } });
+    throw new Error("timeout");
+  });
+  const result = await executeBrowserClosure(input);
+  expect(result.state).toBe("uncertain");
+  expect(result.replacementHash).toBe(replacement);
+  await executeBrowserClosure({ ...input, mode: "resume" });
+  expect(mock.receipt).toHaveBeenLastCalledWith(expect.objectContaining({ hash: replacement }));
   expect(mock.send).toHaveBeenCalledOnce();
 });
