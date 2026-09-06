@@ -84,7 +84,7 @@ export interface CatalogCandidateObservation {
 export interface CatalogCandidate {
   agentKey: string;
   agentId: string;
-  chainId: 56;
+  chainId: 56 | 97;
   owner: string | null;
   metadataUri: string | null;
   name: string | null;
@@ -156,6 +156,12 @@ export function isCatalogOperationalObservation(
 }
 
 export interface CatalogCandidatePage {
+  chainId?: 56 | 97;
+  coverage?: {
+    chainId: 56 | 97;
+    catalogDiscovery: "enabled" | "not_configured";
+    quoteExecution: "enabled" | "not_configured";
+  };
   status: CatalogStatus;
   statuses?: CatalogStatus[];
   query: string;
