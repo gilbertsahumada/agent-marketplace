@@ -83,6 +83,17 @@ describe("summarizeConciergeMessage", () => {
     expect(reply.steps).toEqual([{ tool: "search_agents", summary: "1 agents for “grid”" }]);
   });
 
+  it("keeps the last text the model wrote when the turn ended in a tool call", () => {
+    const parts: ConciergeUIMessage["parts"] = [
+      { type: "text", text: "Which pair " },
+      { type: "text", text: "do you mean?" },
+      { type: "tool-search_agents", toolCallId: "c1", state: "output-available", input: { q: "grid" }, output: { label: "grid", agents: [gridPlanner] } },
+      { type: "text", text: " " },
+    ];
+
+    expect(summarizeConciergeMessage({ parts }, "m").message).toBe("Which pair do you mean?");
+  });
+
   it("returns an empty reply for a message without parts", () => {
     expect(summarizeConciergeMessage({ parts: [] }, "m")).toMatchObject({ message: "", agents: [], proposal: null, steps: [] });
   });

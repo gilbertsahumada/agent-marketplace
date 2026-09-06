@@ -232,13 +232,23 @@ export function filterBannedCopy(text: string): string {
  * duplicates the step rows and often comes in English, so it is dropped.
  */
 export function finalTextParts<PART extends { type: string }>(parts: readonly PART[]): Array<Extract<PART, { type: "text" }>> {
+  const isText = (part: PART): part is Extract<PART, { type: "text" }> => part.type === "text";
+  const hasText = (part: PART) => isText(part) && (part as { text?: string }).text?.trim();
   let lastToolIndex = -1;
   parts.forEach((part, index) => {
     if (part.type.startsWith("tool-")) lastToolIndex = index;
   });
-  return parts
-    .slice(lastToolIndex + 1)
-    .filter((part): part is Extract<PART, { type: "text" }> => part.type === "text");
+  const after = parts.slice(lastToolIndex + 1).filter(isText);
+  if (after.some(hasText) || lastToolIndex < 0) return after;
+  // The turn ended in a tool call with nothing after it (a question the
+  // model asked before "checking one more thing", or an empty last step):
+  // the last text it wrote is still the reply.
+  let end = lastToolIndex;
+  while (end > 0 && !hasText(parts[end - 1]!)) end -= 1;
+  if (end === 0) return after;
+  let start = end;
+  while (start > 0 && isText(parts[start - 1]!)) start -= 1;
+  return parts.slice(start, end).filter(isText);
 }
 
 const STEP_TOOLS = new Set<ConciergeStep["tool"]>(["search_agents", "get_passport", "get_quote_input"]);

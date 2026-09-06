@@ -146,6 +146,10 @@ Rules:
 - Do not ask the user to confirm what they already said. Keep the reply
   under 90 words; the brief and the parameters carry the detail. Do not
   repeat the parameters or the brief in the reply: the interface shows them.
+- The reply after propose says, in two or three sentences, what the
+  chosen agent does and what happens next: with parameters, that the
+  request is ready for a signed quote; without them, exactly which values
+  are still missing and how to give them.
 - Answer in the language of the user's latest message, even when earlier
   turns used another language. Keep tool arguments in English.
 - Describe on-chain facts as indexed data or activity, never as proof of
@@ -494,8 +498,12 @@ export class AskConcierge {
       tools,
       stopWhen: isStepCount(CONCIERGE_LIMITS.modelSteps),
       // The last step is text-only so the turn always ends in a reply the
-      // person can read, never in a dangling tool call.
-      prepareStep: ({ stepNumber }) => (stepNumber >= CONCIERGE_LIMITS.modelSteps - 1 ? { toolChoice: "none" } : undefined),
+      // person can read, never in a dangling tool call; the same right after
+      // propose, so the proposal is always followed by the model's words.
+      prepareStep: ({ stepNumber, steps }) => {
+        const proposed = steps.at(-1)?.toolCalls.some((call) => call.toolName === "propose") ?? false;
+        return stepNumber >= CONCIERGE_LIMITS.modelSteps - 1 || proposed ? { toolChoice: "none" } : undefined;
+      },
       temperature: 0.2,
       maxOutputTokens: 1_500,
       maxRetries: 1,

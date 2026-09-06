@@ -2,7 +2,19 @@
 
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport, type ChatTransport } from "ai";
-import { ArrowUpIcon, CheckIcon, CopyIcon, RotateCcwIcon, SquareIcon } from "lucide-react";
+import {
+  ArrowUpIcon,
+  CheckIcon,
+  CircleAlertIcon,
+  CopyIcon,
+  PenLineIcon,
+  RotateCcwIcon,
+  SearchIcon,
+  ShieldCheckIcon,
+  SlidersHorizontalIcon,
+  SquareIcon,
+  type LucideIcon,
+} from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
@@ -61,11 +73,25 @@ interface StepView {
   key: string;
   state: "running" | "done" | "failed";
   label: string;
+  icon: LucideIcon;
 }
+
+// One glyph per kind of work, so a glance says what the concierge is doing.
+const STEP_ICON: Record<string, LucideIcon> = {
+  "tool-search_agents": SearchIcon,
+  "tool-get_passport": ShieldCheckIcon,
+  "tool-get_quote_input": SlidersHorizontalIcon,
+  "tool-propose": PenLineIcon,
+};
 
 // Turns a streamed tool part into a line a person can read, without the
 // tool's name or its JSON.
 function describeStep(part: ToolPart): StepView {
+  const step = describeStepText(part);
+  return { ...step, icon: step.state === "failed" ? CircleAlertIcon : STEP_ICON[part.type] ?? PenLineIcon };
+}
+
+function describeStepText(part: ToolPart): Omit<StepView, "icon"> {
   const key = part.toolCallId;
   const running = part.state === "input-streaming" || part.state === "input-available";
   if (part.type === "tool-search_agents") {
@@ -241,12 +267,12 @@ function Steps({ steps }: { steps: StepView[] }) {
   return (
     <ul aria-label="Steps" className="flex flex-col gap-1 text-[13px] text-muted-foreground">
       {steps.map((step) => (
-        <li className="flex items-center gap-2" key={step.key}>
-          {step.state === "running" ? (
-            <span className="concierge-shimmer">{step.label}</span>
-          ) : (
-            <span className={cn(step.state === "failed" && "text-amber-300")}>{step.label}</span>
-          )}
+        <li className={cn("flex items-center gap-2", step.state === "failed" && "text-amber-300")} key={step.key}>
+          <step.icon
+            aria-hidden="true"
+            className={cn("size-3.5 shrink-0", step.state === "running" && "concierge-step-pulse text-foreground")}
+          />
+          {step.state === "running" ? <span className="concierge-shimmer">{step.label}</span> : <span>{step.label}</span>}
         </li>
       ))}
     </ul>

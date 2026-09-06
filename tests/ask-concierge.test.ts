@@ -258,8 +258,11 @@ describe("AskConcierge", () => {
     ]);
     expect(reply.model).toBe("scripted-model");
 
-    // Each model call sees the earlier tool results.
+    // Each model call sees the earlier tool results, and the step after
+    // propose is text-only.
     expect(model.doStreamCalls).toHaveLength(4);
+    expect(model.doStreamCalls[2]!.toolChoice).toEqual({ type: "auto" });
+    expect(model.doStreamCalls[3]!.toolChoice).toEqual({ type: "none" });
     expect(toolResult(model.doStreamCalls[1]!.prompt, "c1")).toMatchObject({ label: "grid" });
     expect(toolResult(model.doStreamCalls[2]!.prompt, "c2")).toMatchObject({ agentId: "1" });
     // The model gets the compact propose summary, not the cards.
