@@ -26,6 +26,8 @@ describe("external job delivery integrity", () => {
 describe("closure is not elapsed time alone", () => {
   it("allows a resolved disputed verdict to progress to settlement", () => {
     expect(closureState("SUBMITTED", true, 2, 100, 200)).toBe("settlement_available");
+    expect(closureState("SUBMITTED", true, 2, 300, 200)).toBe("settlement_available");
+    expect(closureState("SUBMITTED", true, 1, 300, 200)).toBe("settlement_available");
     expect(closureState("SUBMITTED", true, 1, 100, 200)).toBe("settlement_available");
   });
   it("requires a chain completion, even after the window", () => {
