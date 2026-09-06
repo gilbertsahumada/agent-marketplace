@@ -47,3 +47,7 @@ that every legacy pending batch can be recovered after quote expiry or reload.
 For an already funded job, **Retry seller notification** re-reads chain state and calls the notification endpoint directly. It does not enter wallet execution, approve tokens or send funding again. Submitted/completed jobs do not request another notification.
 
 Regression coverage includes fresh quotes with saved funded/submitted/completed jobs, explicit recovery, wallet changes, remounts, mismatched job descriptions/buyers, preservation of archived progress and notification failure without wallet execution. These checks use fixtures; they do not send Mainnet transactions.
+
+## Closure signature recovery
+
+An explicit wallet rejection (EIP-1193 code 4001 during the send request, before a hash is returned) is recorded as rejected. A new user-confirmed attempt reruns wallet, contract, policy and simulation checks, retaining previous rejected attempts. Other errors remain uncertain and block resending. A rejection while verifying an already broadcast transaction never enables retry. Replaced transactions still require manual inspection; they are neither automatically confirmed nor rebroadcast. Closure controls remain disabled by default.
