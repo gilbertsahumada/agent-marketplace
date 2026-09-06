@@ -74,11 +74,13 @@ function CopyReference({ value, label }: { value: string; label: string }) {
   );
 }
 
-function statusStyle(status: string): { label: string; className: string; icon: typeof CheckCircle2 } {
+function statusStyle(status: string, errorCode?: string | null): { label: string; className: string; icon: typeof CheckCircle2 } {
+  if (errorCode === "QUOTE_ATTEMPT_INTERRUPTED") return { label: "Interrupted", className: "border-amber-400/30 text-amber-200", icon: CircleAlert };
   if (status === "succeeded") return { label: "Verified", className: "border-emerald-400/30 text-emerald-300", icon: CheckCircle2 };
   if (status === "rejected" || status === "failed") return { label: status === "rejected" ? "Rejected" : "Failed", className: "border-red-400/30 text-red-300", icon: CircleAlert };
   if (status === "expired") return { label: "Expired", className: "border-amber-400/30 text-amber-200", icon: Clock3 };
-  return { label: "Processing", className: "border-cyan-400/30 text-cyan-200", icon: LoaderCircle };
+  if (status === "pending" || status === "running") return { label: "Processing", className: "border-cyan-400/30 text-cyan-200", icon: LoaderCircle };
+  return { label: "Unknown", className: "text-muted-foreground", icon: CircleAlert };
 }
 
 export function QuoteHistory({ agentId }: { agentId: string }) {
@@ -86,11 +88,18 @@ export function QuoteHistory({ agentId }: { agentId: string }) {
   const [error, setError] = useState(false);
   const [page, setPage] = useState(1);
   const [reload, setReload] = useState(0);
+  useEffect(() => { setData(null); }, [agentId, page]);
+  const processing = data?.requests?.some(request => request.status === "pending" || request.status === "running") ?? false;
+  useEffect(() => {
+    if (!processing || error) return;
+    const timer = setTimeout(() => setReload(value => value + 1), 5_000);
+    return () => clearTimeout(timer);
+  }, [processing, error, data]);
   useEffect(() => subscribeMarketplaceEvidence(agentId, () => { setPage(1); setReload(value => value + 1); }), [agentId]);
 
   useEffect(() => {
     let active = true;
-    setError(false); setData(null);
+    setError(false);
     // Test environments and older embedded shells may not expose fetch. Keep
     // the profile renderable in that case; the server-rendered state remains
     // authoritative and the history simply stays unavailable.
@@ -133,7 +142,7 @@ export function QuoteHistory({ agentId }: { agentId: string }) {
       {requests.length > 0 ? (
         <Table containerLabel="Quote history table"><TableHeader><TableRow>{["Request", "Status", "Transport", "Date", "Details"].map(column => <TableHead className="px-5" scope="col" key={column}>{column}</TableHead>)}</TableRow></TableHeader><TableBody>
           {requests.slice(0, 5).map((request) => {
-            const style = statusStyle(request.status);
+            const style = statusStyle(request.status, request.errorCode);
             const Icon = style.icon;
             // The Worker returns attempts newest-first. Keeping the first one
             // here makes the visible executor/result match the current state.
