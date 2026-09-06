@@ -18,7 +18,7 @@ export interface CatalogSnapshotPage {
 export interface CatalogSnapshotCheckpoint {
   schemaVersion: typeof CATALOG_SNAPSHOT_SCHEMA_VERSION;
   generatedAt: string;
-  chainId: 56;
+  chainId: 56 | 97;
   pageSize: number;
   expectedTotal: number | null;
   nextOffset: number;
@@ -30,7 +30,7 @@ export interface CatalogSnapshotCheckpoint {
 export interface CatalogSnapshotV2 {
   schemaVersion: typeof CATALOG_SNAPSHOT_SCHEMA_VERSION;
   generatedAt: string;
-  chainId: 56;
+  chainId: 56 | 97;
   source: {
     provider: "trust8004";
     listPath: "/api/app/agents";
@@ -56,6 +56,7 @@ export interface CatalogSnapshotV2 {
 }
 
 export interface RunCatalogSnapshotOptions {
+  chainId?: 56 | 97;
   pageSize?: number;
   generatedAt?: string;
   resume?: CatalogSnapshotCheckpoint;
@@ -68,9 +69,9 @@ function positiveInteger(value: number, field: string): number {
   return value;
 }
 
-function validateResume(resume: CatalogSnapshotCheckpoint, pageSize: number): void {
+function validateResume(resume: CatalogSnapshotCheckpoint, pageSize: number, chainId: 56 | 97): void {
   if (resume.schemaVersion !== CATALOG_SNAPSHOT_SCHEMA_VERSION
-    || resume.chainId !== 56
+    || resume.chainId !== chainId
     || resume.pageSize !== pageSize
     || resume.nextOffset !== resume.registeredAgentIds.length
     || resume.pages < 0) {
@@ -87,9 +88,11 @@ export function computeCatalogSnapshotSha256(snapshot: CatalogSnapshotV2): strin
 export async function runCatalogSnapshot(
   options: RunCatalogSnapshotOptions,
 ): Promise<CatalogSnapshotV2> {
+  const chainId = options.chainId ?? 56;
+  if (chainId !== 56 && chainId !== 97) throw new Error("CATALOG_CONFIG:chainId");
   const pageSize = positiveInteger(options.pageSize ?? 2_000, "pageSize");
   const generatedAt = options.resume?.generatedAt ?? options.generatedAt ?? new Date().toISOString();
-  if (options.resume) validateResume(options.resume, pageSize);
+  if (options.resume) validateResume(options.resume, pageSize, chainId);
 
   const registeredAgentIds = [...(options.resume?.registeredAgentIds ?? [])];
   const candidates = [...(options.resume?.candidates ?? [])];
@@ -107,6 +110,7 @@ export async function runCatalogSnapshot(
 
     for (const item of page.items) {
       const normalized = normalizeCatalogAgent(item);
+      if (normalized.chainId !== chainId) throw new Error("CATALOG_PAGE_CHAIN_MISMATCH");
       if (seenIds.has(normalized.agentId)) {
         throw new Error(`CATALOG_DUPLICATE_AGENT_ID:${normalized.agentId}`);
       }
@@ -119,7 +123,7 @@ export async function runCatalogSnapshot(
     await options.onCheckpoint?.({
       schemaVersion: CATALOG_SNAPSHOT_SCHEMA_VERSION,
       generatedAt,
-      chainId: 56,
+      chainId,
       pageSize,
       expectedTotal,
       nextOffset,
@@ -149,7 +153,7 @@ export async function runCatalogSnapshot(
   const snapshot: CatalogSnapshotV2 = {
     schemaVersion: CATALOG_SNAPSHOT_SCHEMA_VERSION,
     generatedAt,
-    chainId: 56,
+    chainId,
     source: {
       provider: "trust8004",
       listPath: "/api/app/agents",
