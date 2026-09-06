@@ -210,7 +210,8 @@ describe("ConciergeChat", () => {
 
     const empty = screen.getByRole("region", { name: "No matching agents" });
     expect(screen.getByRole("link", { name: "Browse verified agents" })).toHaveAttribute("href", "/agents?view=marketplace");
-    expect(empty).toHaveTextContent(/grid trading, rebalancing, yield and health factor monitoring/);
+    // The reply already explains the coverage; the card must not repeat it.
+    expect(empty).not.toHaveTextContent(/grid trading/);
     expect(screen.queryByRole("region", { name: "Your brief" })).not.toBeInTheDocument();
     expect(screen.queryByRole("region", { name: "Proposed parameters" })).not.toBeInTheDocument();
     expect(screen.getByRole("list", { name: "Steps" })).toHaveTextContent("Searched the catalog · 0 agents for “trip”");

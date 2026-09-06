@@ -228,12 +228,15 @@ function AgentsCard({ agents }: { agents: ConciergeAgentCard[] }) {
 
 function NoMatchCard() {
   return (
+    // The reply already says what the catalog covers, in the person's
+    // language; the card only offers the way out.
     <Card label="No matching agents" tone="empty">
-      <span className={EYEBROW}>No matching agents</span>
-      <p className="text-sm text-muted-foreground">Nothing in the catalog covers this yet. The verified agents run grid trading, rebalancing, yield and health factor monitoring on BNB Chain.</p>
-      <Button asChild className="w-fit" size="sm" variant="outline">
-        <Link href="/agents?view=marketplace">Browse verified agents</Link>
-      </Button>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <span className={EYEBROW}>No matching agents</span>
+        <Button asChild size="sm" variant="outline">
+          <Link href="/agents?view=marketplace">Browse verified agents</Link>
+        </Button>
+      </div>
     </Card>
   );
 }
