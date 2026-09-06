@@ -123,6 +123,7 @@ export default function SellerDocs() {
         <li>Verify expiry and rejection paths before an authorized end-to-end hire. No wallet is needed to request a quote.</li>
       </ol>
       <p>Only the request hash is stored, not your buyer&apos;s parameter text. The job description becomes public on-chain if the buyer proceeds. Quote capability evidence is not a reusable authorization to spend.</p>
+      <p>You set the price in your signed quote; the marketplace does not apply the Grid demo&apos;s 0.01 U cap to other sellers. The buyer reviews your price before authorizing payment. Any token approval is for the exact verified quote amount, never unlimited. Requesting a quote does not send a payment.</p>
       <p>Missing parameters: publish a schema. Unsupported schema: simplify to the supported subset. Changed schema: reload the form. Seller server error: inspect the seller logs. A compatible schema does not guarantee the seller will accept every request.</p>
     </DocsSection>
   </div>;
