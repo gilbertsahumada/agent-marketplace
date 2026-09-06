@@ -70,6 +70,15 @@ describe("buyer quote request ledger", () => {
     expect(body.counts).toMatchObject({ buyerRequests: 1, importedObservations: 1, buyerVerified: 0 });
     expect(body.requests).toHaveLength(1);
   });
+  it("closes abandoned buyer attempts without inventing a seller failure or erasing history", async () => {
+    await createCatalogQuoteRequestResponse(createRequest(), env.DB as unknown as D1Database, { nowMs: NOW });
+    await catalogQuoteHistoryResponse(new Request("https://worker.test/catalog-quotes/42"), env.DB as unknown as D1Database, "42", NOW + 60_000);
+    expect(await env.DB.prepare("SELECT status FROM catalog_quote_requests").first()).toMatchObject({ status: "running" });
+    await catalogQuoteHistoryResponse(new Request("https://worker.test/catalog-quotes/42"), env.DB as unknown as D1Database, "42", NOW + 301_000);
+    expect(await env.DB.prepare("SELECT status,errorCode FROM catalog_quote_requests").first()).toMatchObject({ status: "failed", errorCode: "QUOTE_ATTEMPT_INTERRUPTED" });
+    expect(await env.DB.prepare("SELECT status,errorCode FROM catalog_quote_attempts").first()).toMatchObject({ status: "failed", errorCode: "QUOTE_ATTEMPT_INTERRUPTED" });
+    expect(await env.DB.prepare("SELECT count(*) AS n FROM catalog_quote_requests").first()).toMatchObject({ n: 1 });
+  });
   it("pages five logical quotes at a time with totals across pages", async () => {
     for (let n = 0; n < 7; n++) await createCatalogQuoteRequestResponse(createRequest(), env.DB as unknown as D1Database, { nowMs: NOW + n * 61_000, caller: "pagination" });
     const read = async (page: number) => (await catalogQuoteHistoryResponse(new Request(`https://worker.test/catalog-quotes/42?page=${page}`), env.DB as unknown as D1Database, "42", NOW)).json() as Promise<{ requests: { id: number }[]; counts: { requests: number }; pagination: { hasMore: boolean } }>;
