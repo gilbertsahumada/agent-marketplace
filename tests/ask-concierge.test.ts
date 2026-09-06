@@ -1,49 +1,91 @@
+import type { LanguageModelV4Prompt, LanguageModelV4StreamPart } from "@ai-sdk/provider";
+import { readUIMessageStream, simulateReadableStream } from "ai";
+import { MockLanguageModelV4 } from "ai/test";
 import { describe, expect, it, vi } from "vitest";
-import { AskConcierge, CONCIERGE_SYSTEM_PROMPT, CONCIERGE_TOOLS, LANGUAGE_REMINDER } from "../src/business/use-cases/ask-concierge.ts";
 import {
-  BANNED_COPY,
-  type ConciergeModel,
-  type ModelChatMessage,
-  type ModelToolCall,
-  type ModelToolDefinition,
-  type ModelTurn,
-} from "../src/business/entities/concierge.ts";
+  AskConcierge,
+  CONCIERGE_SYSTEM_PROMPT,
+  CONCIERGE_TOOL_DESCRIPTIONS,
+  LANGUAGE_REMINDER,
+  type AskConciergeDependencies,
+} from "../src/business/use-cases/ask-concierge.ts";
+import { BANNED_COPY, CONCIERGE_LIMITS, type ConciergeUIMessage } from "../src/business/entities/concierge.ts";
 import type { HireabilityStatus, MarketplaceAgent, MarketplaceAgentPage } from "../src/business/entities/marketplace-agent.ts";
-import { MarketplaceRateLimitError } from "../src/business/errors/marketplace-errors.ts";
+import { MarketplaceDataUnavailableError, MarketplaceRateLimitError } from "../src/business/errors/marketplace-errors.ts";
 import { gridSellerAgentCard } from "../src/business/policies/grid-seller-policy.ts";
 
-// Records every call.complete() receives so tests can assert what the model
-// was shown (tool results, forced propose) without a real network call.
-class ScriptedModel implements ConciergeModel {
-  readonly name = "scripted-model";
-  readonly calls: Array<{ messages: ModelChatMessage[]; tools: ModelToolDefinition[]; forceTool?: string }> = [];
-  private readonly queue: ModelTurn[];
+// --- scripted model ---------------------------------------------------------
 
-  constructor(turns: ModelTurn[]) {
-    this.queue = [...turns];
+function usage() {
+  return {
+    inputTokens: { total: 1, noCache: 1, cacheRead: undefined, cacheWrite: undefined },
+    outputTokens: { total: 1, text: 1, reasoning: undefined },
+  };
+}
+
+interface ScriptedCall {
+  id: string;
+  name: string;
+  input: Record<string, unknown>;
+}
+
+function toolCallsTurn(...calls: ScriptedCall[]): LanguageModelV4StreamPart[] {
+  return [
+    { type: "stream-start", warnings: [] },
+    ...calls.map((call): LanguageModelV4StreamPart => ({
+      type: "tool-call",
+      toolCallId: call.id,
+      toolName: call.name,
+      input: JSON.stringify(call.input),
+    })),
+    { type: "finish", finishReason: { unified: "tool-calls", raw: undefined }, usage: usage() },
+  ];
+}
+
+function textTurn(...deltas: string[]): LanguageModelV4StreamPart[] {
+  return [
+    { type: "stream-start", warnings: [] },
+    { type: "text-start", id: "t1" },
+    ...deltas.map((delta): LanguageModelV4StreamPart => ({ type: "text-delta", id: "t1", delta })),
+    { type: "text-end", id: "t1" },
+    { type: "finish", finishReason: { unified: "stop", raw: undefined }, usage: usage() },
+  ];
+}
+
+function scriptedModel(turns: LanguageModelV4StreamPart[][]): MockLanguageModelV4 {
+  const queue = [...turns];
+  return new MockLanguageModelV4({
+    modelId: "scripted-model",
+    doStream: async () => {
+      const chunks = queue.shift();
+      if (!chunks) throw new Error("scripted model exhausted");
+      return { stream: simulateReadableStream({ chunks, initialDelayInMs: null, chunkDelayInMs: null }) };
+    },
+  });
+}
+
+/** The JSON a tool returned to the model, as seen in the prompt of a later call. */
+function toolResult(prompt: LanguageModelV4Prompt, toolCallId: string): unknown {
+  for (const message of prompt) {
+    if (message.role !== "tool") continue;
+    for (const part of message.content) {
+      if (part.type === "tool-result" && part.toolCallId === toolCallId) {
+        return part.output.type === "json" ? part.output.value : part.output;
+      }
+    }
   }
-
-  async complete(input: { messages: ModelChatMessage[]; tools: ModelToolDefinition[]; forceTool?: string }): Promise<ModelTurn> {
-    this.calls.push(input);
-    const turn = this.queue.shift();
-    if (!turn) throw new Error("ScriptedModel queue exhausted");
-    return turn;
-  }
+  return undefined;
 }
 
-function toolCall(id: string, name: string, args: Record<string, unknown>): ModelToolCall {
-  return { id, name, arguments: JSON.stringify(args) };
+function userTexts(prompt: LanguageModelV4Prompt): string[] {
+  return prompt
+    .filter((message) => message.role === "user")
+    .map((message) => (typeof message.content === "string"
+      ? message.content
+      : message.content.map((part) => (part.type === "text" ? part.text : "")).join("")));
 }
-function toolCallsTurn(...calls: ModelToolCall[]): ModelTurn {
-  return { kind: "tool_calls", text: null, calls };
-}
-function textTurn(text: string): ModelTurn {
-  return { kind: "text", text };
-}
-function toolContent(turnMessages: ModelChatMessage[] | undefined, toolCallId: string): unknown {
-  const message = turnMessages?.find((entry) => entry.role === "tool" && entry.toolCallId === toolCallId);
-  return message && message.role === "tool" ? JSON.parse(message.content) : undefined;
-}
+
+// --- marketplace fixtures ---------------------------------------------------
 
 function evidenceRecord(kind: "declared" | "observed" | "onchain" | "derived", note: string) {
   return { kind, source: "marketplace-inventory" as const, observedAt: "2026-09-01T00:00:00.000Z", verifiedDirectly: false, note };
@@ -145,385 +187,312 @@ async function negotiationInputFake() {
 const validGridParameters = { pair: "BNB/USDT", lowerPrice: "500", upperPrice: "700", capital: "1000", gridCount: 20 };
 const validBrief = { objective: "Run a grid", deliverable: "A funded grid plan", acceptanceCriteria: "Matches the requested range" };
 
+function passportFake() {
+  return {
+    schemaVersion: 1 as const,
+    chainId: 56 as const,
+    agentId: "1",
+    name: "Grid Planner",
+    operator: "third_party" as const,
+    state: "verified" as never,
+    evidenceSnapshotHash: "0x00" as `0x${string}`,
+    generatedAt: "2026-09-01T00:00:00.000Z",
+    attentionReasons: [],
+    checks: {
+      identity: { status: "pass" } as never,
+      endpoint: { status: "pass" } as never,
+      quote: { status: "pass", hireabilityStatus: "quote_verified" } as never,
+      job: { status: "pass" } as never,
+      hireActivity: { status: "pass" } as never,
+    },
+    trackRecord: {
+      provenJobs: 1,
+      sampleSize: 1,
+      submittedJobs: 1,
+      completedJobs: 1,
+      latestJobId: null,
+      latestCapturedAt: null,
+      latestDurationSeconds: null,
+      latestGasCostWei: null,
+    },
+    nextRequirements: [],
+  };
+}
+
+function harness(model: MockLanguageModelV4, overrides: Partial<AskConciergeDependencies> = {}) {
+  const release = vi.fn();
+  const acquire = vi.fn(() => release);
+  const concierge = new AskConcierge({
+    model: () => ({ languageModel: model, name: "scripted-model" }),
+    admission: { acquire },
+    agents: { execute: async () => agentPage([agent1, agent2]) },
+    passports: { execute: async () => passportFake() },
+    negotiationInput: negotiationInputFake,
+    ...overrides,
+  });
+  return { concierge, acquire, release };
+}
+
+const ask = (content: string) => ({ messages: [{ role: "user" as const, content }], caller: "test-caller" });
+
 describe("AskConcierge", () => {
-  it("completes search, quote input and propose with valid parameters (case 1)", async () => {
-    const model = new ScriptedModel([
-      toolCallsTurn(toolCall("c1", "search_agents", { q: "grid" })),
-      toolCallsTurn(toolCall("c2", "get_quote_input", { agentId: "1" })),
-      toolCallsTurn(toolCall("c3", "propose", {
-        message: "Here is a grid plan.",
-        brief: validBrief,
-        agentId: "1",
-        parameters: validGridParameters,
-      })),
+  it("completes search, quote input and propose with valid parameters", async () => {
+    const model = scriptedModel([
+      toolCallsTurn({ id: "c1", name: "search_agents", input: { q: "grid" } }),
+      toolCallsTurn({ id: "c2", name: "get_quote_input", input: { agentId: "1" } }),
+      toolCallsTurn({ id: "c3", name: "propose", input: { brief: validBrief, agentId: "1", parameters: validGridParameters } }),
+      textTurn("Here is ", "a grid plan."),
     ]);
-    const concierge = new AskConcierge({
-      model,
-      admission: { acquire: () => () => {} },
-      agents: { execute: async () => agentPage([agent1, agent2]) },
-      passports: { execute: async () => { throw new Error("not used"); } },
-      negotiationInput: negotiationInputFake,
-    });
+    const { concierge, acquire, release } = harness(model);
 
-    const reply = await concierge.execute({
-      messages: [{ role: "user", content: "I need a grid on BNB/USDT between 500 and 700" }],
-      caller: "caller-1",
-    });
+    const reply = await concierge.execute(ask("Quiero un grid en BNB/USDT entre 500 y 700"));
 
-    expect(reply.proposal?.fields).toHaveLength(5);
-    expect(reply.agents[0]?.agentId).toBe("1");
-    expect(reply.steps).toHaveLength(2);
-    expect(model.calls).toHaveLength(3);
-    expect(toolContent(model.calls[1]?.messages, "c1")).toEqual({ agents: [{
-      agentId: "1", name: "Grid Planner", categories: ["grid_trading"], hireability: "quote_verified",
-      canHire: true, summary: "Computes deterministic Grid plans on BNB Chain.", href: "/hire/1",
-    }, {
-      agentId: "2", name: "Other Agent", categories: ["grid_trading"], hireability: "mcp_only",
-      canHire: false, summary: null, href: "/hire/2",
-    }] });
-    expect(toolContent(model.calls[2]?.messages, "c2")).toMatchObject({ taskDescriptionPrefix: "GRID_PLAN_V1:" });
-  });
-
-  it("discards the proposal when agentId was not seen, but keeps visited agents (case 2)", async () => {
-    const model = new ScriptedModel([
-      toolCallsTurn(toolCall("c1", "search_agents", { q: "grid" })),
-      toolCallsTurn(toolCall("c2", "propose", {
-        message: "Here is a plan.",
-        agentId: "999",
-        parameters: validGridParameters,
-      })),
-    ]);
-    const concierge = new AskConcierge({
-      model,
-      admission: { acquire: () => () => {} },
-      agents: { execute: async () => agentPage([agent1]) },
-      passports: { execute: async () => { throw new Error("not used"); } },
-      negotiationInput: async () => null,
-    });
-
-    const reply = await concierge.execute({ messages: [{ role: "user", content: "need a grid" }], caller: "c" });
-
-    expect(reply.proposal).toBeNull();
-    expect(reply.agents.map((card) => card.agentId)).toEqual(["1"]);
-  });
-
-  it("discards the proposal when parameters fail contract validation, but keeps the brief (case 3)", async () => {
-    const model = new ScriptedModel([
-      toolCallsTurn(toolCall("c1", "search_agents", { q: "grid" })),
-      toolCallsTurn(toolCall("c2", "get_quote_input", { agentId: "1" })),
-      toolCallsTurn(toolCall("c3", "propose", {
-        message: "Here is a plan.",
-        brief: validBrief,
-        agentId: "1",
-        parameters: { ...validGridParameters, gridCount: 500 },
-      })),
-    ]);
-    const concierge = new AskConcierge({
-      model,
-      admission: { acquire: () => () => {} },
-      agents: { execute: async () => agentPage([agent1]) },
-      passports: { execute: async () => { throw new Error("not used"); } },
-      negotiationInput: negotiationInputFake,
-    });
-
-    const reply = await concierge.execute({ messages: [{ role: "user", content: "need a grid" }], caller: "c" });
-
-    expect(reply.proposal).toBeNull();
+    expect(reply.message).toBe("Here is a grid plan.");
+    expect(reply.proposal).toMatchObject({ agentId: "1", contractHash: "f".repeat(64), parameters: validGridParameters });
+    expect(reply.proposal?.fields.map((field) => field.key)).toEqual(["pair", "lowerPrice", "upperPrice", "capital", "gridCount"]);
     expect(reply.brief).toEqual(validBrief);
-  });
-
-  it("rejects get_passport for an agent outside search_agents results (case 4)", async () => {
-    const model = new ScriptedModel([
-      toolCallsTurn(toolCall("c1", "get_passport", { agentId: "999" })),
-      textTurn("I could not find that agent."),
+    expect(reply.agents.map((card) => card.agentId)).toEqual(["1", "2"]);
+    expect(reply.steps).toEqual([
+      { tool: "search_agents", summary: "2 agents for “grid”" },
+      { tool: "get_quote_input", summary: "quote input for 1" },
     ]);
-    const passportsExecute = vi.fn();
-    const concierge = new AskConcierge({
-      model,
-      admission: { acquire: () => () => {} },
-      agents: { execute: async () => agentPage([]) },
-      passports: { execute: passportsExecute },
-      negotiationInput: async () => null,
+    expect(reply.model).toBe("scripted-model");
+
+    // Each model call sees the earlier tool results.
+    expect(model.doStreamCalls).toHaveLength(4);
+    expect(toolResult(model.doStreamCalls[1]!.prompt, "c1")).toMatchObject({ label: "grid" });
+    expect(toolResult(model.doStreamCalls[2]!.prompt, "c2")).toMatchObject({ agentId: "1" });
+    // The model gets the compact propose summary, not the cards.
+    expect(toolResult(model.doStreamCalls[3]!.prompt, "c3")).toEqual({
+      ok: true,
+      rejected: [],
+      brief: true,
+      proposal: { agentId: "1", fields: reply.proposal?.fields },
     });
-
-    await concierge.execute({ messages: [{ role: "user", content: "tell me about agent 999" }], caller: "c" });
-
-    expect(toolContent(model.calls[1]?.messages, "c1")).toEqual({ error: "UNKNOWN_AGENT" });
-    expect(passportsExecute).not.toHaveBeenCalled();
-  });
-
-  it("returns the model's text reply directly when it never proposes (case 5)", async () => {
-    const model = new ScriptedModel([textTurn("Hello, how can I help?")]);
-    const concierge = new AskConcierge({
-      model,
-      admission: { acquire: () => () => {} },
-      agents: { execute: async () => agentPage([]) },
-      passports: { execute: async () => { throw new Error("not used"); } },
-      negotiationInput: async () => null,
-    });
-
-    const reply = await concierge.execute({ messages: [{ role: "user", content: "hi" }], caller: "c" });
-
-    expect(reply.message).toBe("Hello, how can I help?");
-    expect(reply.brief).toBeNull();
-  });
-
-  it("forces propose on the last of the 4 rounds and falls back when it still refuses (case 6)", async () => {
-    const model = new ScriptedModel([
-      toolCallsTurn(toolCall("c1", "search_agents", { q: "grid" })),
-      toolCallsTurn(toolCall("c2", "search_agents", { q: "grid" })),
-      toolCallsTurn(toolCall("c3", "search_agents", { q: "grid" })),
-      textTurn("Still thinking."),
-    ]);
-    const concierge = new AskConcierge({
-      model,
-      admission: { acquire: () => () => {} },
-      agents: { execute: async () => agentPage([agent1]) },
-      passports: { execute: async () => { throw new Error("not used"); } },
-      negotiationInput: async () => null,
-    });
-
-    const reply = await concierge.execute({ messages: [{ role: "user", content: "need a grid" }], caller: "c" });
-
-    // At most `modelRounds` (4) model calls total, not modelRounds + 1: the
-    // forced propose is folded into the last round instead of tacked on
-    // afterwards, keeping worst-case latency inside the route's maxDuration.
-    expect(model.calls).toHaveLength(4);
-    expect(model.calls[3]?.forceTool).toBe("propose");
-    expect(reply.message).toBe("I could not finish this request. Try again with more detail.");
-  });
-
-  it("stops before the round budget once the shared deadline has elapsed (case 6b)", async () => {
-    const model = new ScriptedModel([
-      toolCallsTurn(toolCall("c1", "search_agents", { q: "grid" })),
-      toolCallsTurn(toolCall("c2", "search_agents", { q: "grid" })),
-    ]);
-    // now() is read once for `startedAt` and once per round's deadline
-    // check: 0 (startedAt), 0 (round 0 check, within deadline), then 40s
-    // (round 1 check, past the 35s deadline) so only round 0 ever runs.
-    const clockReadings = [0, 0, 40_000];
-    let clockIndex = 0;
-    const concierge = new AskConcierge({
-      model,
-      admission: { acquire: () => () => {} },
-      agents: { execute: async () => agentPage([agent1]) },
-      passports: { execute: async () => { throw new Error("not used"); } },
-      negotiationInput: async () => null,
-      now: () => clockReadings[Math.min(clockIndex++, clockReadings.length - 1)]!,
-    });
-
-    const reply = await concierge.execute({ messages: [{ role: "user", content: "need a grid" }], caller: "c" });
-
-    expect(model.calls).toHaveLength(1);
-    expect(reply.message).toBe("I could not finish this request. Try again with more detail.");
-  });
-
-  it("rejects tool calls beyond the per-request budget (case 7)", async () => {
-    const searchCalls = Array.from({ length: 7 }, (_, index) => toolCall(`c${index + 1}`, "search_agents", { q: "grid" }));
-    const model = new ScriptedModel([
-      toolCallsTurn(...searchCalls),
-      textTurn("Done for now."),
-    ]);
-    const concierge = new AskConcierge({
-      model,
-      admission: { acquire: () => () => {} },
-      agents: { execute: async () => agentPage([agent1]) },
-      passports: { execute: async () => { throw new Error("not used"); } },
-      negotiationInput: async () => null,
-    });
-
-    await concierge.execute({ messages: [{ role: "user", content: "need many things" }], caller: "c" });
-
-    expect(toolContent(model.calls[1]?.messages, "c7")).toEqual({ error: "TOOL_BUDGET_EXCEEDED" });
-    expect(toolContent(model.calls[1]?.messages, "c6")).not.toEqual({ error: "TOOL_BUDGET_EXCEEDED" });
-  });
-
-  it("accepts propose right after 6 lookups already spent the tool budget (case 7b)", async () => {
-    // propose must never be budgeted like a lookup: 5 search_agents calls
-    // plus one get_quote_input spend the full 6-call budget, and propose
-    // still has to go through as the 7th call in the same turn.
-    const lookupCalls = [
-      ...Array.from({ length: 5 }, (_, index) => toolCall(`c${index + 1}`, "search_agents", { q: "grid" })),
-      toolCall("c6", "get_quote_input", { agentId: "1" }),
-    ];
-    const model = new ScriptedModel([
-      toolCallsTurn(...lookupCalls, toolCall("c7", "propose", {
-        message: "Here is a grid plan.",
-        brief: validBrief,
-        agentId: "1",
-        parameters: validGridParameters,
-      })),
-    ]);
-    const concierge = new AskConcierge({
-      model,
-      admission: { acquire: () => () => {} },
-      agents: { execute: async () => agentPage([agent1]) },
-      passports: { execute: async () => { throw new Error("not used"); } },
-      negotiationInput: negotiationInputFake,
-    });
-
-    const reply = await concierge.execute({ messages: [{ role: "user", content: "need a grid" }], caller: "c" });
-
-    expect(model.calls).toHaveLength(1);
-    expect(reply.proposal?.agentId).toBe("1");
-    expect(reply.proposal?.fields).toHaveLength(5);
-  });
-
-  it("replaces banned copy in the message and clears a banned question (case 8)", async () => {
-    const model = new ScriptedModel([
-      toolCallsTurn(toolCall("c1", "propose", {
-        message: "Our agents have a proven track record and guarantee results.",
-        question: "Can you guarantee delivery?",
-      })),
-    ]);
-    const concierge = new AskConcierge({
-      model,
-      admission: { acquire: () => () => {} },
-      agents: { execute: async () => agentPage([]) },
-      passports: { execute: async () => { throw new Error("not used"); } },
-      negotiationInput: async () => null,
-    });
-
-    const reply = await concierge.execute({ messages: [{ role: "user", content: "hi" }], caller: "c" });
-
-    expect(reply.message).toBe("Here is what I found.");
-    expect(reply.question).toBeNull();
-  });
-
-  it("lists only the fields the model set, keeps a banned search label out of steps and bounds the message (case 8b)", async () => {
-    const gridSchema = (gridContractParams as { inputSchema: { properties: Record<string, unknown> } }).inputSchema;
-    const optionalContract = {
-      ...(gridContractParams as Record<string, unknown>),
-      inputSchema: {
-        ...gridSchema,
-        required: ["pair"],
-        properties: { ...gridSchema.properties, note: { type: "string", title: "Note", maxLength: 40 } },
-      },
-    };
-    const model = new ScriptedModel([
-      toolCallsTurn(toolCall("c1", "search_agents", { q: "a proven grid" })),
-      toolCallsTurn(toolCall("c2", "get_quote_input", { agentId: "1" })),
-      toolCallsTurn(toolCall("c3", "propose", {
-        message: "x".repeat(4_500),
-        agentId: "1",
-        parameters: { pair: "BNB/USDT" },
-      })),
-    ]);
-    const concierge = new AskConcierge({
-      model,
-      admission: { acquire: () => () => {} },
-      agents: { execute: async () => agentPage([agent1]) },
-      passports: { execute: async () => { throw new Error("not used"); } },
-      negotiationInput: async () => ({ status: 200, body: { contract: optionalContract, endpointKey: "a".repeat(64), contractHash: "f".repeat(64) } }),
-    });
-
-    const reply = await concierge.execute({ messages: [{ role: "user", content: "grid" }], caller: "caller-1" });
-
-    expect(reply.proposal?.fields).toEqual([{ key: "pair", title: "Trading pair", value: "BNB/USDT" }]);
-    expect(reply.steps[0]?.summary).toBe("1 agents for “the request”");
-    expect(reply.message).toHaveLength(4_000);
-  });
-
-  it("discards a proposal the quote panel could not encode (case 3b)", async () => {
-    // A 1500-char string passes the schema but pushes task_description over
-    // buildContractRequest's 1500-char bound once the prefix is added.
-    const model = new ScriptedModel([
-      toolCallsTurn(toolCall("c1", "search_agents", { q: "grid" })),
-      toolCallsTurn(toolCall("c2", "get_quote_input", { agentId: "1" })),
-      toolCallsTurn(toolCall("c3", "propose", { message: "Done.", agentId: "1", parameters: { text: "t".repeat(1_500) } })),
-    ]);
-    const concierge = new AskConcierge({
-      model,
-      admission: { acquire: () => () => {} },
-      agents: { execute: async () => agentPage([agent1]) },
-      passports: { execute: async () => { throw new Error("not used"); } },
-      negotiationInput: async () => ({ status: 200, body: { contract: {
-        ...gridContractParams,
-        inputSchema: { type: "object", required: ["text"], properties: { text: { type: "string", maxLength: 1_500 } } },
-      }, endpointKey: "a".repeat(64), contractHash: "f".repeat(64) } }),
-    });
-
-    const reply = await concierge.execute({ messages: [{ role: "user", content: "grid" }], caller: "caller-1" });
-
-    expect(reply.proposal).toBeNull();
-    expect(reply.agents).toHaveLength(1);
-  });
-
-  it("attaches the language reminder to the latest user turn only", async () => {
-    const model = new ScriptedModel([textTurn("Sure.")]);
-    const concierge = new AskConcierge({
-      model,
-      admission: { acquire: () => () => {} },
-      agents: { execute: async () => agentPage([agent1]) },
-      passports: { execute: async () => { throw new Error("not used"); } },
-      negotiationInput: negotiationInputFake,
-    });
-
-    const reply = await concierge.execute({
-      messages: [
-        { role: "user", content: "Quiero un grid" },
-        { role: "assistant", content: "Claro." },
-        { role: "user", content: "is there any way to plan a trip?" },
-      ],
-      caller: "caller-1",
-    });
-
-    const prompt = model.calls[0]!.messages;
-    expect(prompt[1]).toEqual({ role: "user", content: "Quiero un grid" });
-    expect(prompt[3]).toEqual({ role: "user", content: `is there any way to plan a trip?${LANGUAGE_REMINDER}` });
-    expect(reply.message).toBe("Sure.");
-  });
-
-  it("propagates an admission error without calling the model (case 9a)", async () => {
-    const complete = vi.fn(async () => { throw new Error("must not be called"); });
-    const model: ConciergeModel = { name: "guarded-model", complete };
-    const concierge = new AskConcierge({
-      model,
-      admission: { acquire: () => { throw new MarketplaceRateLimitError(5); } },
-      agents: { execute: async () => agentPage([]) },
-      passports: { execute: async () => { throw new Error("not used"); } },
-      negotiationInput: async () => null,
-    });
-
-    await expect(concierge.execute({ messages: [{ role: "user", content: "hi" }], caller: "c" }))
-      .rejects.toBeInstanceOf(MarketplaceRateLimitError);
-    expect(complete).not.toHaveBeenCalled();
-  });
-
-  it("releases admission even when the model rejects (case 9b)", async () => {
-    const release = vi.fn();
-    const model: ConciergeModel = { name: "broken-model", complete: async () => { throw new Error("model failed"); } };
-    const concierge = new AskConcierge({
-      model,
-      admission: { acquire: () => release },
-      agents: { execute: async () => agentPage([]) },
-      passports: { execute: async () => { throw new Error("not used"); } },
-      negotiationInput: async () => null,
-    });
-
-    await expect(concierge.execute({ messages: [{ role: "user", content: "hi" }], caller: "c" }))
-      .rejects.toThrow("model failed");
+    expect(acquire).toHaveBeenCalledWith("test-caller");
     expect(release).toHaveBeenCalledTimes(1);
   });
 
-  it("declares four tools with closed JSON-schema parameters", () => {
-    expect(CONCIERGE_TOOLS.map((tool) => tool.name)).toEqual(["search_agents", "get_passport", "get_quote_input", "propose"]);
-    for (const tool of CONCIERGE_TOOLS) {
-      expect(tool.parameters).toMatchObject({ type: "object", additionalProperties: false });
-    }
-  });
-});
+  it("streams the tool calls and their outputs as typed UI message parts", async () => {
+    const model = scriptedModel([
+      toolCallsTurn({ id: "c1", name: "search_agents", input: { q: "grid" } }),
+      toolCallsTurn({ id: "c2", name: "get_quote_input", input: { agentId: "1" } }),
+      toolCallsTurn({ id: "c3", name: "propose", input: { brief: validBrief, agentId: "1", parameters: validGridParameters } }),
+      textTurn("Done."),
+    ]);
+    const { concierge } = harness(model);
 
-describe("CONCIERGE_SYSTEM_PROMPT (case 10)", () => {
-  it("names propose, search_agents and never, and bans copy words only in the prohibition sentence", () => {
+    let last: ConciergeUIMessage | undefined;
+    for await (const message of readUIMessageStream<ConciergeUIMessage>({ stream: concierge.stream(ask("grid")) })) {
+      last = message;
+    }
+
+    const types = last!.parts.map((part) => part.type);
+    expect(types).toContain("tool-search_agents");
+    expect(types).toContain("tool-get_quote_input");
+    expect(types).toContain("tool-propose");
+    expect(types).toContain("text");
+    const search = last!.parts.find((part) => part.type === "tool-search_agents");
+    expect(search).toMatchObject({ state: "output-available", input: { q: "grid" }, output: { label: "grid" } });
+    const propose = last!.parts.find((part) => part.type === "tool-propose");
+    expect(propose).toMatchObject({ state: "output-available", output: { proposal: { agentId: "1" }, agents: [{ agentId: "1" }, { agentId: "2" }] } });
+  });
+
+  it("drops a proposal for an agent that no search returned", async () => {
+    const model = scriptedModel([
+      toolCallsTurn({ id: "c1", name: "search_agents", input: { q: "grid" } }),
+      toolCallsTurn({ id: "c2", name: "propose", input: { brief: validBrief, agentId: "99", parameters: validGridParameters } }),
+      textTurn("Reply."),
+    ]);
+    const { concierge } = harness(model);
+
+    const reply = await concierge.execute(ask("grid"));
+
+    expect(reply.proposal).toBeNull();
+    expect(reply.brief).toEqual(validBrief);
+    expect(reply.agents.map((card) => card.agentId)).toEqual(["1", "2"]);
+    expect(toolResult(model.doStreamCalls[2]!.prompt, "c2")).toMatchObject({ ok: false, rejected: ["unknown_agent"] });
+  });
+
+  it("drops parameters that do not validate against the seller's schema", async () => {
+    const model = scriptedModel([
+      toolCallsTurn({ id: "c1", name: "search_agents", input: { q: "grid" } }),
+      toolCallsTurn({ id: "c2", name: "get_quote_input", input: { agentId: "1" } }),
+      toolCallsTurn({ id: "c3", name: "propose", input: { brief: validBrief, agentId: "1", parameters: { ...validGridParameters, gridCount: 500 } } }),
+      textTurn("Reply."),
+    ]);
+    const { concierge } = harness(model);
+
+    const reply = await concierge.execute(ask("grid"));
+
+    expect(reply.proposal).toBeNull();
+    expect(reply.brief).toEqual(validBrief);
+    expect(toolResult(model.doStreamCalls[3]!.prompt, "c3")).toMatchObject({ rejected: ["invalid_parameters"] });
+  });
+
+  it("requires get_quote_input before parameters are accepted", async () => {
+    const model = scriptedModel([
+      toolCallsTurn({ id: "c1", name: "search_agents", input: { q: "grid" } }),
+      toolCallsTurn({ id: "c2", name: "propose", input: { agentId: "1", parameters: validGridParameters } }),
+      textTurn("Reply."),
+    ]);
+    const { concierge } = harness(model);
+
+    const reply = await concierge.execute(ask("grid"));
+
+    expect(reply.proposal).toBeNull();
+    expect(toolResult(model.doStreamCalls[2]!.prompt, "c2")).toMatchObject({ rejected: ["missing_quote_input"] });
+  });
+
+  it("refuses passports and quote input for agents outside the search results", async () => {
+    const model = scriptedModel([
+      toolCallsTurn({ id: "c1", name: "get_passport", input: { agentId: "1" } }, { id: "c2", name: "get_quote_input", input: { agentId: "1" } }),
+      textTurn("Reply."),
+    ]);
+    const { concierge } = harness(model);
+
+    await concierge.execute(ask("grid"));
+
+    expect(toolResult(model.doStreamCalls[1]!.prompt, "c1")).toEqual({ error: "UNKNOWN_AGENT" });
+    expect(toolResult(model.doStreamCalls[1]!.prompt, "c2")).toEqual({ error: "UNKNOWN_AGENT" });
+  });
+
+  it("reads a passport only after a search returned the agent", async () => {
+    const model = scriptedModel([
+      toolCallsTurn({ id: "c1", name: "search_agents", input: { category: "grid_trading" } }),
+      toolCallsTurn({ id: "c2", name: "get_passport", input: { agentId: "1" } }),
+      textTurn("Reply."),
+    ]);
+    const { concierge } = harness(model);
+
+    const reply = await concierge.execute(ask("grid"));
+
+    expect(toolResult(model.doStreamCalls[2]!.prompt, "c2")).toMatchObject({ agentId: "1", provenJobs: 1, checks: { quote: { status: "pass" } } });
+    expect(reply.steps).toEqual([
+      { tool: "search_agents", summary: "2 agents for “grid_trading”" },
+      { tool: "get_passport", summary: "passport for 1" },
+    ]);
+  });
+
+  it("returns plain text when the model answers without tools", async () => {
+    const model = scriptedModel([textTurn("The marketplace covers grid trading and DeFi monitoring.")]);
+    const { concierge } = harness(model);
+
+    const reply = await concierge.execute(ask("plan my holiday"));
+
+    expect(reply).toMatchObject({ message: "The marketplace covers grid trading and DeFi monitoring.", brief: null, proposal: null, agents: [], steps: [] });
+  });
+
+  it("forces the last step to plain text so the turn always ends in a reply", async () => {
+    const searching = (index: number) => toolCallsTurn({ id: `s${index}`, name: "search_agents", input: { q: "grid" } });
+    const model = scriptedModel([searching(1), searching(2), searching(3), searching(4), textTurn("Final.")]);
+    const { concierge } = harness(model);
+
+    const reply = await concierge.execute(ask("grid"));
+
+    expect(reply.message).toBe("Final.");
+    expect(model.doStreamCalls).toHaveLength(CONCIERGE_LIMITS.modelSteps);
+    expect(model.doStreamCalls[0]!.toolChoice).toEqual({ type: "auto" });
+    expect(model.doStreamCalls[CONCIERGE_LIMITS.modelSteps - 1]!.toolChoice).toEqual({ type: "none" });
+  });
+
+  it("caps catalog lookups per request", async () => {
+    const calls = Array.from({ length: CONCIERGE_LIMITS.toolCalls + 1 }, (_, index) => ({ id: `c${index}`, name: "search_agents", input: { q: "grid" } }));
+    const model = scriptedModel([toolCallsTurn(...calls), textTurn("Reply.")]);
+    const { concierge } = harness(model);
+
+    await concierge.execute(ask("grid"));
+
+    const prompt = model.doStreamCalls[1]!.prompt;
+    expect(toolResult(prompt, `c${CONCIERGE_LIMITS.toolCalls - 1}`)).toMatchObject({ label: "grid" });
+    expect(toolResult(prompt, `c${CONCIERGE_LIMITS.toolCalls}`)).toEqual({ error: "TOOL_BUDGET_EXCEEDED" });
+  });
+
+  it("rewrites banned marketing copy in the streamed text, even when a phrase spans two deltas", async () => {
+    const model = scriptedModel([
+      textTurn("This agent has a proven track ", "record and guarantees results; the strategy was applied last week.", " Nothing else to add here."),
+    ]);
+    const { concierge } = harness(model);
+
+    const reply = await concierge.execute(ask("grid"));
+
+    expect(reply.message).not.toMatch(BANNED_COPY);
+    expect(reply.message).toBe("This agent has a indexed activity history and promises results; the strategy was used last week. Nothing else to add here.");
+  });
+
+  it("propagates admission rejections without calling the model", async () => {
+    const model = scriptedModel([textTurn("never")]);
+    const { concierge } = harness(model, {
+      admission: {
+        acquire: () => {
+          throw new MarketplaceRateLimitError(9, "The concierge is temporarily at capacity");
+        },
+      },
+    });
+
+    expect(() => concierge.stream(ask("grid"))).toThrow(MarketplaceRateLimitError);
+    await expect(concierge.execute(ask("grid"))).rejects.toBeInstanceOf(MarketplaceRateLimitError);
+    expect(model.doStreamCalls).toHaveLength(0);
+  });
+
+  it("releases admission and reports unavailability when the model fails", async () => {
+    const model = new MockLanguageModelV4({
+      modelId: "broken",
+      doStream: async () => {
+        throw new Error("upstream exploded");
+      },
+    });
+    const { concierge, release } = harness(model);
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    await expect(concierge.execute(ask("grid"))).rejects.toBeInstanceOf(MarketplaceDataUnavailableError);
+
+    expect(release).toHaveBeenCalledTimes(1);
+    expect(consoleError).toHaveBeenCalled();
+    expect(String(consoleError.mock.calls[0])).not.toContain("upstream exploded");
+    consoleError.mockRestore();
+  });
+
+  it("fails fast when the model is not configured", async () => {
+    const { concierge, acquire } = harness(scriptedModel([]), {
+      model: () => {
+        throw new MarketplaceDataUnavailableError("concierge model");
+      },
+    });
+
+    expect(() => concierge.stream(ask("grid"))).toThrow(MarketplaceDataUnavailableError);
+    expect(acquire).not.toHaveBeenCalled();
+  });
+
+  it("sends the system prompt, the tool descriptions and a language reminder on the latest user turn only", async () => {
+    const model = scriptedModel([textTurn("Reply.")]);
+    const { concierge } = harness(model);
+
+    await concierge.execute({
+      messages: [
+        { role: "user", content: "Quiero un grid" },
+        { role: "assistant", content: "¿En qué par?" },
+        { role: "user", content: "BNB/USDT please" },
+      ],
+      caller: "test-caller",
+    });
+
+    const call = model.doStreamCalls[0]!;
+    expect(call.prompt[0]).toEqual({ role: "system", content: CONCIERGE_SYSTEM_PROMPT });
+    const texts = userTexts(call.prompt);
+    expect(texts[0]).toBe("Quiero un grid");
+    expect(texts[1]).toBe(`BNB/USDT please${LANGUAGE_REMINDER}`);
+    const toolNames = (call.tools ?? []).map((definition) => definition.name);
+    expect(toolNames).toEqual(["search_agents", "get_passport", "get_quote_input", "propose"]);
+    const propose = (call.tools ?? []).find((definition) => definition.name === "propose");
+    expect(propose).toMatchObject({ description: CONCIERGE_TOOL_DESCRIPTIONS.propose });
+  });
+
+  it("keeps the system prompt free of banned copy outside the prohibition sentence", () => {
     expect(CONCIERGE_SYSTEM_PROMPT).toContain("propose");
     expect(CONCIERGE_SYSTEM_PROMPT).toContain("search_agents");
-    expect(CONCIERGE_SYSTEM_PROMPT).toContain("never");
-
-    const prohibition = "Never use the words proven, track record or guarantee.";
-    expect(CONCIERGE_SYSTEM_PROMPT).toContain(prohibition);
-
-    const remainder = CONCIERGE_SYSTEM_PROMPT.replace(prohibition, "");
-    expect(BANNED_COPY.test(remainder)).toBe(false);
+    expect(CONCIERGE_SYSTEM_PROMPT).toContain("Never");
+    const withoutProhibition = CONCIERGE_SYSTEM_PROMPT.replace("Never use the words proven, track record or guarantee.", "");
+    expect(withoutProhibition).not.toMatch(BANNED_COPY);
   });
 });

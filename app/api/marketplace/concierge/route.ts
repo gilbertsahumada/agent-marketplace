@@ -1,3 +1,4 @@
+import { createUIMessageStreamResponse } from "ai";
 import { NextResponse } from "next/server";
 import { askConcierge } from "@/src/business/composition";
 import { CONCIERGE_SCHEMA_VERSION, parseConciergeMessages } from "@/src/business/entities/concierge";
@@ -5,7 +6,8 @@ import { InvalidMarketplaceInputError, MarketplacePayloadTooLargeError } from "@
 import { BoundedRequestJsonError, readBoundedRequestJson } from "@/src/presentation/http/bounded-request-json";
 import { callerContext, marketplaceErrorResponse } from "@/src/presentation/http/marketplace-http";
 
-const MAX_BODY_BYTES = 16_384;
+// 12 messages × 4,000 chars of assistant text plus JSON overhead.
+const MAX_BODY_BYTES = 65_536;
 
 async function readConciergeBody(request: Request): Promise<Record<string, unknown>> {
   let value: unknown;
@@ -26,6 +28,10 @@ async function readConciergeBody(request: Request): Promise<Record<string, unkno
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
+// Streams one concierge turn as an AI SDK UI message stream (SSE): text
+// deltas plus every tool call and its output. Input errors, admission and a
+// missing model still answer with the marketplace JSON error shape before
+// the stream starts; failures after that arrive as an error chunk.
 export async function POST(request: Request) {
   try {
     if (!request.headers.get("content-type")?.toLowerCase().startsWith("application/json")) {
@@ -36,8 +42,13 @@ export async function POST(request: Request) {
       throw new InvalidMarketplaceInputError("Unsupported concierge schema version");
     }
     const messages = parseConciergeMessages(body.messages);
-    const reply = await askConcierge.execute({ messages, caller: callerContext(request) });
-    return NextResponse.json(reply, { headers: { "cache-control": "no-store" } });
+    const stream = askConcierge.stream({
+      messages,
+      caller: callerContext(request),
+      // A closed tab aborts the model call so its admission slot is freed.
+      ...(request.signal ? { abortSignal: request.signal } : {}),
+    });
+    return createUIMessageStreamResponse({ stream, headers: { "cache-control": "no-store" } });
   } catch (error) {
     return marketplaceErrorResponse(error);
   }

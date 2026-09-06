@@ -1,8 +1,9 @@
+import type { UIMessageChunk } from "ai";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { MarketplaceDataUnavailableError, MarketplaceRateLimitError } from "../src/business/errors/marketplace-errors.ts";
 
 const conciergeApi = vi.hoisted(() => ({
-  askConcierge: { execute: vi.fn() },
+  askConcierge: { stream: vi.fn() },
 }));
 
 vi.mock("@/src/business/composition", () => conciergeApi);
@@ -21,6 +22,15 @@ const post = (body: unknown, headers: Record<string, string> = {}) =>
     body: typeof body === "string" ? body : JSON.stringify(body),
   }));
 
+function chunkStream(chunks: UIMessageChunk[]): ReadableStream<UIMessageChunk> {
+  return new ReadableStream({
+    start(controller) {
+      for (const chunk of chunks) controller.enqueue(chunk);
+      controller.close();
+    },
+  });
+}
+
 describe("concierge route controller", () => {
   beforeEach(() => vi.clearAllMocks());
 
@@ -30,53 +40,65 @@ describe("concierge route controller", () => {
       body: "plain",
     }));
     expect(response.status).toBe(400);
-    expect(conciergeApi.askConcierge.execute).not.toHaveBeenCalled();
+    expect(conciergeApi.askConcierge.stream).not.toHaveBeenCalled();
   });
 
   it("rejects an invalid JSON body", async () => {
     const response = await post("not json");
     expect(response.status).toBe(400);
-    expect(conciergeApi.askConcierge.execute).not.toHaveBeenCalled();
+    expect(conciergeApi.askConcierge.stream).not.toHaveBeenCalled();
   });
 
-  it("rejects a body larger than 16 KiB", async () => {
+  it("rejects a body larger than 64 KiB", async () => {
     const response = await post({
       schemaVersion: 1,
-      messages: [{ role: "user", content: "x".repeat(20_000) }],
+      messages: [{ role: "user", content: "x".repeat(70_000) }],
     });
     expect(response.status).toBe(413);
-    expect(conciergeApi.askConcierge.execute).not.toHaveBeenCalled();
+    expect(conciergeApi.askConcierge.stream).not.toHaveBeenCalled();
   });
 
   it("rejects an unsupported schema version", async () => {
     const response = await post({ schemaVersion: 2, messages: [{ role: "user", content: "hi" }] });
     expect(response.status).toBe(400);
-    expect(conciergeApi.askConcierge.execute).not.toHaveBeenCalled();
+    expect(conciergeApi.askConcierge.stream).not.toHaveBeenCalled();
   });
 
   it("rejects invalid messages", async () => {
     const response = await post({ schemaVersion: 1, messages: [{ role: "assistant", content: "hi" }] });
     expect(response.status).toBe(400);
-    expect(conciergeApi.askConcierge.execute).not.toHaveBeenCalled();
+    expect(conciergeApi.askConcierge.stream).not.toHaveBeenCalled();
   });
 
-  it("returns the concierge reply uncached and forwards the caller fingerprint", async () => {
-    const reply = { schemaVersion: 1, message: "Here is what I found.", question: null, brief: null, agents: [], proposal: null, steps: [], model: "qwen-plus" };
-    conciergeApi.askConcierge.execute.mockResolvedValue(reply);
+  it("streams the concierge turn as an uncached UI message stream and forwards the caller fingerprint", async () => {
+    conciergeApi.askConcierge.stream.mockReturnValue(chunkStream([
+      { type: "start" },
+      { type: "text-start", id: "t1" },
+      { type: "text-delta", id: "t1", delta: "Here is what I found." },
+      { type: "text-end", id: "t1" },
+      { type: "finish" },
+    ]));
 
     const response = await post(validBody());
 
     expect(response.status).toBe(200);
     expect(response.headers.get("cache-control")).toBe("no-store");
-    expect(await response.json()).toEqual(reply);
-    expect(conciergeApi.askConcierge.execute).toHaveBeenCalledWith({
+    expect(response.headers.get("content-type")).toContain("text/event-stream");
+    expect(response.headers.get("x-vercel-ai-ui-message-stream")).toBe("v1");
+    const body = await response.text();
+    expect(body).toContain('"type":"text-delta"');
+    expect(body).toContain("Here is what I found.");
+    expect(conciergeApi.askConcierge.stream).toHaveBeenCalledWith(expect.objectContaining({
       messages: [{ role: "user", content: "I need a grid bot for BNB/USDT" }],
       caller: "203.0.113.2|http://local",
-    });
+      abortSignal: expect.any(AbortSignal),
+    }));
   });
 
   it("maps a rate limit error to 429 with retry-after", async () => {
-    conciergeApi.askConcierge.execute.mockRejectedValue(new MarketplaceRateLimitError(12, "The concierge is temporarily at capacity"));
+    conciergeApi.askConcierge.stream.mockImplementation(() => {
+      throw new MarketplaceRateLimitError(12, "The concierge is temporarily at capacity");
+    });
 
     const response = await post(validBody());
 
@@ -85,7 +107,9 @@ describe("concierge route controller", () => {
   });
 
   it("maps a data-unavailable error to 503", async () => {
-    conciergeApi.askConcierge.execute.mockRejectedValue(new MarketplaceDataUnavailableError("concierge model"));
+    conciergeApi.askConcierge.stream.mockImplementation(() => {
+      throw new MarketplaceDataUnavailableError("concierge model");
+    });
 
     const response = await post(validBody());
 
