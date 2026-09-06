@@ -23,6 +23,30 @@
 .jobs-explorer a:focus-visible, .jobs-explorer summary:focus-visible { outline: 2px solid var(--signal); outline-offset: 4px; }
 .jobs-explorer { --primary: var(--signal); --ring: var(--signal); }
 .jobs-card { border-radius: 16px; --card-spacing: 24px; }
+.jobs-activity-card {
+  border-color: color-mix(in oklab, var(--signal) 18%, var(--border));
+  background: var(--card);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 4%),
+    0 18px 42px rgb(0 0 0 / 12%);
+}
+.jobs-activity-ascii-clouds {
+  position: absolute;
+  top: 0;
+  right: 0;
+  z-index: 0;
+  width: 52%;
+  height: 58%;
+  opacity: 0.34;
+  font-family: var(--font-space-mono), monospace;
+  pointer-events: none;
+  transition: opacity 180ms ease, filter 180ms ease;
+}
+.jobs-activity-card:hover .jobs-activity-ascii-clouds,
+.jobs-activity-card:focus-within .jobs-activity-ascii-clouds {
+  opacity: 0.58;
+  filter: drop-shadow(0 0 5px rgb(255 233 0 / 18%));
+}
 .jobs-metric-icon { display: flex; align-items: center; justify-content: center; width: 44px; height: 44px; flex-shrink: 0; border: 1px solid var(--border); border-radius: 12px; color: var(--signal); }
 .jobs-records [data-slot="table-container"]:focus-visible { outline: 2px solid var(--signal); outline-offset: -3px; }
 .jobs-records a:hover, .jobs-explorer button:not(:disabled):hover { color: var(--signal); }
