@@ -24,6 +24,7 @@ import { Erc8183SpikeUnavailableError } from "../business/errors/erc8183-spike-e
 import { createSafeEndpointTransport } from "../verification/safe-http.ts";
 import { ERC8183_MAINNET } from "./contracts.ts";
 import { mainnetImplementationPinsMatch } from "./implementation-pins.ts";
+import { quoteProvider } from "../shared/quote-provider.ts";
 
 const ZERO_ADDRESS = getAddress("0x0000000000000000000000000000000000000000");
 const MAX_QUOTE_TTL_SECONDS = 900;
@@ -156,10 +157,7 @@ export class CatalogErc8183Repository implements Erc8183SpikeRepository {
         response.terms?.evaluator_type !== "uma_oov3" ||
         !sameAddress(currency, ERC8183_MAINNET.token)
       ) throw new Erc8183SpikeUnavailableError("Seller quote does not match the marketplace contract policy");
-      if (typeof envelope.provider_address !== "string") {
-        throw new Erc8183SpikeUnavailableError("Seller quote provider is missing");
-      }
-      const provider = getAddress(envelope.provider_address);
+      const provider = quoteProvider(envelope.provider_address, this.target.provider);
       if (!sameAddress(provider, this.target.provider)) {
         throw new Erc8183SpikeUnavailableError("Seller quote provider does not match the quote request");
       }
