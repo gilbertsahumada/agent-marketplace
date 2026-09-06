@@ -150,8 +150,12 @@ describe("ConciergeChat", () => {
     const sent: SendOptions[] = [];
     render(<ConciergeChat transport={transportOf([FULL_TURN], (options) => sent.push(options))} />);
 
+    expect(screen.getByRole("heading", { name: "What do you need done?" })).toBeInTheDocument();
     ask("necesito un grid en BNB/USDT entre 500 y 700");
     await screen.findByText("Here is a verified agent for that.");
+    // The greeting and the examples make way for the conversation.
+    expect(screen.queryByRole("heading", { name: "What do you need done?" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("group", { name: "Examples" })).not.toBeInTheDocument();
 
     expect(sent).toHaveLength(1);
     expect(sent[0]!.messages.at(-1)).toMatchObject({ role: "user", parts: [{ type: "text", text: "necesito un grid en BNB/USDT entre 500 y 700" }] });
@@ -186,7 +190,8 @@ describe("ConciergeChat", () => {
     });
     expect(routerPush).toHaveBeenCalledWith("/hire/303779#quote-request");
 
-    expect(screen.getByText("Ready")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Send" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Retry" })).toBeInTheDocument();
     expect(document.body.textContent).not.toMatch(BANNED_COPY);
 
     const results = await axe.run(document.body);
@@ -274,6 +279,6 @@ describe("ConciergeChat", () => {
 
     expect(alert).toHaveTextContent(CONCIERGE_ERROR_COPY.busy);
     expect(within(alert).getByRole("button", { name: "Try again" })).toBeInTheDocument();
-    await waitFor(() => expect(screen.getByText("Interrupted")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByRole("button", { name: "Send" })).toBeInTheDocument());
   });
 });

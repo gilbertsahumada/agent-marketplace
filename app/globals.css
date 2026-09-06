@@ -971,6 +971,35 @@ body {
   box-shadow: none;
 }
 
+/* Concierge chat: the pulsing dot before the first token and the shimmer
+   that runs over an in-progress step, as chat apps do. */
+.concierge-dot {
+  width: 0.75rem;
+  height: 0.75rem;
+  border-radius: 9999px;
+  background: var(--foreground);
+  animation: concierge-dot 1.1s ease-in-out infinite;
+}
+
+@keyframes concierge-dot {
+  0%, 100% { transform: scale(0.8); opacity: 0.55; }
+  50% { transform: scale(1); opacity: 1; }
+}
+
+.concierge-shimmer {
+  background: linear-gradient(90deg, var(--muted-foreground) 0%, var(--foreground) 45%, var(--muted-foreground) 60%);
+  background-size: 220% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: concierge-shimmer 1.8s linear infinite;
+}
+
+@keyframes concierge-shimmer {
+  from { background-position: 120% center; }
+  to { background-position: -100% center; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

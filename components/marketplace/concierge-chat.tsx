@@ -2,13 +2,13 @@
 
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport, type ChatTransport } from "ai";
-import { ArrowUpIcon, CheckIcon, CircleAlertIcon, LoaderCircleIcon, SparklesIcon, SquareIcon } from "lucide-react";
+import { ArrowUpIcon, CheckIcon, CopyIcon, RotateCcwIcon, SquareIcon } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
 import { Conversation, ConversationContent, ConversationScrollButton } from "@/components/ai-elements/conversation";
 import { Message, MessageContent, MessageResponse } from "@/components/ai-elements/message";
-import { Suggestion, Suggestions } from "@/components/ai-elements/suggestion";
+import { Suggestion } from "@/components/ai-elements/suggestion";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -43,6 +43,10 @@ const STARTERS = [
   "Rebalance a small portfolio into BNB and USDT every week",
   "Watch my Venus health factor and warn me before liquidation",
 ];
+
+// The column every part of the chat lines up on, like a chat app: the
+// conversation, the composer and the note under it share one measure.
+const COLUMN = "mx-auto w-full max-w-3xl px-4 sm:px-6";
 
 type ConciergePart = ConciergeUIMessage["parts"][number];
 type ToolPart = Extract<ConciergePart, { type: `tool-${string}` }>;
@@ -91,12 +95,6 @@ function describeStep(part: ToolPart): StepView {
   return { key, state: "done", label: "Drafted the proposal" };
 }
 
-function StepIcon({ state }: { state: StepView["state"] }) {
-  if (state === "running") return <LoaderCircleIcon aria-hidden="true" className="size-3.5 animate-spin text-primary" />;
-  if (state === "failed") return <CircleAlertIcon aria-hidden="true" className="size-3.5 text-amber-300" />;
-  return <CheckIcon aria-hidden="true" className="size-3.5 text-emerald-400" />;
-}
-
 function AgentBadge({ agent }: { agent: ConciergeAgentCard }) {
   return agent.canHire
     ? <Badge className="border-emerald-400/30 bg-emerald-400/10 text-emerald-300" variant="outline">Verified</Badge>
@@ -108,10 +106,10 @@ function Card({ label, tone = "default", children }: { label: string; tone?: "de
     <section
       aria-label={label}
       className={cn(
-        "flex w-full flex-col gap-4 rounded-2xl border p-4",
-        tone === "ready" && "border-primary/40 bg-primary/5",
+        "flex w-full flex-col gap-4 rounded-3xl border p-5",
+        tone === "ready" && "border-primary/40 bg-primary/[0.06]",
         tone === "empty" && "border-dashed border-border bg-transparent",
-        tone === "default" && "border-border bg-background/40",
+        tone === "default" && "border-border bg-card/60",
       )}
     >
       {children}
@@ -124,7 +122,7 @@ function BriefField({ id, label, value, rows, onChange }: { id: string; label: s
     <label className="flex flex-col gap-1.5" htmlFor={id}>
       <span className={EYEBROW}>{label}</span>
       <Textarea
-        className="min-h-0 resize-none bg-background/60 text-sm"
+        className="field-sizing-content max-h-40 min-h-0 resize-none rounded-xl bg-background/60 text-sm"
         id={id}
         maxLength={CONCIERGE_LIMITS.briefChars}
         onChange={(event) => onChange(event.target.value)}
@@ -156,18 +154,14 @@ function ProposalCard({ id, output, compact }: { id: string; output: ProposeOutp
 
   return (
     <Card label={proposal ? "Proposed parameters" : "Your brief"} tone={proposal ? "ready" : "default"}>
-      <header className="flex flex-wrap items-start justify-between gap-3">
-        <div className="flex flex-col gap-1">
-          <span className={cn(EYEBROW, proposal && "text-primary")}>{proposal ? "Ready for a quote" : "Your brief"}</span>
-          {agent ? (
-            <span className="flex items-center gap-2 text-base font-semibold">
-              {agent.name}
-              <AgentBadge agent={agent} />
-            </span>
-          ) : (
-            <span className="text-sm text-muted-foreground">Edit anything below; it travels with the quote request.</span>
-          )}
-        </div>
+      <header className="flex flex-col gap-1">
+        <span className={cn(EYEBROW, proposal && "text-primary")}>{proposal ? "Ready for a quote" : "Your brief"}</span>
+        {agent ? (
+          <span className="flex items-center gap-2 text-base font-semibold">
+            {agent.name}
+            <AgentBadge agent={agent} />
+          </span>
+        ) : null}
       </header>
       {proposal ? (
         <dl className="grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-3">
@@ -186,16 +180,13 @@ function ProposalCard({ id, output, compact }: { id: string; output: ProposeOutp
           <BriefField id={`${id}-acceptance`} label="Acceptance criteria" onChange={(acceptanceCriteria) => setBrief({ ...brief, acceptanceCriteria })} rows={rows} value={brief.acceptanceCriteria} />
         </div>
       ) : null}
-      <footer className="flex flex-wrap items-center justify-between gap-3">
-        {proposal && agent ? (
-          <Button onClick={continueToQuote} type="button">Continue to quote with {agent.name}</Button>
-        ) : fallback ? (
-          <Button asChild variant="outline">
-            <Link href={fallback.href}>Open {fallback.name}</Link>
-          </Button>
-        ) : null}
-        <p className="text-xs text-muted-foreground">You review every field before a quote is requested.</p>
-      </footer>
+      {proposal && agent ? (
+        <Button className="self-start rounded-full" onClick={continueToQuote} type="button">Continue to quote with {agent.name}</Button>
+      ) : fallback ? (
+        <Button asChild className="self-start rounded-full" variant="outline">
+          <Link href={fallback.href}>Open {fallback.name}</Link>
+        </Button>
+      ) : null}
     </Card>
   );
 }
@@ -216,7 +207,7 @@ function AgentsCard({ agents }: { agents: ConciergeAgentCard[] }) {
                 {[...agent.categories.map((category) => category.replaceAll("_", " ")), HIREABILITY_LABEL[agent.hireability]].join(" · ")}
               </span>
             </div>
-            <Button asChild size="sm" variant="ghost">
+            <Button asChild className="rounded-full" size="sm" variant="ghost">
               <Link href={agent.href}>Open</Link>
             </Button>
           </li>
@@ -233,7 +224,7 @@ function NoMatchCard() {
     <Card label="No matching agents" tone="empty">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <span className={EYEBROW}>No matching agents</span>
-        <Button asChild size="sm" variant="outline">
+        <Button asChild className="rounded-full" size="sm" variant="outline">
           <Link href="/agents?view=marketplace">Browse verified agents</Link>
         </Button>
       </div>
@@ -241,22 +232,65 @@ function NoMatchCard() {
   );
 }
 
-function ThinkingRow() {
+// The pulsing dot a chat shows before the first token arrives.
+function ThinkingDot() {
+  return <span aria-label="The concierge is thinking" className="concierge-dot my-2 block" role="status" />;
+}
+
+function Steps({ steps }: { steps: StepView[] }) {
   return (
-    <span aria-label="The concierge is thinking" className="inline-flex items-center gap-1 py-1" role="status">
-      {[0, 150, 300].map((delay) => (
-        <span className="size-1.5 animate-bounce rounded-full bg-muted-foreground" key={delay} style={{ animationDelay: `${delay}ms` }} />
+    <ul aria-label="Steps" className="flex flex-col gap-1 text-[13px] text-muted-foreground">
+      {steps.map((step) => (
+        <li className="flex items-center gap-2" key={step.key}>
+          {step.state === "running" ? (
+            <span className="concierge-shimmer">{step.label}</span>
+          ) : (
+            <span className={cn(step.state === "failed" && "text-amber-300")}>{step.label}</span>
+          )}
+        </li>
       ))}
-    </span>
+    </ul>
   );
 }
 
-function AssistantTurn({ message, streaming, compact }: { message: ConciergeUIMessage; streaming: boolean; compact: boolean }) {
+function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+  useEffect(() => {
+    if (!copied) return;
+    const timer = window.setTimeout(() => setCopied(false), 1500);
+    return () => window.clearTimeout(timer);
+  }, [copied]);
+  return (
+    <Button
+      aria-label={copied ? "Copied" : "Copy"}
+      className="size-7 rounded-md text-muted-foreground hover:text-foreground"
+      onClick={() => {
+        void navigator.clipboard?.writeText(text).then(() => setCopied(true));
+      }}
+      size="icon"
+      type="button"
+      variant="ghost"
+    >
+      {copied ? <CheckIcon aria-hidden="true" className="size-3.5" /> : <CopyIcon aria-hidden="true" className="size-3.5" />}
+    </Button>
+  );
+}
+
+interface AssistantTurnProps {
+  message: ConciergeUIMessage;
+  streaming: boolean;
+  last: boolean;
+  compact: boolean;
+  onRetry: () => void;
+}
+
+function AssistantTurn({ message, streaming, last, compact, onRetry }: AssistantTurnProps) {
   const toolParts = message.parts.filter(isToolPart);
   const steps = toolParts.map(describeStep);
   // Only the text after the last tool call is the reply; narration before a
   // tool call would duplicate the step rows.
   const textParts = finalTextParts(message.parts).filter((part) => part.text.length > 0);
+  const text = textParts.map((part) => part.text).join("");
   const proposePart = toolParts.find((part) => part.type === "tool-propose");
   const propose = proposePart?.type === "tool-propose" && proposePart.state === "output-available" ? proposePart.output : null;
   let lastSearch: SearchAgentsResult | null = null;
@@ -265,34 +299,48 @@ function AssistantTurn({ message, streaming, compact }: { message: ConciergeUIMe
       lastSearch = part.output;
     }
   }
-  const showAgents = !propose?.proposal && (propose?.agents ?? lastSearch?.agents ?? []).length > 0;
-  const showNoMatch = lastSearch !== null && lastSearch.agents.length === 0 && !propose;
+  // The cards wait for the turn to finish: a search result is not the answer
+  // while the concierge is still reading parameters or drafting.
+  const showAgents = !streaming && !propose?.proposal && (propose?.agents ?? lastSearch?.agents ?? []).length > 0;
+  const showNoMatch = !streaming && lastSearch !== null && lastSearch.agents.length === 0 && !propose;
 
   return (
-    <Message from="assistant">
-      <span className={EYEBROW}>Concierge</span>
-      {steps.length > 0 ? (
-        <ul aria-label="Steps" className="flex flex-col gap-1 font-mono text-xs text-muted-foreground">
-          {steps.map((step) => (
-            <li className="flex items-center gap-2" key={step.key}>
-              <StepIcon state={step.state} />
-              <span>{step.label}</span>
-            </li>
-          ))}
-        </ul>
-      ) : null}
+    <Message className="max-w-full gap-3" from="assistant">
+      {steps.length > 0 ? <Steps steps={steps} /> : null}
       {textParts.length > 0 ? (
-        <MessageContent className="text-[15px] leading-relaxed">
+        <MessageContent className="text-base leading-7">
           {textParts.map((part, index) => (
-            <MessageResponse isAnimating={streaming} key={index}>{part.text}</MessageResponse>
+            <MessageResponse animated isAnimating={streaming} key={index}>{part.text}</MessageResponse>
           ))}
         </MessageContent>
       ) : streaming ? (
-        <ThinkingRow />
+        <ThinkingDot />
       ) : null}
       {propose && (propose.proposal || propose.brief) ? <ProposalCard compact={compact} id={message.id} output={propose} /> : null}
       {showAgents ? <AgentsCard agents={propose?.agents ?? lastSearch!.agents} /> : null}
       {showNoMatch ? <NoMatchCard /> : null}
+      {!streaming && text.length > 0 ? (
+        <div
+          className={cn(
+            "-ml-1.5 flex items-center gap-0.5 transition-opacity",
+            last ? "opacity-100" : "opacity-0 focus-within:opacity-100 group-hover:opacity-100",
+          )}
+        >
+          <CopyButton text={text} />
+          {last ? (
+            <Button
+              aria-label="Retry"
+              className="size-7 rounded-md text-muted-foreground hover:text-foreground"
+              onClick={onRetry}
+              size="icon"
+              type="button"
+              variant="ghost"
+            >
+              <RotateCcwIcon aria-hidden="true" className="size-3.5" />
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
     </Message>
   );
 }
@@ -300,9 +348,8 @@ function AssistantTurn({ message, streaming, compact }: { message: ConciergeUIMe
 function UserTurn({ message }: { message: ConciergeUIMessage }) {
   const text = message.parts.filter((part) => part.type === "text").map((part) => part.text).join("");
   return (
-    <Message from="user">
-      <span className={cn(EYEBROW, "text-right")}>You</span>
-      <MessageContent className="whitespace-pre-wrap text-[15px] leading-relaxed">{text}</MessageContent>
+    <Message className="max-w-[85%] sm:max-w-[70%]" from="user">
+      <MessageContent className="rounded-3xl rounded-br-lg bg-secondary px-5 py-3 text-base leading-7 whitespace-pre-wrap">{text}</MessageContent>
     </Message>
   );
 }
@@ -318,7 +365,7 @@ export interface ConciergeChatProps {
 export function ConciergeChat({
   initialPrompt,
   compact = false,
-  placeholder = "Describe what you need, in your own words.",
+  placeholder = "Describe what you need",
   transport,
 }: ConciergeChatProps) {
   const chatTransport = useMemo(
@@ -336,7 +383,9 @@ export function ConciergeChat({
   const { messages, sendMessage, status, error, stop, regenerate } = useChat<ConciergeUIMessage>({ transport: chatTransport });
   const [draft, setDraft] = useState("");
   const sentInitial = useRef(false);
+  const textarea = useRef<HTMLTextAreaElement>(null);
   const busy = status === "submitted" || status === "streaming";
+  const empty = messages.length === 0;
 
   useEffect(() => {
     if (!initialPrompt || sentInitial.current) return;
@@ -349,6 +398,7 @@ export function ConciergeChat({
     if (!trimmed || busy) return;
     setDraft("");
     void sendMessage({ text: trimmed });
+    textarea.current?.focus();
   };
 
   const onSubmit = (event: FormEvent<HTMLFormElement>) => {
@@ -364,101 +414,124 @@ export function ConciergeChat({
   };
 
   const lastIndex = messages.length - 1;
+  const nearLimit = draft.length >= CONCIERGE_LIMITS.userChars - 200;
 
   return (
     <section
       aria-label="Concierge"
       className={cn(
-        "marketplace-surface flex flex-col overflow-hidden rounded-2xl",
-        compact ? "h-[28rem]" : "h-[min(70vh,46rem)] min-h-[30rem]",
+        "flex min-h-0 flex-col",
+        compact ? "marketplace-surface h-[28rem] overflow-hidden rounded-2xl" : "h-full",
       )}
     >
-      <header className="flex items-center justify-between gap-3 border-b border-border px-4 py-2.5">
-        <span className="flex items-center gap-2">
-          <SparklesIcon aria-hidden="true" className="size-4 text-primary" />
-          <span className={cn(EYEBROW, "text-foreground")}>Concierge</span>
-        </span>
-        <span aria-live="polite" className="flex items-center gap-1.5 text-xs text-muted-foreground" role="status">
-          <span
-            aria-hidden="true"
-            className={cn("size-1.5 rounded-full", busy ? "animate-pulse bg-primary" : error ? "bg-amber-300" : "bg-emerald-400")}
-          />
-          {busy ? "Thinking" : error ? "Interrupted" : "Ready"}
-        </span>
-      </header>
+      {/* Above the composer: the greeting while the chat is empty, the
+          conversation afterwards. */}
+      <div className="flex min-h-0 flex-1 flex-col justify-end">
+        {empty ? (
+          <div className={cn(COLUMN, "pb-6 text-center", compact ? "pb-4" : "pb-6")}>
+            <h2 className={cn("font-semibold tracking-tight text-balance", compact ? "text-xl" : "text-3xl sm:text-4xl")}>
+              What do you need done?
+            </h2>
+          </div>
+        ) : (
+          <Conversation className="min-h-0 flex-1">
+            <ConversationContent className={cn(COLUMN, "gap-7 py-6", compact && "gap-5 py-4")}>
+              {messages.map((message, index) =>
+                message.role === "user" ? (
+                  <UserTurn key={message.id} message={message} />
+                ) : (
+                  <AssistantTurn
+                    compact={compact}
+                    key={message.id}
+                    last={index === lastIndex}
+                    message={message}
+                    onRetry={() => void regenerate()}
+                    streaming={busy && index === lastIndex}
+                  />
+                ),
+              )}
+              {status === "submitted" && messages[lastIndex]?.role === "user" ? (
+                <Message className="max-w-full" from="assistant">
+                  <ThinkingDot />
+                </Message>
+              ) : null}
+              {error ? (
+                <div className="flex flex-wrap items-center gap-3 text-sm text-amber-300" role="alert">
+                  <span>{describeConciergeError(error)}</span>
+                  <Button className="h-7 rounded-full border-amber-300/40 px-3 text-amber-200 hover:text-amber-100" onClick={() => void regenerate()} size="sm" type="button" variant="outline">
+                    Try again
+                  </Button>
+                </div>
+              ) : null}
+            </ConversationContent>
+            <ConversationScrollButton className="bottom-3" />
+          </Conversation>
+        )}
+      </div>
 
-      <Conversation className="flex-1">
-        <ConversationContent className={cn("gap-6", compact ? "p-4" : "p-4 sm:p-6")}>
-          {messages.length === 0 ? (
-            <div className="flex flex-col gap-4 py-2">
-              <div className="flex flex-col gap-1">
-                <h3 className="text-lg font-semibold tracking-tight">Say what you need.</h3>
-                <p className="max-w-prose text-sm text-muted-foreground">
-                  The concierge searches the verified catalog, drafts the brief and fills the seller&apos;s parameters. You get to the quote in one step.
-                </p>
-              </div>
-              <Suggestions aria-label="Examples">
-                {STARTERS.map((starter) => (
-                  <Suggestion key={starter} onClick={submit} suggestion={starter} />
-                ))}
-              </Suggestions>
-            </div>
-          ) : null}
-          {messages.map((message, index) =>
-            message.role === "user" ? (
-              <UserTurn key={message.id} message={message} />
-            ) : (
-              <AssistantTurn compact={compact} key={message.id} message={message} streaming={busy && index === lastIndex} />
-            ),
+      <form aria-label="Ask the concierge" className={cn(COLUMN, "shrink-0", compact && "px-4")} onSubmit={onSubmit}>
+        <div
+          className={cn(
+            "flex flex-col gap-2 rounded-[28px] border border-border bg-secondary/70 px-4 pt-3.5 pb-2.5 shadow-lg shadow-black/25",
+            "transition-[border-color,box-shadow,background-color] duration-200",
+            "focus-within:border-foreground/20 focus-within:bg-secondary focus-within:shadow-xl focus-within:shadow-black/30",
           )}
-          {status === "submitted" && messages[lastIndex]?.role === "user" ? (
-            <Message from="assistant">
-              <span className={EYEBROW}>Concierge</span>
-              <ThinkingRow />
-            </Message>
-          ) : null}
-          {error ? (
-            <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-400/30 bg-amber-400/10 px-4 py-3 text-sm" role="alert">
-              <span>{describeConciergeError(error)}</span>
-              <Button onClick={() => void regenerate()} size="sm" type="button" variant="outline">Try again</Button>
-            </div>
-          ) : null}
-        </ConversationContent>
-        <ConversationScrollButton />
-      </Conversation>
-
-      <form aria-label="Ask the concierge" className="border-t border-border p-3" onSubmit={onSubmit}>
-        <div className="flex items-end gap-2 rounded-xl border border-input bg-background/60 p-1.5 transition-colors focus-within:border-ring">
+        >
           <Textarea
             aria-label="Your request"
-            className="field-sizing-content max-h-40 min-h-0 flex-1 resize-none border-0 bg-transparent px-2.5 py-2 text-[15px] shadow-none focus-visible:border-0 focus-visible:ring-0 focus-visible:outline-none dark:bg-transparent"
+            autoFocus={!compact}
+            className={cn(
+              "field-sizing-content min-h-0 resize-none rounded-none border-0 bg-transparent p-0 text-base shadow-none",
+              "placeholder:text-muted-foreground/80 focus-visible:border-0 focus-visible:ring-0 focus-visible:outline-none dark:bg-transparent",
+              compact ? "max-h-32" : "max-h-52",
+            )}
             maxLength={CONCIERGE_LIMITS.userChars}
             onChange={(event) => setDraft(event.target.value)}
             onKeyDown={onKeyDown}
             placeholder={placeholder}
-            rows={compact ? 1 : 2}
+            ref={textarea}
+            rows={1}
             value={draft}
           />
-          {busy ? (
-            <Button aria-label="Stop" onClick={() => void stop()} size="icon" type="button" variant="outline">
-              <SquareIcon aria-hidden="true" className="size-3.5" />
-            </Button>
-          ) : (
-            <Button aria-label="Send" disabled={draft.trim().length === 0} size="icon" type="submit">
-              <ArrowUpIcon aria-hidden="true" />
-            </Button>
-          )}
-        </div>
-        <div className="mt-2 flex items-center justify-between gap-3 px-1 text-xs text-muted-foreground">
-          <span>Enter to send · Shift+Enter for a new line</span>
-          <span className="tabular-nums">{draft.length}/{CONCIERGE_LIMITS.userChars}</span>
+          <div className="flex items-center justify-between gap-3">
+            <span aria-live="polite" className={cn("text-xs tabular-nums text-muted-foreground", !nearLimit && "invisible")}>
+              {draft.length}/{CONCIERGE_LIMITS.userChars}
+            </span>
+            {busy ? (
+              <Button aria-label="Stop" className="size-9 rounded-full bg-foreground text-background hover:bg-foreground/90" onClick={() => void stop()} size="icon" type="button">
+                <SquareIcon aria-hidden="true" className="size-3 fill-current" />
+              </Button>
+            ) : (
+              <Button aria-label="Send" className="size-9 rounded-full disabled:opacity-30" disabled={draft.trim().length === 0} size="icon" type="submit">
+                <ArrowUpIcon aria-hidden="true" className="size-4" />
+              </Button>
+            )}
+          </div>
         </div>
       </form>
-      {!compact ? (
-        <p className="border-t border-border px-4 py-2.5 text-xs text-muted-foreground">
-          The concierge drafts. You review every field before a quote is requested; the signed quote sets the price and the escrow holds your funds.
-        </p>
-      ) : null}
+
+      {/* Below the composer. While the chat is empty this block shares the
+          free space with the greeting, so the composer sits mid-screen; on
+          the first message it gives that space up and the composer glides
+          to the bottom, the way a chat app does. */}
+      <div
+        className={cn(COLUMN, "flex flex-col items-center gap-4 pt-3 transition-[flex-grow] duration-500 ease-out", compact ? "pb-3" : "pb-4")}
+        style={{ flexBasis: 0, flexGrow: empty ? 1 : 0 }}
+      >
+        {empty ? (
+          <div aria-label="Examples" className="flex flex-wrap justify-center gap-2" role="group">
+            {STARTERS.map((starter) => (
+              <Suggestion
+                className="h-auto border-border bg-transparent px-3.5 py-1.5 text-[13px] font-normal whitespace-normal text-muted-foreground hover:bg-secondary hover:text-foreground"
+                key={starter}
+                onClick={submit}
+                suggestion={starter}
+              />
+            ))}
+          </div>
+        ) : null}
+        <p className="text-center text-xs text-muted-foreground">Drafts only. You review every field before a quote is requested.</p>
+      </div>
     </section>
   );
 }

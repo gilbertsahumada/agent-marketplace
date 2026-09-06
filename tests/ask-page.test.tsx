@@ -25,7 +25,7 @@ describe("/ask page", () => {
 
     const html = await render({ q: "grid" });
 
-    expect(html).toContain("Say what you need");
+    expect(html).toContain("Ask the concierge");
     expect(html).toContain('data-testid="concierge-chat"');
     expect(html).toContain('data-prompt="grid"');
     expect(html).not.toContain("The concierge is not configured on this deployment.");
