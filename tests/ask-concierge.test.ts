@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { AskConcierge, CONCIERGE_SYSTEM_PROMPT, CONCIERGE_TOOLS } from "../src/business/use-cases/ask-concierge.ts";
+import { AskConcierge, CONCIERGE_SYSTEM_PROMPT, CONCIERGE_TOOLS, LANGUAGE_REMINDER } from "../src/business/use-cases/ask-concierge.ts";
 import {
   BANNED_COPY,
   type ConciergeModel,
@@ -447,6 +447,31 @@ describe("AskConcierge", () => {
 
     expect(reply.proposal).toBeNull();
     expect(reply.agents).toHaveLength(1);
+  });
+
+  it("attaches the language reminder to the latest user turn only", async () => {
+    const model = new ScriptedModel([textTurn("Sure.")]);
+    const concierge = new AskConcierge({
+      model,
+      admission: { acquire: () => () => {} },
+      agents: { execute: async () => agentPage([agent1]) },
+      passports: { execute: async () => { throw new Error("not used"); } },
+      negotiationInput: negotiationInputFake,
+    });
+
+    const reply = await concierge.execute({
+      messages: [
+        { role: "user", content: "Quiero un grid" },
+        { role: "assistant", content: "Claro." },
+        { role: "user", content: "is there any way to plan a trip?" },
+      ],
+      caller: "caller-1",
+    });
+
+    const prompt = model.calls[0]!.messages;
+    expect(prompt[1]).toEqual({ role: "user", content: "Quiero un grid" });
+    expect(prompt[3]).toEqual({ role: "user", content: `is there any way to plan a trip?${LANGUAGE_REMINDER}` });
+    expect(reply.message).toBe("Sure.");
   });
 
   it("propagates an admission error without calling the model (case 9a)", async () => {

@@ -266,119 +266,176 @@ export function ConciergeChat({ placeholder, initialPrompt, compact = false }: C
 
   const proposalAgent = reply?.proposal ? reply.agents.find((candidate) => candidate.agentId === reply.proposal!.agentId) ?? null : null;
   const firstAgent = reply?.agents[0] ?? null;
+  const sending = status === "sending";
+  // Results render only once the latest turn is answered, so a stale card
+  // never sits under a question that is still being processed.
+  const result = reply && !sending ? reply : null;
+  const hasAgents = result !== null && result.agents.length > 0;
 
   return (
-    <div className={compact ? "concierge concierge--compact" : "concierge market-terminal"}>
-      <ol aria-label="Conversation" className="concierge__list">
+    <div className={compact ? "concierge concierge--compact" : "concierge"}>
+      <ol aria-label="Conversation" className="concierge__thread">
         {messages.map((message, index) => (
-          <li className="concierge__message" data-role={message.role} key={`${message.role}-${index}`}>
-            {message.content}
+          <li className="concierge__turn" data-role={message.role} key={`${message.role}-${index}`}>
+            <span className="concierge__who">{message.role === "user" ? "You" : "Concierge"}</span>
+            <p className="concierge__text">{message.content}</p>
           </li>
         ))}
+        {sending ? (
+          <li aria-hidden="true" className="concierge__turn" data-role="assistant">
+            <span className="concierge__who">Concierge</span>
+            <p className="concierge__typing"><i /><i /><i /></p>
+          </li>
+        ) : null}
       </ol>
 
-      {reply ? (
-        <>
-          {reply.steps.length > 0 ? (
+      {result ? (
+        <div className="concierge__result">
+          {result.steps.length > 0 ? (
             <ul aria-label="Steps" className="concierge__steps">
-              {reply.steps.map((step, index) => (
-                <li key={`${step.tool}-${index}`}>{step.tool} · {step.summary}</li>
+              {result.steps.map((step, index) => (
+                <li key={`${step.tool}-${index}`}>{describeStep(step)}</li>
               ))}
             </ul>
           ) : null}
 
-          {briefDraft ? (
-            <section aria-label="Your brief" className="concierge__brief">
-              <label>
-                Objective
-                <Input
-                  maxLength={CONCIERGE_LIMITS.briefChars}
-                  onChange={(event) => updateBriefField("objective", event.target.value)}
-                  value={briefDraft.objective}
-                />
-              </label>
-              <label>
-                Deliverable
-                <Textarea
-                  maxLength={CONCIERGE_LIMITS.briefChars}
-                  onChange={(event) => updateBriefField("deliverable", event.target.value)}
-                  rows={2}
-                  value={briefDraft.deliverable}
-                />
-              </label>
-              <label>
-                Acceptance criteria
-                <Textarea
-                  maxLength={CONCIERGE_LIMITS.briefChars}
-                  onChange={(event) => updateBriefField("acceptanceCriteria", event.target.value)}
-                  rows={2}
-                  value={briefDraft.acceptanceCriteria}
-                />
-              </label>
-            </section>
-          ) : null}
-
-          {reply.agents.length > 0 ? (
-            <ol aria-label="Agents for this brief" className="concierge__agents">
-              {reply.agents.map((agent) => (
-                <li className="concierge__agent-row" key={agent.agentId}>
-                  <span>
-                    <strong>{agent.name}</strong>
-                    <span className="concierge__agent-meta">
-                      {agent.categories.map((category) => category.replaceAll("_", " ")).join(", ") || "not classified"}
-                      {" · "}
-                      {HIREABILITY_LABEL[agent.hireability]}
-                    </span>
-                  </span>
-                  <Badge variant={agent.canHire ? "default" : "secondary"}>{agent.canHire ? "verified" : "listed"}</Badge>
-                  <Link href={agent.href}>Open<span className="sr-only"> {agent.name}</span></Link>
-                </li>
-              ))}
-            </ol>
-          ) : null}
-
-          {reply.proposal ? (
-            <section aria-label="Proposed parameters" className="concierge__proposal">
-              <dl>
-                {reply.proposal.fields.map((field) => (
+          {result.proposal ? (
+            <section aria-label="Proposed parameters" className="concierge__card concierge__card--ready">
+              <header className="concierge__card-head">
+                <span className="concierge__eyebrow">Ready for a quote</span>
+                <span className="concierge__card-title">
+                  <strong>{proposalAgent?.name ?? `Agent #${result.proposal.agentId}`}</strong>
+                  {proposalAgent ? <AgentBadge agent={proposalAgent} /> : null}
+                </span>
+              </header>
+              <dl className="concierge__fields">
+                {result.proposal.fields.map((field) => (
                   <div key={field.key}>
                     <dt>{field.title}</dt>
                     <dd>{field.value}</dd>
                   </div>
                 ))}
               </dl>
-              <Button onClick={() => handleContinue(reply.proposal!, proposalAgent)} type="button">
-                Continue to quote with {proposalAgent?.name ?? reply.proposal.agentId}
-              </Button>
+              <div className="concierge__actions">
+                <Button onClick={() => handleContinue(result.proposal!, proposalAgent)} type="button">
+                  Continue to quote with {proposalAgent?.name ?? result.proposal.agentId}
+                </Button>
+                <span className="concierge__hint">You review every field on the seller&apos;s form before the quote is requested.</span>
+              </div>
             </section>
-          ) : firstAgent ? (
-            <Button asChild type="button" variant="outline">
-              <Link href={firstAgent.href}>Open {firstAgent.name}</Link>
-            </Button>
           ) : null}
-        </>
+
+          {hasAgents && briefDraft ? (
+            <section aria-label="Your brief" className="concierge__card">
+              <header className="concierge__card-head">
+                <span className="concierge__eyebrow">Your brief</span>
+                <span className="concierge__hint">Edit anything before you continue. It travels with the quote request.</span>
+              </header>
+              <div className="concierge__brief">
+                <label>
+                  <span>Objective</span>
+                  <Input
+                    maxLength={CONCIERGE_LIMITS.briefChars}
+                    onChange={(event) => updateBriefField("objective", event.target.value)}
+                    value={briefDraft.objective}
+                  />
+                </label>
+                <label>
+                  <span>Deliverable</span>
+                  <Textarea
+                    maxLength={CONCIERGE_LIMITS.briefChars}
+                    onChange={(event) => updateBriefField("deliverable", event.target.value)}
+                    rows={2}
+                    value={briefDraft.deliverable}
+                  />
+                </label>
+                <label>
+                  <span>Acceptance criteria</span>
+                  <Textarea
+                    maxLength={CONCIERGE_LIMITS.briefChars}
+                    onChange={(event) => updateBriefField("acceptanceCriteria", event.target.value)}
+                    rows={2}
+                    value={briefDraft.acceptanceCriteria}
+                  />
+                </label>
+              </div>
+            </section>
+          ) : null}
+
+          {hasAgents ? (
+            <section className="concierge__card">
+              <header className="concierge__card-head">
+                <span className="concierge__eyebrow">{result.proposal ? "Agents found" : "Agents for this brief"}</span>
+              </header>
+              <ol aria-label="Agents for this brief" className="concierge__agents">
+                {result.agents.map((agent) => (
+                  <li className="concierge__agent" key={agent.agentId}>
+                    <span className="concierge__agent-name">
+                      <strong>{agent.name}</strong>
+                      <span className="concierge__agent-meta">
+                        {agent.categories.map((category) => category.replaceAll("_", " ")).join(", ") || "not classified"}
+                        {" · "}
+                        {HIREABILITY_LABEL[agent.hireability]}
+                      </span>
+                    </span>
+                    <AgentBadge agent={agent} />
+                    <Link className="concierge__agent-link" href={agent.href}>Open<span className="sr-only"> {agent.name}</span></Link>
+                  </li>
+                ))}
+              </ol>
+              {!result.proposal && firstAgent ? (
+                <div className="concierge__actions">
+                  <Button asChild type="button" variant="outline">
+                    <Link href={firstAgent.href}>Open {firstAgent.name}</Link>
+                  </Button>
+                  <span className="concierge__hint">The seller&apos;s parameters were not available, so the form starts empty.</span>
+                </div>
+              ) : null}
+            </section>
+          ) : null}
+
+          {!hasAgents && !result.proposal ? (
+            <section aria-label="No matching agents" className="concierge__card concierge__card--empty">
+              <header className="concierge__card-head">
+                <span className="concierge__eyebrow">No matching agents</span>
+              </header>
+              <p className="concierge__text">
+                This marketplace lists agents for grid trading, rebalancing, yield optimisation and health-factor
+                monitoring. Describe a need in one of those areas, or browse the catalog.
+              </p>
+              <div className="concierge__actions">
+                <Button asChild size="sm" type="button" variant="outline">
+                  <Link href="/agents?view=marketplace">Browse verified agents</Link>
+                </Button>
+              </div>
+            </section>
+          ) : null}
+        </div>
       ) : null}
 
-      {reply?.question ? <p className="concierge__question">{reply.question}</p> : null}
+      {result?.question ? <p className="concierge__question">{result.question}</p> : null}
 
-      <form aria-label="Ask the concierge" className="concierge__form" onSubmit={handleSubmit}>
+      <form aria-label="Ask the concierge" className="concierge__composer" onSubmit={handleSubmit}>
         <Textarea
           aria-label="Message"
-          disabled={status === "sending"}
+          disabled={sending}
           maxLength={CONCIERGE_LIMITS.userChars}
           onChange={(event) => setDraft(event.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder={placeholder ?? "Describe what you need — plain words are fine."}
+          placeholder={placeholder ?? "Describe what you need, in your own words."}
           rows={compact ? 2 : 3}
           value={draft}
         />
-        <Button disabled={status === "sending" || draft.trim().length === 0} type="submit">
-          Ask
-        </Button>
+        <div className="concierge__composer-row">
+          <span className="concierge__hint">Enter to send · Shift+Enter for a new line</span>
+          <Button disabled={sending || draft.trim().length === 0} type="submit">
+            Ask
+          </Button>
+        </div>
       </form>
 
       <p aria-live="polite" className="concierge__status" role="status">
-        {status === "sending" ? "Asking the concierge…" : (error ?? "")}
+        {sending ? "Asking the concierge…" : (error ?? "")}
       </p>
 
       <p className="concierge__note">
@@ -387,4 +444,22 @@ export function ConciergeChat({ placeholder, initialPrompt, compact = false }: C
       </p>
     </div>
   );
+}
+
+function AgentBadge({ agent }: { agent: ConciergeAgentCard }) {
+  return <Badge variant={agent.canHire ? "default" : "secondary"}>{agent.canHire ? "verified" : "listed"}</Badge>;
+}
+
+const STEP_LABEL: Record<ConciergeStep["tool"], string> = {
+  search_agents: "Searched the catalog",
+  get_passport: "Read the evidence passport",
+  get_quote_input: "Read the seller's parameters",
+};
+
+// Server summaries are terse ("passport for 303779"); the reader sees a
+// sentence, not a tool name.
+function describeStep(step: ConciergeStep): string {
+  const label = STEP_LABEL[step.tool] ?? step.tool;
+  const detail = step.summary.replace(/^(?:passport|quote input) for /, "#");
+  return `${label} · ${detail}`;
 }

@@ -90,11 +90,14 @@ Rules:
   trading, rebalancing, yield optimisation, health factor monitoring) and a
   single short keyword such as "grid"; the catalog matches words literally,
   so long phrases return nothing.
-- Always include the brief in propose when the need is clear, even when the
-  seller's schema is unavailable or no agent fits; leave agentId and
-  parameters out in that case and say so in one sentence.
+- Include the brief in propose when at least one agent matched, even if the
+  seller's schema is unavailable (then leave agentId and parameters out and
+  say so in one sentence). When nothing in the catalog fits, leave the brief
+  out and say in one sentence what the marketplace does cover.
 - Do not ask the user to confirm what they already said. Keep the message
   under 90 words; the brief and the parameters carry the detail.
+- Answer in the language of the user's latest message, even when earlier
+  turns used another language.
 - Before proposing parameters for an agent, call get_quote_input for that
   agent and use its schema. Never invent a parameter shape.
 - You may call get_passport to read an agent's indexed state and on-chain
@@ -114,6 +117,8 @@ Rules:
   example BNB/USDT), lowerPrice and upperPrice are decimal strings with the
   lower value first, capital is a simulated amount, and gridCount is an
   integer between 2 and 100.`;
+
+export const LANGUAGE_REMINDER = "\n\n(Reply in the language of this message.)";
 
 export const CONCIERGE_TOOLS: ModelToolDefinition[] = [
   {
@@ -192,9 +197,16 @@ export class AskConcierge {
   private async converse(input: { messages: ConciergeMessage[]; caller: string }): Promise<ConciergeReply> {
     const { model, agents, passports, negotiationInput } = this.deps;
     const caller = input.caller;
+    // The language reminder rides on the latest user turn, where models
+    // weigh it most; a long Spanish history otherwise keeps an English
+    // follow-up answered in Spanish. It never reaches the client.
+    const lastIndex = input.messages.length - 1;
     const chat: ModelChatMessage[] = [
       { role: "system", content: CONCIERGE_SYSTEM_PROMPT },
-      ...input.messages.map((message): ModelChatMessage => ({ role: message.role, content: message.content })),
+      ...input.messages.map((message, index): ModelChatMessage => ({
+        role: message.role,
+        content: index === lastIndex && message.role === "user" ? `${message.content}${LANGUAGE_REMINDER}` : message.content,
+      })),
     ];
     const seenAgents = new Map<string, ConciergeAgentCard>();
     const contracts = new Map<string, ContractEntry>();
