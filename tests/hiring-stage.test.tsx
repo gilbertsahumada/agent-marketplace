@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
@@ -68,4 +69,12 @@ describe("hiring stage", () => {
     expect(html).toContain("Get a quote from Grid Planner");
     expect(html).toContain("ask the concierge");
   });
+});
+
+it("does not restyle the concierge chat's lists through the brief slot", () => {
+  // The stage's demo brief is a <dl>; the chat mounted in the same slot has
+  // its own <dl> in the proposal card. Element selectors on the slot would
+  // bleed into it, so the stage styles only its direct child list.
+  const css = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
+  expect(css).not.toMatch(/\.hiring-stage__brief\s+(dl|dt|dd)\s*\{/);
 });

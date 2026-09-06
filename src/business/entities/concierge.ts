@@ -251,6 +251,13 @@ export function finalTextParts<PART extends { type: string }>(parts: readonly PA
   return parts.slice(start, end).filter(isText);
 }
 
+/** The last sentence of the reply when it asks something; the eval judges it. */
+export function extractQuestion(message: string): string | null {
+  const sentences = message.match(/[^.!?\n]+[.!?]+/g) ?? [];
+  const question = sentences.map((sentence) => sentence.trim()).reverse().find((sentence) => sentence.endsWith("?"));
+  return question ?? null;
+}
+
 const STEP_TOOLS = new Set<ConciergeStep["tool"]>(["search_agents", "get_passport", "get_quote_input"]);
 
 /**
@@ -288,7 +295,7 @@ export function summarizeConciergeMessage(message: Pick<ConciergeUIMessage, "par
   return {
     schemaVersion: 1,
     message: message_,
-    question: null,
+    question: extractQuestion(message_),
     brief: propose?.brief ?? null,
     agents: propose?.agents ?? lastSearch?.agents ?? [],
     proposal: propose?.proposal ?? null,

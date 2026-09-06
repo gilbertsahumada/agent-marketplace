@@ -1,5 +1,5 @@
-import type { LanguageModelV4Prompt, LanguageModelV4StreamPart } from "@ai-sdk/provider";
-import { readUIMessageStream, simulateReadableStream } from "ai";
+import { APICallError, type LanguageModelV4Prompt, type LanguageModelV4StreamPart } from "@ai-sdk/provider";
+import { readUIMessageStream, simulateReadableStream, type UIMessageChunk } from "ai";
 import { MockLanguageModelV4 } from "ai/test";
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -7,6 +7,7 @@ import {
   CONCIERGE_SYSTEM_PROMPT,
   CONCIERGE_TOOL_DESCRIPTIONS,
   LANGUAGE_REMINDER,
+  STREAM_ERROR_COPY,
   type AskConciergeDependencies,
 } from "../src/business/use-cases/ask-concierge.ts";
 import { BANNED_COPY, CONCIERGE_LIMITS, type ConciergeUIMessage } from "../src/business/entities/concierge.ts";
@@ -234,6 +235,20 @@ function harness(model: MockLanguageModelV4, overrides: Partial<AskConciergeDepe
 }
 
 const ask = (content: string) => ({ messages: [{ role: "user" as const, content }], caller: "test-caller" });
+
+async function chunksOf(stream: ReadableStream<UIMessageChunk>): Promise<UIMessageChunk[]> {
+  const chunks: UIMessageChunk[] = [];
+  const reader = stream.getReader();
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) return chunks;
+    chunks.push(value);
+  }
+}
+
+function streamedText(chunks: UIMessageChunk[]): string {
+  return chunks.map((chunk) => (chunk.type === "text-delta" ? chunk.delta : "")).join("");
+}
 
 describe("AskConcierge", () => {
   it("completes search, quote input and propose with valid parameters", async () => {
@@ -497,5 +512,116 @@ describe("AskConcierge", () => {
     expect(CONCIERGE_SYSTEM_PROMPT).toContain("Never");
     const withoutProhibition = CONCIERGE_SYSTEM_PROMPT.replace("Never use the words proven, track record or guarantee.", "");
     expect(withoutProhibition).not.toMatch(BANNED_COPY);
+  });
+
+  // --- review findings (PR #116) ------------------------------------------
+
+  it("filters a banned phrase when every word is its own delta", async () => {
+    const sentence = "The agent shows a track record of many grid jobs run on chain.";
+    const deltas = sentence.split(" ").map((word, index, all) => (index < all.length - 1 ? `${word} ` : word));
+    const { concierge } = harness(scriptedModel([textTurn(...deltas)]));
+
+    const text = streamedText(await chunksOf(concierge.stream(ask("grid"))));
+
+    expect(text).not.toMatch(BANNED_COPY);
+    expect(text).toContain("activity history");
+  });
+
+  it("filters a banned phrase followed by a long unbroken token", async () => {
+    const { concierge } = harness(scriptedModel([
+      textTurn("This agent has a ", "track ", "record ", "https://example.com/hire/303779/evidence-passport ", "and more."),
+    ]));
+
+    const text = streamedText(await chunksOf(concierge.stream(ask("grid"))));
+
+    expect(text).not.toMatch(BANNED_COPY);
+    expect(text).toContain("https://example.com/hire/303779/evidence-passport");
+  });
+
+  it("tells the user when the deadline expires instead of ending in silence", async () => {
+    const model = new MockLanguageModelV4({
+      modelId: "slow",
+      doStream: async ({ abortSignal }) => ({
+        stream: new ReadableStream<LanguageModelV4StreamPart>({
+          start(controller) {
+            controller.enqueue({ type: "stream-start", warnings: [] });
+            controller.enqueue({ type: "text-start", id: "t1" });
+            abortSignal?.addEventListener("abort", () => controller.error(abortSignal.reason));
+          },
+        }),
+      }),
+    });
+    const { concierge, release } = harness(model, { deadlineMs: 50 });
+
+    const chunks = await chunksOf(concierge.stream(ask("grid")));
+
+    expect(chunks.at(-1)).toEqual({ type: "error", errorText: STREAM_ERROR_COPY.timeout });
+    expect(release).toHaveBeenCalledTimes(1);
+  });
+
+  it("lets the model retry propose after a rejection while budget remains", async () => {
+    const bad = { ...validGridParameters, gridCount: "20" };
+    const model = scriptedModel([
+      toolCallsTurn({ id: "c1", name: "search_agents", input: { q: "grid" } }),
+      toolCallsTurn({ id: "c2", name: "get_quote_input", input: { agentId: "1" } }),
+      toolCallsTurn({ id: "c3", name: "propose", input: { brief: validBrief, agentId: "1", parameters: bad } }),
+      toolCallsTurn({ id: "c4", name: "propose", input: { brief: validBrief, agentId: "1", parameters: validGridParameters } }),
+      textTurn("Done."),
+    ]);
+    const { concierge } = harness(model);
+
+    const reply = await concierge.execute(ask("grid"));
+
+    expect(toolResult(model.doStreamCalls[3]!.prompt, "c3")).toMatchObject({ ok: false, rejected: ["invalid_parameters"] });
+    // A rejected propose leaves the tools open; an accepted one closes them.
+    expect(model.doStreamCalls[3]!.toolChoice).toEqual({ type: "auto" });
+    expect(model.doStreamCalls[4]!.toolChoice).toEqual({ type: "none" });
+    expect(reply.proposal?.parameters).toEqual(validGridParameters);
+  });
+
+  it("lets propose see a contract fetched by a sibling get_quote_input in the same step", async () => {
+    const model = scriptedModel([
+      toolCallsTurn({ id: "c1", name: "search_agents", input: { q: "grid" } }),
+      toolCallsTurn(
+        { id: "c2", name: "get_quote_input", input: { agentId: "1" } },
+        { id: "c3", name: "propose", input: { brief: validBrief, agentId: "1", parameters: validGridParameters } },
+      ),
+      textTurn("Done."),
+    ]);
+    const { concierge } = harness(model, {
+      negotiationInput: async () => {
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        return negotiationInputFake();
+      },
+    });
+
+    const reply = await concierge.execute(ask("grid"));
+
+    expect(reply.proposal?.parameters).toEqual(validGridParameters);
+    expect(toolResult(model.doStreamCalls[2]!.prompt, "c3")).toMatchObject({ ok: true, rejected: [] });
+  });
+
+  it("maps a rate-limited upstream to the capacity copy after the retry", async () => {
+    const model = new MockLanguageModelV4({
+      modelId: "busy",
+      doStream: async () => {
+        throw new APICallError({
+          message: "rate limited",
+          url: "https://model.example/v1/chat/completions",
+          requestBodyValues: {},
+          statusCode: 429,
+          isRetryable: true,
+          responseHeaders: { "retry-after-ms": "0" },
+        });
+      },
+    });
+    const { concierge } = harness(model);
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const chunks = await chunksOf(concierge.stream(ask("grid")));
+
+    consoleError.mockRestore();
+    expect(model.doStreamCalls.length).toBeGreaterThanOrEqual(2);
+    expect(chunks.at(-1)).toEqual({ type: "error", errorText: STREAM_ERROR_COPY.capacity });
   });
 });

@@ -645,13 +645,13 @@ body {
   text-transform: uppercase;
 }
 
-.hiring-stage__brief dl {
+.hiring-stage__brief > dl {
   display: grid;
   gap: 1.1rem;
   margin: 0;
 }
 
-.hiring-stage__brief dt {
+.hiring-stage__brief > dl dt {
   color: #696b74;
   font-family: var(--font-space-mono), monospace;
   font-size: 0.6rem;
@@ -659,7 +659,7 @@ body {
   text-transform: uppercase;
 }
 
-.hiring-stage__brief dd {
+.hiring-stage__brief > dl dd {
   min-height: 3.2rem;
   margin: 0.35rem 0 0;
   max-width: 30rem;

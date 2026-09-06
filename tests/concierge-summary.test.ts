@@ -94,6 +94,18 @@ describe("summarizeConciergeMessage", () => {
     expect(summarizeConciergeMessage({ parts }, "m").message).toBe("Which pair do you mean?");
   });
 
+  it("surfaces a clarifying question so the eval script can judge it", () => {
+    const parts: ConciergeUIMessage["parts"] = [
+      { type: "tool-search_agents", toolCallId: "c1", state: "output-available", input: { q: "grid" }, output: { label: "grid", agents: [gridPlanner] } },
+      { type: "text", text: "The grid planner needs a price range. Which lower and upper price do you want?" },
+    ];
+
+    const reply = summarizeConciergeMessage({ parts }, "m");
+
+    expect(reply.question).toBe("Which lower and upper price do you want?");
+    expect(summarizeConciergeMessage({ parts: [{ type: "text", text: "Ready for a quote." }] }, "m").question).toBeNull();
+  });
+
   it("returns an empty reply for a message without parts", () => {
     expect(summarizeConciergeMessage({ parts: [] }, "m")).toMatchObject({ message: "", agents: [], proposal: null, steps: [] });
   });

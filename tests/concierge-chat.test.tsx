@@ -281,4 +281,57 @@ describe("ConciergeChat", () => {
     expect(within(alert).getByRole("button", { name: "Try again" })).toBeInTheDocument();
     await waitFor(() => expect(screen.getByRole("button", { name: "Send" })).toBeInTheDocument());
   });
+
+  // --- review findings (PR #116) ------------------------------------------
+
+  it("keeps the parameters when a brief field is cleared before continuing", async () => {
+    render(<ConciergeChat transport={transportOf([FULL_TURN])} />);
+    ask("grid");
+    await screen.findByText("Here is a verified agent for that.");
+
+    const proposal = screen.getByRole("region", { name: "Proposed parameters" });
+    fireEvent.change(within(proposal).getByLabelText("Objective"), { target: { value: "   " } });
+    fireEvent.click(within(proposal).getByRole("button", { name: "Continue to quote with Grid Planner" }));
+
+    const stored = JSON.parse(window.sessionStorage.getItem("concierge:303779") ?? "null") as Record<string, unknown>;
+    expect(stored).toMatchObject({ agentId: "303779", contractHash: CONTRACT_HASH, parameters, brief: null });
+    expect(routerPush).toHaveBeenCalledWith("/hire/303779#quote-request");
+  });
+
+  it("does not show a stopped tool call as still running", async () => {
+    const transport: ChatTransport<ConciergeUIMessage> = {
+      sendMessages: async () =>
+        new ReadableStream<UIMessageChunk>({
+          start(controller) {
+            controller.enqueue({ type: "start" });
+            controller.enqueue({ type: "start-step" });
+            controller.enqueue({ type: "tool-input-start", toolCallId: "c1", toolName: "search_agents" });
+            controller.enqueue({ type: "tool-input-available", toolCallId: "c1", toolName: "search_agents", input: { q: "grid" } });
+            // The catalog never answers; the person gives up.
+          },
+        }),
+      reconnectToStream: async () => null,
+    };
+    render(<ConciergeChat transport={transport} />);
+    ask("grid");
+    await screen.findByText("Searching the catalog…");
+
+    fireEvent.click(screen.getByRole("button", { name: "Stop" }));
+    await screen.findByRole("button", { name: "Send" });
+
+    const steps = screen.getByRole("list", { name: "Steps" });
+    expect(steps.querySelector(".concierge-shimmer")).toBeNull();
+    expect(steps).toHaveTextContent("Stopped while searching the catalog");
+    expect(screen.getByRole("button", { name: "Retry" })).toBeInTheDocument();
+  });
+
+  it("ignores a blank initial prompt instead of sending an empty history", async () => {
+    const sent: SendOptions[] = [];
+    render(<ConciergeChat initialPrompt="   " transport={transportOf([turn(textChunks("t1", "hi"))], (options) => sent.push(options))} />);
+
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(sent).toHaveLength(0);
+    expect(screen.getByRole("heading", { name: "What do you need done?" })).toBeInTheDocument();
+  });
 });

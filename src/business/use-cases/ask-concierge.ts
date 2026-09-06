@@ -61,6 +61,8 @@ export interface AskConciergeDependencies {
   agents: { execute(input: ListMarketplaceAgentsInput): Promise<MarketplaceAgentPage> };
   passports: { execute(input: { agentId: string }): Promise<AgentEvidencePassport> };
   negotiationInput: (agentId: string, options: { caller?: string }) => Promise<{ status: number; body: unknown } | null>;
+  /** Wall-clock budget for the whole turn; defaults to CONCIERGE_LIMITS.deadlineMs. */
+  deadlineMs?: number;
 }
 
 export interface AskConciergeInput {
@@ -223,7 +225,11 @@ export function copyFilterTransform<TOOLS extends ToolSet>(): TransformStream<Te
   return new TransformStream({
     transform(part, controller) {
       if (part.type === "text-delta") {
-        const buffered = (pending.get(part.id) ?? "") + part.text;
+        // Rewrite on the whole buffer, never on the emitted slice alone:
+        // the cut could otherwise land between the two words of a phrase.
+        // The holdback below keeps at least a word plus 24 characters
+        // pending, so a phrase still arriving is never split.
+        const buffered = filterBannedCopy((pending.get(part.id) ?? "") + part.text);
         let cut = -1;
         if (buffered.length > COPY_FILTER_HOLDBACK) {
           const lastBreak = lastBreakBefore(buffered, buffered.length - COPY_FILTER_HOLDBACK);
@@ -232,7 +238,7 @@ export function copyFilterTransform<TOOLS extends ToolSet>(): TransformStream<Te
           cut = lastBreak > 0 ? lastBreakBefore(buffered, lastBreak - 1) : -1;
         }
         if (cut > 0) {
-          controller.enqueue({ ...part, text: filterBannedCopy(buffered.slice(0, cut + 1)) });
+          controller.enqueue({ ...part, text: buffered.slice(0, cut + 1) });
           pending.set(part.id, buffered.slice(cut + 1));
         } else {
           pending.set(part.id, buffered);
@@ -250,12 +256,26 @@ export function copyFilterTransform<TOOLS extends ToolSet>(): TransformStream<Te
 }
 
 function describeStreamError(error: unknown): string {
-  const candidate = error as { statusCode?: unknown; name?: unknown } | null;
+  const candidate = error as { statusCode?: unknown; name?: unknown; lastError?: unknown } | null;
   if (candidate && typeof candidate === "object") {
+    // A retried call surfaces as the SDK's RetryError; the upstream status
+    // lives on the last attempt.
+    if (candidate.lastError && typeof candidate.lastError === "object") return describeStreamError(candidate.lastError);
     if (candidate.statusCode === 429) return STREAM_ERROR_COPY.capacity;
     if (candidate.name === "AbortError" || candidate.name === "TimeoutError") return STREAM_ERROR_COPY.timeout;
   }
   return STREAM_ERROR_COPY.generic;
+}
+
+// The deadline (and a client disconnect) end streamText with an `abort`
+// chunk, which the chat has no words for. The deadline gets the timeout
+// copy as an error chunk instead; a disconnected client reads neither.
+function abortsAsErrors(): TransformStream<UIMessageChunk, UIMessageChunk> {
+  return new TransformStream({
+    transform(chunk, controller) {
+      controller.enqueue(chunk.type === "abort" ? { type: "error", errorText: STREAM_ERROR_COPY.timeout } : chunk);
+    },
+  });
 }
 
 export class AskConcierge {
@@ -320,6 +340,10 @@ export class AskConcierge {
 
     const seenAgents = new Map<string, ConciergeAgentCard>();
     const contracts = new Map<string, ContractEntry>();
+    // Quote-input fetches in flight, so a propose issued in the same model
+    // step (the SDK runs a step's tool calls concurrently) waits for the
+    // contract instead of seeing none.
+    const contractFetches = new Map<string, Promise<unknown>>();
     let lookups = 0;
 
     const overBudget = (): { error: string } | null => {
@@ -393,8 +417,10 @@ export class AskConcierge {
       if (typeof agentId !== "string") return { error: "INVALID_ARGUMENTS" };
       if (!seenAgents.has(agentId)) return { error: "UNKNOWN_AGENT" };
       let response: Awaited<ReturnType<typeof negotiationInput>>;
+      const fetching = negotiationInput(agentId, { caller });
+      contractFetches.set(agentId, fetching.catch(() => undefined));
       try {
-        response = await negotiationInput(agentId, { caller });
+        response = await fetching;
       } catch (error) {
         return toolErrorFrom(error);
       }
@@ -431,6 +457,7 @@ export class AskConcierge {
         if (typeof agentId !== "string" || !seenAgents.has(agentId)) {
           rejected.push("unknown_agent");
         } else {
+          await contractFetches.get(agentId);
           const entry = contracts.get(agentId);
           if (!entry) {
             rejected.push("missing_quote_input");
@@ -501,13 +528,17 @@ export class AskConcierge {
       // person can read, never in a dangling tool call; the same right after
       // propose, so the proposal is always followed by the model's words.
       prepareStep: ({ stepNumber, steps }) => {
-        const proposed = steps.at(-1)?.toolCalls.some((call) => call.toolName === "propose") ?? false;
+        // A rejected propose (bad parameters, missing quote input) leaves the
+        // tools open so the model can fix it while budget remains.
+        const proposed = steps.at(-1)?.toolResults.some(
+          (result) => result.toolName === "propose" && (result.output as ProposeOutput).rejected.length === 0,
+        ) ?? false;
         return stepNumber >= CONCIERGE_LIMITS.modelSteps - 1 || proposed ? { toolChoice: "none" } : undefined;
       },
       temperature: 0.2,
       maxOutputTokens: 1_500,
       maxRetries: 1,
-      timeout: { totalMs: CONCIERGE_LIMITS.deadlineMs },
+      timeout: { totalMs: this.deps.deadlineMs ?? CONCIERGE_LIMITS.deadlineMs },
       ...(input.abortSignal ? { abortSignal: input.abortSignal } : {}),
       ...(model.providerOptions ? { providerOptions: model.providerOptions } : {}),
       experimental_transform: () => copyFilterTransform<typeof tools>(),
@@ -524,6 +555,6 @@ export class AskConcierge {
     return toUIMessageStream({
       stream: result.stream,
       onError: describeStreamError,
-    });
+    }).pipeThrough(abortsAsErrors());
   }
 }

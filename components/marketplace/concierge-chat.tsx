@@ -86,9 +86,15 @@ const STEP_ICON: Record<string, LucideIcon> = {
 
 // Turns a streamed tool part into a line a person can read, without the
 // tool's name or its JSON.
-function describeStep(part: ToolPart): StepView {
+function describeStep(part: ToolPart, streaming: boolean): StepView {
   const step = describeStepText(part);
-  return { ...step, icon: step.state === "failed" ? CircleAlertIcon : STEP_ICON[part.type] ?? PenLineIcon };
+  const icon = STEP_ICON[part.type] ?? PenLineIcon;
+  if (step.state === "running" && !streaming) {
+    // The turn is over (Stop, or a dropped stream) with this call unanswered.
+    const activity = step.label.replace(/…$/, "");
+    return { ...step, state: "failed", label: `Stopped while ${activity.charAt(0).toLowerCase()}${activity.slice(1)}`, icon };
+  }
+  return { ...step, icon: step.state === "failed" ? CircleAlertIcon : icon };
 }
 
 function describeStepText(part: ToolPart): Omit<StepView, "icon"> {
@@ -119,6 +125,10 @@ function describeStepText(part: ToolPart): Omit<StepView, "icon"> {
   if (running) return { key, state: "running", label: "Drafting the proposal…" };
   if (part.state !== "output-available") return { key, state: "failed", label: "The proposal could not be drafted" };
   return { key, state: "done", label: "Drafted the proposal" };
+}
+
+function briefIsComplete(brief: ConciergeBrief | null): brief is ConciergeBrief {
+  return brief !== null && [brief.objective, brief.deliverable, brief.acceptanceCriteria].every((field) => field.trim().length > 0);
 }
 
 function AgentBadge({ agent }: { agent: ConciergeAgentCard }) {
@@ -169,11 +179,14 @@ function ProposalCard({ id, output, compact }: { id: string; output: ProposeOutp
 
   const continueToQuote = () => {
     if (!proposal || !agent) return;
+    // The quote panel rejects a half-empty brief together with everything
+    // else in the handoff; the parameters matter more, so the brief travels
+    // only when complete.
     saveConciergeHandoff(window.sessionStorage, {
       agentId: proposal.agentId,
       contractHash: proposal.contractHash,
       parameters: proposal.parameters,
-      brief,
+      brief: briefIsComplete(brief) ? brief : null,
     });
     router.push(`${agent.href}#quote-request`);
   };
@@ -312,7 +325,7 @@ interface AssistantTurnProps {
 
 function AssistantTurn({ message, streaming, last, compact, onRetry }: AssistantTurnProps) {
   const toolParts = message.parts.filter(isToolPart);
-  const steps = toolParts.map(describeStep);
+  const steps = toolParts.map((part) => describeStep(part, streaming));
   // Only the text after the last tool call is the reply; narration before a
   // tool call would duplicate the step rows.
   const textParts = finalTextParts(message.parts).filter((part) => part.text.length > 0);
@@ -345,14 +358,14 @@ function AssistantTurn({ message, streaming, last, compact, onRetry }: Assistant
       {propose && (propose.proposal || propose.brief) ? <ProposalCard compact={compact} id={message.id} output={propose} /> : null}
       {showAgents ? <AgentsCard agents={propose?.agents ?? lastSearch!.agents} /> : null}
       {showNoMatch ? <NoMatchCard /> : null}
-      {!streaming && text.length > 0 ? (
+      {!streaming && (text.length > 0 || last) ? (
         <div
           className={cn(
             "-ml-1.5 flex items-center gap-0.5 transition-opacity",
             last ? "opacity-100" : "opacity-0 focus-within:opacity-100 group-hover:opacity-100",
           )}
         >
-          <CopyButton text={text} />
+          {text.length > 0 ? <CopyButton text={text} /> : null}
           {last ? (
             <Button
               aria-label="Retry"
@@ -414,9 +427,10 @@ export function ConciergeChat({
   const empty = messages.length === 0;
 
   useEffect(() => {
-    if (!initialPrompt || sentInitial.current) return;
+    const text = initialPrompt?.trim().slice(0, CONCIERGE_LIMITS.userChars);
+    if (!text || sentInitial.current) return;
     sentInitial.current = true;
-    void sendMessage({ text: initialPrompt });
+    void sendMessage({ text });
   }, [initialPrompt, sendMessage]);
 
   const submit = (text: string) => {
