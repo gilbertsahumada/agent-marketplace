@@ -165,7 +165,10 @@ async function quoteRateLimit(
   if (configured.some((value) => !Number.isSafeInteger(value) || value < 1)) return { code: "quote_rate_limit_invalid", retryAfterSeconds: 60 };
   const dayStart = input.nowMs - 24 * 60 * 60 * 1_000;
   const providerBase = gt(catalogQuoteRequests.createdAt, dayStart);
-  const base = and(eq(catalogQuoteRequests.kind, limits.kind ?? "buyer_quote"), providerBase);
+  // Directed audits have a reserved budget. Scheduler activity still counts
+  // against provider safeguards below, but cannot exhaust the operator pool.
+  const base = and(eq(catalogQuoteRequests.kind, limits.kind ?? "buyer_quote"), providerBase,
+    limits.kind === "capability_probe" ? eq(catalogQuoteRequests.callerKey, "operator") : undefined);
   const [globalRows, callerRows, agentRows, originRows] = await Promise.all([
     limits.dailyLimit === undefined ? Promise.resolve([{ total: 0 }]) : db.select({ total: count() })
       .from(catalogQuoteRequests).where(base),
@@ -304,7 +307,7 @@ export async function createCatalogQuoteRequestResponse(
   if (options.kind === "capability_probe" && readyCapability.some(row => row.endpointKey === target.endpointKey)) {
     return json({ status: "skipped", reason: "capability_fresh" });
   }
-  const caller = options.caller ?? "anonymous";
+  const caller = options.kind === "capability_probe" ? "operator" : options.caller ?? "anonymous";
   const limited = await quoteRateLimit(db, {
     agentKey: target.agentKey,
     originKey: target.originKey,
