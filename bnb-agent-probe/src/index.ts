@@ -552,11 +552,15 @@ export function createWorker(dependencies: WorkerDependencies = {}): WorkerEntry
       }
       if (config.catalogProbeEnabled && config.catalogV2WritesEnabled && env.CATALOG_QUOTE_QUEUE !== undefined) {
         const { enqueueDueCatalogCapabilities } = await import("./phases/catalog-capability");
+        const { projectSharedDiscoveryFailures } = await import("./catalog/shared-discovery");
+        const projected = await projectSharedDiscoveryFailures(env.DB as never, now(), Number(env.CATALOG_SHARED_DISCOVERY_LIMIT ?? "0"));
+        if (projected) logger.info("catalog.discovery.shared", { projected, unit: "endpoint declarations", quoteAttemptsCreated: 0 });
         const summary = await enqueueDueCatalogCapabilities(env.DB as never, env.CATALOG_QUOTE_QUEUE, {
           nowMs: now(),
           limit: config.catalogQuoteBatchSize,
           concurrency: config.catalogQuoteConcurrency,
           bootstrapLimit: Number(env.CATALOG_COMPATIBILITY_BOOTSTRAP_BATCH_SIZE ?? "0"),
+          originPerMinute: Number(env.CATALOG_QUOTE_ORIGIN_PER_MINUTE ?? "1"),
         });
         logger.info("catalog.quote.queue.enqueued", { ...summary, scheduledTime: controller.scheduledTime });
         try {
