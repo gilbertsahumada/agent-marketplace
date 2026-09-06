@@ -331,7 +331,10 @@ describe("HireLedgerPage", () => {
   it("shows the last 30 days as phase totals plus a per-day table with the indexing note", async () => {
     render(createElement(HireLedgerPage, { chainId: 56, summary: summary(), page, activity: activity() }));
 
-    expect(screen.getByRole("heading", { level: 2, name: "Last 30 days" })).toBeInTheDocument();
+    const trigger = screen.getByText("Activity summary · Last 30 days");
+    expect(trigger.closest("details")).not.toHaveAttribute("open");
+    expect(screen.getByRole("region", { name: "Indexed jobs" }).compareDocumentPosition(trigger) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    fireEvent.click(trigger.closest("summary")!);
     const totals = screen.getByRole("list", { name: "Phase totals, last 30 days" });
     expect(totals).toHaveTextContent("Created1,234");
     expect(totals).toHaveTextContent("Settled1");
@@ -348,7 +351,7 @@ describe("HireLedgerPage", () => {
   it("omits the per-day table when no phase events fell in the window", () => {
     render(createElement(HireLedgerPage, { chainId: 56, summary: summary(), page, activity: activity({ byDay: [], totals: { created: 0, funded: 0, submitted: 0, settled: 0, refunded: 0 } }) }));
 
-    expect(screen.getByRole("heading", { level: 2, name: "Last 30 days" })).toBeInTheDocument();
+    fireEvent.click(screen.getByText("Activity summary · Last 30 days").closest("summary")!);
     expect(screen.queryByRole("table", { name: "Phase events per UTC day" })).not.toBeInTheDocument();
     expect(screen.getByText("No phase events indexed in this window.")).toBeInTheDocument();
     expect(screen.getByText(/Counts phase events indexed since the ledger started/)).toBeInTheDocument();
@@ -358,7 +361,7 @@ describe("HireLedgerPage", () => {
     render(createElement(HireLedgerPage, { chainId: 56, summary: summary(), page, activity: null }));
 
     expect(screen.getByRole("status")).toHaveTextContent("Recent activity temporarily unavailable.");
-    expect(screen.queryByRole("heading", { name: /Last 30 days/ })).not.toBeInTheDocument();
+    expect(screen.queryByText("Activity summary · Last 30 days")).not.toBeInTheDocument();
     expect(screen.getByText("56,697")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /Job #56696/ })).toBeInTheDocument();
     expect(screen.queryByText("Indexed ledger temporarily unavailable.")).not.toBeInTheDocument();
