@@ -8,6 +8,35 @@ function setup() {
   return port;
 }
 describe("safe closure", () => {
+  it.each(["cancelled", "replaced"] as const)("allows an explicit retry after revalidating %s", async state => {
+    const port = setup();
+    vi.mocked(port.verify).mockResolvedValueOnce(state).mockResolvedValueOnce(state);
+    await closeHireJob(binding, port, "send");
+    expect((await closeHireJob(binding, port, "send")).previousAttempts?.[0]?.state).toBe(state);
+    expect(port.send).toHaveBeenCalledTimes(2);
+  });
+  it("does not send if the job closes during simulation", async () => {
+    const port = setup();
+    vi.mocked(port.read).mockResolvedValueOnce(facts).mockResolvedValueOnce({ ...facts, status: "COMPLETED" });
+    expect((await closeHireJob(binding, port, "send")).state).toBe("already_closed");
+    expect(port.send).not.toHaveBeenCalled();
+  });
+  it("rechecks a reverted receipt before a fresh explicit send and preserves history", async () => {
+    const port = setup();
+    vi.mocked(port.verify).mockResolvedValueOnce("reverted").mockResolvedValueOnce("reverted");
+    await closeHireJob(binding, port, "send");
+    const result = await closeHireJob(binding, port, "send");
+    expect(result.state).toBe("confirmed");
+    expect(result.previousAttempts?.[0]?.state).toBe("reverted");
+    expect(port.verify).toHaveBeenCalledTimes(3);
+  });
+  it("does not resend if a previously reverted receipt is now uncertain", async () => {
+    const port = setup();
+    vi.mocked(port.verify).mockResolvedValueOnce("reverted").mockResolvedValueOnce("pending");
+    await closeHireJob(binding, port, "send");
+    expect((await closeHireJob(binding, port, "send")).state).toBe("uncertain");
+    expect(port.send).toHaveBeenCalledOnce();
+  });
   it("retains a rejected signature and permits only a fresh explicit attempt", async () => {
     const port = setup();
     vi.mocked(port.send).mockRejectedValueOnce(Object.assign(new Error("User rejected"), { code: 4001 }));
