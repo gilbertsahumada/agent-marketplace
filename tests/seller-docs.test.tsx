@@ -9,6 +9,11 @@ import { normalizeNegotiationContract } from "../src/shared/negotiation-input";
 vi.mock("next/navigation", () => ({ usePathname: () => "/docs/sellers" }));
 vi.mock("../components/marketplace/wallet-connect-button", () => ({ WalletConnectButton: () => null }));
 afterEach(cleanup);
+it("documents SDK profiles as an alternative to the marketplace extension", () => {
+  render(<SellerDocs />);
+  expect(screen.getByRole("heading", { name: "BNB SDK compatibility" })).toBeInTheDocument();
+  expect(screen.getByText(/does not prove which SDK version/)).toBeInTheDocument();
+});
 it("provides a single footer with grouped links and one Docs entry", () => {
   render(<MarketplaceShell><main>Content</main></MarketplaceShell>);
   expect(screen.getAllByRole("contentinfo")).toHaveLength(1);
@@ -42,7 +47,7 @@ it("documents the local implementation without claiming remote rollout or prior-
   render(<SellerDocs />);
   expect(screen.getByRole("heading", { name: "How we select agents" })).toBeInTheDocument();
   expect(screen.getByRole("heading", { name: "History and networks" })).toBeInTheDocument();
-  expect(screen.getByText(/this update adds no new migration/)).toBeInTheDocument();
+  expect(screen.getByText(/require migration 0025/)).toBeInTheDocument();
   expect(screen.getByText(/No previous quote or job is required/)).toBeInTheDocument();
   expect(screen.getByText(/Provider-wallet activity is not necessarily attributable/)).toBeInTheDocument();
   expect(screen.getByText(/does not switch the agent identity/)).toBeInTheDocument();

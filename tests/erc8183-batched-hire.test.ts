@@ -4,10 +4,12 @@ import type { Erc8183HirePlan } from "../src/business/entities/erc8183-browser-s
 import { Erc8183JobNotReadyError } from "../src/business/errors/erc8183-spike-errors.ts";
 import {
   buildHireCalls,
+  assertBatchHireEvents,
   extractBatchJobId,
   isBatchUnsupportedError,
   predictNextJobId,
   receiptForCall,
+  resolveCanonicalBatchReceipts,
   supportsAtomicBatch,
   type BatchCallReceipt,
 } from "../src/data/erc8183/batched-hire.ts";
@@ -78,6 +80,20 @@ function receipt(overrides: Partial<BatchCallReceipt> & { jobId?: bigint; commer
 }
 
 describe("batched hire helpers", () => {
+  it("requires canonical creation and funding events bound to the buyer, provider and amount", () => {
+    const created = receipt({ jobId: 939n });
+    const funded = {
+      address: ERC8183_TESTNET.commerce,
+      topics: encodeEventTopics({ abi: agenticCommerceBrowserAbi, eventName: "JobFunded", args: { jobId: 939n, client: BUYER, provider: ERC8183_TESTNET.seller } }),
+      data: encodeAbiParameters([{ type: "uint256" }], [1n]),
+    };
+    const confirmed = { ...created, logs: [...created.logs, funded] } as BatchCallReceipt;
+    expect(() => assertBatchHireEvents([confirmed], plan(), ERC8183_TESTNET.commerce, 939n)).not.toThrow();
+    expect(() => assertBatchHireEvents([created], plan(), ERC8183_TESTNET.commerce, 939n)).toThrow(/missing/);
+    expect(() => assertBatchHireEvents([confirmed], plan({ buyer: ERC8183_TESTNET.seller }), ERC8183_TESTNET.commerce, 939n)).toThrow(/buyer/);
+    const badPrice = plan(); badPrice.quote = { ...badPrice.quote, priceRaw: "2" };
+    expect(() => assertBatchHireEvents([confirmed], badPrice, ERC8183_TESTNET.commerce, 939n)).toThrow(/amount/);
+  });
   it("encodes the five intents in order against the pinned contracts, four without an approval", () => {
     const calls = buildHireCalls({ plan: plan(), deployment: ERC8183_TESTNET, jobId: 939n, budget: 1n });
     expect(calls.map(({ kind, to }) => `${kind}@${to}`)).toEqual([
@@ -128,6 +144,27 @@ describe("batched hire helpers", () => {
     const single = [receipt({ transactionHash: `0x${"03".repeat(32)}` })];
     expect(receiptForCall(single, 5, 4).transactionHash).toBe(`0x${"03".repeat(32)}`);
     expect(() => receiptForCall([], 5, 0)).toThrow(Erc8183JobNotReadyError);
+    expect(() => receiptForCall(perCall, 5, 0)).toThrow(Erc8183JobNotReadyError);
+    expect(() => receiptForCall([receipt({ status: "reverted" })], 5, 0)).toThrow(Erc8183JobNotReadyError);
+  });
+
+  it("resolves a shared wallet receipt once and preserves canonical gas evidence", async () => {
+    const wallet = receipt({ jobId: 939n });
+    const canonical = { ...wallet, gasUsed: 123n, effectiveGasPrice: 4n } as import("viem").TransactionReceipt;
+    let reads = 0;
+    const result = await resolveCanonicalBatchReceipts([wallet], 5, async () => { reads++; return canonical; });
+    expect(reads).toBe(1);
+    expect(result[0]).toBe(canonical);
+    expect(result[0]?.gasUsed).toBe(123n);
+  });
+
+  it("rejects missing, mismatched and reverted canonical receipts", async () => {
+    const wallet = receipt({ jobId: 939n });
+    const canonical = { ...wallet, gasUsed: 123n, effectiveGasPrice: 4n } as import("viem").TransactionReceipt;
+    await expect(resolveCanonicalBatchReceipts([], 5, async () => canonical)).rejects.toThrow();
+    await expect(resolveCanonicalBatchReceipts([wallet], 5, async () => ({ ...canonical, status: "reverted" }))).rejects.toThrow();
+    await expect(resolveCanonicalBatchReceipts([wallet], 5, async () => ({ ...canonical, transactionHash: `0x${"99".repeat(32)}` }))).rejects.toThrow();
+    await expect(resolveCanonicalBatchReceipts([wallet], 5, async () => { throw new Error("RPC unavailable"); })).rejects.toThrow("RPC unavailable");
   });
 
   it("classifies only capability errors as a reason to fall back", () => {

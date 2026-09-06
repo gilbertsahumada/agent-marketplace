@@ -10,6 +10,18 @@ import {
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 describe("catalog candidate feed", () => {
+  it("isolates Testnet pages and rejects cross-chain rows and responses", async () => {
+    const fixtures = JSON.parse(readFileSync(new URL("../contracts/catalog-api-v2.fixtures.json", import.meta.url), "utf8"));
+    const list = { ...fixtures.list, chainId: 97, items: fixtures.list.items.map((item: Record<string, unknown>) => ({ ...item, chainId: 97, agentKey: `eip155:97:${item.agentId}` })) };
+    expect(parseCatalogCandidatePage(list)).toMatchObject({ chainId: 97, items: [{ chainId: 97 }] });
+    expect(() => parseCatalogCandidatePage({ ...list, items: fixtures.list.items })).toThrow("CATALOG_FEED_INVALID");
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json(list)));
+    const input = { chainId: 97 as const, page: 1, limit: 5, fresh: true, env: { OBSERVATIONS_URL: "https://network-worker.example/observations" } };
+    expect(await getCatalogCandidatePage(input)).toMatchObject({ chainId: 97 });
+    expect(String(vi.mocked(fetch).mock.calls[0]?.[0])).toContain("chain=97");
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json(fixtures.list)));
+    expect(await getCatalogCandidatePage(input)).toBeNull();
+  });
   it("bypasses process and Worker caches for the buyer's refresh without exposing credentials in the URL", async () => {
     const fixtures = JSON.parse(readFileSync(new URL("../contracts/catalog-api-v2.fixtures.json", import.meta.url), "utf8"));
     const fetcher = vi.fn(async () => Response.json(fixtures.list));

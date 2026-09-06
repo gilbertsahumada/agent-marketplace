@@ -61,7 +61,7 @@ const marketplaceFlag = sql<number>`EXISTS (
     AND h.provenance = 'chain_verified'
 )`;
 
-function publicJob(row: CommerceJobRow & { marketplace: number }) {
+function publicJob(row: CommerceJobRow & { marketplace: number; registeredAt?: number | null }) {
   return {
     jobId: String(row.jobId),
     client: row.client,
@@ -72,6 +72,7 @@ function publicJob(row: CommerceJobRow & { marketplace: number }) {
     submittedAt: row.submittedAt,
     marketplace: Boolean(row.marketplace),
     updatedAt: row.updatedAt,
+    registeredAt: row.registeredAt ?? null,
   };
 }
 
@@ -134,6 +135,7 @@ export async function commerceJobsListResponse(request: Request, d1: D1Database)
     firstSeenAt: commerceJobs.firstSeenAt,
     updatedAt: commerceJobs.updatedAt,
     marketplace: marketplaceFlag,
+    registeredAt: sql<number | null>`(SELECT min(e.blockTimestamp) FROM commerce_job_events e WHERE e.chainId = commerce_jobs.chainId AND e.jobId = commerce_jobs.jobId AND e.phase = 'created')`,
   }).from(commerceJobs).where(and(...conditions)).orderBy(desc(commerceJobs.jobId)).limit(limit + 1);
   const page = rows.slice(0, limit);
   const last = page[page.length - 1];

@@ -92,6 +92,7 @@ describe("hire ledger feed", () => {
       nextBefore: null,
     });
     expect(parseHireJobPage(page({ nextBefore: "56600" }), 56).nextBefore).toBe("56600");
+    expect(parseHireJobPage(page({}, { registeredAt: NOW - 60_000 }), 56).jobs[0]?.registeredAt).toBe(new Date(NOW - 60_000).toISOString());
   });
 
   it.each<[string, unknown]>([

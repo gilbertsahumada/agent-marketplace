@@ -23,6 +23,9 @@ const SUPPORTED_SORTS = new Set<MarketplaceSort>(MARKETPLACE_DATA_SORTS);
 
 export default async function AgentsPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const params = await searchParams;
+  if (params.network !== undefined && params.network !== "mainnet" && params.network !== "testnet") notFound();
+  const network = params.network === "testnet" ? "testnet" : "mainnet";
+  const chainId = network === "testnet" ? 97 : 56;
   const fresh = (await cookies()).get("marketplace_evidence_refresh")?.value === "1";
   const view = params.view === "all" ? "all" : "marketplace";
   const scope = params.scope === "evaluation" ? "evaluation" : "hiring";
@@ -53,6 +56,7 @@ export default async function AgentsPage({ searchParams }: { searchParams: Promi
   const page = typeof params.page === "string" && /^\d+$/.test(params.page) ? Number(params.page) : 1;
   const optional = { ...(q ? { q } : {}), ...(sort ? { sort } : {}) };
   const retryParams = new URLSearchParams({ view, page: String(page) });
+  retryParams.set("network", network);
   if (view === "marketplace") retryParams.set("scope", scope);
   if (q) retryParams.set("q", q);
   if (sort) retryParams.set("sort", sort);
@@ -61,21 +65,21 @@ export default async function AgentsPage({ searchParams }: { searchParams: Promi
   for (const value of reachability) retryParams.append("reachability", value);
   for (const value of protocols) retryParams.append("protocol", value);
   const metricsPromise = Promise.all([
-    listMarketplaceAgents.execute({
+    chainId === 97 ? Promise.resolve(null) : listMarketplaceAgents.execute({
       view: "all",
       page: 1,
       limit: 1,
       sort: DEFAULT_REGISTERED_AGENT_SORT,
     }).catch(() => null),
-    getCatalogCandidatePage({ status: "requestable", page: 1, limit: 1, ...(fresh ? { fresh } : {}) }).catch(() => null),
+    getCatalogCandidatePage({ chainId, status: "requestable", page: 1, limit: 1, ...(fresh ? { fresh } : {}) }).catch(() => null),
   ]);
-  const catalog = view === "marketplace" ? await getCatalogCandidatePage({
-    scope, statuses, categories, protocols, reachability, page, limit: 24, includeFacets: true, ...optional, ...(fresh ? { fresh } : {}),
+  const catalog = view === "marketplace" || chainId === 97 ? await getCatalogCandidatePage({
+    chainId, ...(view === "all" ? { inventory: "registry" as const } : { scope }), statuses, categories, protocols, reachability, page, limit: 24, includeFacets: true, ...optional, ...(fresh ? { fresh } : {}),
   }) : null;
   let data;
   if (!catalog) {
     // Never replace verified hiring inventory with unverified fallback rows.
-    if (view === "marketplace") return <CatalogUnavailable retryHref={`/agents?${retryParams.toString()}`} />;
+    if (view === "marketplace" || chainId === 97) return <CatalogUnavailable retryHref={`/agents?${retryParams.toString()}`} />;
     try {
       data = await listMarketplaceAgents.execute({ view, page, limit: 24, ...optional });
     } catch (error) {
@@ -84,7 +88,7 @@ export default async function AgentsPage({ searchParams }: { searchParams: Promi
     }
   }
   const mainnetProof = getMainnetJobProof.execute();
-  const observations = view === "marketplace"
+  const observations = view === "marketplace" && chainId === 56
     ? await getWorkerObservations()
     : { status: "unavailable" as const, feed: null };
   const [registryMetric, operationalMetric] = await metricsPromise;
@@ -103,7 +107,7 @@ export default async function AgentsPage({ searchParams }: { searchParams: Promi
     {...(data ? { data } : {})}
     {...(catalog ? { catalog } : {})}
     observations={observations}
-    query={{ view, scope, statuses, categories, protocols, reachability, ...optional }}
+    query={{ view, scope, network, statuses, categories, protocols, reachability, ...optional }}
     {...(mainnetProof ? { provenAgentId: mainnetProof.agentId } : {})}
     {...(typeof registryTotal === "number" ? { registryTotal } : {})}
     {...(typeof operationalTotal === "number" ? { operationalTotal } : {})}

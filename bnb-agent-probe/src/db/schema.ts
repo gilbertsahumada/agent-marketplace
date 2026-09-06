@@ -214,6 +214,9 @@ export const catalogSellerCapabilities = sqliteTable(
     capabilityExpiresAt: integer(),
     compatibilityState: text().notNull().default("pending"),
     schemaHash: text(),
+    detectorVersion: integer().notNull().default(0),
+    negotiationProfile: text(),
+    schemaSource: text(),
     compatibilityCheckedAt: integer(),
     compatibilityExpiresAt: integer(),
     compatibilityErrorCode: text(),
@@ -421,7 +424,7 @@ export const catalogAgents = sqliteTable(
   "catalog_agents",
   {
     agentKey: text().primaryKey(),
-    agentId: text().notNull().unique(),
+    agentId: text().notNull(),
     chainId: integer().notNull(),
     owner: text(),
     metadataUri: text(),
@@ -448,7 +451,8 @@ export const catalogAgents = sqliteTable(
       desc(table.registeredAt),
       table.agentId,
     ),
-    check("catalog_agents_chain_bsc", sql`${table.chainId} = 56`),
+    uniqueIndex("idx_catalog_agents_chain_identity").on(table.chainId, table.agentId),
+    check("catalog_agents_chain_bsc", sql`${table.chainId} IN (56, 97)`),
     check(
       "catalog_agents_metadata_state",
       sql`${table.metadataState} IN ('ok', 'http_unreachable', 'other')`,

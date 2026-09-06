@@ -34,6 +34,7 @@ export interface CategoryCardViewModel {
 
 export interface AgentCardViewModel {
   agentId: string;
+  chainId?: 56 | 97;
   name: string;
   description: string;
   imageUrl?: string;

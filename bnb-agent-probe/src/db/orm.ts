@@ -134,6 +134,7 @@ export function createDatabase(d1: D1DatabaseLike): Database {
 export async function readCatalogReachabilityFacets(
   db: Database,
   nowMs: number,
+  chainId: 56 | 97 = 56,
 ): Promise<CatalogReachabilityFacetCounts> {
   type EndpointFacetRow = {
     agentKey: string;
@@ -166,6 +167,7 @@ export async function readCatalogReachabilityFacets(
       ON agent.agentKey = declaration.agentKey
       AND agent.indexState = 'current'
     WHERE declaration.declarationState = 'current'
+      AND agent.chainId = ${chainId}
       AND endpoint.role = 'operational'
       AND endpoint.eligibility = 'eligible'
   `);
@@ -202,6 +204,7 @@ export async function readCatalogReachabilityFacets(
       INNER JOIN catalog_agents agent
         ON agent.agentKey = observation.agentKey
         AND agent.indexState = 'current'
+        AND agent.chainId = ${chainId}
       GROUP BY observation.agentKey, observation.endpointKey
     `)
     : [];
@@ -239,6 +242,7 @@ export async function readCatalogReachabilityFacets(
       ON agent.agentKey = observation.agentKey
       AND agent.indexState = 'current'
     WHERE observation.source = 'browser_reported'
+      AND agent.chainId = ${chainId}
       AND observation.outcome = 'protocol_valid'
   `);
   const browserAgents = new Set(browserRows.map((row) => row.agentKey));
@@ -350,8 +354,9 @@ export async function readCatalogAgentEvidence(
   db: Database,
   agentId: string,
   observationLimit = 50,
+  chainId: 56 | 97 = 56,
 ): Promise<CatalogAgentEvidenceRows> {
-  const agentKey = `eip155:56:${agentId}`;
+  const agentKey = `eip155:${chainId}:${agentId}`;
   const [agents, declarations, ingestTasks, capabilities, quoteStatsRows, jobStatsRows] = await Promise.all([
     db.select().from(catalogAgents).where(eq(catalogAgents.agentKey, agentKey)).limit(1),
     db.select().from(catalogAgentEndpoints)
@@ -386,7 +391,7 @@ export async function readCatalogAgentEvidence(
         eq(hireEvents.jobId, sql`CAST(${commerceJobs.jobId} AS TEXT)`),
       ))
       .where(and(
-        eq(hireEvents.chainId, 56),
+        eq(hireEvents.chainId, chainId),
         eq(hireEvents.agentId, agentId),
         eq(hireEvents.provenance, "chain_verified"),
       )),

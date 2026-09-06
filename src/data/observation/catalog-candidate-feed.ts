@@ -152,7 +152,7 @@ function observation(value: unknown, schemaVersion: 1 | 2): CatalogCandidateObse
 
 function candidate(value: unknown, schemaVersion: 1 | 2): CatalogCandidate {
   const item = record(value);
-  if (item.chainId !== 56 || !/^\d+$/.test(String(item.agentId))
+  if ((item.chainId !== 56 && item.chainId !== 97) || !/^\d+$/.test(String(item.agentId))
     || !Array.isArray(item.declarations) || !Array.isArray(item.observations)) throw new Error("CATALOG_FEED_INVALID");
   let categories: unknown;
   try { categories = JSON.parse(String(item.categoriesJson)); } catch { throw new Error("CATALOG_FEED_INVALID"); }
@@ -242,7 +242,7 @@ function candidate(value: unknown, schemaVersion: 1 | 2): CatalogCandidate {
   return {
     agentKey: string(item.agentKey)!,
     agentId: item.agentId as string,
-    chainId: 56,
+    chainId: item.chainId,
     owner: item.owner === undefined ? null : string(item.owner, true),
     metadataUri: item.metadataUri === undefined ? null : string(item.metadataUri, true),
     name: string(item.name, true),
@@ -301,7 +301,7 @@ function facets(value: unknown): CatalogFacetCounts {
 
 export function parseCatalogCandidatePage(value: unknown): CatalogCandidatePage {
   const data = record(value);
-  if (![1, 2].includes(Number(data.schemaVersion)) || data.chainId !== 56 || !CATALOG_STATUSES.includes(data.status as CatalogStatus)
+  if (![1, 2].includes(Number(data.schemaVersion)) || (data.chainId !== 56 && data.chainId !== 97) || !CATALOG_STATUSES.includes(data.status as CatalogStatus)
     || !Array.isArray(data.items)) throw new Error("CATALOG_FEED_INVALID");
   const category = data.category;
   if (category !== null && !MARKETPLACE_CATEGORIES.includes(category as MarketplaceCategory)) {
@@ -316,7 +316,13 @@ export function parseCatalogCandidatePage(value: unknown): CatalogCandidatePage 
     throw new Error("CATALOG_FEED_INVALID");
   }
   const schemaVersion = Number(data.schemaVersion) as 1 | 2;
+  const items = data.items.map((entry) => candidate(entry, schemaVersion));
+  if (items.some((item) => item.chainId !== data.chainId || item.agentKey !== `eip155:${data.chainId}:${item.agentId}`)) throw new Error("CATALOG_FEED_INVALID");
+  const coverage = data.coverage === undefined ? undefined : record(data.coverage);
+  if (coverage && (coverage.chainId !== data.chainId || !["enabled", "not_configured"].includes(String(coverage.catalogDiscovery)) || !["enabled", "not_configured"].includes(String(coverage.quoteExecution)))) throw new Error("CATALOG_FEED_INVALID");
   return {
+    chainId: data.chainId,
+    ...(coverage ? { coverage: coverage as unknown as NonNullable<CatalogCandidatePage["coverage"]> } : {}),
     status: data.status as CatalogStatus,
     statuses: statuses as CatalogStatus[],
     query: string(data.query)!,
@@ -328,7 +334,7 @@ export function parseCatalogCandidatePage(value: unknown): CatalogCandidatePage 
     total: integer(data.total)!,
     ...(data.facets === undefined ? {} : { facets: facets(data.facets) }),
     ...(data.nextCursor === undefined ? {} : { nextCursor: string(data.nextCursor, true) }),
-    items: data.items.map((entry) => candidate(entry, schemaVersion)),
+    items,
   };
 }
 
@@ -352,6 +358,7 @@ export function catalogUrl(
 }
 
 export async function getCatalogCandidatePage(input: {
+  chainId?: 56 | 97;
   status?: CatalogStatus;
   statuses?: CatalogStatus[];
   page: number;
@@ -373,6 +380,7 @@ export async function getCatalogCandidatePage(input: {
 }): Promise<CatalogCandidatePage | null> {
   const base = catalogUrl("/catalog-agents", input.env ?? process.env);
   if (!base) return null;
+  if (input.chainId !== undefined) base.searchParams.set("chain", String(input.chainId));
   // An explicit empty UI selection means the operational catalogue, not a
   // hidden requestable filter. Omitted status retains the API's default.
   const statuses = input.statuses?.length ? input.statuses : [input.status ?? (input.statuses !== undefined || input.inventory === "registry" ? "declared" : "requestable")];
@@ -399,7 +407,9 @@ export async function getCatalogCandidatePage(input: {
         signal: AbortSignal.timeout(5_000),
       });
       if (!response.ok) throw new Error("CATALOG_FEED_UNAVAILABLE");
-      return parseCatalogCandidatePage(await response.json());
+      const parsed = parseCatalogCandidatePage(await response.json());
+      if (parsed.chainId !== (input.chainId ?? 56)) throw new Error("CATALOG_FEED_INVALID");
+      return parsed;
     };
     return await (input.fresh ? read() : cache.get(`catalog:${base}`, CACHE_TTL_MS, read));
   } catch {
@@ -409,12 +419,14 @@ export async function getCatalogCandidatePage(input: {
 
 export async function getCatalogCandidate(input: {
   agentId: string;
+  chainId?: 56 | 97;
   env?: Readonly<Record<string, string | undefined>>;
 }): Promise<CatalogCandidate | null> {
   if (!/^[1-9]\d*$/.test(input.agentId)) return null;
   const url = catalogUrl("/catalog-agent", input.env ?? process.env);
   if (!url) return null;
   url.searchParams.set("agentId", input.agentId);
+  if (input.chainId !== undefined) url.searchParams.set("chain", String(input.chainId));
   const env = input.env ?? process.env;
   // Detail is a bounded single-agent read. Never restore stale eligibility after
   // a mutation merely because a different frontend instance handled the write.
@@ -427,7 +439,7 @@ export async function getCatalogCandidate(input: {
         signal: AbortSignal.timeout(5_000),
       });
       if (!response.ok) throw new Error("CATALOG_FEED_UNAVAILABLE");
-      return parseCatalogCandidateDetail(await response.json(), input.agentId);
+      return parseCatalogCandidateDetail(await response.json(), input.agentId, input.chainId ?? 56);
     };
     return await (fresh ? read() : cache.get(`catalog:${url}`, CACHE_TTL_MS, read));
   } catch {
@@ -442,12 +454,12 @@ function catalogReadHeaders(env: Readonly<Record<string, string | undefined>>, f
   } : {}) };
 }
 
-export function parseCatalogCandidateDetail(value: unknown, agentId: string): CatalogCandidate {
+export function parseCatalogCandidateDetail(value: unknown, agentId: string, chainId: 56 | 97 = 56): CatalogCandidate {
   const data = record(value);
-  if (![1, 2].includes(Number(data.schemaVersion)) || data.chainId !== 56 || data.agentId !== agentId
+  if (![1, 2].includes(Number(data.schemaVersion)) || data.chainId !== chainId || data.agentId !== agentId
     || !Array.isArray(data.declarations) || !Array.isArray(data.observations)
     || data.agent === null) throw new Error("CATALOG_FEED_INVALID");
-  return candidate({
+  const parsed = candidate({
     ...record(data.agent),
     platformAttemptCount: data.platformAttemptCount,
     admission: data.admission,
@@ -455,4 +467,6 @@ export function parseCatalogCandidateDetail(value: unknown, agentId: string): Ca
     declarations: data.declarations,
     observations: data.observations,
   }, Number(data.schemaVersion) as 1 | 2);
+  if (parsed.chainId !== chainId || parsed.agentKey !== `eip155:${chainId}:${agentId}`) throw new Error("CATALOG_FEED_INVALID");
+  return parsed;
 }

@@ -30,10 +30,6 @@ const ERROR_CODE = /^[A-Z][A-Z0-9_]{2,63}$/;
 const DEDUPE_WINDOW_MS = 60_000;
 const CAPABILITY_TTL_MS = 24 * 60 * 60 * 1_000;
 const CHAIN_EVIDENCE_TTL_MS = 120_000;
-// This is a public UI guardrail as well as a server-side economic limit. The
-// browser receives it with a verified quote so it never has to guess a
-// deployment-specific value while building the transaction review.
-const MAX_MARKETPLACE_BUDGET_RAW = 10_000_000_000_000_000n;
 const tokenSymbolAbi = parseAbi(["function symbol() view returns (string)"]);
 
 type ChainContext = ProbeChainContext & { readonly publicClient: PublicClient; readonly tokenSymbol: string };
@@ -106,6 +102,7 @@ export async function targetFor(
     .innerJoin(catalogEndpoints, eq(catalogEndpoints.endpointKey, catalogAgentEndpoints.endpointKey))
     .where(and(
       eq(catalogAgents.agentId, agentId),
+      eq(catalogAgents.chainId, 56),
       eq(catalogAgents.indexState, "current"),
       eq(catalogAgentEndpoints.declarationState, "current"),
       eq(catalogEndpoints.role, "operational"),
@@ -243,7 +240,7 @@ export async function catalogNegotiationInputResponse(d1: D1Database, agentId: s
     try {
       const contract = await discoverNegotiationInput({ ...target, request: {}, fetch, timeoutMs: 5000, maxResponseBytes: 32768 });
       const contractHash = await sha256(contract);
-      await recordCompatibility(db, target, nowMs, { schemaHash: contractHash });
+      await recordCompatibility(db, target, nowMs, { schemaHash: contractHash, provenance: contract.provenance });
       return { contract, contractHash, endpointKey: target.endpointKey, transport: target.transport };
     } catch (error) {
       const errorCode = error instanceof Error && ERROR_CODE.test(error.message) ? error.message : "NEGOTIATION_DISCOVERY_FAILED";
@@ -304,7 +301,7 @@ export async function createCatalogQuoteRequestResponse(
     try {
       const contract = await discoverNegotiationInput({ ...target, request: {}, fetch, timeoutMs: 5000, maxResponseBytes: 32768 });
       const schemaHash = await sha256(contract);
-      await recordCompatibility(db, target, options.nowMs, { schemaHash });
+      await recordCompatibility(db, target, options.nowMs, { schemaHash, provenance: contract.provenance });
       if (schemaHash !== input!.contractHash) return json({ error: "NEGOTIATION_SCHEMA_CHANGED" }, 409);
       const value = buildContractRequest(contract, input!.parameters);
       const negotiated = NegotiationRequest.fromDict(value);
@@ -435,7 +432,7 @@ export async function persistQuoteResult(
   // the physical start time. Read it before doing RPC/verification work so
   // public durations reflect the actual browser/Worker operation instead of
   // collapsing to zero when a result is reported quickly.
-  const attemptRows = await db.select({ startedAt: catalogQuoteAttempts.startedAt })
+  const attemptRows = await db.select({ startedAt: catalogQuoteAttempts.startedAt, status: catalogQuoteAttempts.status })
     .from(catalogQuoteAttempts)
     .where(and(
       eq(catalogQuoteAttempts.id, attemptId),
@@ -443,6 +440,7 @@ export async function persistQuoteResult(
     ))
     .limit(1);
   const started = attemptRows[0]?.startedAt ?? nowMs;
+  if (attemptRows[0]?.status === "failed") return json({ error: "attempt_completed", code: "QUOTE_ATTEMPT_INTERRUPTED" }, 409);
   let context: ChainContext;
   let verdict: Awaited<ReturnType<typeof validateProbeQuote>>;
   try {
@@ -455,7 +453,6 @@ export async function persistQuoteResult(
       expectedRequestHash: requestRow.requestHash,
       expectedDeliverables: request.terms.deliverables,
       expectedQualityStandards: request.terms.qualityStandards,
-      maximumPriceRaw: MAX_MARKETPLACE_BUDGET_RAW,
     }, verifyQuoteSignature);
   } catch (error) {
     const code = error instanceof QuoteValidationError || error instanceof SellerProbeError
@@ -606,7 +603,7 @@ export async function persistQuoteResult(
     priceDisplay: formatUnits(BigInt(verdict.priceRaw), verdict.decimals),
     negotiatedAt: Math.floor(verdict.quoteNegotiatedAt / 1_000),
     quoteExpiresAt: Math.floor(verdict.quoteExpiresAt / 1_000),
-    maximumBudgetRaw: MAX_MARKETPLACE_BUDGET_RAW.toString(),
+    maximumBudgetRaw: verdict.priceRaw,
     description: jobDescription,
     observationId,
   };
@@ -752,7 +749,7 @@ export async function catalogQuoteFallbackResponse(request: Request, d1: D1Datab
           },
         });
       })();
-    return persistQuoteResult(
+    return await persistQuoteResult(
       db,
       options.env,
       options.config,
@@ -763,7 +760,7 @@ export async function catalogQuoteFallbackResponse(request: Request, d1: D1Datab
       options.nowMs,
     );
   } catch (error) {
-    const code = error instanceof SellerProbeError ? error.code : "SELLER_UNREACHABLE";
+    const code = error instanceof SellerProbeError ? error.code : "QUOTE_VERIFICATION_UNAVAILABLE";
     await updateAttempt(db, workerAttemptId, found.request.id, "failed", options.nowMs, { errorCode: code, outcome: "error" });
     await db.update(catalogQuoteRequests).set({ status: "failed", completedAt: options.nowMs, errorCode: code }).where(eq(catalogQuoteRequests.id, found.request.id));
     return json({ error: "quote_attempt_failed", code, requestId: found.request.id, attemptId: workerAttemptId, browserAttemptId: attemptId }, 502);
@@ -776,7 +773,25 @@ export async function catalogQuoteHistoryResponse(request: Request, d1: D1Databa
   if (!AGENT_ID.test(agentId) || [...params.keys()].some(key => key !== "page") || params.getAll("page").length > 1
     || (pageValue !== null && !/^[1-9]\d{0,5}$/.test(pageValue))) return json({ error: "invalid_request" }, 400);
   const page = pageValue === null ? null : Number(pageValue);
+  // A disconnected caller or terminated invocation cannot leave a spinner
+  // alive forever. Reconcile only abandoned buyer attempts, never quote
+  // evidence, successful requests, or background capability probes.
   const db = createDatabase(d1 as never);
+  if (d1.batch) {
+    const cutoff = nowMs - 300_000;
+    await db.batch([
+      db.update(catalogQuoteRequests).set({ status: "failed", completedAt: nowMs, errorCode: "QUOTE_ATTEMPT_INTERRUPTED" })
+        .where(and(eq(catalogQuoteRequests.agentKey, `eip155:56:${agentId}`), eq(catalogQuoteRequests.kind, "buyer_quote"),
+          inArray(catalogQuoteRequests.status, ["pending", "running"]), lt(catalogQuoteRequests.createdAt, cutoff),
+          sql`NOT EXISTS (SELECT 1 FROM catalog_quote_attempts a WHERE a.requestId=${catalogQuoteRequests.id} AND a.startedAt >= ${cutoff})`)),
+      db.update(catalogQuoteAttempts).set({ status: "failed", finishedAt: nowMs,
+        durationMs: sql`${nowMs}-${catalogQuoteAttempts.startedAt}`, errorCode: "QUOTE_ATTEMPT_INTERRUPTED", outcome: "interrupted" })
+        .where(and(inArray(catalogQuoteAttempts.status, ["pending", "running"]),
+          inArray(catalogQuoteAttempts.requestId, db.select({ id: catalogQuoteRequests.id }).from(catalogQuoteRequests)
+            .where(and(eq(catalogQuoteRequests.agentKey, `eip155:56:${agentId}`), eq(catalogQuoteRequests.status, "failed"),
+              eq(catalogQuoteRequests.errorCode, "QUOTE_ATTEMPT_INTERRUPTED")))))),
+    ]);
+  }
   // Page logical requests first. A browser-first request may have a failed
   // browser attempt followed by a Worker fallback, so applying LIMIT to a
   // joined request/attempt query can silently drop older logical requests.

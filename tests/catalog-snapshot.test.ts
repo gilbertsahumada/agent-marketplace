@@ -25,6 +25,15 @@ const items = [
 ];
 
 describe("catalog snapshot v2", () => {
+  it("captures Testnet explicitly and rejects cross-network source pages", async () => {
+    const fetchPage = async (offset: number, limit: number) => ({ items: [{ ...items[1]!, chainId: 97 }], total: 1, offset, limit });
+    const snapshot = await runCatalogSnapshot({ chainId: 97, fetchPage });
+    expect(snapshot.chainId).toBe(97);
+    expect(snapshot.candidates[0]?.agentKey).toBe("eip155:97:2");
+    await expect(runCatalogSnapshot({ chainId: 56, fetchPage })).rejects.toThrow("CATALOG_PAGE_CHAIN_MISMATCH");
+    expect(parseCatalogSnapshotCliOptions(["--chain", "97"], "2026-09-06T00:00:00Z").chainId).toBe(97);
+    expect(() => parseCatalogSnapshotCliOptions(["--chain", "1"], "2026-09-06T00:00:00Z")).toThrow("--chain must be 56 or 97");
+  });
   it("requires an explicit source artifact for a D1 seed", () => {
     expect(parseCatalogD1SeedOptions(["--input", "evidence/catalog.json"])).toEqual({
       input: expect.stringMatching(/evidence\/catalog\.json$/),

@@ -23,6 +23,7 @@ import { CatalogSearch } from "./catalog-search";
 import { CatalogReturnRefresh } from "./catalog-return-refresh";
 
 import { CatalogMetric } from "./catalog-metric";
+import { CatalogNetworkTabs } from "./catalog-network-tabs";
 
 function dataCapturedAt(data: MarketplaceAgentPage | undefined, catalog: CatalogCandidatePage | undefined) {
   const value = catalog ? new Date(catalog.generatedAt) : data?.fetchedAt ? new Date(data.fetchedAt) : null;
@@ -53,6 +54,7 @@ export function CatalogPage({
   catalog?: CatalogCandidatePage;
   observations?: ObservationFeedResult;
   query: {
+    network?: "mainnet" | "testnet";
     view: "all" | "marketplace";
     scope?: "hiring" | "evaluation";
     status?: CatalogStatus;
@@ -72,6 +74,7 @@ export function CatalogPage({
 }) {
   if (!data && !catalog) throw new Error("CATALOG_PAGE_DATA_REQUIRED");
   const allView = query.view === "all";
+  const network = query.network ?? "mainnet";
   const selectedStatuses = query.statuses ?? (query.status ? [query.status] : []);
   const selectedCategories = query.categories ?? (query.category ? [query.category] : []);
   const selectedReachability = query.reachability ?? [];
@@ -99,6 +102,7 @@ export function CatalogPage({
   const totalPages = total === 0 ? 0 : Math.ceil(total / (catalog?.limit ?? data!.pagination.pageSize));
   const hrefForPage = (page: number) => {
     const params = new URLSearchParams({ view: query.view, page: String(page), limit: "24" });
+    params.set("network", network);
     if (query.scope) params.set("scope", query.scope);
     if (!allView) for (const status of selectedStatuses) params.append("status", status);
     for (const category of selectedCategories) params.append("category", category);
@@ -111,6 +115,7 @@ export function CatalogPage({
   const searchForm = (
     <form action="/agents" className={allView ? "grid min-w-0 gap-3 sm:grid-cols-[minmax(0,1fr)_auto]" : "relative grid w-full min-w-0 grid-cols-[auto_minmax(0,1fr)] gap-2 lg:block"} key="catalog-search">
       <input name="view" type="hidden" value={query.view} />
+      <input name="network" type="hidden" value={network} />
       {query.scope && <input name="scope" type="hidden" value={query.scope} />}
       {!allView && selectedStatuses.map((status) => <input key={status} name="status" type="hidden" value={status} />)}
       {selectedCategories.map((category) => <input key={category} name="category" type="hidden" value={category} />)}
@@ -166,7 +171,12 @@ export function CatalogPage({
     </form>
   );
 
-  const emptyContent = selectedCategories.length === 1 && selectedCategories[0] === "grid_trading" ? (
+  const emptyContent = catalog?.coverage?.catalogDiscovery === "not_configured" ? (
+    <Alert>
+      <AlertTitle>Testnet agent discovery is not configured yet</AlertTitle>
+      <AlertDescription>Testnet jobs are indexed separately. They do not establish that a Testnet agent can accept quotes here.</AlertDescription>
+    </Alert>
+  ) : selectedCategories.length === 1 && selectedCategories[0] === "grid_trading" ? (
     <Alert className="border-zinc-800 bg-zinc-950">
       <AlertTitle>No verified Grid Trading agent yet</AlertTitle>
       <AlertDescription>
@@ -198,7 +208,8 @@ export function CatalogPage({
           <Button type="submit">Ask</Button>
         </form>
       )}
-      <CatalogNavigationProvider navigationKey={JSON.stringify(query)} {...(query.scope ? { scope: query.scope } : {})}>
+      <CatalogNavigationProvider {...(query.network ? { network: query.network } : {})} navigationKey={JSON.stringify(query)} {...(query.scope ? { scope: query.scope } : {})}>
+      <CatalogNetworkTabs network={network} href={hrefForPage(currentPage)}>
         <div className={allView ? "" : "grid gap-6 lg:h-[calc(100dvh-7rem)] lg:min-h-[30rem] lg:grid-cols-[17rem_minmax(0,1fr)]"}>
           {!allView && (
             <aside aria-label="Catalog filters" className="marketplace-surface hidden rounded-xl lg:sticky lg:top-0 lg:block lg:max-h-full lg:self-start lg:overflow-y-auto">
@@ -214,13 +225,13 @@ export function CatalogPage({
 
           <section aria-label="Agent results" className="min-w-0 space-y-4 lg:h-full lg:overflow-y-auto lg:pr-2">
             {!allView && <nav aria-label="Agent inventory" className="flex flex-wrap items-center gap-2">
-              <Link aria-current={query.scope !== "evaluation" ? "page" : undefined} className={buttonVariants({ variant: query.scope !== "evaluation" ? "default" : "outline", size: "sm" })} href="/agents?scope=hiring">For hiring</Link>
-              <Link aria-current={query.scope === "evaluation" ? "page" : undefined} className={buttonVariants({ variant: query.scope === "evaluation" ? "default" : "outline", size: "sm" })} href="/agents?scope=evaluation">Under evaluation</Link>
+              <Link aria-current={query.scope !== "evaluation" ? "page" : undefined} className={buttonVariants({ variant: query.scope !== "evaluation" ? "default" : "outline", size: "sm" })} href={`/agents?scope=hiring&network=${network}`}>For hiring</Link>
+              <Link aria-current={query.scope === "evaluation" ? "page" : undefined} className={buttonVariants({ variant: query.scope === "evaluation" ? "default" : "outline", size: "sm" })} href={`/agents?scope=evaluation&network=${network}`}>Under evaluation</Link>
               <p className="text-xs text-muted-foreground">{query.scope === "evaluation" ? "Not currently requestable. Pending does not mean incompatible." : "Checked quote forms. No previous quote or job required."}</p>
             </nav>}
             <div className="marketplace-surface grid items-center gap-4 rounded-xl p-3 xl:grid-cols-[auto_minmax(0,1fr)]" data-testid="catalog-summary">
               <div aria-label="Catalog totals" className="flex items-center gap-5 px-1 sm:gap-7">
-                <div className="flex items-center gap-2.5"><UsersRound aria-hidden="true" className="size-4 text-zinc-600" /><CatalogMetric label="ERC-8004 registered" value={registryTotal} /></div>
+                <div className="flex items-center gap-2.5"><UsersRound aria-hidden="true" className="size-4 text-zinc-600" /><CatalogMetric label={network === "testnet" ? "Testnet agents indexed" : "ERC-8004 registered"} value={registryTotal} /></div>
                 <div aria-hidden="true" className="h-10 w-px bg-white/10" />
                 <div className="flex items-center gap-2.5"><RadioTower aria-hidden="true" className="size-4 text-primary" /><CatalogMetric label="Can request quote" value={operationalTotal} /></div>
               </div>
@@ -237,6 +248,7 @@ export function CatalogPage({
             <PaginationLinks hrefFor={hrefForPage} page={currentPage} totalPages={totalPages} />
           </section>
         </div>
+      </CatalogNetworkTabs>
       </CatalogNavigationProvider>
     </main>
   );

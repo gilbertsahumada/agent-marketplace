@@ -1,6 +1,8 @@
-import { isSyntacticallyPublicHttpsUrl } from "../trust8004/safe-url";
-import { a2aBaseEndpoint } from "../trust8004/candidates";
-import { NEGOTIATION_INPUT_EXTENSION, normalizeNegotiationContract, type NegotiationContract } from "../../../src/shared/negotiation-input";
+import { isSyntacticallyPublicHttpsUrl } from "../trust8004/safe-url.ts";
+import { a2aBaseEndpoint } from "../trust8004/candidates.ts";
+import { NEGOTIATION_INPUT_EXTENSION, normalizeNegotiationContract, type NegotiationContract } from "../../../src/shared/negotiation-input.ts";
+import { sdkNegotiationProfile, supportsSdkA2aProfile } from "../../../src/shared/negotiation-profiles.ts";
+import { negotiationFromOpenApi } from "./negotiation-openapi.ts";
 
 /** Only reads declarations: never negotiates or calls a seller tool. */
 export async function discoverNegotiationInput(input: A2aProbeInput & { transport: string }): Promise<NegotiationContract> {
@@ -31,7 +33,10 @@ export async function discoverNegotiationInput(input: A2aProbeInput & { transpor
     if (!parseSkills(card.skills).some(skill => NEGOTIATION_SKILLS.includes(skill as typeof NEGOTIATION_SKILLS[number]))) throw new SellerProbeError("A2A_REQUIRED_SKILLS");
     const extensions = isRecord(card.capabilities) && Array.isArray(card.capabilities.extensions) ? card.capabilities.extensions : [];
     const extension = extensions.find(value => isRecord(value) && value.uri === NEGOTIATION_INPUT_EXTENSION);
-    if (!isRecord(extension)) throw new SellerProbeError("NEGOTIATION_PARAMETERS_UNAVAILABLE");
+    if (!isRecord(extension)) {
+      if (supportsSdkA2aProfile(card)) return sdkNegotiationProfile();
+      throw new SellerProbeError("NEGOTIATION_PARAMETERS_UNAVAILABLE");
+    }
     return normalizeNegotiationContract(extension.params);
   }
   if (input.transport !== "erc8183_http") throw new SellerProbeError("NEGOTIATION_TRANSPORT_UNSUPPORTED");
@@ -39,7 +44,19 @@ export async function discoverNegotiationInput(input: A2aProbeInput & { transpor
   url.pathname = url.pathname.replace(/\/+$/, "").replace(/\/(health|status|negotiate)$/, "") + "/status";
   const status = await fetchJson(url, { headers: { accept: "application/json" } }, input, deadline, usage);
   // Explicit marketplace convention. A healthy HTTP endpoint alone is not a schema.
-  if (!isRecord(status.negotiationInput)) throw new SellerProbeError("NEGOTIATION_PARAMETERS_UNAVAILABLE");
+  if (status.negotiationInput === undefined) {
+    let document;
+    try {
+      document = await fetchJson(new URL("/openapi.json", url), { headers: { accept: "application/json" } }, input, deadline, usage);
+    } catch (error) {
+      // A missing optional schema document is not a failed negotiation endpoint.
+      if (error instanceof SellerProbeError && error.code === "SELLER_HTTP_4XX") throw new SellerProbeError("NEGOTIATION_PARAMETERS_UNAVAILABLE");
+      throw error;
+    }
+    const target = new URL(url);
+    target.pathname = target.pathname.replace(/\/status$/, "/negotiate");
+    return negotiationFromOpenApi(document, target);
+  }
   return normalizeNegotiationContract(status.negotiationInput);
 }
 

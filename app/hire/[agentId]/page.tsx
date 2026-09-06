@@ -5,12 +5,26 @@ import { MarketplaceAgentNotFoundError, MarketplaceDataUnavailableError } from "
 import { CatalogUnavailable } from "@/components/marketplace/catalog-unavailable";
 import { AgentProfile, marketplaceAgentDisplayName } from "@/components/marketplace/agent-profile";
 import { QuoteRequestPanel } from "@/components/marketplace/quote-request-panel";
+import Link from "next/link";
+import { getCatalogCandidate } from "@/src/business/composition";
+import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 
 export const dynamic = "force-dynamic";
 
-export default async function HirePage({ params, searchParams }: { params: Promise<{ agentId: string }>; searchParams?: Promise<{ jobsBefore?: string; jobsNetwork?: string }> }) {
+export default async function HirePage({ params, searchParams }: { params: Promise<{ agentId: string }>; searchParams?: Promise<{ jobsBefore?: string; jobsNetwork?: string; network?: string }> }) {
   const { agentId } = await params;
   const query = await searchParams;
+  if (query?.network !== undefined && query.network !== "mainnet" && query.network !== "testnet") notFound();
+  if (query?.network === "testnet") {
+    const candidate = await getCatalogCandidate({ agentId, chainId: 97 });
+    if (!candidate) return <CatalogUnavailable retryHref={`/hire/${agentId}?network=testnet`} />;
+    return <main id="main-content" className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-5 py-8">
+      <Link className="underline" href="/agents?network=testnet">Testnet agents</Link>
+      <h1>{candidate.name ?? `Agent #${agentId}`} · BSC Testnet</h1>
+      <Alert><AlertTitle>Testnet quotes are not configured yet</AlertTitle><AlertDescription>This identity is indexed on Testnet. Mainnet quotes and payments cannot be used for this agent.</AlertDescription></Alert>
+      <Link className="underline" href="/jobs?chainId=97">View Testnet jobs</Link>
+    </main>;
+  }
   const before = query?.jobsBefore;
   const jobsChainId = query?.jobsNetwork === "testnet" ? 97 : 56;
   const jobsNetwork = jobsChainId === 97 ? "testnet" : "mainnet";

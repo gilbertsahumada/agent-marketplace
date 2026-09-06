@@ -1,5 +1,6 @@
 import {
   encodeFunctionData,
+  decodeEventLog,
   getAddress,
   isAddressEqual,
   type Address,
@@ -120,9 +121,55 @@ export function extractBatchJobId(receipts: readonly BatchCallReceipt[], commerc
 // Maps each call to the receipt that executed it: index-aligned when the
 // wallet answered one receipt per call, otherwise the single batch receipt.
 export function receiptForCall(receipts: readonly BatchCallReceipt[], callCount: number, index: number): BatchCallReceipt {
+  if (receipts.length !== 1 && receipts.length !== callCount) {
+    throw new Erc8183JobNotReadyError("Batched hire receipt mapping is ambiguous");
+  }
   const receipt = receipts.length === callCount ? receipts[index] : receipts[0];
-  if (!receipt) throw new Erc8183JobNotReadyError("Batched hire returned no receipt");
+  if (!receipt || index < 0 || index >= callCount || receipt.status !== "success") throw new Erc8183JobNotReadyError("Batched hire returned no successful receipt");
   return receipt;
+}
+
+// Wallet receipts are hints, never the source of confirmation or gas data.
+// Fetch each unique hash from the pinned chain before recording any call.
+export async function resolveCanonicalBatchReceipts(
+  receipts: readonly BatchCallReceipt[],
+  callCount: number,
+  readReceipt: (hash: Hex) => Promise<TransactionReceipt>,
+): Promise<readonly TransactionReceipt[]> {
+  receiptForCall(receipts, callCount, 0);
+  const canonical = new Map<Hex, TransactionReceipt>();
+  for (const hint of receipts) {
+    if (!/^0x[0-9a-fA-F]{64}$/.test(hint.transactionHash)) throw new Erc8183JobNotReadyError("Invalid batch transaction hash");
+    if (canonical.has(hint.transactionHash)) continue;
+    const receipt = await readReceipt(hint.transactionHash);
+    if (receipt.status !== "success" || receipt.transactionHash.toLowerCase() !== hint.transactionHash.toLowerCase() || typeof receipt.gasUsed !== "bigint" || typeof receipt.effectiveGasPrice !== "bigint") {
+      throw new Erc8183JobNotReadyError("Batch transaction receipt is reverted or incomplete");
+    }
+    canonical.set(hint.transactionHash, receipt);
+  }
+  return receipts.map((hint) => canonical.get(hint.transactionHash)!);
+}
+
+export function assertBatchHireEvents(receipts: readonly BatchCallReceipt[], plan: Erc8183HirePlan, commerce: Address, expectedJobId: bigint): void {
+  let created = false;
+  let funded = false;
+  for (const receipt of receipts) for (const log of receipt.logs) {
+    if (!sameContract(log.address, commerce)) continue;
+    let event;
+    try { event = decodeEventLog({ abi: agenticCommerceBrowserAbi, data: log.data, topics: log.topics }); } catch { continue; }
+    if (event.eventName !== "JobCreated" && event.eventName !== "JobFunded") continue;
+    if (event.args.jobId !== expectedJobId || !sameContract(event.args.client, plan.buyer) || !sameContract(event.args.provider, plan.seller)) {
+      throw new Erc8183JobNotReadyError("Batch receipt belongs to a different job, buyer or provider");
+    }
+    if (event.eventName === "JobCreated") {
+      if (!sameContract(event.args.evaluator, plan.quote.router) || !sameContract(event.args.hook, plan.quote.router) || event.args.expiredAt !== BigInt(plan.deadline)) throw new Erc8183JobNotReadyError("Batch job terms differ from the quote");
+      created = true;
+    } else {
+      if (event.args.amount !== BigInt(plan.quote.priceRaw)) throw new Erc8183JobNotReadyError("Batch funding amount differs from the quote");
+      funded = true;
+    }
+  }
+  if (!created || !funded) throw new Erc8183JobNotReadyError("Batch receipt is missing job creation or funding evidence");
 }
 
 // Errors that mean "this wallet cannot batch" rather than "the batch failed":

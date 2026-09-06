@@ -295,6 +295,7 @@ describe("Commerce read routes", () => {
     expect(response.headers.get("cache-control")).toBe("public, max-age=30, stale-while-revalidate=60");
     const body = await response.json() as { jobs: Array<Record<string, unknown>>; nextBefore: string | null };
     expect(body.jobs.map((entry) => [entry.jobId, entry.marketplace])).toEqual([["802", false], ["801", true]]);
+    expect(body.jobs[1]?.registeredAt).toBe((1_700_000_000 + 1_001) * 1_000);
     expect(body.jobs[1]).toMatchObject({ client: BUYER, provider: SELLER, budget: "10000000000000000", status: 1, expiredAt: 1_788_600_000_000, submittedAt: null });
     expect(body.nextBefore).toBeNull();
 

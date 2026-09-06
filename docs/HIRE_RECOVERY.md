@@ -12,6 +12,16 @@ The latest journal pointer remains compatible with older browsers. Journals with
 
 For sequential sends, confirmation requires a successful RPC receipt plus a transaction whose sender, target and calldata match the exact planned call. Restored jobs show their chain status separately from transaction confirmations.
 
+Batch confirmation now resolves each unique wallet-provided hash through the pinned
+RPC. The mapping must be one shared receipt or one per call; ambiguous/reverted
+receipts are rejected. Creation and funding events must match the job, buyer,
+provider, evaluator/hook, deadline and amount. Canonical receipt gas/block data is
+passed into the journal instead of recording only hashes. Transaction row icons
+are static; operation progress is shown separately. A notification failure cannot
+erase confirmed payment receipts. The wallet batch ID and predicted job ID are
+retained to avoid a second send on a same-checkout retry. This is not yet a claim
+that every legacy pending batch can be recovered after quote expiry or reload.
+
 For an already funded job, **Retry seller notification** re-reads chain state and calls the notification endpoint directly. It does not enter wallet execution, approve tokens or send funding again. Submitted/completed jobs do not request another notification.
 
 Regression coverage includes fresh quotes with saved funded/submitted/completed jobs, explicit recovery, wallet changes, remounts, mismatched job descriptions/buyers, preservation of archived progress and notification failure without wallet execution. These checks use fixtures; they do not send Mainnet transactions.
