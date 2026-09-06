@@ -5,6 +5,9 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader } from "@/components/ui/card";
 import type { DeliveryReport, JobClosure } from "@/src/mainnet/job-delivery";
+import dynamic from "next/dynamic";
+
+const JobClosureActions = dynamic(() => import("./job-closure-actions").then(module => module.JobClosureActions));
 
 const closureLabels: Record<JobClosure, string> = {
   completed: "Completed on-chain", rejected: "Rejected on-chain", expired: "Expired on-chain",
@@ -67,9 +70,10 @@ export function JobDeliveryPanel({ jobId }: { jobId: string }) {
         </> : <p className="text-sm text-muted-foreground">{report.delivery.status === "not_submitted" ? "The seller has not submitted a delivery." : "A supported delivery could not be retrieved. An on-chain hash alone does not make the result accessible."}</p>}
         {report.delivery.url ? <Button asChild variant="outline" size="sm" className="self-start"><a href={report.delivery.url} target="_blank" rel="noopener noreferrer">Seller source<ExternalLink aria-hidden="true" data-icon="inline-end" /></a></Button> : null}
         {report.reviewEndsAt ? <p className="text-sm">Review window ends <time dateTime={report.reviewEndsAt}>{new Date(report.reviewEndsAt).toUTCString()}</time>.</p> : null}
-        {report.closure === "review_window" ? <p className="text-sm text-muted-foreground">If the result does not meet your request, the original buyer can dispute it through the bound policy before the deadline. Disputes are not yet submitted from this app.</p> : null}
-        {report.closure === "settlement_available" ? <p className="text-sm text-muted-foreground">The policy permits settlement. A separate on-chain transaction is required; no settlement or new payment has been sent by this page.</p> : null}
+        {report.closure === "review_window" ? <p className="text-sm text-muted-foreground">If the result does not meet your request, the original buyer can dispute it through the bound policy before the deadline. {process.env.NEXT_PUBLIC_JOB_CLOSURE_ENABLED === "true" ? "Review the wallet action below before signing." : "Disputes are not yet submitted from this app."}</p> : null}
+        {report.closure === "settlement_available" ? <p className="text-sm text-muted-foreground">{report.settlementOutcome === "rejected" ? "The policy verdict is rejection, not successful completion." : report.settlementOutcome === "completed" ? "The policy verdict permits completion; the job is not completed yet." : "The policy permits settlement."} A separate on-chain transaction is required; no settlement or new payment has been sent by this page.</p> : null}
         {report.closure === "disputed" ? <p className="text-sm text-muted-foreground">The policy is handling a dispute. A completed outcome has not been confirmed.</p> : null}
+        {process.env.NEXT_PUBLIC_JOB_CLOSURE_ENABLED === "true" ? <JobClosureActions report={report} refresh={() => setRevision(value => value + 1)} /> : null}
         <details className="group/delivery">
           <summary className="flex cursor-pointer list-none items-center gap-2 text-sm [&::-webkit-details-marker]:hidden">Verification details<ChevronDown aria-hidden="true" className="size-4 group-open/delivery:rotate-180" /></summary>
           <p className="mt-2 break-all text-xs text-muted-foreground">Checked {new Date(report.checkedAt).toUTCString()} · Policy {report.policy ?? "unavailable"}. Read-only checks; no wallet signature.</p>
