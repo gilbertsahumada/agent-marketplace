@@ -432,7 +432,7 @@ export async function persistQuoteResult(
   // the physical start time. Read it before doing RPC/verification work so
   // public durations reflect the actual browser/Worker operation instead of
   // collapsing to zero when a result is reported quickly.
-  const attemptRows = await db.select({ startedAt: catalogQuoteAttempts.startedAt })
+  const attemptRows = await db.select({ startedAt: catalogQuoteAttempts.startedAt, status: catalogQuoteAttempts.status })
     .from(catalogQuoteAttempts)
     .where(and(
       eq(catalogQuoteAttempts.id, attemptId),
@@ -440,6 +440,7 @@ export async function persistQuoteResult(
     ))
     .limit(1);
   const started = attemptRows[0]?.startedAt ?? nowMs;
+  if (attemptRows[0]?.status === "failed") return json({ error: "attempt_completed", code: "QUOTE_ATTEMPT_INTERRUPTED" }, 409);
   let context: ChainContext;
   let verdict: Awaited<ReturnType<typeof validateProbeQuote>>;
   try {
@@ -748,7 +749,7 @@ export async function catalogQuoteFallbackResponse(request: Request, d1: D1Datab
           },
         });
       })();
-    return persistQuoteResult(
+    return await persistQuoteResult(
       db,
       options.env,
       options.config,
@@ -759,7 +760,7 @@ export async function catalogQuoteFallbackResponse(request: Request, d1: D1Datab
       options.nowMs,
     );
   } catch (error) {
-    const code = error instanceof SellerProbeError ? error.code : "SELLER_UNREACHABLE";
+    const code = error instanceof SellerProbeError ? error.code : "QUOTE_VERIFICATION_UNAVAILABLE";
     await updateAttempt(db, workerAttemptId, found.request.id, "failed", options.nowMs, { errorCode: code, outcome: "error" });
     await db.update(catalogQuoteRequests).set({ status: "failed", completedAt: options.nowMs, errorCode: code }).where(eq(catalogQuoteRequests.id, found.request.id));
     return json({ error: "quote_attempt_failed", code, requestId: found.request.id, attemptId: workerAttemptId, browserAttemptId: attemptId }, 502);
@@ -772,7 +773,25 @@ export async function catalogQuoteHistoryResponse(request: Request, d1: D1Databa
   if (!AGENT_ID.test(agentId) || [...params.keys()].some(key => key !== "page") || params.getAll("page").length > 1
     || (pageValue !== null && !/^[1-9]\d{0,5}$/.test(pageValue))) return json({ error: "invalid_request" }, 400);
   const page = pageValue === null ? null : Number(pageValue);
+  // A disconnected caller or terminated invocation cannot leave a spinner
+  // alive forever. Reconcile only abandoned buyer attempts, never quote
+  // evidence, successful requests, or background capability probes.
   const db = createDatabase(d1 as never);
+  if (d1.batch) {
+    const cutoff = nowMs - 300_000;
+    await db.batch([
+      db.update(catalogQuoteRequests).set({ status: "failed", completedAt: nowMs, errorCode: "QUOTE_ATTEMPT_INTERRUPTED" })
+        .where(and(eq(catalogQuoteRequests.agentKey, `eip155:56:${agentId}`), eq(catalogQuoteRequests.kind, "buyer_quote"),
+          inArray(catalogQuoteRequests.status, ["pending", "running"]), lt(catalogQuoteRequests.createdAt, cutoff),
+          sql`NOT EXISTS (SELECT 1 FROM catalog_quote_attempts a WHERE a.requestId=${catalogQuoteRequests.id} AND a.startedAt >= ${cutoff})`)),
+      db.update(catalogQuoteAttempts).set({ status: "failed", finishedAt: nowMs,
+        durationMs: sql`${nowMs}-${catalogQuoteAttempts.startedAt}`, errorCode: "QUOTE_ATTEMPT_INTERRUPTED", outcome: "interrupted" })
+        .where(and(inArray(catalogQuoteAttempts.status, ["pending", "running"]),
+          inArray(catalogQuoteAttempts.requestId, db.select({ id: catalogQuoteRequests.id }).from(catalogQuoteRequests)
+            .where(and(eq(catalogQuoteRequests.agentKey, `eip155:56:${agentId}`), eq(catalogQuoteRequests.status, "failed"),
+              eq(catalogQuoteRequests.errorCode, "QUOTE_ATTEMPT_INTERRUPTED")))))),
+    ]);
+  }
   // Page logical requests first. A browser-first request may have a failed
   // browser attempt followed by a Worker fallback, so applying LIMIT to a
   // joined request/attempt query can silently drop older logical requests.
