@@ -3,9 +3,20 @@ import "@testing-library/jest-dom/vitest";
 import { afterEach, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QuoteRequestPanel } from "../components/marketplace/quote-request-panel";
-vi.mock("../components/spikes/erc8183-browser-spike", () => ({ Erc8183MarketplaceHire: () => <div>Review enabled</div>, Erc8183SavedHire: () => null }));
+vi.mock("../components/spikes/erc8183-browser-spike", () => ({ Erc8183MarketplaceHire: () => <div>Review enabled</div>, Erc8183SavedHire: ({ onActiveChange }: { onActiveChange?: (active: boolean) => void }) => <button onClick={() => onActiveChange?.(true)}>Resume saved job</button> }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+it("does not ask for a new quote after explicitly resuming a previous hire", async () => {
+  const fetcher = vi.fn(async () => Response.json({ error: "quote_service_unavailable" }, { status: 503 }));
+  vi.stubGlobal("fetch", fetcher);
+  render(<QuoteRequestPanel agentId="303779" />);
+  await screen.findByText(/Cannot connect to the marketplace quote service/);
+  expect(screen.getByText("Request a verified quote to unlock hiring.")).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Resume saved job" }));
+  expect(screen.queryByText("Request a verified quote to unlock hiring.")).not.toBeInTheDocument();
+  expect(screen.getByLabelText("Previous hire")).toBeInTheDocument();
+  expect(fetcher).toHaveBeenCalledTimes(1);
+});
 it("does not imply earlier quotes or readiness when the marketplace service is unavailable", async () => {
   vi.stubGlobal("fetch", vi.fn(async () => Response.json({ error: "quote_service_unavailable" }, { status: 503 })));
   render(<QuoteRequestPanel agentId="304169" />);
