@@ -3,7 +3,7 @@ import { ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { CategoryCard } from "./category-card";
 import { FunnelSection } from "./funnel-section";
-import { JourneySteps } from "./journey-steps";
+import { HiringStage } from "./hiring-stage";
 import { NetworkAwareLandingHero } from "./network-aware-landing-hero";
 import type { AgentCardViewModel, CategoryCardViewModel, EvidenceStepViewModel, FunnelSectionViewModel, LedgerPulseViewModel } from "./presentation-types";
 
@@ -36,6 +36,12 @@ export function MarketplaceLanding({
     { kind: "quote", label: "Fresh quote", status: "unknown", provenance: "observed", detail: "A transactional quote is requested only when the buyer asks." },
     { kind: "job", label: "Job", status: "unknown", provenance: "onchain", detail: "No completed Mainnet job is claimed by this card." },
   ] satisfies EvidenceStepViewModel[];
+  const stageCandidate = featuredAgents.find((agent) => agent.categories.includes("grid_trading") && (agent.hireability === "hireable" || agent.hireability === "quote_stale"))
+    ?? featuredAgents.find((agent) => agent.categories.includes("grid_trading"))
+    ?? null;
+  const stageAgent = stageCandidate
+    ? { name: stageCandidate.name, agentId: stageCandidate.agentId, href: stageCandidate.href, quoteCapable: stageCandidate.hireability === "hireable" || stageCandidate.hireability === "quote_stale" }
+    : null;
   const mainnetHref = quoteSeller
     ? `/hire/${quoteSeller.agentId}`
     : "/agents?view=marketplace&category=grid_trading";
@@ -70,10 +76,22 @@ export function MarketplaceLanding({
         }}
       />
 
-      <section aria-labelledby="journey-heading" className="border-b border-border/60">
+      <section aria-labelledby="hiring-heading" className="border-b border-border/60">
         <div className="mx-auto max-w-[1480px] px-5 py-16 sm:px-8 lg:px-12 lg:py-20">
-          <h2 className="sr-only" id="journey-heading">From discovery to onchain proof</h2>
-          <JourneySteps />
+          <div className="grid gap-6 lg:grid-cols-[0.75fr_1.25fr] lg:items-end">
+            <div>
+              <p className="font-eyebrow text-signal">How hiring works</p>
+              <h2 className="mt-3 max-w-2xl text-4xl font-bold leading-[1.02] tracking-[-0.04em] text-foreground sm:text-5xl" id="hiring-heading">
+                Say what you need.<br />Watch it get done.
+              </h2>
+            </div>
+            <p className="max-w-2xl text-base leading-7 text-muted-foreground lg:justify-self-end">
+              You write the outcome in plain words. The marketplace finds a verified agent, holds your funds in escrow, and hands you a receipt you can check on chain.
+            </p>
+          </div>
+          <div className="mt-12">
+            <HiringStage agent={stageAgent} />
+          </div>
         </div>
       </section>
 
