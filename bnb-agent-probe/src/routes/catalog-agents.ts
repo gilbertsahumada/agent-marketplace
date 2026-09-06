@@ -146,7 +146,8 @@ export async function catalogAgentsResponse(
   const latestFailure = rawFailure === null ? null : rawFailure === "true" ? true : rawFailure === "false" ? false : null;
   if (rawFailure !== null && latestFailure === null) return invalid();
   const rawChain = url.searchParams.get("chain");
-  if (rawChain !== null && rawChain !== "56") return invalid();
+  if (url.searchParams.getAll("chain").length > 1 || (rawChain !== null && rawChain !== "56" && rawChain !== "97")) return invalid();
+  const chainId = rawChain === "97" ? 97 : 56;
   const inventory = url.searchParams.get("inventory") ?? (responseVersion === 2 ? "operational" : "registry");
   if (!(["operational", "registry"] as const).includes(inventory as "operational" | "registry")) return invalid();
   const rawFacets = url.searchParams.get("facets");
@@ -193,9 +194,9 @@ export async function catalogAgentsResponse(
         )))),
       )))),
     )));
-  const requestableCondition = compatibleCondition(false);
+  const requestableCondition = chainId === 56 ? compatibleCondition(false) : sql`0=1`;
   const scopeCondition = scope === "hiring" ? requestableCondition : scope === "evaluation" ? not(requestableCondition) : undefined;
-  const quoteCapableCondition = compatibleCondition(true);
+  const quoteCapableCondition = chainId === 56 ? compatibleCondition(true) : sql`0=1`;
   const operationalDeclarationExists = exists(db.select({ value: sql`1` })
     .from(catalogAgentEndpoints)
     .innerJoin(catalogEndpoints, eq(catalogEndpoints.endpointKey, catalogAgentEndpoints.endpointKey))
@@ -544,7 +545,7 @@ export async function catalogAgentsResponse(
     commerceCondition?.inlineParams(),
     quoteCondition?.inlineParams(),
     latestFailure === null ? undefined : latestFailure ? failureExists : not(failureExists),
-    rawChain === null ? undefined : eq(catalogAgents.chainId, 56),
+    eq(catalogAgents.chainId, chainId),
   );
   const facetCount = (condition: ReturnType<typeof statusCondition>) =>
     sql<number>`COALESCE(SUM(CASE WHEN ${condition.inlineParams()} THEN 1 ELSE 0 END), 0)`;
@@ -553,6 +554,7 @@ export async function catalogAgentsResponse(
       SELECT 1 FROM json_each(${catalogAgents.categoriesJson}) WHERE value = ${category}
     ) THEN 1 ELSE 0 END), 0)`;
   const operationalBase = and(
+    eq(catalogAgents.chainId, chainId),
     scopeCondition?.inlineParams(),
     eq(catalogAgents.indexState, "current"),
     operationalDeclarationExists,
@@ -588,7 +590,7 @@ export async function catalogAgentsResponse(
       countFacet("mcp"),
       countFacet("quote_capable"),
       countFacet("failed"),
-      unfilteredFacetScope ? readCatalogReachabilityFacets(db, nowMs).then((row) => [row]) : db.select({
+      unfilteredFacetScope ? readCatalogReachabilityFacets(db, nowMs, chainId).then((row) => [row]) : db.select({
         live: facetCount(anyFreshProtocol!),
         historical: facetCount(and(anyPlatformSuccess, not(anyFreshProtocol!))!),
         never: facetCount(not(anyPlatformSuccess)),
@@ -699,7 +701,7 @@ export async function catalogAgentsResponse(
         eq(hireEvents.jobId, sql`CAST(${commerceJobs.jobId} AS TEXT)`),
       ))
       .where(and(
-        eq(hireEvents.chainId, 56),
+        eq(hireEvents.chainId, chainId),
         inArray(hireEvents.agentId, agents.map((agent) => agent.agentId)),
         eq(hireEvents.provenance, "chain_verified"),
       ))
@@ -791,6 +793,14 @@ export async function catalogAgentsResponse(
     };
   });
   const compatibilityItems = items.map(({ admission: _admission, state: _state, ...item }) => item);
+  if (chainId === 97) for (const item of items) {
+    item.state.canRequestQuote = false;
+    item.state.canPrepareHire = false;
+    item.state.canRequestBrowserValidation = false;
+    item.state.canRequestInfrastructureValidation = false;
+    item.state.buyerAction = "unavailable";
+    item.state.blockingReasons = [...item.state.blockingReasons, "NETWORK_QUOTE_NOT_CONFIGURED"];
+  }
   const facetRow = facetRows[0];
   const facets = facetRow ? {
     protocols: { a2a: Number(facetRow.a2aTransport), mcp: Number(facetRow.mcpTransport), erc8183_http: Number(facetRow.httpTransport) },
@@ -823,7 +833,7 @@ export async function catalogAgentsResponse(
   } : undefined;
   const body = responseVersion === 1 ? {
     schemaVersion: 1,
-    chainId: 56,
+    chainId,
     status: statuses[0],
     page,
     limit,
@@ -835,7 +845,8 @@ export async function catalogAgentsResponse(
   } : {
     schemaVersion: 2,
     apiVersion: CATALOG_API_VERSION,
-    chainId: 56,
+    chainId,
+    coverage: { chainId, catalogDiscovery: chainId === 56 ? "enabled" : "not_configured", quoteExecution: chainId === 56 ? "enabled" : "not_configured" },
     status: statuses[0],
     statuses,
     page,
@@ -849,7 +860,7 @@ export async function catalogAgentsResponse(
       commerce,
       quote,
       latestFailure,
-      chainId: rawChain === null ? null : 56,
+      chainId,
       inventory,
     },
     generatedAt: nowMs,
