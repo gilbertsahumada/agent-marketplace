@@ -116,6 +116,8 @@ export type Erc8183JournalStep =
   | "submitted";
 
 export interface Erc8183BrowserJournal {
+  batchId?: string;
+  batchExpectedJobId?: string;
   quoteRequestId?: number;
   schemaVersion: 1;
   chainId: 56 | 97;

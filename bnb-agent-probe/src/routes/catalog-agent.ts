@@ -17,11 +17,14 @@ export async function catalogAgentResponse(
   const pathMatch = /^\/catalog-agent\/([1-9]\d*)$/.exec(url.pathname);
   const queryAgentId = url.pathname === "/catalog-agent" ? url.searchParams.get("agentId") : null;
   const agentId = pathMatch?.[1] ?? queryAgentId;
+  const rawChain = url.searchParams.get("chain");
+  const chainId = rawChain === "97" ? 97 : 56;
   const queryValid = pathMatch
-    ? url.search === ""
+    ? [...url.searchParams.keys()].every((key) => key === "chain")
     : url.pathname === "/catalog-agent"
-      && [...url.searchParams.keys()].every((key) => key === "agentId");
-  if (!agentId || !AGENT_ID.test(agentId) || !queryValid) {
+      && [...url.searchParams.keys()].every((key) => key === "agentId" || key === "chain");
+  if (!agentId || !AGENT_ID.test(agentId) || !queryValid || url.searchParams.getAll("chain").length > 1
+    || (rawChain !== null && rawChain !== "56" && rawChain !== "97")) {
     return Response.json({ error: "invalid_request" }, {
       status: 400,
       headers: { "cache-control": "no-store" },
@@ -30,6 +33,8 @@ export async function catalogAgentResponse(
   const evidence = await readCatalogAgentEvidence(
     createDatabase(d1 as unknown as D1DatabaseLike),
     agentId,
+    50,
+    chainId,
   );
   if (evidence.agent === null) {
     return Response.json({ error: "not_found" }, {
@@ -71,6 +76,14 @@ export async function catalogAgentResponse(
     nowMs,
   });
   const serializeObservation = publicCatalogObservation;
+  if (chainId === 97) {
+    state.canRequestQuote = false;
+    state.canPrepareHire = false;
+    state.canRequestBrowserValidation = false;
+    state.canRequestInfrastructureValidation = false;
+    state.buyerAction = "unavailable";
+    state.blockingReasons = [...state.blockingReasons, "NETWORK_QUOTE_NOT_CONFIGURED"];
+  }
   const currentOperationalEndpointKeys = new Set(evidence.endpoints
     .filter((endpoint) => endpoint.role === "operational" && endpoint.eligibility === "eligible")
     .map((endpoint) => endpoint.endpointKey));
@@ -139,7 +152,7 @@ export async function catalogAgentResponse(
     && observation.verificationLevel === "onchain");
   const v1Body = {
     schemaVersion: 1,
-    chainId: 56,
+    chainId,
     agentId,
     agent: evidence.agent,
     platformAttemptCount: evidence.platformAttemptCount,
@@ -166,7 +179,8 @@ export async function catalogAgentResponse(
     schemaVersion: 2,
     apiVersion: CATALOG_API_VERSION,
     policyVersion: evidence.agent.policyVersion,
-    chainId: 56,
+    chainId,
+    coverage: { chainId, catalogDiscovery: chainId === 56 ? "enabled" : "not_configured", quoteExecution: chainId === 56 ? "enabled" : "not_configured" },
     agentId,
     agent: evidence.agent,
     provenance: {

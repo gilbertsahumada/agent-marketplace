@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { TableRow, TableCell } from "@/components/ui/table";
 import { CopyAddress } from "./copy-address";
+import { CopyJobId, JobTimestamp } from "./job-table-metadata";
 import { shortAddress } from "@/lib/bsc-chains";
 import { ERC8183_MAINNET, ERC8183_TESTNET } from "@/src/business/browser/erc8183-browser-wallet";
 import type { HireChainId, HireJob, HireJobStatus } from "@/src/business/entities/hire-job";
@@ -36,13 +37,14 @@ function statusClassName(status: HireJobStatus): string {
   return "";
 }
 
-export function HireJobTableRow({ job }: { job: Pick<HireJob, "jobId" | "chainId" | "buyer" | "provider" | "status" | "updatedAt" | "marketplace"> }) {
+export function HireJobTableRow({ job }: { job: Pick<HireJob, "jobId" | "chainId" | "buyer" | "provider" | "status" | "updatedAt" | "registeredAt" | "marketplace"> }) {
   return <TableRow>
-    <TableCell className="px-5 py-4 font-medium">Job #{job.jobId}{job.marketplace ? <span className="block text-xs font-normal text-muted-foreground">Hired here</span> : null}</TableCell>
+    <TableCell className="px-5 py-4 font-medium"><CopyJobId jobId={job.jobId} />{job.marketplace ? <span className="block text-xs font-normal text-muted-foreground">Hired here</span> : null}</TableCell>
     <TableCell className="px-5"><Badge className={statusClassName(job.status)} variant="outline">{jobStatusLabel(job.status)}</Badge></TableCell>
     <TableCell className="px-5"><CopyAddress address={job.buyer} chainId={job.chainId} /></TableCell>
     <TableCell className="px-5"><CopyAddress address={job.provider} chainId={job.chainId} /></TableCell>
-    <TableCell className="px-5 text-xs text-muted-foreground"><time dateTime={job.updatedAt} title={job.updatedAt}>{UTC_DATE.format(new Date(job.updatedAt))} UTC</time></TableCell>
+    <TableCell className="px-5 text-xs text-muted-foreground"><JobTimestamp value={job.registeredAt ?? null} /></TableCell>
+    <TableCell className="px-5 text-xs text-muted-foreground"><JobTimestamp value={job.updatedAt} /></TableCell>
     <TableCell className="px-5"><Button asChild variant="outline" size="sm"><Link href={`/jobs/${networkSlug(job.chainId)}/${job.jobId}`} aria-label={`View job ${job.jobId}`}>View job</Link></Button></TableCell>
   </TableRow>;
 }

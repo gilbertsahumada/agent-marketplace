@@ -104,6 +104,7 @@ function job(entry: unknown, chain: HireChainId): HireJob {
     submittedAt: optionalTimestamp(value.submittedAt),
     marketplace: value.marketplace,
     updatedAt: timestamp(value.updatedAt),
+    ...(value.registeredAt == null ? {} : { registeredAt: timestamp(value.registeredAt) }),
   };
 }
 

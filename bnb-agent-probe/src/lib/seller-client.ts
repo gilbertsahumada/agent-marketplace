@@ -1,6 +1,6 @@
-import { isSyntacticallyPublicHttpsUrl } from "../trust8004/safe-url";
-import { a2aBaseEndpoint } from "../trust8004/candidates";
-import { NEGOTIATION_INPUT_EXTENSION, normalizeNegotiationContract, type NegotiationContract } from "../../../src/shared/negotiation-input";
+import { isSyntacticallyPublicHttpsUrl } from "../trust8004/safe-url.ts";
+import { a2aBaseEndpoint } from "../trust8004/candidates.ts";
+import { NEGOTIATION_INPUT_EXTENSION, normalizeNegotiationContract, type NegotiationContract } from "../../../src/shared/negotiation-input.ts";
 
 /** Only reads declarations: never negotiates or calls a seller tool. */
 export async function discoverNegotiationInput(input: A2aProbeInput & { transport: string }): Promise<NegotiationContract> {

@@ -22,6 +22,8 @@ export interface Env {
   /** Dedicated queue for seller capability/quote probes. */
   CATALOG_QUOTE_QUEUE?: QueueProducer;
   CATALOG_COMPATIBILITY_BOOTSTRAP_BATCH_SIZE?: string;
+  CATALOG_QUOTE_ORIGIN_PER_MINUTE?: string;
+  CATALOG_SHARED_DISCOVERY_LIMIT?: string;
   CLOUDFLARE_WORKERS_PLAN?: string;
   KILL_SWITCH?: string;
   PRODUCER_KILL_SWITCH?: string;

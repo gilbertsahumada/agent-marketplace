@@ -1,12 +1,13 @@
 import { and, eq, inArray, isNull, lte, or, sql } from "drizzle-orm";
 
 import { createDatabase, type CatalogSellerCapabilityRow } from "../db/orm";
-import { catalogAgentEndpoints, catalogAgents, catalogEndpoints, catalogQuoteAttempts, catalogQuoteRequests, catalogSellerCapabilities } from "../db/schema";
+import { catalogQuoteAttempts, catalogQuoteRequests, catalogSellerCapabilities } from "../db/schema";
 import type { D1DatabaseLike } from "../db/client";
 import { discoverNegotiationInput, probeA2aSeller, probeErc8183HttpSeller, probeMcpSeller, SellerProbeError } from "../lib/seller-client";
 import { NegotiationRequest } from "@bnbagent/sdk/erc8183";
 import { buildContractRequest } from "../../../src/shared/negotiation-input";
 import { recordCompatibility, COMPATIBILITY_TTL_MS } from "../catalog/compatibility";
+import { needsProviderChange } from "../catalog/sweep-metrics";
 import type { Env, QueueProducer } from "../types";
 import type { WorkerConfig } from "../config";
 import { persistQuoteResult, readContext, targetFor, sha256 } from "../routes/catalog-quotes";
@@ -26,6 +27,7 @@ export interface CatalogCapabilityWork {
 }
 
 export interface CatalogCapabilityQueueSummary {
+  readonly selected?: number;
   readonly enqueued: number;
   readonly skipped: number;
   readonly pending: number;
@@ -68,11 +70,13 @@ function capabilityPayload(row: Pick<CatalogSellerCapabilityRow, "agentKey" | "e
 export async function enqueueDueCatalogCapabilities(
   dbBinding: D1DatabaseLike,
   queue: QueueProducer,
-  input: { readonly nowMs: number; readonly limit: number; readonly concurrency?: number; readonly bootstrapLimit?: number },
+  input: { readonly nowMs: number; readonly limit: number; readonly concurrency?: number; readonly bootstrapLimit?: number; readonly originPerMinute?: number },
 ): Promise<CatalogCapabilityQueueSummary> {
   if (!Number.isSafeInteger(input.limit) || input.limit < 1) throw new Error("CATALOG_QUOTE_BATCH_SIZE");
   const concurrency = input.concurrency ?? input.limit;
   const bootstrapLimit = input.bootstrapLimit ?? 0;
+  const originPerMinute = input.originPerMinute ?? 1;
+  if (!Number.isSafeInteger(originPerMinute) || originPerMinute < 1 || originPerMinute > 4) throw new Error("CATALOG_QUOTE_ORIGIN_PER_MINUTE");
   if (!Number.isSafeInteger(bootstrapLimit) || bootstrapLimit < 0 || bootstrapLimit > 100) throw new Error("CATALOG_COMPATIBILITY_BOOTSTRAP_BATCH_SIZE");
   if (!Number.isSafeInteger(concurrency) || concurrency < 1) throw new Error("CATALOG_QUOTE_CONCURRENCY");
   const db = createDatabase(dbBinding);
@@ -90,38 +94,41 @@ export async function enqueueDueCatalogCapabilities(
     eq(catalogSellerCapabilities.state, "ready"),
     lte(catalogSellerCapabilities.capabilityExpiresAt, input.nowMs),
   ));
-  const selectDue = (bootstrap: boolean | null, window: number) => db.select({
-    agentKey: catalogSellerCapabilities.agentKey,
-    endpointKey: catalogSellerCapabilities.endpointKey,
-    originKey: catalogEndpoints.originKey,
-    compatibilityState: catalogSellerCapabilities.compatibilityState,
-  }).from(catalogSellerCapabilities)
-    .innerJoin(catalogAgents, eq(catalogAgents.agentKey, catalogSellerCapabilities.agentKey))
-    .innerJoin(catalogAgentEndpoints, and(
-      eq(catalogAgentEndpoints.agentKey, catalogSellerCapabilities.agentKey),
-      eq(catalogAgentEndpoints.endpointKey, catalogSellerCapabilities.endpointKey),
-      eq(catalogAgentEndpoints.declarationState, "current"),
-    ))
-    .innerJoin(catalogEndpoints, and(
-      eq(catalogEndpoints.endpointKey, catalogSellerCapabilities.endpointKey),
-      eq(catalogEndpoints.role, "operational"),
-      eq(catalogEndpoints.eligibility, "eligible"),
-    ))
-    .where(and(
-      bootstrap === null ? undefined : bootstrap
-        ? eq(catalogSellerCapabilities.compatibilityState, "pending")
-        : sql`${catalogSellerCapabilities.compatibilityState} <> 'pending'`,
-      eq(catalogAgents.indexState, "current"),
-      inArray(catalogSellerCapabilities.state, ["discovered", "ready", "stale", "failed"]),
-      or(isNull(catalogSellerCapabilities.nextProbeAt), lte(catalogSellerCapabilities.nextProbeAt, input.nowMs)),
-    ))
-    .orderBy(
-      sql`CASE WHEN ${catalogEndpoints.lastAttemptOutcome} = 'protocol_valid' THEN 0 ELSE 1 END`,
-      sql`CASE WHEN ${catalogSellerCapabilities.transport} = 'erc8183_http' THEN 0 ELSE 1 END`,
-      catalogSellerCapabilities.nextProbeAt, catalogSellerCapabilities.updatedAt, catalogSellerCapabilities.agentKey)
-    // Read beyond the dispatch budget so one shared host cannot consume the
-    // entire candidate window before origin deduplication.
-    .limit(Math.min(1000, window * 10));
+  const selectDue = (bootstrap: boolean | null, window: number) => db.all<{
+    agentKey: string; endpointKey: string; originKey: string; compatibilityState: string; nextProbeAt: number | null;
+  }>(sql`
+    WITH ranked AS (
+      SELECT c.agentKey, c.endpointKey, COALESCE(e.originKey, e.endpointKey) AS originKey,
+        c.compatibilityState,
+        CASE WHEN e.lastAttemptOutcome='protocol_valid' THEN 0 ELSE 1 END AS onlineRank,
+        CASE WHEN c.transport='erc8183_http' THEN 0 ELSE 1 END AS transportRank,
+        c.nextProbeAt, c.updatedAt,
+        ROW_NUMBER() OVER (
+          PARTITION BY COALESCE(e.originKey, e.endpointKey)
+          ORDER BY CASE WHEN e.lastAttemptOutcome='protocol_valid' THEN 0 ELSE 1 END,
+            CASE WHEN c.transport='erc8183_http' THEN 0 ELSE 1 END,
+            c.nextProbeAt, c.updatedAt, c.agentKey, c.endpointKey
+        ) AS originRank
+      FROM catalog_seller_capabilities c
+      JOIN catalog_agents a ON a.agentKey=c.agentKey AND a.indexState='current' AND a.chainId=56
+      JOIN catalog_agent_endpoints ae ON ae.agentKey=c.agentKey AND ae.endpointKey=c.endpointKey AND ae.declarationState='current'
+      JOIN catalog_endpoints e ON e.endpointKey=c.endpointKey AND e.role='operational' AND e.eligibility='eligible'
+      WHERE c.state IN ('discovered','ready','stale','failed')
+        AND (c.nextProbeAt IS NULL OR c.nextProbeAt <= ${input.nowMs})
+        AND NOT (c.state='ready' AND COALESCE(c.capabilityExpiresAt,0) > ${input.nowMs}
+          AND c.compatibilityState='compatible' AND COALESCE(c.compatibilityExpiresAt,0) > ${input.nowMs}
+          AND c.lastSuccessAt IS NOT NULL)
+        AND NOT EXISTS (SELECT 1 FROM runtime_state r
+          WHERE r.key='catalog_sweep_origin:' || COALESCE(e.originKey,e.endpointKey)
+            AND (r.integerValue > ${Math.floor(input.nowMs / 60_000)}
+              OR (r.integerValue=${Math.floor(input.nowMs / 60_000)} AND CAST(r.textValue AS INTEGER)>=${originPerMinute})))
+        AND ${bootstrap === null ? sql`1=1` : bootstrap ? sql`c.compatibilityState='pending'` : sql`c.compatibilityState<>'pending'`}
+    )
+    SELECT agentKey, endpointKey, originKey, compatibilityState, nextProbeAt FROM ranked
+    WHERE originRank <= ${originPerMinute}
+    ORDER BY originRank, onlineRank, transportRank, nextProbeAt, updatedAt, agentKey, endpointKey
+    LIMIT ${Math.min(1000, window * 10)}
+  `);
   // Independent candidate windows: retries on reachable hosts must not crowd
   // first-time discovery out of the bounded SQL result (or vice versa).
   const cohorts = bootstrapLimit > 0
@@ -132,20 +139,20 @@ export async function enqueueDueCatalogCapabilities(
   // Rotation is deterministic for the one-minute scheduler and adds no writes.
   if (bootstrapLimit > 0 && Math.floor(input.nowMs / 60_000) % 2 === 1) cohorts.reverse();
   const due = cohorts.flat();
-  // A single origin can host many catalogued agents. Keep one capability
-  // probe per origin in a tick and cap the total number of queued probes. The
+  // A single origin can host many catalogued agents. Bound capability
+  // probes per origin and cap the total number of queued probes. The
   // five-minute claim lease prevents a second tick from re-queuing the same
   // endpoint while the queue consumer is still working.
   const selected: typeof due = [];
-  const origins = new Set<string>();
+  const origins = new Map<string, number>();
   let bootstrapSelected = 0;
   let maintenanceSelected = 0;
   for (const row of due) {
     const bootstrap = bootstrapLimit > 0 && row.compatibilityState === "pending";
     if (bootstrap ? bootstrapSelected >= bootstrapLimit : maintenanceSelected >= Math.min(input.limit, concurrency)) continue;
     const origin = row.originKey ?? row.endpointKey;
-    if (origins.has(origin)) continue;
-    origins.add(origin);
+    if ((origins.get(origin) ?? 0) >= originPerMinute) continue;
+    origins.set(origin, (origins.get(origin) ?? 0) + 1);
     selected.push(row);
     if (bootstrap) bootstrapSelected += 1;
     else maintenanceSelected += 1;
@@ -164,6 +171,26 @@ export async function enqueueDueCatalogCapabilities(
     )).returning({ agentKey: catalogSellerCapabilities.agentKey });
     if (claimed.length === 0) {
       skipped += 1;
+      continue;
+    }
+    // A durable minute reservation coordinates separate cron invocations.
+    // Failed sends consume their slot conservatively; they do not create a burst.
+    const minute = Math.floor(input.nowMs / 60_000);
+    const reserved = await db.all<{ integerValue: number }>(sql`
+      INSERT INTO runtime_state (key,textValue,integerValue,updatedAt)
+      VALUES (${`catalog_sweep_origin:${row.originKey}`}, '1', ${minute}, ${input.nowMs})
+      ON CONFLICT(key) DO UPDATE SET
+        textValue=CASE WHEN runtime_state.integerValue=${minute}
+          THEN CAST(CAST(runtime_state.textValue AS INTEGER)+1 AS TEXT) ELSE '1' END,
+        integerValue=${minute}, updatedAt=${input.nowMs}
+      WHERE runtime_state.integerValue < ${minute}
+        OR (runtime_state.integerValue=${minute} AND CAST(runtime_state.textValue AS INTEGER)<${originPerMinute})
+      RETURNING integerValue
+    `);
+    if (reserved.length === 0) {
+      skipped += 1;
+      await db.update(catalogSellerCapabilities).set({ nextProbeAt: row.nextProbeAt, updatedAt: input.nowMs })
+        .where(and(eq(catalogSellerCapabilities.agentKey, row.agentKey), eq(catalogSellerCapabilities.endpointKey, row.endpointKey)));
       continue;
     }
     try {
@@ -186,6 +213,7 @@ export async function enqueueDueCatalogCapabilities(
   `);
   const count = (state: string) => Number(counts.find((row) => row.state === state)?.total ?? 0);
   return {
+    selected: selected.length,
     enqueued,
     skipped,
     pending: count("discovered"),
@@ -240,6 +268,13 @@ export async function runCatalogCapabilityProbe(
   if (!capability || capability.state === "unsupported" || capability.state === "suspended") {
     return { status: "skipped", agentKey: work.agentKey, endpointKey: work.endpointKey, requestId: null, attemptId: null, errorCode: null, durationMs: 0 };
   }
+  // Delayed/redelivered work must not re-negotiate evidence already refreshed
+  // by a buyer or another execution. Discovery and quote TTLs are independent.
+  const quoteFresh = capability.state === "ready" && capability.lastSuccessAt !== null
+    && (capability.capabilityExpiresAt ?? 0) > startedAt;
+  if (quoteFresh && capability.compatibilityState === "compatible" && (capability.compatibilityExpiresAt ?? 0) > startedAt) {
+    return { status: "skipped", agentKey: work.agentKey, endpointKey: work.endpointKey, requestId: null, attemptId: null, errorCode: null, durationMs: 0 };
+  }
   const agentId = work.agentKey.split(":").at(-1)!;
   const target = await targetFor(db, agentId, work.endpointKey);
   if (!target) {
@@ -250,12 +285,18 @@ export async function runCatalogCapabilityProbe(
     contract = await discoverNegotiationInput({ ...target, request: {}, fetch: dependencies.fetchImpl ?? fetch, timeoutMs: 5000, maxResponseBytes: 32768 });
     const schemaHash = await sha256(contract);
     await recordCompatibility(db, target, now(), { schemaHash });
+    if (quoteFresh && schemaHash === capability.schemaHash) {
+      await db.update(catalogSellerCapabilities).set({ nextProbeAt: Math.min(capability.capabilityExpiresAt!, now() + COMPATIBILITY_TTL_MS) })
+        .where(and(eq(catalogSellerCapabilities.agentKey, work.agentKey), eq(catalogSellerCapabilities.endpointKey, work.endpointKey)));
+      return { status: "skipped", agentKey: work.agentKey, endpointKey: work.endpointKey, requestId: null, attemptId: null, errorCode: null, durationMs: Math.max(0, now() - startedAt) };
+    }
   } catch (error) {
     const code = errorCode(error);
     await recordCompatibility(db, target, now(), { errorCode: code });
     const failures = capability.consecutiveFailures + 1;
     const delays = config.catalogFailureBackoffMinutes;
-    const delay = delays[Math.min(failures - 1, delays.length - 1)] ?? 60;
+    // Structural/access blockers need provider action, not frequent automatic retries.
+    const delay = needsProviderChange(code) ? 10080 : delays[Math.min(failures - 1, delays.length - 1)] ?? 60;
     // Requirements discovery is not a quote attempt. recordCompatibility owns
     // its error; preserve the independent signed-quote state and last error.
     await db.update(catalogSellerCapabilities).set({ consecutiveFailures: failures, nextProbeAt: now() + delay * 60000 }).where(and(eq(catalogSellerCapabilities.agentKey, work.agentKey), eq(catalogSellerCapabilities.endpointKey, work.endpointKey)));

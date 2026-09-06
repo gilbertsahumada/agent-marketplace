@@ -254,6 +254,7 @@ function SellerQuoteSession({ agentId, agentName, onSuccess, checkCompatibilityF
   const [message, setMessage] = useState<string | null>(null);
   const [quote, setQuote] = useState<MainnetQuoteResponse | null>(null);
   const [quoteRequestId, setQuoteRequestId] = useState<number | null>(null);
+  const [recoveryActive, setRecoveryActive] = useState(false);
   const busy = !["idle", "succeeded", "failed"].includes(phase);
   const discovering = inspectionRequested && !discovery && !discoveryError;
   const [elapsed, setElapsed] = useState(0);
@@ -399,8 +400,9 @@ function SellerQuoteSession({ agentId, agentName, onSuccess, checkCompatibilityF
             quoteRequestId={quoteRequestId}
           />
         </div>
-      ) : <div aria-label="Hiring locked until quote verified">
-        <Erc8183SavedHire agentId={agentId} />
+      ) : <div aria-label={recoveryActive ? "Previous hire" : "Hiring locked until quote verified"}>
+        <Erc8183SavedHire agentId={agentId} onActiveChange={setRecoveryActive} />
+        {!recoveryActive ? <>
         <p className="mb-4 text-sm text-muted-foreground">Request a verified quote to unlock hiring.</p>
         <ol className="flex flex-col divide-y divide-border rounded-lg border border-border">
           {["Review", "Authorize & fund", "Track"].map((label, index) => <li key={label} className="relative flex items-center gap-3 px-4 py-4 text-muted-foreground">
@@ -409,6 +411,7 @@ function SellerQuoteSession({ agentId, agentName, onSuccess, checkCompatibilityF
             <span className="text-sm">{label}</span><LockKeyhole aria-label="Locked" className="ml-auto size-4" />
           </li>)}
         </ol>
+        </> : null}
       </div>}
     </section>
     </div>

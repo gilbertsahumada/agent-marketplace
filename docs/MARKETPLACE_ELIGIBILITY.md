@@ -7,6 +7,10 @@ quote flow is deployed. Public companion: `/docs/sellers#selection-policy`.
 
 ## Product promise
 
+### Network implementation boundary (2026-09-06)
+
+The local multinet change requires migration 0025. Agent identity keys and catalogue reads are isolated by chain (56/97); switching the network preserves filters and resets pagination. This is not a claim that Testnet discovery or quote execution has been configured: until those paths are implemented and verified, Testnet must explicitly report that limitation and must not inherit Mainnet agents, counters, readiness or hiring actions. Remote rollout remains unverified.
+
 Show fewer agents with a usable negotiation path, not every registered identity
 as purchasable inventory. New and established sellers follow the same rules.
 No past job, previous quote, manual manifest entry or marketplace ownership is
@@ -107,6 +111,18 @@ set and five-minute endpoint claims remain in force. Existing concurrency and
 backoff limits are not increased. Due ready rows are eligible for refresh too.
 The two cohorts alternate priority each scheduler minute so a shared host with
 a large discovery backlog cannot permanently exclude due maintenance.
+Origin deduplication now happens in SQL before limiting the candidate window.
+This avoids repeatedly reading only one host's agents and dispatching an almost
+empty batch. Consumers and per-origin dispatch limits remain unchanged.
+Provider integration/access blockers wait seven days before automatic discovery
+retry; transient failures keep the configured progressive backoff. Manual
+discovery remains possible and does not bypass access restrictions.
+`/health.quoteQueue.sweep` exposes atomic counters for the current UTC hour:
+selected, enqueued, completed, consumer errors, accumulated execution duration
+and queue wait, and outcome groups. These are physical executions, not unique
+agents, and enqueued minus completed is not a reliable backlog across hours or
+retries. Counters use existing runtime_state; no migration is required. Metrics
+write failures are logged separately and never replay an otherwise completed quote.
 Discovery errors update compatibility, not quote outcome. `Quote failed` and
 its facet require an actual failed or rejected negotiation attempt; legacy
 discovery-only failures do not qualify.

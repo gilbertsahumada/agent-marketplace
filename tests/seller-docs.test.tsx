@@ -42,7 +42,7 @@ it("documents the local implementation without claiming remote rollout or prior-
   render(<SellerDocs />);
   expect(screen.getByRole("heading", { name: "How we select agents" })).toBeInTheDocument();
   expect(screen.getByRole("heading", { name: "History and networks" })).toBeInTheDocument();
-  expect(screen.getByText(/this update adds no new migration/)).toBeInTheDocument();
+  expect(screen.getByText(/require migration 0025/)).toBeInTheDocument();
   expect(screen.getByText(/No previous quote or job is required/)).toBeInTheDocument();
   expect(screen.getByText(/Provider-wallet activity is not necessarily attributable/)).toBeInTheDocument();
   expect(screen.getByText(/does not switch the agent identity/)).toBeInTheDocument();

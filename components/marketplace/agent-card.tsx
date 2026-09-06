@@ -29,8 +29,8 @@ const categoryLabels: Record<MarketplaceCategory, string> = {
   health_factor_monitoring: "Health factor",
 };
 
-export function trust8004AgentHref(agentId: string) {
-  return `https://trust8004.xyz/agents/56:${agentId}`;
+export function trust8004AgentHref(agentId: string, chainId: 56 | 97 = 56) {
+  return `https://trust8004.xyz/agents/${chainId}:${agentId}`;
 }
 
 function latestQuoteAttemptFailed(agent: AgentCardViewModel) {
@@ -313,16 +313,16 @@ export function AgentCard({ agent, registry = false }: { agent: AgentCardViewMod
           </div>
           <div className="min-w-0 flex-1">
             <CardTitle className="line-clamp-1 text-base leading-tight">
-              <Link className="hover:text-primary" href={`/hire/${agent.agentId}`} prefetch={false}>{agent.name}</Link>
+              <Link className="hover:text-primary" href={agent.href} prefetch={false}>{agent.name}</Link>
             </CardTitle>
             <a
               aria-label={`View ${agent.name} on trust8004 (opens in a new tab)`}
               className="font-stat mt-1 inline-flex items-center gap-1 text-[11px] text-zinc-400 hover:text-white"
-              href={trust8004AgentHref(agent.agentId)}
+              href={trust8004AgentHref(agent.agentId, agent.chainId)}
               rel="noopener noreferrer"
               target="_blank"
             >
-              BSC Mainnet · Agent #{agent.agentId}
+              BSC {agent.chainId === 97 ? "Testnet" : "Mainnet"} · Agent #{agent.agentId}
               <ExternalLink aria-hidden="true" className="size-3" />
             </a>
           </div>

@@ -222,6 +222,7 @@ export function catalogCandidateCard(
 
   return {
     agentId: candidate.agentId,
+    chainId: candidate.chainId,
     name: candidate.name ?? `Agent #${candidate.agentId}`,
     description: candidate.description ?? "No description declared.",
     ...(candidate.imageUrl ? { imageUrl: candidate.imageUrl } : {}),
@@ -243,7 +244,7 @@ export function catalogCandidateCard(
     categories: candidate.categories,
     protocols: declaredProtocols(candidate),
     ...(candidate.state?.capabilityTransport ? { negotiationProtocol: candidate.state.capabilityTransport === "a2a" ? "A2A" as const : candidate.state.capabilityTransport === "mcp" ? "MCP" as const : "ERC-8183 HTTP" as const } : {}),
-    href: `/hire/${candidate.agentId}`,
+    href: `/hire/${candidate.agentId}${candidate.chainId === 97 ? "?network=testnet" : ""}`,
     hireability: candidate.state?.canPrepareHire === true && freshQuote
       ? "hireable"
       : candidate.declarations.some((declaration) => isCatalogOperationalDeclaration(declaration)

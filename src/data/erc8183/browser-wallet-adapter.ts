@@ -22,10 +22,12 @@ import type {
 import { Erc8183JobNotReadyError, InvalidErc8183SpikeInputError } from "../../business/errors/erc8183-spike-errors.ts";
 import {
   buildHireCalls,
+  assertBatchHireEvents,
   extractBatchJobId,
   isBatchUnsupportedError,
   predictNextJobId,
   receiptForCall,
+  resolveCanonicalBatchReceipts,
   supportsAtomicBatch,
   type BatchCallReceipt,
 } from "./batched-hire.ts";
@@ -209,9 +211,11 @@ export function parseBrowserJournal(
     }
     const startedAt = candidate.startedAt;
     if (startedAt !== undefined && !Number.isFinite(Date.parse(startedAt))) return null;
+    if (candidate.batchId !== undefined && (typeof candidate.batchId !== "string" || !candidate.batchId.length || candidate.batchId.length > 512 || !/^\d+$/.test(candidate.batchExpectedJobId ?? ""))) return null;
     return {
       schemaVersion: 1,
       chainId: deployment.chainId,
+      ...(candidate.batchId ? { batchId: candidate.batchId, batchExpectedJobId: candidate.batchExpectedJobId! } : {}),
       ...(Number.isSafeInteger(candidate.quoteRequestId) && Number(candidate.quoteRequestId) > 0 ? { quoteRequestId: Number(candidate.quoteRequestId) } : {}),
       buyer,
       seller,
@@ -501,14 +505,14 @@ export async function executeBrowserHire(
   // confirmation. Resume and recovery keep the sequential path, which can skip
   // the steps chain already shows as done.
   const executeBatchedHire = async (): Promise<BrowserHireExecution | null> => {
-    if (await detectBrowserHireMode(provider, account, deployment) !== "batched") return null;
+    if (!journal.batchId && await detectBrowserHireMode(provider, account, deployment) !== "batched") return null;
     const budget = BigInt(plan.quote.priceRaw);
     const counter = await publicClient.readContract({
       address: deployment.commerce,
       abi: agenticCommerceBrowserAbi,
       functionName: "jobCounter",
     });
-    const predicted = predictNextJobId(counter);
+    const predicted = journal.batchExpectedJobId ? BigInt(journal.batchExpectedJobId) : predictNextJobId(counter);
     // Only createJob can be simulated before the job exists; the other four
     // are protected by the atomic batch (a wrong id reverts everything).
     await publicClient.simulateContract({
@@ -519,7 +523,8 @@ export async function executeBrowserHire(
       args: [plan.seller, deployment.router, BigInt(plan.deadline), plan.quote.description, deployment.router],
     });
     const calls = buildHireCalls({ plan, deployment, jobId: predicted, budget });
-    let batchId: string;
+    let batchId = journal.batchId;
+    if (!batchId) {
     try {
       ({ id: batchId } = await walletClient.sendCalls({
         account,
@@ -531,17 +536,24 @@ export async function executeBrowserHire(
       if (isBatchUnsupportedError(error)) return null;
       throw error;
     }
+    journal = { ...journal, batchId, batchExpectedJobId: predicted.toString() };
+    journal = withProgress(journal, journal.lastConfirmedStep, null, journal.jobId, onProgress, deployment, "batched");
+    }
     const status = await walletClient.waitForCallsStatus({ id: batchId, timeout: 180_000 });
     if (status.status !== "success") {
       throw new Erc8183JobNotReadyError(`The atomic hire batch did not execute (${status.status})`);
     }
     // viem's WalletCallReceipt carries logs, status, hash and block; the
     // helper type names exactly the fields the mapping reads.
-    const receipts = (status.receipts ?? []) as unknown as readonly BatchCallReceipt[];
+    const receipts = await resolveCanonicalBatchReceipts(
+      (status.receipts ?? []) as unknown as readonly BatchCallReceipt[], calls.length,
+      (hash) => publicClient.waitForTransactionReceipt({ hash, timeout: 60_000 }),
+    );
     const confirmedJobId = extractBatchJobId(receipts, deployment.commerce);
     if (confirmedJobId !== predicted) {
       throw new Erc8183JobNotReadyError("The batched job id differs from the predicted id");
     }
+    assertBatchHireEvents(receipts, plan, deployment.commerce, confirmedJobId);
     const block = await publicClient.getBlock({ blockNumber: receiptForCall(receipts, calls.length, 0).blockNumber });
     const confirmedAt = new Date(Number(block.timestamp) * 1_000).toISOString();
     const steps: Partial<Record<Erc8183TransactionKind, Erc8183JournalStep>> = {
@@ -553,7 +565,7 @@ export async function executeBrowserHire(
       batchedJournal = withProgress(
         batchedJournal,
         steps[call.kind] ?? "connected",
-        { kind: call.kind, hash: receipt.transactionHash, confirmedAt },
+        { kind: call.kind, hash: receipt.transactionHash, confirmedAt, receipt: receipts[receipts.length === 1 ? 0 : index]! },
         confirmedJobId.toString(),
         onProgress,
         deployment,

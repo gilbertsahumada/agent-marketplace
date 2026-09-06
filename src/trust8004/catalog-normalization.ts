@@ -58,7 +58,7 @@ export interface CatalogEndpointDeclaration {
 export interface CatalogAgentIndexRecord {
   schemaVersion: 2;
   agentKey: string;
-  chainId: 56;
+  chainId: 56 | 97;
   agentId: string;
   owner: string | null;
   metadataUri: string | null;
@@ -250,7 +250,8 @@ function candidateDeclarations(input: CatalogAgentInput): CatalogEndpointDeclara
 }
 
 export function normalizeCatalogAgent(input: CatalogAgentInput): CatalogAgentIndexRecord {
-  if (Number(input.chainId) !== 56) throw new Error("CATALOG_SCHEMA:chainId");
+  const chainId = Number(input.chainId);
+  if (chainId !== 56 && chainId !== 97) throw new Error("CATALOG_SCHEMA:chainId");
   const agentId = numericString(input.agentId, "agentId");
   const declarations = candidateDeclarations(input);
   const state = metadataState(input);
@@ -267,8 +268,8 @@ export function normalizeCatalogAgent(input: CatalogAgentInput): CatalogAgentInd
 
   return {
     schemaVersion: 2,
-    agentKey: `eip155:56:${agentId}`,
-    chainId: 56,
+    agentKey: `eip155:${chainId}:${agentId}`,
+    chainId,
     agentId,
     owner: boundedText(input.ownerAddress ?? input.owner, 128),
     metadataUri: boundedText(input.metadataUri ?? input.agentURI ?? input.ipfsUri, 16_384),
