@@ -5,6 +5,7 @@ import { loadConfig } from "../../src/config";
 import { recordCompatibility } from "../../src/catalog/compatibility";
 import { recordSweepMetrics, needsProviderChange } from "../../src/catalog/sweep-metrics";
 import { createDatabase } from "../../src/db/orm";
+import { sha256 } from "../../src/routes/catalog-quotes";
 import {
   enqueueDueCatalogCapabilities,
   runCatalogCapabilityProbe,
@@ -64,9 +65,43 @@ function work(agentKey: string, endpointKey = ENDPOINT_KEY, enqueuedAt = NOW): C
   return { schemaVersion: 2, kind: "catalog_capability_probe", agentKey, endpointKey, enqueuedAt };
 }
 
-beforeEach(clearCatalogFixtures);
+beforeEach(async () => {
+  await clearCatalogFixtures();
+  await env.DB.prepare("DELETE FROM runtime_state WHERE key LIKE 'catalog_sweep_origin:%'").run();
+});
 
 describe("catalog quote-capability scheduler", () => {
+  it("does not dispatch valid compatibility and quote evidence even with an obsolete due marker", async () => {
+    await insertCandidate("42", ENDPOINT_KEY, "seller-origin", "ready", NOW + 86_400_000);
+    await env.DB.prepare("UPDATE catalog_seller_capabilities SET compatibilityState='compatible', compatibilityExpiresAt=?, nextProbeAt=0, lastSuccessAt=?").bind(NOW + 86_400_000, NOW - 1000).run();
+    const send = vi.fn();
+    expect(await enqueueDueCatalogCapabilities(env.DB as unknown as D1DatabaseLike, { send }, { nowMs: NOW, limit: 2, bootstrapLimit: 2 })).toMatchObject({ enqueued: 0 });
+    const fetchImpl = vi.fn();
+    expect(await runCatalogCapabilityProbe(work('eip155:56:42'), env as unknown as Env, loadConfig({}), { now: () => NOW, fetchImpl })).toMatchObject({ status: 'skipped', requestId: null });
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+  it("shares a conservative origin budget across concurrent producers", async () => {
+    for (let n = 1; n <= 6; n++) await insertCandidate(String(n), String(n).padStart(64, "0"), "shared-host");
+    const send = vi.fn().mockResolvedValue(undefined);
+    await Promise.all([0, 1].map(() => enqueueDueCatalogCapabilities(env.DB as unknown as D1DatabaseLike, { send }, { nowMs: NOW, limit: 4, bootstrapLimit: 4, originPerMinute: 2 })));
+    expect(send).toHaveBeenCalledTimes(2);
+  });
+  it("refreshes unchanged requirements without repeating a still-valid quote", async () => {
+    const candidate = await insertCandidate("42", ENDPOINT_KEY, "seller-origin", "ready", NOW + 86_400_000);
+    const contract = { encoding: "prefixed-json", taskDescriptionPrefix: "SERVICE_V1:", inputSchema: { type: "object", required: ["topic"], properties: { topic: { type: "string" } } }, terms: { deliverables: "Report", quality_standards: "Cited", evaluation_required: true, evaluator_type: "uma_oov3" } };
+    await env.DB.prepare("UPDATE catalog_endpoints SET endpoint='https://seller.example.com/a2a'").run();
+    // Discovery canonicalizes the contract, so derive the hash from its result.
+    const { discoverNegotiationInput } = await import('../../src/lib/seller-client');
+    const fetchImpl = vi.fn(async () => Response.json({ url: "https://seller.example.com/a2a", skills: [{ id: "negotiate" }], capabilities: { extensions: [{ uri: "https://marketplace.trust8004.xyz/extensions/negotiation-input/v1", params: contract }] } })) as typeof fetch;
+    const parsed = await discoverNegotiationInput({ transport: 'a2a', endpoint: 'https://seller.example.com/a2a', request: {}, fetch: fetchImpl, timeoutMs: 5000, maxResponseBytes: 32768 });
+    await env.DB.prepare("UPDATE catalog_seller_capabilities SET lastSuccessAt=?, compatibilityState='compatible', compatibilityExpiresAt=?, schemaHash=?").bind(NOW - 1000, NOW - 1, await sha256(parsed)).run();
+    vi.mocked(fetchImpl).mockClear();
+    const result = await runCatalogCapabilityProbe(work(candidate.agentKey), env as unknown as Env, loadConfig({}), { now: () => NOW, fetchImpl });
+    expect(result).toMatchObject({ status: 'skipped', errorCode: null, requestId: null });
+    expect(fetchImpl).toHaveBeenCalledOnce();
+    expect(await env.DB.prepare("SELECT COUNT(*) AS total FROM catalog_quote_requests").first()).toMatchObject({ total: 0 });
+    expect(await env.DB.prepare("SELECT capabilityExpiresAt, nextProbeAt FROM catalog_seller_capabilities").first()).toMatchObject({ capabilityExpiresAt: NOW + 86_400_000, nextProbeAt: NOW + 86_400_000 });
+  });
   it("refreshes expired requirements even when quote capability is still ready", async () => {
     await insertCandidate("42", ENDPOINT_KEY, "seller-origin", "ready", NOW + 86_400_000);
     await env.DB.prepare("UPDATE catalog_seller_capabilities SET compatibilityState='compatible', compatibilityExpiresAt=?, nextProbeAt=0").bind(NOW - 1).run();
@@ -160,13 +195,13 @@ describe("catalog quote-capability scheduler", () => {
       limit: 4,
       concurrency: 4,
     });
-    expect(second.enqueued).toBe(1);
-    expect(send).toHaveBeenCalledTimes(2);
+    expect(second.enqueued).toBe(0);
+    expect(send).toHaveBeenCalledTimes(1);
     const claims = await env.DB.prepare(`SELECT agentKey, nextProbeAt
       FROM catalog_seller_capabilities ORDER BY agentKey`).all();
     expect(claims.results).toEqual([
       { agentKey: "eip155:56:42", nextProbeAt: NOW + 5 * 60_000 },
-      { agentKey: "eip155:56:43", nextProbeAt: NOW + 1 + 5 * 60_000 },
+      { agentKey: "eip155:56:43", nextProbeAt: 0 },
     ]);
   });
 
