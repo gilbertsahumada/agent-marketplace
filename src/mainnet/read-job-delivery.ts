@@ -31,6 +31,7 @@ export async function readJobDelivery(ledger: HireJobDetail): Promise<DeliveryRe
         const eligible = Number(job.submittedAt + window);
         report.reviewEndsAt = job.submittedAt > 0n ? new Date(eligible * 1000).toISOString() : null;
         report.closure = closureState(report.status, disputed, verdict[0], eligible, Number(block.timestamp));
+        report.settlementOutcome = report.closure === "settlement_available" ? verdict[0] === 1 ? "completed" : "rejected" : null;
       } catch { /* Policy unavailability must not hide an accessible delivery. */ }
     } else if (report.closure === "unavailable") report.closure = "unsupported_policy";
     if (job.submittedAt === 0n) { report.delivery.status = "not_submitted"; return report; }
