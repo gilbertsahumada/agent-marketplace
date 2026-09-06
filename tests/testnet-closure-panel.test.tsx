@@ -57,7 +57,8 @@ it("aborts an old job request and ignores its late response", async () => {
   vi.stubGlobal("fetch", fetcher);
   const { rerender } = render(<TestnetClosurePanel jobId="514" />);
   fireEvent.click(screen.getByRole("button"));
-  const signal = fetcher.mock.calls[0][1].signal!;
+  expect(fetcher).toHaveBeenCalledTimes(1);
+  const signal = fetcher.mock.calls[0]![1].signal!;
   rerender(<TestnetClosurePanel jobId="515" />);
   expect(signal.aborted).toBe(true);
   await act(async () => { resolve(Response.json(report)); });
