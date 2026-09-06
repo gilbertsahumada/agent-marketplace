@@ -40,7 +40,7 @@ export async function executeBrowserClosure(input: { provider: unknown; wallet: 
       const raw = localStorage.getItem(key);
       if (!raw) return null;
       const saved = JSON.parse(raw) as ClosureAttempt;
-      if (!saved || !["signing", "submitted", "confirmed", "reverted", "uncertain"].includes(saved.state) ||
+      if (!saved || !["signing", "submitted", "confirmed", "reverted", "uncertain", "rejected"].includes(saved.state) ||
         (saved.hash !== undefined && !/^0x[\da-f]{64}$/i.test(saved.hash))) throw new Error("Invalid saved closure; inspect wallet history");
       return saved;
     },
