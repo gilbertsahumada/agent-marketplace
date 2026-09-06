@@ -356,7 +356,8 @@ Prioridad: cerrar el ciclo de contratación sin confundir contenido accesible, i
 - [x] Adaptador directo Mainnet de dispute/settle con verificación de pins, recibo, calldata y estado resultante; sin activar en producción.
 - [x] Exclusión entre pestañas y bloqueo conservador de intentos inciertos; tests con providers simulados.
 - [x] UI detrás de NEXT_PUBLIC_JOB_CLOSURE_ENABLED, ausente/OFF por defecto. Sin cambios de configuración remota.
-- [ ] Completar recuperación explícita de rechazo wallet, revert y reemplazos conservando historial.
+- [x] Recuperar rechazo explícito de wallet (4001 previo al hash), conservando historial y repitiendo preflight solo ante una nueva acción del usuario; regresión local rojo→verde.
+- [ ] Completar recuperación explícita de revert y reemplazos conservando historial; por ahora bloquean nuevos envíos.
 - [ ] Adaptador Testnet, pruebas wallet E2E y admisión de smart accounts; no heredar pins Mainnet.
 - [ ] Devoluciones y reconciliación final con historial indexado.
 
