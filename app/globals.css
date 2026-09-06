@@ -22,6 +22,7 @@
 .jobs-empty p { max-width: 560px; margin: 12px auto 24px; color: var(--muted-foreground); font-size: 14px; }
 .jobs-explorer a:focus-visible, .jobs-explorer summary:focus-visible { outline: 2px solid var(--signal); outline-offset: 4px; }
 .jobs-explorer { --primary: var(--signal); --ring: var(--signal); }
+.agents-catalog { --primary: var(--signal); --ring: var(--signal); --sidebar-primary: var(--signal); }
 .jobs-card { border-radius: 16px; --card-spacing: 24px; }
 .jobs-activity-card {
   border-color: color-mix(in oklab, var(--signal) 18%, var(--border));

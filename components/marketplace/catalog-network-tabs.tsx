@@ -1,7 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { NetworkSelector } from "./network-selector";
 import { useCatalogNavigation } from "./catalog-navigation";
 
 export function catalogNetworkHref(href: string, network: "mainnet" | "testnet") {
@@ -13,16 +13,13 @@ export function catalogNetworkHref(href: string, network: "mainnet" | "testnet")
 }
 
 export function CatalogNetworkTabs({ network, href, children }: {
-  network: "mainnet" | "testnet"; href: string; children: ReactNode;
+  network: "mainnet" | "testnet"; href: string; children?: ReactNode;
 }) {
   const { navigate, pending } = useCatalogNavigation();
-  return <Tabs value={network} onValueChange={(value) => {
-    if (value === "mainnet" || value === "testnet") navigate(catalogNetworkHref(href, value));
-  }} aria-busy={pending}>
-    <TabsList variant="line" aria-label="Agent network">
-      <TabsTrigger value="mainnet" disabled={pending}>Mainnet</TabsTrigger>
-      <TabsTrigger value="testnet" disabled={pending}>Testnet</TabsTrigger>
-    </TabsList>
-    <TabsContent value={network}>{children}</TabsContent>
-  </Tabs>;
+  return <div className="flex flex-col gap-2" aria-busy={pending}>
+    <NetworkSelector network={network} label="Agent network" pending={pending}
+      hrefs={{ mainnet: catalogNetworkHref(href, "mainnet"), testnet: catalogNetworkHref(href, "testnet") }}
+      onSelect={value => navigate(catalogNetworkHref(href, value))} />
+    {children}
+  </div>;
 }

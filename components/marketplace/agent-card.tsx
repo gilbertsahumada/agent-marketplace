@@ -1,6 +1,9 @@
 import Link from "next/link";
 import {
-  ArrowUpRight,
+  BriefcaseBusiness,
+  FilePlus2,
+  RefreshCw,
+  SearchCheck,
   CheckCircle2,
   CircleHelp,
   Clock3,
@@ -130,6 +133,13 @@ export function marketplaceStatus(agent: AgentCardViewModel, registry = false) {
     className: "border-red-400/35 bg-red-400/10 text-red-300",
     icon: TriangleAlert,
   };
+}
+
+export function agentActionIcon(label: string): LucideIcon {
+  return label.startsWith("Retry") ? RefreshCw
+    : label === "Request quote" ? FilePlus2
+    : label === "Hire agent" ? BriefcaseBusiness
+    : SearchCheck;
 }
 
 export function agentJourneyAction(agent: AgentCardViewModel): { href: string; label: string; disabled?: boolean } {
@@ -279,6 +289,7 @@ function platformObservation(agent: AgentCardViewModel): ObservationPresentation
 export function AgentCard({ agent, registry = false }: { agent: AgentCardViewModel; registry?: boolean }) {
   const status = marketplaceStatus(agent, registry);
   const action = agentJourneyAction(agent);
+  const ActionIcon = agentActionIcon(action.label);
   const observation = platformObservation(agent);
   const lastAttemptAt = agent.monitoring?.lastAttemptAt ?? null;
   const checkedAt = lastAttemptAt
@@ -414,8 +425,8 @@ export function AgentCard({ agent, registry = false }: { agent: AgentCardViewMod
         ) : (
           <Button asChild className="h-9 w-full" variant={action.label === "Hire agent" || action.label === "Request quote" || action.label === "Retry quote" ? "default" : "outline"}>
             <Link href={action.href} prefetch={false}>
+              <ActionIcon aria-hidden="true" data-icon="inline-start" />
               {action.label}
-              <ArrowUpRight aria-hidden="true" data-icon="inline-end" />
             </Link>
           </Button>
         )}

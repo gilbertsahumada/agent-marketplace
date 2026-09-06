@@ -57,19 +57,15 @@ describe("concierge entry points", () => {
     expect(links[0]).toHaveTextContent("Ask");
   });
 
-  it("renders the ask-the-concierge form when conciergeEnabled is set", async () => {
+  it("keeps the catalog focused on agents without a duplicate concierge form", async () => {
     render(createElement(CatalogPage, {
       data: emptyPage(),
       query: { view: "all", sort: "newest" },
-      conciergeEnabled: true,
     }));
-    const form = screen.getByRole("form", { name: "Ask the concierge" });
-    expect(form).toHaveAttribute("action", "/ask");
-    expect(form).toHaveAttribute("method", "get");
-    expect(screen.getByPlaceholderText(/What do you need\? e\.g\. a grid on BNB\/USDT between 500 and 700/)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Ask" })).toBeInTheDocument();
-
-    expect((await axe.run(form)).violations).toEqual([]);
+    expect(screen.queryByRole("form", { name: "Ask the concierge" })).not.toBeInTheDocument();
+    expect(screen.queryByText("Checked quote forms. No previous quote or job required.")).not.toBeInTheDocument();
+    expect(screen.getByRole("main")).toHaveClass("agents-catalog");
+    expect((await axe.run(screen.getByRole("navigation", { name: "Agent network" }))).violations).toEqual([]);
   });
 
   it("does not render the ask-the-concierge form when conciergeEnabled is not set", () => {

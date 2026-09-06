@@ -2,14 +2,14 @@
 
 import { useMemo, type ReactNode } from "react";
 import Link from "next/link";
-import { ArrowUpRight, ExternalLink, LayoutGrid, List, LockKeyhole } from "lucide-react";
+import { ExternalLink, LayoutGrid, List, LockKeyhole } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import { AgentAvatar } from "./agent-avatar";
-import { AgentCard, agentJourneyAction, marketplaceStatus, trust8004AgentHref } from "./agent-card";
+import { AgentCard, agentActionIcon, agentJourneyAction, marketplaceStatus, trust8004AgentHref } from "./agent-card";
 import { EvidenceRail } from "./evidence-rail";
 import type { AgentCardViewModel, MarketplaceCategory } from "./presentation-types";
 import { CatalogResultsSkeleton } from "./catalog-loading";
@@ -45,6 +45,7 @@ function AgentComparisonTable({ agents, registry }: { agents: AgentCardViewModel
             const status = marketplaceStatus(agent, registry);
             const canRequestQuote = agent.quoteRequestAvailable === true;
             const action = agentJourneyAction(agent);
+            const ActionIcon = agentActionIcon(action.label);
             return (
               <TableRow className={cn(canRequestQuote && "bg-primary/[0.02]")} key={agent.agentId}>
                 <TableCell className="px-4 py-4">
@@ -90,8 +91,8 @@ function AgentComparisonTable({ agents, registry }: { agents: AgentCardViewModel
                     ) : (
                       <Button asChild size="sm" variant={action.label === "Hire agent" || action.label === "Request quote" || action.label === "Retry quote" ? "default" : "outline"}>
                         <Link href={action.href} prefetch={false}>
+                          <ActionIcon aria-hidden="true" data-icon="inline-start" />
                           {action.label}
-                          <ArrowUpRight aria-hidden="true" data-icon="inline-end" />
                         </Link>
                       </Button>
                     )}

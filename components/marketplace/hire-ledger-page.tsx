@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { NetworkSelector } from "./network-selector";
 import { ArrowDown, ArrowUp, ArrowUpDown, ChevronDown, ChevronLeft, ChevronRight, Database, ListChecks, Search, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -81,29 +82,27 @@ export function HireLedgerPage({ chainId, summary, page, activity = null, activi
     return (sort.ascending ? order : -order) || (BigInt(a.jobId) < BigInt(b.jobId) ? 1 : -1);
   });
 
+  const networkSelector = <NetworkSelector network={chainId === 56 ? "mainnet" : "testnet"}
+    hrefs={{ mainnet: jobsHref(56, periodScope), testnet: jobsHref(97, periodScope) }} />;
+
   return (
     <main className="jobs-explorer mx-auto w-full max-w-[1480px] flex-1 px-5 py-8 sm:px-8 lg:px-12" id="main-content">
       <Breadcrumb current="Jobs" trail={[{ href: "/", label: "Home" }]} />
       <div className="mb-7 flex flex-wrap items-center justify-between gap-6">
         <div>
           <h1 className="text-3xl font-medium tracking-tight sm:text-[42px]">Jobs explorer</h1>
-          <p className="mt-3 text-muted-foreground">Browse indexed ERC-8183 jobs on BNB Chain.</p>
         </div>
-        <nav aria-label="Network" className="flex rounded-lg border border-border p-1 text-sm">
-          {([56, 97] as const).map((network) => <Link key={network} aria-current={network === chainId ? "page" : undefined} className={`rounded-md px-4 py-2.5 transition-colors ${network === chainId ? "bg-signal/5 text-signal ring-1 ring-signal/70" : "text-muted-foreground hover:text-foreground"}`} href={jobsHref(network, periodScope)}>{network === 56 ? "BSC Mainnet" : "BSC Testnet"}</Link>)}
-        </nav>
       </div>
 
       {activity !== null
-        ? <div className="mt-6"><HireActivityWindow activity={activity} periodHrefs={{
+        ? <div className="mt-6"><HireActivityWindow activity={activity} networkSelector={networkSelector} periodHrefs={{
             7: jobsHref(chainId, { ...scope, days: 7 }),
             30: jobsHref(chainId, scope),
             90: jobsHref(chainId, { ...scope, days: 90 }),
           }} /></div>
-        : (summary !== null || page !== null) && <p className="mt-6 text-sm text-muted-foreground" role="status">Recent activity temporarily unavailable.</p>}
+        : <div>{networkSelector}{(summary !== null || page !== null) && <p className="mt-6 text-sm text-muted-foreground" role="status">Recent activity temporarily unavailable.</p>}</div>}
 
-      <section className="mt-7" aria-labelledby="indexed-jobs-heading">
-        <h2 className="mb-3 text-xl font-medium" id="indexed-jobs-heading">Indexed jobs</h2>
+      <section className="mt-7" aria-label="Indexed jobs">
         <div className="relative mb-4">
           <label className="sr-only" htmlFor="jobs-search">Search this page</label>
           <Search aria-hidden="true" className="absolute top-1/2 left-4 size-4 -translate-y-1/2 text-zinc-500" />
