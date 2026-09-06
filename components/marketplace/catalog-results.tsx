@@ -59,7 +59,7 @@ function AgentComparisonTable({ agents, registry }: { agents: AgentCardViewModel
                       <a
                         aria-label={`View ${agent.name} on trust8004 (opens in a new tab)`}
                         className="mt-1 inline-flex items-center gap-1 text-[11px] text-zinc-500 hover:text-white"
-                        href={trust8004AgentHref(agent.agentId)}
+                        href={trust8004AgentHref(agent.agentId, agent.chainId)}
                         rel="noopener noreferrer"
                         target="_blank"
                       >
