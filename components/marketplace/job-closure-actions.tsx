@@ -3,7 +3,8 @@
 import { useRef, useState } from "react";
 import { useAccount } from "wagmi";
 import { LoaderCircle } from "lucide-react";
-import { executeBrowserClosure, type ClosureAction } from "@/src/business/browser/job-closure";
+import { executeBrowserClosure, type ClosureAction, type ClosureAttempt } from "@/src/business/browser/job-closure";
+import { ERC8183_MAINNET } from "@/src/mainnet/contracts";
 import type { DeliveryReport } from "@/src/mainnet/job-delivery";
 
 export function JobClosureActions({ report, refresh }: { report: DeliveryReport; refresh: () => void }) {
@@ -17,6 +18,7 @@ function ClosureControls({ report, wallet, getProvider, refresh }: { report: Del
   const [reviewed, setReviewed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
+  const [attempt, setAttempt] = useState<ClosureAttempt | null>(null);
   const inFlight = useRef(false);
   const action: ClosureAction | null = report.closure === "review_window" ? "dispute" : report.closure === "settlement_available" ? "settle" : null;
   async function run(selected: ClosureAction, mode: "send" | "resume") {
@@ -24,8 +26,12 @@ function ClosureControls({ report, wallet, getProvider, refresh }: { report: Del
     inFlight.current = true; setBusy(true); setMessage("");
     try {
       const result = await executeBrowserClosure({ provider: await getProvider(), wallet, jobId: report.jobId, action: selected, mode });
+      setAttempt(result);
       setMessage(result.state === "rejected" ? "You declined the wallet request. Review the action again if you want to retry." : result.state === "confirmed" ? "Closure transaction confirmed on-chain." : result.state === "reverted" ? "The closure transaction reverted. No new payment was sent." : "Confirmation is uncertain. Check the previous transaction; do not send again.");
-      if (result.state === "confirmed") refresh();
+      if (result.state === "reverted") setMessage("Transaction failed on-chain and may have used gas. Review the action to retry; the previous receipt will be checked again.");
+      if (result.state === "cancelled" || result.state === "replaced") setMessage("The original transaction was replaced by a different operation. This did not confirm the closure. Review the job before retrying.");
+      if (result.state === "already_closed") setMessage("This job is already closed. No new transaction was sent.");
+      if (result.state === "confirmed" || result.state === "already_closed") refresh();
     } catch (error) { setMessage(error instanceof Error ? error.message : "Could not verify the closure action."); }
     finally { setBusy(false); inFlight.current = false; setReviewed(false); }
   }
@@ -43,5 +49,7 @@ function ClosureControls({ report, wallet, getProvider, refresh }: { report: Del
     </div>
     {busy ? <p role="status" className="text-sm">Checking or awaiting wallet confirmation…</p> : null}
     {message ? <p role="status" className="text-sm">{message}</p> : null}
+    {attempt?.hash ? <a className="text-sm text-signal underline" href={`${ERC8183_MAINNET.explorerUrl}/tx/${attempt.hash}`} target="_blank" rel="noopener noreferrer">Original transaction on explorer</a> : null}
+    {attempt?.replacementHashes?.map(hash => <a key={hash} className="text-sm text-signal underline" href={`${ERC8183_MAINNET.explorerUrl}/tx/${hash}`} target="_blank" rel="noopener noreferrer">Replacement transaction on explorer</a>)}
   </fieldset>;
 }
