@@ -1,11 +1,25 @@
 // @vitest-environment happy-dom
 import "@testing-library/jest-dom/vitest";
 import { afterEach, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { HistoryPages } from "../components/marketplace/history-pages";
 import { QuoteHistory } from "../components/marketplace/quote-history";
 import { markCatalogForRefresh } from "../components/marketplace/catalog-return-refresh";
-afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+afterEach(() => { cleanup(); vi.useRealTimers(); vi.unstubAllGlobals(); });
+it("polls processing quotes and stops after an interrupted result", async () => {
+  vi.useFakeTimers();
+  const request = vi.fn()
+    .mockResolvedValueOnce(Response.json({ requests: [{ id: 704, status: "running", transport: "a2a", createdAt: Date.now(), attempts: [] }] }))
+    .mockResolvedValue(Response.json({ requests: [{ id: 704, status: "failed", errorCode: "QUOTE_ATTEMPT_INTERRUPTED", transport: "a2a", createdAt: Date.now(), attempts: [] }] }));
+  vi.stubGlobal("fetch", request);
+  await act(async () => { render(<QuoteHistory agentId="42" />); });
+  expect(screen.getByText("Processing")).toBeInTheDocument();
+  await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
+  expect(screen.getByText("Interrupted")).toBeInTheDocument();
+  expect(screen.queryByText("Processing")).not.toBeInTheDocument();
+  await act(async () => { await vi.advanceTimersByTimeAsync(15_000); });
+  expect(request).toHaveBeenCalledTimes(2);
+});
 it("shows five job rows, then the next five, and allows returning", () => {
   render(<HistoryPages label="Jobs">{Array.from({ length: 11 }, (_, n) => <div key={n}>Job row {n}</div>)}</HistoryPages>);
   expect(screen.getAllByText(/Job row/)).toHaveLength(5);
