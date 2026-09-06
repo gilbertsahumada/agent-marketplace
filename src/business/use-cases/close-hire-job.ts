@@ -1,7 +1,7 @@
 export type ClosureAction = "dispute" | "settle";
 export type ClosureBinding = { chainId: number; commerce: string; jobId: string; wallet: string; action: ClosureAction };
 export type ClosureFacts = { status: string; buyer: string; supported: boolean; disputed: boolean; verdict: number; now: bigint; reviewEndsAt: bigint };
-export type ClosureAttempt = ClosureBinding & { state: "signing" | "submitted" | "confirmed" | "reverted" | "uncertain" | "rejected"; hash?: string; previousAttempts?: Omit<ClosureAttempt, "previousAttempts">[] };
+export type ClosureAttempt = ClosureBinding & { state: "signing" | "submitted" | "confirmed" | "reverted" | "uncertain" | "rejected" | "cancelled" | "replaced" | "already_closed"; hash?: string; replacementHash?: string; replacementHashes?: string[]; previousAttempts?: Omit<ClosureAttempt, "previousAttempts">[] };
 
 /** Only an explicit EIP-1193 rejection during send is safe to retry. */
 function signatureRejected(error: unknown): boolean {
@@ -18,7 +18,7 @@ export interface ClosurePort {
   assertWallet(): Promise<void>;
   simulate(): Promise<void>;
   send(): Promise<string>;
-  verify(hash: string): Promise<"confirmed" | "reverted" | "pending">;
+  verify(hash: string, replacement?: (hash: string) => void): Promise<"confirmed" | "reverted" | "pending" | "cancelled" | "replaced">;
   load(): ClosureAttempt | null;
   save(attempt: ClosureAttempt): void;
   /** Must exclude concurrent tabs as well as concurrent clicks. */
@@ -43,22 +43,38 @@ function sameAttempt(a: ClosureBinding, b: ClosureBinding): boolean {
 /** Sending is explicit; resume ONLY checks a previous receipt, never signs again. */
 export async function closeHireJob(binding: ClosureBinding, port: ClosurePort, mode: "send" | "resume"): Promise<ClosureAttempt> {
   return port.exclusive(async () => {
-    const saved = port.load();
+    let saved = port.load();
     if (saved && !sameAttempt(saved, binding)) throw new Error("Saved closure belongs to another job or wallet");
-    if (mode === "resume") {
-      if (!saved?.hash) throw new Error("No transaction hash available; inspect wallet history before retrying");
-      const result = await port.verify(saved.hash);
-      const updated: ClosureAttempt = { ...saved, state: result === "pending" ? "uncertain" : result };
+    async function check(attempt: ClosureAttempt): Promise<ClosureAttempt> {
+      let updated = { ...attempt };
+      try {
+        const result = await port.verify(attempt.hash!, hash => {
+          updated = { ...updated, replacementHash: hash, replacementHashes: [...new Set([...(updated.replacementHashes ?? []), hash])] };
+          port.save(updated);
+        });
+        updated.state = result === "pending" ? "uncertain" : result;
+      } catch { updated.state = "uncertain"; }
       port.save(updated);
       return updated;
     }
-    if (saved && (saved.state !== "rejected" || saved.hash)) throw new Error("A closure attempt already exists; check it before sending another transaction");
+    if (mode === "resume") {
+      if (!saved?.hash) throw new Error("No transaction hash available; inspect wallet history before retrying");
+      return check(saved);
+    }
+    if (saved?.hash && ["reverted", "cancelled", "replaced"].includes(saved.state)) {
+      saved = await check(saved);
+      if (!["reverted", "cancelled", "replaced"].includes(saved.state)) return saved;
+    } else if (saved && (saved.state !== "rejected" || saved.hash)) throw new Error("A closure attempt already exists; check it before sending another transaction");
     await port.assertWallet();
-    assertClosureAllowed(binding, await port.read());
+    const facts = await port.read();
+    if (facts.supported && ["COMPLETED", "REJECTED", "EXPIRED"].includes(facts.status)) return { ...(saved ?? binding), state: "already_closed" };
+    assertClosureAllowed(binding, facts);
     await port.simulate();
     // Revalidate after potentially slow simulation; no stale wallet/state reuse.
     await port.assertWallet();
-    assertClosureAllowed(binding, await port.read());
+    const fresh = await port.read();
+    if (fresh.supported && ["COMPLETED", "REJECTED", "EXPIRED"].includes(fresh.status)) return { ...(saved ?? binding), state: "already_closed" };
+    assertClosureAllowed(binding, fresh);
     let attempt: ClosureAttempt = { ...binding, state: "signing" };
     if (saved) {
       const { previousAttempts = [], ...previous } = saved;
@@ -71,10 +87,7 @@ export async function closeHireJob(binding: ClosureBinding, port: ClosurePort, m
       sending = false;
       attempt = { ...attempt, hash, state: "submitted" };
       port.save(attempt);
-      const result = await port.verify(hash);
-      attempt = { ...attempt, state: result === "pending" ? "uncertain" : result };
-      port.save(attempt);
-      return attempt;
+      return await check(attempt);
     } catch (error) {
       // Even wallet/RPC errors can hide a broadcast; retain the attempt and never auto-resend.
       attempt = { ...attempt, state: sending && signatureRejected(error) ? "rejected" : "uncertain" };
