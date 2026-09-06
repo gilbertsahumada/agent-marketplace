@@ -9,8 +9,7 @@ import {
   type MarketplaceSort,
 } from "@/src/business/use-cases/list-marketplace-agents";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Button, buttonVariants } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { buttonVariants } from "@/components/ui/button";
 import { CatalogFilters } from "./catalog-filters";
 import { CatalogResults } from "./catalog-results";
 import { PaginationLinks } from "./page-primitives";
@@ -48,7 +47,6 @@ export function CatalogPage({
   registryTotal: providedRegistryTotal,
   operationalTotal: providedOperationalTotal,
   filterCounts,
-  conciergeEnabled = false,
 }: {
   data?: MarketplaceAgentPage;
   catalog?: CatalogCandidatePage;
@@ -70,7 +68,6 @@ export function CatalogPage({
   registryTotal?: number;
   operationalTotal?: number;
   filterCounts?: CatalogFacetCounts;
-  conciergeEnabled?: boolean;
 }) {
   if (!data && !catalog) throw new Error("CATALOG_PAGE_DATA_REQUIRED");
   const allView = query.view === "all";
@@ -193,23 +190,10 @@ export function CatalogPage({
   );
 
   return (
-    <main id="main-content" className="mx-auto w-full max-w-[96rem] flex-1 px-4 py-6 sm:px-6 lg:px-8">
+    <main id="main-content" className="agents-catalog mx-auto w-full max-w-[96rem] flex-1 px-4 py-6 sm:px-6 lg:px-8">
       <h1 className="sr-only">Agents</h1>
       <CatalogReturnRefresh />
-      {conciergeEnabled && (
-        <form action="/ask" aria-label="Ask the concierge" className="marketplace-surface mb-6 flex items-center gap-2 rounded-xl p-3" method="get">
-          <label className="sr-only" htmlFor="concierge-entry-q">What do you need?</label>
-          <Input
-            id="concierge-entry-q"
-            maxLength={1200}
-            name="q"
-            placeholder="What do you need? e.g. a grid on BNB/USDT between 500 and 700"
-          />
-          <Button type="submit">Ask</Button>
-        </form>
-      )}
       <CatalogNavigationProvider {...(query.network ? { network: query.network } : {})} navigationKey={JSON.stringify(query)} {...(query.scope ? { scope: query.scope } : {})}>
-      <CatalogNetworkTabs network={network} href={hrefForPage(currentPage)}>
         <div className={allView ? "" : "grid gap-6 lg:h-[calc(100dvh-7rem)] lg:min-h-[30rem] lg:grid-cols-[17rem_minmax(0,1fr)]"}>
           {!allView && (
             <aside aria-label="Catalog filters" className="marketplace-surface hidden rounded-xl lg:sticky lg:top-0 lg:block lg:max-h-full lg:self-start lg:overflow-y-auto">
@@ -224,11 +208,14 @@ export function CatalogPage({
           )}
 
           <section aria-label="Agent results" className="min-w-0 space-y-4 lg:h-full lg:overflow-y-auto lg:pr-2">
+            <div className="flex flex-wrap items-center gap-3">
             {!allView && <nav aria-label="Agent inventory" className="flex flex-wrap items-center gap-2">
               <Link aria-current={query.scope !== "evaluation" ? "page" : undefined} className={buttonVariants({ variant: query.scope !== "evaluation" ? "default" : "outline", size: "sm" })} href={`/agents?scope=hiring&network=${network}`}>For hiring</Link>
               <Link aria-current={query.scope === "evaluation" ? "page" : undefined} className={buttonVariants({ variant: query.scope === "evaluation" ? "default" : "outline", size: "sm" })} href={`/agents?scope=evaluation&network=${network}`}>Under evaluation</Link>
-              <p className="text-xs text-muted-foreground">{query.scope === "evaluation" ? "Not currently requestable. Pending does not mean incompatible." : "Checked quote forms. No previous quote or job required."}</p>
+              {query.scope === "evaluation" ? <p className="text-xs text-muted-foreground">Not currently requestable. Pending does not mean incompatible.</p> : null}
             </nav>}
+            <CatalogNetworkTabs network={network} href={hrefForPage(currentPage)} />
+            </div>
             <div className="marketplace-surface grid items-center gap-4 rounded-xl p-3 xl:grid-cols-[auto_minmax(0,1fr)]" data-testid="catalog-summary">
               <div aria-label="Catalog totals" className="flex items-center gap-5 px-1 sm:gap-7">
                 <div className="flex items-center gap-2.5"><UsersRound aria-hidden="true" className="size-4 text-zinc-600" /><CatalogMetric label={network === "testnet" ? "Testnet agents indexed" : "ERC-8004 registered"} value={registryTotal} /></div>
@@ -248,7 +235,6 @@ export function CatalogPage({
             <PaginationLinks hrefFor={hrefForPage} page={currentPage} totalPages={totalPages} />
           </section>
         </div>
-      </CatalogNetworkTabs>
       </CatalogNavigationProvider>
     </main>
   );

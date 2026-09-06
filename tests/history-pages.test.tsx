@@ -9,7 +9,7 @@ import { markCatalogForRefresh } from "../components/marketplace/catalog-return-
 afterEach(() => { cleanup(); vi.useRealTimers(); vi.unstubAllGlobals(); });
 it("shows daily activity cards with a compact period selector", () => {
   render(<HireActivityWindow activity={{ chainId: 56, days: 30, from: "", to: "", totals: { created: 1, funded: 0, submitted: 0, settled: 0, refunded: 0 }, byDay: [] }} />);
-  expect(screen.getByRole("heading", { name: "ERC-8183 activity" })).toBeInTheDocument();
+  expect(screen.getByRole("region", { name: "ERC-8183 activity" })).toBeInTheDocument();
   expect(screen.getByText("Past 30 days", { selector: "summary" }).closest("details")).not.toHaveAttribute("open");
   expect(screen.getByRole("button", { name: "About the Created metric" })).toBeInTheDocument();
 });

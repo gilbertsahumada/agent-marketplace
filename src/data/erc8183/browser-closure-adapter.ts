@@ -1,6 +1,7 @@
 import { createPublicClient, createWalletClient, custom, encodeFunctionData, isAddressEqual, parseAbi, type EIP1193Provider, type Address, type Hex } from "viem";
-import { bsc } from "viem/chains";
-import { ERC8183_MAINNET as pins } from "../../mainnet/contracts.ts";
+import { bsc, bscTestnet } from "viem/chains";
+import { ERC8183_MAINNET } from "../../mainnet/contracts.ts";
+import { TESTNET_CLOSURE_PINS, testnetClosurePinsMatch } from "./testnet-closure-pins.ts";
 import { mainnetImplementationPinsMatch } from "../../mainnet/implementation-pins.ts";
 import { closeHireJob, type ClosureAction, type ClosureAttempt, type ClosurePort } from "../../business/use-cases/close-hire-job.ts";
 
@@ -16,19 +17,23 @@ const readAbi = parseAbi([
 const statuses = ["OPEN", "FUNDED", "SUBMITTED", "COMPLETED", "REJECTED", "EXPIRED"];
 
 /** Explicit Mainnet adapter. Never swaps Testnet IDs onto Mainnet contracts. */
-export async function executeBrowserClosure(input: { provider: unknown; wallet: string; jobId: string; action: ClosureAction; mode: "send" | "resume" }) {
+export async function executeBrowserClosure(input: { provider: unknown; wallet: string; jobId: string; action: ClosureAction; mode: "send" | "resume"; network?: "mainnet" | "testnet" }) {
+  if (input.network !== undefined && input.network !== "mainnet" && input.network !== "testnet") throw new Error("Unsupported closure network");
+  const pins = input.network === "testnet" ? TESTNET_CLOSURE_PINS : ERC8183_MAINNET;
+  const chain = input.network === "testnet" ? bscTestnet : bsc;
+  const pinsMatch = input.network === "testnet" ? testnetClosurePinsMatch : mainnetImplementationPinsMatch;
   if (!/^[1-9]\d{0,19}$/.test(input.jobId) || !/^0x[\da-f]{40}$/i.test(input.wallet) ||
     !input.provider || typeof (input.provider as EIP1193Provider).request !== "function") throw new Error("Invalid wallet or job");
   if (!navigator.locks) throw new Error("This browser cannot safely coordinate closure attempts");
   const provider = input.provider as EIP1193Provider;
   const wallet = input.wallet as Address;
-  const p = createPublicClient({ chain: bsc, transport: custom(provider, { retryCount: 0 }) });
-  const w = createWalletClient({ chain: bsc, account: wallet, transport: custom(provider, { retryCount: 0 }) });
+  const p = createPublicClient({ chain, transport: custom(provider, { retryCount: 0 }) });
+  const w = createWalletClient({ chain, account: wallet, transport: custom(provider, { retryCount: 0 }) });
   const id = BigInt(input.jobId);
   const address = input.action === "dispute" ? pins.policy : pins.router;
   const data = input.action === "dispute" ? encodeFunctionData({ abi, functionName: "dispute", args: [id] }) : encodeFunctionData({ abi, functionName: "settle", args: [id, "0x"] });
-  const binding = { chainId: 56, commerce: pins.commerce, wallet, jobId: input.jobId, action: input.action };
-  const key = `marketplace:closure:v1:56:${pins.commerce.toLowerCase()}:${id}:${wallet.toLowerCase()}:${input.action}`;
+  const binding = { chainId: pins.chainId, commerce: pins.commerce, wallet, jobId: input.jobId, action: input.action };
+  const key = `marketplace:closure:v1:${pins.chainId}:${pins.commerce.toLowerCase()}:${id}:${wallet.toLowerCase()}:${input.action}`;
   const getJob = () => p.readContract({ address: pins.commerce, abi: readAbi, functionName: "getJob", args: [id] });
   const disputedNow = () => p.readContract({ address: pins.policy, abi: readAbi, functionName: "disputed", args: [id] });
   const port: ClosurePort = {
@@ -48,10 +53,10 @@ export async function executeBrowserClosure(input: { provider: unknown; wallet: 
     save: attempt => localStorage.setItem(key, JSON.stringify(attempt)),
     assertWallet: async () => {
       const [chain, accounts] = await Promise.all([p.getChainId(), w.getAddresses()]);
-      if (chain !== 56 || !accounts[0] || !isAddressEqual(accounts[0], wallet)) throw new Error("Wallet or network changed");
+      if (chain !== pins.chainId || !accounts[0] || !isAddressEqual(accounts[0], wallet)) throw new Error("Wallet or network changed");
     },
     read: async () => {
-      if (await p.getChainId() !== 56 || !await mainnetImplementationPinsMatch(p)) throw new Error("Contract verification failed");
+      if (await p.getChainId() !== pins.chainId || !await pinsMatch(p)) throw new Error("Contract verification failed");
       const [job, boundPolicy, block, window, disputed, verdict] = await Promise.all([
         getJob(), p.readContract({ address: pins.router, abi: readAbi, functionName: "jobPolicy", args: [id] }), p.getBlock(), p.readContract({ address: pins.policy, abi: readAbi, functionName: "disputeWindow" }), disputedNow(), p.readContract({ address: pins.policy, abi: readAbi, functionName: "check", args: [id, "0x"] }),
       ]);
@@ -60,7 +65,7 @@ export async function executeBrowserClosure(input: { provider: unknown; wallet: 
     simulate: async () => { await p.call({ account: wallet, to: address, data }); },
     send: async () => w.sendTransaction({ account: wallet, to: address, data, value: 0n }),
     verify: async (hash, replacement) => {
-      if (await p.getChainId() !== 56 || !await mainnetImplementationPinsMatch(p)) throw new Error("Wrong network or changed contracts");
+      if (await p.getChainId() !== pins.chainId || !await pinsMatch(p)) throw new Error("Wrong network or changed contracts");
       const contextKey = `${key}:original:${hash.toLowerCase()}`;
       type OriginalContext = { from: Address; to: Address | null; input: Hex; value: bigint; nonce: number };
       const matches = (tx: OriginalContext) => !!tx.to && isAddressEqual(tx.to, address) && isAddressEqual(tx.from, wallet) && tx.input.toLowerCase() === data.toLowerCase() && tx.value === 0n;
@@ -73,7 +78,7 @@ export async function executeBrowserClosure(input: { provider: unknown; wallet: 
         const raw = localStorage.getItem(contextKey);
         if (!raw || !port.load()?.replacementHash) throw error;
         const stored = JSON.parse(raw);
-        if (stored.hash !== hash.toLowerCase() || stored.chainId !== 56 || stored.commerce !== pins.commerce ||
+        if (stored.hash !== hash.toLowerCase() || stored.chainId !== pins.chainId || stored.commerce !== pins.commerce ||
           stored.jobId !== input.jobId || stored.action !== input.action || typeof stored.from !== "string" || stored.from.toLowerCase() !== wallet.toLowerCase() || stored.to !== address ||
           stored.input !== data || stored.value !== "0" || !Number.isSafeInteger(stored.nonce) || stored.nonce < 0) throw new Error("Invalid original transaction context");
         original = { from: wallet, to: address, input: data, value: 0n, nonce: stored.nonce };
@@ -85,7 +90,7 @@ export async function executeBrowserClosure(input: { provider: unknown; wallet: 
       const receipt = await p.waitForTransactionReceipt({ hash: (port.load()?.replacementHash ?? hash) as Hex, timeout: 45_000, confirmations: 1,
         onReplaced: event => { replacement?.(event.transaction.hash); },
       });
-      if (await p.getChainId() !== 56 || !await mainnetImplementationPinsMatch(p)) throw new Error("Network or contracts changed during verification");
+      if (await p.getChainId() !== pins.chainId || !await pinsMatch(p)) throw new Error("Network or contracts changed during verification");
       if (receipt.status !== "success" && receipt.status !== "reverted") return "pending";
       const tx = await p.getTransaction({ hash: receipt.transactionHash });
       if (receipt.transactionHash.toLowerCase() !== hash.toLowerCase()) {

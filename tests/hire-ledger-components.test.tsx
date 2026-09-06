@@ -367,7 +367,14 @@ describe("HireLedgerPage", () => {
   it("shows five simultaneous phase totals with accessible daily charts", async () => {
     render(createElement(HireLedgerPage, { chainId: 56, summary: summary(), page, activity: activity() }));
 
-    expect(screen.getByRole("heading", { level: 2, name: "ERC-8183 activity" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Indexed jobs" })).not.toBeInTheDocument();
+    const network = screen.getByRole("navigation", { name: "Network" });
+    const period = screen.getByText("Past 30 days", { selector: "summary" });
+    expect(network).toHaveClass("h-9");
+    expect(period).toHaveClass("h-9");
+    expect(period.closest("details")).toHaveClass("ml-auto");
+    expect(network.parentElement).toBe(period.closest("details")?.parentElement);
+    expect(screen.getByRole("region", { name: "ERC-8183 activity" })).toBeInTheDocument();
     expect(screen.getAllByText("Past 30 days")).toHaveLength(2);
     expect(screen.getByText("Created").closest("[data-slot='card']")).toHaveTextContent("1,234");
     expect(screen.getByText("Settled").closest("[data-slot='card']")).toHaveTextContent("1");
@@ -396,9 +403,9 @@ describe("HireLedgerPage", () => {
   it("keeps zero-value phase charts visible when no phase events fell in the window", () => {
     render(createElement(HireLedgerPage, { chainId: 56, summary: summary(), page, activity: activity({ byDay: [], totals: { created: 0, funded: 0, submitted: 0, settled: 0, refunded: 0 } }) }));
 
-    expect(screen.getByRole("heading", { level: 2, name: "ERC-8183 activity" })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "ERC-8183 activity" })).toBeInTheDocument();
     expect(screen.getAllByRole("img", { name: /events per UTC day/ })).toHaveLength(5);
-    const activitySection = screen.getByRole("heading", { level: 2, name: "ERC-8183 activity" }).closest("section")!;
+    const activitySection = screen.getByRole("region", { name: "ERC-8183 activity" }).closest("section")!;
     for (const label of ["Created", "Funded", "Submitted", "Settled", "Refunded"]) {
       expect(within(activitySection).getByText(label).closest("[data-slot='card']")).toHaveTextContent("0");
     }
