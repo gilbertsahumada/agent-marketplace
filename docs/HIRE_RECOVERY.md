@@ -12,6 +12,16 @@ This panel is read-only. Wallet dispute and settlement submission remain pending
 
 ## Checkout recovery
 
+### Closure implementation — local, gated, not production-enabled
+
+`close-hire-job.ts` coordinates explicit dispute/settle attempts independently of funding. It reads eligibility, simulates, rechecks wallet/state, persists before opening the wallet and checks the receipt. Resume only checks the previous transaction; it never sends again. Browser Web Locks reject concurrent tabs for the same chain/Commerce/job/wallet/action. Missing lock support or unavailable storage stops signing.
+
+The Mainnet browser adapter verifies chain and implementation pins, bound evaluator/policy, exact sender/target/calldata/value, unchanged receipt hash, and resulting disputed/terminal state. The UI is gated by `NEXT_PUBLIC_JOB_CLOSURE_ENABLED=true`; default is OFF. Do not enable this flag in production before an authorized end-to-end wallet acceptance run. No buyer private keys or new backend secrets are required. No Worker/migration changes are included.
+
+Remaining acceptance: Testnet-specific adapter and pins; replacement transactions and user-rejected/no-hash attempts need an explicit recovery/reset flow that retains history. Current behavior conservatively blocks new sends for all saved attempts, including reverted/uncertain attempts. Smart-account wrapped calls are not supported by this exact direct-transaction verifier. Refunds are not implemented. These limitations must not be represented as a complete closure rollout.
+
+Automated tests use fake ports/providers, never live signatures. Mainnet deployment remains read-only while the flag is absent.
+
 New quote requests mount a fresh checkout. Loading a page or changing the connected wallet does not restore transactions or report historical hire events against the current quote request.
 
 Saved browser progress is a recovery hint, not proof of payment. The previous job is shown with its buyer and recorded start time (or an explicit unavailable date). Recovery requires selecting **Resume job #…** with the original buyer wallet connected; it does not require a fresh quote or a prepared payment plan. This entry is available after a full reload, even when no buyer quote is active. Current chain facts must match the saved buyer, provider, network and job ID, the global evaluator/policy/token pins, and a positive funded budget matching the on-chain quoted price. Recovery never compares an old job with a new quote's description or price and never copies cached receipts into the active transaction list.
