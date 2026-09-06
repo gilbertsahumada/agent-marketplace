@@ -96,8 +96,7 @@ describe("/jobs ledger page", () => {
 
     expect(ledger.summary).toHaveBeenCalledWith({ chainId: 56 });
     expect(ledger.listRecentJobs).toHaveBeenCalledWith({ chainId: 56 });
-    expect(html).toContain("56,697");
-    expect(html).toContain("Attributed to marketplace");
+    expect(html).toContain("56,697 indexed");
     expect(html).toContain("Index cursor 119000000");
     expect(html).toContain('href="/jobs/mainnet/56696"');
     expect(html).toContain('href="/jobs?chainId=56&amp;before=56695"');
@@ -106,7 +105,7 @@ describe("/jobs ledger page", () => {
     expect(html).toContain("not deliverable quality");
   });
 
-  it("reads the last 30 days of phase events for the chain and renders the totals with the indexing note", async () => {
+  it("reads the last 30 days of phase events for the chain and renders the interactive chart with the indexing note", async () => {
     ledger.summary.mockResolvedValue(summary());
     ledger.listRecentJobs.mockResolvedValue({ chainId: 56, jobs: [], nextBefore: null });
     ledger.activity.mockResolvedValue(activity());
@@ -116,9 +115,11 @@ describe("/jobs ledger page", () => {
     // No explicit days: the default window is the Worker's default, so the
     // page and the agent profile share one cached read.
     expect(ledger.activity).toHaveBeenCalledWith({ chainId: 56 });
-    expect(html).toContain("Last 30 days");
-    expect(html).toContain("2026-09-01");
-    expect(html).toContain("2026-09-02");
+    expect(html).toContain("ERC-8183 activity");
+    expect(html).toContain("Past 30 days");
+    expect(html).toContain("Created events per UTC day over the last 30 days");
+    expect(html).toContain("Refunded events per UTC day over the last 30 days");
+    expect(html).not.toContain("Phase events per UTC day");
     expect(html).toContain("Counts phase events indexed since the ledger started; earlier jobs are present by state only.");
     expect(html).not.toContain("Recent activity temporarily unavailable");
     expect(html).not.toMatch(/proven|track record/i);
@@ -132,7 +133,7 @@ describe("/jobs ledger page", () => {
 
     expect(ledger.activity).toHaveBeenCalledWith({ chainId: 97, provider: BUYER });
     expect(html).toContain("Recent activity temporarily unavailable.");
-    expect(html).toContain("Attributed to marketplace");
+    expect(html).toContain("Coverage details");
     expect(html).not.toContain("Indexed ledger temporarily unavailable");
   });
 
@@ -181,7 +182,7 @@ describe("/jobs ledger page", () => {
     expect(ledger.listRecentJobs).toHaveBeenCalledWith({ chainId: 56 });
     expect(html).not.toContain("Jobs before #");
     expect(html).toContain("Indexed ledger temporarily unavailable");
-    expect(html).toContain("Unavailable");
+    expect(html).toContain("Counts temporarily unavailable");
     expect(html).not.toContain("tabular-nums\">0");
   });
 
@@ -189,6 +190,24 @@ describe("/jobs ledger page", () => {
     await expect(render({ chainId })).rejects.toThrow("NEXT_NOT_FOUND");
     expect(ledger.summary).not.toHaveBeenCalled();
     expect(ledger.listRecentJobs).not.toHaveBeenCalled();
+  });
+
+  it("requests a selected activity window and preserves it in navigation", async () => {
+    ledger.summary.mockResolvedValue(summary());
+    ledger.listRecentJobs.mockResolvedValue({ chainId: 56, jobs: [job("99")], nextBefore: "98" });
+    ledger.activity.mockResolvedValue({ ...activity(), days: 7 });
+
+    const html = await render({ days: "7" });
+
+    expect(ledger.activity).toHaveBeenCalledWith({ chainId: 56, days: 7 });
+    expect(html).toContain("Past 7 days");
+    expect(html).toContain('href="/jobs?chainId=97&amp;days=7"');
+    expect(html).toContain('href="/jobs?chainId=56&amp;before=98&amp;days=7"');
+  });
+
+  it.each(["0", "14", "91", "7 "])("404s unsupported activity window ?days=%s", async (days) => {
+    await expect(render({ days })).rejects.toThrow("NEXT_NOT_FOUND");
+    expect(ledger.summary).not.toHaveBeenCalled();
   });
 
   // The agent profile links here for "All indexed jobs" sold by a wallet:
