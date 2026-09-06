@@ -316,6 +316,13 @@ export class CatalogErc8183Repository implements Erc8183SpikeRepository {
         job: after,
       };
     } catch (error) {
+      // A notification can time out after the seller has already submitted.
+      try {
+        const current = await this.getJob(jobId);
+        if (current.status === "SUBMITTED" || current.status === "COMPLETED") {
+          return { acknowledged: true, alreadySubmitted: true, job: current };
+        }
+      } catch { /* Keep the original failure if the chain is unavailable too. */ }
       if (error instanceof Erc8183SpikeUnavailableError) throw error;
       throw new Erc8183SpikeUnavailableError("The seller notification could not be completed; the funded job remains onchain");
     } finally {
