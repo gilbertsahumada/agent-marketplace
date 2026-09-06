@@ -88,6 +88,30 @@ async function typeAndAsk(message: string) {
 }
 
 describe("ConciergeChat", () => {
+  it("shows the no-match state without a brief form when nothing in the catalog fits", async () => {
+    const reply = {
+      ...FULL_REPLY,
+      message: "No agents plan trips; the marketplace covers trading and DeFi monitoring.",
+      brief: { objective: "Plan a trip", deliverable: "An itinerary", acceptanceCriteria: "Five days" },
+      agents: [],
+      proposal: null,
+      steps: [{ tool: "search_agents", summary: '0 agents for "trip"' }],
+    };
+    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse(reply)));
+    render(<ConciergeChat />);
+
+    await typeAndAsk("necesito una ruta de viaje de 5 días en Marruecos");
+    await screen.findByText(reply.message);
+
+    const empty = screen.getByRole("region", { name: "No matching agents" });
+    expect(empty).toHaveTextContent(/grid trading, rebalancing, yield optimisation and health-factor monitoring/);
+    expect(screen.getByRole("link", { name: "Browse verified agents" })).toHaveAttribute("href", "/agents?view=marketplace");
+    expect(screen.queryByRole("region", { name: "Your brief" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("list", { name: "Agents for this brief" })).not.toBeInTheDocument();
+    expect(screen.getByRole("list", { name: "Steps" })).toHaveTextContent('Searched the catalog · 0 agents for "trip"');
+    expect(document.body.textContent).not.toMatch(/search_agents/);
+  });
+
   it("asks the concierge and renders steps, editable brief, agents and the proposal", async () => {
     const fetcher = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => jsonResponse(FULL_REPLY));
     vi.stubGlobal("fetch", fetcher);
@@ -103,7 +127,7 @@ describe("ConciergeChat", () => {
       messages: [{ role: "user", content: "Quiero un grid en BNB/USDT entre 500 y 700" }],
     });
 
-    expect(screen.getByText(/search_agents/)).toHaveTextContent('search_agents · 3 agents for "grid"');
+    expect(screen.getByRole("list", { name: "Steps" })).toHaveTextContent('Searched the catalog · 3 agents for "grid"');
     expect(screen.getByLabelText("Objective")).toHaveValue(FULL_REPLY.brief!.objective);
     expect(screen.getByLabelText("Deliverable")).toHaveValue(FULL_REPLY.brief!.deliverable);
     expect(screen.getByLabelText("Acceptance criteria")).toHaveValue(FULL_REPLY.brief!.acceptanceCriteria);
