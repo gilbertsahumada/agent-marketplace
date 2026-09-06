@@ -48,6 +48,20 @@ beforeEach(async () => {
 });
 
 describe("buyer quote request ledger", () => {
+  it("creates a first SDK-profile request without admission, extension or historical quotes", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({ url: "https://seller.example.com/a2a", protocolVersion: "0.3.0", skills: [{ id: "negotiate", description: "Send task_description and terms; receive negotiation_hash and provider_sig." }] })));
+    const discovered = await catalogNegotiationInputResponse(env.DB as unknown as D1Database, "42");
+    expect(discovered.status).toBe(200);
+    const { contractHash } = await discovered.json() as { contractHash: string };
+    const response = await createCatalogQuoteRequestResponse(new Request("https://worker.test/catalog-quotes/42", { method: "POST", body: JSON.stringify({ schemaVersion: 2, endpointKey: ENDPOINT_KEY, contractHash, parameters: { task_description: "Explain BNB identity", terms: { deliverables: "Summary", quality_standards: "Cited" } } }) }), env.DB as unknown as D1Database, { nowMs: NOW });
+    expect(response.status).toBe(201);
+    const created = await response.json() as { request: Record<string, unknown> };
+    expect(created.request).toMatchObject({ task_description: "Explain BNB identity", terms: { deliverables: "Summary", quality_standards: "Cited", evaluation_required: true, evaluator_type: "uma_oov3" } });
+    const row = await env.DB.prepare("SELECT * FROM catalog_seller_capabilities WHERE agentKey='eip155:56:42'").first();
+    expect(row).toMatchObject({ state: "discovered", negotiationProfile: "bnb-sdk-v1", schemaSource: "a2a-declaration", lastSuccessAt: null });
+    const stored = await env.DB.prepare("SELECT * FROM catalog_quote_requests").all();
+    expect(JSON.stringify(stored)).not.toContain("Explain BNB identity");
+  });
   it("keeps imported observations out of recorded request totals and pages", async () => {
     await createCatalogQuoteRequestResponse(createRequest(), env.DB as unknown as D1Database, { nowMs: NOW });
     await env.DB.prepare(`INSERT INTO catalog_quote_requests (requestHash, agentKey, endpointKey, transport, kind, status, callerKey, createdAt, metadataJson) VALUES ('imported', 'eip155:56:42', ?, 'a2a', 'buyer_quote', 'succeeded', 'migration', ?, '{"evidenceMigrated":1}')`).bind(ENDPOINT_KEY, NOW).run();

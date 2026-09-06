@@ -16,6 +16,7 @@ export interface InputSchema {
   examples?: unknown[];
 }
 export interface NegotiationContract {
+  provenance?: { profile: "bnb-sdk-v1" | "seller-schema"; source: "a2a-declaration" | "openapi" | "manifest" | "mcp-schema"; detectorVersion: number };
   capabilityProbeParameters?: Record<string, unknown>;
   encoding: "prefixed-json" | "request";
   inputSchema: InputSchema;
@@ -79,7 +80,11 @@ export function normalizeNegotiationContract(value: unknown): NegotiationContrac
   if (inputSchema.type !== "object") return fail();
   const sample = value.capabilityProbeParameters;
   if (sample !== undefined && (!record(sample) || !validateParameters(inputSchema, sample))) return fail();
-  const probe = sample === undefined ? {} : { capabilityProbeParameters: sample as Record<string, unknown> };
+  const probe = { ...(sample === undefined ? {} : { capabilityProbeParameters: sample as Record<string, unknown> }),
+    ...(record(value.provenance) && ["bnb-sdk-v1", "seller-schema"].includes(String(value.provenance.profile))
+      && ["a2a-declaration", "openapi", "manifest", "mcp-schema"].includes(String(value.provenance.source))
+      && value.provenance.detectorVersion === 2 ? { provenance: value.provenance as unknown as NonNullable<NegotiationContract["provenance"]> } : {}),
+  };
   if (value.encoding === "request") {
     if (inputSchema.properties?.task_description?.type !== "string" || inputSchema.properties?.terms?.type !== "object"
       || !["task_description", "terms"].every(key => inputSchema.required?.includes(key))
@@ -89,14 +94,14 @@ export function normalizeNegotiationContract(value: unknown): NegotiationContrac
     const canonicalKeys = ["deliverables", "quality_standards", "evaluation_required", "evaluator_type"];
     // Compatibility must be established even when the seller publishes no probe
     // example. A schema accepting arbitrary terms is not a canonical quote API.
-    if (canonicalKeys.some(key => !properties[key])
+    if (["deliverables", "quality_standards"].some(key => !properties[key])
       || termsSchema.required?.some(key => !canonicalKeys.includes(key))
       || termsSchema.const !== undefined || termsSchema.enum !== undefined
       || !acceptsCanonicalText(inputSchema.properties.task_description, 1500)
       || !acceptsCanonicalText(properties.deliverables!, 500)
       || !acceptsCanonicalText(properties.quality_standards!, 500)
-      || !validateParameters(properties.evaluation_required!, true)
-      || !validateParameters(properties.evaluator_type!, "uma_oov3")) return fail();
+      || (properties.evaluation_required !== undefined && !validateParameters(properties.evaluation_required, true))
+      || (properties.evaluator_type !== undefined && !validateParameters(properties.evaluator_type, "uma_oov3"))) return fail();
     const contract: NegotiationContract = { encoding: "request", inputSchema, ...probe };
     if (contract.capabilityProbeParameters) buildContractRequest(contract, contract.capabilityProbeParameters);
     return contract;
@@ -112,9 +117,10 @@ function acceptsCanonicalText(input: InputSchema, limit: number): boolean {
   return !choices || choices.some(value => typeof value === "string" && !!value.trim() && value.length <= limit && validateParameters(input, value));
 }
 function validTerms(value: unknown): value is Record<string, unknown> {
-  return record(value) && Object.keys(value).sort().join(",") === "deliverables,evaluation_required,evaluator_type,quality_standards"
+  return record(value) && Object.keys(value).every(key => ["deliverables", "quality_standards", "evaluation_required", "evaluator_type"].includes(key))
     && [value.deliverables, value.quality_standards].every(v => typeof v === "string" && v.trim().length > 0 && v.length <= 500)
-    && value.evaluation_required === true && value.evaluator_type === "uma_oov3";
+    && (value.evaluation_required === undefined || value.evaluation_required === true)
+    && (value.evaluator_type === undefined || value.evaluator_type === "uma_oov3");
 }
 export function validateParameters(schema: InputSchema, value: unknown): boolean {
   if (schema.const !== undefined && value !== schema.const) return false;

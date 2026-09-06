@@ -68,6 +68,16 @@ function validVerifier() {
 }
 
 describe("WP3 quote validation", () => {
+  it("verifies an SDK envelope without optional provider_address against the chain-resolved provider, without rewriting it", async () => {
+    const quote = acceptedEnvelope();
+    delete quote.provider_address;
+    const original = JSON.stringify(quote);
+    const verify = validVerifier();
+    await expect(validateProbeQuote(quote, context(), verify)).resolves.toMatchObject({ outcome: "quote_verified", provider: PROVIDER });
+    expect(verify).toHaveBeenCalledWith(expect.objectContaining({ provider: PROVIDER }));
+    expect(JSON.stringify(quote)).toBe(original);
+    await expect(validateProbeQuote(quote, context(), vi.fn(async () => ({ valid: false as const, reason: "wrong signer" })))).rejects.toThrow();
+  });
   it("verifies every canonical field and pins signature verification to one block", async () => {
     const verify = validVerifier();
     const result = await validateProbeQuote(acceptedEnvelope(), context(), verify);
@@ -142,7 +152,6 @@ describe("WP3 quote validation", () => {
     ["response hash", (quote: Record<string, unknown>) => { quote.response_hash = `0x${"a".repeat(64)}`; }],
     ["negotiation hash", (quote: Record<string, unknown>) => { quote.negotiation_hash = "0x01"; }],
     ["provider", (quote: Record<string, unknown>) => { quote.provider_address = OTHER; }],
-    ["missing provider", (quote: Record<string, unknown>) => { delete quote.provider_address; }],
     ["chain", (quote: Record<string, unknown>) => { quote.chain_id = 97; }],
     ["Commerce", (quote: Record<string, unknown>) => { quote.verifying_contract = OTHER; }],
     ["price", (quote: Record<string, unknown>) => {
@@ -179,7 +188,21 @@ describe("WP3 quote validation", () => {
     }))).rejects.toMatchObject({ code: "QUOTE_SIGNER" });
   });
 
-  it("rejects a validly signed buyer quote above the marketplace spend ceiling", async () => {
+  it("accepts the seller price above the former demo cap", async () => {
+    const quote = acceptedEnvelope();
+    ((quote.response as Record<string, unknown>).terms as Record<string, unknown>).price = "100000000000000000";
+    quote.response_hash = NegotiationResponse.fromDict(quote.response as Record<string, unknown>).computeHash();
+    await expect(validateProbeQuote(quote, context(), validVerifier())).resolves.toMatchObject({ priceRaw: "100000000000000000" });
+  });
+
+  it("rejects prices that cannot fit the on-chain uint256 budget", async () => {
+    const quote = acceptedEnvelope();
+    ((quote.response as Record<string, unknown>).terms as Record<string, unknown>).price = (2n ** 256n).toString();
+    quote.response_hash = NegotiationResponse.fromDict(quote.response as Record<string, unknown>).computeHash();
+    await expect(validateProbeQuote(quote, context(), validVerifier())).rejects.toMatchObject({ code: "QUOTE_PRICE" });
+  });
+
+  it("respects an explicitly supplied caller spend ceiling", async () => {
     const quote = acceptedEnvelope();
     ((quote.response as Record<string, unknown>).terms as Record<string, unknown>).price = "10000000000000001";
     quote.response_hash = NegotiationResponse.fromDict(quote.response as Record<string, unknown>).computeHash();

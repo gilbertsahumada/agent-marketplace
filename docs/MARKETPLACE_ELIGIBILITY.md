@@ -192,6 +192,36 @@ service, never a failed seller. Single-agent authenticated detail reads are fres
 
 ## Networks
 
+## Negotiation profiles — detector v2
+
+The marketplace extension is optional, not an admission standard. Resolution uses
+an explicit seller schema first, then a documented supported SDK A2A wire profile
+or bounded same-origin OpenAPI HTTP schema. Invalid explicit schemas fail closed.
+SDK A2A recognition requires protocolVersion 0.3.0, negotiate-erc8183-job/negotiate,
+and a skill description identifying task_description, terms, negotiation_hash and
+provider_sig. This is a wire-profile declaration, not proof of installed software.
+The common form has task description, deliverable and quality standards. Omitted
+SDK evaluation settings are normalized by the SDK when constructing the request;
+provided unsupported settings are rejected. Unknown input fields are not dropped.
+
+HTTP discovery reads the origin's /openapi.json for the exact /negotiate path used
+by the existing transport. No external refs, authentication bypass, custom headers,
+remote servers, arbitrary routes or invented task parameters. A healthy SDK-like
+status alone is insufficient. Unsupported optional schema features remain blocked
+until they have a tested adapter. Existing Grid prefixed-json remains supported.
+
+Migration 0026 records detectorVersion, negotiationProfile and schemaSource.
+Historical rows remain version 0. A bounded bootstrap revisit targets only old
+parameter/schema failures, preserves quote evidence and counters, and never resets
+pending queue leases. Shared failures must come from the current detector version.
+Schema hashes bind provenance and form requirements; quote signatures still bind
+the original SDK request/response, not our presentation metadata.
+
+No new production hireable-agent count is claimed by these local changes. Review
+docs/IMPLEMENTATION_SDK_NEGOTIATION.md for test and rollout status.
+
+### Network execution boundaries
+
 Current catalogue and dynamic quote verification are Mainnet (56). Indexed jobs
 support 56 and 97. First reuse network selection inside job history; propagate it
 through queries, totals, cursors and explorer links. This does not switch the
@@ -229,3 +259,7 @@ provider-wallet activity, not independently attributed to that agent. Grid
 303779 had four tracked requests (two successful, two failed), plus 24 migrated
 quote observations. Its indexed job 56696 was Submitted. These facts explain
 the UI defects; query current data for demos rather than hardcoding this snapshot.
+
+## Seller-defined pricing
+
+The marketplace does not impose the Grid demo's 0.01 U price on other sellers. Sellers set their price in the signed quote. Buyers review the amount and authorize it in their wallet; requesting a quote never sends payment. Quotes must contain a positive uint256 amount and still pass identity, signature, request, chain, contract, token and expiry validation. Payment preparation binds the spending ceiling and any token approval to the exact verified quote amount, never an unlimited approval. Historical jobs retain their original budgets.

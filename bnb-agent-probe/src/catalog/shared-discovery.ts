@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import { createDatabase } from "../db/orm";
 import type { D1DatabaseLike } from "../db/client";
+import { NEGOTIATION_DETECTOR_VERSION } from "../../../src/shared/negotiation-profiles";
 
 /** Reuse only public structural discovery failures for the exact endpoint and
  * transport. No quote/identity success, auth failure or transient error is shared.
@@ -17,6 +18,7 @@ export async function projectSharedDiscoveryFailures(binding: D1DatabaseLike, no
       JOIN catalog_agents a ON a.agentKey=c.agentKey AND a.chainId=56 AND a.indexState='current'
       JOIN catalog_agent_endpoints ae ON ae.agentKey=c.agentKey AND ae.endpointKey=c.endpointKey AND ae.declarationState='current'
       WHERE c.compatibilityState='unsupported'
+        AND c.detectorVersion=${NEGOTIATION_DETECTOR_VERSION}
         AND c.compatibilityErrorCode IN ('A2A_REQUIRED_SKILLS','MCP_QUOTE_TOOL_REQUIRED','NEGOTIATION_PARAMETERS_UNAVAILABLE','NEGOTIATION_SCHEMA_UNSUPPORTED')
         AND c.compatibilityCheckedAt > ${now - 86400000} AND c.compatibilityCheckedAt <= ${now}
         AND c.state <> 'suspended'
@@ -32,7 +34,7 @@ export async function projectSharedDiscoveryFailures(binding: D1DatabaseLike, no
       ORDER BY c.createdAt,c.agentKey LIMIT ${limit}
     )
     UPDATE catalog_seller_capabilities AS c SET
-      compatibilityState='unsupported',schemaHash=NULL,
+      compatibilityState='unsupported',schemaHash=NULL,detectorVersion=${NEGOTIATION_DETECTOR_VERSION},negotiationProfile=NULL,schemaSource=NULL,
       compatibilityErrorCode=t.compatibilityErrorCode,
       compatibilityCheckedAt=t.compatibilityCheckedAt,compatibilityExpiresAt=NULL,
       nextProbeAt=t.compatibilityCheckedAt+86400000,updatedAt=${now}

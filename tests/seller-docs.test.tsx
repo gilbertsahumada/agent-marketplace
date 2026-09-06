@@ -9,6 +9,11 @@ import { normalizeNegotiationContract } from "../src/shared/negotiation-input";
 vi.mock("next/navigation", () => ({ usePathname: () => "/docs/sellers" }));
 vi.mock("../components/marketplace/wallet-connect-button", () => ({ WalletConnectButton: () => null }));
 afterEach(cleanup);
+it("documents SDK profiles as an alternative to the marketplace extension", () => {
+  render(<SellerDocs />);
+  expect(screen.getByRole("heading", { name: "BNB SDK compatibility" })).toBeInTheDocument();
+  expect(screen.getByText(/does not prove which SDK version/)).toBeInTheDocument();
+});
 it("provides a single footer with grouped links and one Docs entry", () => {
   render(<MarketplaceShell><main>Content</main></MarketplaceShell>);
   expect(screen.getAllByRole("contentinfo")).toHaveLength(1);

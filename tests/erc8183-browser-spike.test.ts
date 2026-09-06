@@ -140,6 +140,20 @@ function repository(overrides: Partial<Erc8183SpikeRepository> = {}): Erc8183Spi
 }
 
 describe("Gate 6A business policy", () => {
+  it("prepares the seller's 0.1 U price with an exact approval, not the demo price", async () => {
+    const priceRaw = "100000000000000000";
+    const repo = repository();
+    repo.allowlist.maximumBudgetRaw = BigInt(priceRaw);
+    repo.validateQuote = async () => quote({ priceRaw, priceDisplay: "0.1" });
+    repo.getBuyerFacts = async () => buyerFacts({ tokenBalanceRaw: priceRaw });
+    const plan = await new PrepareErc8183Hire(repo, () => NOW).execute({ buyer: BUYER, quote: {} });
+    expect(plan.quote.priceRaw).toBe(priceRaw);
+    expect(plan.approvalAmountRaw).toBe(priceRaw);
+    expect(plan.guardrails.spendCeilingRaw).toBe(priceRaw);
+    expect(plan.guardrails.approvalMode).toBe("exact_if_required");
+    expect(plan.guardrails.buyerPrivateKeyReceivedByServer).toBe(false);
+  });
+
   it.each([
     ["wrong chain", { chainId: 56 }],
     ["expired quote", { quoteExpiresAt: NOW }],

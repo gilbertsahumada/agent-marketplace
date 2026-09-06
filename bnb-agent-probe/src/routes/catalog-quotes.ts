@@ -30,10 +30,6 @@ const ERROR_CODE = /^[A-Z][A-Z0-9_]{2,63}$/;
 const DEDUPE_WINDOW_MS = 60_000;
 const CAPABILITY_TTL_MS = 24 * 60 * 60 * 1_000;
 const CHAIN_EVIDENCE_TTL_MS = 120_000;
-// This is a public UI guardrail as well as a server-side economic limit. The
-// browser receives it with a verified quote so it never has to guess a
-// deployment-specific value while building the transaction review.
-const MAX_MARKETPLACE_BUDGET_RAW = 10_000_000_000_000_000n;
 const tokenSymbolAbi = parseAbi(["function symbol() view returns (string)"]);
 
 type ChainContext = ProbeChainContext & { readonly publicClient: PublicClient; readonly tokenSymbol: string };
@@ -244,7 +240,7 @@ export async function catalogNegotiationInputResponse(d1: D1Database, agentId: s
     try {
       const contract = await discoverNegotiationInput({ ...target, request: {}, fetch, timeoutMs: 5000, maxResponseBytes: 32768 });
       const contractHash = await sha256(contract);
-      await recordCompatibility(db, target, nowMs, { schemaHash: contractHash });
+      await recordCompatibility(db, target, nowMs, { schemaHash: contractHash, provenance: contract.provenance });
       return { contract, contractHash, endpointKey: target.endpointKey, transport: target.transport };
     } catch (error) {
       const errorCode = error instanceof Error && ERROR_CODE.test(error.message) ? error.message : "NEGOTIATION_DISCOVERY_FAILED";
@@ -305,7 +301,7 @@ export async function createCatalogQuoteRequestResponse(
     try {
       const contract = await discoverNegotiationInput({ ...target, request: {}, fetch, timeoutMs: 5000, maxResponseBytes: 32768 });
       const schemaHash = await sha256(contract);
-      await recordCompatibility(db, target, options.nowMs, { schemaHash });
+      await recordCompatibility(db, target, options.nowMs, { schemaHash, provenance: contract.provenance });
       if (schemaHash !== input!.contractHash) return json({ error: "NEGOTIATION_SCHEMA_CHANGED" }, 409);
       const value = buildContractRequest(contract, input!.parameters);
       const negotiated = NegotiationRequest.fromDict(value);
@@ -456,7 +452,6 @@ export async function persistQuoteResult(
       expectedRequestHash: requestRow.requestHash,
       expectedDeliverables: request.terms.deliverables,
       expectedQualityStandards: request.terms.qualityStandards,
-      maximumPriceRaw: MAX_MARKETPLACE_BUDGET_RAW,
     }, verifyQuoteSignature);
   } catch (error) {
     const code = error instanceof QuoteValidationError || error instanceof SellerProbeError
@@ -607,7 +602,7 @@ export async function persistQuoteResult(
     priceDisplay: formatUnits(BigInt(verdict.priceRaw), verdict.decimals),
     negotiatedAt: Math.floor(verdict.quoteNegotiatedAt / 1_000),
     quoteExpiresAt: Math.floor(verdict.quoteExpiresAt / 1_000),
-    maximumBudgetRaw: MAX_MARKETPLACE_BUDGET_RAW.toString(),
+    maximumBudgetRaw: verdict.priceRaw,
     description: jobDescription,
     observationId,
   };

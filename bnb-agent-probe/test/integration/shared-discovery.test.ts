@@ -3,6 +3,8 @@ import { beforeEach, expect, it } from "vitest";
 import { clearCatalogFixtures } from "./catalog-fixtures";
 import { projectSharedDiscoveryFailures } from "../../src/catalog/shared-discovery";
 import type { D1DatabaseLike } from "../../src/db/client";
+import { createDatabase } from "../../src/db/orm";
+import { revisitOldInputFailures } from "../../src/catalog/rediscover-inputs";
 
 const now = 1800000000000;
 const endpoint = 'a'.repeat(64);
@@ -15,7 +17,7 @@ async function seed() {
     await env.DB.prepare("INSERT INTO catalog_agent_endpoints (agentKey,endpointKey,declarationState,firstSeenAt,lastSeenAt) VALUES (?,?,'current',?,?)").bind(key,endpoint,now,now).run();
     await env.DB.prepare("INSERT INTO catalog_seller_capabilities (agentKey,endpointKey,transport,state,createdAt,updatedAt) VALUES (?,?,'a2a','discovered',?,?)").bind(key,endpoint,now,now).run();
   }
-  await env.DB.prepare("UPDATE catalog_seller_capabilities SET compatibilityState='unsupported',compatibilityErrorCode='A2A_REQUIRED_SKILLS',compatibilityCheckedAt=? WHERE agentKey='eip155:56:1'").bind(now-1000).run();
+  await env.DB.prepare("UPDATE catalog_seller_capabilities SET detectorVersion=2,compatibilityState='unsupported',compatibilityErrorCode='A2A_REQUIRED_SKILLS',compatibilityCheckedAt=? WHERE agentKey='eip155:56:1'").bind(now-1000).run();
 }
 it("projects a bounded exact-endpoint public failure without creating quotes or fresh timestamps", async () => {
   await seed();
@@ -34,4 +36,23 @@ it("does not share auth failures, stale results or project suspended rows", asyn
   await env.DB.prepare("UPDATE catalog_seller_capabilities SET compatibilityCheckedAt=? WHERE agentKey='eip155:56:1'").bind(now-1000).run();
   await env.DB.prepare("UPDATE catalog_seller_capabilities SET state='suspended' WHERE agentKey<>'eip155:56:1'").run();
   expect(await projectSharedDiscoveryFailures(env.DB as unknown as D1DatabaseLike,now,100)).toBe(0);
+});
+it("does not spread a structural failure produced by an older detector", async () => {
+  await seed();
+  await env.DB.prepare("UPDATE catalog_seller_capabilities SET detectorVersion=0").run();
+  expect(await projectSharedDiscoveryFailures(env.DB as unknown as D1DatabaseLike,now,100)).toBe(0);
+});
+it("revisits old schema failures once without erasing history or resetting a queue lease", async () => {
+  await seed();
+  await env.DB.prepare("UPDATE catalog_seller_capabilities SET detectorVersion=0,compatibilityState='unsupported',compatibilityErrorCode='NEGOTIATION_PARAMETERS_UNAVAILABLE',nextProbeAt=?,consecutiveFailures=4").bind(now+86400000).run();
+  const db = createDatabase(env.DB as unknown as D1DatabaseLike);
+  await revisitOldInputFailures(db,now,1);
+  const rows = await env.DB.prepare("SELECT * FROM catalog_seller_capabilities WHERE compatibilityState='pending'").all();
+  const results = rows.results ?? [];
+  expect(results).toHaveLength(1);
+  expect(results[0]).toMatchObject({ state:'discovered', nextProbeAt:now, consecutiveFailures:4, compatibilityErrorCode:'NEGOTIATION_PARAMETERS_UNAVAILABLE' });
+  const key = results[0]!.agentKey;
+  await env.DB.prepare("UPDATE catalog_seller_capabilities SET nextProbeAt=? WHERE agentKey=?").bind(now+300000,key).run();
+  await revisitOldInputFailures(db,now,1);
+  expect(await env.DB.prepare("SELECT nextProbeAt FROM catalog_seller_capabilities WHERE agentKey=?").bind(key).first()).toMatchObject({nextProbeAt:now+300000});
 });
