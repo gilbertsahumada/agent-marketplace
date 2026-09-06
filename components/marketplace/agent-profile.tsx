@@ -1,9 +1,11 @@
-import Link from "next/link";
 import {
-  ArrowRight,
+  Check,
+  CircleAlert,
+  Activity,
   BadgeCheck,
   BriefcaseBusiness,
   Clock3,
+  ChevronDown,
   ExternalLink,
   FileText,
   RadioTower,
@@ -12,7 +14,7 @@ import type { ReactNode } from "react";
 import type { MarketplaceAgent } from "@/src/business/entities/marketplace-agent";
 import type { AgentEvidencePassport } from "@/src/business/entities/evidence-passport";
 import type { MainnetJobProof } from "@/src/business/entities/mainnet-job-proof";
-import type { HireActivity, HireJob } from "@/src/business/entities/hire-job";
+import type { HireActivity, HireChainId, HireJob } from "@/src/business/entities/hire-job";
 import { Badge } from "@/components/ui/badge";
 import { Breadcrumb } from "./page-primitives";
 import { AgentAvatar } from "./agent-avatar";
@@ -26,26 +28,18 @@ import { HiringUnavailable } from "./agent-journey";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { relativeAge } from "./relative-time";
-import { HireJobRows } from "./hire-job-rows";
 import { QuoteHistory } from "./quote-history";
+import { JobHistory } from "./job-history";
+import { agentJobHistory, type JobHistoryTotals } from "./agent-job-history";
 
 const EMPTY_JOBS: readonly MainnetJobProof[] = [];
 const SHARED_VALIDATION_SOURCES = new Set(["marketplace_probe", "worker_probe", "buyer_refresh", "migration"]);
-const UTC_DATE = new Intl.DateTimeFormat("en", {
-  day: "numeric",
-  month: "short",
-  timeZone: "UTC",
-  year: "numeric",
-});
 
 export function marketplaceAgentDisplayName(name: string): string {
   if (!/^[a-z0-9]+(?:-[a-z0-9]+)+$/.test(name)) return name;
   return name.split("-").map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(" ");
 }
 
-function utcDate(value: string): string {
-  return UTC_DATE.format(new Date(value));
-}
 
 function EvidenceSummaryItem({
   detail,
@@ -61,113 +55,26 @@ function EvidenceSummaryItem({
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <button
-          className="flex min-w-0 cursor-pointer items-center gap-3 rounded-lg px-3 py-3 text-left transition-colors hover:bg-white/[0.04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-          type="button"
+        <span
+          className="flex min-w-0 items-center gap-3 rounded-lg px-3 py-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+          tabIndex={0}
         >
           <span className={cn(
-            "flex size-8 shrink-0 items-center justify-center rounded-full border",
-            state === "verified" && "border-emerald-400/30 bg-emerald-400/10 text-emerald-300",
-            state === "attention" && "border-amber-400/30 bg-amber-400/10 text-amber-200",
-            state === "neutral" && "border-white/10 bg-white/[0.02] text-zinc-500",
+            "flex shrink-0 items-center justify-center",
+            state === "verified" && "text-emerald-300",
+            state === "attention" && "text-amber-200",
+            state === "neutral" && "text-muted-foreground",
           )}>
-            <Icon aria-hidden="true" className="size-4" />
+            {state === "verified" ? <Check aria-hidden="true" className="size-4" /> : state === "attention" ? <CircleAlert aria-hidden="true" className="size-4" /> : <Icon aria-hidden="true" className="size-4" />}
           </span>
           <span className="min-w-0 text-sm font-medium text-zinc-200">{label}</span>
-        </button>
+        </span>
       </TooltipTrigger>
       <TooltipContent className="max-w-72 leading-relaxed" sideOffset={8}>{detail}</TooltipContent>
     </Tooltip>
   );
 }
 
-function JobHistory({ hireActivity, activity, jobs, hireJobs, more, scope }: {
-  hireActivity: AgentEvidencePassport["checks"]["hireActivity"];
-  // Trailing 30-day window of phase events in the same scope as hireJobs;
-  // null when the window was not read, in which case no subtitle is shown.
-  activity: HireActivity | null;
-  jobs: readonly MainnetJobProof[];
-  hireJobs: readonly HireJob[] | null;
-  more: boolean;
-  scope: "wallet" | "agent";
-}) {
-  const ordered = [...jobs].sort((left, right) => Date.parse(right.capturedAt) - Date.parse(left.capturedAt));
-  const proven = new Set(jobs.map((job) => job.jobId));
-  const indexed = (hireJobs ?? []).filter((job) => !proven.has(job.jobId));
-  const allJobIds = new Set([...jobs.map((job) => job.jobId), ...(hireJobs ?? []).map((job) => job.jobId)]);
-  const completed = new Set([
-    ...jobs.filter((job) => job.finalState === "COMPLETED").map((job) => job.jobId),
-    ...(hireJobs ?? []).filter((job) => job.status === "COMPLETED").map((job) => job.jobId),
-  ]);
-  const funded = (hireJobs ?? []).filter((job) => job.status === "FUNDED").length;
-  const resultVerified = new Set(jobs.map((job) => job.jobId)).size;
-  return (
-    <details className="group mt-5 rounded-xl border border-white/10 bg-white/[0.015]">
-      <summary className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-3 px-4 py-4 sm:px-5">
-        <div>
-          <h2 className="flex items-center gap-2 text-base font-medium text-white" id="erc8183-history">
-            <BriefcaseBusiness aria-hidden="true" className="size-4 text-zinc-500" />ERC-8183 job history
-          </h2>
-          {activity !== null ? (
-            <p className="mt-1 text-xs text-zinc-500">
-              {`Last ${activity.days} days: ${activity.totals.created.toLocaleString("en")} created · ${activity.totals.settled.toLocaleString("en")} settled`}
-            </p>
-          ) : null}
-        </div>
-        <div className="flex flex-wrap gap-2">
-          {hireJobs !== null ? <>
-            <Badge variant="outline">{allJobIds.size}{more ? "+" : ""} {allJobIds.size === 1 ? "job" : "jobs"}</Badge>
-            <Badge className={funded > 0 ? "border-amber-300/30 bg-amber-300/10 text-amber-100" : ""} variant="outline">{funded} funded</Badge>
-            <Badge className={completed.size > 0 ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-200" : ""} variant="outline">{completed.size} completed</Badge>
-            <Badge variant="outline">{resultVerified} result verified</Badge>
-          </> : <Badge variant="outline">{jobs.length} result verified</Badge>}
-        </div>
-      </summary>
-      <div className="border-t border-white/10">
-        {hireActivity.status === "verified" ? (
-          <dl className="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-b border-white/10 px-4 py-3 text-sm sm:px-5">
-            <dt className="text-zinc-500">Verified hire activity</dt>
-            <dd className="min-w-0 break-all text-zinc-300">{hireActivity.detail}</dd>
-            {hireActivity.observedAt ? <dd className="text-zinc-500">{utcDate(hireActivity.observedAt)}</dd> : null}
-          </dl>
-        ) : null}
-        {ordered.length === 0 && indexed.length === 0 ? (
-          <div className="px-5 py-6 text-sm text-zinc-500">
-            {hireJobs === null ? "Indexed ledger unavailable right now." : "No indexed jobs yet."}
-          </div>
-        ) : null}
-        {ordered.length > 0 ? (
-          <ul className="divide-y divide-white/10">
-            {ordered.map((job) => (
-              <li key={job.jobId}>
-                <Link
-                  className="grid cursor-pointer items-center gap-3 px-4 py-4 transition-colors hover:bg-white/[0.04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary sm:grid-cols-[1fr_auto_auto_auto] sm:px-5"
-                  href={`/jobs/mainnet/${job.jobId}`}
-                >
-                  <span className="font-medium text-white">Job #{job.jobId}</span>
-                  <Badge className={job.finalState === "COMPLETED" ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-200" : ""} variant="outline">
-                    {job.finalState === "COMPLETED" ? "Completed" : "Submitted"}
-                  </Badge>
-                  <span className="text-sm text-zinc-400">{job.durationSeconds}s</span>
-                  <span className="flex items-center justify-between gap-3 text-sm text-zinc-500 sm:justify-start">
-                    {utcDate(job.capturedAt)}<ArrowRight aria-hidden="true" className="size-4" />
-                  </span>
-                </Link>
-              </li>
-            ))}
-          </ul>
-        ) : null}
-        {indexed.length > 0 ? (
-          <div className={ordered.length > 0 ? "border-t border-white/10" : ""}>
-            <p className="px-4 pt-4 text-xs text-zinc-500 sm:px-5">{scope === "wallet" ? "Provider wallet activity" : "Agent activity"}</p>
-            <HireJobRows chainId={56} emptyText="" jobs={indexed} />
-          </div>
-        ) : null}
-        {more ? <p className="px-5 py-3 text-xs text-zinc-500">Newest jobs shown. <Link className="text-primary" href="/jobs">Explore jobs</Link></p> : null}
-      </div>
-    </details>
-  );
-}
 
 export function AgentProfile({
   agent,
@@ -179,9 +86,17 @@ export function AgentProfile({
   hireJobs = null,
   hireJobsMore = false,
   hireJobsScope = "agent",
+  jobsOlderHref,
+  jobsNewestHref,
+  jobsChainId = 56,
+  hireJobsTotals,
   hireActivity = null,
   jobProofs = EMPTY_JOBS,
 }: {
+  jobsOlderHref?: string;
+  jobsNewestHref?: string;
+  jobsChainId?: HireChainId;
+  hireJobsTotals?: JobHistoryTotals;
   agent: MarketplaceAgent;
   passport: AgentEvidencePassport;
   catalogCandidate?: CatalogCandidate | null;
@@ -196,6 +111,7 @@ export function AgentProfile({
   jobProofs?: readonly MainnetJobProof[];
 }) {
   const displayName = marketplaceAgentDisplayName(agent.name);
+  const jobModel = agentJobHistory({ chainId: jobsChainId, scope: hireJobsScope, jobs: hireJobs, proofs: jobProofs, ...(hireJobsTotals ? { totals: hireJobsTotals } : {}) });
   const current = catalogCandidate ? catalogCandidateCard(catalogCandidate) : null;
   const browserTargets = declaredBrowserValidationTargets(agent);
   const browserTargetKeys = new Set(browserTargets.map((target) => `${target.protocol}\u0000${target.endpoint}`));
@@ -238,22 +154,23 @@ export function AgentProfile({
   const previouslyReachable = catalogCandidate?.state?.operationalStatus === "platform_reachable";
   const browserOnly = catalogCandidate?.state?.operationalStatus === "browser_observed";
   const platformFailed = catalogCandidate?.state?.operationalStatus === "platform_failed";
-  const quoteReady = !platformFailed && (catalogCandidate?.state
-    ? catalogCandidate.state.quoteStatus === "verified_fresh"
-    : passport.checks.quote.status === "verified");
+  const negotiationOnline = catalogCandidate?.state?.canRequestQuote === true && catalogCandidate.state.compatibilityState === "compatible";
+  const quoteReady = negotiationOnline && catalogCandidate?.state?.capabilityState === "ready";
   const journey = deriveAgentJourney({
     declared: true,
     state: catalogCandidate?.state,
     validationAvailable: canCheckAvailability,
     hireFlowAvailable: hireFlowAvailable ?? hireFlow !== undefined,
     provenJobs: passport.trackRecord.provenJobs,
-    indexedJobs: hireJobs?.length ?? 0,
+    indexedJobs: hireJobsScope === "agent" ? jobModel.agentTotal : 0,
   });
-  const latestCheckedAt = current?.monitoring?.lastAttemptAt;
+  const latestCheckedAt = negotiationOnline && catalogCandidate?.state?.compatibilityCheckedAt
+    ? new Date(catalogCandidate.state.compatibilityCheckedAt).toISOString()
+    : current?.monitoring?.lastAttemptAt;
   const attemptCount = current?.monitoring?.attemptCount;
   const headerStatus = quoteReady
-    ? "Quote verified"
-    : reachable
+    ? "Ready to quote"
+    : negotiationOnline ? "Negotiation online" : reachable
       ? "Reachable"
       : platformFailed
         ? "Last check failed"
@@ -288,14 +205,14 @@ export function AgentProfile({
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2 sm:justify-end">
-          <Badge className={reachable || quoteReady
+          <Badge className={reachable || negotiationOnline
             ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-300"
             : platformFailed
               ? "border-red-400/30 bg-red-400/10 text-red-300"
               : canCheckAvailability || previouslyReachable
                 ? "border-amber-400/30 bg-amber-400/10 text-amber-300"
                 : ""} variant="outline">
-            <span aria-hidden="true" className={`size-1.5 rounded-full ${reachable || quoteReady
+            <span aria-hidden="true" className={`size-1.5 rounded-full ${reachable || negotiationOnline
               ? "bg-emerald-400"
               : platformFailed
                 ? "bg-red-400"
@@ -304,7 +221,6 @@ export function AgentProfile({
                   : "bg-zinc-600"}`} />
             {headerStatus}
           </Badge>
-          <Badge variant="outline">{Math.max(passport.trackRecord.provenJobs, hireJobs?.length ?? 0)} jobs</Badge>
           <a
             className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg px-2 py-1 text-sm text-zinc-400 transition-colors hover:bg-white/[0.05] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
             href={trust8004AgentHref(agent.agentId)}
@@ -320,20 +236,20 @@ export function AgentProfile({
         <section aria-label="Hiring evidence" className="mt-3 grid rounded-xl border border-white/10 bg-white/[0.015] sm:grid-cols-2 lg:grid-cols-4">
           <EvidenceSummaryItem detail={journey.declared.detail} icon={FileText} label="Identity declared" state="verified" />
           <EvidenceSummaryItem
-            detail={journey.availability.detail}
+            detail={negotiationOnline ? "The selected negotiation endpoint and its inputs were checked together." : journey.availability.detail}
             icon={RadioTower}
             label={<span className="inline-flex min-w-0 items-center gap-1.5">
-              {journey.availability.label}
+              {negotiationOnline ? "Negotiation online" : journey.availability.label}
               {latestCheckedAt ? <span className="inline-flex shrink-0 items-center gap-1 text-xs font-normal text-zinc-500"><Clock3 aria-hidden="true" className="size-3" /><time dateTime={latestCheckedAt} title={latestCheckedAt}>{relativeAge(latestCheckedAt)}</time></span> : null}
             </span>}
-            state={reachable ? "verified" : "attention"}
+            state={reachable || negotiationOnline ? "verified" : "attention"}
           />
-          <EvidenceSummaryItem detail={journey.quote.detail} icon={BadgeCheck} label={journey.quote.label} state={journey.quote.state === "verified" ? "verified" : journey.quote.state === "locked" ? "neutral" : "attention"} />
+          <EvidenceSummaryItem detail={journey.quote.detail} icon={BadgeCheck} label={journey.quote.label} state={negotiationOnline || journey.quote.state === "verified" ? "verified" : journey.quote.state === "locked" ? "neutral" : "attention"} />
           <EvidenceSummaryItem
             detail={journey.jobs.detail}
             icon={BriefcaseBusiness}
-            label={`${passport.trackRecord.completedJobs + (hireJobs ?? []).filter((job) => job.status === "COMPLETED").length} completed job${passport.trackRecord.completedJobs + (hireJobs ?? []).filter((job) => job.status === "COMPLETED").length === 1 ? "" : "s"}`}
-            state={passport.trackRecord.completedJobs > 0 || (hireJobs ?? []).some((job) => job.status === "COMPLETED") ? "verified" : "neutral"}
+            label={hireJobsScope === "wallet" ? "Agent jobs unverified" : hireJobsTotals ? `${jobModel.agentCompleted} completed job${jobModel.agentCompleted === 1 ? "" : "s"}` : "Job totals unavailable"}
+            state={hireJobsScope === "agent" && jobModel.agentCompleted > 0 ? "verified" : "neutral"}
           />
         </section>
       </TooltipProvider>
@@ -341,15 +257,19 @@ export function AgentProfile({
 
       <div className="mt-5 flex flex-col gap-5">
         {hireFlow ? <section className="scroll-mt-6" id="hire-flow">{hireFlow}</section> : <HiringUnavailable model={journey} notice={hireNotice} validationAvailable={canCheckAvailability} />}
+      </div>
+      <JobHistory activity={hireActivity} provider={agent.onchainIdentity?.agentWallet ?? null} agentId={agent.agentId} chainId={jobsChainId} {...(hireJobsTotals ? { totals: hireJobsTotals } : {})} hireActivity={passport.checks.hireActivity} hireJobs={hireJobs} jobs={jobProofs} more={hireJobsMore} scope={hireJobsScope} {...(jobsOlderHref ? { olderHref: jobsOlderHref } : {})} {...(jobsNewestHref ? { newestHref: jobsNewestHref } : {})} />
+      <div className="mt-5"><QuoteHistory agentId={agent.agentId} /></div>
+      <div className="mt-5">
         {canCheckAvailability ? (
           <details open={!reachable} className="group rounded-xl border border-white/10 bg-white/[0.015]" id="validation">
             <summary className="flex cursor-pointer list-none items-center justify-between px-5 py-4 text-sm font-medium text-zinc-200">
-              {reachable ? "Diagnostics" : "Check connection"}
-              <span className="text-xs font-normal text-zinc-500 group-open:hidden">Validate declared endpoints</span>
-              <span className="hidden text-xs font-normal text-zinc-500 group-open:inline">Hide</span>
+              <span className="flex items-center gap-2"><Activity aria-hidden="true" className="size-4 text-muted-foreground" />{reachable ? "Diagnostics" : "Check connection"}</span>
+              <span className="flex items-center gap-2 text-xs font-normal text-zinc-500"><span className="group-open:hidden">Validate declared endpoints</span><span className="hidden group-open:inline">Hide</span><ChevronDown aria-hidden="true" className="size-4 transition-transform group-open:rotate-180 motion-reduce:transition-none" /></span>
             </summary>
-            <div className="border-t border-white/10 px-4 pb-5 sm:px-5">
+            <div className="border-t border-white/10">
               <AgentValidationActions
+                embedded
                 agentId={agent.agentId}
                 initialObservations={validationObservations}
                 targets={validationTargets}
@@ -359,8 +279,6 @@ export function AgentProfile({
         ) : null}
       </div>
 
-      <QuoteHistory agentId={agent.agentId} />
-      <JobHistory activity={hireActivity} hireActivity={passport.checks.hireActivity} hireJobs={hireJobs} jobs={jobProofs} more={hireJobsMore} scope={hireJobsScope} />
     </main>
   );
 }

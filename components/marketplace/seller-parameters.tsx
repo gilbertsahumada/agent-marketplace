@@ -5,6 +5,7 @@ import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { type InputSchema, validateParameters } from "@/src/shared/negotiation-input";
+import { parameterPlaceholder } from "./seller-parameter-examples";
 
 export function initialSellerParameters(schema: InputSchema): Record<string, unknown> {
   return Object.fromEntries(Object.entries(schema.properties ?? {}).flatMap<[string, unknown]>(([key, child]) => {
@@ -14,11 +15,12 @@ export function initialSellerParameters(schema: InputSchema): Record<string, unk
   }));
 }
 
-export function SellerParameters({ schema, value, onChange, disabled = false, showErrors = false, prefix = "seller" }: {
+export function SellerParameters({ schema, value, onChange, disabled = false, showErrors = false, prefix = "seller", example }: {
   schema: InputSchema; value: Record<string, unknown>; onChange: (value: Record<string, unknown>) => void;
   disabled?: boolean; showErrors?: boolean; prefix?: string;
+  example?: Record<string, unknown> | null | undefined;
 }) {
-  return <FieldGroup>
+  return <FieldGroup className="grid grid-cols-1 items-start gap-4 sm:grid-cols-2 xl:grid-cols-3">
     {Object.entries(schema.properties ?? {}).map(([key, field]) => {
       const id = `${prefix}-${key}`;
       const required = schema.required?.includes(key) ?? false;
@@ -28,19 +30,20 @@ export function SellerParameters({ schema, value, onChange, disabled = false, sh
         if (next === undefined) delete result[key]; else result[key] = next;
         onChange(result);
       };
-      if (field.type === "object") return <fieldset key={key} disabled={disabled} className="min-w-0 rounded-md border p-3">
+      if (field.type === "object") return <fieldset key={key} disabled={disabled} className="col-span-full min-w-0 rounded-md border p-3">
         <legend className="px-1 text-sm font-medium">{field.title ?? key}</legend>
-        <SellerParameters schema={field} value={(value[key] ?? {}) as Record<string, unknown>} onChange={update} disabled={disabled} showErrors={showErrors} prefix={id} />
+        <SellerParameters schema={field} value={(value[key] ?? {}) as Record<string, unknown>} onChange={update} disabled={disabled} showErrors={showErrors} prefix={id} example={example?.[key] as Record<string, unknown> | undefined} />
       </fieldset>;
       return <Field key={key} data-invalid={invalid} data-disabled={disabled}>
         <FieldLabel htmlFor={id}>{field.title ?? key}{required ? " *" : ""}</FieldLabel>
         {field.const !== undefined ? <Input id={id} readOnly value={String(field.const)} />
           : field.enum ? <Select value={value[key] === undefined ? "" : `option-${field.enum.indexOf(value[key] as never)}`} onValueChange={selected => update(field.enum![Number(selected.slice(7))])} disabled={disabled}>
-            <SelectTrigger id={id} aria-invalid={invalid}><SelectValue placeholder="Select" /></SelectTrigger>
+            <SelectTrigger id={id} aria-invalid={invalid}><SelectValue placeholder={`Select ${field.title?.toLowerCase() ?? "an option"}`} /></SelectTrigger>
             <SelectContent><SelectGroup>{field.enum.map((item, index) => <SelectItem key={index} value={`option-${index}`}>{String(item) || "Empty value"}</SelectItem>)}</SelectGroup></SelectContent>
           </Select>
           : field.type === "boolean" ? <Checkbox id={id} checked={value[key] === true} onCheckedChange={checked => update(checked === true)} disabled={disabled} aria-invalid={invalid} />
           : <Input id={id} value={value[key] === undefined ? "" : String(value[key])} disabled={disabled} required={required} aria-invalid={invalid}
+            placeholder={parameterPlaceholder(field, example?.[key])}
             type={field.type === "string" ? "text" : "number"} step={field.type === "integer" ? 1 : "any"}
             min={field.minimum} max={field.maximum} minLength={field.minLength} maxLength={field.maxLength ?? 1500}
             onChange={event => update(event.target.value === "" ? undefined : field.type === "string" ? event.target.value : Number(event.target.value))} />}

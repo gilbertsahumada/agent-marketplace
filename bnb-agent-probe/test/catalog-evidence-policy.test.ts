@@ -42,8 +42,8 @@ describe("catalog effective evidence policy", () => {
     expect(state).toMatchObject({
       capabilityState: "stale",
       capabilityExpiresAt: NOW,
-      canRequestQuote: true,
-      buyerAction: "request_quote",
+      canRequestQuote: false,
+      buyerAction: "check_availability",
     });
   });
 
@@ -63,9 +63,9 @@ describe("catalog effective evidence policy", () => {
 
     expect(state).toMatchObject({
       capabilityState: "discovered",
-      canRequestQuote: true,
+      canRequestQuote: false,
       canPrepareHire: false,
-      buyerAction: "request_quote",
+      buyerAction: "check_availability",
     });
   });
 
@@ -123,7 +123,7 @@ describe("catalog effective evidence policy", () => {
     });
   });
 
-  it("requires a fresh cryptographic quote and a current chain check before prepare", () => {
+  it("never uses public quotes and chain checks to authorize another buyer", () => {
     const commerceEndpoint = { ...endpoint, validationProtocol: "a2a" as const };
     const admitted = { state: "admitted", endpointKey: "endpoint" };
     const quote = observation({
@@ -134,14 +134,14 @@ describe("catalog effective evidence policy", () => {
       endpoints: [commerceEndpoint], observations: [quote], admission: admitted,
       capability: { state: "ready", endpointKey: "endpoint", transport: "a2a", capabilityExpiresAt: NOW + 1_000 }, nowMs: NOW,
     }))
-      .toMatchObject({ quoteStatus: "verified_fresh", buyerAction: "request_quote", canPrepareHire: false });
+      .toMatchObject({ quoteStatus: "verified_fresh", buyerAction: "check_availability", canPrepareHire: false });
     expect(deriveCatalogEvidenceState({
       endpoints: [commerceEndpoint],
       observations: [quote, observation({ id: 3, endpointKey: null, outcome: "protocol_valid", validationKind: "chain", verificationLevel: "onchain" })],
       admission: admitted,
       capability: { state: "ready", endpointKey: "endpoint", transport: "a2a", capabilityExpiresAt: NOW + 1_000 },
       nowMs: NOW,
-    })).toMatchObject({ quoteStatus: "verified_fresh", buyerAction: "prepare_hire", canPrepareHire: true });
+    })).toMatchObject({ quoteStatus: "verified_fresh", buyerAction: "check_availability", canPrepareHire: false });
   });
 
   it("scopes quote and chain evidence to the admitted commerce endpoint", () => {
@@ -165,7 +165,7 @@ describe("catalog effective evidence policy", () => {
       nowMs: NOW,
     })).toMatchObject({
       quoteStatus: "not_requested",
-      buyerAction: "request_quote",
+      buyerAction: "check_availability",
       canPrepareHire: false,
     });
   });
@@ -190,7 +190,7 @@ describe("catalog effective evidence policy", () => {
     })).toMatchObject({ quoteStatus: "not_requested", canPrepareHire: false, buyerAction: "check_availability" });
   });
 
-  it("lets a discovered A2A/HTTP candidate request a quote without manual admission", () => {
+  it("does not confuse an A2A declaration with checked requirements", () => {
     expect(deriveCatalogEvidenceState({
       endpoints: [{ ...endpoint, validationProtocol: "a2a" }],
       observations: [],
@@ -198,10 +198,10 @@ describe("catalog effective evidence policy", () => {
       nowMs: NOW,
     })).toMatchObject({
       commerceStatus: "declared",
-      canRequestQuote: true,
+      canRequestQuote: false,
       canPrepareHire: false,
-      buyerAction: "request_quote",
-      blockingReasons: expect.arrayContaining(["FRESH_QUOTE_REQUIRED"]),
+      buyerAction: "check_availability",
+      blockingReasons: expect.arrayContaining(["NEGOTIATION_REQUIREMENTS_UNVERIFIED"]),
     });
   });
 
@@ -244,7 +244,7 @@ describe("catalog effective evidence policy", () => {
       canRequestQuote: false,
       canPrepareHire: false,
       buyerAction: "check_availability",
-      blockingReasons: expect.arrayContaining(["MCP_QUOTE_TOOL_REQUIRED"]),
+      blockingReasons: expect.arrayContaining(["NEGOTIATION_REQUIREMENTS_UNVERIFIED"]),
     });
   });
 });

@@ -201,6 +201,7 @@ export function createWp2ScheduledRunner(dependencies: ScheduledRuntimeDependenc
         key: "last_scheduler_summary",
         textValue: JSON.stringify({
         status: "error",
+        stage: "acquire_lease",
         errorCode: phaseErrorCode(error),
         requests: 0,
         d1Queries: budget.used + 3,

@@ -18,6 +18,28 @@ function candidate(): CatalogCandidate {
 }
 
 describe("catalog candidate card", () => {
+  it.each(["a", "b"])("shows fresh negotiation discovery instead of an old failed %s endpoint probe", (failedEndpoint) => {
+    const value = candidate();
+    value.declarations.push({ ...value.declarations[0]!, endpointKey: "b".repeat(64), protocol: "mcp" });
+    value.state = {
+      operationalStatus: "platform_reachable", freshness: "live", commerceStatus: "declared", quoteStatus: "verified_historical",
+      buyerAction: "request_quote", canRequestBrowserValidation: true, canRequestInfrastructureValidation: true, canRequestQuote: true, canPrepareHire: false, blockingReasons: [],
+      capabilityState: "ready", capabilityEndpointKey: "a".repeat(64), capabilityTransport: "a2a", capabilityExpiresAt: NOW + 86_400_000,
+      compatibilityState: "compatible", compatibilityCheckedAt: NOW, compatibilityExpiresAt: NOW + 86_400_000,
+    };
+    value.observations.push({ id: 1, agentKey: value.agentKey, endpointKey: failedEndpoint.repeat(64), protocol: failedEndpoint === "a" ? "a2a" : "mcp",
+      source: "worker_probe", validationKind: "protocol", verificationLevel: "platform_observed", outcome: "http_error", observedAt: NOW - 1000,
+      expiresAt: null, httpStatus: 500, errorCode: "HTTP_ERROR", durationMs: 100, details: {} });
+    value.observations.push({ id: 2, agentKey: value.agentKey, endpointKey: "a".repeat(64), protocol: "a2a", source: "buyer_refresh",
+      validationKind: "quote", verificationLevel: "cryptographic", outcome: "quote_verified", observedAt: NOW - 120_000,
+      expiresAt: NOW - 60_000, httpStatus: 200, errorCode: null, durationMs: 25, details: {} });
+    const card = catalogCandidateCard(value, NOW);
+    expect(card.monitoring).toMatchObject({ source: "negotiation_discovery", lastAttemptAt: new Date(NOW).toISOString() });
+    expect(card.monitoring).not.toHaveProperty("latestHttpStatus");
+    expect(card.monitoring).not.toHaveProperty("latestDurationMs");
+    expect(card.evidence.find(({kind}) => kind === "reachable")).toMatchObject({ timestamp: new Date(NOW).toISOString(), source: "Negotiation discovery" });
+    expect(card.evidence.find(({kind}) => kind === "quote")).toMatchObject({ label: "Ready to quote", status: "verified" });
+  });
   it.each([
     ["NO_ELIGIBLE_OPERATIONAL_ENDPOINT", "No supported operational endpoint is available for marketplace hiring."],
     ["NO_QUOTE_TRANSPORT", "No compatible negotiation transport is available for requesting a quote."],
@@ -194,7 +216,7 @@ describe("catalog candidate card", () => {
       timestamp: new Date(NOW).toISOString(),
     });
     expect(card.evidence.find(({ kind }) => kind === "quote")).toMatchObject({
-      status: "verified",
+      status: "unknown",
       provenance: "observed",
       timestamp: new Date(NOW).toISOString(),
     });
@@ -330,7 +352,7 @@ describe("catalog candidate card", () => {
     });
 
     const card = catalogCandidateCard(value, NOW);
-    expect(card.evidence.find(({ kind }) => kind === "quote")).toMatchObject({ status: "verified" });
+    expect(card.evidence.find(({ kind }) => kind === "quote")).toMatchObject({ status: "unknown" });
     expect(card.evidence.find(({ kind }) => kind === "reachable")).toMatchObject({ status: "verified" });
     expect(card.hireability).toBe("hireable");
   });

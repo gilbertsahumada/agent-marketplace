@@ -103,7 +103,7 @@ describe("catalog signed quote evidence", () => {
       status: "verified",
       artifactHash: expect.stringMatching(/^[0-9a-f]{64}$/),
       quote: { signatureMethod: "eip191", signer: PROVIDER, blockNumber: "123" },
-      capabilities: { quoteStatus: "verified_fresh", canPrepareHire: true, buyerAction: "prepare_hire" },
+      capabilities: { quoteStatus: "verified_fresh", canPrepareHire: false, buyerAction: "check_availability" },
     });
     expect(verifyQuote).toHaveBeenCalledOnce();
 

@@ -13,11 +13,15 @@ export async function discoverNegotiationInput(input: A2aProbeInput & { transpor
     const initialized = await fetchMcpJson(target, { jsonrpc: "2.0", id: crypto.randomUUID(), method: "initialize", params: {
       protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "trust8004-marketplace", version: "1.0" },
     } }, mcpInput, deadline, usage);
+    requireMcpVersion(initialized.result);
+    await fetchMcpJson(target, { jsonrpc: "2.0", method: "notifications/initialized" }, mcpInput, deadline, usage, initialized.sessionId);
     const listed = await fetchMcpJson(target, { jsonrpc: "2.0", id: crypto.randomUUID(), method: "tools/list", params: {} }, mcpInput, deadline, usage, initialized.sessionId);
     const tools = isRecord(listed.result) && Array.isArray(listed.result.tools) ? listed.result.tools : [];
     const tool = tools.find(value => isRecord(value) && ["negotiate_erc8183_job", "request_quote"].includes(String(value.name)));
     if (!isRecord(tool)) throw new SellerProbeError("MCP_QUOTE_TOOL_REQUIRED");
-    return normalizeNegotiationContract({ encoding: "request", inputSchema: tool.inputSchema });
+    return normalizeNegotiationContract({ encoding: "request", inputSchema: tool.inputSchema,
+      ...(tool.capabilityProbeParameters === undefined ? {} : { capabilityProbeParameters: tool.capabilityProbeParameters }),
+    });
   }
   if (input.transport === "a2a") {
     const url = new URL(a2aBaseEndpoint(input.endpoint));
@@ -190,6 +194,8 @@ export async function probeMcpSeller(input: McpProbeInput): Promise<A2aProbeResu
     params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "trust8004-marketplace", version: "1.0" } },
   }, input, deadline, usage);
   const sessionId = initReply.sessionId;
+  requireMcpVersion(initReply.result);
+  await fetchMcpJson(target, { jsonrpc: "2.0", method: "notifications/initialized" }, input, deadline, usage, sessionId);
   const toolsReply = await fetchMcpJson(target, {
     jsonrpc: "2.0",
     id: crypto.randomUUID(),
@@ -241,6 +247,12 @@ export async function probeMcpSeller(input: McpProbeInput): Promise<A2aProbeResu
   throw new SellerProbeError("MCP_QUOTE_INVALID");
 }
 
+function requireMcpVersion(result: unknown): void {
+  if (!isRecord(result) || result.protocolVersion !== "2025-06-18") {
+    throw new SellerProbeError("MCP_PROTOCOL_VERSION_UNSUPPORTED");
+  }
+}
+
 async function fetchMcpJson(
   endpoint: URL,
   body: Record<string, unknown>,
@@ -259,6 +271,7 @@ async function fetchMcpJson(
       headers: {
         accept: "application/json, text/event-stream",
         "content-type": "application/json",
+        "mcp-protocol-version": "2025-06-18",
         ...(sessionId ? { "mcp-session-id": sessionId } : {}),
       },
       body: JSON.stringify(body),
@@ -268,6 +281,9 @@ async function fetchMcpJson(
   if (response.status >= 300 && response.status < 400) throw new SellerProbeError("SELLER_REDIRECT");
   if (!response.ok) throw new SellerProbeError("MCP_HTTP_ERROR");
   const text = await readBoundedText(response, input.maxResponseBytes, usage);
+  // Notifications have no JSON-RPC id or response envelope. Streamable HTTP
+  // normally acknowledges them with 202 and an empty body.
+  if (!Object.hasOwn(body, "id")) return sessionId ? { sessionId } : {};
   let parsed: unknown;
   try {
     parsed = JSON.parse(text);
@@ -332,6 +348,8 @@ async function fetchJson(
     throw new SellerProbeError("SELLER_REDIRECT");
   }
   if (response.status >= 500) throw new SellerProbeError("SELLER_SERVER_ERROR");
+  if (response.status === 401 || response.status === 403) throw new SellerProbeError("SELLER_ACCESS_DENIED");
+  if (response.status === 429) throw new SellerProbeError("SELLER_RATE_LIMITED");
   if (!response.ok) throw new SellerProbeError("SELLER_HTTP_4XX");
   const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
   if (!contentType.includes("application/json")) throw new SellerProbeError("SELLER_INVALID_JSON");

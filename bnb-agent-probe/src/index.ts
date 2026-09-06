@@ -105,7 +105,14 @@ async function cachedCatalogResponse(
   request: Request,
   seconds: number,
   produce: () => Promise<Response>,
+  fresh = false,
 ): Promise<Response> {
+  if (fresh) {
+    const response = await produce();
+    const headers = new Headers(response.headers);
+    headers.set("cache-control", "no-store");
+    return new Response(response.body, { status: response.status, headers });
+  }
   if (seconds <= 0) return produce();
   const cache = (caches as unknown as { default: Cache }).default;
   const key = canonicalCacheKey(new URL(request.url));
@@ -266,15 +273,19 @@ export function createWorker(dependencies: WorkerDependencies = {}): WorkerEntry
       }
       if (request.method === "GET" && (url.pathname === "/catalog-agent" || /^\/catalog-agent\/[1-9]\d*$/.test(url.pathname))) {
         const { catalogAgentResponse } = await import("./routes/catalog-agent");
-        return cachedCatalogResponse(request, config.catalogResponseCacheSeconds, () => (
+        const fresh = request.headers.get("x-marketplace-refresh") === "1" && Boolean(env.BUYER_OBSERVATION_SECRET)
+          && await bearerMatches(request.headers.get("authorization"), env.BUYER_OBSERVATION_SECRET!);
+        return cachedCatalogResponse(request, fresh ? 0 : config.catalogResponseCacheSeconds, () => (
           catalogAgentResponse(request, env.DB, now(), config.catalogV2ReadsEnabled ? 2 : 1)
-        ));
+        ), fresh);
       }
       if (request.method === "GET" && url.pathname === "/catalog-agents") {
         const { catalogAgentsResponse } = await import("./routes/catalog-agents");
-        return cachedCatalogResponse(request, config.catalogResponseCacheSeconds, () => (
+        const fresh = request.headers.get("x-marketplace-refresh") === "1" && Boolean(env.BUYER_OBSERVATION_SECRET)
+          && await bearerMatches(request.headers.get("authorization"), env.BUYER_OBSERVATION_SECRET!);
+        return cachedCatalogResponse(request, fresh ? 0 : config.catalogResponseCacheSeconds, () => (
           catalogAgentsResponse(request, env.DB, now(), config.catalogV2ReadsEnabled ? 2 : 1)
-        ));
+        ), fresh);
       }
       if (request.method === "GET" && /^\/catalog-validations\/\d+$/.test(url.pathname)) {
         if (env.BUYER_OBSERVATION_SECRET === undefined) return errorResponse("not_found", 404);
@@ -545,6 +556,7 @@ export function createWorker(dependencies: WorkerDependencies = {}): WorkerEntry
           nowMs: now(),
           limit: config.catalogQuoteBatchSize,
           concurrency: config.catalogQuoteConcurrency,
+          bootstrapLimit: Number(env.CATALOG_COMPATIBILITY_BOOTSTRAP_BATCH_SIZE ?? "0"),
         });
         logger.info("catalog.quote.queue.enqueued", { ...summary, scheduledTime: controller.scheduledTime });
       }

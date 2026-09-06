@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, Copy, ExternalLink, LogOut, TriangleAlert, Wallet } from "lucide-react";
+import { Check, Copy, ExternalLink, LogOut, TriangleAlert, Wallet, LoaderCircle } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useAccount, useChainId, useConnect, useDisconnect, useSwitchChain, type Connector } from "wagmi";
 import { Button } from "@/components/ui/button";
@@ -41,7 +41,7 @@ const panelClass =
 
 export function WalletConnectButton({ variant = "full" }: { variant?: "compact" | "full" }) {
   const { address, isConnected } = useAccount();
-  const { connect, connectors, error: connectError } = useConnect();
+  const { connect, connectors, error: connectError, isPending } = useConnect();
   const { disconnect } = useDisconnect();
   const chainId = useChainId();
   const { switchChain } = useSwitchChain();
@@ -207,12 +207,15 @@ export function WalletConnectButton({ variant = "full" }: { variant?: "compact" 
       <Button
         aria-expanded={isOpen}
         aria-haspopup="menu"
+        aria-busy={isPending}
+        disabled={isPending}
         onClick={() => setIsOpen(!isOpen)}
         variant="outline"
       >
-        <Wallet aria-hidden="true" />
-        {variant === "full" && "Connect wallet"}
+        {isPending ? <LoaderCircle aria-hidden="true" data-icon="inline-start" className="motion-safe:animate-spin" /> : <Wallet aria-hidden="true" data-icon="inline-start" />}
+        {variant === "full" && (isPending ? "Connecting…" : "Connect wallet")}
       </Button>
+      {!isOpen && connectError ? <p role="alert" className="mt-2 max-w-60 text-xs text-destructive">Connection did not complete. Try again.</p> : null}
 
       {isOpen && (
         <div className={panelClass}>

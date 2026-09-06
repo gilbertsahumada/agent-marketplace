@@ -5,6 +5,7 @@ import type { CatalogCandidatePage, CatalogFacetCounts, CatalogStatus } from "@/
 import {
   DEFAULT_REGISTERED_AGENT_SORT,
   type MarketplaceReachability,
+  type MarketplaceProtocol,
   type MarketplaceSort,
 } from "@/src/business/use-cases/list-marketplace-agents";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -51,11 +52,13 @@ export function CatalogPage({
   observations?: ObservationFeedResult;
   query: {
     view: "all" | "marketplace";
+    scope?: "hiring" | "evaluation";
     status?: CatalogStatus;
     category?: MarketplaceCategory;
     statuses?: CatalogStatus[];
     categories?: MarketplaceCategory[];
     reachability?: MarketplaceReachability[];
+    protocols?: MarketplaceProtocol[];
     q?: string;
     sort?: MarketplaceSort;
   };
@@ -69,6 +72,7 @@ export function CatalogPage({
   const selectedStatuses = query.statuses ?? (query.status ? [query.status] : []);
   const selectedCategories = query.categories ?? (query.category ? [query.category] : []);
   const selectedReachability = query.reachability ?? [];
+  const selectedProtocols = query.protocols ?? [];
   const targets = observationTargetsByAgentId(observations.feed);
   const now = Date.now();
   const cards = catalog
@@ -85,15 +89,18 @@ export function CatalogPage({
   const registryTotal = providedRegistryTotal ?? (allView ? total : undefined);
   const operationalTotal = providedOperationalTotal
     ?? (!allView
+      && query.scope !== "evaluation"
       && (selectedStatuses.length === 0 || (selectedStatuses.length === 1 && selectedStatuses[0] === "declared"))
       && selectedCategories.length === 0 && !query.q ? total : undefined);
   const currentPage = catalog?.page ?? data!.pagination.page;
   const totalPages = total === 0 ? 0 : Math.ceil(total / (catalog?.limit ?? data!.pagination.pageSize));
   const hrefForPage = (page: number) => {
     const params = new URLSearchParams({ view: query.view, page: String(page), limit: "24" });
+    if (query.scope) params.set("scope", query.scope);
     if (!allView) for (const status of selectedStatuses) params.append("status", status);
     for (const category of selectedCategories) params.append("category", category);
     if (!allView) for (const value of selectedReachability) params.append("reachability", value);
+    if (!allView) for (const value of selectedProtocols) params.append("protocol", value);
     if (query.q) params.set("q", query.q);
     if (query.sort) params.set("sort", query.sort);
     return `/agents?${params}`;
@@ -101,9 +108,11 @@ export function CatalogPage({
   const searchForm = (
     <form action="/agents" className={allView ? "grid min-w-0 gap-3 sm:grid-cols-[minmax(0,1fr)_auto]" : "relative grid w-full min-w-0 grid-cols-[auto_minmax(0,1fr)] gap-2 lg:block"} key="catalog-search">
       <input name="view" type="hidden" value={query.view} />
+      {query.scope && <input name="scope" type="hidden" value={query.scope} />}
       {!allView && selectedStatuses.map((status) => <input key={status} name="status" type="hidden" value={status} />)}
       {selectedCategories.map((category) => <input key={category} name="category" type="hidden" value={category} />)}
       {!allView && selectedReachability.map((value) => <input key={value} name="reachability" type="hidden" value={value} />)}
+      {!allView && selectedProtocols.map((value) => <input key={value} name="protocol" type="hidden" value={value} />)}
       {!allView && (
         <details className="lg:hidden">
           <summary
@@ -116,6 +125,7 @@ export function CatalogPage({
           </summary>
           <div className="absolute inset-x-0 top-12 z-20 max-h-[min(70vh,32rem)] overflow-y-auto rounded-xl border border-border bg-background p-4 shadow-xl">
             <CatalogFilters
+              protocols={selectedProtocols}
               idPrefix="catalog-mobile"
               categories={selectedCategories}
               reachability={selectedReachability}
@@ -127,6 +137,7 @@ export function CatalogPage({
         </details>
       )}
       <CatalogSearch
+        protocols={selectedProtocols}
         categories={selectedCategories}
         reachability={selectedReachability}
         statuses={selectedStatuses}
@@ -172,32 +183,38 @@ export function CatalogPage({
     <main id="main-content" className="mx-auto w-full max-w-[96rem] flex-1 px-4 py-6 sm:px-6 lg:px-8">
       <h1 className="sr-only">Agents</h1>
       <CatalogReturnRefresh />
-      <CatalogNavigationProvider navigationKey={JSON.stringify(query)}>
+      <CatalogNavigationProvider navigationKey={JSON.stringify(query)} {...(query.scope ? { scope: query.scope } : {})}>
         <div className={allView ? "" : "grid gap-6 lg:h-[calc(100dvh-7rem)] lg:min-h-[30rem] lg:grid-cols-[17rem_minmax(0,1fr)]"}>
           {!allView && (
             <aside aria-label="Catalog filters" className="marketplace-surface hidden rounded-xl lg:sticky lg:top-0 lg:block lg:max-h-full lg:self-start lg:overflow-y-auto">
-              <CatalogFilters idPrefix="catalog-desktop" categories={selectedCategories} reachability={selectedReachability} {...(filterCounts ? { counts: filterCounts } : {})} statuses={selectedStatuses} {...(query.q ? { q: query.q } : {})} />
+              <CatalogFilters protocols={selectedProtocols} idPrefix="catalog-desktop" categories={selectedCategories} reachability={selectedReachability} {...(filterCounts ? { counts: filterCounts } : {})} statuses={selectedStatuses} {...(query.q ? { q: query.q } : {})} />
               <div className="m-4 rounded-lg border border-white/8 bg-black/20 p-4">
                 <div className="flex items-center gap-2 text-sm font-medium text-white"><Database aria-hidden="true" className="size-4 text-primary" />Catalog data</div>
                 <p className="mt-3 text-xs leading-5 text-zinc-400">trust8004 catalog + marketplace observation Worker</p>
+                <p className="mt-2 text-xs leading-5 text-zinc-400">Compatibility checks are in progress. Pending does not mean incompatible.</p>
                 <p className="mt-2 font-stat text-[10px] text-zinc-600">Captured {dataCapturedAt(data, catalog)}</p>
               </div>
             </aside>
           )}
 
           <section aria-label="Agent results" className="min-w-0 space-y-4 lg:h-full lg:overflow-y-auto lg:pr-2">
+            {!allView && <nav aria-label="Agent inventory" className="flex flex-wrap items-center gap-2">
+              <Link aria-current={query.scope !== "evaluation" ? "page" : undefined} className={buttonVariants({ variant: query.scope !== "evaluation" ? "default" : "outline", size: "sm" })} href="/agents?scope=hiring">For hiring</Link>
+              <Link aria-current={query.scope === "evaluation" ? "page" : undefined} className={buttonVariants({ variant: query.scope === "evaluation" ? "default" : "outline", size: "sm" })} href="/agents?scope=evaluation">Under evaluation</Link>
+              <p className="text-xs text-muted-foreground">{query.scope === "evaluation" ? "Not currently requestable. Pending does not mean incompatible." : "Checked quote forms. No previous quote or job required."}</p>
+            </nav>}
             <div className="marketplace-surface grid items-center gap-4 rounded-xl p-3 xl:grid-cols-[auto_minmax(0,1fr)]" data-testid="catalog-summary">
               <div aria-label="Catalog totals" className="flex items-center gap-5 px-1 sm:gap-7">
                 <div className="flex items-center gap-2.5"><UsersRound aria-hidden="true" className="size-4 text-zinc-600" /><CatalogMetric label="ERC-8004 registered" value={registryTotal} /></div>
                 <div aria-hidden="true" className="h-10 w-px bg-white/10" />
-                <div className="flex items-center gap-2.5"><RadioTower aria-hidden="true" className="size-4 text-primary" /><CatalogMetric label="Operational candidates" value={operationalTotal} /></div>
+                <div className="flex items-center gap-2.5"><RadioTower aria-hidden="true" className="size-4 text-primary" /><CatalogMetric label="Can request quote" value={operationalTotal} /></div>
               </div>
             </div>
             <CatalogResults
               agents={cards}
               emptyContent={emptyContent}
               filters={!allView ? (
-                <CatalogQuickFilters key="catalog-quick-filters" categories={selectedCategories} {...(filterCounts ? { counts: filterCounts } : {})} {...(query.q ? { q: query.q } : {})} reachability={selectedReachability} statuses={selectedStatuses} />
+                <CatalogQuickFilters protocols={selectedProtocols} key="catalog-quick-filters" categories={selectedCategories} {...(filterCounts ? { counts: filterCounts } : {})} {...(query.q ? { q: query.q } : {})} reachability={selectedReachability} statuses={selectedStatuses} />
               ) : undefined}
               registry={allView}
               toolbar={searchForm}

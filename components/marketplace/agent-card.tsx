@@ -75,7 +75,7 @@ export function marketplaceStatus(agent: AgentCardViewModel, registry = false) {
       icon: Clock3,
     };
     if (capabilityState === "discovered") return {
-      label: "Quote available",
+      label: "Can request quote",
       className: "border-cyan-400/40 bg-cyan-400/10 text-cyan-200",
       icon: FileCheck2,
     };
@@ -135,7 +135,7 @@ export function marketplaceStatus(agent: AgentCardViewModel, registry = false) {
 export function agentJourneyAction(agent: AgentCardViewModel): { href: string; label: string; disabled?: boolean } {
   const action = agent.buyerAction ?? (agent.quoteRequestAvailable === true ? "request_quote" : "unavailable");
   const connection = agent.evidence.find((step) => step.kind === "reachable");
-  if ((action === "prepare_hire" || action === "request_quote") && connection?.status !== "verified") {
+  if ((action === "prepare_hire" || action === "request_quote") && (connection?.status === "failed" || (agent.quoteRequestAvailable !== true && connection?.status !== "verified"))) {
     return {
       href: `/hire/${agent.agentId}#validation`,
       label: connection?.status === "failed" ? "Retry availability" : "Check availability",
@@ -151,7 +151,7 @@ export function agentJourneyAction(agent: AgentCardViewModel): { href: string; l
   if (action === "check_availability") {
     const reachableNow = agent.evidence.some((step) => step.kind === "reachable" && step.status === "verified");
     return reachableNow
-      ? { href: `/hire/${agent.agentId}`, label: "View details" }
+      ? { href: `/hire/${agent.agentId}#hire-flow`, label: "Check compatibility" }
       : { href: `/hire/${agent.agentId}#validation`, label: "Check availability" };
   }
   // An MCP-only listing can still expose a public endpoint that a buyer may
@@ -196,7 +196,7 @@ const FAILED_OUTCOMES = new Set([
 const SUCCESS_OUTCOMES = new Set(["quote_verified", "protocol_valid", "reachable"]);
 
 function declaredTransport(agent: AgentCardViewModel) {
-  return agent.protocols?.find((protocol) => protocol !== "Web") ?? "Endpoint";
+  return agent.negotiationProtocol ?? agent.protocols?.find((protocol) => protocol !== "Web") ?? "Endpoint";
 }
 
 function platformObservation(agent: AgentCardViewModel): ObservationPresentation {
@@ -204,6 +204,12 @@ function platformObservation(agent: AgentCardViewModel): ObservationPresentation
   const reachability = agent.evidence.find((step) => step.kind === "reachable")?.status;
   const latestOutcome = monitoring?.latestOutcome;
   const transport = declaredTransport(agent);
+  if (monitoring?.source === "negotiation_discovery") return {
+    label: "Inputs verified",
+    detail: `The selected ${transport} negotiation endpoint responded and its required inputs were verified. Request a quote to review this seller's terms.`,
+    tone: "text-emerald-300",
+    icon: FileCheck2,
+  };
   if (monitoring?.state === "feed_unavailable") return {
     label: "Monitoring unavailable",
     detail: "The marketplace observation feed is not connected, so no reachability claim is being made.",
@@ -280,6 +286,8 @@ export function AgentCard({ agent, registry = false }: { agent: AgentCardViewMod
     : null;
   const observationSource = agent.monitoring?.source === "release_snapshot"
     ? "Release verification"
+    : agent.monitoring?.source === "negotiation_discovery"
+      ? "Negotiation discovery"
     : agent.monitoring?.source === "worker"
       ? "Marketplace Worker"
       : "Marketplace feed";

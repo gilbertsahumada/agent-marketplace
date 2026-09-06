@@ -21,7 +21,8 @@ export interface CatalogCandidatePageReader {
     quote?: Array<"verified" | "expired" | "missing">;
     latestFailure?: boolean;
     inventory?: "operational" | "registry";
-    statuses?: Array<"declared" | "pending" | "a2a" | "mcp" | "mcp_only" | "erc8183" | "quote_capable" | "hireable" | "failed">;
+    scope?: "hiring" | "evaluation";
+    statuses?: import("../../business/entities/catalog-candidate.ts").CatalogStatus[];
   }): Promise<CatalogCandidatePage | null>;
 }
 

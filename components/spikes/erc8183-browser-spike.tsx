@@ -25,6 +25,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { markCatalogForRefresh } from "@/components/marketplace/catalog-return-refresh";
+import { WalletConnectButton } from "@/components/marketplace/wallet-connect-button";
 import { relativeAge } from "@/components/marketplace/relative-time";
 import {
   type Erc8183BrowserJournal,
@@ -36,11 +37,11 @@ import {
 } from "@/src/business/entities/erc8183-browser-spike";
 import type { MainnetDemoPublicConfig } from "@/src/business/entities/mainnet-browser-demo";
 import {
-  clearBrowserJournal,
   detectBrowserHireMode,
   executeBrowserHire,
   loadBrowserJournal,
-  recoverBrowserJournal,
+  normalizeBrowserAddress,
+  recoverFundedBrowserJournal,
   saveBrowserJournal,
   ERC8183_TESTNET,
   type BrowserHireMode,
@@ -229,7 +230,7 @@ function CheckoutStep({
         <span className={state === "locked" ? "text-sm font-medium text-zinc-500" : "text-sm font-medium text-zinc-100"}>{label}</span>
         {state === "locked" ? <span className="ml-auto text-xs text-zinc-600">Locked</span> : null}
       </div>
-      {state === "current" && children ? <div className="px-4 pb-5 pl-15 sm:px-5 sm:pb-6 sm:pl-16">{children}</div> : null}
+      {state === "current" && children ? <div className="px-4 pb-5 pl-15 motion-safe:animate-in motion-safe:fade-in motion-safe:duration-300 sm:px-5 sm:pb-6 sm:pl-16">{children}</div> : null}
     </li>
   );
 }
@@ -398,11 +399,33 @@ export function Erc8183TestnetDemo() {
   return <Erc8183BrowserDemo mode="testnet" deployment={TESTNET_DEPLOYMENT} />;
 }
 
-function Erc8183BrowserDemo({ mode, deployment, agentName, embedded = false, evidence, initialQuote = null, apiBaseOverride, jobsBaseOverride, quoteRequestId = null, onQuoteExpired }: {
+/** Only reads a saved execution reference; never requests a fresh quote or prepares payment. */
+export function Erc8183SavedHire({ agentId }: { agentId: string }) {
+  const [deployment, setDeployment] = useState<Erc8183BrowserDeployment | null>(null);
+  useEffect(() => {
+    setDeployment(null);
+    try {
+      const raw = localStorage.getItem(`bnb-agent-marketplace:erc8183-browser:56:${agentId}:v1`);
+      if (!raw || !/^\d+$/.test(agentId)) return;
+      const reference = JSON.parse(raw) as { seller?: string };
+      if (!reference.seller) return;
+      const candidate: Erc8183BrowserDeployment = {
+        ...ERC8183_MAINNET, agentId: Number(agentId), seller: normalizeBrowserAddress(reference.seller),
+        nativeCurrencyName: "BNB", nativeCurrencySymbol: "BNB", maximumBudgetRaw: ERC8183_MAINNET.maximumDemoBudgetRaw,
+      };
+      if (loadBrowserJournal(localStorage, candidate)?.jobId) setDeployment(candidate);
+    } catch { /* An unreadable local reference never becomes an active hire. */ }
+  }, [agentId]);
+  return deployment ? <Erc8183BrowserDemo deployment={deployment} mode="mainnet" embedded recoveryOnly
+    apiBaseOverride={`/api/marketplace/agents/${agentId}/hire`} jobsBaseOverride={`/api/marketplace/agents/${agentId}/hire/jobs`} /> : null;
+}
+
+function Erc8183BrowserDemo({ mode, deployment, agentName, embedded = false, recoveryOnly = false, evidence, initialQuote = null, apiBaseOverride, jobsBaseOverride, quoteRequestId = null, onQuoteExpired }: {
   mode: "testnet" | "mainnet";
   deployment: Erc8183BrowserDeployment;
   agentName?: string;
   embedded?: boolean;
+  recoveryOnly?: boolean;
   evidence?: EmbeddedHireEvidence;
   initialQuote?: MainnetQuoteResponse | null;
   apiBaseOverride?: string;
@@ -424,21 +447,23 @@ function Erc8183BrowserDemo({ mode, deployment, agentName, embedded = false, evi
   const [hireMode, setHireMode] = useState<BrowserHireMode | null>(null);
   const [journal, setJournal] = useState<Erc8183BrowserJournal | null>(null);
   const [journalRestored, setJournalRestored] = useState(false);
+  const [savedJournal, setSavedJournal] = useState<Erc8183BrowserJournal | null>(null);
   const [job, setJob] = useState<Erc8183JobFacts | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [recoveryJobId, setRecoveryJobId] = useState("");
 
   const readJob = useCallback(async (jobId: string) => {
-    const trackingUrl = quoteRequestId === null
+    const activeRequestId = journalRestored ? journal?.quoteRequestId ?? null : quoteRequestId;
+    const trackingUrl = activeRequestId === null
       ? `${jobsBase}/${jobId}`
-      : `${jobsBase}/${jobId}?quoteRequestId=${encodeURIComponent(String(quoteRequestId))}`;
+      : `${jobsBase}/${jobId}?quoteRequestId=${encodeURIComponent(String(activeRequestId))}`;
     const tracking = await apiJson<{ job: Erc8183JobFacts | null }>(trackingUrl);
     if (!tracking.job) throw new Error("Current chain state is temporarily unavailable.");
     const current = tracking.job;
     setJob(current);
     return current;
-  }, [jobsBase, quoteRequestId]);
+  }, [jobsBase, quoteRequestId, journalRestored, journal?.quoteRequestId]);
 
   useEffect(() => {
     setWalletHydrated(true);
@@ -446,20 +471,14 @@ function Erc8183BrowserDemo({ mode, deployment, agentName, embedded = false, evi
 
   useEffect(() => {
     const stored = loadBrowserJournal(localStorage, deployment);
-    setJournal(stored);
-    setJournalRestored(stored !== null);
-    if (stored?.jobId) {
-      void readJob(stored.jobId).catch(() => {
-        setError("The local journal was found, but current chain state could not be reconstructed.");
-      });
-      // Replay the confirmed phases: the Worker verifies each against chain and
-      // deduplicates by transaction, so a report lost earlier is recovered here.
-      const { createJob, fund, submit } = stored.transactions;
-      if (createJob) reportHireEvent(deployment, { phase: "created", jobId: stored.jobId, txHash: createJob }, { quoteRequestId });
-      if (fund) reportHireEvent(deployment, { phase: "funded", jobId: stored.jobId, txHash: fund }, { quoteRequestId });
-      if (submit) reportHireEvent(deployment, { phase: "submitted", jobId: stored.jobId, txHash: submit }, { quoteRequestId });
-    }
-  }, [deployment, readJob, quoteRequestId]);
+    if (stored?.jobId) saveBrowserJournal(stored, localStorage, deployment);
+    setSavedJournal(stored);
+    setJournal(null);
+    setJournalRestored(false);
+    setJob(null);
+    setPlan(null);
+    setError(null);
+  }, [deployment, quoteRequestId, account]);
 
   useEffect(() => {
     if (!quote) return;
@@ -482,6 +501,9 @@ function Erc8183BrowserDemo({ mode, deployment, agentName, embedded = false, evi
     setError(null);
     setQuote(null);
     setPlan(null);
+    setJournal(null);
+    setJournalRestored(false);
+    setJob(null);
     setHireMode(null);
     reportHireEvent(deployment, { phase: "clicked" });
     try {
@@ -545,21 +567,38 @@ function Erc8183BrowserDemo({ mode, deployment, agentName, embedded = false, evi
   };
 
   const signAndRun = async () => {
-    if (!plan || !account) return;
-    if (!connector) return setError("The connected wallet is no longer available.");
+    if (!account) return;
     setBusy("Waiting for wallet confirmations");
     setError(null);
     try {
+      // A funded job only needs an off-chain notification. Never enter the
+      // wallet execution path again, even if that notification previously failed.
+      if (journal?.jobId && job && ["FUNDED", "SUBMITTED", "COMPLETED"].includes(job.status)) {
+        const current = await readJob(journal.jobId);
+        if (journalRestored) recoverFundedBrowserJournal(current, journal, account, deployment);
+        if (current.buyer.toLowerCase() !== account.toLowerCase() || current.provider.toLowerCase() !== deployment.seller.toLowerCase() || current.chainId !== deployment.chainId) throw new Error("Job does not belong to this buyer and seller.");
+        if (current.status === "SUBMITTED" || current.status === "COMPLETED") return;
+        if (current.status !== "FUNDED") throw new Error("Funding could not be verified. No transaction was sent.");
+        const notification = await apiJson<NotifyFundedResult>(`${apiBase}/notify`, {
+          method: "POST",
+          body: JSON.stringify({ buyer: account, jobId: current.jobId, ...(journalRestored ? { quoteRequestId: journal.quoteRequestId } : quoteRequestId === null ? {} : { quoteRequestId }) }),
+        });
+        setJob(notification.job);
+        return;
+      }
+      if (!plan) return;
+      if (!connector) throw new Error("The connected wallet is no longer available.");
       const provider = (await connector.getProvider()) as InjectedProvider;
       if (job && (job.status === "SUBMITTED" || job.status === "COMPLETED")) return;
       const execution = await executeBrowserHire(provider, plan, {
+        ...(quoteRequestId === null ? {} : { quoteRequestId }),
         journal,
         recoveredJob: job,
         onProgress: ({ step, journal: next }) => {
           setJournal(next);
           const txHash = step === "created" ? next.transactions.createJob : step === "funded" ? next.transactions.fund : undefined;
           if ((step === "created" || step === "funded") && next.jobId && txHash) {
-            reportHireEvent(deployment, { phase: step, jobId: next.jobId, txHash }, { quoteRequestId });
+            reportHireEvent(deployment, { phase: step, jobId: next.jobId, txHash }, { quoteRequestId: next.quoteRequestId ?? null });
           }
         },
         deployment,
@@ -568,7 +607,7 @@ function Erc8183BrowserDemo({ mode, deployment, agentName, embedded = false, evi
       await readJob(execution.jobId);
       const notification = await apiJson<NotifyFundedResult>(`${apiBase}/notify`, {
         method: "POST",
-        body: JSON.stringify({ buyer: account, jobId: execution.jobId, ...(quoteRequestId === null ? {} : { quoteRequestId }) }),
+        body: JSON.stringify({ buyer: account, jobId: execution.jobId, ...(execution.journal.quoteRequestId ? { quoteRequestId: execution.journal.quoteRequestId } : {}) }),
       });
       let nextJournal: Erc8183BrowserJournal = {
         ...execution.journal,
@@ -576,7 +615,7 @@ function Erc8183BrowserDemo({ mode, deployment, agentName, embedded = false, evi
       };
       if (notification.job.status === "SUBMITTED" || notification.job.status === "COMPLETED") {
         if (notification.sellerTransactionHash) {
-          reportHireEvent(deployment, { phase: "submitted", jobId: execution.jobId, txHash: notification.sellerTransactionHash }, { quoteRequestId });
+          reportHireEvent(deployment, { phase: "submitted", jobId: execution.jobId, txHash: notification.sellerTransactionHash }, { quoteRequestId: execution.journal.quoteRequestId ?? null });
         }
         nextJournal = {
           ...nextJournal,
@@ -595,17 +634,26 @@ function Erc8183BrowserDemo({ mode, deployment, agentName, embedded = false, evi
     }
   };
 
-  const recoverJob = async () => {
-    if (!plan || !/^\d+$/.test(recoveryJobId)) {
-      setError("Enter a numeric Job ID after preparing the connected wallet.");
+  const recoverJob = async (selectedJobId = recoveryJobId) => {
+    if (!account || !/^\d+$/.test(selectedJobId)) {
+      setError("Connect the original buyer wallet and select a saved job.");
       return;
     }
     setBusy("Recovering confirmed job");
     setError(null);
     try {
-      const current = await readJob(recoveryJobId);
-      const recovered = recoverBrowserJournal(current, plan, localStorage, deployment);
+      const savedRequestId = savedJournal?.jobId === selectedJobId ? savedJournal.quoteRequestId : undefined;
+      if (apiBaseOverride && !savedRequestId) throw new Error("This older job has no saved quote reference. Open job history to inspect it; it cannot be attached to your new quote.");
+      const tracking = await apiJson<{ job: Erc8183JobFacts | null }>(`${jobsBase}/${selectedJobId}${savedRequestId ? `?quoteRequestId=${savedRequestId}` : ""}`);
+      if (!tracking.job) throw new Error("Current chain state is temporarily unavailable.");
+      const current = tracking.job;
+      const saved = savedJournal?.jobId === selectedJobId ? savedJournal : null;
+      const recovered = saved && ["FUNDED", "SUBMITTED", "COMPLETED"].includes(current.status)
+        ? recoverFundedBrowserJournal(current, saved, account, deployment)
+        : (() => { throw new Error("This job is not funded. Open job history; a new quote cannot authorize its remaining payments."); })();
       setJournal(recovered);
+      setPlan(null);
+      setJournalRestored(true);
       setJob(current);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "The confirmed job could not be recovered.");
@@ -615,6 +663,11 @@ function Erc8183BrowserDemo({ mode, deployment, agentName, embedded = false, evi
   };
 
   const signaturePurpose = plan?.transactions.filter(({ required }) => required) ?? [];
+  const previousHire = savedJournal?.jobId && !journal ? <div className="mb-4 rounded-lg border border-border p-3 text-sm">
+    <p className="text-muted-foreground">Previous hire · wallet <span className="break-all font-mono text-xs">{savedJournal.buyer}</span> · {savedJournal.startedAt ? new Date(savedJournal.startedAt).toUTCString() : "Date unavailable"}</p>
+    <Button className="mt-2" type="button" variant="outline" disabled={busy !== null || account?.toLowerCase() !== savedJournal.buyer.toLowerCase()} onClick={() => void recoverJob(savedJournal.jobId!)}>Resume job #{savedJournal.jobId}</Button>
+    {!account ? <p className="mt-1 text-xs text-muted-foreground">Connect the original buyer wallet to verify this previous job.</p> : null}
+  </div> : null;
   const pendingSignatures = signaturePurpose.filter(({ kind }) => journal?.receipts?.[kind] === undefined).length;
   const quoteExpired = quote !== null && quote.quoteExpiresAt <= quoteClock;
   const historicalQuote = quote === null && evidence?.quoteStatus === "verified_historical";
@@ -654,6 +707,24 @@ function Erc8183BrowserDemo({ mode, deployment, agentName, embedded = false, evi
     URL.revokeObjectURL(url);
   };
 
+  if (journalRestored && job) {
+    return <section aria-label="Resumed hire" className="flex flex-col gap-3">
+      <p role="status">Resumed job #{job.jobId} · {job.status}</p>
+      <p className="text-sm text-muted-foreground">Wallet {journal?.buyer}. Previous receipts remain in job history. No new payment is required.</p>
+      <div className="flex flex-wrap gap-2">
+        <Button asChild variant="outline"><Link href={`${jobPageBase}/${job.jobId}`}>View job history</Link></Button>
+        {job.status === "FUNDED" ? <Button disabled={busy !== null} onClick={() => void signAndRun()}>
+          {busy ? <LoaderCircle aria-hidden="true" className="animate-spin" data-icon="inline-start" /> : null}
+          {busy ? "Notifying seller…" : "Retry seller notification"}
+        </Button> : null}
+        <Button variant="ghost" disabled={busy !== null} onClick={() => { setJournal(null); setJob(null); setJournalRestored(false); }}>Leave this job · keep history</Button>
+      </div>
+      {error ? <p role="alert">{stopTitle}: {stopDetail}</p> : null}
+    </section>;
+  }
+
+  if (recoveryOnly) return <div>{previousHire}{busy ? <p role="status">Recovering saved job…</p> : null}{error ? <p role="alert">{error}</p> : null}</div>;
+
   if (embedded) {
     const activeStep = quoteExpired || !quote ? "quote" : !plan ? "review" : !submitted ? "fund" : "track";
     const stepState = (step: "quote" | "review" | "fund" | "track") => {
@@ -665,6 +736,7 @@ function Erc8183BrowserDemo({ mode, deployment, agentName, embedded = false, evi
 
     return (
       <section aria-busy={busy !== null} aria-label="ERC-8183 hiring flow" className="w-full">
+        {previousHire}
         {busyStatusLabel(busy) ? (
           <p aria-live="polite" className="mb-4 inline-flex items-center gap-2 text-xs text-cyan-200" role="status">
             <LoaderCircle aria-hidden="true" className="size-4 animate-spin" />{busyStatusLabel(busy)}…
@@ -747,10 +819,10 @@ function Erc8183BrowserDemo({ mode, deployment, agentName, embedded = false, evi
                       </div>
                     </dl>
                     {mode === "mainnet" ? <p className="mt-3 text-xs text-zinc-500" role="status">{sharedEvidenceSyncMessage(quote.observationSync)}</p> : null}
-                    <Button className="mt-4 min-w-44" disabled={!account || busy !== null} onClick={() => void connectAndPrepare()} size="lg">
+                    {!account ? <div className="mt-4"><WalletConnectButton /></div> : <Button className="mt-4 min-w-44" disabled={busy !== null} onClick={() => void connectAndPrepare()} size="lg">
                       {busy === "Preparing the connected wallet" ? <LoaderCircle aria-hidden="true" className="animate-spin" /> : <Wallet aria-hidden="true" />}
-                      {busy === "Preparing the connected wallet" ? "Preparing wallet…" : account ? "Prepare hire" : "Connect wallet in header"}
-                    </Button>
+                      {busy === "Preparing the connected wallet" ? "Preparing wallet…" : "Prepare hire"}
+                    </Button>}
                   </>
                 ) : null}
               </CheckoutStep>
@@ -762,7 +834,7 @@ function Erc8183BrowserDemo({ mode, deployment, agentName, embedded = false, evi
                       <div><dt className="text-xs text-zinc-500">Balance</dt><dd className="mt-1 text-sm text-zinc-200">{displayUnits(plan.tokenBalanceRaw, plan.quote.tokenDecimals)} {plan.quote.tokenSymbol}</dd></div>
                       <div><dt className="text-xs text-zinc-500">Allowance</dt><dd className="mt-1 text-sm text-zinc-200">{plan.approvalRequired ? `Exact ${plan.quote.priceDisplay} ${plan.quote.tokenSymbol}` : "Ready"}</dd></div>
                     </dl>
-                    <div className="mt-4"><Erc8183TransactionList explorerUrl={deployment.explorerUrl} intents={plan.transactions} journal={journal} mode={hireMode} restored={journalRestored} /></div>
+                    <div className="mt-4">{journalRestored && job ? <p role="status">Resumed job #{job.jobId} · {job.status}. Previous receipts are available in <Link className="underline" href={`${jobPageBase}/${job.jobId}`}>job history</Link>.</p> : <Erc8183TransactionList explorerUrl={deployment.explorerUrl} intents={plan.transactions} journal={journal} mode={hireMode} />}</div>
                     {!journal?.jobId && hireConfirmationLabel(hireMode, signaturePurpose.length) ? (
                       <p className="mt-3 text-xs text-zinc-500" role="status">{hireConfirmationLabel(hireMode, signaturePurpose.length)}</p>
                     ) : null}
@@ -771,9 +843,9 @@ function Erc8183BrowserDemo({ mode, deployment, agentName, embedded = false, evi
                       {busy === "Waiting for wallet confirmations"
                         ? "Waiting for confirmations…"
                         : journal?.jobId
-                          ? pendingSignatures > 0
+                          ? funded ? "Retry seller notification" : pendingSignatures > 0
                             ? `Continue ${pendingSignatures} wallet approval${pendingSignatures === 1 ? "" : "s"}`
-                            : "Confirm funding with seller"
+                            : "Retry seller notification"
                           : hireMode === "batched"
                             ? "Authorize hire (one confirmation)"
                             : `Begin ${signaturePurpose.length || 0} wallet approval${signaturePurpose.length === 1 ? "" : "s"}`}
@@ -845,7 +917,7 @@ function Erc8183BrowserDemo({ mode, deployment, agentName, embedded = false, evi
               </dl>
             </details>
 
-            {journal && !submitted ? <Button className="w-full" onClick={() => { clearBrowserJournal(localStorage, deployment); setJournal(null); setJournalRestored(false); setJob(null); setError(null); }} variant="ghost">Clear browser progress</Button> : null}
+            {journal && !submitted ? <Button className="w-full" onClick={() => { setJournal(null); setJournalRestored(false); setJob(null); setPlan(null); setError(null); }} variant="ghost">Leave this job · keep history</Button> : null}
             {submitted && journal && job && plan ? <Button className="w-full" onClick={downloadEvidence} variant="ghost">Download evidence</Button> : null}
           </aside>
         </div>
@@ -861,6 +933,7 @@ function Erc8183BrowserDemo({ mode, deployment, agentName, embedded = false, evi
       aria-busy={busy !== null}
       className={embedded ? "w-full" : "mx-auto w-full max-w-6xl px-4 py-10 sm:px-6 lg:px-8 lg:py-14"}
     >
+      {previousHire}
       {!embedded ? (
         <>
           <header className="max-w-3xl">
@@ -967,7 +1040,7 @@ function Erc8183BrowserDemo({ mode, deployment, agentName, embedded = false, evi
             </CardHeader>
             <CardContent>
               {plan ? (
-                <Erc8183TransactionList explorerUrl={deployment.explorerUrl} intents={plan.transactions} journal={journal} mode={hireMode} restored={journalRestored} />
+                journalRestored && job ? <p role="status">Resumed job #{job.jobId} · {job.status}. <Link className="underline" href={`${jobPageBase}/${job.jobId}`}>View job history</Link></p> : <Erc8183TransactionList explorerUrl={deployment.explorerUrl} intents={plan.transactions} journal={journal} mode={hireMode} />
               ) : <p className="text-sm text-zinc-500">Connect a wallet to calculate the exact transaction set.</p>}
               <Button className="mt-5" disabled={!plan || quoteExpired || busy !== null || submitted} onClick={() => void signAndRun()}>
                 {busy === "Waiting for wallet confirmations" ? <LoaderCircle aria-hidden="true" className="animate-spin" /> : <Wallet aria-hidden="true" />}
@@ -976,9 +1049,9 @@ function Erc8183BrowserDemo({ mode, deployment, agentName, embedded = false, evi
                   : submitted
                   ? "Job already submitted"
                   : journal?.jobId
-                    ? pendingSignatures > 0
+                    ? funded ? "Retry seller notification" : pendingSignatures > 0
                       ? `Continue ${pendingSignatures} wallet approval${pendingSignatures === 1 ? "" : "s"}`
-                      : "Confirm funding with seller"
+                      : "Retry seller notification"
                     : hireMode === "batched"
                       ? "Authorize hire (one confirmation)"
                       : `Begin ${signaturePurpose.length || 0} wallet approval${signaturePurpose.length === 1 ? "" : "s"}`}
@@ -1078,8 +1151,8 @@ function Erc8183BrowserDemo({ mode, deployment, agentName, embedded = false, evi
           )}
 
           {journal && !submitted && (
-            <Button onClick={() => { clearBrowserJournal(localStorage, deployment); setJournal(null); setJournalRestored(false); setJob(null); setError(null); }} variant="ghost">
-              Clear this browser journal
+            <Button onClick={() => { setJournal(null); setJournalRestored(false); setJob(null); setPlan(null); setError(null); }} variant="ghost">
+              Leave this job · keep history
             </Button>
           )}
         </aside>

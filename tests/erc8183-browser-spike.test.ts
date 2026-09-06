@@ -21,6 +21,7 @@ import {
   exactApprovalRequired,
   parseBrowserJournal,
   recoverBrowserJournal,
+  recoverFundedBrowserJournal,
   resumeRequirements,
   validateRecoveredJobForResume,
 } from "../src/data/erc8183/browser-wallet-adapter.ts";
@@ -309,6 +310,8 @@ describe("receipts and recovery", () => {
       ),
     ).toThrow(/does not match/);
     expect(() => validateRecoveredJobForResume(job(), hirePlan(), "900")).not.toThrow();
+    expect(() => validateRecoveredJobForResume(job({ description: "Another quote" }), hirePlan(), "900")).toThrow(/does not match/);
+    expect(() => validateRecoveredJobForResume(job({ buyer: getAddress("0x9999999999999999999999999999999999999999") }), hirePlan(), "900")).toThrow(/does not match/);
     expect(parseBrowserJournal({
       ...restored,
       lastConfirmedStep: "wallet_has_the_key",
@@ -325,7 +328,19 @@ describe("receipts and recovery", () => {
       transactions: {},
       lastConfirmedStep: "created",
     });
-    expect([...values.values()]).toHaveLength(1);
+    expect([...values.values()]).toHaveLength(2);
+    expect([...values.keys()].some(key => key.endsWith(`:job:${BUYER.toLowerCase()}:900`))).toBe(true);
+  });
+
+  it("recovers funded history independently of quote expiry and never trusts stored receipts", () => {
+    const saved = { schemaVersion: 1 as const, chainId: 97 as const, buyer: BUYER, seller: ERC8183_TESTNET.seller,
+      jobId: "900", quoteRequestId: 17, transactions: { fund: `0x${"12".repeat(32)}` as Hash }, lastConfirmedStep: "funded" as const };
+    const current = job({ status: "FUNDED", quoteExpiresAt: 1 });
+    expect(recoverFundedBrowserJournal(current, saved, BUYER)).toMatchObject({ quoteRequestId: 17, jobId: "900", transactions: {} });
+    for (const change of [
+      { buyer: ERC8183_TESTNET.seller }, { provider: BUYER }, { jobId: "901" },
+      { evaluator: BUYER }, { policy: BUYER }, { quotedToken: BUYER }, { budgetRaw: "2" }, { status: "OPEN" as const },
+    ]) expect(() => recoverFundedBrowserJournal({ ...current, ...change }, saved, BUYER)).toThrow(/does not match/);
   });
 });
 

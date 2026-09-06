@@ -276,8 +276,9 @@ describe("PR 16 Mainnet exposure", () => {
   it("gates the hire page from the normalized catalog action instead of legacy agent fields", () => {
     const source = readFileSync("app/hire/[agentId]/page.tsx", "utf8");
     expect(source).toContain("getAgentEvidencePassport.executeWithAgent");
-    expect(source).toContain("catalogCandidateCard");
-    expect(source).toContain("buyerAction");
+    expect(source).toContain("normalizedState?.canRequestQuote === true");
+    expect(source).toContain('normalizedState.commerceStatus !== "suspended"');
+    expect(source).toContain("checkCompatibilityFirst={!canRequestQuote}");
     expect(source).not.toContain("agentCardViewModel");
     expect(source).not.toContain("getMarketplaceAgent.execute");
   });

@@ -74,6 +74,13 @@ function activity(overrides: Record<string, unknown> = {}) {
 describe("hire ledger feed", () => {
   afterEach(() => vi.unstubAllGlobals());
 
+  it("preserves independent scope totals and rejects malformed aggregates", () => {
+    const totals = { total: 17, completed: 8, funded: 2, submitted: 3 };
+    expect(parseHireJobPage(page({ totals, nextBefore: "56000" }), 56)).toHaveProperty("totals", totals);
+    expect(() => parseHireJobPage(page({ totals: { ...totals, completed: 18 } }), 56)).toThrow();
+    expect(() => parseHireJobPage(page({ totals: { ...totals, total: -1 } }), 56)).toThrow();
+  });
+
   it("parses only the allowlisted job fields and maps numeric status to its name", () => {
     expect(parseHireJobPage(page({}, { extra: "dropped" }), 56)).toEqual({
       chainId: 56,

@@ -7,9 +7,26 @@ import {
   parseCatalogCandidatePage,
 } from "../src/data/observation/catalog-candidate-feed.ts";
 
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 describe("catalog candidate feed", () => {
+  it("bypasses process and Worker caches for the buyer's refresh without exposing credentials in the URL", async () => {
+    const fixtures = JSON.parse(readFileSync(new URL("../contracts/catalog-api-v2.fixtures.json", import.meta.url), "utf8"));
+    const fetcher = vi.fn(async () => Response.json(fixtures.list));
+    vi.stubGlobal("fetch", fetcher);
+    const input = { page: 1, limit: 5, fresh: true, env: { OBSERVATIONS_URL: "https://fresh-worker.example/observations", BUYER_OBSERVATION_SECRET: "test-refresh-secret" } };
+    await getCatalogCandidatePage(input);
+    await getCatalogCandidatePage(input);
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(fetch).mock.calls[0]?.[1]?.headers).toMatchObject({ authorization: "Bearer test-refresh-secret", "x-marketplace-refresh": "1" });
+    expect(String(vi.mocked(fetch).mock.calls[0]?.[0])).not.toContain("secret");
+  });
+  it("defaults discovery to requestable and accepts optional hiring facets", async () => {
+    const fixtures = JSON.parse(readFileSync(new URL("../contracts/catalog-api-v2.fixtures.json", import.meta.url), "utf8"));
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({ ...fixtures.list, status: "requestable", statuses: ["requestable"] })));
+    await getCatalogCandidatePage({ page: 1, limit: 24, env: { OBSERVATIONS_URL: "https://worker.example/observations" } });
+    expect(String(vi.mocked(fetch).mock.calls[0]?.[0])).toContain("status=requestable");
+  });
   it("accepts the shared v2 list and detail contract fixtures", () => {
     const fixtures = JSON.parse(readFileSync(new URL("../contracts/catalog-api-v2.fixtures.json", import.meta.url), "utf8"));
     expect(parseCatalogCandidatePage(fixtures.list)).toMatchObject({

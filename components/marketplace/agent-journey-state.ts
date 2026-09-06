@@ -1,4 +1,5 @@
 import type { CatalogCandidate } from "@/src/business/entities/catalog-candidate";
+import { compatibilityMessage } from "@/src/shared/compatibility-message";
 
 export type AgentJourneyStageState = "verified" | "current" | "attention" | "locked";
 
@@ -40,8 +41,7 @@ export function deriveAgentJourney(input: {
   const failed = state?.operationalStatus === "platform_failed";
   const stale = state?.freshness === "stale" || state?.freshness === "historical";
   const capabilityState = state?.capabilityState ?? (state?.canRequestQuote ? "discovered" : "unsupported");
-  const canRequestQuote = live && state?.canRequestQuote === true;
-  const canPrepareHire = live && state?.canPrepareHire === true;
+  const canRequestQuote = state?.canRequestQuote === true && state?.compatibilityState === "compatible";
 
   const declaredStage: AgentJourneyStage = declared
     ? { state: "verified", label: "Declared", detail: "The agent identity and public endpoints are present in the indexed BSC catalogue." }
@@ -59,27 +59,21 @@ export function deriveAgentJourney(input: {
             ? { state: "current", label: "Check availability", detail: "Run a read-only marketplace check to publish current evidence." }
             : { state: "locked", label: "Not checked", detail: "No eligible public protocol endpoint is available for a check." };
 
-  const quote: AgentJourneyStage = !live && state?.canRequestQuote
-    ? { state: "locked", label: "Check connection first", detail: "Verify the seller connection before requesting a quote." }
-    : state?.quoteStatus === "verified_fresh"
-    ? { state: "verified", label: "Quote ready", detail: "A signed ERC-8183 quote is current and bound to this seller endpoint." }
-    : state?.quoteStatus === "rejected"
-      ? { state: "attention", label: "Quote rejected", detail: "The latest quote attempt did not satisfy the marketplace policy." }
-      : state?.quoteStatus === "verified_historical"
-        ? { state: "attention", label: "Quote expired", detail: "Request a fresh quote to continue. The previous signed quote is historical and cannot authorize a transaction." }
-        : canRequestQuote
-          ? { state: capabilityState === "ready" ? "verified" : "current", label: capabilityState === "ready" ? "Ready to quote" : "Request quote", detail: capabilityState === "ready" ? "The marketplace recently verified that this endpoint can produce an ERC-8183 quote." : "This compatible seller endpoint can be asked for a quote now; requesting it is read-only and requires no signature." }
-          : { state: "locked", label: "Quote unavailable", detail: "This agent has no compatible seller negotiation transport yet." };
+  const quote: AgentJourneyStage = canRequestQuote
+    ? { state: capabilityState === "ready" ? "verified" : "current", label: capabilityState === "ready" ? "Ready to quote" : "Inputs verified", detail: capabilityState === "ready" ? "Recent quote capability and usable requirements are verified. A new session quote is still required." : "Compatible seller inputs are available. No prior quote or job is required." }
+    : state?.compatibilityState === "unsupported"
+      ? { state: "locked", label: "Integration required", detail: "The seller does not publish supported negotiation requirements." }
+      : state?.compatibilityState === "unavailable"
+        ? { state: "attention", label: compatibilityMessage(state.compatibilityErrorCode).title, detail: compatibilityMessage(state.compatibilityErrorCode).detail }
+        : { state: "locked", label: "Requirements unverified", detail: "Check the seller's negotiation requirements before requesting a quote." };
 
-  const hire: AgentJourneyStage = !live && state?.canRequestQuote
+  const hire: AgentJourneyStage = !live && !canRequestQuote && input.validationAvailable
     ? { state: "locked", label: failed ? "Retry availability" : "Check availability", detail: "Once connected, you can request a quote." }
-    : canPrepareHire && input.hireFlowAvailable
-    ? { state: "verified", label: "Ready to hire", detail: "A current seller quote is indexed. Request a fresh session quote below before any wallet signature." }
     : canRequestQuote && input.hireFlowAvailable
       ? { state: "current", label: "Start hiring", detail: "Request a fresh quote below, then review the exact transaction plan." }
       : canRequestQuote
         ? { state: "current", label: "Request a quote to hire", detail: "Ask this seller for a fresh quote; wallet access starts only after Review." }
-        : { state: "locked", label: "Hiring unavailable", detail: "This agent does not currently expose a compatible negotiation transport." };
+        : { state: "locked", label: "Check compatibility", detail: "Check the seller's required inputs. A prior job does not establish current compatibility." };
 
   const indexedJobs = input.indexedJobs ?? 0;
   const jobs: AgentJourneyStage = input.provenJobs > 0
@@ -88,15 +82,13 @@ export function deriveAgentJourney(input: {
       ? { state: "current", label: `${indexedJobs} job${indexedJobs === 1 ? "" : "s"}`, detail: "Indexed onchain activity is shown below; completion and result verification are tracked separately." }
       : { state: "locked", label: "No jobs yet", detail: "Indexed ERC-8183 work will appear here after a job is created." };
 
-  const nextAction = input.hireFlowAvailable && canPrepareHire
-    ? "Request a fresh quote below; the current indexed quote is evidence, not a wallet authorization."
-    : input.hireFlowAvailable && canRequestQuote
+  const nextAction = input.hireFlowAvailable && canRequestQuote
       ? "Request a fresh quote below; no wallet signature is needed for this step."
       : input.validationAvailable && !live
         ? "Check availability below to update shared evidence for everyone."
         : canRequestQuote
           ? "Request a seller quote below; no wallet signature is needed for this step."
-          : "This agent is listed for discovery; hiring stays locked until a compatible seller transport is declared.";
+          : "Check compatibility below. Only a fresh buyer quote can enable Review and Fund.";
 
   return { declared: declaredStage, availability, quote, hire, jobs, nextAction };
 }

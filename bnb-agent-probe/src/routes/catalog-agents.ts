@@ -38,7 +38,7 @@ import {
 import type { D1Database } from "../types";
 
 const STATUSES = [
-  "declared", "pending", "a2a", "mcp", "mcp_only", "erc8183", "quote_capable", "hireable", "failed",
+  "declared", "pending", "a2a", "mcp", "mcp_only", "erc8183", "quote_capable", "hireable", "failed", "requestable", "quote_failed", "completed_jobs",
 ] as const;
 type CatalogStatus = (typeof STATUSES)[number];
 const PLATFORM_SOURCES = ["worker_probe", "buyer_refresh", "migration"] as const;
@@ -115,12 +115,16 @@ export async function catalogAgentsResponse(
   const url = new URL(request.url);
   const allowedKeys = [
     "status", "page", "cursor", "limit", "q", "category", "protocol", "reachability",
-    "commerce", "quote", "latestFailure", "chain", "inventory", "facets",
+    "commerce", "quote", "latestFailure", "chain", "inventory", "facets", "scope",
   ];
   if ([...url.searchParams.keys()].some((key) => !allowedKeys.includes(key))) return invalid();
+  const scope = url.searchParams.get("scope");
+  if (scope !== null && scope !== "hiring" && scope !== "evaluation") return invalid();
   const rawStatuses = url.searchParams.getAll("status");
   if (rawStatuses.length > STATUSES.length) return invalid();
   const statuses = [...new Set(rawStatuses)];
+  // Preserve the public discovery API default. The hiring app explicitly
+  // requests requestable; indexers and verification clients retain discovery.
   if (statuses.length === 0) statuses.push("declared");
   if (statuses.some((status) => !STATUSES.includes(status as CatalogStatus))) return invalid();
   const page = parsePositive(url.searchParams.get("page"), 1, 100_000);
@@ -153,7 +157,7 @@ export async function catalogAgentsResponse(
   // Ready-to-quote is a capability projection, not an active buyer quote. A
   // correlated EXISTS keeps this filter/facet bounded by the agent index and
   // avoids materialising a potentially 20k-item key set in the Worker.
-  const quoteCapableCondition = exists(db.select({ value: sql`1` })
+  const compatibleCondition = (ready: boolean) => exists(db.select({ value: sql`1` })
     .from(catalogSellerCapabilities)
     .innerJoin(catalogAgentEndpoints, and(
       eq(catalogAgentEndpoints.agentKey, catalogSellerCapabilities.agentKey),
@@ -162,13 +166,36 @@ export async function catalogAgentsResponse(
     .innerJoin(catalogEndpoints, eq(catalogEndpoints.endpointKey, catalogSellerCapabilities.endpointKey))
     .where(and(
       eq(catalogSellerCapabilities.agentKey, catalogAgents.agentKey),
-      eq(catalogSellerCapabilities.state, "ready"),
-      gt(catalogSellerCapabilities.capabilityExpiresAt, nowMs),
+      ready ? eq(catalogSellerCapabilities.state, "ready") : not(inArray(catalogSellerCapabilities.state, ["unsupported", "suspended"])),
+      ready ? gt(catalogSellerCapabilities.capabilityExpiresAt, nowMs) : undefined,
+      eq(catalogSellerCapabilities.compatibilityState, "compatible"),
+      sql`${catalogSellerCapabilities.schemaHash} IS NOT NULL`,
+      gt(catalogSellerCapabilities.compatibilityExpiresAt, nowMs),
       eq(catalogAgentEndpoints.declarationState, "current"),
       eq(catalogEndpoints.role, "operational"),
       eq(catalogEndpoints.eligibility, "eligible"),
       inArray(catalogEndpoints.validationProtocol, ["a2a", "mcp", "erc8183_http"]),
+      not(exists(db.select({ value: sql`1` }).from(catalogObservations).where(and(
+        eq(catalogObservations.agentKey, catalogSellerCapabilities.agentKey),
+        eq(catalogObservations.endpointKey, catalogSellerCapabilities.endpointKey),
+        inArray(catalogObservations.source, [...PLATFORM_SOURCES]),
+        inArray(catalogObservations.validationKind, [...PLATFORM_VALIDATION_KINDS]),
+        eq(catalogObservations.verificationLevel, "platform_observed"),
+        inArray(catalogObservations.outcome, [...FAILURE_OUTCOMES]),
+        gt(catalogObservations.observedAt, catalogSellerCapabilities.compatibilityCheckedAt),
+        not(exists(db.select({ value: sql`1` }).from(newerObservation).where(and(
+          eq(newerObservation.agentKey, catalogObservations.agentKey),
+          eq(newerObservation.endpointKey, catalogObservations.endpointKey),
+          inArray(newerObservation.source, [...PLATFORM_SOURCES]),
+          inArray(newerObservation.validationKind, [...PLATFORM_VALIDATION_KINDS]),
+          eq(newerObservation.verificationLevel, "platform_observed"),
+          or(gt(newerObservation.observedAt, catalogObservations.observedAt), and(eq(newerObservation.observedAt,catalogObservations.observedAt),gt(newerObservation.id,catalogObservations.id))),
+        )))),
+      )))),
     )));
+  const requestableCondition = compatibleCondition(false);
+  const scopeCondition = scope === "hiring" ? requestableCondition : scope === "evaluation" ? not(requestableCondition) : undefined;
+  const quoteCapableCondition = compatibleCondition(true);
   const operationalDeclarationExists = exists(db.select({ value: sql`1` })
     .from(catalogAgentEndpoints)
     .innerJoin(catalogEndpoints, eq(catalogEndpoints.endpointKey, catalogAgentEndpoints.endpointKey))
@@ -190,15 +217,6 @@ export async function catalogAgentsResponse(
         eq(catalogEndpoints.eligibility, "eligible"),
       ))),
   );
-  const platformObservationExists = exists(db.select({ value: sql`1` })
-    .from(catalogObservations)
-    .where(and(
-      eq(catalogObservations.agentKey, catalogAgents.agentKey),
-      inArray(catalogObservations.source, [...PLATFORM_SOURCES]),
-      inArray(catalogObservations.validationKind, [...PLATFORM_VALIDATION_KINDS]),
-      eq(catalogObservations.verificationLevel, "platform_observed"),
-      observationBelongsToAgent,
-    )));
   const freshProtocol = (protocol: "a2a" | "mcp" | "erc8183_http") => exists(db.select({ value: sql`1` })
     .from(catalogObservations)
     .where(and(
@@ -410,19 +428,60 @@ export async function catalogAgentsResponse(
     )));
   const capabilityState = (state: "discovered" | "stale" | "failed" | "suspended") => exists(db.select({ value: sql`1` })
     .from(catalogSellerCapabilities)
+    .innerJoin(catalogAgentEndpoints, and(eq(catalogAgentEndpoints.agentKey,catalogSellerCapabilities.agentKey),eq(catalogAgentEndpoints.endpointKey,catalogSellerCapabilities.endpointKey)))
     .where(and(
       eq(catalogSellerCapabilities.agentKey, catalogAgents.agentKey),
+      eq(catalogAgentEndpoints.declarationState,"current"),
       eq(catalogSellerCapabilities.state, state),
     )));
+  // Older discovery failures also set capability.state='failed'. Only a real
+  // failed negotiation attempt is evidence for the Quote failed filter.
+  const quoteFailedCondition = exists(db.select({ value: sql`1` })
+    .from(catalogSellerCapabilities)
+    .innerJoin(catalogAgentEndpoints, and(
+      eq(catalogAgentEndpoints.agentKey, catalogSellerCapabilities.agentKey),
+      eq(catalogAgentEndpoints.endpointKey, catalogSellerCapabilities.endpointKey),
+    ))
+    .innerJoin(catalogQuoteAttempts, eq(catalogQuoteAttempts.id, catalogSellerCapabilities.lastAttemptId))
+    .innerJoin(catalogQuoteRequests, and(
+      eq(catalogQuoteRequests.id, catalogQuoteAttempts.requestId),
+      eq(catalogQuoteRequests.agentKey, catalogSellerCapabilities.agentKey),
+      eq(catalogQuoteRequests.endpointKey, catalogSellerCapabilities.endpointKey),
+    ))
+    .where(and(
+      eq(catalogSellerCapabilities.agentKey, catalogAgents.agentKey),
+      eq(catalogAgentEndpoints.declarationState, "current"),
+      eq(catalogSellerCapabilities.state, "failed"),
+      inArray(catalogQuoteAttempts.status, ["failed", "rejected"]),
+    )));
+  const completedJobsCondition = exists(db.select({value:sql`1`}).from(hireEvents)
+    .innerJoin(commerceJobs,and(eq(hireEvents.chainId,commerceJobs.chainId),eq(hireEvents.jobId,sql`CAST(${commerceJobs.jobId} AS TEXT)`)))
+    .where(and(eq(hireEvents.agentId,catalogAgents.agentId),eq(hireEvents.chainId,catalogAgents.chainId),eq(hireEvents.provenance,"chain_verified"),eq(commerceJobs.status,3))));
+  const needsVerificationCondition = sql`EXISTS (
+    SELECT 1 FROM catalog_agent_endpoints declaration
+    JOIN catalog_endpoints endpoint ON endpoint.endpointKey = declaration.endpointKey
+    LEFT JOIN catalog_seller_capabilities capability ON capability.agentKey = declaration.agentKey AND capability.endpointKey = declaration.endpointKey
+    WHERE declaration.agentKey = ${catalogAgents.agentKey} AND declaration.declarationState = 'current'
+      AND endpoint.role = 'operational' AND endpoint.eligibility = 'eligible'
+      AND (capability.agentKey IS NULL OR (
+        capability.state <> 'suspended' AND (
+          capability.compatibilityState IN ('pending', 'unavailable')
+          OR (capability.compatibilityState = 'compatible' AND (capability.compatibilityExpiresAt IS NULL OR capability.compatibilityExpiresAt <= ${nowMs}))
+        )
+      ))
+  )`;
   // Every current catalog row is an ERC-8004 identity declaration. Endpoint
   // declarations are optional, so registry inventory must retain identities
   // whose metadata has not yielded an operational resource yet.
   const statusCondition = (status: string) => status === "declared" ? sql`1 = 1`
-    : status === "pending" ? not(platformObservationExists)
+    : status === "pending" ? and(not(requestableCondition),needsVerificationCondition)!
       : status === "a2a" ? freshProtocol("a2a")
         : status === "mcp" ? freshProtocol("mcp")
           : status === "mcp_only" ? and(mcpDeclarationExists, not(sellerDeclarationExists), not(quoteCapableCondition))!
           : status === "erc8183" ? erc8183Declaration
+              : status === "requestable" ? requestableCondition
+              : status === "quote_failed" ? quoteFailedCondition
+              : status === "completed_jobs" ? completedJobsCondition
               : status === "quote_capable" ? quoteCapableCondition
               // Keep the legacy query alias, but make it mean the same thing
               // as Ready to quote. Manual admission is no longer a hiring
@@ -437,15 +496,16 @@ export async function catalogAgentsResponse(
   const categoryCondition = categories.length === 0 ? undefined : or(...categories.map((category) => sql`EXISTS (
     SELECT 1 FROM json_each(${catalogAgents.categoriesJson}) WHERE value = ${category}
   )`));
-  const protocolCondition = protocols.length === 0 ? undefined : exists(db.select({ value: sql`1` })
+  const declaredProtocolCondition = (selected: Array<typeof PROTOCOLS[number]>) => exists(db.select({ value: sql`1` })
     .from(catalogAgentEndpoints)
     .innerJoin(catalogEndpoints, eq(catalogEndpoints.endpointKey, catalogAgentEndpoints.endpointKey))
     .where(and(
       eq(catalogAgentEndpoints.agentKey, catalogAgents.agentKey),
       eq(catalogAgentEndpoints.declarationState, "current"),
-      inArray(catalogEndpoints.validationProtocol, protocols),
+      inArray(catalogEndpoints.validationProtocol, selected),
       eq(catalogEndpoints.eligibility, "eligible"),
     )));
+  const protocolCondition = protocols.length === 0 ? undefined : declaredProtocolCondition(protocols);
   const reachabilityCondition = reachability.length === 0 ? undefined : or(...reachability.map((value) => value === "live"
     ? anyFreshProtocol!
     : value === "historical" ? and(anyPlatformSuccess, not(anyFreshProtocol!))!
@@ -468,9 +528,10 @@ export async function catalogAgentsResponse(
     .filter((status) => status !== "declared")
     .map(statusCondition);
   const statusConditionCombined = selectedStatusConditions.length > 0
-    ? or(...selectedStatusConditions)
-    : statusCondition("declared");
+    ? or(...selectedStatusConditions)!.inlineParams()
+    : statusCondition("declared").inlineParams();
   const where = and(
+    scopeCondition?.inlineParams(),
     eq(catalogAgents.indexState, "current"),
     inventory === "operational" && !statuses.some((status) => OPERATIONAL_STATUSES.has(status as CatalogStatus))
       ? operationalDeclarationExists
@@ -479,24 +540,32 @@ export async function catalogAgentsResponse(
     searchCondition,
     categoryCondition,
     protocolCondition,
-    reachabilityCondition,
-    commerceCondition,
-    quoteCondition,
+    reachabilityCondition?.inlineParams(),
+    commerceCondition?.inlineParams(),
+    quoteCondition?.inlineParams(),
     latestFailure === null ? undefined : latestFailure ? failureExists : not(failureExists),
     rawChain === null ? undefined : eq(catalogAgents.chainId, 56),
   );
   const facetCount = (condition: ReturnType<typeof statusCondition>) =>
-    sql<number>`COALESCE(SUM(CASE WHEN ${condition} THEN 1 ELSE 0 END), 0)`;
+    sql<number>`COALESCE(SUM(CASE WHEN ${condition.inlineParams()} THEN 1 ELSE 0 END), 0)`;
   const categoryFacetCount = (category: (typeof CATEGORIES)[number]) =>
     sql<number>`COALESCE(SUM(CASE WHEN EXISTS (
       SELECT 1 FROM json_each(${catalogAgents.categoriesJson}) WHERE value = ${category}
     ) THEN 1 ELSE 0 END), 0)`;
   const operationalBase = and(
+    scopeCondition?.inlineParams(),
     eq(catalogAgents.indexState, "current"),
     operationalDeclarationExists,
+    searchCondition,
+    commerceCondition,
+    quoteCondition,
+    latestFailure === null ? undefined : latestFailure ? failureExists : not(failureExists),
   );
   const countFacet = (status: CatalogStatus) => db.select({ count: count() })
-    .from(catalogAgents).where(and(operationalBase, statusCondition(status)));
+    .from(catalogAgents).where(and(operationalBase, categoryCondition, protocolCondition, reachabilityCondition, statusCondition(status).inlineParams()));
+  const unfilteredFacetScope = scope === null && !q && categories.length === 0 && protocols.length === 0
+    && commerce.length === 0 && quote.length === 0 && latestFailure === null
+    && statuses.every((status) => status === "declared");
   const facetRowsPromise = includeFacets
     ? Promise.all([
       db.select({
@@ -504,28 +573,45 @@ export async function catalogAgentsResponse(
         mcpOnly: facetCount(statusCondition("mcp_only")),
         erc8183: facetCount(statusCondition("erc8183")),
         hireable: facetCount(statusCondition("hireable")),
+        requestable: facetCount(requestableCondition),
+        quoteFailed: facetCount(quoteFailedCondition),
+        completedJobs: facetCount(completedJobsCondition),
+      }).from(catalogAgents).where(and(operationalBase, categoryCondition, protocolCondition, reachabilityCondition)),
+      db.select({
         rebalancing: categoryFacetCount("rebalancing"),
         gridTrading: categoryFacetCount("grid_trading"),
         yieldOptimisation: categoryFacetCount("yield_optimisation"),
         healthFactorMonitoring: categoryFacetCount("health_factor_monitoring"),
-      }).from(catalogAgents).where(operationalBase),
+      }).from(catalogAgents).where(and(operationalBase, statusConditionCombined, protocolCondition, reachabilityCondition)),
       countFacet("pending"),
       countFacet("a2a"),
       countFacet("mcp"),
       countFacet("quote_capable"),
       countFacet("failed"),
-      readCatalogReachabilityFacets(db, nowMs),
-    ]).then(([simple, pending, a2a, mcp, quoteCapable, failed, reachabilityFacets]) => [{
+      unfilteredFacetScope ? readCatalogReachabilityFacets(db, nowMs).then((row) => [row]) : db.select({
+        live: facetCount(anyFreshProtocol!),
+        historical: facetCount(and(anyPlatformSuccess, not(anyFreshProtocol!))!),
+        never: facetCount(not(anyPlatformSuccess)),
+        browserObserved: facetCount(and(browserSuccess, not(anyPlatformSuccess))!),
+      }).from(catalogAgents).where(and(operationalBase, statusConditionCombined, categoryCondition, protocolCondition)),
+      db.select({
+        a2aTransport: facetCount(declaredProtocolCondition(["a2a"])),
+        mcpTransport: facetCount(declaredProtocolCondition(["mcp"])),
+        httpTransport: facetCount(declaredProtocolCondition(["erc8183_http"])),
+      }).from(catalogAgents).where(and(operationalBase,statusConditionCombined,categoryCondition,reachabilityCondition)),
+    ]).then(([simple, categoryFacets, pending, a2a, mcp, quoteCapable, failed, reachabilityFacets, transportFacets]) => [{
       ...simple[0]!,
+      ...categoryFacets[0]!,
+      ...transportFacets[0]!,
       pending: pending[0]?.count ?? 0,
       a2a: a2a[0]?.count ?? 0,
       mcp: mcp[0]?.count ?? 0,
       quoteCapable: quoteCapable[0]?.count ?? 0,
       failed: failed[0]?.count ?? 0,
-      live: reachabilityFacets.live,
-      historical: reachabilityFacets.historical,
-      never: reachabilityFacets.never,
-      browserObserved: reachabilityFacets.browserObserved,
+      live: reachabilityFacets[0]?.live ?? 0,
+      historical: reachabilityFacets[0]?.historical ?? 0,
+      never: reachabilityFacets[0]?.never ?? 0,
+      browserObserved: reachabilityFacets[0]?.browserObserved ?? 0,
     }])
     : Promise.resolve([]);
   const cursorCondition = cursor === undefined ? undefined : or(
@@ -599,7 +685,7 @@ export async function catalogAgentsResponse(
       lastAttemptAt: sql<number | null>`MAX(${catalogQuoteAttempts.startedAt})`,
     }).from(catalogQuoteRequests)
       .leftJoin(catalogQuoteAttempts, eq(catalogQuoteAttempts.requestId, catalogQuoteRequests.id))
-      .where(and(inArray(catalogQuoteRequests.agentKey, agentKeys), eq(catalogQuoteRequests.kind, "buyer_quote")))
+      .where(and(inArray(catalogQuoteRequests.agentKey, agentKeys), eq(catalogQuoteRequests.kind, "buyer_quote"), sql`${catalogQuoteRequests.callerKey} <> 'migration'`))
       .groupBy(catalogQuoteRequests.agentKey),
     agentKeys.length === 0 ? Promise.resolve([]) : db.select({
       agentId: hireEvents.agentId,
@@ -652,8 +738,13 @@ export async function catalogAgentsResponse(
         lastAttemptAt: entry.lastAttemptAt ?? null,
         consecutiveFailures: entry.consecutiveFailures ?? 0,
         lastErrorCode: entry.lastErrorCode ?? null,
+        compatibilityState: entry.compatibilityState as "pending" | "compatible" | "unsupported" | "unavailable",
+        schemaHash: entry.schemaHash ?? null,
+        compatibilityCheckedAt: entry.compatibilityCheckedAt ?? null,
+        compatibilityExpiresAt: entry.compatibilityExpiresAt ?? null,
+        compatibilityErrorCode: entry.compatibilityErrorCode ?? null,
       }));
-    const capability = selectBestCapability(capabilityRows, nowMs);
+    const capability = selectBestCapability(capabilityRows, nowMs, { endpoints: agentDeclarations.map(entry => entry.endpoint), observations: agentObservations });
     const quoteStat = quoteStats.find((entry) => entry.agentKey === agent.agentKey);
     const jobStat = jobStats.find((entry) => entry.agentId === agent.agentId);
     return {
@@ -673,6 +764,11 @@ export async function catalogAgentsResponse(
           lastAttemptAt: capability.lastAttemptAt ?? null,
           consecutiveFailures: capability.consecutiveFailures ?? 0,
           lastErrorCode: capability.lastErrorCode ?? null,
+          compatibilityState: capability.compatibilityState ?? "pending",
+          schemaHash: capability.schemaHash ?? null,
+          compatibilityCheckedAt: capability.compatibilityCheckedAt ?? null,
+          compatibilityExpiresAt: capability.compatibilityExpiresAt ?? null,
+          compatibilityErrorCode: capability.compatibilityErrorCode ?? null,
         } : null,
         ...(quoteStat ? { quoteStats: {
           requestCount: Number(quoteStat.requestCount),
@@ -697,6 +793,7 @@ export async function catalogAgentsResponse(
   const compatibilityItems = items.map(({ admission: _admission, state: _state, ...item }) => item);
   const facetRow = facetRows[0];
   const facets = facetRow ? {
+    protocols: { a2a: Number(facetRow.a2aTransport), mcp: Number(facetRow.mcpTransport), erc8183_http: Number(facetRow.httpTransport) },
     statuses: {
       declared: Number(facetRow.declared),
       pending: Number(facetRow.pending),
@@ -707,6 +804,9 @@ export async function catalogAgentsResponse(
       quote_capable: Number(facetRow.quoteCapable),
       hireable: Number(facetRow.hireable),
       failed: Number(facetRow.failed),
+      requestable: Number(facetRow.requestable),
+      quote_failed: Number(facetRow.quoteFailed),
+      completed_jobs: Number(facetRow.completedJobs),
     },
     categories: {
       rebalancing: Number(facetRow.rebalancing),
