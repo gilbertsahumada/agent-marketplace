@@ -6,15 +6,17 @@ import { LoaderCircle } from "lucide-react";
 import { executeBrowserClosure, type ClosureAction, type ClosureAttempt } from "@/src/business/browser/job-closure";
 import { ERC8183_MAINNET } from "@/src/mainnet/contracts";
 import type { DeliveryReport } from "@/src/mainnet/job-delivery";
+type ClosureSummary = Pick<DeliveryReport, "jobId" | "closure" | "settlementOutcome">;
+const networks = { mainnet: { chainId: 56, name: "Mainnet", explorerUrl: ERC8183_MAINNET.explorerUrl }, testnet: { chainId: 97, name: "Testnet", explorerUrl: "https://testnet.bscscan.com" } };
 
-export function JobClosureActions({ report, refresh }: { report: DeliveryReport; refresh: () => void }) {
+export function JobClosureActions({ report, refresh, network = "mainnet" }: { report: ClosureSummary; refresh: () => void; network?: "mainnet" | "testnet" }) {
   const { address, chainId, connector } = useAccount();
   if (!address || !connector) return <p className="text-sm text-muted-foreground">Connect your wallet to review closure actions.</p>;
-  if (chainId !== 56) return <p className="text-sm text-muted-foreground">Switch your wallet to Mainnet before reviewing this job.</p>;
-  return <ClosureControls key={`${report.jobId}:${address}:${chainId}`} report={report} wallet={address} getProvider={() => connector.getProvider()} refresh={refresh} />;
+  if (chainId !== networks[network].chainId) return <p className="text-sm text-muted-foreground">Switch your wallet to {networks[network].name} before reviewing this job.</p>;
+  return <ClosureControls key={`${network}:${report.jobId}:${address}:${chainId}`} network={network} report={report} wallet={address} getProvider={() => connector.getProvider()} refresh={refresh} />;
 }
 
-function ClosureControls({ report, wallet, getProvider, refresh }: { report: DeliveryReport; wallet: string; getProvider: () => Promise<unknown>; refresh: () => void }) {
+function ClosureControls({ report, wallet, getProvider, refresh, network }: { report: ClosureSummary; wallet: string; getProvider: () => Promise<unknown>; refresh: () => void; network: "mainnet" | "testnet" }) {
   const [reviewed, setReviewed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
@@ -25,7 +27,7 @@ function ClosureControls({ report, wallet, getProvider, refresh }: { report: Del
     if (inFlight.current) return;
     inFlight.current = true; setBusy(true); setMessage("");
     try {
-      const result = await executeBrowserClosure({ provider: await getProvider(), wallet, jobId: report.jobId, action: selected, mode });
+      const result = await executeBrowserClosure({ provider: await getProvider(), wallet, jobId: report.jobId, action: selected, mode, network });
       setAttempt(result);
       setMessage(result.state === "rejected" ? "You declined the wallet request. Review the action again if you want to retry." : result.state === "confirmed" ? "Closure transaction confirmed on-chain." : result.state === "reverted" ? "The closure transaction reverted. No new payment was sent." : "Confirmation is uncertain. Check the previous transaction; do not send again.");
       if (result.state === "reverted") setMessage("Transaction failed on-chain and may have used gas. Review the action to retry; the previous receipt will be checked again.");
@@ -49,7 +51,7 @@ function ClosureControls({ report, wallet, getProvider, refresh }: { report: Del
     </div>
     {busy ? <p role="status" className="text-sm">Checking or awaiting wallet confirmation…</p> : null}
     {message ? <p role="status" className="text-sm">{message}</p> : null}
-    {attempt?.hash ? <a className="text-sm text-signal underline" href={`${ERC8183_MAINNET.explorerUrl}/tx/${attempt.hash}`} target="_blank" rel="noopener noreferrer">Original transaction on explorer</a> : null}
-    {attempt?.replacementHashes?.map(hash => <a key={hash} className="text-sm text-signal underline" href={`${ERC8183_MAINNET.explorerUrl}/tx/${hash}`} target="_blank" rel="noopener noreferrer">Replacement transaction on explorer</a>)}
+    {attempt?.hash ? <a className="text-sm text-signal underline" href={`${networks[network].explorerUrl}/tx/${attempt.hash}`} target="_blank" rel="noopener noreferrer">Original transaction on explorer</a> : null}
+    {attempt?.replacementHashes?.map(hash => <a key={hash} className="text-sm text-signal underline" href={`${networks[network].explorerUrl}/tx/${hash}`} target="_blank" rel="noopener noreferrer">Replacement transaction on explorer</a>)}
   </fieldset>;
 }

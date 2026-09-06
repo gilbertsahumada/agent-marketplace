@@ -16,16 +16,24 @@ export async function mainnetImplementationPinsMatch(
   client: ImplementationReader,
   blockNumber?: bigint,
 ): Promise<boolean> {
+  return implementationPinsMatch(client, ERC8183_MAINNET, blockNumber);
+}
+
+export async function implementationPinsMatch(
+  client: ImplementationReader,
+  pins: { commerce: Address; router: Address; commerceImplementation: Address; routerImplementation: Address },
+  blockNumber?: bigint,
+): Promise<boolean> {
   const checkedBlock = blockNumber ?? await client.getBlockNumber();
   const [commerceStorage, routerStorage] = await Promise.all([
-    client.getStorageAt({ address: ERC8183_MAINNET.commerce, slot: ERC1967_IMPLEMENTATION_SLOT, blockNumber: checkedBlock }),
-    client.getStorageAt({ address: ERC8183_MAINNET.router, slot: ERC1967_IMPLEMENTATION_SLOT, blockNumber: checkedBlock }),
+    client.getStorageAt({ address: pins.commerce, slot: ERC1967_IMPLEMENTATION_SLOT, blockNumber: checkedBlock }),
+    client.getStorageAt({ address: pins.router, slot: ERC1967_IMPLEMENTATION_SLOT, blockNumber: checkedBlock }),
   ]);
   const commerce = implementationAddress(commerceStorage);
   const router = implementationAddress(routerStorage);
   return Boolean(
     commerce && router &&
-    isAddressEqual(commerce, ERC8183_MAINNET.commerceImplementation) &&
-    isAddressEqual(router, ERC8183_MAINNET.routerImplementation),
+    isAddressEqual(commerce, pins.commerceImplementation) &&
+    isAddressEqual(router, pins.routerImplementation),
   );
 }

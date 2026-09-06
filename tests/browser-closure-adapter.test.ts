@@ -2,11 +2,14 @@
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { executeBrowserClosure } from "../src/data/erc8183/browser-closure-adapter";
 import { ERC8183_MAINNET as pins } from "../src/mainnet/contracts";
+import { TESTNET_CLOSURE_PINS } from "../src/data/erc8183/testnet-closure-pins";
+let activePins: { router: string; policy: string } = pins;
 const mock = vi.hoisted(() => ({ send: vi.fn(), call: vi.fn(), receipt: vi.fn(), tx: vi.fn(), job: vi.fn(), locks: vi.fn(), chain: vi.fn(), pins: vi.fn() }));
 const wallet = pins.token;
 const hash = `0x${"aa".repeat(32)}`;
 vi.mock("../src/mainnet/implementation-pins", () => ({ mainnetImplementationPinsMatch: mock.pins }));
-vi.mock("viem", async original => ({ ...await original<object>(), createPublicClient: () => ({ readContract: async ({ functionName }: { functionName: string }) => functionName === "getJob" ? mock.job() : functionName === "jobPolicy" ? pins.policy : functionName === "disputed" ? false : functionName === "disputeWindow" ? 100n : [1, "0x"], getChainId: mock.chain, call: mock.call, getBlock: async () => ({ timestamp: 200n }), waitForTransactionReceipt: mock.receipt, getTransaction: mock.tx }), createWalletClient: () => ({ getAddresses: async () => [wallet], sendTransaction: mock.send }) }));
+vi.mock("../src/data/erc8183/testnet-closure-pins", async original => ({ ...await original<object>(), testnetClosurePinsMatch: mock.pins }));
+vi.mock("viem", async original => ({ ...await original<object>(), createPublicClient: () => ({ readContract: async ({ functionName }: { functionName: string }) => functionName === "getJob" ? mock.job() : functionName === "jobPolicy" ? activePins.policy : functionName === "disputed" ? false : functionName === "disputeWindow" ? 100n : [1, "0x"], getChainId: mock.chain, call: mock.call, getBlock: async () => ({ timestamp: 200n }), waitForTransactionReceipt: mock.receipt, getTransaction: mock.tx }), createWalletClient: () => ({ getAddresses: async () => [wallet], sendTransaction: mock.send }) }));
 vi.mock("@bnbagent/sdk/erc8183", async original => ({ ...await original<object>(),
   CommerceClient: class { getJob = mock.job; },
   RouterClient: class { jobPolicy = async () => pins.policy; },
@@ -14,6 +17,7 @@ vi.mock("@bnbagent/sdk/erc8183", async original => ({ ...await original<object>(
 }));
 const input = { provider: { request: vi.fn() }, wallet, jobId: "1", action: "settle" as const, mode: "send" as const };
 beforeEach(() => {
+  activePins = pins;
   vi.clearAllMocks(); localStorage.clear();
   vi.stubGlobal("navigator", { locks: { request: mock.locks } });
   mock.locks.mockImplementation((_key, _options, callback) => callback({}));
@@ -24,6 +28,25 @@ beforeEach(() => {
   mock.receipt.mockResolvedValue({ status: "success", transactionHash: hash });
 });
 afterEach(() => vi.unstubAllGlobals());
+it("uses Testnet contracts and isolates a same-ID Mainnet journal", async () => {
+  await executeBrowserClosure(input);
+  activePins = TESTNET_CLOSURE_PINS;
+  mock.chain.mockResolvedValue(97);
+  mock.job.mockResolvedValue({ status: 2, client: wallet, evaluator: TESTNET_CLOSURE_PINS.router, submittedAt: 100n });
+  const result = await executeBrowserClosure({ ...input, network: "testnet" });
+  expect(result.chainId).toBe(97);
+  expect(result.commerce).toBe(TESTNET_CLOSURE_PINS.commerce);
+  expect(result.state).toBe("confirmed");
+  expect(mock.send).toHaveBeenLastCalledWith(expect.objectContaining({ to: TESTNET_CLOSURE_PINS.router, value: 0n }));
+  expect(mock.send).toHaveBeenCalledTimes(2);
+});
+it("never routes a Testnet request through Mainnet wallet or mismatched pins", async () => {
+  await expect(executeBrowserClosure({ ...input, network: "testnet" })).rejects.toThrow(/network/);
+  mock.chain.mockResolvedValue(97);
+  mock.pins.mockResolvedValue(false);
+  await expect(executeBrowserClosure({ ...input, network: "testnet" })).rejects.toThrow(/Contract/);
+  expect(mock.send).not.toHaveBeenCalled();
+});
 it.each(["valid", "wallet casing", "missing", "other job", "wrong nonce"])("handles dropped original with %s context", async scenario => {
   const replacement = `0x${"dd".repeat(32)}`;
   let original: { from: string; to: string; input: string; value: bigint; nonce: number };
