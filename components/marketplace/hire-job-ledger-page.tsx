@@ -9,7 +9,7 @@ import { AddressLink } from "./address-link";
 import { JobAgentCell } from "./job-agent-cell";
 import type { JobAgentResolution } from "@/src/business/entities/job-agent-resolution";
 import { JobDeliveryPanel } from "./job-delivery-panel";
-import { formatUnits } from "viem";
+import { formatTokenAmount } from "@/src/business/entities/token-amount";
 import { ERC8183_MAINNET } from "@/src/mainnet/contracts";
 
 const EXPLORER_LINK = "inline-flex items-center gap-1.5 text-signal underline decoration-signal/30 underline-offset-4 hover:decoration-signal focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-signal";
@@ -77,7 +77,7 @@ export function HireJobLedgerPage({ job, agentResolution }: { job: HireJobDetail
           {job.chainId === 56 ? <div className="grid gap-1 border-b border-border pb-3 sm:grid-cols-[10rem_1fr]">
             <span className="text-muted-foreground">Budget</span>
             <p className="flex items-center gap-1.5">
-              <span>{formatUnits(BigInt(job.budgetRaw), 18)}</span>
+              <span>{formatTokenAmount(job.budgetRaw, 18)}</span>
               <a className={EXPLORER_LINK} href={`${explorer}/address/${ERC8183_MAINNET.token}`} target="_blank" rel="noopener noreferrer" aria-label="U token on explorer, opens in a new tab">U<ExternalLink aria-hidden="true" className="size-3" /></a>
             </p>
           </div> : null}
