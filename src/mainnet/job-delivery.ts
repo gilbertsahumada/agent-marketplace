@@ -9,6 +9,7 @@ export type DeliveryReport = {
   jobId: string; status: string; checkedAt: string; delivery: Delivery;
   closure: JobClosure; reviewEndsAt: string | null; policy: string | null;
   requestTexts?: string[];
+  settlementOutcome?: "completed" | "rejected" | null;
 };
 
 /** Only request fields from the job's on-chain description, never inferred from seller prose. */
@@ -16,8 +17,10 @@ export function requestTextsFromDescription(description: string): string[] {
   try {
     const request = JobDescription.fromStr(description);
     if (!request) return [];
-    return [...new Set([request.task, request.terms.deliverables, request.terms.qualityStandards, request.terms.successCriteria]
-      .filter((value): value is string => typeof value === "string" && value.trim().length > 0 && value.length <= 8_000))];
+    const terms = request.terms;
+    return [...new Set([request.task, terms.deliverables, terms.qualityStandards, terms.quality_standards, terms.successCriteria, terms.success_criteria]
+      .flatMap(value => Array.isArray(value) ? value.slice(0, 32) : [value])
+      .filter((value): value is string => typeof value === "string" && value.trim().length > 0 && value.length <= 8_000))].slice(0, 64);
   } catch { return []; }
 }
 const same = (a: unknown, b: string) => typeof a === "string" && /^0x[\da-f]{40}$/i.test(a) && isAddressEqual(a as `0x${string}`, b as `0x${string}`);
@@ -44,7 +47,8 @@ export function closureState(status: string, disputed: boolean, verdict: number,
   if (status === "REJECTED") return "rejected";
   if (status === "EXPIRED") return "expired";
   if (status !== "SUBMITTED") return "not_submitted";
-  if (disputed) return "disputed";
+  if (verdict === 1 || verdict === 2) return "settlement_available";
+  if (disputed && verdict !== 1 && verdict !== 2) return "disputed";
   if (now < eligibleAt) return "review_window";
-  return verdict === 1 || verdict === 2 ? "settlement_available" : "awaiting_policy";
+  return "awaiting_policy";
 }

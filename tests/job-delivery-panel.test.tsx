@@ -24,6 +24,13 @@ it("renders seller text without HTML execution or a quality claim", async () => 
   expect(screen.getByText("Review window open")).toBeInTheDocument();
   expect(screen.getByRole("link", { name: "Seller source" })).toHaveAttribute("rel", "noopener noreferrer");
 });
+it("does not present a rejection verdict as a successful completion", async () => {
+  vi.stubGlobal("fetch", vi.fn(async () => Response.json({ ...report, closure: "settlement_available", settlementOutcome: "rejected" })));
+  render(<JobDeliveryPanel jobId="56719" />);
+  await screen.findByText(/The policy verdict is rejection, not successful completion/);
+  expect(screen.queryByText("Completed on-chain")).not.toBeInTheDocument();
+  expect(screen.getByText(/no settlement or new payment has been sent/)).toBeInTheDocument();
+});
 it("stops loading on failure and offers a read-only retry", async () => {
   const fetcher = vi.fn().mockResolvedValueOnce(new Response(null, { status: 503 })).mockResolvedValueOnce(Response.json(report));
   vi.stubGlobal("fetch", fetcher);

@@ -1,6 +1,6 @@
 # SDK negotiation interoperability
 
-Status: local implementation validated; publication and remote rollout tracked below.
+Status: implementation published. Historical rollout checkboxes below are superseded by the reconciliation in IMPLEMENTATION_PAYMENTS_DISCOVERY_MULTINET.md (2026-09-06, after PR #117); do not treat unchecked release items as current blockers without verifying the target environment.
 
 ## Delivery boundaries
 - [x] Publish previous changes separately: PR #107, main target; frontend 1001 tests, Worker 891 tests, typechecks and production build passed.

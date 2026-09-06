@@ -12,6 +12,16 @@ This panel is read-only. Wallet dispute and settlement submission remain pending
 
 ## Checkout recovery
 
+### Closure implementation — local, gated, not production-enabled
+
+`close-hire-job.ts` coordinates explicit dispute/settle attempts independently of funding. It reads eligibility, simulates, rechecks wallet/state, persists before opening the wallet and checks the receipt. Resume only checks the previous transaction; it never sends again. Browser Web Locks reject concurrent tabs for the same chain/Commerce/job/wallet/action. Missing lock support or unavailable storage stops signing.
+
+The Mainnet browser adapter verifies chain and implementation pins, bound evaluator/policy, exact sender/target/calldata/value, unchanged receipt hash, and resulting disputed/terminal state. The UI is gated by `NEXT_PUBLIC_JOB_CLOSURE_ENABLED=true`; default is OFF. Do not enable this flag in production before an authorized end-to-end wallet acceptance run. No buyer private keys or new backend secrets are required. No Worker/migration changes are included.
+
+Remaining acceptance: Testnet-specific adapter and pins, live-wallet E2E and smart-account wrapped calls. Refunds are not implemented. Uncertain/no-hash attempts remain blocked unless explicitly rejected by the wallet. These limitations must not be represented as a complete closure rollout.
+
+Automated tests use fake ports/providers, never live signatures. Mainnet deployment remains read-only while the flag is absent.
+
 New quote requests mount a fresh checkout. Loading a page or changing the connected wallet does not restore transactions or report historical hire events against the current quote request.
 
 Saved browser progress is a recovery hint, not proof of payment. The previous job is shown with its buyer and recorded start time (or an explicit unavailable date). Recovery requires selecting **Resume job #…** with the original buyer wallet connected; it does not require a fresh quote or a prepared payment plan. This entry is available after a full reload, even when no buyer quote is active. Current chain facts must match the saved buyer, provider, network and job ID, the global evaluator/policy/token pins, and a positive funded budget matching the on-chain quoted price. Recovery never compares an old job with a new quote's description or price and never copies cached receipts into the active transaction list.
@@ -37,3 +47,11 @@ that every legacy pending batch can be recovered after quote expiry or reload.
 For an already funded job, **Retry seller notification** re-reads chain state and calls the notification endpoint directly. It does not enter wallet execution, approve tokens or send funding again. Submitted/completed jobs do not request another notification.
 
 Regression coverage includes fresh quotes with saved funded/submitted/completed jobs, explicit recovery, wallet changes, remounts, mismatched job descriptions/buyers, preservation of archived progress and notification failure without wallet execution. These checks use fixtures; they do not send Mainnet transactions.
+
+## Closure signature recovery
+
+An explicit wallet rejection (EIP-1193 code 4001 during the send request, before a hash is returned) is recorded as rejected. A new user-confirmed attempt reruns wallet, contract, policy and simulation checks, retaining previous attempts. Other errors remain uncertain and block resending. A rejection while verifying an already broadcast transaction never enables retry. Closure controls remain disabled by default.
+
+Direct-transaction replacements retain the original hash and every observed replacement hash, including observations before a timeout. Recovery rechecks the original call and the replacement sender/nonce. Only the exact target, calldata (action/job) and zero value can confirm closure; successful accelerated calls also require the resulting policy/job state. A self-transfer cancellation or a different operation is not closure confirmation. Reverted, cancelled and replaced attempts require a fresh receipt check before a new explicit send, followed by all preflight checks. Reverts may consume gas. A job already closed during preflight is refreshed without sending. Verification is fixture-based, not a claim of live Testnet or smart-account coverage.
+
+PR #119 review regressions: validated original transaction context is persisted by attempt/hash before receipt waiting. If RPC evicts the original, a known replacement can recover using that prior context, with exact bindings and nonce rechecked; missing/invalid context remains uncertain. Wallet address casing does not change identity. Verification persistence failures retain the latest replacement metadata rather than overwriting it with stale send state. Final policy verdicts take precedence over the review timer, including resolved disputes. All three findings were reproduced with failing tests before correction.
