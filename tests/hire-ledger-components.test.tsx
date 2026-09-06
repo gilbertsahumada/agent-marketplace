@@ -235,6 +235,30 @@ describe("AddressLink", () => {
 describe("HireLedgerPage", () => {
   const page = { chainId: 56 as const, jobs: [job("56696", { marketplace: true }), job("56695")], nextBefore: "56695" };
 
+  it("sorts job IDs numerically and toggles every data header accessibly", () => {
+    const records = { ...page, jobs: [job("100"), job("9")] };
+    render(createElement(HireLedgerPage, { chainId: 56, summary: summary(), page: records }));
+    const ids = () => screen.getAllByRole("link", { name: /^Job #/ }).map(link => link.textContent);
+    expect(ids()).toEqual(["Job #100", "Job #9"]);
+    fireEvent.click(screen.getByRole("button", { name: "Job" }));
+    expect(ids()).toEqual(["Job #9", "Job #100"]);
+    expect(screen.getByRole("columnheader", { name: "Job" })).toHaveAttribute("aria-sort", "ascending");
+    for (const label of ["Agent", "Current state", "Buyer", "Provider", "Origin", "Last observed"]) {
+      fireEvent.click(screen.getByRole("button", { name: label }));
+      expect(screen.getByRole("columnheader", { name: label })).toHaveAttribute("aria-sort", "ascending");
+      fireEvent.click(screen.getByRole("button", { name: label }));
+      expect(screen.getByRole("columnheader", { name: label })).toHaveAttribute("aria-sort", "descending");
+    }
+    expect(records.jobs.map(record => record.jobId)).toEqual(["100", "9"]);
+  });
+
+  it("returns to the preceding cursor rather than jumping to the first page", () => {
+    render(createElement(HireLedgerPage, { chainId: 56, summary: summary(), page, before: "56670", cursorTrail: ["56695"] }));
+    expect(screen.getByText("Page 3")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Previous" })).toHaveAttribute("href", "/jobs?chainId=56&before=56695");
+    expect(screen.getByRole("link", { name: "Next" })).toHaveAttribute("href", "/jobs?chainId=56&before=56695&trail=56695,56670");
+  });
+
   it("names the two counts as activity and reports a succeeded index run", async () => {
     render(createElement(HireLedgerPage, { chainId: 56, summary: summary(), page }));
 
@@ -244,8 +268,8 @@ describe("HireLedgerPage", () => {
     expect(screen.queryByText("My jobs")).not.toBeInTheDocument();
     expect(screen.getByText(/Last run succeeded/)).toBeInTheDocument();
     expect(screen.queryByText(/last run ok/)).not.toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Older jobs" })).toHaveAttribute("href", "/jobs?chainId=56&before=56695");
-    expect(screen.queryByRole("link", { name: "Newest jobs" })).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Next" })).toHaveAttribute("href", "/jobs?chainId=56&before=56695");
+    expect(screen.queryByRole("link", { name: "Previous" })).not.toBeInTheDocument();
     expect((await axe.run(document.body)).violations).toEqual([]);
   });
 
@@ -254,7 +278,7 @@ describe("HireLedgerPage", () => {
 
     expect(screen.getByText(/Last run failed/)).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: /Indexed jobs before/ })).not.toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Newest jobs" })).toHaveAttribute("href", "/jobs?chainId=56");
+    expect(screen.getByRole("link", { name: "Previous" })).toHaveAttribute("href", "/jobs?chainId=56");
   });
 
   it("searches loaded jobs and clears the filter without changing index totals", () => {
@@ -264,7 +288,7 @@ describe("HireLedgerPage", () => {
     expect(screen.getByRole("link", { name: "Job #56696" })).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Job #56695" })).not.toBeInTheDocument();
     expect(screen.getByText("56,697")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Older jobs" })).toHaveAttribute("href", "/jobs?chainId=56&before=56695");
+    expect(screen.getByRole("link", { name: "Next" })).toHaveAttribute("href", "/jobs?chainId=56&before=56695");
     fireEvent.change(search, { target: { value: "no-match" } });
     expect(screen.getByText(/No matching records on this page/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Clear search" }));
@@ -369,15 +393,45 @@ describe("HireLedgerPage", () => {
 });
 
 describe("HireJobLedgerPage", () => {
+  it.each([56, 97] as const)("places chain %s in job facts instead of the header", (chainId) => {
+    render(createElement(HireJobLedgerPage, { job: detail({ chainId }) }));
+    expect(screen.getByText(`Chain ID: ${chainId}`)).toBeInTheDocument();
+    expect(screen.getByText(chainId === 56 ? "BNB Smart Chain Mainnet" : "BNB Smart Chain Testnet")).toBeInTheDocument();
+    expect(screen.queryByText(/BSC Mainnet · chain|BSC Testnet · chain/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Indexed chain activity\. Delivery integrity/)).not.toBeInTheDocument();
+  });
+
+  it("shows one precise budget with the token symbol linked to explorer", () => {
+    render(createElement(HireJobLedgerPage, { job: detail({ budgetRaw: "100000000000001" }) }));
+    expect(screen.getByText("0.000100000000000001")).toBeInTheDocument();
+    expect(screen.queryByText("100000000000001")).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /U token on explorer/ })).toHaveAttribute("href", "https://bscscan.com/address/0xcE24439F2D9C6a2289F741120FE202248B666666");
+  });
+
+  it("links transactions on the selected network without repeating blocks", () => {
+    const hash = `0x${"ab".repeat(32)}`;
+    render(createElement(HireJobLedgerPage, { job: detail({ chainId: 97, deliverable: hash, events: [event("submitted", "JobSubmitted", { deliverable: hash })] }) }));
+    expect(screen.queryByText(/Block 119000000/)).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /View submission transaction/ })).toHaveAttribute("href", `https://testnet.bscscan.com/tx/${TX}`);
+    expect(screen.getByRole("link", { name: /Submitted transaction on explorer/ })).toHaveClass("text-signal");
+    expect(screen.queryByText("0.01 U")).not.toBeInTheDocument();
+  });
+
+  it("does not invent a transaction link for a deliverable without a matching event", () => {
+    render(createElement(HireJobLedgerPage, { job: detail({ deliverable: `0x${"ab".repeat(32)}` }) }));
+    expect(screen.queryByRole("link", { name: /View submission transaction/ })).not.toBeInTheDocument();
+    expect(screen.getByText("Submission transaction not yet indexed.")).toBeInTheDocument();
+  });
+
   it("names every explorer link by phase and destination and warns about the new tab", async () => {
     render(createElement(HireJobLedgerPage, { job: detail() }));
 
-    const funded = screen.getByRole("link", { name: "Funded transaction on BscScan, opens in a new tab" });
-    const settled = screen.getByRole("link", { name: "Settled transaction on BscScan, opens in a new tab" });
+    const funded = screen.getByRole("link", { name: "Funded transaction on explorer, opens in a new tab" });
+    const settled = screen.getByRole("link", { name: "Settled transaction on explorer, opens in a new tab" });
     expect(funded).toHaveAttribute("href", `https://bscscan.com/tx/${TX}`);
     expect(funded).toHaveAttribute("rel", "noopener noreferrer");
     expect(funded).toHaveAttribute("target", "_blank");
-    expect(settled).toHaveTextContent("Transaction on BscScan");
+    expect(settled).toHaveTextContent("Transaction on explorer");
     expect(screen.queryByRole("link", { name: "Transaction" })).not.toBeInTheDocument();
     expect((await axe.run(document.body)).violations).toEqual([]);
   });
@@ -386,16 +440,18 @@ describe("HireJobLedgerPage", () => {
     render(createElement(HireJobLedgerPage, { job: detail({ hireEvents: [{ phase: "funded", txHash: TX, blockNumber: "119000000", occurredAt: NOW, agentId: "303779", jobId: "56662", chainId: 56 } as never] }) }));
 
     expect(screen.getAllByRole("heading", { level: 2 }).map((heading) => heading.textContent))
-      .toEqual(["Indexed job state", "Phase ledger", "Marketplace hire events"]);
+      .toEqual(["Delivery & closure", "Indexed job state", "Phase ledger", "Marketplace hire events"]);
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("ERC-8183 Job #56662");
+    expect(screen.getByRole("link", { name: "Funded marketplace transaction on explorer, opens in a new tab" })).toHaveAttribute("href", `https://bscscan.com/tx/${TX}`);
+    expect(screen.queryByText(/Block 119000000/)).not.toBeInTheDocument();
   });
 
   it("labels raw budget units and keeps the proof page bound to hash-verified deliverables", () => {
     render(createElement(HireJobLedgerPage, { job: detail() }));
 
-    expect(screen.getByText("Budget (raw token units)")).toBeInTheDocument();
+    expect(screen.queryByText("Budget (raw token units)")).not.toBeInTheDocument();
     expect(screen.queryByText("Budget raw")).not.toBeInTheDocument();
-    expect(screen.getByText(/a proof page exists only for jobs whose deliverable this marketplace hash-verified/)).toBeInTheDocument();
+    expect(screen.getByText(/Integrity confirms the content matches its on-chain hash, not that it meets your requirements/)).toBeInTheDocument();
     expect(screen.getByText("Hired via this marketplace")).toBeInTheDocument();
     expect(screen.queryByText(/Processed through this marketplace/)).not.toBeInTheDocument();
   });
@@ -405,7 +461,7 @@ describe("HireJobLedgerPage", () => {
     const twin = event("settled", "JobCompleted");
     render(createElement(HireJobLedgerPage, { job: detail({ events: [twin, { ...twin }] }) }));
 
-    expect(screen.getAllByRole("link", { name: "Settled transaction on BscScan, opens in a new tab" })).toHaveLength(2);
+    expect(screen.getAllByRole("link", { name: "Settled transaction on explorer, opens in a new tab" })).toHaveLength(2);
     expect(consoleError.mock.calls.flat().join(" ")).not.toMatch(/same key/);
     consoleError.mockRestore();
   });
