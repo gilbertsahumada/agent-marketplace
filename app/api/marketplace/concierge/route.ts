@@ -4,7 +4,7 @@ import { askConcierge } from "@/src/business/composition";
 import { CONCIERGE_SCHEMA_VERSION, parseConciergeMessages } from "@/src/business/entities/concierge";
 import { InvalidMarketplaceInputError, MarketplacePayloadTooLargeError } from "@/src/business/errors/marketplace-errors";
 import { BoundedRequestJsonError, readBoundedRequestJson } from "@/src/presentation/http/bounded-request-json";
-import { callerContext, marketplaceErrorResponse } from "@/src/presentation/http/marketplace-http";
+import { callerContext, clientAddress, marketplaceErrorResponse } from "@/src/presentation/http/marketplace-http";
 
 // 12 messages × 4,000 chars of assistant text plus JSON overhead.
 const MAX_BODY_BYTES = 65_536;
@@ -45,6 +45,7 @@ export async function POST(request: Request) {
     const stream = askConcierge.stream({
       messages,
       caller: callerContext(request),
+      admissionKey: clientAddress(request),
       // A closed tab aborts the model call so its admission slot is freed.
       ...(request.signal ? { abortSignal: request.signal } : {}),
     });

@@ -37,6 +37,14 @@ export function callerContext(request: Request): string {
   return [forwarded || real || "unknown", origin || "same-origin"].join("|");
 }
 
+// The address alone, for in-process admission: the Origin header is the
+// client's to choose, so it must not open a fresh budget per request.
+export function clientAddress(request: Request): string {
+  const forwarded = request.headers.get("x-forwarded-for")?.split(",", 1)[0]?.trim();
+  const real = request.headers.get("x-real-ip")?.trim();
+  return forwarded || real || "anonymous";
+}
+
 export function marketplaceErrorResponse(error: unknown): NextResponse {
   if (error instanceof MarketplacePayloadTooLargeError) {
     return NextResponse.json(

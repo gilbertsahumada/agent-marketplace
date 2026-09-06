@@ -8,9 +8,23 @@
 
 import { cn } from "@/lib/utils";
 import type { UIMessage } from "ai";
-import type { ComponentProps, HTMLAttributes } from "react";
+import type { AnchorHTMLAttributes, ComponentProps, HTMLAttributes } from "react";
 import { memo } from "react";
 import { Streamdown } from "streamdown";
+
+// Seller-written catalog text reaches the model and can come back in its
+// reply as markdown. The reply never loads remote resources (no images, so
+// no tracking pixels) and only links within this site; anything else is
+// shown as plain text.
+function isSameSiteHref(href: string | undefined): href is string {
+  return href !== undefined && /^(\/(?!\/)|#)/.test(href);
+}
+
+const SAFE_COMPONENTS = {
+  img: () => null,
+  a: ({ href, children, ...props }: AnchorHTMLAttributes<HTMLAnchorElement>) =>
+    isSameSiteHref(href) ? <a href={href} {...props}>{children}</a> : <span>{children}</span>,
+};
 
 export type MessageProps = HTMLAttributes<HTMLDivElement> & {
   from: UIMessage["role"];
@@ -49,6 +63,7 @@ export const MessageResponse = memo(
   ({ className, ...props }: MessageResponseProps) => (
     <Streamdown
       className={cn("size-full [&>*:first-child]:mt-0 [&>*:last-child]:mb-0", className)}
+      components={SAFE_COMPONENTS}
       {...props}
     />
   ),

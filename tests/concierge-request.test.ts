@@ -78,3 +78,17 @@ describe("describeConciergeError", () => {
     expect(describeConciergeError("nope")).toBe(CONCIERGE_ERROR_COPY.generic);
   });
 });
+
+it("keeps the newest user text when merging across a textless assistant turn", () => {
+  const messages = [
+    { role: "user", parts: [{ type: "text", text: "a".repeat(1_190) }] },
+    { role: "assistant", parts: [{ type: "tool-search_agents", toolCallId: "c1", state: "input-available", input: { q: "grid" } }] },
+    { role: "user", parts: [{ type: "text", text: "second question" }] },
+  ] as const;
+
+  const projected = projectConciergeMessages(messages as never);
+
+  expect(projected.at(-1)!.role).toBe("user");
+  expect(projected.at(-1)!.content.endsWith("second question")).toBe(true);
+  expect(projected.at(-1)!.content.length).toBeLessThanOrEqual(1_200);
+});

@@ -297,7 +297,7 @@ Response: an [AI SDK UI message stream](https://ai-sdk.dev/docs/ai-sdk-ui/stream
 typed part per tool call and its output. Tool outputs: \`search_agents\` → \`{ "label", "agents": [{ "agentId", "name", "canHire", ... }] }\`;
 \`get_passport\` and \`get_quote_input\` → the agent's indexed state or the seller's input schema;
 \`propose\` → \`{ "brief": {...} | null, "proposal": { "agentId", "contractHash", "parameters", "fields" } | null, "agents": [...], "rejected": [...] }\`.
-Consume it with \`useChat\` or \`readUIMessageStream\` from the \`ai\` package.
+Consume it with \`useChat\` from \`@ai-sdk/react\` or \`readUIMessageStream\` from the \`ai\` package.
 
 Limits: up to 5 model steps (the last one is text-only), 6 catalogue lookups per request,
 35 seconds wall-clock time. Agents returned are only those from the catalogue search in the

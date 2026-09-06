@@ -67,7 +67,10 @@ export interface AskConciergeDependencies {
 
 export interface AskConciergeInput {
   messages: ConciergeMessage[];
+  /** Caller fingerprint forwarded to the Worker for its own budgets. */
   caller: string;
+  /** Key for in-process admission; defaults to the caller. */
+  admissionKey?: string;
   abortSignal?: AbortSignal;
 }
 
@@ -236,6 +239,10 @@ export function copyFilterTransform<TOOLS extends ToolSet>(): TransformStream<Te
           // One more whole word stays buffered so a two-word phrase that
           // straddles the break is filtered as a unit.
           cut = lastBreak > 0 ? lastBreakBefore(buffered, lastBreak - 1) : -1;
+          // Text without spaces (Chinese, Japanese, a long URL) still has to
+          // stream: cut on characters once the holdback is well exceeded.
+          // Banned phrases are ASCII words, and the buffer was filtered whole.
+          if (buffered.length - cut - 1 > 2 * COPY_FILTER_HOLDBACK) cut = buffered.length - COPY_FILTER_HOLDBACK - 1;
         }
         if (cut > 0) {
           controller.enqueue({ ...part, text: buffered.slice(0, cut + 1) });
@@ -289,7 +296,7 @@ export class AskConcierge {
    */
   stream(input: AskConciergeInput): ReadableStream<UIMessageChunk> {
     const model = this.deps.model();
-    const release = this.deps.admission.acquire(input.caller);
+    const release = this.deps.admission.acquire(input.admissionKey ?? input.caller);
     let released = false;
     const releaseOnce = () => {
       if (released) return;
@@ -448,8 +455,17 @@ export class AskConcierge {
 
     const propose = async (input: ProposeInput): Promise<ProposeOutput> => {
       const rejected: ProposeRejection[] = [];
-      const brief = parseConciergeBrief(input.brief);
-      if (input.brief !== undefined && !brief) rejected.push("invalid_brief");
+      const parsedBrief = parseConciergeBrief(input.brief);
+      if (input.brief !== undefined && !parsedBrief) rejected.push("invalid_brief");
+      // The brief is copy people read (and carry into the quote): the same
+      // rule as the reply applies to it.
+      const brief = parsedBrief
+        ? {
+          objective: filterBannedCopy(parsedBrief.objective),
+          deliverable: filterBannedCopy(parsedBrief.deliverable),
+          acceptanceCriteria: filterBannedCopy(parsedBrief.acceptanceCriteria),
+        }
+        : null;
 
       let proposal: ConciergeProposal | null = null;
       const agentId = input.agentId;
@@ -554,6 +570,8 @@ export class AskConcierge {
 
     return toUIMessageStream({
       stream: result.stream,
+      // Reasoning restates the instructions and skips the copy filter.
+      sendReasoning: false,
       onError: describeStreamError,
     }).pipeThrough(abortsAsErrors());
   }

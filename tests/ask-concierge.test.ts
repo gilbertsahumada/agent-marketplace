@@ -624,4 +624,65 @@ describe("AskConcierge", () => {
     expect(model.doStreamCalls.length).toBeGreaterThanOrEqual(2);
     expect(chunks.at(-1)).toEqual({ type: "error", errorText: STREAM_ERROR_COPY.capacity });
   });
+
+  it("takes admission under the admission key when the route provides one", async () => {
+    const { concierge, acquire } = harness(scriptedModel([textTurn("Hi.")]));
+
+    await concierge.execute({ ...ask("grid"), admissionKey: "203.0.113.2" });
+
+    expect(acquire).toHaveBeenCalledWith("203.0.113.2");
+  });
+
+  it("rewrites banned copy inside a model-authored brief", async () => {
+    const dirty = {
+      objective: "Hire a bot with a proven track record",
+      deliverable: "A plan that guarantees 5% yield",
+      acceptanceCriteria: "Strategy applied daily",
+    };
+    const model = scriptedModel([
+      toolCallsTurn({ id: "c1", name: "search_agents", input: { q: "grid" } }),
+      toolCallsTurn({ id: "c2", name: "propose", input: { brief: dirty } }),
+      textTurn("Which range?"),
+    ]);
+    const { concierge } = harness(model);
+
+    const reply = await concierge.execute(ask("grid"));
+
+    expect(reply.brief).not.toBeNull();
+    for (const value of Object.values(reply.brief!)) expect(value).not.toMatch(BANNED_COPY);
+    expect(reply.brief!.objective).toBe("Hire a bot with a indexed activity history");
+  });
+
+  it("does not forward reasoning parts to the client", async () => {
+    const model = scriptedModel([[
+      { type: "stream-start", warnings: [] },
+      { type: "reasoning-start", id: "r1" },
+      { type: "reasoning-delta", id: "r1", delta: "The rules say never use proven." },
+      { type: "reasoning-end", id: "r1" },
+      { type: "text-start", id: "t1" },
+      { type: "text-delta", id: "t1", delta: "Reply." },
+      { type: "text-end", id: "t1" },
+      { type: "finish", finishReason: { unified: "stop", raw: undefined }, usage: usage() },
+    ]]);
+    const { concierge } = harness(model);
+
+    const chunks = await chunksOf(concierge.stream(ask("grid")));
+
+    expect(chunks.some((chunk) => chunk.type.startsWith("reasoning"))).toBe(false);
+    expect(streamedText(chunks)).toBe("Reply.");
+  });
+
+  it("streams unbroken CJK text before the block ends", async () => {
+    const reply = "我们为您找到了一个网格交易代理，它会在您设定的价格区间内自动挂单并持续运行，直到您停止它为止。价格和交付时间由签署的报价决定，托管账户保管您的资金。";
+    const { concierge } = harness(scriptedModel([textTurn(reply)]));
+
+    const chunks = await chunksOf(concierge.stream(ask("网格")));
+
+    const deltas = chunks.filter((chunk) => chunk.type === "text-delta");
+    const textEnd = chunks.findIndex((chunk) => chunk.type === "text-end");
+    // At least one delta reaches the client before the block closes.
+    expect(chunks.findIndex((chunk) => chunk.type === "text-delta")).toBeLessThan(textEnd);
+    expect(deltas.length).toBeGreaterThanOrEqual(2);
+    expect(streamedText(chunks)).toBe(reply);
+  });
 });

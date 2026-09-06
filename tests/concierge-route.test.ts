@@ -91,8 +91,17 @@ describe("concierge route controller", () => {
     expect(conciergeApi.askConcierge.stream).toHaveBeenCalledWith(expect.objectContaining({
       messages: [{ role: "user", content: "I need a grid bot for BNB/USDT" }],
       caller: "203.0.113.2|http://local",
+      admissionKey: "203.0.113.2",
       abortSignal: expect.any(AbortSignal),
     }));
+  });
+
+  it("keys admission on the client address, not on the Origin header", async () => {
+    conciergeApi.askConcierge.stream.mockReturnValue(chunkStream([{ type: "start" }, { type: "finish" }]));
+    await post(validBody(), { origin: "https://a.example" });
+    await post(validBody(), { origin: "https://b.example" });
+    const keys = conciergeApi.askConcierge.stream.mock.calls.map(([input]) => (input as { admissionKey: string }).admissionKey);
+    expect(keys).toEqual(["203.0.113.2", "203.0.113.2"]);
   });
 
   it("maps a rate limit error to 429 with retry-after", async () => {

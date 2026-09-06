@@ -29,9 +29,13 @@ export function projectConciergeMessages(messages: ReadonlyArray<Pick<UIMessage,
   let recent = merged.slice(-CONCIERGE_LIMITS.messages);
   if (recent.length > 0 && recent[0]!.role !== "user") recent = recent.slice(1);
 
+  // A user turn merged across a textless assistant turn keeps its newest
+  // text (the question just asked); an assistant turn keeps its opening.
   return recent.map((message) => ({
     role: message.role,
-    content: message.content.slice(0, message.role === "user" ? CONCIERGE_LIMITS.userChars : CONCIERGE_LIMITS.assistantChars),
+    content: message.role === "user"
+      ? message.content.slice(-CONCIERGE_LIMITS.userChars)
+      : message.content.slice(0, CONCIERGE_LIMITS.assistantChars),
   }));
 }
 
