@@ -1578,6 +1578,33 @@ describe("marketplace presentation rules", () => {
     expect(screen.queryByText(/BSC Testnet.*Job #551/i)).not.toBeInTheDocument();
   });
 
+  it("renders the concierge chat in the hiring stage only when the concierge is configured", () => {
+    vi.stubGlobal("fetch", vi.fn());
+    const { rerender } = render(createElement(MarketplaceLanding, {
+      categories: [],
+      conciergeEnabled: true,
+      demoEnabled: true,
+      featuredAgents: [],
+      funnel: null,
+      publicProof: [],
+      qualifiedSeller: null,
+    }));
+
+    expect(screen.getByRole("form", { name: "Ask the concierge" })).toBeInTheDocument();
+    expect(screen.getByText("ask the concierge")).toBeInTheDocument();
+
+    rerender(createElement(MarketplaceLanding, {
+      categories: [],
+      demoEnabled: true,
+      featuredAgents: [],
+      funnel: null,
+      publicProof: [],
+      qualifiedSeller: null,
+    }));
+
+    expect(screen.queryByRole("form", { name: "Ask the concierge" })).not.toBeInTheDocument();
+  });
+
   it("hydrates the Mainnet default safely before revealing a restored Testnet wallet", async () => {
     walletState.address = null;
     walletState.chainId = 56;

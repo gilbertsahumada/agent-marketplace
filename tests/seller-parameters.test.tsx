@@ -3,9 +3,10 @@ import "@testing-library/jest-dom/vitest";
 import { afterEach, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QuoteRequestPanel } from "../components/marketplace/quote-request-panel";
+import { handoffKey } from "../components/marketplace/concierge-handoff";
 vi.mock("../components/spikes/erc8183-browser-spike", () => ({ Erc8183MarketplaceHire: () => <div>Review enabled</div>, Erc8183SavedHire: () => null }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
-afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); window.sessionStorage.clear(); });
 it("does not imply earlier quotes or readiness when the marketplace service is unavailable", async () => {
   vi.stubGlobal("fetch", vi.fn(async () => Response.json({ error: "quote_service_unavailable" }, { status: 503 })));
   render(<QuoteRequestPanel agentId="304169" />);
@@ -114,4 +115,59 @@ it.each(["2025-06-18", "unsupported"])("initializes MCP before tools and rejects
   }
   await screen.findByText("Review enabled");
   expect(methods).toEqual(["initialize", "notifications/initialized", "tools/list", "tools/call"]);
+});
+function stubDiscovery(contractHash: string) {
+  return vi.fn(async () => Response.json({ contract, endpointKey: "e".repeat(64), contractHash }));
+}
+it("fills seller parameters from a valid concierge hand-off and shows the note", async () => {
+  window.sessionStorage.setItem(handoffKey("42"), JSON.stringify({
+    schemaVersion: 1, agentId: "42", contractHash: "f".repeat(64),
+    parameters: { topic: "Concierge topic" },
+    brief: { objective: "Find a grid bot", deliverable: "A running grid", acceptanceCriteria: "Trades within range" },
+    savedAt: Date.now(),
+  }));
+  vi.stubGlobal("fetch", stubDiscovery("f".repeat(64)));
+  render(<QuoteRequestPanel agentId="42" />);
+  const input = await screen.findByLabelText("Research topic *");
+  expect(input).toHaveValue("Concierge topic");
+  expect(screen.getByText(/Filled by the concierge from your brief\. Review each field before requesting a quote\./)).toBeInTheDocument();
+  expect(screen.getByText("Your brief")).toBeInTheDocument();
+  expect(screen.getByText(/Find a grid bot/)).toBeInTheDocument();
+  expect(screen.getByText(/A running grid/)).toBeInTheDocument();
+  expect(screen.getByText(/Trades within range/)).toBeInTheDocument();
+});
+it("ignores a concierge hand-off saved for a different contract", async () => {
+  window.sessionStorage.setItem(handoffKey("42"), JSON.stringify({
+    schemaVersion: 1, agentId: "42", contractHash: "a".repeat(64),
+    parameters: { topic: "Should not appear" }, brief: null, savedAt: Date.now(),
+  }));
+  vi.stubGlobal("fetch", stubDiscovery("f".repeat(64)));
+  render(<QuoteRequestPanel agentId="42" />);
+  const input = await screen.findByLabelText("Research topic *");
+  expect(input).toHaveValue("");
+  expect(screen.queryByText(/Filled by the concierge from your brief/)).not.toBeInTheDocument();
+});
+it("removes the concierge hand-off key from sessionStorage once discovery runs", async () => {
+  window.sessionStorage.setItem(handoffKey("42"), JSON.stringify({
+    schemaVersion: 1, agentId: "42", contractHash: "f".repeat(64),
+    parameters: { topic: "Concierge topic" }, brief: null, savedAt: Date.now(),
+  }));
+  vi.stubGlobal("fetch", stubDiscovery("f".repeat(64)));
+  render(<QuoteRequestPanel agentId="42" />);
+  await screen.findByLabelText("Research topic *");
+  expect(window.sessionStorage.getItem(handoffKey("42"))).toBeNull();
+});
+it("keeps concierge-filled parameters and the note after Reload parameters, even though the key is already consumed", async () => {
+  window.sessionStorage.setItem(handoffKey("42"), JSON.stringify({
+    schemaVersion: 1, agentId: "42", contractHash: "f".repeat(64),
+    parameters: { topic: "Concierge topic" }, brief: null, savedAt: Date.now(),
+  }));
+  vi.stubGlobal("fetch", stubDiscovery("f".repeat(64)));
+  render(<QuoteRequestPanel agentId="42" />);
+  await screen.findByLabelText("Research topic *");
+  expect(window.sessionStorage.getItem(handoffKey("42"))).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Reload parameters" }));
+  const input = await screen.findByLabelText("Research topic *");
+  expect(input).toHaveValue("Concierge topic");
+  expect(screen.getByText(/Filled by the concierge from your brief/)).toBeInTheDocument();
 });

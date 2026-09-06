@@ -2,7 +2,7 @@ import { MarketplaceLanding } from "@/components/marketplace/landing-page";
 import type { CategoryCardViewModel, EvidenceStepViewModel, FunnelSectionViewModel } from "@/components/marketplace/presentation-types";
 import { catalogCandidateCard } from "@/components/marketplace/catalog-candidate-view-model";
 import { ledgerPulseViewModel } from "@/components/marketplace/ledger-pulse-view-model";
-import { getCatalogCandidatePage, getFunnelEvidence, getHireLedger, getMainnetJobProof, getPublicJobProof, listMarketplaceAgents } from "@/src/business/composition";
+import { getCatalogCandidatePage, getFunnelEvidence, getHireLedger, getMainnetJobProof, getPublicJobProof, isConciergeConfigured, listMarketplaceAgents } from "@/src/business/composition";
 import type { FunnelEvidence } from "@/src/business/entities/funnel-evidence";
 
 export const dynamic = "force-dynamic";
@@ -105,6 +105,7 @@ export default async function HomePage() {
   return (
     <MarketplaceLanding
       categories={categories}
+      conciergeEnabled={isConciergeConfigured()}
       demoEnabled={Reflect.get(process.env, "ERC8183_BROWSER_SPIKE_ENABLED") === "true"}
       featuredAgents={featuredAgents}
       funnel={funnelSectionViewModel(getFunnelEvidence.execute())}
