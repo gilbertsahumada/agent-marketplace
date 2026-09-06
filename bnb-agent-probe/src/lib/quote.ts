@@ -9,6 +9,7 @@ import {
 import {
   getAddress,
   isAddress,
+  maxUint256,
   type Address,
   type PublicClient,
 } from "viem";
@@ -153,7 +154,7 @@ export async function validateProbeQuote(
     || terms.evaluationRequired !== true
     || terms.evaluatorType !== "uma_oov3"
   ) throw new QuoteValidationError("QUOTE_TERMS");
-  if (!terms.price || !/^[1-9]\d*$/.test(terms.price)) {
+  if (!terms.price || terms.price.length > 78 || !/^[1-9]\d*$/.test(terms.price) || BigInt(terms.price) > maxUint256) {
     throw new QuoteValidationError("QUOTE_PRICE");
   }
   if (context.maximumPriceRaw !== undefined && BigInt(terms.price) > context.maximumPriceRaw) {
