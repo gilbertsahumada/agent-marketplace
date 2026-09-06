@@ -40,7 +40,8 @@ export async function executeBrowserClosure(input: { provider: unknown; wallet: 
       const raw = localStorage.getItem(key);
       if (!raw) return null;
       const saved = JSON.parse(raw) as ClosureAttempt;
-      if (!saved || !["signing", "submitted", "confirmed", "reverted", "uncertain", "rejected"].includes(saved.state) ||
+      if (!saved || !["signing", "submitted", "confirmed", "reverted", "uncertain", "rejected", "cancelled", "replaced"].includes(saved.state) ||
+        (saved.replacementHash !== undefined && !/^0x[\da-f]{64}$/i.test(saved.replacementHash)) ||
         (saved.hash !== undefined && !/^0x[\da-f]{64}$/i.test(saved.hash))) throw new Error("Invalid saved closure; inspect wallet history");
       return saved;
     },
@@ -58,12 +59,22 @@ export async function executeBrowserClosure(input: { provider: unknown; wallet: 
     },
     simulate: async () => { await p.call({ account: wallet, to: address, data }); },
     send: async () => w.sendTransaction({ account: wallet, to: address, data, value: 0n }),
-    verify: async hash => {
+    verify: async (hash, replacement) => {
       if (await p.getChainId() !== 56 || !await mainnetImplementationPinsMatch(p)) throw new Error("Wrong network or changed contracts");
-      const receipt = await p.waitForTransactionReceipt({ hash: hash as Hex, timeout: 45_000, confirmations: 1 });
-      if (receipt.transactionHash.toLowerCase() !== hash.toLowerCase()) throw new Error("Transaction was replaced; inspect the replacement before continuing");
-      const tx = await p.getTransaction({ hash: hash as Hex });
-      if (!tx.to || !isAddressEqual(tx.to, address) || !isAddressEqual(tx.from, wallet) || tx.input.toLowerCase() !== data.toLowerCase() || tx.value !== 0n) throw new Error("Receipt does not belong to this closure");
+      const original = await p.getTransaction({ hash: hash as Hex });
+      const matches = (tx: typeof original) => !!tx.to && isAddressEqual(tx.to, address) && isAddressEqual(tx.from, wallet) && tx.input.toLowerCase() === data.toLowerCase() && tx.value === 0n;
+      if (!matches(original)) throw new Error("Receipt does not belong to this closure");
+      const receipt = await p.waitForTransactionReceipt({ hash: (port.load()?.replacementHash ?? hash) as Hex, timeout: 45_000, confirmations: 1,
+        onReplaced: event => { replacement?.(event.transaction.hash); },
+      });
+      if (await p.getChainId() !== 56 || !await mainnetImplementationPinsMatch(p)) throw new Error("Network or contracts changed during verification");
+      if (receipt.status !== "success" && receipt.status !== "reverted") return "pending";
+      const tx = await p.getTransaction({ hash: receipt.transactionHash });
+      if (receipt.transactionHash.toLowerCase() !== hash.toLowerCase()) {
+        if (!isAddressEqual(tx.from, wallet) || tx.nonce !== original.nonce || original.nonce === undefined) throw new Error("Unrelated replacement");
+        replacement?.(receipt.transactionHash);
+        if (!matches(tx)) return tx.to && isAddressEqual(tx.to, wallet) && tx.value === 0n && tx.input === "0x" ? "cancelled" : "replaced";
+      } else if (!matches(tx)) throw new Error("Receipt does not belong to this closure");
       if (receipt.status === "reverted") return "reverted";
       if (input.action === "dispute") return await disputedNow() ? "confirmed" : "pending";
       const job = await getJob();
