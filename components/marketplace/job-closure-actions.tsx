@@ -24,7 +24,7 @@ function ClosureControls({ report, wallet, getProvider, refresh }: { report: Del
     inFlight.current = true; setBusy(true); setMessage("");
     try {
       const result = await executeBrowserClosure({ provider: await getProvider(), wallet, jobId: report.jobId, action: selected, mode });
-      setMessage(result.state === "confirmed" ? "Closure transaction confirmed on-chain." : result.state === "reverted" ? "The closure transaction reverted. No new payment was sent." : "Confirmation is uncertain. Check the previous transaction; do not send again.");
+      setMessage(result.state === "rejected" ? "You declined the wallet request. Review the action again if you want to retry." : result.state === "confirmed" ? "Closure transaction confirmed on-chain." : result.state === "reverted" ? "The closure transaction reverted. No new payment was sent." : "Confirmation is uncertain. Check the previous transaction; do not send again.");
       if (result.state === "confirmed") refresh();
     } catch (error) { setMessage(error instanceof Error ? error.message : "Could not verify the closure action."); }
     finally { setBusy(false); inFlight.current = false; setReviewed(false); }
