@@ -1,12 +1,12 @@
 import "server-only";
 import { CommerceClient, RouterClient, JobStatus, PolicyClient } from "@bnbagent/sdk/erc8183";
 import { createPublicClient, http, decodeFunctionData, decodeEventLog, hexToString, isAddressEqual } from "viem";
-import type { HireJobDetail } from "../business/entities/hire-job";
-import { createSafeEndpointTransport } from "../verification/safe-http";
-import { readBoundedJson } from "../verification/bounded-json";
-import { ERC8183_MAINNET as pins, mainnetCommerceEvidenceAbi } from "./contracts";
-import { mainnetImplementationPinsMatch } from "./implementation-pins";
-import { closureState, verifyDelivery, requestTextsFromDescription, type DeliveryReport } from "./job-delivery";
+import type { HireJobDetail } from "../business/entities/hire-job.ts";
+import { createSafeEndpointTransport } from "../verification/safe-http.ts";
+import { readBoundedJson } from "../verification/bounded-json.ts";
+import { ERC8183_MAINNET as pins, mainnetCommerceEvidenceAbi } from "./contracts.ts";
+import { mainnetImplementationPinsMatch } from "./implementation-pins.ts";
+import { closureState, verifyDelivery, requestTextsFromDescription, type DeliveryReport } from "./job-delivery.ts";
 
 /** Read-only: no wallet, no settle/dispute calls, no speculative URL discovery. */
 export async function readJobDelivery(ledger: HireJobDetail): Promise<DeliveryReport> {
