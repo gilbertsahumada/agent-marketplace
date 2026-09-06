@@ -24,6 +24,34 @@ beforeEach(() => {
   mock.receipt.mockResolvedValue({ status: "success", transactionHash: hash });
 });
 afterEach(() => vi.unstubAllGlobals());
+it.each(["valid", "wallet casing", "missing", "other job", "wrong nonce"])("handles dropped original with %s context", async scenario => {
+  const replacement = `0x${"dd".repeat(32)}`;
+  let original: { from: string; to: string; input: string; value: bigint; nonce: number };
+  mock.send.mockImplementationOnce(async tx => {
+    original = { from: wallet, to: tx.to, input: tx.data, value: 0n, nonce: 17 };
+    mock.tx.mockResolvedValue(original);
+    return hash;
+  });
+  mock.receipt.mockImplementationOnce(async options => {
+    options.onReplaced({ transaction: { hash: replacement } });
+    throw new Error("timeout");
+  });
+  expect((await executeBrowserClosure(input)).state).toBe("uncertain");
+  const contextKey = Array.from({ length: localStorage.length }, (_, i) => localStorage.key(i)!).find(key => key.includes(":original:"));
+  if (scenario === "missing" && contextKey) localStorage.removeItem(contextKey);
+  if (scenario === "other job" && contextKey) {
+    const context = JSON.parse(localStorage.getItem(contextKey)!);
+    localStorage.setItem(contextKey, JSON.stringify({ ...context, jobId: "999" }));
+  }
+  mock.tx.mockImplementation(async ({ hash: requested }) => {
+    if (requested === hash) throw new Error("Transaction not found");
+    return scenario === "wrong nonce" ? { ...original, nonce: 18 } : original;
+  });
+  mock.receipt.mockResolvedValue({ status: "success", transactionHash: replacement });
+  mock.job.mockResolvedValue({ status: 3 });
+  expect((await executeBrowserClosure({ ...input, wallet: scenario === "wallet casing" ? wallet.toLowerCase() : wallet, mode: "resume" })).state).toBe(["valid", "wallet casing"].includes(scenario) ? "confirmed" : "uncertain");
+  expect(mock.send).toHaveBeenCalledOnce();
+});
 it("sends only the exact zero-value settlement and recovers without a second send", async () => {
   expect((await executeBrowserClosure(input)).state).toBe("confirmed");
   expect(mock.send).toHaveBeenCalledWith(expect.objectContaining({ to: pins.router, value: 0n }));
