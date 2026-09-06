@@ -34,6 +34,7 @@ const { HireJobRows } = await import("../components/marketplace/hire-job-rows.ts
 const { MyHireJobs } = await import("../components/marketplace/my-hire-jobs.tsx");
 const { HireJobLedgerPage } = await import("../components/marketplace/hire-job-ledger-page.tsx");
 const { HireLedgerPage } = await import("../components/marketplace/hire-ledger-page.tsx");
+const { dailyActivitySeries, PHASE_DESCRIPTIONS } = await import("../components/marketplace/hire-activity-chart.tsx");
 
 const BUYER = "0x5ee75a1B1648C023e885E58bD3735Ae273f2cc52" as const;
 const SELLER = "0xA2a2012e52Fd075c0F3146e37E833E7294ee52B5" as const;
@@ -96,6 +97,18 @@ afterEach(() => {
 });
 
 describe("hire ledger components", () => {
+  it("keeps every UTC day in the chart and fills days without indexed events with zero", () => {
+    const series = dailyActivitySeries(activity());
+
+    expect(series).toHaveLength(30);
+    expect(series[0]?.day).toBe("2026-08-05");
+    expect(series.find((row) => row.day === "2026-09-01")?.created).toBe(1_234);
+    expect(series.find((row) => row.day === "2026-08-31")).toEqual({
+      day: "2026-08-31", created: 0, funded: 0, submitted: 0, settled: 0, refunded: 0,
+    });
+    expect(series.at(-1)?.day).toBe("2026-09-03");
+  });
+
   it("links every indexed job to its network page and marks marketplace jobs", async () => {
     render(createElement("main", {}, createElement(HireJobRows, { chainId: 97, emptyText: "none", jobs: [job("551", { chainId: 97, marketplace: true, status: "COMPLETED" }), job("552", { chainId: 97 })] })));
 
@@ -259,11 +272,10 @@ describe("HireLedgerPage", () => {
     expect(screen.getByRole("link", { name: "Next" })).toHaveAttribute("href", "/jobs?chainId=56&before=56695&trail=56695,56670");
   });
 
-  it("names the two counts as activity and reports a succeeded index run", async () => {
+  it("keeps protocol totals in coverage details and reports a succeeded index run", async () => {
     render(createElement(HireLedgerPage, { chainId: 56, summary: summary(), page }));
 
-    expect(screen.getByText("Protocol jobs indexed")).toBeInTheDocument();
-    expect(screen.getByText("Attributed to marketplace")).toBeInTheDocument();
+    expect(screen.getByText(/56,697 indexed/)).toBeInTheDocument();
     expect(screen.getByText(/Marketplace attribution confirms a recorded hire event/)).toBeInTheDocument();
     expect(screen.queryByText("My jobs")).not.toBeInTheDocument();
     expect(screen.getByText(/Last run succeeded/)).toBeInTheDocument();
@@ -287,7 +299,7 @@ describe("HireLedgerPage", () => {
     fireEvent.change(search, { target: { value: "#56696" } });
     expect(screen.getByRole("link", { name: "Job #56696" })).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Job #56695" })).not.toBeInTheDocument();
-    expect(screen.getByText("56,697")).toBeInTheDocument();
+    expect(screen.getByText(/56,697 indexed/)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Next" })).toHaveAttribute("href", "/jobs?chainId=56&before=56695");
     fireEvent.change(search, { target: { value: "no-match" } });
     expect(screen.getByText(/No matching records on this page/)).toBeInTheDocument();
@@ -310,7 +322,7 @@ describe("HireLedgerPage", () => {
       fireEvent.change(search, { target: { value } });
       expect(screen.getByRole("link", { name: "Grid Agent · #303779" })).toHaveAttribute("href", "/agents/303779");
       expect(screen.queryByRole("link", { name: "Job #56695" })).not.toBeInTheDocument();
-      expect(screen.getByText("56,697")).toBeInTheDocument();
+      expect(screen.getByText(/56,697 indexed/)).toBeInTheDocument();
     }
   });
 
@@ -336,7 +348,7 @@ describe("HireLedgerPage", () => {
     render(createElement(HireLedgerPage, { chainId: 56, summary: summary(), page: null }));
 
     expect(screen.getByText("Indexed ledger temporarily unavailable.")).toBeInTheDocument();
-    expect(screen.getByText("56,697")).toBeInTheDocument();
+    expect(screen.getByText("Current indexed states")).toBeInTheDocument();
     expect(screen.queryByText(/Counts temporarily unavailable/)).not.toBeInTheDocument();
   });
 
@@ -352,32 +364,44 @@ describe("HireLedgerPage", () => {
     expect(screen.getAllByRole("status")).toHaveLength(1);
   });
 
-  it("shows the last 30 days as phase totals plus a per-day table with the indexing note", async () => {
+  it("shows five simultaneous phase totals with accessible daily charts", async () => {
     render(createElement(HireLedgerPage, { chainId: 56, summary: summary(), page, activity: activity() }));
 
-    const trigger = screen.getByText("Activity summary · Last 30 days");
-    expect(trigger.closest("details")).not.toHaveAttribute("open");
-    expect(screen.getByRole("region", { name: "Indexed jobs" }).compareDocumentPosition(trigger) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    fireEvent.click(trigger.closest("summary")!);
-    const totals = screen.getByRole("list", { name: "Phase totals, last 30 days" });
-    expect(totals).toHaveTextContent("Created1,234");
-    expect(totals).toHaveTextContent("Settled1");
-    expect(totals).toHaveTextContent("Refunded1");
-    const table = screen.getByRole("table", { name: "Phase events per UTC day" });
-    expect(within(table).getAllByRole("columnheader").map((cell) => cell.textContent)).toEqual(["Day", "Created", "Funded", "Submitted", "Settled", "Refunded"]);
-    expect(within(table).getByRole("rowheader", { name: "2026-09-01" })).toBeInTheDocument();
-    expect(within(table).getByRole("rowheader", { name: "2026-09-02" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 2, name: "ERC-8183 activity" })).toBeInTheDocument();
+    expect(screen.getAllByText("Past 30 days")).toHaveLength(2);
+    expect(screen.getByText("Created").closest("[data-slot='card']")).toHaveTextContent("1,234");
+    expect(screen.getByText("Settled").closest("[data-slot='card']")).toHaveTextContent("1");
+    expect(screen.getByText("Refunded").closest("[data-slot='card']")).toHaveTextContent("1");
+    expect(screen.getByRole("img", { name: "Created events per UTC day over the last 30 days" })).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "Settled events per UTC day over the last 30 days" })).toBeInTheDocument();
+    expect(screen.getAllByRole("img", { name: /events per UTC day/ })).toHaveLength(5);
+    for (const label of ["Created", "Funded", "Submitted", "Settled", "Refunded"]) {
+      expect(screen.getByRole("button", { name: `About the ${label} metric` })).toBeInTheDocument();
+    }
+    expect(screen.queryByRole("table", { name: "Phase events per UTC day" })).not.toBeInTheDocument();
     expect(screen.getByText("Counts phase events indexed since the ledger started; earlier jobs are present by state only.")).toBeInTheDocument();
     expect(document.body.textContent).not.toMatch(/proven/i);
     expect((await axe.run(document.body)).violations).toEqual([]);
   });
 
-  it("omits the per-day table when no phase events fell in the window", () => {
+  it("explains each phase metric from its help control", async () => {
+    render(createElement(HireLedgerPage, { chainId: 56, summary: summary(), page, activity: activity() }));
+
+    const help = screen.getByRole("button", { name: "About the Created metric" });
+    fireEvent.focus(help);
+
+    expect(await screen.findByRole("tooltip")).toHaveTextContent(PHASE_DESCRIPTIONS.created);
+  });
+
+  it("keeps zero-value phase charts visible when no phase events fell in the window", () => {
     render(createElement(HireLedgerPage, { chainId: 56, summary: summary(), page, activity: activity({ byDay: [], totals: { created: 0, funded: 0, submitted: 0, settled: 0, refunded: 0 } }) }));
 
-    fireEvent.click(screen.getByText("Activity summary · Last 30 days").closest("summary")!);
-    expect(screen.queryByRole("table", { name: "Phase events per UTC day" })).not.toBeInTheDocument();
-    expect(screen.getByText("No phase events indexed in this window.")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 2, name: "ERC-8183 activity" })).toBeInTheDocument();
+    expect(screen.getAllByRole("img", { name: /events per UTC day/ })).toHaveLength(5);
+    const activitySection = screen.getByRole("heading", { level: 2, name: "ERC-8183 activity" }).closest("section")!;
+    for (const label of ["Created", "Funded", "Submitted", "Settled", "Refunded"]) {
+      expect(within(activitySection).getByText(label).closest("[data-slot='card']")).toHaveTextContent("0");
+    }
     expect(screen.getByText(/Counts phase events indexed since the ledger started/)).toBeInTheDocument();
   });
 
@@ -385,8 +409,8 @@ describe("HireLedgerPage", () => {
     render(createElement(HireLedgerPage, { chainId: 56, summary: summary(), page, activity: null }));
 
     expect(screen.getByRole("status")).toHaveTextContent("Recent activity temporarily unavailable.");
-    expect(screen.queryByText("Activity summary · Last 30 days")).not.toBeInTheDocument();
-    expect(screen.getByText("56,697")).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: /ERC-8183 activity/ })).not.toBeInTheDocument();
+    expect(screen.getByText(/56,697 indexed/)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /Job #56696/ })).toBeInTheDocument();
     expect(screen.queryByText("Indexed ledger temporarily unavailable.")).not.toBeInTheDocument();
   });

@@ -28,10 +28,18 @@ function providerParameter(value: string | string[] | undefined): HireAddress | 
   notFound();
 }
 
+function activityDaysParameter(value: string | string[] | undefined): 7 | 30 | 90 {
+  if (value === undefined || value === "30") return 30;
+  if (value === "7") return 7;
+  if (value === "90") return 90;
+  notFound();
+}
+
 export default async function JobsPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const params = await searchParams;
   const chainId = chainIdParameter(params.chainId);
   const provider = providerParameter(params.provider);
+  const activityDays = activityDaysParameter(params.days);
   const before = typeof params.before === "string" && /^[1-9]\d{0,15}$/.test(params.before) ? params.before : undefined;
   const cursor = before === undefined ? {} : { before };
   const cursorTrail = typeof params.trail === "string" && /^(?:[1-9]\d{0,15})(?:,[1-9]\d{0,15})*$/.test(params.trail) ? params.trail.split(",").slice(0, 1000) : [];
@@ -41,15 +49,15 @@ export default async function JobsPage({ searchParams }: { searchParams: Promise
     provider === undefined
       ? getHireLedger.listRecentJobs({ chainId, ...cursor })
       : getHireLedger.listJobsByProvider({ chainId, provider, ...cursor }),
-    // The activity window follows the provider scope of the list, not the
-    // cursor: always the default trailing window (HIRE_ACTIVITY_DEFAULT_DAYS),
-    // requested without an explicit `days` so it shares one cache entry.
-    getHireLedger.activity({ chainId, ...scope }),
+    // Preserve the shared default cache entry for 30 days. Alternate windows
+    // are explicit and never change list pagination.
+    getHireLedger.activity({ chainId, ...scope, ...(activityDays === 30 ? {} : { days: activityDays }) }),
   ]);
   const agentResolutions = await resolveJobAgents.execute(page?.jobs ?? []);
   return (
     <HireLedgerPage
       activity={activity}
+      activityDays={activityDays}
       cursorTrail={cursorTrail}
       key={`${chainId}:${provider ?? "all"}:${before ?? "newest"}`}
       chainId={chainId}
