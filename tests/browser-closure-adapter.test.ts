@@ -54,3 +54,17 @@ it("leaves a timed-out receipt uncertain and prevents rebroadcast", async () => 
   await expect(executeBrowserClosure(input)).rejects.toThrow(/already exists/);
   expect(mock.send).toHaveBeenCalledOnce();
 });
+it("recovers a wrapped wallet rejection while retaining the previous attempt", async () => {
+  mock.send.mockRejectedValueOnce(new Error("Wallet wrapper", { cause: { code: 4001 } }));
+  expect((await executeBrowserClosure(input)).state).toBe("rejected");
+  const retry = await executeBrowserClosure(input);
+  expect(retry.state).toBe("confirmed");
+  expect(retry.previousAttempts).toEqual([expect.objectContaining({ state: "rejected" })]);
+  expect(mock.send).toHaveBeenCalledTimes(2);
+});
+it("does not confirm or rebroadcast a replaced transaction", async () => {
+  mock.receipt.mockResolvedValue({ status: "success", transactionHash: `0x${"bb".repeat(32)}` });
+  expect((await executeBrowserClosure(input)).state).toBe("uncertain");
+  await expect(executeBrowserClosure(input)).rejects.toThrow(/already exists/);
+  expect(mock.send).toHaveBeenCalledOnce();
+});
