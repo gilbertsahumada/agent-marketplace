@@ -1,4 +1,4 @@
-import { and, count, desc, eq, gt, gte, inArray, lt, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, gt, inArray, lt, sql } from "drizzle-orm";
 import { NegotiationRequest, buildJobDescription, verifyQuoteSignature } from "@bnbagent/sdk/erc8183";
 import { formatUnits, parseAbi, type PublicClient } from "viem";
 import { createDatabase } from "../db/orm";
@@ -144,6 +144,8 @@ function metadata(input: { requestHash: string; transport: string; endpoint: str
 }
 
 type QuoteRateLimitOptions = {
+  /** Trusted server option, never read from request JSON or headers. */
+  kind?: "buyer_quote" | "capability_probe";
   /** Limits are intentionally supplied by the Worker config so this route is
    * also usable from a test or another private Worker without global state. */
   dailyLimit?: number;
@@ -162,32 +164,44 @@ async function quoteRateLimit(
   if (configured.length === 0) return null;
   if (configured.some((value) => !Number.isSafeInteger(value) || value < 1)) return { code: "quote_rate_limit_invalid", retryAfterSeconds: 60 };
   const dayStart = input.nowMs - 24 * 60 * 60 * 1_000;
-  const base = and(
-    eq(catalogQuoteRequests.kind, "buyer_quote"),
-    gte(catalogQuoteRequests.createdAt, dayStart),
-  );
+  const providerBase = gt(catalogQuoteRequests.createdAt, dayStart);
+  const base = and(eq(catalogQuoteRequests.kind, limits.kind ?? "buyer_quote"), providerBase);
   const [globalRows, callerRows, agentRows, originRows] = await Promise.all([
     limits.dailyLimit === undefined ? Promise.resolve([{ total: 0 }]) : db.select({ total: count() })
       .from(catalogQuoteRequests).where(base),
     limits.callerDailyLimit === undefined ? Promise.resolve([{ total: 0 }]) : db.select({ total: count() })
       .from(catalogQuoteRequests).where(and(base, eq(catalogQuoteRequests.callerKey, input.caller))),
     limits.agentDailyLimit === undefined ? Promise.resolve([{ total: 0 }]) : db.select({ total: count() })
-      .from(catalogQuoteRequests).where(and(base, eq(catalogQuoteRequests.agentKey, input.agentKey))),
+      .from(catalogQuoteRequests).where(and(providerBase, eq(catalogQuoteRequests.agentKey, input.agentKey))),
     limits.originDailyLimit === undefined || input.originKey === null
       ? Promise.resolve([{ total: 0 }])
       : db.select({ total: count() }).from(catalogQuoteRequests)
         .innerJoin(catalogEndpoints, eq(catalogEndpoints.endpointKey, catalogQuoteRequests.endpointKey))
-        .where(and(base, eq(catalogEndpoints.originKey, input.originKey))),
+        .where(and(providerBase, eq(catalogEndpoints.originKey, input.originKey))),
   ]);
   const global = Number(globalRows[0]?.total ?? 0);
   const caller = Number(callerRows[0]?.total ?? 0);
   const agent = Number(agentRows[0]?.total ?? 0);
   const origin = Number(originRows[0]?.total ?? 0);
-  if (limits.dailyLimit !== undefined && global >= limits.dailyLimit) return { code: "daily_quote_rate_limit", retryAfterSeconds: 60 };
-  if (limits.callerDailyLimit !== undefined && caller >= limits.callerDailyLimit) return { code: "caller_quote_rate_limit", retryAfterSeconds: 60 };
-  if (limits.agentDailyLimit !== undefined && agent >= limits.agentDailyLimit) return { code: "agent_quote_rate_limit", retryAfterSeconds: 60 };
-  if (limits.originDailyLimit !== undefined && origin >= limits.originDailyLimit) return { code: "origin_quote_rate_limit", retryAfterSeconds: 60 };
-  return null;
+  const scopes = [
+    { code: "daily_quote_rate_limit", limit: limits.dailyLimit, total: global, where: base },
+    { code: "caller_quote_rate_limit", limit: limits.callerDailyLimit, total: caller, where: and(base, eq(catalogQuoteRequests.callerKey, input.caller)) },
+    { code: "agent_quote_rate_limit", limit: limits.agentDailyLimit, total: agent, where: and(providerBase, eq(catalogQuoteRequests.agentKey, input.agentKey)) },
+    { code: "origin_quote_rate_limit", limit: limits.originDailyLimit, total: origin, where: and(providerBase,
+      inArray(catalogQuoteRequests.endpointKey, db.select({ key: catalogEndpoints.endpointKey }).from(catalogEndpoints)
+        .where(eq(catalogEndpoints.originKey, input.originKey ?? "")))) },
+  ];
+  const blocked = await Promise.all(scopes.filter(scope => scope.limit !== undefined && scope.total >= scope.limit)
+    .map(async scope => {
+      // If a limit was lowered, more than one request may need to expire.
+      const rows = await db.select({ createdAt: catalogQuoteRequests.createdAt }).from(catalogQuoteRequests)
+        .where(scope.where).orderBy(asc(catalogQuoteRequests.createdAt), asc(catalogQuoteRequests.id))
+        .limit(1).offset(scope.total - scope.limit!);
+      const resetAt = (rows[0]?.createdAt ?? input.nowMs) + 86_400_000;
+      return { code: scope.code, retryAfterSeconds: Math.max(1, Math.ceil((resetAt - input.nowMs) / 1000)) };
+    }));
+  // All exhausted scopes must have room, not just the first one checked.
+  return blocked.sort((a, b) => b.retryAfterSeconds - a.retryAfterSeconds)[0] ?? null;
 }
 
 async function updateAttempt(
@@ -287,6 +301,9 @@ export async function createCatalogQuoteRequestResponse(
     structured || readyCapability[0] ? undefined : ["a2a", "erc8183_http"],
   );
   if (!target) return json({ error: "quote_transport_unavailable" }, 409);
+  if (options.kind === "capability_probe" && readyCapability.some(row => row.endpointKey === target.endpointKey)) {
+    return json({ status: "skipped", reason: "capability_fresh" });
+  }
   const caller = options.caller ?? "anonymous";
   const limited = await quoteRateLimit(db, {
     agentKey: target.agentKey,
@@ -317,6 +334,7 @@ export async function createCatalogQuoteRequestResponse(
     eq(catalogQuoteRequests.agentKey, target.agentKey),
     eq(catalogQuoteRequests.endpointKey, target.endpointKey),
     eq(catalogQuoteRequests.callerKey, caller),
+    eq(catalogQuoteRequests.kind, options.kind ?? "buyer_quote"),
     eq(catalogQuoteRequests.requestHash, requestHash),
     lt(catalogQuoteRequests.createdAt, options.nowMs + 1),
   )).orderBy(desc(catalogQuoteRequests.createdAt), desc(catalogQuoteRequests.id)).limit(1);
@@ -338,7 +356,7 @@ export async function createCatalogQuoteRequestResponse(
     agentKey: target.agentKey,
     endpointKey: target.endpointKey,
     transport: target.transport,
-    kind: "buyer_quote",
+    kind: options.kind ?? "buyer_quote",
     status: "running",
     callerKey: caller,
     createdAt: options.nowMs,
@@ -350,7 +368,7 @@ export async function createCatalogQuoteRequestResponse(
   await db.insert(catalogQuoteAttempts).values({
     id: attemptId,
     requestId,
-    executor: "browser",
+    executor: options.kind === "capability_probe" ? "worker" : "browser",
     status: "pending",
     startedAt: options.nowMs,
     metadataJson: metadata({ requestHash, transport: target.transport, endpoint: target.endpoint }),
@@ -649,7 +667,7 @@ export async function catalogQuoteBrowserResultResponse(request: Request, d1: D1
   return persistQuoteResult(db, options.env, options.config, found.request, attemptId, input.envelope as Record<string, unknown>, "browser", options.nowMs);
 }
 
-export async function catalogQuoteFallbackResponse(request: Request, d1: D1Database, attemptId: string, options: { nowMs: number; env: Env; config: WorkerConfig; expectedAgentId?: string }): Promise<Response> {
+export async function catalogQuoteFallbackResponse(request: Request, d1: D1Database, attemptId: string, options: { nowMs: number; env: Env; config: WorkerConfig; expectedAgentId?: string; operational?: boolean }): Promise<Response> {
   if (!ATTEMPT_ID.test(attemptId)) return json({ error: "invalid_request" }, 400);
   const db = createDatabase(d1 as never);
   const found = await findAttempt(db, attemptId);
@@ -658,7 +676,7 @@ export async function catalogQuoteFallbackResponse(request: Request, d1: D1Datab
   if (found.attempt.status === "succeeded" || found.attempt.status === "rejected" || found.attempt.status === "failed") {
     return json({ error: "attempt_completed" }, 409);
   }
-  if (found.request.kind !== "buyer_quote") return json({ error: "invalid_request_kind" }, 409);
+  if (found.request.kind !== (options.operational ? "capability_probe" : "buyer_quote")) return json({ error: "invalid_request_kind" }, 409);
   const requestData = requestPayload(found.request) as { requestHash: string; transport: string; endpoint: string } | null;
   if (!requestData || !REQUEST_HASH.test(requestData.requestHash)) return json({ error: "request_metadata_invalid" }, 500);
   const requestObject = await body(request);
@@ -688,31 +706,39 @@ export async function catalogQuoteFallbackResponse(request: Request, d1: D1Datab
   // Browser-first is a single logical request, but every physical execution
   // must remain auditable. Close the browser attempt as a fallback event and
   // create a separate Worker attempt instead of mutating its executor.
-  const browserErrorCode = browserFallbackErrorCode(request);
-  await updateAttempt(db, attemptId, found.request.id, "failed", options.nowMs, {
-    errorCode: browserErrorCode,
-    outcome: "fallback",
-    metadataJson: JSON.stringify({
-      requestHash: found.request.requestHash,
-      transport: found.request.transport,
-      endpoint: requestData.endpoint,
-      fallback: "worker",
-    }),
-  });
-  const workerAttemptId = crypto.randomUUID();
-  await db.insert(catalogQuoteAttempts).values({
-    id: workerAttemptId,
-    requestId: found.request.id,
-    executor: "worker",
-    status: "running",
-    startedAt: options.nowMs,
-    metadataJson: JSON.stringify({
-      requestHash: found.request.requestHash,
-      transport: found.request.transport,
-      endpoint: requestData.endpoint,
-      fallbackFromAttemptId: attemptId,
-    }),
-  });
+  let workerAttemptId = attemptId;
+  if (options.operational) {
+    if (found.attempt.executor !== "worker") return json({ error: "invalid_executor" }, 409);
+    const claimed = await db.update(catalogQuoteAttempts).set({ status: "running" })
+      .where(and(eq(catalogQuoteAttempts.id, attemptId), eq(catalogQuoteAttempts.status, "pending"))).returning({ id: catalogQuoteAttempts.id });
+    if (!claimed.length) return json({ error: "attempt_running" }, 409);
+  } else {
+    const browserErrorCode = browserFallbackErrorCode(request);
+    await updateAttempt(db, attemptId, found.request.id, "failed", options.nowMs, {
+      errorCode: browserErrorCode,
+      outcome: "fallback",
+      metadataJson: JSON.stringify({
+        requestHash: found.request.requestHash,
+        transport: found.request.transport,
+        endpoint: requestData.endpoint,
+        fallback: "worker",
+      }),
+    });
+    workerAttemptId = crypto.randomUUID();
+    await db.insert(catalogQuoteAttempts).values({
+      id: workerAttemptId,
+      requestId: found.request.id,
+      executor: "worker",
+      status: "running",
+      startedAt: options.nowMs,
+      metadataJson: JSON.stringify({
+        requestHash: found.request.requestHash,
+        transport: found.request.transport,
+        endpoint: requestData.endpoint,
+        fallbackFromAttemptId: attemptId,
+      }),
+    });
+  }
   const deliverables = terms.deliverables as string;
   const qualityStandards = terms.quality_standards as string;
   const probeInput = {
