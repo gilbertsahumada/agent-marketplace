@@ -16,6 +16,19 @@ import { clearCatalogFixtures } from "./catalog-fixtures";
 
 const VALID_CALLER_KEY = "a".repeat(64);
 
+it("keeps operational quotes behind the admin credential and kill switch", async () => {
+  const app = createWorker();
+  const operationalEnv = { ...env, SHARED_SECRET: "admin-only", BUYER_OBSERVATION_SECRET: "buyer-only",
+    KILL_SWITCH: "0", PRODUCER_KILL_SWITCH: "0", CATALOG_PROBE_ENABLED: "1",
+    CATALOG_V2_WRITES_ENABLED: "1", PROBE_GENERAL_EGRESS_APPROVED: "1" } as unknown as Env;
+  const call = (token: string, targetEnv = operationalEnv) => app.fetch(new Request("https://worker.test/__admin/catalog-quotes/42", {
+    method: "POST", headers: { authorization: `Bearer ${token}` }, body: "{}",
+  }), targetEnv);
+  expect((await call("buyer-only")).status).toBe(401);
+  expect((await call("admin-only")).status).toBe(400);
+  expect((await call("admin-only", { ...operationalEnv, KILL_SWITCH: "1" })).status).toBe(404);
+});
+
 beforeEach(async () => {
   await clearCatalogFixtures();
   await env.DB.prepare("DELETE FROM runtime_state").run();
