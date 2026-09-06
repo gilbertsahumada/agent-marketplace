@@ -47,7 +47,8 @@ export function closureState(status: string, disputed: boolean, verdict: number,
   if (status === "REJECTED") return "rejected";
   if (status === "EXPIRED") return "expired";
   if (status !== "SUBMITTED") return "not_submitted";
+  if (verdict === 1 || verdict === 2) return "settlement_available";
   if (disputed && verdict !== 1 && verdict !== 2) return "disputed";
   if (now < eligibleAt) return "review_window";
-  return verdict === 1 || verdict === 2 ? "settlement_available" : "awaiting_policy";
+  return "awaiting_policy";
 }
