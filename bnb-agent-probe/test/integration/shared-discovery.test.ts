@@ -48,9 +48,10 @@ it("revisits old schema failures once without erasing history or resetting a que
   const db = createDatabase(env.DB as unknown as D1DatabaseLike);
   await revisitOldInputFailures(db,now,1);
   const rows = await env.DB.prepare("SELECT * FROM catalog_seller_capabilities WHERE compatibilityState='pending'").all();
-  expect(rows.results).toHaveLength(1);
-  expect(rows.results[0]).toMatchObject({ state:'discovered', nextProbeAt:now, consecutiveFailures:4, compatibilityErrorCode:'NEGOTIATION_PARAMETERS_UNAVAILABLE' });
-  const key = rows.results[0]!.agentKey;
+  const results = rows.results ?? [];
+  expect(results).toHaveLength(1);
+  expect(results[0]).toMatchObject({ state:'discovered', nextProbeAt:now, consecutiveFailures:4, compatibilityErrorCode:'NEGOTIATION_PARAMETERS_UNAVAILABLE' });
+  const key = results[0]!.agentKey;
   await env.DB.prepare("UPDATE catalog_seller_capabilities SET nextProbeAt=? WHERE agentKey=?").bind(now+300000,key).run();
   await revisitOldInputFailures(db,now,1);
   expect(await env.DB.prepare("SELECT nextProbeAt FROM catalog_seller_capabilities WHERE agentKey=?").bind(key).first()).toMatchObject({nextProbeAt:now+300000});
