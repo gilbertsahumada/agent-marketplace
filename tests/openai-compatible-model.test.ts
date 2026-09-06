@@ -56,6 +56,7 @@ describe("OpenAiCompatibleModel", () => {
       temperature: 0.2,
       max_tokens: 1_500,
       stream: false,
+      enable_thinking: false,
       tool_choice: { type: "function", function: { name: "propose" } },
       tools: [{ type: "function", function: { name: "search_agents", description: "Search agents", parameters: { type: "object", properties: {} } } }],
     });

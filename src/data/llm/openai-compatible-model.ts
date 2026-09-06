@@ -137,6 +137,10 @@ export class OpenAiCompatibleModel implements ConciergeModel {
       temperature: 0.2,
       max_tokens: 1_500,
       stream: false,
+      // DashScope models default to a "thinking" pass that adds seconds and
+      // tokens; the concierge output is structured tool calls, so it is off.
+      // Other OpenAI-compatible hosts do not know the flag and must not get it.
+      ...(this.baseUrl.includes("dashscope") ? { enable_thinking: false } : {}),
     };
 
     let response: Response;
