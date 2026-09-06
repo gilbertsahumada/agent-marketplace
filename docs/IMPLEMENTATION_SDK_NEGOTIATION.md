@@ -44,7 +44,8 @@ schema failures in bounded batches after deploying a newer detector.
 ## Still pending, not claimed complete
 - [ ] Merge the two reviewed deliveries in order and apply migrations 0025 then 0026.
 - [ ] Deploy Worker/frontend and confirm live forms and ledger persistence through the UI.
-- [ ] Decide the price-limit policy: external pilot sellers quote 0.1 U, current cap is 0.01 U.
+- [x] Seller-defined pricing: remove the marketplace's 0.01 U commercial cap. Accept positive uint256 signed prices; bind each prepared payment and exact approval to that quote. The Grid seller's own price and isolated demo limits remain unchanged.
+- [ ] Deploy the pricing change and request fresh external quotes; historical pilot quotes cannot authorize payment.
 - [ ] Implement specialized task-schema adapters such as ChainHelix (not silently bypassed).
 - [ ] Add supported HTTP profiles when neither OpenAPI nor an explicit schema is available;
       a generic SDK-like health/status response alone is deliberately insufficient.
