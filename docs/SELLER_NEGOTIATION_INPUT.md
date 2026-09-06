@@ -132,8 +132,11 @@ This synchronous operation requires catalog probes/writes enabled and both kill
 switches cleared. It does not alter scheduler controls or STAGING_MANUAL_RUN.
 
 Run audits sequentially and honor 429 responses. Global and caller daily
-counters are separated by request kind, using the configured validation quota
-ceilings; agent/origin daily safeguards include both kinds and scheduler probes.
+counters reserve a separate pool for directed operator audits, excluding scheduler
+probes from that pool. Its effective ceiling is the smaller configured global
+and caller validation quota (currently 10 audits per rolling day in staging).
+The operator identity is fixed server-side, not supplied by the requester.
+Agent/origin daily safeguards include buyers, operator audits and scheduler probes.
 Fresh capability on the selected endpoint is skipped. Each execution is stored
 as a capability probe with one Worker attempt. The response contains only its
 outcome/request ID, not a buyer funding quote. Historical rows remain unchanged.

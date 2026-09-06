@@ -243,4 +243,20 @@ describe("buyer quote request ledger", () => {
     await expect(result.json()).resolves.toMatchObject({ status: "skipped", reason: "capability_fresh" });
     expect(await env.DB.prepare("SELECT COUNT(*) AS total FROM catalog_quote_requests").first()).toMatchObject({ total: 0 });
   });
+
+  it("reserves a bounded operator budget without ignoring scheduler load on the provider", async () => {
+    await env.DB.prepare("UPDATE catalog_endpoints SET originKey='shared-origin'").run();
+    await env.DB.prepare(`INSERT INTO catalog_quote_requests
+      (requestHash, agentKey, endpointKey, transport, kind, status, callerKey, createdAt)
+      VALUES ('scheduled', 'eip155:56:42', ?, 'a2a', 'capability_probe', 'failed', 'scheduler', ?)`).bind(ENDPOINT_KEY, NOW).run();
+    const options = { nowMs: NOW + 1, kind: "capability_probe" as const, caller: "operator", dailyLimit: 1, originDailyLimit: 2 };
+    const created = await createCatalogQuoteRequestResponse(createRequest(), env.DB as unknown as D1Database, options);
+    expect(created.status).toBe(201);
+    const exhausted = await createCatalogQuoteRequestResponse(createRequest(), env.DB as unknown as D1Database, { ...options, nowMs: NOW + 2 });
+    expect(exhausted.status).toBe(429);
+    await expect(exhausted.json()).resolves.toMatchObject({ code: "daily_quote_rate_limit", retryAfterSeconds: 86400 });
+    const providerLimited = await createCatalogQuoteRequestResponse(createRequest(), env.DB as unknown as D1Database, { ...options, dailyLimit: 10, nowMs: NOW + 3 });
+    expect(providerLimited.status).toBe(429);
+    await expect(providerLimited.json()).resolves.toMatchObject({ code: "origin_quote_rate_limit" });
+  });
 });
