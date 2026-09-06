@@ -47,7 +47,7 @@ function JobHistoryContent({ jobs, hireJobs, scope, olderHref, newestHref, chain
       <div className="border-t border-white/10">
         {activity?.chainId === chainId ? <p className="px-5 pt-3 text-xs text-muted-foreground">Last {activity.days} days: {activity.totals.created.toLocaleString("en")} created · {activity.totals.settled.toLocaleString("en")} settled</p> : null}
         <JobNetworkTabs agentId={agentId} chainId={chainId} walletScope={scope === "wallet"} onNetworkChange={onNetworkChange} pending={pending}>
-        <HistoryPages emptyContent={hireJobs === null ? "Indexed ledger unavailable right now." : "No indexed jobs on this network."} columns={["Job", "Status", "Buyer", "Provider", "Updated", "Details"]} key={olderHref ?? newestHref ?? "newest"} label="Jobs" {...(olderHref ? { olderHref } : {})} {...(newestHref ? { newestHref } : {})}>
+        <HistoryPages emptyContent={hireJobs === null ? "Indexed ledger unavailable right now." : "No indexed jobs on this network."} columns={["Job", "Status", "Buyer", "Provider", "Registered", "Updated", "Details"]} key={olderHref ?? newestHref ?? "newest"} label="Jobs" {...(olderHref ? { olderHref } : {})} {...(newestHref ? { newestHref } : {})}>
             {ordered.map((job) => (
               <HireJobTableRow key={job.jobId} job={{ chainId: 56, jobId: job.jobId, buyer: job.buyer, provider: job.seller, status: job.finalState, updatedAt: job.capturedAt, marketplace: false }} />
             ))}
