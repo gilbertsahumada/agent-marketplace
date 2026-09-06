@@ -8,6 +8,23 @@ function setup() {
   return port;
 }
 describe("safe closure", () => {
+  it("retains a rejected signature and permits only a fresh explicit attempt", async () => {
+    const port = setup();
+    vi.mocked(port.send).mockRejectedValueOnce(Object.assign(new Error("User rejected"), { code: 4001 }));
+    expect((await closeHireJob(binding, port, "send")).state).toBe("rejected");
+    expect(port.send).toHaveBeenCalledOnce();
+    await expect(closeHireJob(binding, port, "resume")).rejects.toThrow(/No transaction hash/);
+    const next = await closeHireJob(binding, port, "send");
+    expect(next.state).toBe("confirmed");
+    expect(next.previousAttempts).toEqual([expect.objectContaining({ state: "rejected" })]);
+    expect(port.read).toHaveBeenCalledTimes(4);
+  });
+  it("never treats a verification error after broadcast as a rejected signature", async () => {
+    const port = setup();
+    vi.mocked(port.verify).mockRejectedValueOnce(Object.assign(new Error("Rejected RPC"), { code: 4001 }));
+    expect((await closeHireJob(binding, port, "send")).state).toBe("uncertain");
+    await expect(closeHireJob(binding, port, "send")).rejects.toThrow(/already exists/);
+  });
   it("simulates, checks state twice and persists before signing", async () => {
     const port = setup();
     expect((await closeHireJob(binding, port, "send")).state).toBe("confirmed");
