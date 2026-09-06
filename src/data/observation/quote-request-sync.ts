@@ -79,7 +79,9 @@ async function requestWorker(
         ...(init.headers ?? {}),
         "x-marketplace-caller": callerFingerprint("quote-request-caller", options.caller, secret),
       },
-      signal: AbortSignal.timeout(10_000),
+      // Negotiation plus independent chain/signature verification must finish
+      // before the proxy stops waiting. Reads retain their shorter deadline.
+      signal: AbortSignal.timeout(init.method === "POST" ? 60_000 : 10_000),
     });
     return { status: response.status, body: await response.json().catch(() => null) };
   } catch { return null; }
