@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { CategoryCard } from "./category-card";
+import { ConciergeChat } from "./concierge-chat";
 import { FunnelSection } from "./funnel-section";
 import { HiringStage } from "./hiring-stage";
 import { NetworkAwareLandingHero } from "./network-aware-landing-hero";
@@ -9,6 +10,7 @@ import type { AgentCardViewModel, CategoryCardViewModel, EvidenceStepViewModel, 
 
 export function MarketplaceLanding({
   categories,
+  conciergeEnabled = false,
   demoEnabled,
   featuredAgents,
   funnel,
@@ -18,6 +20,7 @@ export function MarketplaceLanding({
   qualifiedSeller,
 }: {
   categories: CategoryCardViewModel[];
+  conciergeEnabled?: boolean;
   demoEnabled: boolean;
   featuredAgents: AgentCardViewModel[];
   funnel: FunnelSectionViewModel | null;
@@ -90,7 +93,7 @@ export function MarketplaceLanding({
             </p>
           </div>
           <div className="mt-12">
-            <HiringStage agent={stageAgent} />
+            <HiringStage agent={stageAgent} brief={conciergeEnabled ? <ConciergeChat compact /> : undefined} />
           </div>
         </div>
       </section>

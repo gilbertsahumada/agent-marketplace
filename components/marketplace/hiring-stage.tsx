@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { DEFAULT_STAGE_AGENT, RESTING_ELAPSED, STEP_TITLES, stageFrame, type StageAgent, type StageFrame } from "./hiring-stage-model";
 
@@ -18,7 +18,7 @@ export interface HiringStageAgent extends StageAgent {
 // timeline runs. State updates are throttled to 15 fps and pause when the
 // stage is off-screen or the tab is hidden; reduced motion keeps the
 // finished scene.
-export function HiringStage({ agent = null }: { agent?: HiringStageAgent | null }) {
+export function HiringStage({ agent = null, brief = null }: { agent?: HiringStageAgent | null; brief?: ReactNode }) {
   const stageAgent = agent ?? DEFAULT_STAGE_AGENT;
   const [frame, setFrame] = useState<StageFrame>(() => stageFrame(RESTING_ELAPSED, stageAgent, () => 0));
 
@@ -58,19 +58,24 @@ export function HiringStage({ agent = null }: { agent?: HiringStageAgent | null 
           <strong>hire</strong>
           <span className="text-muted-foreground">· one brief, one escrow, one receipt</span>
         </span>
-        <span className="hiring-stage__phase">{frame.briefDone ? "running the hire" : "writing the brief"}</span>
+        <span className="hiring-stage__phase">{brief ? "ask the concierge" : frame.briefDone ? "running the hire" : "writing the brief"}</span>
       </div>
 
       <div className="hiring-stage__body">
-        <section aria-label="Your brief" className="hiring-stage__brief">
-          <p className="hiring-stage__eyebrow">Your brief · plain words</p>
-          <dl>
-            <div><dt>What I need</dt><dd>{frame.brief.objective}</dd></div>
-            <div><dt>What I get back</dt><dd>{frame.brief.deliverable}</dd></div>
-            <div><dt>How I will judge it</dt><dd>{frame.brief.acceptance}</dd></div>
-          </dl>
-          <p className="hiring-stage__meta">{frame.brief.meta}</p>
-        </section>
+        {brief ? (
+          // A plain wrapper: the chat brings its own "Your brief" landmark.
+          <div className="hiring-stage__brief">{brief}</div>
+        ) : (
+          <section aria-label="Your brief" className="hiring-stage__brief">
+            <p className="hiring-stage__eyebrow">Your brief · plain words</p>
+            <dl>
+              <div><dt>What I need</dt><dd>{frame.brief.objective}</dd></div>
+              <div><dt>What I get back</dt><dd>{frame.brief.deliverable}</dd></div>
+              <div><dt>How I will judge it</dt><dd>{frame.brief.acceptance}</dd></div>
+            </dl>
+            <p className="hiring-stage__meta">{frame.brief.meta}</p>
+          </section>
+        )}
 
         <ol aria-label="What happens for you" className="hiring-stage__timeline" style={{ "--rail": frame.rail } as React.CSSProperties}>
           {frame.steps.map((step, index) => (
