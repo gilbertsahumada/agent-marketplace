@@ -7,6 +7,7 @@ import { discoverNegotiationInput, probeA2aSeller, probeErc8183HttpSeller, probe
 import { NegotiationRequest } from "@bnbagent/sdk/erc8183";
 import { buildContractRequest } from "../../../src/shared/negotiation-input";
 import { recordCompatibility, COMPATIBILITY_TTL_MS } from "../catalog/compatibility";
+import { revisitOldInputFailures } from "../catalog/rediscover-inputs";
 import { needsProviderChange } from "../catalog/sweep-metrics";
 import type { Env, QueueProducer } from "../types";
 import type { WorkerConfig } from "../config";
@@ -80,6 +81,7 @@ export async function enqueueDueCatalogCapabilities(
   if (!Number.isSafeInteger(bootstrapLimit) || bootstrapLimit < 0 || bootstrapLimit > 100) throw new Error("CATALOG_COMPATIBILITY_BOOTSTRAP_BATCH_SIZE");
   if (!Number.isSafeInteger(concurrency) || concurrency < 1) throw new Error("CATALOG_QUOTE_CONCURRENCY");
   const db = createDatabase(dbBinding);
+  await revisitOldInputFailures(db, input.nowMs, bootstrapLimit);
   // Repair stale scheduling markers from earlier discovery runs without
   // manufacturing new quote evidence or extending its expiry.
   await db.run(sql`UPDATE catalog_seller_capabilities SET state='ready', updatedAt=${input.nowMs}
@@ -284,7 +286,7 @@ export async function runCatalogCapabilityProbe(
   try {
     contract = await discoverNegotiationInput({ ...target, request: {}, fetch: dependencies.fetchImpl ?? fetch, timeoutMs: 5000, maxResponseBytes: 32768 });
     const schemaHash = await sha256(contract);
-    await recordCompatibility(db, target, now(), { schemaHash });
+    await recordCompatibility(db, target, now(), { schemaHash, provenance: contract.provenance });
     if (quoteFresh && schemaHash === capability.schemaHash) {
       await db.update(catalogSellerCapabilities).set({ nextProbeAt: Math.min(capability.capabilityExpiresAt!, now() + COMPATIBILITY_TTL_MS) })
         .where(and(eq(catalogSellerCapabilities.agentKey, work.agentKey), eq(catalogSellerCapabilities.endpointKey, work.endpointKey)));
