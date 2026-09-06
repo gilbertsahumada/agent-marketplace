@@ -29,6 +29,8 @@ export interface HireJob {
   submittedAt: string | null;
   marketplace: boolean;
   updatedAt: string;
+  /** Creation event timestamp, not the time the indexer discovered this job. */
+  registeredAt?: string | null;
 }
 
 export interface HireJobEvent {
