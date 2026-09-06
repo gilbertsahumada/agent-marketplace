@@ -470,6 +470,30 @@ export function createWorker(dependencies: WorkerDependencies = {}): WorkerEntry
         }
         return response;
       }
+      if (request.method === "POST" && /^\/__admin\/catalog-quotes\/[1-9]\d{0,19}$/.test(url.pathname) && url.search === "") {
+        if (env.SHARED_SECRET === undefined || config.killSwitch || config.producerKillSwitch
+          || !config.catalogProbeEnabled || !config.catalogV2WritesEnabled) return errorResponse("not_found", 404);
+        if (!await bearerMatches(request.headers.get("authorization"), env.SHARED_SECRET)) return errorResponse("unauthorized", 401);
+        const { createCatalogQuoteRequestResponse, catalogQuoteFallbackResponse } = await import("./routes/catalog-quotes");
+        const created = await createCatalogQuoteRequestResponse(request, env.DB, {
+          nowMs: now(), caller: "operator", kind: "capability_probe",
+          dailyLimit: config.catalogValidationRequestsPerDay,
+          callerDailyLimit: config.catalogValidationRequestsPerCallerDay,
+          agentDailyLimit: config.catalogValidationRequestsPerAgentDay,
+          originDailyLimit: config.catalogValidationRequestsPerOriginDay,
+        });
+        if (!created.ok) return created;
+        const registered = await created.json() as { status?: string; attemptId?: string; request?: unknown };
+        if (!registered.attemptId) return Response.json(registered, { headers: { "cache-control": "no-store" } });
+        const result = await catalogQuoteFallbackResponse(new Request(request.url, {
+          method: "POST", body: JSON.stringify(registered.request),
+        }), env.DB, registered.attemptId, { nowMs: now(), env, config, operational: true, expectedAgentId: url.pathname.split("/").at(-1)! });
+        const outcome = await result.json() as { status?: string; requestId?: number; error?: string; code?: string };
+        // Operational evidence must never be returned as a buyer's funding quote.
+        return Response.json({ status: outcome.status, requestId: outcome.requestId, error: outcome.error, code: outcome.code }, {
+          status: result.status, headers: { "cache-control": "no-store" },
+        });
+      }
       if (request.method === "GET" && url.pathname === "/__admin/catalog-operations" && url.search === "") {
         if (env.SHARED_SECRET === undefined) return errorResponse("not_found", 404);
         if (!await bearerMatches(request.headers.get("authorization"), env.SHARED_SECRET)) {

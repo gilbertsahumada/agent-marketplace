@@ -197,6 +197,50 @@ describe("buyer quote request ledger", () => {
       { nowMs: NOW + 1, caller: "caller:two", originDailyLimit: 1 },
     );
     expect(limited.status).toBe(429);
-    await expect(limited.json()).resolves.toMatchObject({ code: "origin_quote_rate_limit" });
+    expect(limited.headers.get("retry-after")).toBe("86400");
+    await expect(limited.json()).resolves.toMatchObject({ code: "origin_quote_rate_limit", retryAfterSeconds: 86400 });
+  });
+
+  it("waits for every exhausted scope and releases the rolling window at its boundary", async () => {
+    await createCatalogQuoteRequestResponse(createRequest(), env.DB as unknown as D1Database, { nowMs: NOW, caller: "old" });
+    await createCatalogQuoteRequestResponse(createRequest(), env.DB as unknown as D1Database, { nowMs: NOW + 3600000, caller: "buyer" });
+    const options = { nowMs: NOW + 7200000, caller: "buyer", dailyLimit: 2, callerDailyLimit: 1 };
+    const blocked = await createCatalogQuoteRequestResponse(createRequest(), env.DB as unknown as D1Database, options);
+    expect(blocked.status).toBe(429);
+    expect(blocked.headers.get("retry-after")).toBe("82800");
+    const released = await createCatalogQuoteRequestResponse(createRequest(), env.DB as unknown as D1Database, { ...options, nowMs: NOW + 3600000 + 86400000 });
+    expect(released.status).toBe(201);
+  });
+
+  it("separates operational quota and history while preserving the shared provider limit", async () => {
+    await env.DB.prepare("UPDATE catalog_endpoints SET originKey='shared-origin'").run();
+    await createCatalogQuoteRequestResponse(createRequest(), env.DB as unknown as D1Database, { nowMs: NOW, caller: "buyer", callerDailyLimit: 1 });
+    const operation = await createCatalogQuoteRequestResponse(createRequest(), env.DB as unknown as D1Database, {
+      nowMs: NOW + 1, caller: "buyer", kind: "capability_probe", callerDailyLimit: 1, originDailyLimit: 2,
+    });
+    expect(operation.status).toBe(201);
+    const registered = await operation.json() as { attemptId: string; request: unknown };
+    expect(await env.DB.prepare("SELECT executor FROM catalog_quote_attempts WHERE id=?").bind(registered.attemptId).first()).toMatchObject({ executor: "worker" });
+    const forbidden = await catalogQuoteFallbackResponse(new Request("https://worker.test/catalog-quotes/42/attempt/" + registered.attemptId + "/fallback", { method: "POST", body: JSON.stringify(registered.request) }), env.DB as unknown as D1Database, registered.attemptId, { nowMs: NOW + 2, env: env as unknown as Env, config: loadConfig({ KILL_SWITCH: "0", PRODUCER_KILL_SWITCH: "0" }) });
+    expect(forbidden.status).toBe(409);
+    await expect(forbidden.json()).resolves.toMatchObject({ error: "invalid_request_kind" });
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("unavailable", { status: 404 })));
+    const executed = await catalogQuoteFallbackResponse(new Request("https://worker.test/__admin/catalog-quotes/42", { method: "POST", body: JSON.stringify(registered.request) }), env.DB as unknown as D1Database, registered.attemptId, { nowMs: NOW + 2, operational: true, env: env as unknown as Env, config: loadConfig({ KILL_SWITCH: "0", PRODUCER_KILL_SWITCH: "0" }) });
+    expect(executed.status).toBe(502);
+    expect(await env.DB.prepare("SELECT status, executor FROM catalog_quote_attempts WHERE id=?").bind(registered.attemptId).first()).toMatchObject({ status: "failed", executor: "worker" });
+    expect(await env.DB.prepare("SELECT COUNT(*) AS total FROM catalog_quote_attempts").first()).toMatchObject({ total: 2 });
+    const limited = await createCatalogQuoteRequestResponse(createRequest(), env.DB as unknown as D1Database, { nowMs: NOW + 2, caller: "another", originDailyLimit: 2 });
+    expect(limited.status).toBe(429);
+    const history = await catalogQuoteHistoryResponse(new Request("https://worker.test/catalog-quotes/42"), env.DB as unknown as D1Database, "42", NOW + 3);
+    await expect(history.json()).resolves.toMatchObject({ counts: { buyerRequests: 1, capabilityProbes: 1 } });
+  });
+
+  it("does not repeat a fresh capability probe or count it as a buyer request", async () => {
+    await env.DB.prepare(`INSERT INTO catalog_seller_capabilities
+      (agentKey, endpointKey, transport, state, capabilityExpiresAt, createdAt, updatedAt)
+      VALUES ('eip155:56:42', ?, 'a2a', 'ready', ?, ?, ?)`).bind(ENDPOINT_KEY, NOW + 86400000, NOW, NOW).run();
+    const result = await createCatalogQuoteRequestResponse(createRequest(), env.DB as unknown as D1Database, { nowMs: NOW + 1, kind: "capability_probe", caller: "operator" });
+    await expect(result.json()).resolves.toMatchObject({ status: "skipped", reason: "capability_fresh" });
+    expect(await env.DB.prepare("SELECT COUNT(*) AS total FROM catalog_quote_requests").first()).toMatchObject({ total: 0 });
   });
 });

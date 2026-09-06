@@ -116,6 +116,28 @@ targets and no redirects. Per-minute limits are 120 globally, 10 per caller and
 also retains its own rate limits. Identical-request deduplication includes the
 caller and endpoint to prevent sharing another buyer's pending request.
 
+Quote quotas use a rolling 24-hour window. On HTTP 429, respect
+`Retry-After` / `retryAfterSeconds`; these reflect the exhausted quota, not a
+fixed one-minute retry. Marketplace capability audits are recorded separately
+from buyer requests and do not consume the buyer caller quota. Provider-level
+daily safeguards still count both types of request. A capability audit never
+replaces a fresh buyer quote for funding.
+
+### Operator audits
+
+Use `POST /__admin/catalog-quotes/{agentId}` with the administrative
+`SHARED_SECRET`, never the browser or buyer credential. Send the same discovered
+schemaVersion 2 parameters, endpointKey and contractHash as the buyer form.
+This synchronous operation requires catalog probes/writes enabled and both kill
+switches cleared. It does not alter scheduler controls or STAGING_MANUAL_RUN.
+
+Run audits sequentially and honor 429 responses. Global and caller daily
+counters are separated by request kind, using the configured validation quota
+ceilings; agent/origin daily safeguards include both kinds and scheduler probes.
+Fresh capability on the selected endpoint is skipped. Each execution is stored
+as a capability probe with one Worker attempt. The response contains only its
+outcome/request ID, not a buyer funding quote. Historical rows remain unchanged.
+
 Seller HTTP 5xx is classified as `SELLER_SERVER_ERROR`, distinct from network
 unreachability. An Agent Card response alone is not successful negotiation.
 
