@@ -81,10 +81,6 @@ export function HireLedgerPage({ chainId, summary, page, activity = null, before
         </div>
       </div>
 
-      {activity !== null
-        ? <div className="mt-6"><HireActivityWindow activity={activity} /></div>
-        : (summary !== null || page !== null) && <p className="mt-6 text-sm text-muted-foreground" role="status">Recent activity temporarily unavailable.</p>}
-
       <section className="mt-4" aria-label="Indexed jobs">
         <div className="mb-4 flex items-center gap-3">
           <label className="relative block w-full min-w-0"><span className="sr-only">Search this page</span><Search aria-hidden="true" className="absolute top-1/2 left-4 size-4 -translate-y-1/2 text-zinc-500" /><Input className="catalog-search-input h-10 pl-11 focus-visible:ring-0" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search this page by agent, job ID, wallet, state or origin" maxLength={120} disabled={!page?.jobs.length} /></label>
@@ -116,6 +112,10 @@ export function HireLedgerPage({ chainId, summary, page, activity = null, before
         </CardFooter>}
         </Card>
       </section>
+
+      {activity !== null
+        ? <div className="mt-6"><HireActivityWindow activity={activity} /></div>
+        : (summary !== null || page !== null) && <p className="mt-6 text-sm text-muted-foreground" role="status">Recent activity temporarily unavailable.</p>}
 
       <Card className="jobs-card mt-6 text-muted-foreground">
         <CardContent>

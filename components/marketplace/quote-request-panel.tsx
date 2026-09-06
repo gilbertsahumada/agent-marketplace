@@ -352,6 +352,7 @@ function SellerQuoteSession({ agentId, agentName, onSuccess, checkCompatibilityF
       router.refresh();
       setMessage(code === "quote_service_unavailable"
         ? "Quote service is temporarily unavailable. Try again later."
+        : /QUOTE_SIGNATURE|QUOTE_SIGNER/i.test(code) ? "The quote signature could not be verified. Hiring remains blocked. Try another agent with a verified quote."
         : /EXPIRED/i.test(code) ? "Quote expired. Request again."
           : /RATE_LIMIT|rate_limit/i.test(code) ? "Too many attempts. Please try again later."
             : /SCHEMA_CHANGED/i.test(code) ? "Requirements changed. Reload the seller parameters."

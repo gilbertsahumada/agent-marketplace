@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, CircleAlert, Clock3, Copy, ExternalLink, FileClock, LoaderCircle, RotateCw } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -88,7 +88,8 @@ export function QuoteHistory({ agentId }: { agentId: string }) {
   const [error, setError] = useState(false);
   const [page, setPage] = useState(1);
   const [reload, setReload] = useState(0);
-  useEffect(() => { setData(null); }, [agentId, page]);
+  const [expandedRequest, setExpandedRequest] = useState<number | null>(null);
+  useEffect(() => { setData(null); setExpandedRequest(null); }, [agentId, page]);
   const processing = data?.requests?.some(request => request.status === "pending" || request.status === "running") ?? false;
   useEffect(() => {
     if (!processing || error) return;
@@ -148,8 +149,10 @@ export function QuoteHistory({ agentId }: { agentId: string }) {
             // here makes the visible executor/result match the current state.
             const latestAttempt = request.attempts[0];
             const created = new Date(request.createdAt).toISOString();
+            const expanded = expandedRequest === request.id;
             return (
-              <TableRow key={request.id}>
+              <Fragment key={request.id}>
+              <TableRow>
                 <TableCell className="px-5 py-4"><span className="font-medium">#{request.id}</span><span className="block text-xs text-muted-foreground">{request.kind === "capability_probe" ? "Capacity check" : "Buyer quote"}</span></TableCell>
                 <TableCell className="px-5"><Badge className={style.className} variant="outline"><Icon aria-hidden="true" className={style.label === "Processing" ? "animate-spin motion-reduce:animate-none" : ""} />{style.label}</Badge></TableCell>
                 <TableCell className="px-5 uppercase text-xs text-muted-foreground">{request.transport.replace("erc8183_http", "HTTP")}</TableCell>
@@ -158,9 +161,22 @@ export function QuoteHistory({ agentId }: { agentId: string }) {
                       <Clock3 aria-hidden="true" className="size-3" />{relativeAge(created)}
                     </time>
                 </TableCell>
-                <TableCell className="px-5"><details className="group/quote">
-                  <summary className="flex w-fit cursor-pointer list-none items-center gap-2 rounded-md border border-input px-3 py-1.5 text-xs font-medium hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring">View details<ChevronDown aria-hidden="true" className="size-3 transition-transform group-open/quote:rotate-180 motion-reduce:transition-none" /></summary>
-                  <div className="mt-3 flex max-w-80 flex-col gap-2 whitespace-normal text-xs text-muted-foreground">
+                <TableCell className="px-5"><Button variant="outline" size="sm" type="button"
+                  aria-label={`${expanded ? "Hide" : "View"} details for quote ${request.id}`}
+                  aria-expanded={expanded} aria-controls={`quote-details-${request.id}`}
+                  onClick={() => setExpandedRequest(expanded ? null : request.id)}>
+                  {expanded ? "Hide details" : "View details"}<ChevronDown aria-hidden="true" data-icon="inline-end" style={{ transform: expanded ? "rotate(180deg)" : undefined }} />
+                </Button></TableCell>
+              </TableRow>
+              {expanded ? <TableRow><TableCell colSpan={5} className="px-5 py-4 whitespace-normal">
+                <div id={`quote-details-${request.id}`} role="region" aria-label={`Quote ${request.id} details`} className="flex flex-col gap-4">
+                  <p className="text-sm">{request.errorCode === "QUOTE_SIGNATURE"
+                    ? "The quote signature could not be verified. Hiring remains blocked."
+                    : request.errorCode === "SELLER_TIMEOUT" ? "The seller did not respond in time. No quote was verified."
+                      : request.status === "succeeded" ? "Quote verified. Funding requires a fresh quote for your request."
+                        : request.errorCode === "QUOTE_ATTEMPT_INTERRUPTED" ? "This attempt was interrupted before verification finished."
+                          : `Quote ${style.label.toLowerCase()}.`}</p>
+                  <div className="grid min-w-0 gap-4 text-xs text-muted-foreground sm:grid-cols-2 lg:grid-cols-3">
                     {request.requestHash ? (
                       <span className="inline-flex min-w-0 items-center gap-1">
                         <code className="truncate" title={request.requestHash}>Request {shortHash(request.requestHash)}</code>
@@ -175,7 +191,7 @@ export function QuoteHistory({ agentId }: { agentId: string }) {
                         target="_blank"
                         title={request.endpoint}
                       >
-                        <span className="truncate">{request.endpoint}</span><ExternalLink aria-hidden="true" className="size-3 shrink-0" />
+                        <span className="truncate">Seller endpoint · {new URL(request.endpoint).hostname}</span><ExternalLink aria-hidden="true" className="size-3 shrink-0" />
                       </a>
                     ) : null}
                     {request.provider ? (
@@ -192,17 +208,19 @@ export function QuoteHistory({ agentId }: { agentId: string }) {
                         <CopyReference label="provider address" value={request.provider} />
                       </span>
                     ) : null}
-                  </div>
-                <span className="mt-2 block text-xs text-muted-foreground">
+                <span className="flex flex-col gap-1 text-xs text-muted-foreground">
                   {latestAttempt ? (
                     <>
-                      <span className="block uppercase tracking-wide">{latestAttempt.outcome === "fallback" ? "Worker fallback" : latestAttempt.executor}</span>
-                      <span className="block">{latestAttempt.durationMs ?? "—"} ms{latestAttempt.httpStatus !== null ? ` · HTTP ${latestAttempt.httpStatus}` : ""}{latestAttempt.errorCode ? ` · ${latestAttempt.errorCode}` : ""}</span>
+                      <span>{latestAttempt.executor === "browser" ? "Browser attempt" : "Marketplace attempt"}</span>
+                      <span>{latestAttempt.durationMs ?? "—"} ms{latestAttempt.httpStatus !== null ? ` · HTTP ${latestAttempt.httpStatus}` : ""}</span>
+                      {latestAttempt.errorCode ? <code className="break-all">{latestAttempt.errorCode}</code> : null}
                     </>
                   ) : "—"}
                 </span>
-                </details></TableCell>
-              </TableRow>
+                  </div>
+                </div>
+              </TableCell></TableRow> : null}
+              </Fragment>
             );
           })}
         </TableBody></Table>

@@ -472,6 +472,40 @@ function Erc8183BrowserDemo({ mode, deployment, agentName, embedded = false, rec
     return current;
   }, [jobsBase, quoteRequestId, journalRestored, journal?.quoteRequestId]);
 
+  // Notification delivery and on-chain execution are independent. Poll only
+  // the active funded hire; never replay a payment or notification here.
+  useEffect(() => {
+    if (!journal?.jobId || job?.status !== "FUNDED" || !account ||
+      journal.buyer.toLowerCase() !== account.toLowerCase()) return;
+    const controller = new AbortController();
+    const requestId = journalRestored ? journal.quoteRequestId : quoteRequestId;
+    const url = `${jobsBase}/${journal.jobId}${requestId ? `?quoteRequestId=${requestId}` : ""}`;
+    let timer: ReturnType<typeof setTimeout>;
+    let attempts = 0;
+    const refresh = async () => {
+      try {
+        const response = await fetch(url, { cache: "no-store", signal: AbortSignal.any([controller.signal, AbortSignal.timeout(8_000)]) });
+        if (!response.ok) throw new Error("Tracking unavailable");
+        const { job: current } = await response.json() as { job: Erc8183JobFacts | null };
+        if (controller.signal.aborted) return;
+        if (current && current.jobId === journal.jobId && current.chainId === deployment.chainId &&
+          current.buyer.toLowerCase() === account.toLowerCase() &&
+          current.provider.toLowerCase() === deployment.seller.toLowerCase()) {
+          setJob(current);
+          if (current.status !== "FUNDED") {
+            setError(null);
+            return;
+          }
+        }
+      } catch {
+        // Keep the last verified state; a transport failure is not a job failure.
+      }
+      if (!controller.signal.aborted && ++attempts < 24) timer = setTimeout(refresh, 5_000);
+    };
+    timer = setTimeout(refresh, 2_000);
+    return () => { controller.abort(); clearTimeout(timer); };
+  }, [account, deployment, jobsBase, journal?.jobId, journal?.buyer, journal?.quoteRequestId, journalRestored, quoteRequestId, job?.status]);
+
   useEffect(() => {
     setWalletHydrated(true);
   }, []);
