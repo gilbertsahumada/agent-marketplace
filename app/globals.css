@@ -951,9 +951,15 @@ body {
   height: 1px;
 }
 
-:focus-visible {
-  outline: 2px solid var(--ring);
-  outline-offset: 3px;
+/* Keyboard focus for elements without a ring of their own (links, summaries,
+   table containers). It lives in the base layer so a component's own
+   `outline-none` + `focus-visible:ring-*` utilities win; unlayered, it used to
+   stack a second yellow border on every input and button. */
+@layer base {
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 3px;
+  }
 }
 
 .catalog-search-input:focus-visible {
