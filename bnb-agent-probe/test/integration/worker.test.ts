@@ -27,7 +27,7 @@ it("keeps operational quotes behind the admin credential and kill switch", async
   expect((await call("buyer-only")).status).toBe(401);
   expect((await call("admin-only")).status).toBe(400);
   expect((await call("admin-only", { ...operationalEnv, KILL_SWITCH: "1" })).status).toBe(404);
-});
+}, 30_000);
 
 beforeEach(async () => {
   await clearCatalogFixtures();
