@@ -246,6 +246,14 @@ describe("AddressLink", () => {
 });
 
 describe("HireLedgerPage", () => {
+  it("links a pending withdrawal to the correct network and removes the action after withdrawal", () => {
+    const records = { chainId: 97 as const, jobs: [job("1066", { chainId: 97, expiresAt: "2000-01-01T00:00:00Z" })], nextBefore: null };
+    const view = render(createElement(HireLedgerPage, { chainId: 97, summary: null, page: records }));
+    expect(screen.getByRole("link", { name: "Withdrawal available" })).toHaveAttribute("href", "/jobs/testnet/1066");
+    view.rerender(createElement(HireLedgerPage, { chainId: 97, summary: null, page: { ...records, jobs: [{ ...records.jobs[0]!, status: "EXPIRED" }] } }));
+    expect(screen.getByText("Deposit withdrawn")).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Withdrawal available" })).not.toBeInTheDocument();
+  });
   it("finds an exact Testnet job outside the loaded page", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(Response.json({ jobId: "1066", chainId: 97 }));
     try {
@@ -275,7 +283,7 @@ describe("HireLedgerPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Job" }));
     expect(ids()).toEqual(["Job #9", "Job #100"]);
     expect(screen.getByRole("columnheader", { name: "Job" })).toHaveAttribute("aria-sort", "ascending");
-    for (const label of ["Agent", "Current state", "Buyer", "Provider", "Origin", "Last observed"]) {
+    for (const label of ["Agent", "Current state", "Next step", "Buyer", "Provider", "Origin", "Last observed"]) {
       fireEvent.click(screen.getByRole("button", { name: label }));
       expect(screen.getByRole("columnheader", { name: label })).toHaveAttribute("aria-sort", "ascending");
       fireEvent.click(screen.getByRole("button", { name: label }));

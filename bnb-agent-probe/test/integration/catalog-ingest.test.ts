@@ -70,8 +70,8 @@ describe("resumable catalog discovery ingest", () => {
     const testnet = { ...agent("2177"), chainId: 97 as const };
     await expect(enqueueCatalogDiscoveryPage(db, [testnet], { nowMs: NOW, source: "sweep", cursor: 10, cursorKey: "catalog_sweep_offset" })).rejects.toThrow("CATALOG_CURSOR_NETWORK_MISMATCH");
     await enqueueCatalogDiscoveryPage(db, [testnet], { chainId: 97, nowMs: NOW, source: "sweep", cursor: 10, cursorKey: "catalog_sweep_offset", headerHighWater: "2177" });
-    expect(await env.DB.prepare("SELECT integerValue FROM runtime_state WHERE key = ?").bind("catalog_sweep_offset:97").first("integerValue")).toBe(10);
-    expect(await env.DB.prepare("SELECT textValue FROM runtime_state WHERE key = ?").bind("header_high_water:97").first("textValue")).toBe("2177");
+    expect((await env.DB.prepare("SELECT integerValue FROM runtime_state WHERE key = ?").bind("catalog_sweep_offset:97").first<{ integerValue: number }>())?.integerValue).toBe(10);
+    expect((await env.DB.prepare("SELECT textValue FROM runtime_state WHERE key = ?").bind("header_high_water:97").first<{ textValue: string }>())?.textValue).toBe("2177");
   });
   it("keeps identical numeric IDs separate across networks and fetches the task chain", async () => {
     await clearCatalogFixtures();

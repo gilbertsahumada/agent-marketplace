@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import { formatUnits } from "viem";
+import { formatTokenAmount } from "@/src/business/entities/token-amount";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardContent, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -51,7 +51,7 @@ function Panel({ jobId }: { jobId: string }) {
         <Badge variant="outline">{report.refundAvailable ? "Deadline passed · deposit available" : labels[report.closure]}</Badge>
         {report.refundAvailable ? <>
           <p className="text-sm text-muted-foreground">No delivery was submitted before the deadline. Your deposit is still in escrow. Withdraw it to return the funds to your wallet.</p>
-          <p className="text-sm">Available to withdraw <span className="ml-2 font-medium">{formatUnits(BigInt(report.budgetRaw!), 18)} U</span></p>
+          <p className="text-sm">Available to withdraw <span className="ml-2 font-medium">{formatTokenAmount(report.budgetRaw!, 18)} U</span></p>
         </> : report.closure === "not_submitted" ? <p className="text-sm text-muted-foreground">The provider has not submitted a delivery yet.</p> : null}
       </div>
       {report.refundAvailable === true || process.env.NEXT_PUBLIC_TESTNET_JOB_CLOSURE_ENABLED === "true"

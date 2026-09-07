@@ -12,6 +12,7 @@ import { JobDeliveryPanel } from "./job-delivery-panel";
 import { TestnetClosurePanel } from "./testnet-closure-panel";
 import { formatTokenAmount } from "@/src/business/entities/token-amount";
 import { ERC8183_MAINNET } from "@/src/mainnet/contracts";
+import { JobNotificationStatus } from "./job-notification-status";
 
 const EXPLORER_LINK = "inline-flex items-center gap-1.5 text-signal underline decoration-signal/30 underline-offset-4 hover:decoration-signal focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-signal";
 
@@ -58,6 +59,7 @@ export function HireJobLedgerPage({ job, agentResolution }: { job: HireJobDetail
       </div>
       <h1 className="mt-5 text-3xl font-light tracking-tight text-white sm:text-5xl">ERC-8183 Job #{job.jobId}</h1>
       {job.chainId === 56 ? <JobDeliveryPanel jobId={job.jobId} /> : <TestnetClosurePanel jobId={job.jobId} />}
+      <JobNotificationStatus chainId={job.chainId} jobId={job.jobId} />
 
       <Card className="mt-8">
         <CardHeader><LedgerCardTitle>Indexed job state</LedgerCardTitle><CardDescription>Read from the Commerce contract by the observation Worker.</CardDescription></CardHeader>

@@ -16,10 +16,11 @@ import { HireActivityWindow } from "./hire-activity-window";
 import { jobStatusLabel, networkSlug } from "./hire-job-rows";
 import { JobAgentCell } from "./job-agent-cell";
 import { Breadcrumb } from "./page-primitives";
+import { jobNextStep } from "@/src/business/entities/job-next-step";
 
 const DATE = new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", timeZone: "UTC" });
 const STATUSES = ["OPEN", "FUNDED", "SUBMITTED", "COMPLETED", "REJECTED", "EXPIRED"] as const;
-const COLUMNS = ["Job", "Agent", "Current state", "Buyer", "Provider", "Origin", "Last observed"] as const;
+const COLUMNS = ["Job", "Agent", "Current state", "Next step", "Buyer", "Provider", "Origin", "Last observed"] as const;
 type SortColumn = typeof COLUMNS[number];
 
 function jobsHref(chainId: HireChainId, scope: { provider?: HireAddress; before?: string; days?: number } = {}): string {
@@ -62,6 +63,12 @@ export function HireLedgerPage({ chainId, summary, page, activity = null, activi
   const retryHref = jobsHref(chainId, { ...periodScope, ...(before ? { before } : {}) });
   const otherChain = chainId === 56 ? 97 : 56;
   const [search, setSearch] = useState("");
+  const [now, setNow] = useState<number | null>(null);
+  useEffect(() => {
+    setNow(Date.now());
+    const timer = setInterval(() => setNow(Date.now()), 30_000);
+    return () => clearInterval(timer);
+  }, []);
   const [sort, setSort] = useState<{ column: SortColumn; ascending: boolean }>({ column: "Job", ascending: false });
   const query = search.trim().toLowerCase().replace(/^#/, "");
   const exactId = /^[1-9]\d{0,15}$/.test(query) ? query : null;
@@ -89,7 +96,7 @@ export function HireLedgerPage({ chainId, summary, page, activity = null, activi
     }, 300);
     return () => { active = false; clearTimeout(timer); controller.abort(); };
   }, [chainId, exactId, loadedExact, lookupKey]);
-  const jobs = page?.jobs.filter((job) => [job.jobId, job.buyer, job.provider, job.status, job.marketplace ? "marketplace" : "unattributed",
+  const jobs = page?.jobs.filter((job) => [job.jobId, job.buyer, job.provider, job.status, jobNextStep(job, now).label, job.marketplace ? "marketplace" : "unattributed",
     ...(agentResolutions[`${chainId}:${job.jobId}`]?.agents.flatMap(agent => [agent.agentId, agent.name ?? ""]) ?? []),
   ].some((value) => value.toLowerCase().includes(query))) ?? [];
   const agentName = (id: string) => agentResolutions[`${chainId}:${id}`]?.agents.map(agent => agent.name || agent.agentId).join(" ") ?? "";
@@ -99,6 +106,7 @@ export function HireLedgerPage({ chainId, summary, page, activity = null, activi
       case "Job": order = BigInt(a.jobId) < BigInt(b.jobId) ? -1 : BigInt(a.jobId) > BigInt(b.jobId) ? 1 : 0; break;
       case "Agent": order = agentName(a.jobId).localeCompare(agentName(b.jobId), "en", { numeric: true }); break;
       case "Current state": order = jobStatusLabel(a.status).localeCompare(jobStatusLabel(b.status)); break;
+      case "Next step": order = jobNextStep(a, now).label.localeCompare(jobNextStep(b, now).label); break;
       case "Buyer": order = a.buyer.toLowerCase().localeCompare(b.buyer.toLowerCase()); break;
       case "Provider": order = a.provider.toLowerCase().localeCompare(b.provider.toLowerCase()); break;
       case "Origin": order = (a.marketplace ? "Marketplace" : "Unattributed").localeCompare(b.marketplace ? "Marketplace" : "Unattributed"); break;
@@ -155,12 +163,17 @@ export function HireLedgerPage({ chainId, summary, page, activity = null, activi
                   <TableHead scope="row"><Link className="font-hash hover:text-signal" href={`/jobs/${networkSlug(chainId)}/${job.jobId}`}><span className="sr-only">Job </span>#{job.jobId}</Link></TableHead>
                   <TableCell><JobAgentCell resolution={agentResolutions[`${chainId}:${job.jobId}`]} /></TableCell>
                   <TableCell><Badge variant="outline" className={`jobs-state jobs-state--${job.status.toLowerCase()}`}>{jobStatusLabel(job.status)}</Badge></TableCell>
+                  <TableCell className="whitespace-nowrap">
+                    {jobNextStep(job, now).actionable
+                      ? <Link className="text-signal underline-offset-4 hover:underline" title="Based on indexed state. Open the job to verify its current status and available actions." href={`/jobs/${networkSlug(chainId)}/${job.jobId}`}>{jobNextStep(job, now).label}</Link>
+                      : <span className="text-muted-foreground">{jobNextStep(job, now).label}</span>}
+                  </TableCell>
                   <TableCell className="font-hash text-xs"><AddressLink address={job.buyer} chainId={chainId} /></TableCell>
                   <TableCell className="font-hash text-xs"><AddressLink address={job.provider} chainId={chainId} /></TableCell>
                   <TableCell><span className={job.marketplace ? "inline-flex items-center gap-2 text-signal" : "text-muted-foreground"}>{job.marketplace && <Database aria-hidden="true" className="size-4" />}{job.marketplace ? "Marketplace" : "Unattributed"}</span></TableCell>
                   <TableCell className="text-muted-foreground"><time dateTime={job.updatedAt}>{DATE.format(new Date(job.updatedAt))} UTC</time></TableCell>
                   <TableCell><Button asChild variant="ghost" size="icon"><Link aria-label={`View job #${job.jobId}`} href={`/jobs/${networkSlug(chainId)}/${job.jobId}`}><ChevronRight aria-hidden="true" /></Link></Button></TableCell>
-                </TableRow>)}{jobs.length === 0 && <TableRow><TableCell colSpan={8} className="h-32 text-center">No matching records on this page. Clear the search or browse older jobs.</TableCell></TableRow>}</TableBody>
+                </TableRow>)}{jobs.length === 0 && <TableRow><TableCell colSpan={9} className="h-32 text-center">No matching records on this page. Clear the search or browse older jobs.</TableCell></TableRow>}</TableBody>
               </Table>
             </div>}
           </CardContent>

@@ -408,6 +408,11 @@ export function createWorker(dependencies: WorkerDependencies = {}): WorkerEntry
         const seconds = config.catalogResponseCacheSeconds > 0 ? COMMERCE_ACTIVITY_CACHE_SECONDS : 0;
         return cachedCatalogResponse(request, seconds, () => commerceActivityResponse(request, env.DB, now()));
       }
+      if (request.method === "POST" && url.pathname === "/hire-notifications") {
+        if (!env.BUYER_OBSERVATION_SECRET || !await bearerMatches(request.headers.get("authorization"), env.BUYER_OBSERVATION_SECRET)) return errorResponse("unauthorized", 401);
+        const { hireNotificationsResponse } = await import("./routes/hire-notifications");
+        return hireNotificationsResponse(request, env.DB as never, now());
+      }
       if (request.method === "GET" && url.pathname === "/hire-events") {
         const { hireEventsListResponse } = await import("./routes/hire-events");
         // Short fixed window: verified hire history changes rarely, but the
@@ -551,6 +556,8 @@ export function createWorker(dependencies: WorkerDependencies = {}): WorkerEntry
     async scheduled(controller, env, _context) {
       const config = loadConfig(env);
       if (config.killSwitch || config.producerKillSwitch) return;
+      const { hireNotificationTick } = await import("./phases/hire-notification-tick");
+      _context.waitUntil(hireNotificationTick(env).catch(() => logger.error("hire.notification.tick.failed")));
       logger.info("wp2.cron.received", {
         cron: controller.cron,
         scheduledTime: controller.scheduledTime,

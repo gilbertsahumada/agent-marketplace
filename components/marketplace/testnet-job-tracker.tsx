@@ -14,6 +14,7 @@ import { EvidenceRail } from "./evidence-rail";
 import { Breadcrumb, PageIntro } from "./page-primitives";
 import { JobAgentCell } from "./job-agent-cell";
 import { TestnetClosurePanel } from "./testnet-closure-panel";
+import { JobNotificationStatus } from "./job-notification-status";
 import type { JobAgentResolution } from "@/src/business/entities/job-agent-resolution";
 
 const TRANSACTION_LABELS = {
@@ -96,6 +97,7 @@ export function TestnetJobTracker({ tracking, agentResolution }: { tracking: Erc
         <AlertDescription>Seller Agent 1866 is a controlled Testnet fixture. This job does not make a Mainnet marketplace candidate hireable.</AlertDescription>
       </Alert>
       {job ? <TestnetClosurePanel jobId={jobId} /> : null}
+      <JobNotificationStatus chainId={97} jobId={jobId} />
 
       {tracking.liveStatus === "unavailable" && (
         <Alert className="mt-4 border-zinc-700 bg-zinc-950">

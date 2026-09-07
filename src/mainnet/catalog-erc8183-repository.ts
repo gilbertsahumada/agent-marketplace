@@ -289,7 +289,7 @@ export class CatalogErc8183Repository implements Erc8183SpikeRepository {
     }
   }
 
-  async notifyFunded(jobId: bigint): Promise<NotifyFundedResult> {
+  async notifyFunded(jobId: bigint, beforeSend?: () => Promise<void>): Promise<NotifyFundedResult> {
     const before = await this.getJob(jobId);
     if (before.status === "SUBMITTED" || before.status === "COMPLETED") {
       return { acknowledged: true, alreadySubmitted: true, job: before };
@@ -307,7 +307,7 @@ export class CatalogErc8183Repository implements Erc8183SpikeRepository {
     // notification method for them, so leave the job honestly in “Waiting for
     // seller” instead of claiming that a result was submitted.
     if (this.target.transport !== "a2a") {
-      return { acknowledged: true, alreadySubmitted: false, job: before };
+      return { acknowledged: true, alreadySubmitted: false, notificationMethod: "chain_watch", job: before };
     }
 
     const origin = new URL(this.target.endpoint).origin;
@@ -315,8 +315,9 @@ export class CatalogErc8183Repository implements Erc8183SpikeRepository {
     try {
       const card = await fetchAgentCard(this.target.endpoint, null, transport.fetch);
       if (!card.skills.some((skill: { id: string }) => skill.id === "notify_funded")) {
-        return { acknowledged: true, alreadySubmitted: false, job: before };
+        return { acknowledged: true, alreadySubmitted: false, notificationMethod: "chain_watch", job: before };
       }
+      await beforeSend?.();
       const response = await notifyFunded(card.url, jobId, null, transport.fetch);
       const after = await this.getJob(jobId);
       const transactionHash = typeof response.transaction_hash === "string" && /^0x[0-9a-fA-F]{64}$/.test(response.transaction_hash)

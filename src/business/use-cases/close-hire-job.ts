@@ -1,3 +1,5 @@
+import { refundDeadlinePassed } from "../entities/job-next-step.ts";
+
 export type ClosureAction = "dispute" | "settle" | "refund";
 export type ClosureBinding = { chainId: number; commerce: string; jobId: string; wallet: string; action: ClosureAction };
 export type ClosureFacts = { status: string; buyer: string; supported: boolean; disputed: boolean; verdict: number; now: bigint; reviewEndsAt: bigint; deadline?: bigint };
@@ -30,7 +32,7 @@ export function assertClosureAllowed(binding: ClosureBinding, facts: ClosureFact
   if (binding.action === "refund") {
     if (binding.chainId !== 97) throw new Error("Refund controls are limited to Testnet");
     if (binding.wallet.toLowerCase() !== facts.buyer.toLowerCase()) throw new Error("Connect the original buyer wallet to claim the refund");
-    if (facts.status !== "FUNDED" || facts.deadline === undefined || facts.now <= facts.deadline) throw new Error("This job is not eligible for an expired-job refund");
+    if (facts.deadline === undefined || !refundDeadlinePassed(facts.status, facts.deadline, facts.now)) throw new Error("This job is not eligible for an expired-job refund");
     return;
   }
   if (facts.status !== "SUBMITTED") throw new Error("Job is not awaiting closure");

@@ -8,6 +8,7 @@ import { CatalogUnavailable } from "@/components/marketplace/catalog-unavailable
 import { HireJobLedgerPage } from "@/components/marketplace/hire-job-ledger-page";
 import { JobAgentCell } from "@/components/marketplace/job-agent-cell";
 import { JobDeliveryPanel } from "@/components/marketplace/job-delivery-panel";
+import { JobNotificationStatus } from "@/components/marketplace/job-notification-status";
 import { Breadcrumb } from "@/components/marketplace/page-primitives";
 import { getHireLedger, getMainnetErc8183JobStatus, resolveJobAgents } from "@/src/business/composition";
 import {
@@ -60,6 +61,7 @@ export default async function MainnetJobPage({ params }: { params: Promise<{ job
       <h1 className="mt-5 text-3xl font-light tracking-tight text-white sm:text-5xl">ERC-8183 Job #{job.jobId}</h1>
       <p className="mt-3 max-w-2xl text-zinc-400">Reload-safe chain state for the marketplace-operated Grid seller. Browser journal entries are never treated as proof.</p>
       <JobDeliveryPanel jobId={job.jobId} />
+      <JobNotificationStatus chainId={56} jobId={job.jobId} />
       <Card className="mt-8">
         <CardHeader><CardTitle>Verified job state</CardTitle><CardDescription>Contracts and lifecycle are read from BSC Mainnet.</CardDescription></CardHeader>
         <CardContent className="space-y-4 text-sm">

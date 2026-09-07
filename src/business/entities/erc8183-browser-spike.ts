@@ -100,6 +100,7 @@ export interface Erc8183JobFacts {
 
 export interface NotifyFundedResult {
   acknowledged: true;
+  notificationMethod?: "chain_watch";
   alreadySubmitted: boolean;
   sellerTransactionHash?: Hash;
   job: Erc8183JobFacts;

@@ -848,7 +848,27 @@ export const agentIdentities = sqliteTable("agent_identities", {
   check("agent_identities_source", sql`${table.source} IN ('agentWallet', 'ownerOf')`),
 ]);
 
+export const hireNotifications = sqliteTable("hire_notifications", {
+  chainId: integer().$type<56 | 97>().notNull(),
+  jobId: text().notNull(),
+  agentId: text().notNull(),
+  quoteRequestId: integer().notNull(),
+  buyer: text().notNull(),
+  state: text().$type<import("../../../shared/hire-notification").NotificationState>().notNull().default("pending"),
+  attempts: integer().notNull().default(0),
+  nextAttemptAt: integer().notNull(),
+  leaseToken: text(),
+  leaseUntil: integer().notNull().default(0),
+  createdAt: integer().notNull(),
+  updatedAt: integer().notNull(),
+}, table => [
+  primaryKey({ columns: [table.chainId, table.jobId] }),
+  index("hire_notifications_due").on(table.state, table.nextAttemptAt),
+  check("hire_notifications_chain", sql`${table.chainId} IN (56, 97)`),
+]);
+
 export const schema = {
+  hireNotifications,
   agentIdentities,
   probeTargets,
   probeObservations,

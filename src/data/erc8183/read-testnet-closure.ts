@@ -4,6 +4,7 @@ import { bscTestnet } from "viem/chains";
 import { TESTNET_CLOSURE_PINS as pins } from "./testnet-closure-pins.ts";
 import { implementationPinsMatch } from "../../mainnet/implementation-pins.ts";
 import { closureState } from "../../mainnet/job-delivery.ts";
+import { refundDeadlinePassed } from "../../business/entities/job-next-step.ts";
 
 const abi = parseAbi([
   "function getJob(uint256 jobId) view returns ((uint256 id,address client,address provider,address evaluator,string description,uint256 budget,uint256 expiredAt,uint8 status,address hook,uint256 submittedAt,bytes32 deliverable))",
@@ -30,7 +31,7 @@ export async function readTestnetClosure(jobId: string) {
   if (job.id !== id || !isAddressEqual(job.evaluator, pins.router) || !isAddressEqual(policy, pins.policy)) throw new Error("Unsupported job or policy");
   const status = statuses[job.status] ?? "UNKNOWN";
   return { jobId, chainId: 97 as const, buyer: job.client, status,
-    refundAvailable: status === "FUNDED" && block.timestamp > job.expiredAt,
+    refundAvailable: refundDeadlinePassed(status, job.expiredAt, block.timestamp),
     budgetRaw: job.budget.toString(),
     closure: closureState(status, disputed, verdict[0], Number(job.submittedAt + window), Number(block.timestamp)),
     reviewEndsAt: String(job.submittedAt + window),
