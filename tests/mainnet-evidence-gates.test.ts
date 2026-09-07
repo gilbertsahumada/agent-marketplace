@@ -193,6 +193,16 @@ describe("Mainnet proof deployment binding", () => {
     })).toThrow(/Agent ID/);
   });
 
+  it("accepts a COMPLETED job whose Router policy binding was cleared at settlement, but not an unsettled one", () => {
+    const cleared = "0x0000000000000000000000000000000000000000";
+    expect(() => assertMainnetProofBinding({ ...binding, job: { ...proofJob, policy: cleared } })).not.toThrow();
+    expect(() => assertMainnetProofBinding({
+      ...binding,
+      job: { ...proofJob, status: "SUBMITTED" as const, policy: cleared },
+    })).toThrow(/allowlist/);
+    expect(() => assertMainnetProofBinding({ ...binding, job: { ...proofJob, policy: BUYER } })).toThrow(/allowlist/);
+  });
+
   it("resolves the Agent ID at funding rather than accepting a later identity update", async () => {
     const fundingBlock = 100n;
     const metadataUri = (endpoint: string) => `data:application/json;base64,${Buffer.from(JSON.stringify({
