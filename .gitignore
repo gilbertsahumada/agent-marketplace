@@ -21,8 +21,11 @@ tunnel*.pid
 .env
 .env.*
 !.env.example
+# Local root-level Markdown notes; only the project README is public.
 /*.md
+/*.markdown
 !/README.md
+# Local working documents. Never force-add files from this directory.
 /docs/
 .claude/
 .vercel/
