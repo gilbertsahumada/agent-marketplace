@@ -5,6 +5,7 @@ import { MarketplaceAgentNotFoundError, MarketplaceDataUnavailableError } from "
 import { CatalogUnavailable } from "@/components/marketplace/catalog-unavailable";
 import { AgentProfile, marketplaceAgentDisplayName } from "@/components/marketplace/agent-profile";
 import { QuoteRequestPanel } from "@/components/marketplace/quote-request-panel";
+import { QuoteHistory } from "@/components/marketplace/quote-history";
 import Link from "next/link";
 import { getCatalogCandidate } from "@/src/business/composition";
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
@@ -18,10 +19,15 @@ export default async function HirePage({ params, searchParams }: { params: Promi
   if (query?.network === "testnet") {
     const candidate = await getCatalogCandidate({ agentId, chainId: 97 });
     if (!candidate) return <CatalogUnavailable retryHref={`/hire/${agentId}?network=testnet`} />;
+    const configured = candidate.state !== undefined && !candidate.state.blockingReasons.includes("NETWORK_QUOTE_NOT_CONFIGURED");
+    const canDiscover = configured && candidate.state?.commerceStatus !== "suspended"
+      && candidate.declarations.some(isCatalogSellerDeclaration);
     return <main id="main-content" className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-5 py-8">
       <Link className="underline" href="/agents?network=testnet">Testnet agents</Link>
       <h1>{candidate.name ?? `Agent #${agentId}`} · BSC Testnet</h1>
-      <Alert><AlertTitle>Testnet quotes are not configured yet</AlertTitle><AlertDescription>This identity is indexed on Testnet. Mainnet quotes and payments cannot be used for this agent.</AlertDescription></Alert>
+      {canDiscover ? <QuoteRequestPanel agentId={agentId} chainId={97} agentName={candidate.name ?? `Agent #${agentId}`} checkCompatibilityFirst={!candidate.state?.canRequestQuote} />
+        : <Alert><AlertTitle>{configured ? "Seller integration unavailable" : "Testnet quotes are not configured yet"}</AlertTitle><AlertDescription>{configured ? "This agent has no available seller transport for a quote." : "This identity is indexed on Testnet. Mainnet quotes and payments cannot be used for this agent."}</AlertDescription></Alert>}
+      <QuoteHistory agentId={agentId} chainId={97} />
       <Link className="underline" href="/jobs?chainId=97">View Testnet jobs</Link>
     </main>;
   }

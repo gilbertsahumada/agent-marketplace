@@ -617,6 +617,34 @@ async function executeCatalogV2Phase(
   const probeQueryReserve = input.phase === "probe" && input.config.catalogProbeEnabled
     ? 1 + (4 * input.config.catalogProbeBatchSize)
     : 0;
+  const { testnetCatalogEnabled, TESTNET_DISCOVERY_PAGE_SIZE } = await import("./catalog/testnet-policy");
+  // Keep the Mainnet header path intact and reserve the probe/final-state writes.
+  // Testnet advances independently in small pages, instead of importing the
+  // whole registry into one scheduler invocation.
+  if (testnetCatalogEnabled(input.env) && input.queryBudget.remaining >= 20 + probeQueryReserve) {
+    const testnetCatalog = new Trust8004CatalogClient({
+      chainId: 97,
+      baseUrl: input.env.TRUST8004_BASE_URL ?? "https://trust8004.xyz/api/app",
+      timeoutMs: input.config.probeTimeoutMs,
+      maxResponseBytes: input.config.maxCatalogResponseBytes,
+      fetch: fetchImpl,
+    });
+    if (input.phase === "header") {
+      const page = await testnetCatalog.listHeader(TESTNET_DISCOVERY_PAGE_SIZE);
+      discovery.push(await enqueueCatalogDiscoveryPage(input.db, page.items, {
+        chainId: 97, nowMs: input.nowMs, source: "header",
+      }));
+    } else if (input.phase === "sweep") {
+      const rows = await readRuntimeStates(createDatabase(input.db), ["catalog_sweep_offset:97"]);
+      const offset = rows[0]?.integerValue ?? 0;
+      const page = await testnetCatalog.listSweepPage(TESTNET_DISCOVERY_PAGE_SIZE, offset);
+      discovery.push(await enqueueCatalogDiscoveryPage(input.db, page.items, {
+        chainId: 97, nowMs: input.nowMs, source: "sweep",
+        cursor: offset + page.items.length >= page.total ? 0 : offset + page.items.length,
+        cursorKey: "catalog_sweep_offset",
+      }));
+    }
+  }
   const ingestTaskLimit = catalogIngestTaskLimitForBudget({
     remainingQueries: input.queryBudget.remaining,
     maxDeclarations: input.config.catalogDeclarationsPerTask,
@@ -627,7 +655,14 @@ async function executeCatalogV2Phase(
     const summary = await processNextCatalogIngestTask(input.db, {
       nowMs: input.now(),
       maxDeclarations: input.config.catalogDeclarationsPerTask,
-      fetchAgent: (agentId) => catalog.getAgent(agentId),
+      fetchAgent: (agentId, chainId) => chainId === 56 ? catalog.getAgent(agentId)
+        : new Trust8004CatalogClient({
+          chainId,
+          baseUrl: input.env.TRUST8004_BASE_URL ?? "https://trust8004.xyz/api/app",
+          timeoutMs: input.config.probeTimeoutMs,
+          maxResponseBytes: input.config.maxCatalogResponseBytes,
+          fetch: fetchImpl,
+        }).getAgent(agentId),
     });
     ingestSummaries.push(summary);
     if (summary.status === "idle") break;

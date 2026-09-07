@@ -10,6 +10,8 @@ import {
   catalogQuoteHistoryResponse,
 } from "../../src/routes/catalog-quotes";
 import { clearCatalogFixtures } from "./catalog-fixtures";
+import { createDatabase } from "../../src/db/orm";
+import { catalogObservations, catalogQuoteRequests } from "../../src/db/schema";
 
 const NOW = 1_800_000_000_000;
 const ENDPOINT_KEY = "e".repeat(64);
@@ -48,6 +50,60 @@ beforeEach(async () => {
 });
 
 describe("buyer quote request ledger", () => {
+  it("returns the verified negotiation hash needed to bind an existing job", async () => {
+    const db = createDatabase(env.DB as never);
+    const negotiationHash = `0x${"ab".repeat(32)}`;
+    const observation = await db.insert(catalogObservations).values({ agentKey: "eip155:56:42", endpointKey: ENDPOINT_KEY, protocol: "a2a", source: "worker_probe", outcome: "quote_verified", verificationLevel: "cryptographic", observedAt: NOW, durationMs: 1, detailsJson: JSON.stringify({ provider: `0x${"11".repeat(20)}`, negotiationHash }) }).returning().get();
+    const quote = await db.insert(catalogQuoteRequests).values({ requestHash: "binding-test", agentKey: "eip155:56:42", endpointKey: ENDPOINT_KEY, transport: "a2a", kind: "buyer_quote", status: "succeeded", createdAt: NOW, resultObservationId: observation!.id }).returning().get();
+    const response = await catalogQuoteHistoryResponse(new Request(`https://worker.test/catalog-quotes/42?requestId=${quote!.id}`), env.DB as unknown as D1Database, "42", NOW);
+    expect(await response.json()).toMatchObject({ requests: [{ id: quote!.id, negotiationHash }] });
+  });
+  it("retrieves a request outside the latest 100 without crossing networks", async () => {
+    for (let index = 0; index < 102; index++) {
+      await env.DB.prepare(`INSERT INTO catalog_quote_requests
+        (requestHash, agentKey, endpointKey, transport, kind, status, callerKey, createdAt)
+        VALUES (?, 'eip155:56:42', ?, 'a2a', 'buyer_quote', 'failed', 'browser', ?)`)
+        .bind(`exact-${index}`, ENDPOINT_KEY, NOW + index).run();
+    }
+    const oldest = await env.DB.prepare("SELECT id FROM catalog_quote_requests WHERE requestHash='exact-0'").first<{ id: number }>();
+    const lookup = async (chainId: number) => {
+      const response = await catalogQuoteHistoryResponse(new Request(`https://worker.test/catalog-quotes/42?chainId=${chainId}&requestId=${oldest!.id}`), env.DB as unknown as D1Database, "42", NOW);
+      expect(response.status).toBe(200);
+      return await response.json() as { requests: Array<{ id: number }> };
+    };
+    expect((await lookup(56)).requests).toEqual([expect.objectContaining({ id: oldest!.id })]);
+    expect((await lookup(97)).requests).toEqual([]);
+  });
+
+  it.each(["requestId=0", "requestId=1&requestId=2", "requestId=1&page=1", "requestId=9007199254740992"])("rejects ambiguous exact lookup %s", async query => {
+    const response = await catalogQuoteHistoryResponse(new Request(`https://worker.test/catalog-quotes/42?${query}`), env.DB as unknown as D1Database, "42", NOW);
+    expect(response.status).toBe(400);
+  });
+  it("does not fall back to Mainnet when Testnet has no seller declaration", async () => {
+    const request = new Request("https://worker.test/catalog-quotes/42?chainId=97", { method: "POST", body: JSON.stringify(brief()) });
+    const response = await createCatalogQuoteRequestResponse(request, env.DB as unknown as D1Database, { nowMs: NOW });
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ error: "quote_transport_unavailable" });
+  });
+  it("rejects unsupported or duplicated quote networks", async () => {
+    for (const query of ["chainId=1", "chainId=97&chainId=56", "chainId="]) {
+      const request = new Request(`https://worker.test/catalog-quotes/42?${query}`, { method: "POST", body: JSON.stringify(brief()) });
+      expect((await createCatalogQuoteRequestResponse(request, env.DB as unknown as D1Database, { nowMs: NOW })).status).toBe(400);
+    }
+  });
+  it("keeps Testnet quote history separate for the same agent ID", async () => {
+    for (const chainId of [56, 97]) {
+      await env.DB.prepare(`INSERT INTO catalog_quote_requests
+        (requestHash, agentKey, endpointKey, transport, kind, status, callerKey, createdAt)
+        VALUES (?, ?, ?, 'a2a', 'buyer_quote', 'failed', 'browser', ?)`)
+        .bind(`history-${chainId}`, `eip155:${chainId}:42`, ENDPOINT_KEY, NOW).run();
+    }
+    const response = await catalogQuoteHistoryResponse(new Request("https://worker.test/catalog-quotes/42?chainId=97"), env.DB as unknown as D1Database, "42", NOW);
+    expect(response.status).toBe(200);
+    const data = JSON.stringify(await response.json());
+    expect(data).toContain("history-97");
+    expect(data).not.toContain("history-56");
+  });
   it("creates a first SDK-profile request without admission, extension or historical quotes", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => Response.json({ url: "https://seller.example.com/a2a", protocolVersion: "0.3.0", skills: [{ id: "negotiate", description: "Send task_description and terms; receive negotiation_hash and provider_sig." }] })));
     const discovered = await catalogNegotiationInputResponse(env.DB as unknown as D1Database, "42");

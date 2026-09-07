@@ -2,6 +2,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { CatalogCandidate } from "../src/business/entities/catalog-candidate.ts";
+const lookupCandidate = vi.hoisted(() => vi.fn());
 
 const { executePassport, executeConfig, executeHireJobs, profileProps, renderDemo, redirectRoute } = vi.hoisted(() => ({
   executePassport: vi.fn(),
@@ -14,6 +15,7 @@ const { executePassport, executeConfig, executeHireJobs, profileProps, renderDem
 }));
 
 vi.mock("@/src/business/composition", () => ({
+  getCatalogCandidate: lookupCandidate,
   getAgentEvidencePassport: { executeWithAgent: executePassport },
   getMainnetBrowserDemoConfig: { execute: executeConfig },
   listAgentHireJobs: { execute: executeHireJobs },
@@ -65,6 +67,17 @@ const { default: AgentPage } = await import("../app/agents/[agentId]/page.tsx");
 const { default: PassportPage } = await import("../app/agents/[agentId]/passport/page.tsx");
 const { default: MainnetDemoAliasPage } = await import("../app/demo/erc8183-mainnet/page.tsx");
 const { default: Job514ProofAliasPage } = await import("../app/proof/job-514/page.tsx");
+
+it("opens the Testnet quote form only after catalog rollout is configured", async () => {
+  lookupCandidate.mockResolvedValue({ ...candidate(state()), chainId: 97 });
+  const enabled = renderToStaticMarkup(await HirePage({ params: Promise.resolve({ agentId: "303779" }), searchParams: Promise.resolve({ network: "testnet" }) }));
+  expect(enabled).toContain("Quote request panel");
+  expect(lookupCandidate).toHaveBeenCalledWith({ agentId: "303779", chainId: 97 });
+  lookupCandidate.mockResolvedValue({ ...candidate(state({ blockingReasons: ["NETWORK_QUOTE_NOT_CONFIGURED"] })), chainId: 97 });
+  const disabled = renderToStaticMarkup(await HirePage({ params: Promise.resolve({ agentId: "303779" }), searchParams: Promise.resolve({ network: "testnet" }) }));
+  expect(disabled).not.toContain("Quote request panel");
+  expect(disabled).toContain("Testnet quotes are not configured yet");
+});
 
 function candidate(state: NonNullable<CatalogCandidate["state"]>): CatalogCandidate {
   return {

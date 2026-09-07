@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { CheckCircle2, CircleAlert, Clock3, LoaderCircle, RadioTower, ShieldCheck, FileInput, LockKeyhole } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { SellerParameters, initialSellerParameters } from "./seller-parameters";
 import { sellerParameterExample } from "./seller-parameter-examples";
 import { QuoteDetails } from "./quote-details";
@@ -216,11 +217,11 @@ function shouldUseWorkerFallback(error: unknown): boolean {
   return code === "BROWSER_NETWORK_ERROR" || code === "BROWSER_TIMEOUT" || code === "TIMEOUT";
 }
 
-export function QuoteRequestPanel({ agentId, agentName, onSuccess, checkCompatibilityFirst = false }: { agentId: string; agentName?: string; onSuccess?: () => void; checkCompatibilityFirst?: boolean }) {
-  return <SellerQuoteSession key={agentId} agentId={agentId} checkCompatibilityFirst={checkCompatibilityFirst} {...(agentName ? { agentName } : {})} {...(onSuccess ? { onSuccess } : {})} />;
+export function QuoteRequestPanel({ agentId, chainId = 56, agentName, onSuccess, checkCompatibilityFirst = false }: { agentId: string; chainId?: 56 | 97; agentName?: string; onSuccess?: () => void; checkCompatibilityFirst?: boolean }) {
+  return <SellerQuoteSession key={`${chainId}:${agentId}`} agentId={agentId} chainId={chainId} checkCompatibilityFirst={checkCompatibilityFirst} {...(agentName ? { agentName } : {})} {...(onSuccess ? { onSuccess } : {})} />;
 }
 
-function SellerQuoteSession({ agentId, agentName, onSuccess, checkCompatibilityFirst }: { agentId: string; agentName?: string; onSuccess?: () => void; checkCompatibilityFirst: boolean }) {
+function SellerQuoteSession({ agentId, chainId, agentName, onSuccess, checkCompatibilityFirst }: { agentId: string; chainId: 56 | 97; agentName?: string; onSuccess?: () => void; checkCompatibilityFirst: boolean }) {
   const router = useRouter();
   const [inspectionRequested, setInspectionRequested] = useState(!checkCompatibilityFirst);
   const [discovery, setDiscovery] = useState<{ contract: NegotiationContract; endpointKey: string; contractHash: string } | null>(null);
@@ -234,7 +235,7 @@ function SellerQuoteSession({ agentId, agentName, onSuccess, checkCompatibilityF
     if (!inspectionRequested) return;
     const controller = new AbortController();
     setDiscovery(null); setDiscoveryError(null);
-    void fetch(`/api/marketplace/agents/${agentId}/quotes/input`, { signal: controller.signal, cache: "no-store" })
+    void fetch(`/api/marketplace/agents/${agentId}/quotes/input?chainId=${chainId}`, { signal: controller.signal, cache: "no-store" })
       .then(async response => {
         const value = asRecord(await response.json());
         if (!response.ok || !value) throw new Error(String(value?.error ?? "NEGOTIATION_DISCOVERY_FAILED"));
@@ -242,7 +243,7 @@ function SellerQuoteSession({ agentId, agentName, onSuccess, checkCompatibilityF
         if (typeof value.endpointKey !== "string" || typeof value.contractHash !== "string") throw new Error("NEGOTIATION_DISCOVERY_FAILED");
         if (controller.signal.aborted) return;
         setParameters(initialSellerParameters(contract.inputSchema));
-        if (typeof window !== "undefined") {
+        if (chainId === 56 && typeof window !== "undefined") {
           handoffRef.current ??= takeConciergeHandoff(window.sessionStorage, agentId);
           const handoff = handoffRef.current;
           if (handoff && handoff.contractHash === value.contractHash && validateParameters(contract.inputSchema, handoff.parameters)) {
@@ -260,7 +261,7 @@ function SellerQuoteSession({ agentId, agentName, onSuccess, checkCompatibilityF
         router.refresh();
       });
     return () => controller.abort();
-  }, [agentId, reload, inspectionRequested]);
+  }, [agentId, chainId, reload, inspectionRequested]);
   const [phase, setPhase] = useState<Phase>("idle");
   const [message, setMessage] = useState<string | null>(null);
   const [quote, setQuote] = useState<MainnetQuoteResponse | null>(null);
@@ -279,7 +280,7 @@ function SellerQuoteSession({ agentId, agentName, onSuccess, checkCompatibilityF
 
   function verifiedQuote(value: unknown): MainnetQuoteResponse | null {
     const candidate = asRecord(value);
-    if (!candidate || !candidate.envelope || typeof candidate.envelope !== "object" || Array.isArray(candidate.envelope)) return null;
+    if (!candidate || candidate.chainId !== chainId || String(candidate.agentId) !== agentId || !candidate.envelope || typeof candidate.envelope !== "object" || Array.isArray(candidate.envelope)) return null;
     return candidate as unknown as MainnetQuoteResponse;
   }
 
@@ -290,7 +291,7 @@ function SellerQuoteSession({ agentId, agentName, onSuccess, checkCompatibilityF
     setShowErrors(false);
     setQuote(null); setQuoteRequestId(null); setMessage(null); setPhase("registering");
     try {
-      const start = await fetch(`/api/marketplace/agents/${agentId}/quotes`, {
+      const start = await fetch(`/api/marketplace/agents/${agentId}/quotes?chainId=${chainId}`, {
         method: "POST", headers: { "content-type": "application/json" },
         body: JSON.stringify({ schemaVersion: 2, parameters, endpointKey: discovery.endpointKey, contractHash: discovery.contractHash }),
       });
@@ -312,14 +313,14 @@ function SellerQuoteSession({ agentId, agentName, onSuccess, checkCompatibilityF
           // Persist a seller rejection/invalid protocol result against the
           // already-registered attempt. This avoids repeating a known failure
           // through the Worker and keeps the public history honest.
-          await fetch(`/api/marketplace/agents/${agentId}/quotes/${attemptId}/result`, {
+          await fetch(`/api/marketplace/agents/${agentId}/quotes/${attemptId}/result?chainId=${chainId}`, {
             method: "POST", headers: { "content-type": "application/json" },
             body: JSON.stringify({ schemaVersion: 1, errorCode: code }),
           }).catch(() => undefined);
           throw new Error(code);
         }
         setPhase("fallback");
-        const fallback = await fetch(`/api/marketplace/agents/${agentId}/quotes/${attemptId}/fallback`, {
+        const fallback = await fetch(`/api/marketplace/agents/${agentId}/quotes/${attemptId}/fallback?chainId=${chainId}`, {
           method: "POST", headers: {
             "content-type": "application/json",
             "x-marketplace-browser-error": errorCode(error),
@@ -335,7 +336,7 @@ function SellerQuoteSession({ agentId, agentName, onSuccess, checkCompatibilityF
       }
       if (!envelope) throw new Error("QUOTE_EMPTY_RESPONSE");
       setPhase("verifying");
-      const result = await fetch(`/api/marketplace/agents/${agentId}/quotes/${attemptId}/result`, {
+      const result = await fetch(`/api/marketplace/agents/${agentId}/quotes/${attemptId}/result?chainId=${chainId}`, {
         method: "POST", headers: { "content-type": "application/json" },
         body: JSON.stringify({ envelope: { ...envelope, request: envelope.request ?? requestBody } }),
       });
@@ -398,7 +399,21 @@ function SellerQuoteSession({ agentId, agentName, onSuccess, checkCompatibilityF
           </details> : null}
         </>
           : discoveryError ? <p role="status" className="text-sm text-muted-foreground">{discoveryError === "quote_service_unavailable" ? "Cannot connect to the marketplace quote service. Requirements could not be checked." : compatibilityMessage(discoveryError).detail}</p>
-          : null}
+          : discovering ? <div aria-hidden="true" data-testid="quote-parameters-skeleton" className="flex flex-col gap-5">
+            <div className="flex flex-col gap-2 sm:w-1/2 lg:w-1/3">
+              <Skeleton className="h-4 w-36 motion-reduce:animate-none" />
+              <Skeleton className="h-9 w-full motion-reduce:animate-none" />
+            </div>
+            <div className="flex flex-col gap-3">
+              <Skeleton className="h-4 w-28 motion-reduce:animate-none" />
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                {[0, 1].map(index => <div key={index} className="flex flex-col gap-2">
+                  <Skeleton className="h-4 w-40 motion-reduce:animate-none" />
+                  <Skeleton className="h-9 w-full motion-reduce:animate-none" />
+                </div>)}
+              </div>
+            </div>
+          </div> : null}
       </div>
       <div className="mt-4 flex flex-wrap items-center gap-3">
         {discovery ? <Button className="cursor-pointer" disabled={busy} aria-busy={busy} onClick={requestQuote} type="button">{busy ? <LoaderCircle aria-hidden="true" data-icon="inline-start" className="motion-safe:animate-spin" /> : <ShieldCheck aria-hidden="true" data-icon="inline-start" />}{busy ? phaseCopy[phase] : phase === "succeeded" ? "Request again" : "Request quote"}</Button> : null}
@@ -422,7 +437,7 @@ function SellerQuoteSession({ agentId, agentName, onSuccess, checkCompatibilityF
           />
         </div>
       ) : <div aria-label={recoveryActive ? "Previous hire" : "Hiring locked until quote verified"}>
-        <Erc8183SavedHire agentId={agentId} onActiveChange={setRecoveryActive} />
+        <Erc8183SavedHire agentId={agentId} chainId={chainId} onActiveChange={setRecoveryActive} />
         {!recoveryActive ? <>
         <p className="mb-4 text-sm text-muted-foreground">Request a verified quote to unlock hiring.</p>
         <ol className="flex flex-col divide-y divide-border rounded-lg border border-border">

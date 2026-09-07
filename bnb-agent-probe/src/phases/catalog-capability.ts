@@ -11,10 +11,10 @@ import { revisitOldInputFailures } from "../catalog/rediscover-inputs";
 import { needsProviderChange } from "../catalog/sweep-metrics";
 import type { Env, QueueProducer } from "../types";
 import type { WorkerConfig } from "../config";
-import { persistQuoteResult, readContext, targetFor, sha256 } from "../routes/catalog-quotes";
+import { persistQuoteResult, readContext, targetFor, sha256, catalogQuoteChain } from "../routes/catalog-quotes";
 
 const CLAIM_LEASE_MS = 5 * 60 * 1_000;
-const AGENT_KEY = /^eip155:56:[1-9]\d{0,19}$/;
+const AGENT_KEY = /^eip155:(56|97):[1-9]\d{0,19}$/;
 const ENDPOINT_KEY = /^[a-f0-9]{64}$/;
 
 export const CATALOG_CAPABILITY_WORK_KIND = "catalog_capability_probe" as const;
@@ -71,8 +71,10 @@ function capabilityPayload(row: Pick<CatalogSellerCapabilityRow, "agentKey" | "e
 export async function enqueueDueCatalogCapabilities(
   dbBinding: D1DatabaseLike,
   queue: QueueProducer,
-  input: { readonly nowMs: number; readonly limit: number; readonly concurrency?: number; readonly bootstrapLimit?: number; readonly originPerMinute?: number },
+  input: { readonly nowMs: number; readonly limit: number; readonly chainId?: 56 | 97; readonly concurrency?: number; readonly bootstrapLimit?: number; readonly originPerMinute?: number },
 ): Promise<CatalogCapabilityQueueSummary> {
+  const chainId = input.chainId ?? 56;
+  if (chainId !== 56 && chainId !== 97) throw new Error("CATALOG_CHAIN_UNSUPPORTED");
   if (!Number.isSafeInteger(input.limit) || input.limit < 1) throw new Error("CATALOG_QUOTE_BATCH_SIZE");
   const concurrency = input.concurrency ?? input.limit;
   const bootstrapLimit = input.bootstrapLimit ?? 0;
@@ -112,7 +114,7 @@ export async function enqueueDueCatalogCapabilities(
             c.nextProbeAt, c.updatedAt, c.agentKey, c.endpointKey
         ) AS originRank
       FROM catalog_seller_capabilities c
-      JOIN catalog_agents a ON a.agentKey=c.agentKey AND a.indexState='current' AND a.chainId=56
+      JOIN catalog_agents a ON a.agentKey=c.agentKey AND a.indexState='current' AND a.chainId=${chainId}
       JOIN catalog_agent_endpoints ae ON ae.agentKey=c.agentKey AND ae.endpointKey=c.endpointKey AND ae.declarationState='current'
       JOIN catalog_endpoints e ON e.endpointKey=c.endpointKey AND e.role='operational' AND e.eligibility='eligible'
       WHERE c.state IN ('discovered','ready','stale','failed')
@@ -278,7 +280,8 @@ export async function runCatalogCapabilityProbe(
     return { status: "skipped", agentKey: work.agentKey, endpointKey: work.endpointKey, requestId: null, attemptId: null, errorCode: null, durationMs: 0 };
   }
   const agentId = work.agentKey.split(":").at(-1)!;
-  const target = await targetFor(db, agentId, work.endpointKey);
+  const chainId = catalogQuoteChain(work.agentKey);
+  const target = await targetFor(db, agentId, work.endpointKey, undefined, chainId);
   if (!target) {
     return { status: "skipped", agentKey: work.agentKey, endpointKey: work.endpointKey, requestId: null, attemptId: null, errorCode: "NO_QUOTE_TRANSPORT", durationMs: Math.max(0, now() - startedAt) };
   }
@@ -357,7 +360,7 @@ export async function runCatalogCapabilityProbe(
           },
         })
         : await (async () => {
-          const context = await readContext(env, config, agentId, startedAt);
+          const context = await readContext(env, config, agentId, startedAt, chainId);
           return probeErc8183HttpSeller({
             ...common,
             expectedHttpStatus: {

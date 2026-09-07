@@ -276,7 +276,7 @@ export function createWorker(dependencies: WorkerDependencies = {}): WorkerEntry
         const fresh = request.headers.get("x-marketplace-refresh") === "1" && Boolean(env.BUYER_OBSERVATION_SECRET)
           && await bearerMatches(request.headers.get("authorization"), env.BUYER_OBSERVATION_SECRET!);
         return cachedCatalogResponse(request, fresh ? 0 : config.catalogResponseCacheSeconds, () => (
-          catalogAgentResponse(request, env.DB, now(), config.catalogV2ReadsEnabled ? 2 : 1)
+          catalogAgentResponse(request, env.DB, now(), config.catalogV2ReadsEnabled ? 2 : 1, env.CATALOG_TESTNET_ENABLED === "1" && Boolean(env.BSC_TESTNET_RPC_URL?.trim()))
         ), fresh);
       }
       if (request.method === "GET" && url.pathname === "/catalog-agents") {
@@ -284,7 +284,7 @@ export function createWorker(dependencies: WorkerDependencies = {}): WorkerEntry
         const fresh = request.headers.get("x-marketplace-refresh") === "1" && Boolean(env.BUYER_OBSERVATION_SECRET)
           && await bearerMatches(request.headers.get("authorization"), env.BUYER_OBSERVATION_SECRET!);
         return cachedCatalogResponse(request, fresh ? 0 : config.catalogResponseCacheSeconds, () => (
-          catalogAgentsResponse(request, env.DB, now(), config.catalogV2ReadsEnabled ? 2 : 1)
+          catalogAgentsResponse(request, env.DB, now(), config.catalogV2ReadsEnabled ? 2 : 1, env.CATALOG_TESTNET_ENABLED === "1" && Boolean(env.BSC_TESTNET_RPC_URL?.trim()))
         ), fresh);
       }
       if (request.method === "GET" && /^\/catalog-validations\/\d+$/.test(url.pathname)) {
@@ -344,8 +344,8 @@ export function createWorker(dependencies: WorkerDependencies = {}): WorkerEntry
       if (request.method === "GET" && /^\/catalog-quotes\/[1-9]\d{0,19}\/input$/.test(url.pathname)) {
         if (env.BUYER_OBSERVATION_SECRET === undefined) return errorResponse("not_found", 404);
         if (!await bearerMatches(request.headers.get("authorization"), env.BUYER_OBSERVATION_SECRET)) return errorResponse("unauthorized", 401);
-        const { catalogNegotiationInputResponse, callerForQuote } = await import("./routes/catalog-quotes");
-        return catalogNegotiationInputResponse(env.DB, url.pathname.split("/")[2]!, { caller: callerForQuote(request), nowMs: now() });
+        const { catalogNegotiationInputResponse, callerForQuote, catalogQuoteRequestChain } = await import("./routes/catalog-quotes");
+        return catalogNegotiationInputResponse(env.DB, url.pathname.split("/")[2]!, { caller: callerForQuote(request), nowMs: now(), chainId: catalogQuoteRequestChain(request) });
       }
       if ((request.method === "POST" && /^\/catalog-quotes\/[1-9]\d{0,19}$/.test(url.pathname))
         || (request.method === "GET" && /^\/catalog-quotes\/[1-9]\d{0,19}$/.test(url.pathname))) {
@@ -407,6 +407,11 @@ export function createWorker(dependencies: WorkerDependencies = {}): WorkerEntry
         // Same window as the route's own cache-control, so the rewrite is a no-op.
         const seconds = config.catalogResponseCacheSeconds > 0 ? COMMERCE_ACTIVITY_CACHE_SECONDS : 0;
         return cachedCatalogResponse(request, seconds, () => commerceActivityResponse(request, env.DB, now()));
+      }
+      if (request.method === "POST" && url.pathname === "/hire-notifications") {
+        if (!env.BUYER_OBSERVATION_SECRET || !await bearerMatches(request.headers.get("authorization"), env.BUYER_OBSERVATION_SECRET)) return errorResponse("unauthorized", 401);
+        const { hireNotificationsResponse } = await import("./routes/hire-notifications");
+        return hireNotificationsResponse(request, env.DB as never, now());
       }
       if (request.method === "GET" && url.pathname === "/hire-events") {
         const { hireEventsListResponse } = await import("./routes/hire-events");
@@ -551,6 +556,8 @@ export function createWorker(dependencies: WorkerDependencies = {}): WorkerEntry
     async scheduled(controller, env, _context) {
       const config = loadConfig(env);
       if (config.killSwitch || config.producerKillSwitch) return;
+      const { hireNotificationTick } = await import("./phases/hire-notification-tick");
+      _context.waitUntil(hireNotificationTick(env).catch(() => logger.error("hire.notification.tick.failed")));
       logger.info("wp2.cron.received", {
         cron: controller.cron,
         scheduledTime: controller.scheduledTime,
@@ -591,6 +598,19 @@ export function createWorker(dependencies: WorkerDependencies = {}): WorkerEntry
           const { recordSweepMetrics } = await import("./catalog/sweep-metrics");
           await recordSweepMetrics(env.DB as never, now(), { ticks: 1, selected: summary.selected ?? summary.enqueued + summary.skipped, enqueued: summary.enqueued, claimOrSendFailed: summary.skipped });
         } catch { logger.error("catalog.sweep.metrics.unavailable", { stage: "producer" }); }
+        const { testnetCatalogEnabled, TESTNET_QUOTE_BATCH_SIZE } = await import("./catalog/testnet-policy");
+        if (testnetCatalogEnabled(env)) {
+          const testnet = await enqueueDueCatalogCapabilities(env.DB as never, env.CATALOG_QUOTE_QUEUE, {
+            nowMs: now(), chainId: 97,
+            limit: TESTNET_QUOTE_BATCH_SIZE, concurrency: 1,
+            bootstrapLimit: TESTNET_QUOTE_BATCH_SIZE, originPerMinute: 1,
+          });
+          logger.info("catalog.quote.queue.enqueued", { ...testnet, chainId: 97, scheduledTime: controller.scheduledTime });
+          try {
+            const { recordSweepMetrics } = await import("./catalog/sweep-metrics");
+            await recordSweepMetrics(env.DB as never, now(), { selected: testnet.selected ?? testnet.enqueued + testnet.skipped, enqueued: testnet.enqueued, claimOrSendFailed: testnet.skipped });
+          } catch { logger.error("catalog.sweep.metrics.unavailable", { stage: "testnet-producer" }); }
+        }
       }
     },
 

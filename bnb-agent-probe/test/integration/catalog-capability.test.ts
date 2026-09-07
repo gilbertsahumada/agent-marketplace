@@ -39,12 +39,13 @@ async function insertCandidate(
   originKey = "seller-origin",
   state: "discovered" | "ready" | "stale" | "failed" = "discovered",
   capabilityExpiresAt: number | null = null,
+  chainId: 56 | 97 = 56,
 ) {
-  const agentKey = `eip155:56:${agentId}`;
+  const agentKey = `eip155:${chainId}:${agentId}`;
   await env.DB.prepare(`INSERT INTO catalog_agents (
     agentKey, agentId, chainId, categoriesJson, metadataState, indexState, firstSeenAt, lastSeenAt
-  ) VALUES (?, ?, 56, '["grid_trading"]', 'ok', 'current', ?, ?)`)
-    .bind(agentKey, agentId, NOW, NOW).run();
+  ) VALUES (?, ?, ?, '["grid_trading"]', 'ok', 'current', ?, ?)`)
+    .bind(agentKey, agentId, chainId, NOW, NOW).run();
   await env.DB.prepare(`INSERT OR IGNORE INTO catalog_endpoints (
     endpointKey, protocol, endpoint, originKey, safety, nextProbeAt, declaredProtocol,
     role, validationProtocol, eligibility
@@ -71,6 +72,18 @@ beforeEach(async () => {
 });
 
 describe("catalog quote-capability scheduler", () => {
+  it("dispatches only the requested network, including colliding agent IDs", async () => {
+    await insertCandidate("42", "a".repeat(64), "mainnet-host");
+    await insertCandidate("42", "b".repeat(64), "testnet-host", "discovered", null, 97);
+    const send = vi.fn().mockResolvedValue(undefined);
+    await enqueueDueCatalogCapabilities(env.DB as unknown as D1DatabaseLike, { send }, { nowMs: NOW, limit: 2, chainId: 97 });
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send.mock.calls[0]?.[0]).toMatchObject({ agentKey: "eip155:97:42" });
+    send.mockClear();
+    await enqueueDueCatalogCapabilities(env.DB as unknown as D1DatabaseLike, { send }, { nowMs: NOW, limit: 2 });
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send.mock.calls[0]?.[0]).toMatchObject({ agentKey: "eip155:56:42" });
+  });
   it("does not dispatch valid compatibility and quote evidence even with an obsolete due marker", async () => {
     await insertCandidate("42", ENDPOINT_KEY, "seller-origin", "ready", NOW + 86_400_000);
     await env.DB.prepare("UPDATE catalog_seller_capabilities SET compatibilityState='compatible', compatibilityExpiresAt=?, nextProbeAt=0, lastSuccessAt=?").bind(NOW + 86_400_000, NOW - 1000).run();

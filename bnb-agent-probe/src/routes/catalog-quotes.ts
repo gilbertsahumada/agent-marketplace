@@ -1,6 +1,7 @@
 import { and, asc, count, desc, eq, gt, inArray, lt, sql } from "drizzle-orm";
 import { NegotiationRequest, buildJobDescription, verifyQuoteSignature } from "@bnbagent/sdk/erc8183";
 import { formatUnits, parseAbi, type PublicClient } from "viem";
+import { bsc, bscTestnet } from "viem/chains";
 import { createDatabase } from "../db/orm";
 import {
   catalogAgentEndpoints,
@@ -30,6 +31,11 @@ const ERROR_CODE = /^[A-Z][A-Z0-9_]{2,63}$/;
 const DEDUPE_WINDOW_MS = 60_000;
 const CAPABILITY_TTL_MS = 24 * 60 * 60 * 1_000;
 const CHAIN_EVIDENCE_TTL_MS = 120_000;
+export function catalogQuoteChain(agentKey: string): 56 | 97 {
+  const match = /^eip155:(56|97):[1-9]\d{0,19}$/.exec(agentKey);
+  if (!match) throw new Error("QUOTE_AGENT_NETWORK");
+  return Number(match[1]) as 56 | 97;
+}
 const tokenSymbolAbi = parseAbi(["function symbol() view returns (string)"]);
 
 type ChainContext = ProbeChainContext & { readonly publicClient: PublicClient; readonly tokenSymbol: string };
@@ -89,6 +95,7 @@ export async function targetFor(
   agentId: string,
   endpointKey?: string,
   transports: readonly ("a2a" | "mcp" | "erc8183_http")[] = ["a2a", "mcp", "erc8183_http"],
+  chainId: 56 | 97 = 56,
 ) {
   const rows = await db.select({
     agentKey: catalogAgents.agentKey,
@@ -102,7 +109,7 @@ export async function targetFor(
     .innerJoin(catalogEndpoints, eq(catalogEndpoints.endpointKey, catalogAgentEndpoints.endpointKey))
     .where(and(
       eq(catalogAgents.agentId, agentId),
-      eq(catalogAgents.chainId, 56),
+      eq(catalogAgents.chainId, chainId),
       eq(catalogAgents.indexState, "current"),
       eq(catalogAgentEndpoints.declarationState, "current"),
       eq(catalogEndpoints.role, "operational"),
@@ -119,15 +126,17 @@ export async function targetFor(
     : null;
 }
 
-export async function readContext(env: Env, config: WorkerConfig, agentId: string, nowMs: number): Promise<ChainContext> {
-  if (!env.BSC_RPC_URL) throw new Error("BSC_RPC_URL_REQUIRED");
+export async function readContext(env: Env, config: WorkerConfig, agentId: string, nowMs: number, chainId: 56 | 97 = 56): Promise<ChainContext> {
+  const rpcUrl = chainId === 97 ? env.BSC_TESTNET_RPC_URL : env.BSC_RPC_URL;
+  if (!rpcUrl) throw new Error(chainId === 97 ? "BSC_TESTNET_RPC_URL_REQUIRED" : "BSC_RPC_URL_REQUIRED");
   const client = createCountedBscClient({
-    rpcUrl: env.BSC_RPC_URL,
+    rpcUrl,
+    chain: chainId === 97 ? bscTestnet : bsc,
     fetch,
     deadlineMs: nowMs + config.probeTimeoutMs,
     now: Date.now,
   });
-  const context = await readProbeChainContext(client, { agentId, nowSeconds: Math.floor(nowMs / 1_000) });
+  const context = await readProbeChainContext(client, { agentId, nowSeconds: Math.floor(nowMs / 1_000), chainId });
   const tokenSymbol = await client.readContract({
     address: context.paymentToken,
     abi: tokenSymbolAbi,
@@ -238,7 +247,16 @@ async function discoveryAllowance(d1: D1Database, key: string, limit: number, no
   return row != null;
 }
 
-export async function catalogNegotiationInputResponse(d1: D1Database, agentId: string, options: { caller?: string; nowMs?: number } = {}): Promise<Response> {
+export function catalogQuoteRequestChain(request: Request): 56 | 97 | null {
+  const values = new URL(request.url).searchParams.getAll("chainId");
+  if (values.length === 0) return 56;
+  if (values.length !== 1) return null;
+  return values[0] === "56" ? 56 : values[0] === "97" ? 97 : null;
+}
+
+export async function catalogNegotiationInputResponse(d1: D1Database, agentId: string, options: { caller?: string; nowMs?: number; chainId?: 56 | 97 | null } = {}): Promise<Response> {
+  const chainId = options.chainId === undefined ? 56 : options.chainId;
+  if (chainId !== 56 && chainId !== 97) return json({ error: "invalid_request" }, 400);
   if (!AGENT_ID.test(agentId)) return json({ error: "invalid_request" }, 400);
   const nowMs = options.nowMs ?? Date.now();
   if (!await discoveryAllowance(d1, "global", 120, nowMs)
@@ -246,12 +264,12 @@ export async function catalogNegotiationInputResponse(d1: D1Database, agentId: s
   const db = createDatabase(d1 as never);
   const endpoints = await db.select({ endpointKey: catalogAgentEndpoints.endpointKey }).from(catalogAgentEndpoints)
     .innerJoin(catalogEndpoints, eq(catalogEndpoints.endpointKey, catalogAgentEndpoints.endpointKey))
-    .where(and(eq(catalogAgentEndpoints.agentKey, `eip155:56:${agentId}`), eq(catalogAgentEndpoints.declarationState, "current"),
+    .where(and(eq(catalogAgentEndpoints.agentKey, `eip155:${chainId}:${agentId}`), eq(catalogAgentEndpoints.declarationState, "current"),
       eq(catalogEndpoints.role, "operational"), eq(catalogEndpoints.eligibility, "eligible"), eq(catalogEndpoints.safety, "safe"),
       inArray(catalogEndpoints.validationProtocol, ["a2a", "mcp", "erc8183_http"])))
     .orderBy(desc(catalogAgentEndpoints.priority), catalogAgentEndpoints.endpointKey).limit(4);
   const results = await Promise.all(endpoints.map(async ({ endpointKey }) => {
-    const target = await targetFor(db, agentId, endpointKey);
+    const target = await targetFor(db, agentId, endpointKey, undefined, chainId);
     if (!target) return { error: "quote_transport_unavailable" };
     if (!await discoveryAllowance(d1, await sha256(new URL(target.endpoint).origin), 25, nowMs)) return { error: "quote_rate_limited" };
     try {
@@ -275,6 +293,8 @@ export async function createCatalogQuoteRequestResponse(
   options: { nowMs: number; caller?: string } & QuoteRateLimitOptions,
 ): Promise<Response> {
   const url = new URL(request.url);
+  const chainId = catalogQuoteRequestChain(request);
+  if (chainId === null) return json({ error: "invalid_request" }, 400);
   const agentId = url.pathname.split("/").at(-1) ?? "";
   if (!AGENT_ID.test(agentId)) return json({ error: "invalid_request" }, 400);
   const input = await body(request);
@@ -291,7 +311,7 @@ export async function createCatalogQuoteRequestResponse(
   const readyCapability = await db.select({ endpointKey: catalogSellerCapabilities.endpointKey })
     .from(catalogSellerCapabilities)
     .where(and(
-      eq(catalogSellerCapabilities.agentKey, `eip155:56:${agentId}`),
+      eq(catalogSellerCapabilities.agentKey, `eip155:${chainId}:${agentId}`),
       eq(catalogSellerCapabilities.state, "ready"),
       gt(catalogSellerCapabilities.capabilityExpiresAt, options.nowMs),
     ))
@@ -302,6 +322,7 @@ export async function createCatalogQuoteRequestResponse(
     agentId,
     structured ? input!.endpointKey as string : readyCapability[0]?.endpointKey,
     structured || readyCapability[0] ? undefined : ["a2a", "erc8183_http"],
+    chainId,
   );
   if (!target) return json({ error: "quote_transport_unavailable" }, 409);
   if (options.kind === "capability_probe" && readyCapability.some(row => row.endpointKey === target.endpointKey)) {
@@ -465,7 +486,7 @@ export async function persistQuoteResult(
   let context: ChainContext;
   let verdict: Awaited<ReturnType<typeof validateProbeQuote>>;
   try {
-    context = await readContext(env, config, requestRow.agentKey.split(":").at(-1)!, nowMs);
+    context = await readContext(env, config, requestRow.agentKey.split(":").at(-1)!, nowMs, catalogQuoteChain(requestRow.agentKey));
     const request = NegotiationRequest.fromDict((envelope.request ?? {}) as Record<string, unknown>);
     verdict = await validateProbeQuote(envelope, {
       ...context,
@@ -523,7 +544,7 @@ export async function persistQuoteResult(
       decimals: verdict.decimals,
       quoteNegotiatedAt: verdict.quoteNegotiatedAt,
       quoteExpiresAt: verdict.quoteExpiresAt,
-      chainId: 56,
+      chainId: context.chainId ?? 56,
       quoteKind: requestRow.kind,
       commerce: context.commerce,
       router: context.router,
@@ -549,7 +570,7 @@ export async function persistQuoteResult(
     expiresAt: nowMs + CHAIN_EVIDENCE_TTL_MS,
     durationMs: Math.max(0, nowMs - started),
     detailsJson: JSON.stringify({
-      chainId: 56,
+      chainId: context.chainId ?? 56,
       blockNumber: context.blockNumber.toString(),
       blockTimestamp: context.blockTimestamp.toString(),
       provider: context.provider,
@@ -611,7 +632,7 @@ export async function persistQuoteResult(
   const normalizedQuote = {
     envelope,
     agentId: Number(requestRow.agentKey.split(":").at(-1)),
-    chainId: 56 as const,
+    chainId: context.chainId ?? 56,
     provider: verdict.provider,
     ...(endpoint ? { endpoint } : {}),
     commerce: context.commerce,
@@ -638,13 +659,15 @@ export async function persistQuoteResult(
 }
 
 export async function catalogQuoteBrowserResultResponse(request: Request, d1: D1Database, attemptId: string, options: { nowMs: number; env: Env; config: WorkerConfig; expectedAgentId?: string }): Promise<Response> {
+  const chainId = catalogQuoteRequestChain(request);
+  if (chainId === null) return json({ error: "invalid_request" }, 400);
   if (!ATTEMPT_ID.test(attemptId)) return json({ error: "invalid_request" }, 400);
   const input = await body(request);
   if (!input || input.schemaVersion !== 1) return json({ error: "invalid_request" }, 400);
   const db = createDatabase(d1 as never);
   const found = await findAttempt(db, attemptId);
   if (!found) return json({ error: "not_found" }, 404);
-  if (options.expectedAgentId !== undefined && found.request.agentKey !== `eip155:56:${options.expectedAgentId}`) return json({ error: "not_found" }, 404);
+  if (options.expectedAgentId !== undefined && found.request.agentKey !== `eip155:${chainId}:${options.expectedAgentId}`) return json({ error: "not_found" }, 404);
   if (found.attempt.executor !== "browser") return json({ error: "invalid_executor" }, 409);
   if (found.attempt.status === "succeeded" || found.attempt.status === "rejected" || found.attempt.status === "failed") {
     return json({ error: "attempt_completed" }, 409);
@@ -671,11 +694,13 @@ export async function catalogQuoteBrowserResultResponse(request: Request, d1: D1
 }
 
 export async function catalogQuoteFallbackResponse(request: Request, d1: D1Database, attemptId: string, options: { nowMs: number; env: Env; config: WorkerConfig; expectedAgentId?: string; operational?: boolean }): Promise<Response> {
+  const chainId = catalogQuoteRequestChain(request);
+  if (chainId === null) return json({ error: "invalid_request" }, 400);
   if (!ATTEMPT_ID.test(attemptId)) return json({ error: "invalid_request" }, 400);
   const db = createDatabase(d1 as never);
   const found = await findAttempt(db, attemptId);
   if (!found) return json({ error: "not_found" }, 404);
-  if (options.expectedAgentId !== undefined && found.request.agentKey !== `eip155:56:${options.expectedAgentId}`) return json({ error: "not_found" }, 404);
+  if (options.expectedAgentId !== undefined && found.request.agentKey !== `eip155:${chainId}:${options.expectedAgentId}`) return json({ error: "not_found" }, 404);
   if (found.attempt.status === "succeeded" || found.attempt.status === "rejected" || found.attempt.status === "failed") {
     return json({ error: "attempt_completed" }, 409);
   }
@@ -765,7 +790,7 @@ export async function catalogQuoteFallbackResponse(request: Request, d1: D1Datab
       : found.request.transport === "mcp"
         ? await probeMcpSeller(probeInput)
       : await (async () => {
-        const context = await readContext(options.env, options.config, found.request.agentKey.split(":").at(-1)!, options.nowMs);
+        const context = await readContext(options.env, options.config, found.request.agentKey.split(":").at(-1)!, options.nowMs, catalogQuoteChain(found.request.agentKey));
         return probeErc8183HttpSeller({
           ...probeInput,
           expectedHttpStatus: {
@@ -797,9 +822,14 @@ export async function catalogQuoteFallbackResponse(request: Request, d1: D1Datab
 }
 
 export async function catalogQuoteHistoryResponse(request: Request, d1: D1Database, agentId: string, nowMs = Date.now()): Promise<Response> {
+  const chainId = catalogQuoteRequestChain(request);
+  if (chainId === null) return json({ error: "invalid_request" }, 400);
   const params = new URL(request.url).searchParams;
   const pageValue = params.get("page");
-  if (!AGENT_ID.test(agentId) || [...params.keys()].some(key => key !== "page") || params.getAll("page").length > 1
+  const requestValue = params.get("requestId");
+  if (params.getAll("requestId").length > 1 || (requestValue !== null &&
+    (!/^[1-9]\d*$/.test(requestValue) || !Number.isSafeInteger(Number(requestValue)) || pageValue !== null))) return json({ error: "invalid_request" }, 400);
+  if (!AGENT_ID.test(agentId) || [...params.keys()].some(key => key !== "page" && key !== "chainId" && key !== "requestId") || params.getAll("page").length > 1
     || (pageValue !== null && !/^[1-9]\d{0,5}$/.test(pageValue))) return json({ error: "invalid_request" }, 400);
   const page = pageValue === null ? null : Number(pageValue);
   // A disconnected caller or terminated invocation cannot leave a spinner
@@ -810,14 +840,14 @@ export async function catalogQuoteHistoryResponse(request: Request, d1: D1Databa
     const cutoff = nowMs - 300_000;
     await db.batch([
       db.update(catalogQuoteRequests).set({ status: "failed", completedAt: nowMs, errorCode: "QUOTE_ATTEMPT_INTERRUPTED" })
-        .where(and(eq(catalogQuoteRequests.agentKey, `eip155:56:${agentId}`), eq(catalogQuoteRequests.kind, "buyer_quote"),
+        .where(and(eq(catalogQuoteRequests.agentKey, `eip155:${chainId}:${agentId}`), eq(catalogQuoteRequests.kind, "buyer_quote"),
           inArray(catalogQuoteRequests.status, ["pending", "running"]), lt(catalogQuoteRequests.createdAt, cutoff),
           sql`NOT EXISTS (SELECT 1 FROM catalog_quote_attempts a WHERE a.requestId=${catalogQuoteRequests.id} AND a.startedAt >= ${cutoff})`)),
       db.update(catalogQuoteAttempts).set({ status: "failed", finishedAt: nowMs,
         durationMs: sql`${nowMs}-${catalogQuoteAttempts.startedAt}`, errorCode: "QUOTE_ATTEMPT_INTERRUPTED", outcome: "interrupted" })
         .where(and(inArray(catalogQuoteAttempts.status, ["pending", "running"]),
           inArray(catalogQuoteAttempts.requestId, db.select({ id: catalogQuoteRequests.id }).from(catalogQuoteRequests)
-            .where(and(eq(catalogQuoteRequests.agentKey, `eip155:56:${agentId}`), eq(catalogQuoteRequests.status, "failed"),
+            .where(and(eq(catalogQuoteRequests.agentKey, `eip155:${chainId}:${agentId}`), eq(catalogQuoteRequests.status, "failed"),
               eq(catalogQuoteRequests.errorCode, "QUOTE_ATTEMPT_INTERRUPTED")))))),
     ]);
   }
@@ -838,7 +868,8 @@ export async function catalogQuoteHistoryResponse(request: Request, d1: D1Databa
     errorCode: catalogQuoteRequests.errorCode,
     resultObservationId: catalogQuoteRequests.resultObservationId,
   }).from(catalogQuoteRequests)
-    .where(and(eq(catalogQuoteRequests.agentKey, `eip155:56:${agentId}`), sql`${catalogQuoteRequests.callerKey} <> 'migration'`))
+    .where(and(eq(catalogQuoteRequests.agentKey, `eip155:${chainId}:${agentId}`), sql`${catalogQuoteRequests.callerKey} <> 'migration'`,
+      requestValue === null ? undefined : eq(catalogQuoteRequests.id, Number(requestValue))))
     .orderBy(desc(catalogQuoteRequests.createdAt), desc(catalogQuoteRequests.id)).limit(page === null ? 100 : 5).offset(page === null ? 0 : (page - 1) * 5);
   const requestIds = requestRows.map((row) => row.id);
   const attempts = requestIds.length === 0 ? [] : await db.select({
@@ -866,7 +897,7 @@ export async function catalogQuoteHistoryResponse(request: Request, d1: D1Databa
     list.push(attempt);
     attemptsByRequest.set(attempt.requestId, list);
   }
-  const requests = new Map<number, { id: number; requestHash: string; kind: string; status: string; transport: string; endpoint: string | null; provider: string | null; createdAt: number; completedAt: number | null; quoteExpiresAt: number | null; errorCode: string | null; resultObservationId: number | null; attempts: Array<{ id: string; executor: string; status: string; durationMs: number | null; httpStatus: number | null; outcome: string | null; errorCode: string | null }> }>();
+  const requests = new Map<number, { id: number; requestHash: string; negotiationHash: string | null; kind: string; status: string; transport: string; endpoint: string | null; provider: string | null; createdAt: number; completedAt: number | null; quoteExpiresAt: number | null; errorCode: string | null; resultObservationId: number | null; attempts: Array<{ id: string; executor: string; status: string; durationMs: number | null; httpStatus: number | null; outcome: string | null; errorCode: string | null }> }>();
   for (const row of requestRows) {
     const status = row.status === "succeeded" && row.quoteExpiresAt !== null && row.quoteExpiresAt <= nowMs
       ? "expired" : row.status;
@@ -876,13 +907,19 @@ export async function catalogQuoteHistoryResponse(request: Request, d1: D1Databa
         return typeof value.provider === "string" ? value.provider : null;
       } catch { return null; }
     })();
+    const negotiationHash = (() => {
+      try {
+        const value = JSON.parse(row.resultObservationId === null ? "{}" : observationById.get(row.resultObservationId) ?? "{}");
+        return typeof value.negotiationHash === "string" && /^0x[\da-f]{64}$/i.test(value.negotiationHash) ? value.negotiationHash : null;
+      } catch { return null; }
+    })();
     const requestMetadata = (() => {
       try {
         const value = JSON.parse(row.requestMetadataJson ?? "{}") as { endpoint?: unknown };
         return typeof value.endpoint === "string" ? value.endpoint : null;
       } catch { return null; }
     })();
-    const current = requests.get(row.id) ?? { id: row.id, requestHash: row.requestHash, kind: row.kind, status, transport: row.transport, endpoint: requestMetadata, provider: observationMetadata, createdAt: row.createdAt, completedAt: row.completedAt, quoteExpiresAt: row.quoteExpiresAt, errorCode: row.errorCode, resultObservationId: row.resultObservationId, attempts: [] };
+    const current = requests.get(row.id) ?? { id: row.id, requestHash: row.requestHash, negotiationHash, kind: row.kind, status, transport: row.transport, endpoint: requestMetadata, provider: observationMetadata, createdAt: row.createdAt, completedAt: row.completedAt, quoteExpiresAt: row.quoteExpiresAt, errorCode: row.errorCode, resultObservationId: row.resultObservationId, attempts: [] };
     if (current.provider === null && observationMetadata !== null) current.provider = observationMetadata;
     if (current.endpoint === null && requestMetadata !== null) current.endpoint = requestMetadata;
     current.attempts = (attemptsByRequest.get(row.id) ?? []).map((attempt) => ({
@@ -899,8 +936,8 @@ export async function catalogQuoteHistoryResponse(request: Request, d1: D1Databa
   const allRequests = [...requests.values()];
   const effectiveStatus = sql<string>`CASE WHEN ${catalogQuoteRequests.status} = 'succeeded' AND ${catalogQuoteRequests.quoteExpiresAt} <= ${nowMs} THEN 'expired' ELSE ${catalogQuoteRequests.status} END`;
   const totals = await db.select({ kind: catalogQuoteRequests.kind, status: effectiveStatus, total: count(), verified: sql<number>`SUM(CASE WHEN ${catalogQuoteRequests.status} = 'succeeded' THEN 1 ELSE 0 END)` }).from(catalogQuoteRequests)
-    .where(and(eq(catalogQuoteRequests.agentKey, `eip155:56:${agentId}`), sql`${catalogQuoteRequests.callerKey} <> 'migration'`)).groupBy(catalogQuoteRequests.kind, effectiveStatus);
-  const migrated = await db.select({ total: count() }).from(catalogQuoteRequests).where(and(eq(catalogQuoteRequests.agentKey, `eip155:56:${agentId}`), eq(catalogQuoteRequests.callerKey, "migration")));
+    .where(and(eq(catalogQuoteRequests.agentKey, `eip155:${chainId}:${agentId}`), sql`${catalogQuoteRequests.callerKey} <> 'migration'`)).groupBy(catalogQuoteRequests.kind, effectiveStatus);
+  const migrated = await db.select({ total: count() }).from(catalogQuoteRequests).where(and(eq(catalogQuoteRequests.agentKey, `eip155:${chainId}:${agentId}`), eq(catalogQuoteRequests.callerKey, "migration")));
   const buyerRequests = totals.filter((entry) => entry.kind === "buyer_quote");
   const capabilityProbes = totals.filter((entry) => entry.kind === "capability_probe");
   const sum = (rows: typeof totals) => rows.reduce((total, row) => total + row.total, 0);

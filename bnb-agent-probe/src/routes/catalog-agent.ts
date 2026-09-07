@@ -12,6 +12,7 @@ export async function catalogAgentResponse(
   d1: D1Database,
   nowMs = Date.now(),
   responseVersion: 1 | 2 = 2,
+  testnetEnabled = false,
 ): Promise<Response> {
   const url = new URL(request.url);
   const pathMatch = /^\/catalog-agent\/([1-9]\d*)$/.exec(url.pathname);
@@ -76,7 +77,7 @@ export async function catalogAgentResponse(
     nowMs,
   });
   const serializeObservation = publicCatalogObservation;
-  if (chainId === 97) {
+  if (chainId === 97 && !testnetEnabled) {
     state.canRequestQuote = false;
     state.canPrepareHire = false;
     state.canRequestBrowserValidation = false;

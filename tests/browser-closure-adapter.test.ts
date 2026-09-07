@@ -16,6 +16,19 @@ vi.mock("@bnbagent/sdk/erc8183", async original => ({ ...await original<object>(
   PolicyClient: class { disputeWindow = async () => 100n; disputed = async () => false; check = async () => [1, "0x"]; },
 }));
 const input = { provider: { request: vi.fn() }, wallet, jobId: "1", action: "settle" as const, mode: "send" as const };
+it("sends a Testnet refund to Commerce and verifies EXPIRED state", async () => {
+  activePins = TESTNET_CLOSURE_PINS;
+  mock.chain.mockResolvedValue(97);
+  mock.job.mockResolvedValue({ id: 1n, status: 1, client: wallet, evaluator: activePins.router, submittedAt: 0n, expiredAt: 100n });
+  mock.send.mockImplementationOnce(async tx => {
+    mock.tx.mockResolvedValue({ from: wallet, to: tx.to, input: tx.data, value: 0n });
+    mock.job.mockResolvedValue({ id: 1n, status: 5 });
+    return hash;
+  });
+  const result = await executeBrowserClosure({ ...input, network: "testnet", action: "refund" });
+  expect(result.state).toBe("confirmed");
+  expect(mock.send).toHaveBeenCalledWith(expect.objectContaining({ to: TESTNET_CLOSURE_PINS.commerce, value: 0n }));
+});
 beforeEach(() => {
   activePins = pins;
   vi.clearAllMocks(); localStorage.clear();

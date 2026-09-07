@@ -75,16 +75,16 @@ it("uses seller fields, preserves one request through fallback, and clears the q
   const calls: Array<{ url: string; body: unknown }> = [];
   vi.stubGlobal("fetch", vi.fn(async (url: string | URL, init?: RequestInit) => {
     calls.push({ url: String(url), body: init?.body ? JSON.parse(String(init.body)) : null });
-    if (String(url).endsWith("/input")) return Response.json({ contract, endpointKey: "e".repeat(64), contractHash: "f".repeat(64) });
+    if (new URL(String(url), "http://local").pathname.endsWith("/input")) return Response.json({ contract, endpointKey: "e".repeat(64), contractHash: "f".repeat(64) });
     if (String(url).startsWith("https://seller")) throw new TypeError("Failed to fetch");
-    if (String(url).endsWith("/fallback")) return Response.json({ requestId: 4, quote: { envelope: { request_hash: "hash" } } });
+    if (new URL(String(url), "http://local").pathname.endsWith("/fallback")) return Response.json({ requestId: 4, quote: { chainId: 56, agentId: 42, envelope: { request_hash: "hash" } } });
     return Response.json({ attemptId: "attempt-1", target: "https://seller.example.com/a2a", transport: "a2a", request: { task_description: 'SERVICE_V1:{"topic":"Research"}', terms: contract.terms } });
   }));
   render(<QuoteRequestPanel agentId="42" />);
   const input = await screen.findByLabelText("Research topic *");
   expect(screen.getByLabelText("Hiring locked until quote verified")).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "Request quote" }));
-  expect(calls.filter(call => call.url.endsWith("/quotes"))).toHaveLength(0);
+  expect(calls.filter(call => new URL(call.url, "http://local").pathname.endsWith("/quotes"))).toHaveLength(0);
   fireEvent.change(input, { target: { value: "Research" } });
   fireEvent.click(screen.getByRole("button", { name: "Request quote" }));
   await screen.findByText("Review enabled");
@@ -92,8 +92,8 @@ it("uses seller fields, preserves one request through fallback, and clears the q
   expect(screen.queryByText("Status")).not.toBeInTheDocument();
   expect(screen.getByText("Quote details").closest("details")).not.toHaveAttribute("open");
   expect(screen.queryByLabelText("Hiring locked until quote verified")).not.toBeInTheDocument();
-  expect(calls.find(call => call.url.endsWith("/quotes"))?.body).toMatchObject({ schemaVersion: 2, parameters: { topic: "Research" } });
-  expect(calls.find(call => call.url.endsWith("/fallback"))?.url).toContain("attempt-1");
+  expect(calls.find(call => new URL(call.url, "http://local").pathname.endsWith("/quotes"))?.body).toMatchObject({ schemaVersion: 2, parameters: { topic: "Research" } });
+  expect(calls.find(call => new URL(call.url, "http://local").pathname.endsWith("/fallback"))?.url).toContain("attempt-1");
   fireEvent.change(input, { target: { value: "Changed" } });
   await waitFor(() => expect(screen.queryByText("Review enabled")).not.toBeInTheDocument());
   expect(screen.getByLabelText("Hiring locked until quote verified")).toBeInTheDocument();
@@ -101,7 +101,7 @@ it("uses seller fields, preserves one request through fallback, and clears the q
 it.each(["2025-06-18", "unsupported"])("initializes MCP before tools and rejects unsupported versions: %s", async (version) => {
   const methods: string[] = [];
   vi.stubGlobal("fetch", vi.fn(async (url: string | URL, init?: RequestInit) => {
-    if (String(url).endsWith("/input")) return Response.json({ contract, endpointKey: "e".repeat(64), contractHash: "f".repeat(64) });
+    if (new URL(String(url), "http://local").pathname.endsWith("/input")) return Response.json({ contract, endpointKey: "e".repeat(64), contractHash: "f".repeat(64) });
     const body = init?.body ? JSON.parse(String(init.body)) : {};
     if (String(url).startsWith("https://seller")) {
       methods.push(body.method);
@@ -112,7 +112,7 @@ it.each(["2025-06-18", "unsupported"])("initializes MCP before tools and rejects
       if (body.method === "tools/list") return Response.json({ jsonrpc: "2.0", id: body.id, result: { tools: [{ name: "request_quote", inputSchema: { type: "object", required: ["task_description", "terms"], properties: { task_description: { type: "string" }, terms: { type: "object" } } } }] } });
       return Response.json({ jsonrpc: "2.0", id: body.id, result: { structuredContent: { request_hash: "hash" } } });
     }
-    if (String(url).endsWith("/result")) return Response.json({ requestId: 4, quote: { envelope: { request_hash: "hash" } } });
+    if (new URL(String(url), "http://local").pathname.endsWith("/result")) return Response.json({ requestId: 4, quote: { chainId: 56, agentId: 42, envelope: { request_hash: "hash" } } });
     return Response.json({ attemptId: "mcp-attempt", target: "https://seller.example.com/mcp", transport: "mcp", request: { task_description: "Research", terms: contract.terms } });
   }));
   render(<QuoteRequestPanel agentId="42" />);

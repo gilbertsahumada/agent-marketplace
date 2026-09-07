@@ -9,7 +9,7 @@ vi.mock("../src/a2a.ts", () => ({
 function repository(status: string) {
   const repo = Object.create(CatalogErc8183Repository.prototype) as CatalogErc8183Repository;
   Object.assign(repo, { target: { transport: "a2a", endpoint: "https://seller.example" } });
-  vi.spyOn(repo, "getJob").mockResolvedValueOnce({ status: "FUNDED" } as never).mockResolvedValue({ status, jobId: "56719" } as never);
+  vi.spyOn(repo, "getJob").mockResolvedValueOnce({ status: "FUNDED", deadline: String(Math.floor(Date.now() / 1000) + 3600) } as never).mockResolvedValue({ status, jobId: "56719" } as never);
   return repo;
 }
 it("recovers a submitted chain state after notification timeout", async () => {
@@ -19,4 +19,11 @@ it("recovers a submitted chain state after notification timeout", async () => {
 });
 it("does not claim submission when the funded job has not advanced", async () => {
   await expect(repository("FUNDED").notifyFunded(56719n)).rejects.toThrow("notification could not be completed");
+});
+
+it.each(["1", "0", "invalid"])("refuses direct notification with expired or invalid deadline %s", async deadline => {
+  const repo = repository("FUNDED");
+  vi.mocked(repo.getJob).mockReset().mockResolvedValue({ status: "FUNDED", deadline } as never);
+  await expect(repo.notifyFunded(56719n)).rejects.toThrow(/deadline/);
+  expect(repo.getJob).toHaveBeenCalledTimes(1);
 });

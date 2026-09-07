@@ -80,7 +80,7 @@ function busyStatusLabel(busy: string | null): string | null {
 
 type InjectedProvider = Parameters<typeof executeBrowserHire>[0];
 
-async function apiJson<T>(input: string, init?: RequestInit): Promise<T> {
+async function fetchApiJson<T>(input: string, init?: RequestInit): Promise<T> {
   const response = await fetch(input, {
     ...init,
     headers: { "content-type": "application/json", ...init?.headers },
@@ -366,13 +366,14 @@ export function Erc8183MarketplaceHire({
   quote: MainnetQuoteResponse;
   quoteRequestId: number;
 }) {
+  const network = quote.chainId === 97 ? ERC8183_TESTNET : ERC8183_MAINNET;
   const deployment: Erc8183BrowserDeployment = {
-    chainId: 56,
-    networkName: ERC8183_MAINNET.networkName,
+    chainId: quote.chainId,
+    networkName: network.networkName,
     nativeCurrencyName: "BNB",
     nativeCurrencySymbol: "BNB",
-    rpcUrl: ERC8183_MAINNET.rpcUrl,
-    explorerUrl: ERC8183_MAINNET.explorerUrl,
+    rpcUrl: network.rpcUrl,
+    explorerUrl: network.explorerUrl,
     agentId: quote.agentId,
     commerce: quote.commerce,
     router: quote.router,
@@ -389,7 +390,7 @@ export function Erc8183MarketplaceHire({
       embedded
       initialQuote={quote}
       jobsBaseOverride={`/api/marketplace/agents/${quote.agentId}/hire/jobs`}
-      mode="mainnet"
+      mode={quote.chainId === 97 ? "testnet" : "mainnet"}
       {...(onQuoteExpired ? { onQuoteExpired } : {})}
       quoteRequestId={quoteRequestId}
     />
@@ -401,23 +402,23 @@ export function Erc8183TestnetDemo() {
 }
 
 /** Only reads a saved execution reference; never requests a fresh quote or prepares payment. */
-export function Erc8183SavedHire({ agentId, onActiveChange }: { agentId: string; onActiveChange?: (active: boolean) => void }) {
+export function Erc8183SavedHire({ agentId, chainId = 56, onActiveChange }: { agentId: string; chainId?: 56 | 97; onActiveChange?: (active: boolean) => void }) {
   const [deployment, setDeployment] = useState<Erc8183BrowserDeployment | null>(null);
   useEffect(() => {
     setDeployment(null);
     try {
-      const raw = localStorage.getItem(`bnb-agent-marketplace:erc8183-browser:56:${agentId}:v1`);
+      const raw = localStorage.getItem(`bnb-agent-marketplace:erc8183-browser:${chainId}:${agentId}:v1`);
       if (!raw || !/^\d+$/.test(agentId)) return;
       const reference = JSON.parse(raw) as { seller?: string };
       if (!reference.seller) return;
       const candidate: Erc8183BrowserDeployment = {
-        ...ERC8183_MAINNET, agentId: Number(agentId), seller: normalizeBrowserAddress(reference.seller),
+        ...(chainId === 97 ? ERC8183_TESTNET : ERC8183_MAINNET), agentId: Number(agentId), seller: normalizeBrowserAddress(reference.seller),
         nativeCurrencyName: "BNB", nativeCurrencySymbol: "BNB", maximumBudgetRaw: (2n ** 256n) - 1n,
       };
       if (loadBrowserJournal(localStorage, candidate)?.jobId) setDeployment(candidate);
     } catch { /* An unreadable local reference never becomes an active hire. */ }
-  }, [agentId]);
-  return deployment ? <Erc8183BrowserDemo deployment={deployment} mode="mainnet" embedded recoveryOnly
+  }, [agentId, chainId]);
+  return deployment ? <Erc8183BrowserDemo key={`${chainId}:${agentId}`} deployment={deployment} mode={chainId === 97 ? "testnet" : "mainnet"} embedded recoveryOnly
     {...(onActiveChange ? { onRecoveryActiveChange: onActiveChange } : {})}
     apiBaseOverride={`/api/marketplace/agents/${agentId}/hire`} jobsBaseOverride={`/api/marketplace/agents/${agentId}/hire/jobs`} /> : null;
 }
@@ -439,6 +440,11 @@ function Erc8183BrowserDemo({ mode, deployment, agentName, embedded = false, rec
   const router = useRouter();
   const apiBase = apiBaseOverride ?? (mode === "mainnet" ? "/api/marketplace/demo/erc8183-mainnet" : "/api/marketplace/demo/erc8183");
   const jobsBase = jobsBaseOverride ?? (mode === "mainnet" ? "/api/marketplace/jobs/mainnet" : "/api/marketplace/jobs/testnet");
+  const catalogRequest = apiBaseOverride !== undefined;
+  const apiJson = useCallback(<T,>(input: string, init?: RequestInit): Promise<T> => {
+    const destination = catalogRequest ? `${input}${input.includes("?") ? "&" : "?"}chainId=${deployment.chainId}` : input;
+    return fetchApiJson<T>(destination, init);
+  }, [catalogRequest, deployment.chainId]);
   const jobPageBase = mode === "mainnet" ? "/jobs/mainnet" : "/jobs/testnet";
   const [quote, setQuote] = useState<MainnetQuoteResponse | null>(initialQuote);
   const [quoteClock, setQuoteClock] = useState(() => Math.floor(Date.now() / 1_000));
@@ -470,7 +476,7 @@ function Erc8183BrowserDemo({ mode, deployment, agentName, embedded = false, rec
     const current = tracking.job;
     setJob(current);
     return current;
-  }, [jobsBase, quoteRequestId, journalRestored, journal?.quoteRequestId]);
+  }, [apiJson, jobsBase, quoteRequestId, journalRestored, journal?.quoteRequestId]);
 
   // Notification delivery and on-chain execution are independent. Poll only
   // the active funded hire; never replay a payment or notification here.
@@ -479,7 +485,7 @@ function Erc8183BrowserDemo({ mode, deployment, agentName, embedded = false, rec
       journal.buyer.toLowerCase() !== account.toLowerCase()) return;
     const controller = new AbortController();
     const requestId = journalRestored ? journal.quoteRequestId : quoteRequestId;
-    const url = `${jobsBase}/${journal.jobId}${requestId ? `?quoteRequestId=${requestId}` : ""}`;
+    const url = `${jobsBase}/${journal.jobId}?chainId=${deployment.chainId}${requestId ? `&quoteRequestId=${requestId}` : ""}`;
     let timer: ReturnType<typeof setTimeout>;
     let attempts = 0;
     const refresh = async () => {

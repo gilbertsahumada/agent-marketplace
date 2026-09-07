@@ -30,8 +30,8 @@ export function SellerParameters({ schema, value, onChange, disabled = false, sh
         if (next === undefined) delete result[key]; else result[key] = next;
         onChange(result);
       };
-      if (field.type === "object") return <fieldset key={key} disabled={disabled} className="col-span-full min-w-0 rounded-md border p-3">
-        <legend className="px-1 text-sm font-medium">{field.title ?? key}</legend>
+      if (field.type === "object") return <fieldset key={key} disabled={disabled} className="col-span-full min-w-0 border-0 p-0">
+        <legend className="mb-3 text-sm font-medium text-muted-foreground">{field.title ?? key}</legend>
         <SellerParameters schema={field} value={(value[key] ?? {}) as Record<string, unknown>} onChange={update} disabled={disabled} showErrors={showErrors} prefix={id} example={example?.[key] as Record<string, unknown> | undefined} />
       </fieldset>;
       return <Field key={key} data-invalid={invalid} data-disabled={disabled}>

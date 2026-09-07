@@ -32,6 +32,13 @@ export const BSC_PAYMENT_TOKEN = getAddress("0xcE24439F2D9C6a2289F741120FE202248
 // demo. Only hire-event verification reads it; probes stay Mainnet-only.
 export const BSC_TESTNET_REGISTRY = getAddress(IDENTITY_REGISTRIES[97]);
 export const BSC_TESTNET_COMMERCE = getAddress("0xa206c0517b6371c6638cd9e4a42cc9f02a33b0de");
+export const PROBE_DEPLOYMENTS = {
+  56: { registry: BSC_REGISTRY, commerce: BSC_COMMERCE, router: BSC_ROUTER, policy: BSC_POLICY, token: BSC_PAYMENT_TOKEN },
+  97: { registry: BSC_TESTNET_REGISTRY, commerce: BSC_TESTNET_COMMERCE,
+    router: getAddress("0xD7d36D66d2F1B608A0F943f722D27e3744f66F25"),
+    policy: getAddress("0xd6a4217588F6B1F5657a92A3e94E6422aD771cEA"),
+    token: getAddress("0xc70B8741B8B07A6d61E54fd4B20f22Fa648E5565") },
+} as const;
 
 const registryAbi = parseAbi([
   "function getAgentWallet(uint256 agentId) view returns (address)",
@@ -129,6 +136,7 @@ interface ProbeChainReader {
 }
 
 export interface ProbeChainContext {
+  readonly chainId?: 56 | 97;
   readonly provider: Address;
   readonly walletSource: "agentWallet" | "ownerOf";
   readonly blockNumber: bigint;
@@ -143,7 +151,7 @@ export interface ProbeChainContext {
 
 export async function readProbeChainContext(
   client: ProbeChainReader,
-  input: { readonly agentId: string; readonly nowSeconds: number },
+  input: { readonly agentId: string; readonly nowSeconds: number; readonly chainId?: 56 | 97 },
 ): Promise<ProbeChainContext> {
   if (!/^[1-9]\d*$/.test(input.agentId)) throw new BscProbeError("BSC_AGENT_ID");
   let chainId: number;
@@ -154,7 +162,9 @@ export async function readProbeChainContext(
     if (transportError) throw transportError;
     throw new BscProbeError("BSC_CHAIN_RPC");
   }
-  if (chainId !== 56) throw new BscProbeError("BSC_CHAIN_ID");
+  const expectedChain = input.chainId ?? 56;
+  if (chainId !== expectedChain) throw new BscProbeError("BSC_CHAIN_ID");
+  const deployment = PROBE_DEPLOYMENTS[expectedChain];
   let block: Awaited<ReturnType<ProbeChainReader["getBlock"]>>;
   try {
     block = await client.getBlock();
@@ -170,11 +180,11 @@ export async function readProbeChainContext(
   }
   const agentId = BigInt(input.agentId);
   const contracts = [
-    { address: BSC_REGISTRY, abi: registryAbi, functionName: "getAgentWallet", args: [agentId] },
-    { address: BSC_REGISTRY, abi: registryAbi, functionName: "ownerOf", args: [agentId] },
-    { address: BSC_COMMERCE, abi: commerceAbi, functionName: "paymentToken" },
-    { address: BSC_ROUTER, abi: routerAbi, functionName: "policyWhitelist", args: [BSC_POLICY] },
-    { address: BSC_PAYMENT_TOKEN, abi: tokenAbi, functionName: "decimals" },
+    { address: deployment.registry, abi: registryAbi, functionName: "getAgentWallet", args: [agentId] },
+    { address: deployment.registry, abi: registryAbi, functionName: "ownerOf", args: [agentId] },
+    { address: deployment.commerce, abi: commerceAbi, functionName: "paymentToken" },
+    { address: deployment.router, abi: routerAbi, functionName: "policyWhitelist", args: [deployment.policy] },
+    { address: deployment.token, abi: tokenAbi, functionName: "decimals" },
   ] as const;
   let values: readonly unknown[];
   try {
@@ -193,21 +203,22 @@ export async function readProbeChainContext(
   if (
     typeof paymentToken !== "string"
     || !isAddress(paymentToken)
-    || !isAddressEqual(paymentToken, BSC_PAYMENT_TOKEN)
+    || !isAddressEqual(paymentToken, deployment.token)
   ) {
     throw new BscProbeError("BSC_PAYMENT_TOKEN");
   }
   if (policyAllowlisted !== true) throw new BscProbeError("BSC_POLICY");
   if (tokenDecimals !== 18) throw new BscProbeError("BSC_TOKEN_DECIMALS");
   return {
+    chainId: expectedChain,
     provider: getAddress(identity.wallet),
     walletSource: identity.source,
     blockNumber: block.number,
     blockTimestamp: block.timestamp,
-    commerce: BSC_COMMERCE,
-    router: BSC_ROUTER,
-    policy: BSC_POLICY,
-    paymentToken: BSC_PAYMENT_TOKEN,
+    commerce: deployment.commerce,
+    router: deployment.router,
+    policy: deployment.policy,
+    paymentToken: deployment.token,
     tokenDecimals: 18,
     policyAllowlisted: true,
   };

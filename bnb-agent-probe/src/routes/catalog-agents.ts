@@ -111,6 +111,7 @@ export async function catalogAgentsResponse(
   d1: D1Database,
   nowMs: number,
   responseVersion: 1 | 2 = 2,
+  testnetEnabled = false,
 ): Promise<Response> {
   const url = new URL(request.url);
   const allowedKeys = [
@@ -194,9 +195,9 @@ export async function catalogAgentsResponse(
         )))),
       )))),
     )));
-  const requestableCondition = chainId === 56 ? compatibleCondition(false) : sql`0=1`;
+  const requestableCondition = chainId === 56 || testnetEnabled ? compatibleCondition(false) : sql`0=1`;
   const scopeCondition = scope === "hiring" ? requestableCondition : scope === "evaluation" ? not(requestableCondition) : undefined;
-  const quoteCapableCondition = chainId === 56 ? compatibleCondition(true) : sql`0=1`;
+  const quoteCapableCondition = chainId === 56 || testnetEnabled ? compatibleCondition(true) : sql`0=1`;
   const operationalDeclarationExists = exists(db.select({ value: sql`1` })
     .from(catalogAgentEndpoints)
     .innerJoin(catalogEndpoints, eq(catalogEndpoints.endpointKey, catalogAgentEndpoints.endpointKey))
@@ -793,7 +794,7 @@ export async function catalogAgentsResponse(
     };
   });
   const compatibilityItems = items.map(({ admission: _admission, state: _state, ...item }) => item);
-  if (chainId === 97) for (const item of items) {
+  if (chainId === 97 && !testnetEnabled) for (const item of items) {
     item.state.canRequestQuote = false;
     item.state.canPrepareHire = false;
     item.state.canRequestBrowserValidation = false;
@@ -846,7 +847,7 @@ export async function catalogAgentsResponse(
     schemaVersion: 2,
     apiVersion: CATALOG_API_VERSION,
     chainId,
-    coverage: { chainId, catalogDiscovery: chainId === 56 ? "enabled" : "not_configured", quoteExecution: chainId === 56 ? "enabled" : "not_configured" },
+    coverage: { chainId, catalogDiscovery: chainId === 56 || testnetEnabled ? "enabled" : "not_configured", quoteExecution: chainId === 56 || testnetEnabled ? "enabled" : "not_configured" },
     status: statuses[0],
     statuses,
     page,

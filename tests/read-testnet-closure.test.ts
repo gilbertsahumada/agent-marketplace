@@ -7,7 +7,7 @@ vi.mock("viem", async original => ({ ...await original<object>(), createPublicCl
 beforeEach(() => {
   vi.clearAllMocks(); mock.chain.mockResolvedValue(97); mock.pins.mockResolvedValue(true);
   mock.read.mockImplementation(async ({ functionName }) => {
-    if (functionName === "getJob") return { id: 514n, client: pins.seller, evaluator: pins.router, status: 2, submittedAt: 100n };
+    if (functionName === "getJob") return { id: 514n, client: pins.seller, evaluator: pins.router, status: 2, submittedAt: 100n, budget: 100000000000000000n, expiredAt: 1000n };
     if (functionName === "jobPolicy") return pins.policy;
     if (functionName === "disputeWindow") return 900n;
     if (functionName === "disputed") return true;

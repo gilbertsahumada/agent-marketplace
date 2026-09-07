@@ -1,3 +1,4 @@
+import { quoteNetwork } from "@/src/presentation/http/quote-network";
 import { NextResponse } from "next/server";
 import { getBuyerQuoteHistory, startBuyerQuote } from "@/src/business/composition";
 import { InvalidMarketplaceInputError, MarketplacePayloadTooLargeError } from "@/src/business/errors/marketplace-errors";
@@ -40,8 +41,8 @@ export async function GET(_request: Request, context: { params: Promise<{ agentI
     const { agentId } = await context.params;
     const params = new URL(_request.url).searchParams;
     const page = params.get("page");
-    if ([...params.keys()].some(key => key !== "page") || params.getAll("page").length > 1 || (page !== null && !/^[1-9]\d{0,5}$/.test(page))) throw new InvalidMarketplaceInputError("Invalid history page");
-    const result = await getBuyerQuoteHistory(agentId, page ? { page: Number(page) } : {});
+    if ([...params.keys()].some(key => key !== "page" && key !== "chainId") || params.getAll("page").length > 1 || (page !== null && !/^[1-9]\d{0,5}$/.test(page))) throw new InvalidMarketplaceInputError("Invalid history page");
+    const result = await getBuyerQuoteHistory(agentId, { chainId: quoteNetwork(_request), ...(page ? { page: Number(page) } : {}) });
     if (!result) return NextResponse.json({ error: "quote_service_unavailable" }, { status: 503 });
     return NextResponse.json(result.body, { status: result.status, headers: { "cache-control": "no-store" } });
   } catch (error) { return marketplaceErrorResponse(error); }
@@ -53,7 +54,7 @@ export async function POST(request: Request, context: { params: Promise<{ agentI
       throw new InvalidMarketplaceInputError("Content-Type must be application/json");
     }
     const { agentId } = await context.params;
-    const result = await startBuyerQuote(agentId, brief(await readJson(request)), { caller: callerContext(request) });
+    const result = await startBuyerQuote(agentId, brief(await readJson(request)), { chainId: quoteNetwork(request), caller: callerContext(request) });
     if (!result) return NextResponse.json({ error: "quote_service_unavailable" }, { status: 503 });
     return NextResponse.json(result.body, { status: result.status, headers: { "cache-control": "no-store" } });
   } catch (error) { return marketplaceErrorResponse(error); }

@@ -7,7 +7,7 @@ import axe from "axe-core";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { AgentCard } from "../components/marketplace/agent-card.tsx";
+import { AgentCard, agentJourneyAction } from "../components/marketplace/agent-card.tsx";
 import { AgentProfile } from "../components/marketplace/agent-profile.tsx";
 import { CatalogPage } from "../components/marketplace/catalog-page.tsx";
 import { CatalogUnavailable } from "../components/marketplace/catalog-unavailable.tsx";
@@ -607,6 +607,16 @@ describe("marketplace presentation rules", () => {
 
     expect(screen.getByText("Ready to hire")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /hire agent/i })).toHaveAttribute("href", "/hire/303779#hire-flow");
+  });
+
+  it.each(["request_quote", "prepare_hire", "check_availability", "unavailable"] as const)("preserves Testnet in %s action links", buyerAction => {
+    const action = agentJourneyAction({
+      agentId: "2197", chainId: 97, name: "Testnet agent", description: "Agent",
+      operator: "third_party", categories: [], href: "/hire/2197?network=testnet",
+      hireability: "listed_only", buyerAction, quoteRequestAvailable: true,
+      evidence, passportState: "evaluated",
+    });
+    expect(new URL(action.href, "http://localhost").searchParams.get("network")).toBe("testnet");
   });
 
   it("lets a buyer check a declared endpoint without waiting for the scheduler", () => {
@@ -1691,9 +1701,9 @@ describe("marketplace presentation rules", () => {
     await user.click(screen.getByRole("button", { name: "Retry seller notification" }));
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
     expect(fetchMock.mock.calls.map(call => String(call[0]))).toEqual([
-      "/api/marketplace/agents/303779/hire/jobs/42?quoteRequestId=17",
-      "/api/marketplace/agents/303779/hire/jobs/42?quoteRequestId=17",
-      "/api/marketplace/agents/303779/hire/notify",
+      "/api/marketplace/agents/303779/hire/jobs/42?quoteRequestId=17&chainId=56",
+      "/api/marketplace/agents/303779/hire/jobs/42?quoteRequestId=17&chainId=56",
+      "/api/marketplace/agents/303779/hire/notify?chainId=56",
     ]);
     expect(JSON.parse(fetchMock.mock.calls[2]?.[1]?.body as string)).toEqual({ buyer, jobId: "42", quoteRequestId: 17 });
     expect(walletState.switchChainAsync).not.toHaveBeenCalled();

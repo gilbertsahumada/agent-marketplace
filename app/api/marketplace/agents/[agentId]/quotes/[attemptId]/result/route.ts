@@ -1,3 +1,4 @@
+import { quoteNetwork } from "@/src/presentation/http/quote-network";
 import { NextResponse } from "next/server";
 import { reportBuyerQuoteFailure, submitBuyerQuoteResult } from "@/src/business/composition";
 import { InvalidMarketplaceInputError, MarketplacePayloadTooLargeError } from "@/src/business/errors/marketplace-errors";
@@ -30,8 +31,8 @@ export async function POST(request: Request, context: { params: Promise<{ agentI
     if (!/^[1-9]\d{0,19}$/.test(agentId)) throw new InvalidMarketplaceInputError("Agent id is invalid");
     const resultInput = await readEnvelope(request);
     const result = resultInput.errorCode
-      ? await reportBuyerQuoteFailure(agentId, attemptId, resultInput.errorCode, { caller: callerContext(request) })
-      : await submitBuyerQuoteResult(agentId, attemptId, resultInput.envelope!, { caller: callerContext(request) });
+      ? await reportBuyerQuoteFailure(agentId, attemptId, resultInput.errorCode, { chainId: quoteNetwork(request), caller: callerContext(request) })
+      : await submitBuyerQuoteResult(agentId, attemptId, resultInput.envelope!, { chainId: quoteNetwork(request), caller: callerContext(request) });
     if (!result) return NextResponse.json({ error: "quote_service_unavailable" }, { status: 503 });
     return NextResponse.json(result.body, { status: result.status, headers: { "cache-control": "no-store" } });
   } catch (error) { return marketplaceErrorResponse(error); }

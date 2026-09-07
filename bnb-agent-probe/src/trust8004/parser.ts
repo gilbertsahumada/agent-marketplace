@@ -1,6 +1,7 @@
 import {
   BSC_CHAIN_ID,
   type CatalogAgent,
+  type CatalogChainId,
   type CatalogDeclaredEndpoint,
   type CatalogEndpointProtocol,
   type CatalogIndexEndpoint,
@@ -172,13 +173,13 @@ function blockNumber(value: unknown, path: string): string | null {
   throw new CatalogSchemaError(path, "non-negative integer string or number", value);
 }
 
-export function parseCatalogAgent(value: unknown, path = "item"): CatalogAgent {
+export function parseCatalogAgent(value: unknown, path = "item", chainId: CatalogChainId = BSC_CHAIN_ID): CatalogAgent {
   const item = record(value, path);
   const rawChainId = typeof item.chainId === "string" && /^\d+$/.test(item.chainId)
     ? Number(item.chainId)
     : item.chainId;
-  if (rawChainId !== BSC_CHAIN_ID) {
-    throw new CatalogSchemaError(`${path}.chainId`, `chainId ${BSC_CHAIN_ID}`, item.chainId);
+  if (rawChainId !== chainId) {
+    throw new CatalogSchemaError(`${path}.chainId`, `chainId ${chainId}`, item.chainId);
   }
   let declaredEndpoints: CatalogDeclaredEndpoint[] = [];
   let indexEndpoints: CatalogIndexEndpoint[] = [];
@@ -207,7 +208,7 @@ export function parseCatalogAgent(value: unknown, path = "item"): CatalogAgent {
     if (!(error instanceof CatalogSchemaError)) throw error;
   }
   return {
-    chainId: BSC_CHAIN_ID,
+    chainId,
     agentId: numericAgentId(item.agentId, `${path}.agentId`),
     owner: nullableString(item.ownerAddress ?? item.owner, `${path}.owner`),
     metadataUri: nullableString(
@@ -230,7 +231,7 @@ export function parseCatalogAgent(value: unknown, path = "item"): CatalogAgent {
   };
 }
 
-export function parseCatalogPage(value: unknown): CatalogPage {
+export function parseCatalogPage(value: unknown, chainId: CatalogChainId = BSC_CHAIN_ID): CatalogPage {
   const page = record(value, "response");
   if (!Array.isArray(page.items) || page.items.length > MAX_PAGE_ITEMS) {
     throw new CatalogSchemaError("response.items", `array with at most ${MAX_PAGE_ITEMS} items`, page.items);
@@ -245,7 +246,7 @@ export function parseCatalogPage(value: unknown): CatalogPage {
   const invalidItems: CatalogPage["invalidItems"] = [];
   for (const [index, item] of page.items.entries()) {
     try {
-      items.push(parseCatalogAgent(item, `response.items[${index}]`));
+      items.push(parseCatalogAgent(item, `response.items[${index}]`, chainId));
     } catch (error) {
       invalidItems.push({ index, message: error instanceof Error ? error.message : String(error) });
     }

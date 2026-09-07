@@ -5,9 +5,17 @@ import { invalidateCatalogCandidateCache } from "./catalog-candidate-feed.ts";
 
 type Environment = Readonly<Record<string, string | undefined>>;
 
+export class BuyerQuoteLookupUnavailableError extends Error {
+  constructor() {
+    super("Quote verification records are temporarily unavailable. Retry without creating another quote or funding transaction.");
+    this.name = "BUYER_QUOTE_LOOKUP_UNAVAILABLE";
+  }
+}
+
 export interface BuyerQuoteHistoryRequest {
   id: number;
   requestHash: string;
+  negotiationHash?: string | null;
   kind: "buyer_quote" | "capability_probe" | string;
   status: string;
   transport: string;
@@ -63,10 +71,12 @@ function urlFor(env: Environment, path: string): URL | null {
 async function requestWorker(
   path: string,
   init: RequestInit,
-  options: { env?: Environment; fetchImpl?: typeof fetch; caller?: string } = {},
+  options: { chainId?: 56 | 97; env?: Environment; fetchImpl?: typeof fetch; caller?: string } = {},
 ): Promise<{ status: number; body: unknown } | null> {
   const env = options.env ?? process.env;
   const destination = urlFor(env, path);
+  if (options.chainId !== undefined && options.chainId !== 56 && options.chainId !== 97) return null;
+  if (destination && options.chainId !== undefined) destination.searchParams.set("chainId", String(options.chainId));
   const secret = env.BUYER_OBSERVATION_SECRET?.trim();
   if (!destination || !secret) return null;
   try {
@@ -90,7 +100,7 @@ async function requestWorker(
 export async function startBuyerQuote(
   agentId: string,
   brief: BuyerQuoteBrief | SellerParameterRequest,
-  options: { env?: Environment; fetchImpl?: typeof fetch; caller?: string } = {},
+  options: { chainId?: 56 | 97; env?: Environment; fetchImpl?: typeof fetch; caller?: string } = {},
 ) {
   const result = await requestWorker(`/catalog-quotes/${agentId}`, {
     method: "POST",
@@ -103,7 +113,7 @@ export async function startBuyerQuote(
   return result;
 }
 
-export async function getBuyerNegotiationInput(agentId: string, options: { env?: Environment; fetchImpl?: typeof fetch; caller?: string } = {}) {
+export async function getBuyerNegotiationInput(agentId: string, options: { chainId?: 56 | 97; env?: Environment; fetchImpl?: typeof fetch; caller?: string } = {}) {
   return requestWorker(`/catalog-quotes/${agentId}/input`, { method: "GET" }, options);
 }
 
@@ -111,7 +121,7 @@ export async function submitBuyerQuoteResult(
   agentId: string,
   attemptId: string,
   envelope: Record<string, unknown>,
-  options: { env?: Environment; fetchImpl?: typeof fetch; caller?: string } = {},
+  options: { chainId?: 56 | 97; env?: Environment; fetchImpl?: typeof fetch; caller?: string } = {},
 ) {
   const result = await requestWorker(`/catalog-quotes/${agentId}/attempt/${attemptId}/result`, {
     method: "POST",
@@ -126,7 +136,7 @@ export async function reportBuyerQuoteFailure(
   agentId: string,
   attemptId: string,
   errorCode: string,
-  options: { env?: Environment; fetchImpl?: typeof fetch; caller?: string } = {},
+  options: { chainId?: 56 | 97; env?: Environment; fetchImpl?: typeof fetch; caller?: string } = {},
 ) {
   const result = await requestWorker(`/catalog-quotes/${agentId}/attempt/${attemptId}/result`, {
     method: "POST",
@@ -141,7 +151,7 @@ export async function fallbackBuyerQuote(
   agentId: string,
   attemptId: string,
   request: { task_description: string; terms: Record<string, unknown> },
-  options: { env?: Environment; fetchImpl?: typeof fetch; browserErrorCode?: string; caller?: string } = {},
+  options: { chainId?: 56 | 97; env?: Environment; fetchImpl?: typeof fetch; browserErrorCode?: string; caller?: string } = {},
 ) {
   const browserErrorCode = options.browserErrorCode?.trim().toUpperCase();
   const result = await requestWorker(`/catalog-quotes/${agentId}/attempt/${attemptId}/fallback`, {
@@ -160,7 +170,7 @@ export async function fallbackBuyerQuote(
 
 export async function getBuyerQuoteHistory(
   agentId: string,
-  options: { env?: Environment; fetchImpl?: typeof fetch; page?: number } = {},
+  options: { chainId?: 56 | 97; env?: Environment; fetchImpl?: typeof fetch; page?: number } = {},
 ) {
   return requestWorker(`/catalog-quotes/${agentId}${options.page ? `?page=${options.page}` : ""}`, { method: "GET" }, options);
 }
@@ -173,15 +183,21 @@ export async function getBuyerQuoteHistory(
 export async function resolveBuyerQuoteRequest(
   agentId: string,
   requestId: number,
-  options: { env?: Environment; fetchImpl?: typeof fetch } = {},
+  options: { chainId?: 56 | 97; env?: Environment; fetchImpl?: typeof fetch } = {},
 ): Promise<BuyerQuoteHistoryRequest | null> {
   if (!Number.isSafeInteger(requestId) || requestId < 1) return null;
-  const result = await getBuyerQuoteHistory(agentId, options);
-  if (!result || result.status < 200 || result.status >= 300 || !result.body || typeof result.body !== "object") return null;
+  let result = await requestWorker(`/catalog-quotes/${agentId}?requestId=${requestId}`, { method: "GET" }, options);
+  // Rolling releases may still reach the previous Worker, which rejects the
+  // new query parameter. Keep existing jobs usable until the Worker is updated.
+  // Never fall back on timeouts, authentication failures or rate limiting.
+  const legacy = result?.status === 400;
+  if (legacy) result = await getBuyerQuoteHistory(agentId, options);
+  if (!result || result.status < 200 || result.status >= 300 || !result.body || typeof result.body !== "object") throw new BuyerQuoteLookupUnavailableError();
   const body = result.body as Partial<BuyerQuoteHistory>;
-  if (!Array.isArray(body.requests)) return null;
+  if (body.agentId !== agentId || !Array.isArray(body.requests)) throw new BuyerQuoteLookupUnavailableError();
   const row = body.requests.find((candidate): candidate is BuyerQuoteHistoryRequest => (
     candidate && typeof candidate === "object" && candidate.id === requestId && candidate.kind === "buyer_quote"
   ));
+  if (!row && legacy) throw new BuyerQuoteLookupUnavailableError();
   return row ?? null;
 }
