@@ -1,4 +1,94 @@
 {
   "schemaVersion": 1,
-  "proofs": []
+  "proofs": [
+    {
+      "schemaVersion": 1,
+      "capturedAt": "2026-09-07T21:03:00.076Z",
+      "chainId": 56,
+      "agentId": "303779",
+      "jobId": "56662",
+      "buyer": "0x5ee75a1B1648C023e885E58bD3735Ae273f2cc52",
+      "seller": "0xA2a2012e52Fd075c0F3146e37E833E7294ee52B5",
+      "token": "0xcE24439F2D9C6a2289F741120FE202248B666666",
+      "budgetRaw": "10000000000000000",
+      "finalState": "COMPLETED",
+      "deliverableHash": "0x104681048d6ecd1824bd04e39e3975eb7ab9fcf65e69647e982bf186f843aa5d",
+      "resultHashVerified": true,
+      "deterministicResultVerified": true,
+      "durationSeconds": "1031411",
+      "totalGasCostWei": "93696050000000",
+      "transactions": {
+        "createJob": {
+          "hash": "0xdeb145d607ebd994287931c9d1eb3f8cb0cdff2da7dd667241bbd6cec5da03ab",
+          "blockNumber": "118271068",
+          "timestamp": "2026-08-26T22:23:50.000Z",
+          "gasUsed": "783999",
+          "effectiveGasPrice": "50000000",
+          "gasCostWei": "39199950000000",
+          "explorerUrl": "https://bscscan.com/tx/0xdeb145d607ebd994287931c9d1eb3f8cb0cdff2da7dd667241bbd6cec5da03ab",
+          "provenance": "onchain:bsc-mainnet-rpc"
+        },
+        "registerJob": {
+          "hash": "0x3d4ae85b7e3d8f3ea5c55b7d19e3174640de63f06c851baa67f0fab97840348a",
+          "blockNumber": "118271086",
+          "timestamp": "2026-08-26T22:23:58.000Z",
+          "gasUsed": "151450",
+          "effectiveGasPrice": "50000000",
+          "gasCostWei": "7572500000000",
+          "explorerUrl": "https://bscscan.com/tx/0x3d4ae85b7e3d8f3ea5c55b7d19e3174640de63f06c851baa67f0fab97840348a",
+          "provenance": "onchain:bsc-mainnet-rpc"
+        },
+        "setBudget": {
+          "hash": "0x4697b192566c71ae54c3de341f712c75d41b8d75eefe946b7475ef9092396234",
+          "blockNumber": "118271106",
+          "timestamp": "2026-08-26T22:24:07.000Z",
+          "gasUsed": "96150",
+          "effectiveGasPrice": "50000000",
+          "gasCostWei": "4807500000000",
+          "explorerUrl": "https://bscscan.com/tx/0x4697b192566c71ae54c3de341f712c75d41b8d75eefe946b7475ef9092396234",
+          "provenance": "onchain:bsc-mainnet-rpc"
+        },
+        "approve": {
+          "hash": "0xfdac999cd6faa2ce20937246f3bc53ec6b2d291395bd4de5745aac71afcd213b",
+          "blockNumber": "118271125",
+          "timestamp": "2026-08-26T22:24:15.000Z",
+          "gasUsed": "60233",
+          "effectiveGasPrice": "50000000",
+          "gasCostWei": "3011650000000",
+          "explorerUrl": "https://bscscan.com/tx/0xfdac999cd6faa2ce20937246f3bc53ec6b2d291395bd4de5745aac71afcd213b",
+          "provenance": "onchain:bsc-mainnet-rpc"
+        },
+        "fund": {
+          "hash": "0x4e45656e7c4652077b91714c279cc193a5cc109cabaedc82bdacf24ceb35a491",
+          "blockNumber": "118271144",
+          "timestamp": "2026-08-26T22:24:24.000Z",
+          "gasUsed": "102517",
+          "effectiveGasPrice": "50000000",
+          "gasCostWei": "5125850000000",
+          "explorerUrl": "https://bscscan.com/tx/0x4e45656e7c4652077b91714c279cc193a5cc109cabaedc82bdacf24ceb35a491",
+          "provenance": "onchain:bsc-mainnet-rpc"
+        },
+        "submit": {
+          "hash": "0x4709c8639ed35184926b7ad3490342f12d128b66706566cf278a101feb80f3d5",
+          "blockNumber": "118273282",
+          "timestamp": "2026-08-26T22:40:26.000Z",
+          "gasUsed": "205055",
+          "effectiveGasPrice": "100000000",
+          "gasCostWei": "20505500000000",
+          "explorerUrl": "https://bscscan.com/tx/0x4709c8639ed35184926b7ad3490342f12d128b66706566cf278a101feb80f3d5",
+          "provenance": "onchain:bsc-mainnet-rpc"
+        },
+        "settle": {
+          "hash": "0x11c492db91acb957fc2133d9ef542cf9162f3e8cb2f8c6974802df473b13acd0",
+          "blockNumber": "120561790",
+          "timestamp": "2026-09-07T20:54:01.000Z",
+          "gasUsed": "134731",
+          "effectiveGasPrice": "100000000",
+          "gasCostWei": "13473100000000",
+          "explorerUrl": "https://bscscan.com/tx/0x11c492db91acb957fc2133d9ef542cf9162f3e8cb2f8c6974802df473b13acd0",
+          "provenance": "onchain:bsc-mainnet-rpc"
+        }
+      }
+    }
+  ]
 }

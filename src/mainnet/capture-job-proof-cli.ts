@@ -91,6 +91,18 @@ function sameAddress(left: string, right: string): boolean {
   return isAddressEqual(getAddress(left), getAddress(right));
 }
 
+const CLEARED_POLICY = "0x0000000000000000000000000000000000000000";
+
+/**
+ * The Router clears a job's policy binding when settlement completes, so a COMPLETED job reads the
+ * zero address. The pinned policy is still enforced for every lifecycle transaction through the
+ * registerJob calldata and the JobRegistered/JobSettled events.
+ */
+function policyBindingAllowed(policy: string, status: string): boolean {
+  if (sameAddress(policy, ERC8183_MAINNET.policy)) return true;
+  return status === "COMPLETED" && sameAddress(policy, CLEARED_POLICY);
+}
+
 /** Reject a proof unless its job, signed quote and ERC-8004 identity all bind to the fixed deployment. */
 export function assertMainnetProofBinding(input: MainnetProofBindingInput): void {
   const { job, description, identity } = input;
@@ -99,7 +111,7 @@ export function assertMainnetProofBinding(input: MainnetProofBindingInput): void
     job.chainId !== 56 ||
     !sameAddress(job.provider, input.expectedSeller) ||
     !sameAddress(job.evaluator, ERC8183_MAINNET.router) ||
-    !sameAddress(job.policy, ERC8183_MAINNET.policy) ||
+    !policyBindingAllowed(job.policy, job.status) ||
     job.budgetRaw !== ERC8183_MAINNET.maximumDemoBudgetRaw.toString() ||
     job.quotedPriceRaw !== ERC8183_MAINNET.maximumDemoBudgetRaw.toString() ||
     !job.quotedToken ||
@@ -284,7 +296,7 @@ async function main(): Promise<void> {
   const description = sourceObject(JSON.parse(job.description));
   const expectedPlan = buildGridPlan(parseGridTaskDescription(parsedDescription.task));
   if (JSON.stringify(JSON.parse(job.result.content)) !== JSON.stringify(expectedPlan)) throw new Error("Grid result is not the deterministic quoted computation");
-  const client = createPublicClient({ chain: bsc, transport: http(ERC8183_MAINNET.rpcUrl) });
+  const client = createPublicClient({ chain: bsc, transport: http(process.env.BSC_RPC_URL?.trim() || ERC8183_MAINNET.rpcUrl) });
   const transactions: Record<string, MainnetJobTransactionProof> = {};
   let firstTimestamp: bigint | null = null;
   let lastTimestamp: bigint | null = null;
