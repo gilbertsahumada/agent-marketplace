@@ -1,9 +1,10 @@
 import { CatalogSchemaError, parseCatalogAgent, parseCatalogPage } from "./parser.ts";
-import { BSC_CHAIN_ID, type CatalogAgent, type CatalogPage } from "./types.ts";
+import { BSC_CHAIN_ID, type CatalogChainId, type CatalogAgent, type CatalogPage } from "./types.ts";
 
 export const DEFAULT_MAX_CATALOG_RESPONSE_BYTES = 16 * 1_024 * 1_024;
 
 export interface Trust8004CatalogClientOptions {
+  chainId?: CatalogChainId;
   baseUrl: string;
   timeoutMs: number;
   maxResponseBytes: number;
@@ -51,18 +52,22 @@ function positiveInteger(value: number, field: string): number {
 }
 
 export class Trust8004CatalogClient {
+  private readonly chainId: CatalogChainId;
   private readonly baseUrl: string;
   private readonly timeoutMs: number;
   private readonly maxResponseBytes: number;
   private readonly fetchImpl: typeof fetch;
 
   constructor(options: Trust8004CatalogClientOptions) {
+    this.chainId = options.chainId ?? BSC_CHAIN_ID;
+    if (this.chainId !== 56 && this.chainId !== 97) throw new Error("Unsupported catalog chain");
     const baseUrl = new URL(options.baseUrl);
     if (baseUrl.protocol !== "https:") throw new Error("baseUrl must use HTTPS");
     this.baseUrl = baseUrl.toString().replace(/\/$/, "");
     this.timeoutMs = positiveInteger(options.timeoutMs, "timeoutMs");
     this.maxResponseBytes = positiveInteger(options.maxResponseBytes, "maxResponseBytes");
-    this.fetchImpl = options.fetch ?? fetch;
+    // Workers fetch requires its global receiver, not a class instance.
+    this.fetchImpl = options.fetch ?? globalThis.fetch.bind(globalThis);
   }
 
   listHeader(limit: number): Promise<CatalogPage> {
@@ -81,8 +86,8 @@ export class Trust8004CatalogClient {
     if (!/^\d+$/.test(agentId) || agentId.length > 78) {
       throw new Error("agentId must be a numeric string");
     }
-    const url = new URL(`${this.baseUrl}/agents/${BSC_CHAIN_ID}:${encodeURIComponent(agentId)}`);
-    const agent = await this.request(url, (value) => parseCatalogAgent(value, "response"));
+    const url = new URL(`${this.baseUrl}/agents/${this.chainId}:${encodeURIComponent(agentId)}`);
+    const agent = await this.request(url, (value) => parseCatalogAgent(value, "response", this.chainId));
     if (agent.agentId !== agentId) {
       throw new CatalogSchemaError("response.agentId", `agentId ${agentId}`, agent.agentId);
     }
@@ -101,7 +106,7 @@ export class Trust8004CatalogClient {
     }
     const url = new URL(`${this.baseUrl}/agents`);
     url.search = new URLSearchParams({
-      chainId: String(BSC_CHAIN_ID),
+      chainId: String(this.chainId),
       limit: String(limit),
       offset: String(options.offset),
       sortBy: "registered",
@@ -111,7 +116,7 @@ export class Trust8004CatalogClient {
       includeMetadataReasonCounts: "false",
       includeTotal: "true",
     }).toString();
-    return this.request(url, parseCatalogPage);
+    return this.request(url, value => parseCatalogPage(value, this.chainId));
   }
 
   private async request<T>(url: URL, parse: (value: unknown) => T): Promise<T> {

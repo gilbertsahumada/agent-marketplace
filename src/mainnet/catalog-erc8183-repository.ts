@@ -20,10 +20,11 @@ import type {
 } from "../business/entities/erc8183-browser-spike.ts";
 import type { Erc8183SpikeRepository } from "../data/repositories/erc8183-spike-repository.ts";
 import type { Erc8183SpikeAllowlist } from "../business/policies/erc8183-spike-policy.ts";
-import { Erc8183SpikeUnavailableError } from "../business/errors/erc8183-spike-errors.ts";
+import { Erc8183SpikeUnavailableError, Erc8183JobNotReadyError } from "../business/errors/erc8183-spike-errors.ts";
 import { createSafeEndpointTransport } from "../verification/safe-http.ts";
 import { ERC8183_MAINNET } from "./contracts.ts";
-import { mainnetImplementationPinsMatch } from "./implementation-pins.ts";
+import { implementationPinsMatch } from "./implementation-pins.ts";
+import { TESTNET_CLOSURE_PINS } from "../data/erc8183/testnet-closure-pins.ts";
 import { quoteProvider } from "../shared/quote-provider.ts";
 
 const ZERO_ADDRESS = getAddress("0x0000000000000000000000000000000000000000");
@@ -47,6 +48,7 @@ const registryAbi = [
 ] as const;
 
 type CatalogHireTarget = {
+  chainId?: 56 | 97;
   agentId: number;
   endpoint: string;
   transport: string;
@@ -65,18 +67,19 @@ function integer(value: unknown, field: string): number {
   return value;
 }
 
-function networkConfig() {
-  const base = resolveNetwork("bsc-mainnet");
+function networkConfig(chainId: 56 | 97) {
+  const deployment = chainId === 97 ? TESTNET_CLOSURE_PINS : ERC8183_MAINNET;
+  const base = resolveNetwork(chainId === 97 ? "bsc-testnet" : "bsc-mainnet");
   return {
     ...base,
     // Contract addresses are immutable marketplace pins. Only the RPC may be
     // selected by the deployment environment, and the implementation slots
     // are checked before any buyer facts or job state are trusted.
-    rpcUrl: process.env.BSC_RPC_URL?.trim() || ERC8183_MAINNET.rpcUrl,
-    registryContract: ERC8183_MAINNET.registry,
-    commerceContract: ERC8183_MAINNET.commerce,
-    routerContract: ERC8183_MAINNET.router,
-    policyContract: ERC8183_MAINNET.policy,
+    rpcUrl: (chainId === 97 ? process.env.BSC_TESTNET_RPC_URL : process.env.BSC_RPC_URL)?.trim() || deployment.rpcUrl,
+    registryContract: deployment.registry,
+    commerceContract: deployment.commerce,
+    routerContract: deployment.router,
+    policyContract: deployment.policy,
   };
 }
 
@@ -92,31 +95,36 @@ export class CatalogErc8183Repository implements Erc8183SpikeRepository {
   private clientPromise: Promise<ERC8183Client> | null = null;
 
   constructor(private readonly target: CatalogHireTarget) {
+    if (target.chainId !== undefined && target.chainId !== 56 && target.chainId !== 97) throw new Erc8183SpikeUnavailableError("Unsupported hire network");
     this.seller = target.provider;
+  }
+
+  private get deployment() {
+    return this.target.chainId === 97 ? TESTNET_CLOSURE_PINS : ERC8183_MAINNET;
   }
 
   get allowlist(): Erc8183SpikeAllowlist {
     return {
-      chainId: 56,
+      chainId: this.deployment.chainId,
       agentId: this.target.agentId,
       maximumBudgetRaw: this.maximumBudgetRaw,
-      networkLabel: ERC8183_MAINNET.networkName,
-      commerce: ERC8183_MAINNET.commerce,
-      router: ERC8183_MAINNET.router,
-      policy: ERC8183_MAINNET.policy,
-      token: ERC8183_MAINNET.token,
+      networkLabel: this.deployment.networkName,
+      commerce: this.deployment.commerce,
+      router: this.deployment.router,
+      policy: this.deployment.policy,
+      token: this.deployment.token,
       seller: this.seller,
     };
   }
 
   private async client(): Promise<ERC8183Client> {
     this.clientPromise ??= (async () => {
-      const client = await ERC8183Client.create({ network: networkConfig() });
-      if ((await client.publicClient.getChainId()) !== 56) {
-        throw new Erc8183SpikeUnavailableError("RPC is not connected to BSC Mainnet");
+      const client = await ERC8183Client.create({ network: networkConfig(this.deployment.chainId) });
+      if ((await client.publicClient.getChainId()) !== this.deployment.chainId) {
+        throw new Erc8183SpikeUnavailableError("RPC is not connected to the selected network");
       }
-      if (!await mainnetImplementationPinsMatch(client.publicClient)) {
-        throw new Erc8183SpikeUnavailableError("The Mainnet Commerce or Router implementation is not allowlisted");
+      if (!await implementationPinsMatch(client.publicClient, this.deployment)) {
+        throw new Erc8183SpikeUnavailableError("The Commerce or Router implementation is not allowlisted");
       }
       return client;
     })();
@@ -150,14 +158,14 @@ export class CatalogErc8183Repository implements Erc8183SpikeRepository {
         response?.accepted !== true ||
         typeof price !== "string" || price.length > 78 || !/^[1-9]\d*$/.test(price) || BigInt(price) > maxUint256 ||
         typeof currency !== "string" ||
-        envelope.chain_id !== 56 ||
+        envelope.chain_id !== this.deployment.chainId ||
         typeof envelope.verifying_contract !== "string" ||
-        !sameAddress(envelope.verifying_contract, ERC8183_MAINNET.commerce) ||
+        !sameAddress(envelope.verifying_contract, this.deployment.commerce) ||
         response.terms?.deliverables !== request.terms.deliverables ||
         response.terms?.quality_standards !== request.terms.qualityStandards ||
         response.terms?.evaluation_required !== true ||
         response.terms?.evaluator_type !== "uma_oov3" ||
-        !sameAddress(currency, ERC8183_MAINNET.token)
+        !sameAddress(currency, this.deployment.token)
       ) throw new Erc8183SpikeUnavailableError("Seller quote does not match the marketplace contract policy");
       const provider = quoteProvider(envelope.provider_address, this.target.provider);
       if (!sameAddress(provider, this.target.provider)) {
@@ -165,10 +173,10 @@ export class CatalogErc8183Repository implements Erc8183SpikeRepository {
       }
 
       const [agentWallet, owner, paymentToken, policyAllowed, tokenSymbol, tokenDecimals] = await Promise.all([
-        client.publicClient.readContract({ address: ERC8183_MAINNET.registry, abi: registryAbi, functionName: "getAgentWallet", args: [BigInt(this.target.agentId)] }),
-        client.publicClient.readContract({ address: ERC8183_MAINNET.registry, abi: registryAbi, functionName: "ownerOf", args: [BigInt(this.target.agentId)] }),
+        client.publicClient.readContract({ address: this.deployment.registry, abi: registryAbi, functionName: "getAgentWallet", args: [BigInt(this.target.agentId)] }),
+        client.publicClient.readContract({ address: this.deployment.registry, abi: registryAbi, functionName: "ownerOf", args: [BigInt(this.target.agentId)] }),
         client.paymentToken(),
-        client.router.policyWhitelist(ERC8183_MAINNET.policy),
+        client.router.policyWhitelist(this.deployment.policy),
         client.tokenSymbol(),
         client.tokenDecimals(),
       ]);
@@ -177,14 +185,14 @@ export class CatalogErc8183Repository implements Erc8183SpikeRepository {
       if (isAddressEqual(registeredProvider, ZERO_ADDRESS) || !isAddressEqual(registeredProvider, provider)) {
         throw new Erc8183SpikeUnavailableError("Seller quote provider is not the ERC-8004 agent wallet");
       }
-      if (!isAddressEqual(paymentToken, ERC8183_MAINNET.token) || !policyAllowed || tokenDecimals !== 18) {
-        throw new Erc8183SpikeUnavailableError("The Mainnet Commerce allowlist is not active");
+      if (!isAddressEqual(paymentToken, this.deployment.token) || !policyAllowed || tokenDecimals !== 18) {
+        throw new Erc8183SpikeUnavailableError("The Commerce allowlist is not active");
       }
       const signature = await verifyQuoteSignature({
         envelope,
         provider,
         publicClient: client.publicClient,
-        expectedVerifyingContract: ERC8183_MAINNET.commerce,
+        expectedVerifyingContract: this.deployment.commerce,
       });
       if (!signature.valid || !isAddressEqual(signature.signer, provider)) {
         throw new Erc8183SpikeUnavailableError("Seller quote signature is invalid");
@@ -203,13 +211,13 @@ export class CatalogErc8183Repository implements Erc8183SpikeRepository {
       return {
         envelope,
         agentId: this.target.agentId,
-        chainId: 56,
+        chainId: this.deployment.chainId,
         provider,
         endpoint: this.target.endpoint,
-        commerce: ERC8183_MAINNET.commerce,
-        router: ERC8183_MAINNET.router,
-        policy: ERC8183_MAINNET.policy,
-        token: ERC8183_MAINNET.token,
+        commerce: this.deployment.commerce,
+        router: this.deployment.router,
+        policy: this.deployment.policy,
+        token: this.deployment.token,
         tokenSymbol,
         tokenDecimals,
         priceRaw: price,
@@ -220,7 +228,7 @@ export class CatalogErc8183Repository implements Erc8183SpikeRepository {
       };
     } catch (error) {
       if (error instanceof Erc8183SpikeUnavailableError) throw error;
-      throw new Erc8183SpikeUnavailableError("The seller quote could not be verified on BSC Mainnet");
+      throw new Erc8183SpikeUnavailableError("The seller quote could not be verified on the selected network");
     }
   }
 
@@ -230,9 +238,9 @@ export class CatalogErc8183Repository implements Erc8183SpikeRepository {
       const [nativeBalance, tokenBalance, allowance, disputeWindow, policyAllowlisted] = await Promise.all([
         client.publicClient.getBalance({ address: buyer }),
         client.tokenBalance(buyer),
-        client.tokenAllowance(buyer, ERC8183_MAINNET.commerce),
+        client.tokenAllowance(buyer, this.deployment.commerce),
         client.policy.disputeWindow(),
-        client.router.policyWhitelist(ERC8183_MAINNET.policy),
+        client.router.policyWhitelist(this.deployment.policy),
       ]);
       return {
         buyer,
@@ -257,7 +265,7 @@ export class CatalogErc8183Repository implements Erc8183SpikeRepository {
       ]);
       const parsed = parseJobDescription(job.description);
       return {
-        chainId: 56,
+        chainId: this.deployment.chainId,
         jobId: jobId.toString(),
         buyer: job.client,
         provider: job.provider,
@@ -288,6 +296,11 @@ export class CatalogErc8183Repository implements Erc8183SpikeRepository {
     }
     if (before.status !== "FUNDED") {
       throw new Erc8183SpikeUnavailableError("notify_funded requires an onchain FUNDED job");
+    }
+    // Defense in depth for direct callers, including future recovery workers.
+    // The use case also checks expiry; terminal jobs above remain idempotent.
+    if (!/^[1-9]\d*$/.test(before.deadline) || BigInt(before.deadline) <= BigInt(Math.floor(Date.now() / 1000))) {
+      throw new Erc8183JobNotReadyError("Job deadline has expired or is invalid. Check refund eligibility; do not notify or fund another job.");
     }
 
     // HTTP and MCP sellers may watch the chain themselves. We cannot invent a

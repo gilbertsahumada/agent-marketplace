@@ -23,7 +23,7 @@ const curatedById = new Map(CURATED_INVENTORY.entries.map((entry) => [entry.agen
 type NormalizedEndpoint = NormalizedCatalogResource;
 
 function priority(agent: CatalogAgent): number {
-  if (curatedById.has(agent.agentId)) return 100;
+  if (agent.chainId === 56 && curatedById.has(agent.agentId)) return 100;
   const protocols = new Set((agent.indexEndpoints ?? [])
     .filter(({ protocol, endpoint }) => classifyCatalogResource(protocol, endpoint).eligibility === "eligible")
     .map(({ protocol }) => protocol));
@@ -62,7 +62,7 @@ export async function syncCatalogHeaderCandidates(
     }
     const values = [...unique.values()];
     endpointDeclarationsDeferred += Math.max(0, values.length - MAX_ENDPOINTS_PER_AGENT);
-    normalizedByAgent.set(`eip155:56:${agent.agentId}`, values.slice(0, MAX_ENDPOINTS_PER_AGENT));
+    normalizedByAgent.set(`eip155:${agent.chainId}:${agent.agentId}`, values.slice(0, MAX_ENDPOINTS_PER_AGENT));
   }
   if (selected.length === 0) return {
     candidatesSeen: candidates.length, candidatesIndexed: 0, candidatesDeferred: candidates.length,
@@ -85,7 +85,7 @@ export async function syncCatalogHeaderCandidates(
     .filter((entry) => entry.originKey && entry.representativeAgentKey)
     .map((entry) => [`${entry.originKey}:${entry.protocol}`, entry.representativeAgentKey!]));
   for (const agent of selected) {
-    const agentKey = `eip155:56:${agent.agentId}`;
+    const agentKey = `eip155:${agent.chainId}:${agent.agentId}`;
     for (const endpoint of normalizedByAgent.get(agentKey) ?? []) {
       if (endpoint.eligibility !== "eligible" || endpoint.originKey === null || endpoint.validationProtocol === null) continue;
       const key = `${endpoint.originKey}:${endpoint.validationProtocol}`;
@@ -93,11 +93,11 @@ export async function syncCatalogHeaderCandidates(
     }
   }
   const agentRows = await Promise.all(selected.map(async (agent) => {
-    const curated = curatedById.get(agent.agentId);
+    const curated = agent.chainId === 56 ? curatedById.get(agent.agentId) : undefined;
     return {
-      agentKey: `eip155:56:${agent.agentId}`,
+      agentKey: `eip155:${agent.chainId}:${agent.agentId}`,
       agentId: agent.agentId,
-      chainId: 56 as const,
+      chainId: agent.chainId,
       owner: agent.owner,
       metadataUri: agent.metadataUri,
       blockNumber: agent.blockNumber,
@@ -131,7 +131,7 @@ export async function syncCatalogHeaderCandidates(
         : null,
   }));
   const relations = selected.flatMap((agent) => {
-    const agentKey = `eip155:56:${agent.agentId}`;
+    const agentKey = `eip155:${agent.chainId}:${agent.agentId}`;
     return (normalizedByAgent.get(agentKey) ?? []).map((endpoint) => ({
       agentKey,
       endpointKey: endpoint.endpointKey,
@@ -146,11 +146,11 @@ export async function syncCatalogHeaderCandidates(
     }));
   });
   const admissionRows = selected.flatMap((agent) => {
-    const agentKey = `eip155:56:${agent.agentId}`;
+    const agentKey = `eip155:${agent.chainId}:${agent.agentId}`;
     const endpointsForAgent = normalizedByAgent.get(agentKey) ?? [];
     const commerce = endpointsForAgent.find((endpoint) => endpoint.eligibility === "eligible"
       && endpoint.validationProtocol === "erc8183_http")
-      ?? (curatedById.get(agent.agentId)?.operator === "marketplace"
+      ?? (agent.chainId === 56 && curatedById.get(agent.agentId)?.operator === "marketplace"
         ? endpointsForAgent.find((endpoint) => endpoint.eligibility === "eligible"
           && endpoint.validationProtocol === "a2a")
         : undefined);
@@ -159,7 +159,7 @@ export async function syncCatalogHeaderCandidates(
       state: "candidate",
       commerceTransport: commerce.validationProtocol as "a2a" | "erc8183_http",
       endpointKey: commerce.endpointKey,
-      chainId: 56,
+      chainId: agent.chainId,
       provider: null,
       validatedAt: null,
       configurationVersion: `metadata:${agentRows.find((row) => row.agentKey === agentKey)!.metadataVersion}`,

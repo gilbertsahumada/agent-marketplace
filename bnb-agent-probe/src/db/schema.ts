@@ -762,7 +762,7 @@ export const catalogAgentAdmission = sqliteTable(
       "catalog_agent_admission_transport",
       sql`${table.commerceTransport} IS NULL OR ${table.commerceTransport} IN ('a2a', 'erc8183_http')`,
     ),
-    check("catalog_agent_admission_chain_bsc", sql`${table.chainId} = 56`),
+    check("catalog_agent_admission_chain_bsc", sql`${table.chainId} IN (56, 97)`),
   ],
 );
 

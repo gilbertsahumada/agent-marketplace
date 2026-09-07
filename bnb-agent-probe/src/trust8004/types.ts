@@ -1,4 +1,5 @@
 export const BSC_CHAIN_ID = 56 as const;
+export type CatalogChainId = 56 | 97;
 
 export type CatalogTransport = "a2a" | "erc8183_http";
 export type CatalogEndpointProtocol = CatalogTransport | "mcp" | "x402" | "web" | "unknown";
@@ -20,7 +21,7 @@ export interface CatalogIndexEndpoint {
 }
 
 export interface CatalogAgent {
-  chainId: typeof BSC_CHAIN_ID;
+  chainId: CatalogChainId;
   agentId: string;
   /** Identity and URI as declared by the trust8004 public catalog. */
   owner: string | null;

@@ -1,6 +1,6 @@
-export type ClosureAction = "dispute" | "settle";
+export type ClosureAction = "dispute" | "settle" | "refund";
 export type ClosureBinding = { chainId: number; commerce: string; jobId: string; wallet: string; action: ClosureAction };
-export type ClosureFacts = { status: string; buyer: string; supported: boolean; disputed: boolean; verdict: number; now: bigint; reviewEndsAt: bigint };
+export type ClosureFacts = { status: string; buyer: string; supported: boolean; disputed: boolean; verdict: number; now: bigint; reviewEndsAt: bigint; deadline?: bigint };
 export type ClosureAttempt = ClosureBinding & { state: "signing" | "submitted" | "confirmed" | "reverted" | "uncertain" | "rejected" | "cancelled" | "replaced" | "already_closed"; hash?: string; replacementHash?: string; replacementHashes?: string[]; previousAttempts?: Omit<ClosureAttempt, "previousAttempts">[] };
 
 /** Only an explicit EIP-1193 rejection during send is safe to retry. */
@@ -27,6 +27,12 @@ export interface ClosurePort {
 
 export function assertClosureAllowed(binding: ClosureBinding, facts: ClosureFacts): void {
   if (!facts.supported) throw new Error("Unsupported closure policy or contracts");
+  if (binding.action === "refund") {
+    if (binding.chainId !== 97) throw new Error("Refund controls are limited to Testnet");
+    if (binding.wallet.toLowerCase() !== facts.buyer.toLowerCase()) throw new Error("Connect the original buyer wallet to claim the refund");
+    if (facts.status !== "FUNDED" || facts.deadline === undefined || facts.now <= facts.deadline) throw new Error("This job is not eligible for an expired-job refund");
+    return;
+  }
   if (facts.status !== "SUBMITTED") throw new Error("Job is not awaiting closure");
   if (binding.action === "dispute") {
     if (binding.wallet.toLowerCase() !== facts.buyer.toLowerCase()) throw new Error("Only the original buyer can dispute");

@@ -10,6 +10,16 @@ import {
 const payload = JSON.stringify({ items: [], total: 0, limit: 25, offset: 0 });
 
 describe("trust8004 catalog client", () => {
+  it("isolates an explicit Testnet inventory from Mainnet responses", async () => {
+    const fetchImpl = vi.fn<typeof fetch>(async () => new Response(JSON.stringify({
+      items: [{ chainId: 97, agentId: "42" }, { chainId: 56, agentId: "42" }], total: 2, limit: 25, offset: 0,
+    })));
+    const client = new Trust8004CatalogClient({ chainId: 97, baseUrl: "https://trust8004.xyz/api/app", timeoutMs: 1000, maxResponseBytes: 10000, fetch: fetchImpl });
+    const page = await client.listHeader(25);
+    expect(new URL(String(fetchImpl.mock.calls[0]![0])).searchParams.get("chainId")).toBe("97");
+    expect(page.items.map(item => item.chainId)).toEqual([97]);
+    expect(page.invalidItems).toHaveLength(1);
+  });
   it("requests BSC chain 56 with JSON accept header and HEADER ordering", async () => {
     const fetchImpl = vi.fn<typeof fetch>(async () => new Response(payload));
     const client = new Trust8004CatalogClient({

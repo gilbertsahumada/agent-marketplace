@@ -18,7 +18,7 @@ import {
   normalizeCatalogResource,
   type NormalizedCatalogResource,
 } from "../trust8004/resource-normalization";
-import type { CatalogAgent } from "../trust8004/types";
+import type { CatalogAgent, CatalogChainId } from "../trust8004/types";
 import { CatalogHttpError } from "../trust8004/client";
 
 // D1 currently enforces a much smaller bound-variable ceiling than desktop
@@ -67,8 +67,8 @@ export interface CatalogIngestSummary {
   readonly errorCode: string | null;
 }
 
-function agentPriority(agentId: string, resources: readonly NormalizedCatalogResource[]): number {
-  const curated = CURATED_INVENTORY.entries.find((entry) => entry.agentId === agentId);
+function agentPriority(agentId: string, resources: readonly NormalizedCatalogResource[], chainId: CatalogChainId): number {
+  const curated = chainId === 56 ? CURATED_INVENTORY.entries.find((entry) => entry.agentId === agentId) : undefined;
   if (curated) return curated.operator === "marketplace" ? 100 : 90;
   if (resources.some(({ validationProtocol, eligibility }) => validationProtocol === "erc8183_http" && eligibility === "eligible")) return 80;
   if (resources.some(({ validationProtocol, eligibility }) => validationProtocol === "mcp" && eligibility === "eligible")) return 60;
@@ -76,7 +76,8 @@ function agentPriority(agentId: string, resources: readonly NormalizedCatalogRes
   return 20;
 }
 
-function categories(agentId: string): string[] {
+function categories(agentId: string, chainId: CatalogChainId): string[] {
+  if (chainId !== 56) return [];
   return CURATED_INVENTORY.entries.find((entry) => entry.agentId === agentId)
     ?.categories.map(({ category }) => category) ?? [];
 }
@@ -85,7 +86,7 @@ async function preparedAgent(agent: CatalogAgent) {
   const resources = await Promise.all((agent.indexEndpoints ?? []).map(normalizeCatalogResource));
   const uniqueResources = [...new Map(resources.map((resource) => [resource.endpointKey, resource])).values()];
   const metadataVersion = await catalogMetadataVersion(agent);
-  return { agent, resources: uniqueResources, metadataVersion, priority: agentPriority(agent.agentId, uniqueResources) };
+  return { agent, resources: uniqueResources, metadataVersion, priority: agentPriority(agent.agentId, uniqueResources, agent.chainId) };
 }
 
 export async function enqueueCatalogDiscoveryPage(
@@ -94,16 +95,20 @@ export async function enqueueCatalogDiscoveryPage(
   input: {
     readonly nowMs: number;
     readonly source: DiscoverySource;
+    readonly chainId?: CatalogChainId;
     readonly cursor?: number;
     readonly cursorKey?: "catalog_sweep_offset";
     /** Monotonic trust8004 high-water marker committed with the page/worklist. */
     readonly headerHighWater?: string;
   },
 ): Promise<CatalogDiscoverySummary> {
-  const uniqueAgents = [...new Map(agents.map((agent) => [agent.agentId, agent])).values()];
+  const cursorChain = input.chainId ?? 56;
+  if ((input.cursor !== undefined || input.headerHighWater !== undefined)
+    && agents.some(agent => agent.chainId !== cursorChain)) throw new Error("CATALOG_CURSOR_NETWORK_MISMATCH");
+  const uniqueAgents = [...new Map(agents.map((agent) => [`${agent.chainId}:${agent.agentId}`, agent])).values()];
   const prepared = await Promise.all(uniqueAgents.map(preparedAgent));
   const db = createDatabase(dbBinding);
-  const agentKeys = prepared.map(({ agent }) => `eip155:56:${agent.agentId}`);
+  const agentKeys = prepared.map(({ agent }) => `eip155:${agent.chainId}:${agent.agentId}`);
   const [existingAgents, existingTasks] = agentKeys.length === 0 ? [[], []] : await Promise.all([
     db.select({
       agentKey: catalogAgents.agentKey,
@@ -116,21 +121,21 @@ export async function enqueueCatalogDiscoveryPage(
   const agentsByKey = new Map(existingAgents.map((row) => [row.agentKey, row]));
   const tasksByKey = new Map(existingTasks.map((row) => [row.agentKey, row]));
   const agentRows = prepared.flatMap(({ agent, metadataVersion, priority }) => {
-    const agentKey = `eip155:56:${agent.agentId}`;
+    const agentKey = `eip155:${agent.chainId}:${agent.agentId}`;
     const existing = agentsByKey.get(agentKey);
     if (existing?.metadataVersion === metadataVersion
       && input.nowMs - existing.lastSeenAt < LAST_SEEN_REFRESH_MS) return [];
     return [{
       agentKey,
       agentId: agent.agentId,
-      chainId: 56,
+      chainId: agent.chainId,
       owner: agent.owner,
       metadataUri: agent.metadataUri,
       blockNumber: agent.blockNumber,
       name: agent.name,
       description: agent.description,
       imageUrl: agent.imageUrl,
-      categoriesJson: JSON.stringify(categories(agent.agentId)),
+      categoriesJson: JSON.stringify(categories(agent.agentId, agent.chainId)),
       marketplaceConfigured: 0,
       metadataState: agent.metadataAvailable ? "ok" : "other",
       indexState: "current",
@@ -145,7 +150,7 @@ export async function enqueueCatalogDiscoveryPage(
   });
   const taskRows = prepared.flatMap(({ agent, resources, metadataVersion, priority }) => {
     if (!agent.metadataAvailable) return [];
-    const agentKey = `eip155:56:${agent.agentId}`;
+    const agentKey = `eip155:${agent.chainId}:${agent.agentId}`;
     const existing = tasksByKey.get(agentKey);
     if (existing?.metadataVersion === metadataVersion) return [];
     return [{
@@ -194,7 +199,7 @@ export async function enqueueCatalogDiscoveryPage(
       })),
     ...(input.cursor === undefined || input.cursorKey === undefined ? [] : [
       db.insert(runtimeState).values({
-        key: input.cursorKey,
+        key: cursorChain === 56 ? input.cursorKey : `${input.cursorKey}:97`,
         textValue: null,
         integerValue: input.cursor,
         updatedAt: input.nowMs,
@@ -205,7 +210,7 @@ export async function enqueueCatalogDiscoveryPage(
     ]),
     ...(input.headerHighWater === undefined ? [] : [
       db.insert(runtimeState).values({
-        key: "header_high_water",
+        key: cursorChain === 56 ? "header_high_water" : "header_high_water:97",
         textValue: input.headerHighWater,
         integerValue: null,
         updatedAt: input.nowMs,
@@ -242,7 +247,7 @@ export async function processNextCatalogIngestTask(
   input: {
     readonly nowMs: number;
     readonly maxDeclarations: number;
-    readonly fetchAgent: (agentId: string) => Promise<CatalogAgent>;
+    readonly fetchAgent: (agentId: string, chainId: CatalogChainId) => Promise<CatalogAgent>;
     readonly leaseOwner?: string;
   },
 ): Promise<CatalogIngestSummary> {
@@ -355,9 +360,12 @@ export async function processNextCatalogIngestTask(
   }
 
   const agentId = active.agentKey.split(":").at(-1)!;
+  const chainId = Number(active.agentKey.split(":")[1]) as CatalogChainId;
   let agent: CatalogAgent;
   try {
-    agent = await input.fetchAgent(agentId);
+    if (chainId !== 56 && chainId !== 97) throw new Error("CATALOG_CHAIN_UNSUPPORTED");
+    agent = await input.fetchAgent(agentId, chainId);
+    if (agent.chainId !== chainId || agent.agentId !== agentId) throw new Error("CATALOG_IDENTITY_MISMATCH");
   } catch (error) {
     const errorCode = safeError(error);
     await db.update(catalogIngestTasks).set({
@@ -456,7 +464,7 @@ export async function processNextCatalogIngestTask(
   ));
   const commerce = current.resources.find((resource) => resource.eligibility === "eligible"
     && resource.validationProtocol === "erc8183_http")
-    ?? (CURATED_INVENTORY.entries.find((entry) => entry.agentId === agentId)?.operator === "marketplace"
+    ?? (chainId === 56 && CURATED_INVENTORY.entries.find((entry) => entry.agentId === agentId)?.operator === "marketplace"
       ? current.resources.find((resource) => resource.eligibility === "eligible" && resource.validationProtocol === "a2a")
       : undefined);
   const admissionStatements = !declarationsComplete ? [] : commerce ? [db.insert(catalogAgentAdmission).values({
@@ -464,7 +472,7 @@ export async function processNextCatalogIngestTask(
     state: "candidate",
     commerceTransport: commerce.validationProtocol as "a2a" | "erc8183_http",
     endpointKey: commerce.endpointKey,
-    chainId: 56,
+    chainId: agent.chainId,
     provider: null,
     validatedAt: null,
     configurationVersion: `metadata:${current.metadataVersion}`,
@@ -496,14 +504,14 @@ export async function processNextCatalogIngestTask(
     db.insert(catalogAgents).values({
       agentKey: active.agentKey,
       agentId,
-      chainId: 56,
+      chainId: agent.chainId,
       owner: agent.owner,
       metadataUri: agent.metadataUri,
       blockNumber: agent.blockNumber,
       name: agent.name,
       description: agent.description,
       imageUrl: agent.imageUrl,
-      categoriesJson: JSON.stringify(categories(agentId)),
+      categoriesJson: JSON.stringify(categories(agentId, chainId)),
       marketplaceConfigured: 0,
       metadataState: agent.metadataAvailable ? "ok" : "other",
       indexState: "current",
@@ -519,7 +527,7 @@ export async function processNextCatalogIngestTask(
       set: {
         owner: agent.owner, metadataUri: agent.metadataUri, blockNumber: agent.blockNumber,
         name: agent.name, description: agent.description, imageUrl: agent.imageUrl,
-        categoriesJson: JSON.stringify(categories(agentId)), metadataState: agent.metadataAvailable ? "ok" : "other",
+        categoriesJson: JSON.stringify(categories(agentId, chainId)), metadataState: agent.metadataAvailable ? "ok" : "other",
         indexState: "current", registeredAt: agent.registeredAt, lastSeenAt: input.nowMs,
         priority: current.priority, metadataVersion: current.metadataVersion,
         metadataObservedAt: agent.metadataUpdatedAt ?? input.nowMs, policyVersion: 2,

@@ -31,6 +31,7 @@ export class QuoteValidationError extends Error {
 }
 
 export interface ProbeQuoteContext {
+  readonly chainId?: 56 | 97;
   readonly provider: Address;
   readonly blockNumber: bigint;
   readonly publicClient: PublicClient;
@@ -131,7 +132,7 @@ export async function validateProbeQuote(
   }
 
   if (!context.policyAllowlisted) throw new QuoteValidationError("QUOTE_CONTRACT_CONTEXT");
-  if (envelope.chain_id !== 56) throw new QuoteValidationError("QUOTE_CHAIN");
+  if (envelope.chain_id !== (context.chainId ?? 56)) throw new QuoteValidationError("QUOTE_CHAIN");
   // provider_address is convenience metadata, absent from the SDK's native
   // NegotiationResult. Always verify the signature against the chain-resolved
   // identity; never derive authority from this optional field or rewrite the quote.

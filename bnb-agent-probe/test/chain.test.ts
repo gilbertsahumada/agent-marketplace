@@ -7,6 +7,7 @@ import {
   BSC_POLICY,
   BSC_REGISTRY,
   BSC_ROUTER,
+  PROBE_DEPLOYMENTS,
   BscProbeError,
   createCountedBscClient,
   nestedBscProbeError,
@@ -28,6 +29,13 @@ function reader(overrides: Record<string, unknown> = {}) {
 }
 
 describe("WP3 fixed-block chain context", () => {
+  it("binds Testnet reads to chain 97 contracts and rejects Mainnet RPC", async () => {
+    const client = reader({ getChainId: vi.fn(async () => 97), multicall: vi.fn(async () => [WALLET, OWNER, PROBE_DEPLOYMENTS[97].token, true, 18]) });
+    const result = await readProbeChainContext(client as never, { agentId: "2177", nowSeconds: NOW, chainId: 97 });
+    expect(result).toMatchObject({ chainId: 97, commerce: PROBE_DEPLOYMENTS[97].commerce, paymentToken: PROBE_DEPLOYMENTS[97].token });
+    expect(client.multicall).toHaveBeenCalledWith(expect.objectContaining({ contracts: expect.arrayContaining([expect.objectContaining({ address: PROBE_DEPLOYMENTS[97].registry })]) }));
+    await expect(readProbeChainContext(reader() as never, { agentId: "2177", nowSeconds: NOW, chainId: 97 })).rejects.toThrow("BSC_CHAIN_ID");
+  });
   it("reads identity, contracts, policy and decimals at the same fresh block", async () => {
     const client = reader();
     const result = await readProbeChainContext(client as never, {

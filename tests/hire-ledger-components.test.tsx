@@ -246,6 +246,25 @@ describe("AddressLink", () => {
 });
 
 describe("HireLedgerPage", () => {
+  it("finds an exact Testnet job outside the loaded page", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(Response.json({ jobId: "1066", chainId: 97 }));
+    try {
+      render(createElement(HireLedgerPage, { chainId: 97, summary: null, page: { ...page, jobs: [] } }));
+      fireEvent.change(screen.getByRole("textbox", { name: "Search this page" }), { target: { value: "#1066" } });
+      expect(await screen.findByRole("link", { name: "Open job #1066 · Testnet" })).toHaveAttribute("href", "/jobs/testnet/1066");
+      expect(fetchMock).toHaveBeenCalledWith("/api/marketplace/jobs/testnet/1066/ledger", expect.any(Object));
+    } finally { fetchMock.mockRestore(); }
+  });
+
+  it.each([404, 503])("distinguishes missing jobs from lookup failures (%s)", async status => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(Response.json({}, { status }));
+    try {
+      render(createElement(HireLedgerPage, { chainId: 97, summary: null, page }));
+      fireEvent.change(screen.getByRole("textbox", { name: "Search this page" }), { target: { value: "1066" } });
+      expect(await screen.findByText(status === 404 ? /not indexed on the selected network/ : /Job search is temporarily unavailable/)).toBeInTheDocument();
+      expect(screen.queryByRole("link", { name: "Open job #1066 · Testnet" })).not.toBeInTheDocument();
+    } finally { fetchMock.mockRestore(); }
+  });
   const page = { chainId: 56 as const, jobs: [job("56696", { marketplace: true }), job("56695")], nextBefore: "56695" };
 
   it("sorts job IDs numerically and toggles every data header accessibly", () => {
@@ -424,6 +443,10 @@ describe("HireLedgerPage", () => {
 });
 
 describe("HireJobLedgerPage", () => {
+  it("includes closure and refund checks for external Testnet ledger jobs", () => {
+    render(createElement(HireJobLedgerPage, { job: detail({ chainId: 97, jobId: "1066" }) }));
+    expect(screen.getByRole("heading", { name: "Job status" })).toBeInTheDocument();
+  });
   it.each([56, 97] as const)("places chain %s in job facts instead of the header", (chainId) => {
     render(createElement(HireJobLedgerPage, { job: detail({ chainId }) }));
     expect(screen.getByText(`Chain ID: ${chainId}`)).toBeInTheDocument();

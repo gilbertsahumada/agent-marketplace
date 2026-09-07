@@ -5,6 +5,13 @@ import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { HistoryPages } from "../components/marketplace/history-pages";
 import { HireActivityWindow } from "../components/marketplace/hire-activity-window";
 import { QuoteHistory } from "../components/marketplace/quote-history";
+
+it("requests Testnet quote history with an explicit network", async () => {
+  const fetcher = vi.fn().mockResolvedValue(Response.json({ counts: { requests: 0 }, requests: [] }));
+  vi.stubGlobal("fetch", fetcher);
+  await act(async () => { render(<QuoteHistory agentId="42" chainId={97} />); });
+  expect(fetcher).toHaveBeenCalledWith("/api/marketplace/agents/42/quotes?page=1&chainId=97", expect.any(Object));
+});
 import { markCatalogForRefresh } from "../components/marketplace/catalog-return-refresh";
 afterEach(() => { cleanup(); vi.useRealTimers(); vi.unstubAllGlobals(); });
 it("shows daily activity cards with a compact period selector", () => {

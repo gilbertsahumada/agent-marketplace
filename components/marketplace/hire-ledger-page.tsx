@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { NetworkSelector } from "./network-selector";
 import { ArrowDown, ArrowUp, ArrowUpDown, ChevronDown, ChevronLeft, ChevronRight, Database, ListChecks, Search, X } from "lucide-react";
@@ -64,6 +64,31 @@ export function HireLedgerPage({ chainId, summary, page, activity = null, activi
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState<{ column: SortColumn; ascending: boolean }>({ column: "Job", ascending: false });
   const query = search.trim().toLowerCase().replace(/^#/, "");
+  const exactId = /^[1-9]\d{0,15}$/.test(query) ? query : null;
+  const lookupKey = `${chainId}:${exactId}`;
+  const [lookup, setLookup] = useState<{ key: string; state: "found" | "missing" | "error" } | null>(null);
+  const loadedExact = exactId !== null && Boolean(page?.jobs.some(job => job.jobId === exactId));
+  useEffect(() => {
+    if (!exactId || loadedExact) return;
+    const controller = new AbortController();
+    let active = true;
+    const timer = setTimeout(async () => {
+      try {
+        const response = await fetch(`/api/marketplace/jobs/${networkSlug(chainId)}/${exactId}/ledger`, { signal: controller.signal });
+        if (response.status === 404) {
+          if (active) setLookup({ key: lookupKey, state: "missing" });
+          return;
+        }
+        if (!response.ok) throw new Error("Lookup unavailable");
+        const data = await response.json();
+        if (data.jobId !== exactId || data.chainId !== chainId) throw new Error("Invalid job response");
+        if (active) setLookup({ key: lookupKey, state: "found" });
+      } catch {
+        if (active) setLookup({ key: lookupKey, state: "error" });
+      }
+    }, 300);
+    return () => { active = false; clearTimeout(timer); controller.abort(); };
+  }, [chainId, exactId, loadedExact, lookupKey]);
   const jobs = page?.jobs.filter((job) => [job.jobId, job.buyer, job.provider, job.status, job.marketplace ? "marketplace" : "unattributed",
     ...(agentResolutions[`${chainId}:${job.jobId}`]?.agents.flatMap(agent => [agent.agentId, agent.name ?? ""]) ?? []),
   ].some((value) => value.toLowerCase().includes(query))) ?? [];
@@ -106,9 +131,15 @@ export function HireLedgerPage({ chainId, summary, page, activity = null, activi
         <div className="relative mb-4">
           <label className="sr-only" htmlFor="jobs-search">Search this page</label>
           <Search aria-hidden="true" className="absolute top-1/2 left-4 size-4 -translate-y-1/2 text-zinc-500" />
-          <Input id="jobs-search" className="catalog-search-input h-10 pr-11 pl-11 focus-visible:ring-0" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search by agent, job ID, wallet, state or origin" maxLength={120} disabled={!page?.jobs.length} />
+          <Input id="jobs-search" className="catalog-search-input h-10 pr-11 pl-11 focus-visible:ring-0" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Find any job by exact ID, or filter this page by text" maxLength={120} />
           {search && <Button aria-label="Clear search" className="absolute top-1/2 right-1.5 size-7 -translate-y-1/2 text-muted-foreground hover:text-foreground" variant="ghost" size="icon" onClick={() => setSearch("")}><X aria-hidden="true" /></Button>}
         </div>
+        {exactId && !loadedExact && <p role="status" className="mb-4 text-sm">
+          {lookup?.key !== lookupKey ? "Searching the selected network…" : lookup.state === "found"
+            ? <Link className="text-signal hover:underline" href={`/jobs/${networkSlug(chainId)}/${exactId}`}>Open job #{exactId} · {chainId === 97 ? "Testnet" : "Mainnet"}</Link>
+            : lookup.state === "missing" ? "This job is not indexed on the selected network."
+              : "Job search is temporarily unavailable. Clear the search and retry."}
+        </p>}
         <Card className="jobs-card jobs-records gap-0 py-0">
           {provider && <div className="flex flex-wrap items-center gap-3 px-6 py-3 text-sm">Provider <AddressLink address={provider} chainId={chainId} /><Link className="text-signal hover:underline" href={jobsHref(chainId, activityDays === 30 ? {} : { days: activityDays })}>All jobs</Link></div>}
           <CardContent className="px-0">

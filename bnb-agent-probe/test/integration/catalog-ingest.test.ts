@@ -64,6 +64,33 @@ beforeEach(async () => {
 });
 
 describe("resumable catalog discovery ingest", () => {
+  it("isolates Testnet cursor updates and rejects cross-network cursor pages", async () => {
+    await clearCatalogFixtures();
+    const db = env.DB as unknown as D1DatabaseLike;
+    const testnet = { ...agent("2177"), chainId: 97 as const };
+    await expect(enqueueCatalogDiscoveryPage(db, [testnet], { nowMs: NOW, source: "sweep", cursor: 10, cursorKey: "catalog_sweep_offset" })).rejects.toThrow("CATALOG_CURSOR_NETWORK_MISMATCH");
+    await enqueueCatalogDiscoveryPage(db, [testnet], { chainId: 97, nowMs: NOW, source: "sweep", cursor: 10, cursorKey: "catalog_sweep_offset", headerHighWater: "2177" });
+    expect(await env.DB.prepare("SELECT integerValue FROM runtime_state WHERE key = ?").bind("catalog_sweep_offset:97").first("integerValue")).toBe(10);
+    expect(await env.DB.prepare("SELECT textValue FROM runtime_state WHERE key = ?").bind("header_high_water:97").first("textValue")).toBe("2177");
+  });
+  it("keeps identical numeric IDs separate across networks and fetches the task chain", async () => {
+    await clearCatalogFixtures();
+    const db = env.DB as unknown as D1DatabaseLike;
+    const mainnet = agent("2177");
+    const testnet = { ...agent("2177"), chainId: 97 as const, name: "Testnet provider" };
+    await enqueueCatalogDiscoveryPage(db, [mainnet, testnet], { nowMs: NOW, source: "directed" });
+    const rows = await env.DB.prepare("SELECT agentKey, chainId FROM catalog_agents WHERE agentId = ? ORDER BY chainId").bind("2177").all();
+    expect(rows.results).toEqual([{ agentKey: "eip155:56:2177", chainId: 56 }, { agentKey: "eip155:97:2177", chainId: 97 }]);
+    const requested: number[] = [];
+    for (let index = 0; index < 2; index++) {
+      const result = await processNextCatalogIngestTask(db, {
+        nowMs: NOW + 1, maxDeclarations: 4,
+        fetchAgent: async (_id, chainId) => { requested.push(chainId); return chainId === 97 ? testnet : mainnet; },
+      });
+      expect(result.errorCode).toBeNull();
+    }
+    expect(requested.sort()).toEqual([56, 97]);
+  });
   it("defers whole ingest tasks when the remaining D1 query budget cannot cover their worst case", () => {
     expect(catalogIngestTaskLimitForBudget({
       remainingQueries: 18,

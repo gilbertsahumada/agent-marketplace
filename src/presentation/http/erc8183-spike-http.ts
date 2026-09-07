@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { BuyerQuoteLookupUnavailableError } from "../../data/observation/quote-request-sync.ts";
 import { getAddress, type Address } from "viem";
 import type { Erc8183QuoteEnvelope } from "../../business/entities/erc8183-browser-spike.ts";
 import {
@@ -55,6 +56,11 @@ export function spikeQuote(value: unknown): Erc8183QuoteEnvelope {
 }
 
 export function erc8183SpikeErrorResponse(error: unknown, networkLabel = "Testnet"): NextResponse {
+  if (error instanceof BuyerQuoteLookupUnavailableError) {
+    return NextResponse.json({ error: { code: error.name, message: error.message } }, {
+      status: 503, headers: { "retry-after": "5", "cache-control": "no-store" },
+    });
+  }
   if (error instanceof Erc8183SpikeDisabledError) {
     return NextResponse.json(
       { error: { code: error.name, message: `The experimental ${networkLabel} flow is disabled.` } },

@@ -9,6 +9,7 @@ import { AddressLink } from "./address-link";
 import { JobAgentCell } from "./job-agent-cell";
 import type { JobAgentResolution } from "@/src/business/entities/job-agent-resolution";
 import { JobDeliveryPanel } from "./job-delivery-panel";
+import { TestnetClosurePanel } from "./testnet-closure-panel";
 import { formatTokenAmount } from "@/src/business/entities/token-amount";
 import { ERC8183_MAINNET } from "@/src/mainnet/contracts";
 
@@ -56,7 +57,7 @@ export function HireJobLedgerPage({ job, agentResolution }: { job: HireJobDetail
         {job.marketplace ? <Badge className="border-primary/40 bg-primary/10 text-primary" variant="outline">Hired via this marketplace</Badge> : null}
       </div>
       <h1 className="mt-5 text-3xl font-light tracking-tight text-white sm:text-5xl">ERC-8183 Job #{job.jobId}</h1>
-      {job.chainId === 56 ? <JobDeliveryPanel jobId={job.jobId} /> : null}
+      {job.chainId === 56 ? <JobDeliveryPanel jobId={job.jobId} /> : <TestnetClosurePanel jobId={job.jobId} />}
 
       <Card className="mt-8">
         <CardHeader><LedgerCardTitle>Indexed job state</LedgerCardTitle><CardDescription>Read from the Commerce contract by the observation Worker.</CardDescription></CardHeader>

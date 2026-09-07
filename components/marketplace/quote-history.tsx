@@ -83,7 +83,11 @@ function statusStyle(status: string, errorCode?: string | null): { label: string
   return { label: "Unknown", className: "text-muted-foreground", icon: CircleAlert };
 }
 
-export function QuoteHistory({ agentId }: { agentId: string }) {
+export function QuoteHistory({ agentId, chainId = 56 }: { agentId: string; chainId?: 56 | 97 }) {
+  return <NetworkQuoteHistory key={`${chainId}:${agentId}`} agentId={agentId} chainId={chainId} />;
+}
+
+function NetworkQuoteHistory({ agentId, chainId }: { agentId: string; chainId: 56 | 97 }) {
   const [data, setData] = useState<QuoteHistoryResponse | null>(null);
   const [error, setError] = useState(false);
   const [page, setPage] = useState(1);
@@ -105,7 +109,7 @@ export function QuoteHistory({ agentId }: { agentId: string }) {
     // the profile renderable in that case; the server-rendered state remains
     // authoritative and the history simply stays unavailable.
     const request = typeof fetch === "function"
-      ? fetch(`/api/marketplace/agents/${agentId}/quotes?page=${page}`, { cache: "no-store" })
+      ? fetch(`/api/marketplace/agents/${agentId}/quotes?page=${page}&chainId=${chainId}`, { cache: "no-store" })
       : null;
     if (!request || typeof (request as Promise<Response>).then !== "function") {
       return () => { active = false; };
@@ -118,7 +122,7 @@ export function QuoteHistory({ agentId }: { agentId: string }) {
       })
       .catch(() => { if (active) setError(true); });
     return () => { active = false; };
-  }, [agentId, page, reload]);
+  }, [agentId, chainId, page, reload]);
 
   const requests = data?.requests ?? [];
   return (

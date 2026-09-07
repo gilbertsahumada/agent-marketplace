@@ -30,6 +30,8 @@ export async function readTestnetClosure(jobId: string) {
   if (job.id !== id || !isAddressEqual(job.evaluator, pins.router) || !isAddressEqual(policy, pins.policy)) throw new Error("Unsupported job or policy");
   const status = statuses[job.status] ?? "UNKNOWN";
   return { jobId, chainId: 97 as const, buyer: job.client, status,
+    refundAvailable: status === "FUNDED" && block.timestamp > job.expiredAt,
+    budgetRaw: job.budget.toString(),
     closure: closureState(status, disputed, verdict[0], Number(job.submittedAt + window), Number(block.timestamp)),
     reviewEndsAt: String(job.submittedAt + window),
     settlementOutcome: verdict[0] === 1 ? "completed" as const : verdict[0] === 2 ? "rejected" as const : null,

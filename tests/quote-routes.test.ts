@@ -20,6 +20,17 @@ const context = (agentId = "303779", attemptId = "03f1b8f1-4384-40b6-b31b-3e29a2
 
 describe("buyer quote route controllers", () => {
   beforeEach(() => vi.clearAllMocks());
+  it("preserves Testnet and pagination when requesting history", async () => {
+    quoteApi.getBuyerQuoteHistory.mockResolvedValue({ status: 200, body: { requests: [] } });
+    const response = await quoteRoute.GET(new Request("http://local/quotes?chainId=97&page=2"), context());
+    expect(response.status).toBe(200);
+    expect(quoteApi.getBuyerQuoteHistory).toHaveBeenCalledWith("303779", { chainId: 97, page: 2 });
+  });
+  it("rejects ambiguous networks before reading quote history", async () => {
+    const response = await quoteRoute.GET(new Request("http://local/quotes?chainId=97&chainId=56"), context());
+    expect(response.status).toBe(400);
+    expect(quoteApi.getBuyerQuoteHistory).not.toHaveBeenCalled();
+  });
 
   it("registers a bounded structured brief and keeps the response private", async () => {
     quoteApi.startBuyerQuote.mockResolvedValue({ status: 201, body: { attemptId: "attempt" } });
@@ -35,7 +46,7 @@ describe("buyer quote route controllers", () => {
       objective: "Plan",
       deliverable: "JSON",
       acceptanceCriteria: "Deterministic",
-    }, { caller: "203.0.113.2|http://local" });
+    }, { chainId: 56, caller: "203.0.113.2|http://local" });
   });
 
   it.each([quoteRoute.POST, resultRoute.POST, fallbackRoute.POST])(
@@ -60,7 +71,7 @@ describe("buyer quote route controllers", () => {
       "303779",
       "03f1b8f1-4384-40b6-b31b-3e29a2f74eb7",
       { quote: "signed" },
-      { caller: "anonymous" },
+      { chainId: 56, caller: "anonymous" },
     );
 
     const failure = await resultRoute.POST(new Request("http://local/result", {
@@ -73,7 +84,7 @@ describe("buyer quote route controllers", () => {
       "303779",
       "03f1b8f1-4384-40b6-b31b-3e29a2f74eb7",
       "A2A_QUOTE_INVALID",
-      { caller: "anonymous" },
+      { chainId: 56, caller: "anonymous" },
     );
   });
 
@@ -99,7 +110,7 @@ describe("buyer quote route controllers", () => {
       "303779",
       "03f1b8f1-4384-40b6-b31b-3e29a2f74eb7",
       canonical,
-      { caller: "anonymous", browserErrorCode: "BROWSER_NETWORK_ERROR" },
+      { chainId: 56, caller: "anonymous", browserErrorCode: "BROWSER_NETWORK_ERROR" },
     );
   });
 

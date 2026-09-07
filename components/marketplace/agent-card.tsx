@@ -143,35 +143,36 @@ export function agentActionIcon(label: string): LucideIcon {
 }
 
 export function agentJourneyAction(agent: AgentCardViewModel): { href: string; label: string; disabled?: boolean } {
+  const hireHref = `/hire/${agent.agentId}${agent.chainId === 97 ? "?network=testnet" : ""}`;
   const action = agent.buyerAction ?? (agent.quoteRequestAvailable === true ? "request_quote" : "unavailable");
   const connection = agent.evidence.find((step) => step.kind === "reachable");
   if ((action === "prepare_hire" || action === "request_quote") && (connection?.status === "failed" || (agent.quoteRequestAvailable !== true && connection?.status !== "verified"))) {
     return {
-      href: `/hire/${agent.agentId}#validation`,
+      href: `${hireHref}#validation`,
       label: connection?.status === "failed" ? "Retry availability" : "Check availability",
     };
   }
   if (action === "prepare_hire") {
-    return { href: `/hire/${agent.agentId}#hire-flow`, label: "Hire agent" };
+    return { href: `${hireHref}#hire-flow`, label: "Hire agent" };
   }
   if (action === "request_quote") return {
-    href: `/hire/${agent.agentId}#hire-flow`,
+    href: `${hireHref}#hire-flow`,
     label: latestQuoteAttemptFailed(agent) ? "Retry quote" : "Request quote",
   };
   if (action === "check_availability") {
     const reachableNow = agent.evidence.some((step) => step.kind === "reachable" && step.status === "verified");
     return reachableNow
-      ? { href: `/hire/${agent.agentId}#hire-flow`, label: "Check compatibility" }
-      : { href: `/hire/${agent.agentId}#validation`, label: "Check availability" };
+      ? { href: `${hireHref}#hire-flow`, label: "Check compatibility" }
+      : { href: `${hireHref}#validation`, label: "Check availability" };
   }
   // An MCP-only listing can still expose a public endpoint that a buyer may
   // inspect. It must not be presented as quote-capable until the exact MCP
   // negotiation tool has been proven, so route it to diagnostics instead of
   // disabling the only useful action.
   if (agent.hireability === "mcp_only") {
-    return { href: `/hire/${agent.agentId}#validation`, label: "Check availability" };
+    return { href: `${hireHref}#validation`, label: "Check availability" };
   }
-  return { href: `/hire/${agent.agentId}`, label: "Not available", disabled: true };
+  return { href: hireHref, label: "Not available", disabled: true };
 }
 
 function formatObservationTime(value: string) {
