@@ -15,6 +15,7 @@ export class BuyerQuoteLookupUnavailableError extends Error {
 export interface BuyerQuoteHistoryRequest {
   id: number;
   requestHash: string;
+  negotiationHash?: string | null;
   kind: "buyer_quote" | "capability_probe" | string;
   status: string;
   transport: string;

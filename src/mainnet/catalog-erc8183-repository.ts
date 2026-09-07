@@ -53,6 +53,7 @@ type CatalogHireTarget = {
   endpoint: string;
   transport: string;
   requestHash: string;
+  negotiationHash?: string | null;
   provider: Address;
 };
 

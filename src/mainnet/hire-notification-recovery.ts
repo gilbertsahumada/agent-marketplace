@@ -7,6 +7,7 @@ import { assertExpectedJob } from "../business/policies/erc8183-spike-policy.ts"
 import { CatalogErc8183Repository } from "./catalog-erc8183-repository.ts";
 import { resolveCatalogHireTarget } from "./catalog-hire.ts";
 import { catalogHireWritesEnabled } from "./catalog-hire-network.ts";
+import { assertJobQuoteBinding } from "../business/policies/job-quote-binding.ts";
 
 export async function processHireNotification(chainId: 56 | 97, jobId: string) {
   if (process.env.HIRE_NOTIFICATION_RECOVERY_ENABLED !== "1" || !catalogHireWritesEnabled(chainId)) return null;
@@ -18,6 +19,7 @@ export async function processHireNotification(chainId: 56 | 97, jobId: string) {
       const target = await resolveCatalogHireTarget(row.agentId, row.quoteRequestId, { chainId, allowExpired: true });
       const repo = new CatalogErc8183Repository(target);
       const job = await repo.getJob(BigInt(jobId));
+      assertJobQuoteBinding(job.description, target.negotiationHash);
       // Closed/expired states are reconciled without another external notification.
       if (!["REJECTED", "EXPIRED"].includes(job.status) && BigInt(job.deadline) > BigInt(Math.floor(Date.now()/1000))) {
         assertExpectedJob(job, { buyer: getAddress(row.buyer), seller: target.provider, allowlist: repo.allowlist });

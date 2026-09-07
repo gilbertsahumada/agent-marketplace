@@ -47,5 +47,16 @@ request, or an unavailable quote/store on the first request, requires resuming
 the existing hire. Once enqueued, recovery no longer depends on the browser.
 Funding transactions must never be repeated to repair a notification.
 
-Disable HIRE_NOTIFICATION_RECOVERY_ENABLED in both services to stop new dispatch
-and automatic recovery while preserving all rows for reconciliation.
+Set HIRE_NOTIFICATION_RECOVERY_ENABLED=0 explicitly in both services to stop new
+dispatch and automatic recovery while preserving all rows for reconciliation.
+Removing the app flag instead permits legacy notification only after a successful
+read proves that no durable record exists. A store outage fails closed; an
+existing record never falls back to an unfenced send.
+
+The application binds the job's signed negotiation hash AND recomputed description
+content to the hash in the verified quote observation before enqueue or recovery.
+Deploy the Worker first: the quote history API must expose negotiationHash and the
+notification store must be readable. Missing legacy metadata blocks dispatch rather
+than guessing the quote. No new database migration is required for these fields.
+The runner sends enabled chain IDs to the Worker, which filters before LIMIT 3 so
+paused networks cannot starve active ones.

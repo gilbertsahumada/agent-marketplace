@@ -10,6 +10,8 @@ import {
   catalogQuoteHistoryResponse,
 } from "../../src/routes/catalog-quotes";
 import { clearCatalogFixtures } from "./catalog-fixtures";
+import { createDatabase } from "../../src/db/orm";
+import { catalogObservations, catalogQuoteRequests } from "../../src/db/schema";
 
 const NOW = 1_800_000_000_000;
 const ENDPOINT_KEY = "e".repeat(64);
@@ -48,6 +50,14 @@ beforeEach(async () => {
 });
 
 describe("buyer quote request ledger", () => {
+  it("returns the verified negotiation hash needed to bind an existing job", async () => {
+    const db = createDatabase(env.DB as never);
+    const negotiationHash = `0x${"ab".repeat(32)}`;
+    const observation = await db.insert(catalogObservations).values({ agentKey: "eip155:56:42", endpointKey: ENDPOINT_KEY, protocol: "a2a", source: "worker_probe", outcome: "quote_verified", verificationLevel: "cryptographic", observedAt: NOW, durationMs: 1, detailsJson: JSON.stringify({ provider: `0x${"11".repeat(20)}`, negotiationHash }) }).returning().get();
+    const quote = await db.insert(catalogQuoteRequests).values({ requestHash: "binding-test", agentKey: "eip155:56:42", endpointKey: ENDPOINT_KEY, transport: "a2a", kind: "buyer_quote", status: "succeeded", createdAt: NOW, resultObservationId: observation!.id }).returning().get();
+    const response = await catalogQuoteHistoryResponse(new Request(`https://worker.test/catalog-quotes/42?requestId=${quote!.id}`), env.DB as unknown as D1Database, "42", NOW);
+    expect(await response.json()).toMatchObject({ requests: [{ id: quote!.id, negotiationHash }] });
+  });
   it("retrieves a request outside the latest 100 without crossing networks", async () => {
     for (let index = 0; index < 102; index++) {
       await env.DB.prepare(`INSERT INTO catalog_quote_requests

@@ -14,7 +14,10 @@ export async function hireNotificationsResponse(request: Request, db: D1Database
   const orm = createDatabase(db);
   const eligible = and(inArray(table.state, ["pending", "processing", "sending", "uncertain"]), lte(table.nextAttemptAt, now), lte(table.leaseUntil, now));
   if (b.action === "due") {
-    return reply(await orm.select({ chainId: table.chainId, jobId: table.jobId }).from(table).where(eligible).orderBy(asc(table.nextAttemptAt)).limit(3).all());
+    const chains = b.chainIds === undefined ? [56, 97] : b.chainIds;
+    if (!Array.isArray(chains) || chains.length > 2 || chains.some(chain => chain !== 56 && chain !== 97) || new Set(chains).size !== chains.length) return Response.json({ error: "invalid_request" }, { status: 400 });
+    if (chains.length === 0) return reply([]);
+    return reply(await orm.select({ chainId: table.chainId, jobId: table.jobId }).from(table).where(and(eligible, inArray(table.chainId, chains))).orderBy(asc(table.nextAttemptAt)).limit(3).all());
   }
   if (![56, 97].includes(Number(b.chainId)) || typeof b.jobId !== "string" || !/^[1-9]\d{0,19}$/.test(b.jobId)) return Response.json({ error: "invalid_request" }, { status: 400 });
   const chain = Number(b.chainId) as 56 | 97, id = b.jobId;

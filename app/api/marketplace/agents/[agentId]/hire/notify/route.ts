@@ -4,6 +4,7 @@ import { CatalogErc8183Repository } from "@/src/mainnet/catalog-erc8183-reposito
 import { CatalogHireUnavailableError, resolveCatalogHireTarget } from "@/src/mainnet/catalog-hire";
 import { NotifyFundedJob } from "@/src/business/use-cases/notify-funded-job";
 import { assertExpectedJob } from "@/src/business/policies/erc8183-spike-policy";
+import { assertJobQuoteBinding } from "@/src/business/policies/job-quote-binding";
 import { notificationStore } from "@/src/mainnet/hire-notification-store";
 import { processHireNotification } from "@/src/mainnet/hire-notification-recovery";
 import type { HireNotification } from "@/shared/hire-notification";
@@ -35,6 +36,7 @@ export async function POST(request: Request, context: { params: Promise<{ agentI
       return NextResponse.json({ acknowledged: true, alreadySubmitted: true, job }, { headers: { "cache-control": "no-store" } });
     }
     if (!catalogHireWritesEnabled(chainId)) throw new Erc8183SpikeDisabledError();
+    assertJobQuoteBinding(job.description, target.negotiationHash);
     if (process.env.HIRE_NOTIFICATION_RECOVERY_ENABLED === "1") {
       const buyer = spikeAddress(body.buyer, "buyer");
       assertExpectedJob(job, { buyer, seller: target.provider, allowlist: repository.allowlist });
@@ -45,6 +47,11 @@ export async function POST(request: Request, context: { params: Promise<{ agentI
       const saved = await notificationStore<HireNotification>({ action: "read", chainId, jobId: job.jobId });
       if (["notified", "watching", "delivered"].includes(saved.state)) return NextResponse.json({ acknowledged: true, alreadySubmitted: saved.state === "delivered", job }, { headers: { "cache-control": "no-store" } });
       return NextResponse.json({ error: { code: "NOTIFICATION_PENDING", message: "Funding is confirmed. Check this job's notification status; do not fund again." } }, { status: 503, headers: { "cache-control": "no-store" } });
+    }
+    // An explicit pause blocks all sends. Removing the flag must not erase a
+    // managed job's fence either; only a confirmed absent row permits legacy work.
+    if (process.env.HIRE_NOTIFICATION_RECOVERY_ENABLED === "0" || await notificationStore<HireNotification | null>({ action: "read", chainId, jobId: job.jobId })) {
+      return NextResponse.json({ error: { code: "NOTIFICATION_PAUSED", message: "Notification recovery is paused. Funding remains confirmed; do not fund again." } }, { status: 503, headers: { "cache-control": "no-store" } });
     }
     return NextResponse.json(await (new NotifyFundedJob(repository)).execute({
       buyer: spikeAddress(body.buyer, "buyer"),

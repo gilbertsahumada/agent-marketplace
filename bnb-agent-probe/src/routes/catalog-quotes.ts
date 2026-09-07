@@ -897,7 +897,7 @@ export async function catalogQuoteHistoryResponse(request: Request, d1: D1Databa
     list.push(attempt);
     attemptsByRequest.set(attempt.requestId, list);
   }
-  const requests = new Map<number, { id: number; requestHash: string; kind: string; status: string; transport: string; endpoint: string | null; provider: string | null; createdAt: number; completedAt: number | null; quoteExpiresAt: number | null; errorCode: string | null; resultObservationId: number | null; attempts: Array<{ id: string; executor: string; status: string; durationMs: number | null; httpStatus: number | null; outcome: string | null; errorCode: string | null }> }>();
+  const requests = new Map<number, { id: number; requestHash: string; negotiationHash: string | null; kind: string; status: string; transport: string; endpoint: string | null; provider: string | null; createdAt: number; completedAt: number | null; quoteExpiresAt: number | null; errorCode: string | null; resultObservationId: number | null; attempts: Array<{ id: string; executor: string; status: string; durationMs: number | null; httpStatus: number | null; outcome: string | null; errorCode: string | null }> }>();
   for (const row of requestRows) {
     const status = row.status === "succeeded" && row.quoteExpiresAt !== null && row.quoteExpiresAt <= nowMs
       ? "expired" : row.status;
@@ -907,13 +907,19 @@ export async function catalogQuoteHistoryResponse(request: Request, d1: D1Databa
         return typeof value.provider === "string" ? value.provider : null;
       } catch { return null; }
     })();
+    const negotiationHash = (() => {
+      try {
+        const value = JSON.parse(row.resultObservationId === null ? "{}" : observationById.get(row.resultObservationId) ?? "{}");
+        return typeof value.negotiationHash === "string" && /^0x[\da-f]{64}$/i.test(value.negotiationHash) ? value.negotiationHash : null;
+      } catch { return null; }
+    })();
     const requestMetadata = (() => {
       try {
         const value = JSON.parse(row.requestMetadataJson ?? "{}") as { endpoint?: unknown };
         return typeof value.endpoint === "string" ? value.endpoint : null;
       } catch { return null; }
     })();
-    const current = requests.get(row.id) ?? { id: row.id, requestHash: row.requestHash, kind: row.kind, status, transport: row.transport, endpoint: requestMetadata, provider: observationMetadata, createdAt: row.createdAt, completedAt: row.completedAt, quoteExpiresAt: row.quoteExpiresAt, errorCode: row.errorCode, resultObservationId: row.resultObservationId, attempts: [] };
+    const current = requests.get(row.id) ?? { id: row.id, requestHash: row.requestHash, negotiationHash, kind: row.kind, status, transport: row.transport, endpoint: requestMetadata, provider: observationMetadata, createdAt: row.createdAt, completedAt: row.completedAt, quoteExpiresAt: row.quoteExpiresAt, errorCode: row.errorCode, resultObservationId: row.resultObservationId, attempts: [] };
     if (current.provider === null && observationMetadata !== null) current.provider = observationMetadata;
     if (current.endpoint === null && requestMetadata !== null) current.endpoint = requestMetadata;
     current.attempts = (attemptsByRequest.get(row.id) ?? []).map((attempt) => ({

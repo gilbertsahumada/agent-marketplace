@@ -37,6 +37,7 @@ export async function resolveCatalogHireTarget(
     endpoint: row.endpoint,
     transport: row.transport,
     requestHash: row.requestHash,
+    negotiationHash: row.negotiationHash ?? null,
     provider,
   };
 }
