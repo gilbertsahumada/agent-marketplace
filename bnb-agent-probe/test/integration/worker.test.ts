@@ -2512,7 +2512,12 @@ describe("WP1 in the Workers runtime", () => {
     headerIncludesAgent = false;
     detailIncludesEndpoint = false;
     await runner(controller, env, context, config); // HEADER, identical target data
-    await runner(controller, env, context, config); // SWEEP page 2/2, round complete
+    await runner(controller, env, context, config); // SWEEP page 2/3 (four operated sellers joined the inventory)
+    expect(await runtimeInteger("sweep_offset")).toBe(8);
+    expect(await runtimeInteger("sweep_round")).toBeNull();
+    await runner(controller, env, context, config); // PROBE retries the safe Grid bootstrap
+    await runner(controller, env, context, config); // HEADER, still identical
+    await runner(controller, env, context, config); // SWEEP page 3/3, round complete
     expect(await runtimeInteger("sweep_round")).toBe(1);
     await runner(controller, env, context, config); // PROBE retries the safe Grid bootstrap
     await runner(controller, env, context, config); // HEADER empty

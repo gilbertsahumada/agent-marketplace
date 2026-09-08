@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="t" shape-rendering="geometricPrecision">
+<title id="t">Grid planner portrait</title>
+<defs>
+<pattern id="dots" width="24" height="24" patternUnits="userSpaceOnUse"><circle cx="12" cy="12" r="1.2" fill="#a8a9b2" fill-opacity=".2"/></pattern>
+<radialGradient id="glow" cx="50%" cy="50%" r="50%"><stop offset="0" stop-color="#f0b90b" stop-opacity=".18"/><stop offset="1" stop-color="#f0b90b" stop-opacity="0"/></radialGradient>
+<linearGradient id="sell" gradientUnits="userSpaceOnUse" x1="0" y1="136" x2="0" y2="248"><stop offset="0" stop-color="#ffe900" stop-opacity=".4"/><stop offset="1" stop-color="#f0b90b" stop-opacity="1"/></linearGradient>
+<linearGradient id="buy" gradientUnits="userSpaceOnUse" x1="0" y1="264" x2="0" y2="376"><stop offset="0" stop-color="#10b981" stop-opacity=".95"/><stop offset="1" stop-color="#10b981" stop-opacity=".35"/></linearGradient>
+<g id="tri"><circle cx="0" cy="-4" r="2"/><circle cx="-4" cy="3" r="2"/><circle cx="4" cy="3" r="2"/></g>
+</defs>
+<rect width="512" height="512" rx="56" fill="#14151a"/>
+<rect x="1.5" y="1.5" width="509" height="509" rx="55" fill="#181a1e" stroke="#373943" stroke-width="3"/>
+<rect width="512" height="512" rx="56" fill="url(#dots)"/>
+<ellipse cx="256" cy="256" rx="220" ry="200" fill="url(#glow)"/>
+<g fill="#a8a9b2" fill-opacity=".55"><use href="#tri" x="52" y="54"/><use href="#tri" x="460" y="54"/><use href="#tri" x="52" y="458"/></g>
+<g stroke="#a8a9b2" stroke-opacity=".5" stroke-width="2" stroke-dasharray="4 8"><line x1="72" y1="104" x2="440" y2="104"/><line x1="72" y1="408" x2="440" y2="408"/></g>
+<g fill="#a8a9b2" fill-opacity=".7"><path d="M84 96l8-14 8 14z"/><path d="M84 416l8 14 8-14z"/></g>
+<g stroke="#f0b90b" stroke-width="7" stroke-linecap="round"><line x1="128" y1="122" x2="128" y2="390"/><line x1="384" y1="122" x2="384" y2="390"/></g>
+<g stroke-width="8" stroke-linecap="round" stroke="url(#sell)"><line x1="128" y1="144" x2="384" y2="144"/><line x1="128" y1="176" x2="384" y2="176"/><line x1="128" y1="208" x2="384" y2="208"/><line x1="128" y1="240" x2="384" y2="240"/></g>
+<g stroke-width="8" stroke-linecap="round" stroke="url(#buy)"><line x1="128" y1="272" x2="384" y2="272"/><line x1="128" y1="304" x2="384" y2="304"/><line x1="128" y1="336" x2="384" y2="336"/><line x1="128" y1="368" x2="384" y2="368"/></g>
+<line x1="112" y1="256" x2="400" y2="256" stroke="#f7f7f5" stroke-opacity=".35" stroke-width="2" stroke-dasharray="2 6"/>
+<g fill="#181a1e" stroke="#ffe900" stroke-width="2"><rect x="392" y="139" width="14" height="10" rx="2"/><rect x="392" y="171" width="14" height="10" rx="2"/><rect x="392" y="203" width="14" height="10" rx="2"/><rect x="392" y="235" width="14" height="10" rx="2"/></g>
+<g fill="#181a1e" stroke="#10b981" stroke-width="2"><rect x="106" y="267" width="14" height="10" rx="2"/><rect x="106" y="299" width="14" height="10" rx="2"/><rect x="106" y="331" width="14" height="10" rx="2"/><rect x="106" y="363" width="14" height="10" rx="2"/></g>
+<path d="M96 300C120 300 132 322 152 322S180 268 208 268 236 226 262 226 290 296 318 296 344 238 372 238 404 186 424 186" fill="none" stroke="#22d3ee" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+<g fill="#22d3ee"><circle cx="152" cy="322" r="5"/><circle cx="208" cy="268" r="5"/><circle cx="262" cy="226" r="5"/><circle cx="318" cy="296" r="5"/><circle cx="372" cy="238" r="5"/></g>
+<circle cx="424" cy="186" r="7" fill="#14151a" stroke="#22d3ee" stroke-width="3"/>
+<text x="64" y="470" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="22" letter-spacing="6" fill="#a8a9b2">GRID</text>
+<g fill="#f0b90b"><circle cx="418" cy="463" r="3"/><circle cx="430" cy="463" r="3"/><circle cx="442" cy="463" r="3"/></g>
+</svg>

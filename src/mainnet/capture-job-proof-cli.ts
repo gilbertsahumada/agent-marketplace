@@ -17,13 +17,8 @@ import { bsc } from "viem/chains";
 import { parseJobDescription, verifyQuoteSignature } from "@bnbagent/sdk/erc8183";
 import type { MainnetJobProof, MainnetJobTransactionProof } from "../business/entities/mainnet-job-proof.ts";
 import type { Erc8183JobFacts } from "../business/entities/erc8183-browser-spike.ts";
-import {
-  GRID_CANONICAL_INPUT,
-  GRID_NEGOTIATION_TERMS,
-  buildGridPlan,
-  gridTaskDescription,
-  parseGridTaskDescription,
-} from "../business/policies/grid-plan-policy.ts";
+import { hostedSellerDeliverableUrl, hostedSellerForTask } from "../business/policies/hosted-seller-catalog.ts";
+import { loadMainnetHostedSellerConfig } from "./hosted-seller-config.ts";
 import { resolveIdentity, type ResolvedIdentity } from "../identity.ts";
 import {
   ERC8183_MAINNET,
@@ -87,6 +82,11 @@ interface MainnetProofBindingInput {
   signatureValid: boolean;
 }
 
+function expectedDeliverableUrl(job: { jobId: bigint; description: string }): string | null {
+  const service = hostedSellerForTask(parseJobDescription(job.description)?.task ?? "");
+  return service ? hostedSellerDeliverableUrl("https://bnb-agent-marketplace-ruby.vercel.app", service.slug, job.jobId) : null;
+}
+
 function sameAddress(left: string, right: string): boolean {
   return isAddressEqual(getAddress(left), getAddress(right));
 }
@@ -101,6 +101,18 @@ const CLEARED_POLICY = "0x0000000000000000000000000000000000000000";
 function policyBindingAllowed(policy: string, status: string): boolean {
   if (sameAddress(policy, ERC8183_MAINNET.policy)) return true;
   return status === "COMPLETED" && sameAddress(policy, CLEARED_POLICY);
+}
+
+// A public proof is always the seller's canonical example: the same input a
+// judge can re-run, quoted under that seller's fixed terms.
+function proofTaskAllowed(task: unknown, terms: Record<string, unknown>): boolean {
+  if (typeof task !== "string") return false;
+  const service = hostedSellerForTask(task);
+  if (!service) return false;
+  const { planner } = service;
+  return task === planner.taskDescription(planner.canonicalInput)
+    && terms.deliverables === planner.terms.deliverables
+    && terms.quality_standards === planner.terms.qualityStandards;
 }
 
 /** Reject a proof unless its job, signed quote and ERC-8004 identity all bind to the fixed deployment. */
@@ -119,9 +131,7 @@ export function assertMainnetProofBinding(input: MainnetProofBindingInput): void
     description.chain_id !== 56 ||
     typeof description.verifying_contract !== "string" ||
     !sameAddress(description.verifying_contract, ERC8183_MAINNET.commerce) ||
-    description.task !== gridTaskDescription(GRID_CANONICAL_INPUT) ||
-    terms.deliverables !== GRID_NEGOTIATION_TERMS.deliverables ||
-    terms.quality_standards !== GRID_NEGOTIATION_TERMS.qualityStandards
+    !proofTaskAllowed(description.task, terms)
   ) throw new Error("Mainnet proof job or quote is outside the fixed deployment allowlist");
   if (!input.signatureValid) throw new Error("Mainnet proof quote signature is invalid");
   if (
@@ -251,7 +261,7 @@ export function assertMainnetEvidenceTransaction(input: {
     if (
       jobId !== job.jobId ||
       deliverable.toLowerCase() !== job.deliverable.toLowerCase() ||
-      deliverableUrl !== `https://bnb-agent-marketplace-ruby.vercel.app/api/sellers/grid/job/${job.jobId}/response`
+      deliverableUrl !== expectedDeliverableUrl(job)
     ) throw new Error("submit calldata does not match the proven deliverable");
     requireEvent(eventArgs(receipt, ERC8183_MAINNET.commerce, mainnetCommerceEvidenceAbi, "JobSubmitted", (event) =>
       event.jobId === job.jobId && sameAddress(String(event.provider), job.seller) && String(event.deliverable).toLowerCase() === job.deliverable.toLowerCase()), phase);
@@ -294,8 +304,10 @@ async function main(): Promise<void> {
   const parsedDescription = parseJobDescription(job.description);
   if (!parsedDescription) throw new Error("Mainnet job description is not a signed quote");
   const description = sourceObject(JSON.parse(job.description));
-  const expectedPlan = buildGridPlan(parseGridTaskDescription(parsedDescription.task));
-  if (JSON.stringify(JSON.parse(job.result.content)) !== JSON.stringify(expectedPlan)) throw new Error("Grid result is not the deterministic quoted computation");
+  const service = hostedSellerForTask(parsedDescription.task);
+  if (!service) throw new Error("Mainnet job task does not belong to a marketplace-operated seller");
+  const expectedPlan = service.planner.build(service.planner.parseTaskDescription(parsedDescription.task));
+  if (JSON.stringify(JSON.parse(job.result.content)) !== JSON.stringify(expectedPlan)) throw new Error("Result is not the deterministic quoted computation");
   const client = createPublicClient({ chain: bsc, transport: http(process.env.BSC_RPC_URL?.trim() || ERC8183_MAINNET.rpcUrl) });
   const transactions: Record<string, MainnetJobTransactionProof> = {};
   let firstTimestamp: bigint | null = null;
@@ -343,7 +355,8 @@ async function main(): Promise<void> {
   if (firstTimestamp === null || lastTimestamp === null || phaseBlocks.createJob === undefined || fundedAtBlock === undefined) {
     throw new Error("Proof timestamps or lifecycle blocks are unavailable");
   }
-  const config = repository.allowlist;
+  const sellerConfig = loadMainnetHostedSellerConfig(service.slug, process.env, { requireAgentId: true });
+  const config = { agentId: sellerConfig.agentId!, seller: sellerConfig.address };
   const [identity, signature] = await Promise.all([
     resolveIdentity(client, config.agentId, {
       chainId: 56,

@@ -19,6 +19,8 @@ import {
 import { createProbeBudget, type ProbeBudget } from "../verification/probe-budget.ts";
 import type { IdentityVerification, VerificationError } from "../verification/types.ts";
 import { GRID_CANONICAL_INPUT, GRID_NEGOTIATION_TERMS, gridTaskDescription } from "../business/policies/grid-plan-policy.ts";
+import type { HostedSellerSlug } from "../business/entities/hosted-seller-service.ts";
+import { hostedSellerService } from "../business/policies/hosted-seller-catalog.ts";
 import type {
   HireabilityAssessment,
   QuoteEvidence,
@@ -58,6 +60,8 @@ export interface HireabilityAssessorOptions {
     expectedVerifyingContract: Address;
   }) => Promise<QuoteVerdict>;
   marketplaceOperatedGridSellerAgentId?: string;
+  /** Operated sellers probed with their own canonical example instead of the generic readiness quote. */
+  marketplaceOperatedAgents?: ReadonlyArray<{ agentId: string; slug: HostedSellerSlug }>;
 }
 
 const QUOTE_TERMS = new TermSpecification({
@@ -83,6 +87,13 @@ interface ReadinessQuoteProbe {
   request: Record<string, unknown>;
   requestHash: string;
   terms: TermSpecification;
+}
+
+function hostedSellerQuoteProbe(slug: HostedSellerSlug): ReadinessQuoteProbe {
+  const { planner } = hostedSellerService(slug);
+  const terms = new TermSpecification({ deliverables: planner.terms.deliverables, qualityStandards: planner.terms.qualityStandards });
+  const request = new NegotiationRequest({ taskDescription: planner.taskDescription(planner.canonicalInput), terms });
+  return { request: request.toDict(), requestHash: request.computeHash().toLowerCase(), terms };
 }
 
 const DEFAULT_QUOTE_PROBE: ReadinessQuoteProbe = {
@@ -632,9 +643,12 @@ export function createHireabilityAssessor(
     const protocols = declaredProtocols(agent);
     if (protocols.length === 0) return summarize(protocols, [], hasMcp(agent));
     const provider = identity.onchain.agentWallet;
-    const quoteProbe = options.marketplaceOperatedGridSellerAgentId === agent.agentId
-      ? GRID_QUOTE_PROBE
-      : DEFAULT_QUOTE_PROBE;
+    const operated = options.marketplaceOperatedAgents?.find(({ agentId }) => agentId === agent.agentId);
+    const quoteProbe = operated
+      ? hostedSellerQuoteProbe(operated.slug)
+      : options.marketplaceOperatedGridSellerAgentId === agent.agentId
+        ? GRID_QUOTE_PROBE
+        : DEFAULT_QUOTE_PROBE;
     const observations: SellerProtocolVerification[] = [];
     const selectedTransports = new Set<SellerTransport>();
     const selected = new Set(protocols.filter((protocol) => {

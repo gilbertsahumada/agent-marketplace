@@ -1,4 +1,5 @@
 import { KNOWN_HEYANON_AGENT_IDS, buildBscCandidateInventory } from "../trust8004/inventory.ts";
+import type { HostedSellerSlug } from "../business/entities/hosted-seller-service.ts";
 import type { Trust8004Provider } from "../trust8004/provider.ts";
 import type { MarketplaceAgent, MarketplaceCategory } from "../trust8004/types.ts";
 import { verifyMcpEndpoint, type McpVerifierOptions } from "../verification/mcp.ts";
@@ -27,6 +28,7 @@ export interface BuildReadinessReportOptions {
   ) => Promise<HireabilityAssessment>;
   additionalAgentIds?: readonly string[];
   marketplaceOperatedGridSellerAgentId?: string;
+  marketplaceOperatedAgents?: ReadonlyArray<{ agentId: string; slug: HostedSellerSlug }>;
   now?: () => number;
 }
 
@@ -77,6 +79,7 @@ export async function buildBscMarketplaceReadinessReport(
   const inventory = await buildBscCandidateInventory(options.provider, now, {
     ...(options.additionalAgentIds ? { additionalAgentIds: options.additionalAgentIds } : {}),
     ...(options.marketplaceOperatedGridSellerAgentId ? { marketplaceOperatedGridSellerAgentId: options.marketplaceOperatedGridSellerAgentId } : {}),
+    ...(options.marketplaceOperatedAgents ? { marketplaceOperatedAgentIds: options.marketplaceOperatedAgents.map(({ agentId }) => agentId) } : {}),
   });
   const probeBudget = createProbeBudget({
     maxMcpEndpoints: 24,
@@ -99,6 +102,7 @@ export async function buildBscMarketplaceReadinessReport(
     ...(inventory.selection.marketplaceOperatedAgentIds[0]
       ? { marketplaceOperatedGridSellerAgentId: inventory.selection.marketplaceOperatedAgentIds[0] }
       : {}),
+    ...(options.marketplaceOperatedAgents ? { marketplaceOperatedAgents: options.marketplaceOperatedAgents } : {}),
   });
   let candidates: ReadinessCandidate[] = [];
 

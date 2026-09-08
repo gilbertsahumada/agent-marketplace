@@ -5,19 +5,22 @@ import { isAddressEqual } from "viem";
 import { readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { ERC8183_MAINNET } from "./contracts.ts";
-import { loadMainnetGridSellerConfig } from "./grid-seller-config.ts";
+import { isHostedSellerSlug } from "../business/policies/hosted-seller-catalog.ts";
+import { loadMainnetHostedSellerConfig } from "./hosted-seller-config.ts";
 
 async function main(): Promise<void> {
   const jobIdRaw = process.argv[2];
   const execute = process.argv.includes("--execute");
   const evidenceIndex = process.argv.indexOf("--evidence");
   const evidencePath = evidenceIndex >= 0 ? process.argv[evidenceIndex + 1] : undefined;
-  const allowedArguments = new Set(["--execute", "--evidence", evidencePath]);
-  if (!jobIdRaw || !/^\d+$/.test(jobIdRaw) || (evidenceIndex >= 0 && !evidencePath) || process.argv.some((arg, index) => index > 2 && !allowedArguments.has(arg))) {
-    throw new Error("Expected command: <jobId> [--execute] [--evidence sanitized-browser-evidence.json]");
+  const sellerIndex = process.argv.indexOf("--seller");
+  const sellerRaw = sellerIndex >= 0 ? process.argv[sellerIndex + 1] : "grid";
+  const allowedArguments = new Set(["--execute", "--evidence", evidencePath, "--seller", sellerRaw]);
+  if (!jobIdRaw || !/^\d+$/.test(jobIdRaw) || (evidenceIndex >= 0 && !evidencePath) || !sellerRaw || !isHostedSellerSlug(sellerRaw) || process.argv.some((arg, index) => index > 2 && !allowedArguments.has(arg))) {
+    throw new Error("Expected command: <jobId> [--seller grid|rebalance|yield|loan-health] [--execute] [--evidence sanitized-browser-evidence.json]");
   }
   const jobId = BigInt(jobIdRaw);
-  const config = loadMainnetGridSellerConfig();
+  const config = loadMainnetHostedSellerConfig(sellerRaw);
   const wallet = new EVMWalletProvider({ password: "in-memory-only", privateKey: config.privateKey, persist: false });
   const client = await ERC8183Client.create({ walletProvider: wallet, network: resolveNetwork("bsc-mainnet") });
   const [job, policy, disputeWindow, latestBlock] = await Promise.all([
@@ -27,14 +30,14 @@ async function main(): Promise<void> {
     client.publicClient.getBlock(),
   ]);
   if (!isAddressEqual(job.provider, config.address) || !isAddressEqual(job.evaluator, ERC8183_MAINNET.router) || !isAddressEqual(policy, ERC8183_MAINNET.policy)) {
-    throw new Error("Job is outside the Mainnet Grid seller allowlist");
+    throw new Error(`Job is outside the Mainnet ${sellerRaw} seller allowlist`);
   }
   if (job.status === JobStatus.COMPLETED) {
     process.stdout.write(`${JSON.stringify({ status: "ALREADY_COMPLETED", chainId: 56, jobId: jobIdRaw })}\n`);
     return;
   }
   if (job.status !== JobStatus.SUBMITTED || job.deliverable === `0x${"0".repeat(64)}`) {
-    throw new Error("Only a submitted Grid job with a deliverable can be settled");
+    throw new Error("Only a submitted job with a deliverable can be settled");
   }
   const eligibleAt = job.submittedAt + disputeWindow;
   if (latestBlock.timestamp < eligibleAt) {

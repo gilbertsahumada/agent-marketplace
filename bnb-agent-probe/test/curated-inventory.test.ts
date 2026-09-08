@@ -10,12 +10,12 @@ import {
   serializeCuratedInventory,
 } from "../scripts/generate-curated-inventory.ts";
 
-const EXPECTED_AGENT_IDS = ["43129", "45381", "45422", "45650", "303779"];
+const EXPECTED_AGENT_IDS = ["43129", "45381", "45422", "45650", "303779", "341563", "341564", "341565"];
 
 describe("WP1 curated inventory", () => {
-  it("keeps the five current marketplace candidates, including Grid", () => {
+  it("keeps the curated candidates and the four marketplace-operated sellers", () => {
     expect(CURATED_INVENTORY.entries.map(({ agentId }) => agentId)).toEqual(EXPECTED_AGENT_IDS);
-    expect(new Set(CURATED_INVENTORY.entries.map(({ agentId }) => agentId)).size).toBe(5);
+    expect(new Set(CURATED_INVENTORY.entries.map(({ agentId }) => agentId)).size).toBe(EXPECTED_AGENT_IDS.length);
   });
 
   it("keeps all four marketplace categories first-class", () => {
@@ -29,7 +29,7 @@ describe("WP1 curated inventory", () => {
 
   it("marks every category assignment as derived and unverified", () => {
     const assignments = CURATED_INVENTORY.entries.flatMap(({ categories }) => categories);
-    expect(assignments.length).toBe(6);
+    expect(assignments.length).toBe(9);
 
     for (const assignment of assignments) {
       expect(assignment.provenance).toBe("derived:marketplace-inventory");

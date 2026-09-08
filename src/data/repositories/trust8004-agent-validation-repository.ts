@@ -1,4 +1,5 @@
 import "server-only";
+import type { HostedSellerSlug } from "../../business/entities/hosted-seller-service.ts";
 import type {
   AgentValidationEvidence,
   AgentValidationEndpointCheck,
@@ -29,6 +30,7 @@ export interface Trust8004AgentValidationRepositoryOptions {
   buildVerificationReport?: (options: BuildVerificationReportOptions) => Promise<BscVerificationReport>;
   assessHireability?: (agent: MarketplaceAgent, identity: IdentityVerification) => Promise<HireabilityAssessment>;
   marketplaceOperatedGridSellerAgentId?: string;
+  marketplaceOperatedAgents?: ReadonlyArray<{ agentId: string; slug: HostedSellerSlug }>;
   now?: () => number;
 }
 
@@ -153,6 +155,7 @@ export class Trust8004AgentValidationRepository implements AgentValidationReposi
   private readonly buildVerificationReport: (options: BuildVerificationReportOptions) => Promise<BscVerificationReport>;
   private readonly assessHireabilityOverride: ((agent: MarketplaceAgent, identity: IdentityVerification) => Promise<HireabilityAssessment>) | undefined;
   private readonly marketplaceOperatedGridSellerAgentId: string | undefined;
+  private readonly marketplaceOperatedAgents: ReadonlyArray<{ agentId: string; slug: HostedSellerSlug }>;
   private readonly now: () => number;
 
   constructor(options: Trust8004AgentValidationRepositoryOptions = {}) {
@@ -162,6 +165,7 @@ export class Trust8004AgentValidationRepository implements AgentValidationReposi
     this.buildVerificationReport = options.buildVerificationReport ?? buildBscVerificationReport;
     this.assessHireabilityOverride = options.assessHireability;
     this.marketplaceOperatedGridSellerAgentId = options.marketplaceOperatedGridSellerAgentId;
+    this.marketplaceOperatedAgents = options.marketplaceOperatedAgents ?? [];
     this.now = options.now ?? Date.now;
   }
 
@@ -203,6 +207,7 @@ export class Trust8004AgentValidationRepository implements AgentValidationReposi
         ...(this.marketplaceOperatedGridSellerAgentId
           ? { marketplaceOperatedGridSellerAgentId: this.marketplaceOperatedGridSellerAgentId }
           : {}),
+        marketplaceOperatedAgents: this.marketplaceOperatedAgents,
       });
       const activation = await assessHireability(agent, verifiedAgent.identity);
       const observationSync = NO_GLOBAL_OBSERVATION_WRITE;
@@ -231,7 +236,7 @@ export class Trust8004AgentValidationRepository implements AgentValidationReposi
           description: agent.description,
           owner: agent.owner,
           metadataUri: agent.metadataUri,
-          operator: this.marketplaceOperatedGridSellerAgentId === agent.agentId ? "marketplace" : "third_party",
+          operator: this.marketplaceOperatedGridSellerAgentId === agent.agentId || this.marketplaceOperatedAgents.some(({ agentId }) => agentId === agent.agentId) ? "marketplace" : "third_party",
           indexedAt: agent.freshness.fetchedAt,
           declaredServices: [...declaredServices.values()],
         },
