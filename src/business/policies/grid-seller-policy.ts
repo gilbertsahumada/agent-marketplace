@@ -1,5 +1,5 @@
 import type { HostedSellerAgentCard } from "../entities/hosted-erc8183-seller.ts";
-import { GRID_NEGOTIATION_TERMS } from "./grid-plan-policy.ts";
+import { GRID_CANONICAL_INPUT, GRID_NEGOTIATION_TERMS } from "./grid-plan-policy.ts";
 
 export function gridSellerAgentCard(origin: string): HostedSellerAgentCard {
   return {
@@ -16,6 +16,9 @@ export function gridSellerAgentCard(origin: string): HostedSellerAgentCard {
       params: {
         skill: "negotiate-erc8183-job",
         taskDescriptionPrefix: "GRID_PLAN_V1:",
+        // The Worker's capability probe requests a signed quote with these
+        // parameters, so the seller stays "ready" without a browser visit.
+        capabilityProbeParameters: { ...GRID_CANONICAL_INPUT },
         inputSchema: {
           type: "object",
           additionalProperties: false,
