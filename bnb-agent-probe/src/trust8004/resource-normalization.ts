@@ -1,3 +1,4 @@
+import { CURATED_INVENTORY } from "../manifest/curated-inventory";
 import { classifyCatalogResource } from "./resource-classification";
 import type { CatalogAgent, CatalogEndpointProtocol } from "./types";
 import type {
@@ -60,7 +61,24 @@ export async function normalizeCatalogResource(
   };
 }
 
+/**
+ * Curated inventory facts that the ingest writes onto the agent row. They are
+ * part of the metadata version so a manifest change (a new marketplace-operated
+ * seller, a category assignment) re-ingests the agent instead of leaving the
+ * row stale until upstream metadata happens to change. Agents outside the
+ * manifest keep the historical version string.
+ */
+export function curatedInventoryFingerprint(agent: Pick<CatalogAgent, "agentId" | "chainId">): {
+  operator: "third_party" | "marketplace";
+  categories: string[];
+} | null {
+  if (agent.chainId !== 56) return null;
+  const entry = CURATED_INVENTORY.entries.find((candidate) => candidate.agentId === agent.agentId);
+  return entry ? { operator: entry.operator, categories: entry.categories.map(({ category }) => category) } : null;
+}
+
 export async function catalogMetadataVersion(agent: CatalogAgent): Promise<string> {
+  const curated = curatedInventoryFingerprint(agent);
   return sha256(JSON.stringify({
     owner: agent.owner,
     metadataUri: agent.metadataUri,
@@ -71,5 +89,6 @@ export async function catalogMetadataVersion(agent: CatalogAgent): Promise<strin
     description: agent.description ?? null,
     imageUrl: agent.imageUrl ?? null,
     endpoints: agent.indexEndpoints ?? [],
+    ...(curated ? { curated } : {}),
   }));
 }
