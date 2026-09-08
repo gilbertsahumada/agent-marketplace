@@ -26,6 +26,7 @@ import { acquireSchedulerLease, releaseSchedulerLease } from "./lib/scheduler-le
 import { createDatabase, readRuntimeStates, writeRuntimeState } from "./db/orm";
 import { runtimeState } from "./db/schema";
 import { CURATED_INVENTORY, CURATED_INVENTORY_CATEGORIES } from "./manifest/curated-inventory";
+import { expectedHostedSellerMessageUrl } from "./manifest/hosted-sellers";
 import { selectLiveTargets } from "./trust8004/candidates";
 import {
   CatalogBodyLimitError,
@@ -42,9 +43,6 @@ const FREE_LEASE_MS = 4 * 60_000;
 const PAID_LEASE_MS = 60_000;
 const CURATED_IDS = CURATED_INVENTORY.entries.map(({ agentId }) => agentId);
 const CURATED_ID_SET = new Set(CURATED_IDS);
-const GRID_AGENT_ID = "303779";
-const GRID_ENDPOINT = "https://bnb-agent-marketplace-ruby.vercel.app/grid";
-const GRID_MESSAGE_URL = "https://bnb-agent-marketplace-ruby.vercel.app/api/sellers/grid/a2a";
 type StructuredLogger = Pick<Console, "info" | "error">;
 
 export type SchedulerPhase = "header" | "sweep" | "probe";
@@ -490,10 +488,8 @@ async function executeWp2Phase(input: PhaseExecution, fetchImpl: typeof fetch): 
         maxResponseBytes: input.config.maxSellerResponseBytes,
         fetch: probeFetch,
         now: input.now,
-        ...(target.transport === "a2a"
-          && target.agentId === GRID_AGENT_ID
-          && target.endpoint === GRID_ENDPOINT
-          ? { expectedA2aMessageUrl: GRID_MESSAGE_URL }
+        ...(target.transport === "a2a" && expectedHostedSellerMessageUrl(target.endpoint, target.agentId)
+          ? { expectedA2aMessageUrl: expectedHostedSellerMessageUrl(target.endpoint, target.agentId)! }
           : {}),
         ...(target.transport === "erc8183_http" ? { expectedHttpStatus: {
           provider: chain.provider,

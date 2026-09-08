@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="t" shape-rendering="geometricPrecision">
+<title id="t">Yield allocation planner portrait</title>
+<defs>
+<pattern id="dots" width="24" height="24" patternUnits="userSpaceOnUse"><circle cx="12" cy="12" r="1.2" fill="#a8a9b2" fill-opacity=".2"/></pattern>
+<radialGradient id="glow" cx="50%" cy="50%" r="50%"><stop offset="0" stop-color="#f0b90b" stop-opacity=".2"/><stop offset="1" stop-color="#f0b90b" stop-opacity="0"/></radialGradient>
+<linearGradient id="pool" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#22d3ee" stop-opacity=".28"/><stop offset="1" stop-color="#22d3ee" stop-opacity=".04"/></linearGradient>
+<linearGradient id="rise" x1="0" y1="1" x2="1" y2="0"><stop offset="0" stop-color="#f0b90b"/><stop offset="1" stop-color="#ffe900"/></linearGradient>
+<g id="tri"><circle cx="0" cy="-4" r="2"/><circle cx="-4" cy="3" r="2"/><circle cx="4" cy="3" r="2"/></g>
+<path id="wave" d="M0 0c4-4 8-4 12 0s8 4 12 0" fill="none" stroke="#22d3ee" stroke-width="2" stroke-linecap="round"/>
+</defs>
+<rect width="512" height="512" rx="56" fill="#14151a"/>
+<rect x="1.5" y="1.5" width="509" height="509" rx="55" fill="#181a1e" stroke="#373943" stroke-width="3"/>
+<rect width="512" height="512" rx="56" fill="url(#dots)"/>
+<ellipse cx="360" cy="150" rx="180" ry="160" fill="url(#glow)"/>
+<g fill="#a8a9b2" fill-opacity=".55"><use href="#tri" x="52" y="54"/><use href="#tri" x="460" y="458"/></g>
+<line x1="64" y1="404" x2="448" y2="404" stroke="#a8a9b2" stroke-opacity=".7" stroke-width="2"/>
+<g stroke="#a8a9b2" stroke-opacity=".35" stroke-width="1.5" stroke-dasharray="3 9"><line x1="64" y1="330" x2="448" y2="330"/><line x1="64" y1="256" x2="448" y2="256"/><line x1="64" y1="182" x2="448" y2="182"/></g>
+<g stroke="#373943" stroke-width="2" fill="url(#pool)">
+<rect x="92" y="322" width="52" height="82" rx="6"/><rect x="164" y="268" width="52" height="136" rx="6"/><rect x="236" y="296" width="52" height="108" rx="6"/><rect x="308" y="230" width="52" height="174" rx="6"/><rect x="380" y="256" width="52" height="148" rx="6"/>
+</g>
+<g fill="#f0b90b">
+<rect x="92" y="322" width="52" height="26" rx="6"/><rect x="164" y="268" width="52" height="58" rx="6"/><rect x="236" y="296" width="52" height="38" rx="6"/><rect x="308" y="230" width="52" height="92" rx="6"/><rect x="380" y="256" width="52" height="48" rx="6"/>
+</g>
+<g fill="#181a1e" fill-opacity=".9"><rect x="92" y="340" width="52" height="8"/><rect x="164" y="318" width="52" height="8"/><rect x="236" y="326" width="52" height="8"/><rect x="308" y="314" width="52" height="8"/><rect x="380" y="296" width="52" height="8"/></g>
+<g fill="#10b981"><circle cx="118" cy="384" r="3"/><circle cx="190" cy="384" r="3"/><circle cx="262" cy="384" r="3"/><circle cx="334" cy="384" r="3"/><circle cx="406" cy="384" r="3"/></g>
+<use href="#wave" x="106" y="420"/><use href="#wave" x="178" y="420"/><use href="#wave" x="250" y="420"/><use href="#wave" x="322" y="420"/><use href="#wave" x="394" y="420"/>
+<path d="M72 394C160 396 200 372 250 318S330 210 372 168 424 108 444 92" fill="none" stroke="#14151a" stroke-width="16" stroke-linecap="round" stroke-opacity=".8"/>
+<path d="M72 394C160 396 200 372 250 318S330 210 372 168 424 108 444 92" fill="none" stroke="url(#rise)" stroke-width="8" stroke-linecap="round"/>
+<g fill="#10b981" stroke="#14151a" stroke-width="2"><path d="M444 92c-40-6-64 12-70 40 30 4 58-10 70-40z"/><path d="M444 92c-4-40-30-56-62-58 4 30 24 50 62 58z"/></g>
+<circle cx="444" cy="92" r="7" fill="#ffe900" stroke="#14151a" stroke-width="2"/>
+<g fill="#ffe900" fill-opacity=".8"><circle cx="250" cy="318" r="5"/><circle cx="372" cy="168" r="5"/></g>
+<text x="64" y="470" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="22" letter-spacing="6" fill="#a8a9b2">YIELD</text>
+</svg>

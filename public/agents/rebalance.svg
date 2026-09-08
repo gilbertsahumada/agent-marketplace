@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="t" shape-rendering="geometricPrecision">
+<title id="t">Rebalancing planner portrait</title>
+<defs>
+<pattern id="dots" width="24" height="24" patternUnits="userSpaceOnUse"><circle cx="12" cy="12" r="1.2" fill="#a8a9b2" fill-opacity=".2"/></pattern>
+<radialGradient id="glow" cx="50%" cy="50%" r="50%"><stop offset=".55" stop-color="#f0b90b" stop-opacity="0"/><stop offset=".8" stop-color="#f0b90b" stop-opacity=".16"/><stop offset="1" stop-color="#f0b90b" stop-opacity="0"/></radialGradient>
+<marker id="ay" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto"><path d="M0 0L10 5 0 10z" fill="#ffe900"/></marker>
+<marker id="ag" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto"><path d="M0 0L10 5 0 10z" fill="#10b981"/></marker>
+<g id="tri"><circle cx="0" cy="-4" r="2"/><circle cx="-4" cy="3" r="2"/><circle cx="4" cy="3" r="2"/></g>
+</defs>
+<rect width="512" height="512" rx="56" fill="#14151a"/>
+<rect x="1.5" y="1.5" width="509" height="509" rx="55" fill="#181a1e" stroke="#373943" stroke-width="3"/>
+<rect width="512" height="512" rx="56" fill="url(#dots)"/>
+<circle cx="256" cy="256" r="230" fill="url(#glow)"/>
+<g fill="#a8a9b2" fill-opacity=".55"><use href="#tri" x="52" y="54"/><use href="#tri" x="460" y="54"/><use href="#tri" x="460" y="458"/></g>
+<g fill="none" stroke="#a8a9b2" stroke-opacity=".4" stroke-width="1.5"><circle cx="256" cy="256" r="104" stroke-dasharray="3 7"/><circle cx="256" cy="256" r="204" stroke-dasharray="2 10"/></g>
+<g fill="none" stroke-width="40" transform="rotate(-90 256 256)">
+<circle cx="256" cy="256" r="140" stroke="#f0b90b" stroke-dasharray="345 880"/>
+<circle cx="256" cy="256" r="140" stroke="#10b981" stroke-dasharray="213 880" transform="rotate(144 256 256)"/>
+<circle cx="256" cy="256" r="140" stroke="#22d3ee" stroke-dasharray="169 880" transform="rotate(234 256 256)"/>
+<circle cx="256" cy="256" r="140" stroke="#6366f1" stroke-dasharray="125 880" transform="rotate(306 256 256)"/>
+</g>
+<circle cx="256" cy="256" r="140" fill="none" stroke="#14151a" stroke-opacity=".6" stroke-width="2" stroke-dasharray="1 5"/>
+<g stroke="#ffe900" stroke-width="4" stroke-linecap="round"><line x1="256" y1="96" x2="256" y2="66"/><line x1="385.44" y1="350.05" x2="409.71" y2="367.68"/><line x1="161.95" y1="385.44" x2="144.32" y2="409.71"/><line x1="161.95" y1="126.56" x2="144.32" y2="102.29"/></g>
+<g fill="none" stroke-width="5" stroke-linecap="round">
+<path d="M359.45 398.38A176 176 0 0 0 398.38 359.45" stroke="#ffe900" marker-end="url(#ay)"/>
+<path d="M113.62 359.45A176 176 0 0 0 152.55 398.38" stroke="#ffe900" marker-end="url(#ay)"/>
+<path d="M113.62 152.55A176 176 0 0 1 152.55 113.62" stroke="#10b981" marker-end="url(#ag)"/>
+</g>
+<circle cx="256" cy="256" r="72" fill="#181a1e" stroke="#373943" stroke-width="2"/>
+<g stroke="#f7f7f5" stroke-width="4" stroke-linecap="round" fill="none">
+<line x1="256" y1="232" x2="256" y2="284"/>
+<line x1="206" y1="248" x2="306" y2="236" stroke="#f0b90b" stroke-width="6"/>
+<path d="M206 248l-16 28h32zM306 236l-16 28h32z" stroke="#a8a9b2"/>
+<path d="M238 284h36" stroke="#a8a9b2"/>
+</g>
+<circle cx="256" cy="242" r="6" fill="#ffe900"/>
+<text x="64" y="470" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="22" letter-spacing="6" fill="#a8a9b2">REBAL</text>
+</svg>

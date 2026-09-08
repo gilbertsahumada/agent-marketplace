@@ -1,4 +1,5 @@
 import type { MarketplaceCategory } from "../../trust8004/types.ts";
+import { configuredHostedSellerAgentIds } from "../../shared/hosted-seller-env.ts";
 
 export interface InventoryCategoryEvidence {
   category: MarketplaceCategory;
@@ -107,26 +108,38 @@ export const MARKETPLACE_INVENTORY = {
   },
 } as const;
 
+// Each configured marketplace-operated seller joins the curated inventory
+// under its own category. Signals stay descriptive: operating a seller is
+// not evidence that it is hireable; the Worker's observations decide that.
+const HOSTED_SELLER_SIGNALS: Record<string, { category: MarketplaceCategory; signal: string }> = {
+  grid: { category: "grid_trading", signal: "Marketplace-operated deterministic Grid planner; no trading execution or custody." },
+  rebalance: { category: "rebalancing", signal: "Marketplace-operated deterministic rebalancing planner; no order execution or custody." },
+  yield: { category: "yield_optimisation", signal: "Marketplace-operated deterministic yield allocation planner over buyer-provided rates; no deposits or custody." },
+  "loan-health": { category: "health_factor_monitoring", signal: "Marketplace-operated deterministic loan health report; a single report, not a monitoring service, no transactions or custody." },
+};
+
 export function marketplaceInventoryEntries(
   env: Readonly<Record<string, string | undefined>> = process.env,
 ): MarketplaceInventoryEntry[] {
-  const configuredAgentId = Reflect.get(env, "ERC8183_MAINNET_SELLER_AGENT_ID")?.trim();
-  if (!configuredAgentId || !/^\d+$/.test(configuredAgentId) || BigInt(configuredAgentId) <= 0n) {
-    return [...MARKETPLACE_INVENTORY.entries];
+  const entries: MarketplaceInventoryEntry[] = [...MARKETPLACE_INVENTORY.entries];
+  const known = new Set(entries.map(({ agentId }) => agentId));
+  for (const { slug, agentId } of configuredHostedSellerAgentIds(env)) {
+    const assignment = HOSTED_SELLER_SIGNALS[slug];
+    if (!assignment || known.has(agentId)) continue;
+    known.add(agentId);
+    entries.push({
+      chainId: 56,
+      agentId,
+      operator: "marketplace",
+      categories: [{
+        category: assignment.category,
+        signal: assignment.signal,
+        provenance: "derived:marketplace-inventory",
+        verificationStatus: "candidate_unverified",
+      }],
+    });
   }
-  const normalized = BigInt(configuredAgentId).toString();
-  if (MARKETPLACE_INVENTORY.entries.some(({ agentId }) => agentId === normalized)) return [...MARKETPLACE_INVENTORY.entries];
-  return [...MARKETPLACE_INVENTORY.entries, {
-    chainId: 56,
-    agentId: normalized,
-    operator: "marketplace",
-    categories: [{
-      category: "grid_trading",
-      signal: "Marketplace-operated deterministic Grid planner; no trading execution or custody.",
-      provenance: "derived:marketplace-inventory",
-      verificationStatus: "candidate_unverified",
-    }],
-  }];
+  return entries;
 }
 
 const entriesById = new Map<string, MarketplaceInventoryEntry>(

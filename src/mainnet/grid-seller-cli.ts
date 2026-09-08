@@ -6,7 +6,8 @@ import { bsc } from "viem/chains";
 import { fetchAgentCard } from "../a2a.ts";
 import { createSafeEndpointTransport } from "../verification/safe-http.ts";
 import { ERC8183_MAINNET } from "./contracts.ts";
-import { loadMainnetGridSellerConfig } from "./grid-seller-config.ts";
+import { hostedSellerMessageUrl, hostedSellerService, isHostedSellerSlug } from "../business/policies/hosted-seller-catalog.ts";
+import { loadMainnetHostedSellerConfig } from "./hosted-seller-config.ts";
 import { evaluateMainnetGoNoGo, type MainnetGoNoGoReport } from "./go-no-go.ts";
 
 export function assertRegistrationDecision(
@@ -39,29 +40,34 @@ export function assertRegistrationDecision(
 
 async function main(): Promise<void> {
   const execute = process.argv.includes("--execute");
-  if (process.argv[2] !== "register" || process.argv.some((arg, index) => index > 2 && arg !== "--execute")) {
-    throw new Error("Expected command: register [--execute]");
+  const sellerIndex = process.argv.indexOf("--seller");
+  const seller = sellerIndex >= 0 ? process.argv[sellerIndex + 1] : "grid";
+  const allowed = new Set(["--execute", "--seller", seller]);
+  if (process.argv[2] !== "register" || !seller || !isHostedSellerSlug(seller) || process.argv.some((arg, index) => index > 2 && !allowed.has(arg))) {
+    throw new Error("Expected command: register [--seller grid|rebalance|yield|loan-health] [--execute]");
   }
-  const config = loadMainnetGridSellerConfig(process.env, { requireAgentId: false });
+  const service = hostedSellerService(seller);
+  const config = loadMainnetHostedSellerConfig(seller, process.env, { requireAgentId: false });
   // Re-read the chain and the fixed production endpoint in this invocation.
   // A previously written or edited local report is never an authority for a write.
-  const decision = await evaluateMainnetGoNoGo();
+  const decision = await evaluateMainnetGoNoGo({ seller });
   assertRegistrationDecision(decision, config);
-  if (config.agentId !== null) throw new Error("The Mainnet Grid seller already has a configured Agent ID");
+  if (config.agentId !== null) throw new Error(`The Mainnet ${seller} seller already has a configured Agent ID`);
   const transport = await createSafeEndpointTransport(config.origin, { timeoutMs: 20_000, maxResponseBytes: 64 * 1024 });
   const card = await (async () => {
     try { return await fetchAgentCard(config.endpoint, null, transport.fetch); }
     finally { await transport.close(); }
   })();
-  if (card.url !== `${config.origin}/api/sellers/grid/a2a`) {
-    throw new Error("The public Grid Agent Card does not match the fixed message route");
+  if (card.url !== hostedSellerMessageUrl(config.origin, seller) || card.name !== service.name) {
+    throw new Error("The public Agent Card does not match the fixed message route");
   }
   const wallet = new EVMWalletProvider({ password: "in-memory-only", privateKey: config.privateKey, persist: false });
   const identity = await ERC8004Agent.create({ walletProvider: wallet, network: resolveNetwork("bsc-mainnet") });
   const agentUri = identity.generateAgentUri({
-    name: "marketplace-operated-grid-planner",
-    description: "Marketplace-operated deterministic Grid planning seller. No trading, custody or financial execution. Not an official BNB reference agent.",
+    name: service.name,
+    description: service.description,
     endpoints: [AgentEndpoint.a2a(config.endpoint, { version: "0.3.0" })],
+    image: `${config.origin}${service.imagePath}`,
   });
   const publicClient = createPublicClient({ chain: bsc, transport: http(ERC8183_MAINNET.rpcUrl) });
   await publicClient.simulateContract({
@@ -74,8 +80,10 @@ async function main(): Promise<void> {
   const summary = {
     execute,
     chainId: 56,
+    sellerSlug: seller,
     seller: config.address,
     endpoint: config.endpoint,
+    image: `${config.origin}${service.imagePath}`,
     registry: ERC8183_MAINNET.registry,
     goNoGoBlock: decision.blockNumber,
     registrationSimulation: "passed",
@@ -91,7 +99,7 @@ async function main(): Promise<void> {
 
 if (process.argv[1] && import.meta.url === new URL(`file://${process.argv[1]}`).href) {
   main().catch(() => {
-    process.stderr.write("Mainnet Grid seller registration failed; no secret details were emitted.\n");
+    process.stderr.write("Mainnet seller registration failed; no secret details were emitted.\n");
     process.exitCode = 1;
   });
 }

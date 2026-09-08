@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { configuredHostedSellerAgentIds } from "../shared/hosted-seller-env.ts";
 import { mkdir, open, rename, rm } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -103,6 +104,7 @@ async function main(): Promise<void> {
     ...(process.env.ERC8183_MAINNET_SELLER_AGENT_ID
       ? { marketplaceOperatedGridSellerAgentId: process.env.ERC8183_MAINNET_SELLER_AGENT_ID }
       : {}),
+    marketplaceOperatedAgents: configuredHostedSellerAgentIds(process.env),
   });
   await writeReadinessReport(args.outputPath, report);
   process.stdout.write(

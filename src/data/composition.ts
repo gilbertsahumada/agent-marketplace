@@ -1,4 +1,5 @@
 import { Trust8004MarketplaceAgentRepository } from "./repositories/trust8004-marketplace-agent-repository.ts";
+import { configuredHostedSellerAgentIds } from "../shared/hosted-seller-env.ts";
 import { Gate1PublicProofRepository } from "./proofs/gate1-public-proof-repository.ts";
 import { TrustlessErc8183SpikeRepository } from "./erc8183/trustless-erc8183-spike-repository.ts";
 import { MainnetErc8183Repository } from "../mainnet/mainnet-erc8183-repository.ts";
@@ -35,6 +36,7 @@ export const agentValidationRepository = new RateLimitedAgentValidationRepositor
     ...(configuredMarketplaceSellerId
       ? { marketplaceOperatedGridSellerAgentId: configuredMarketplaceSellerId }
       : {}),
+    marketplaceOperatedAgents: configuredHostedSellerAgentIds(process.env),
   }),
 );
 export const funnelEvidenceRepository = staticFunnelEvidenceRepository;

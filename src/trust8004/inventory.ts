@@ -1,5 +1,5 @@
 import { Trust8004Provider } from "./provider.ts";
-import { MARKETPLACE_INVENTORY } from "../data/inventory/marketplace-inventory.ts";
+import { MARKETPLACE_INVENTORY, marketplaceInventoryEntries } from "../data/inventory/marketplace-inventory.ts";
 import {
   BSC_MAINNET_CHAIN_ID,
   CATALOG_COVERAGE,
@@ -14,6 +14,8 @@ export const MAX_EXPLICIT_QUALIFICATION_AGENT_IDS = 20;
 export interface BuildBscCandidateInventoryOptions {
   additionalAgentIds?: readonly string[];
   marketplaceOperatedGridSellerAgentId?: string;
+  /** Every configured marketplace-operated seller; supersedes the single Grid ID when present. */
+  marketplaceOperatedAgentIds?: readonly string[];
 }
 
 export const MAX_UINT256_AGENT_ID = (1n << 256n) - 1n;
@@ -33,9 +35,18 @@ export async function buildBscCandidateInventory(
   const requestedExplicitIds = options.additionalAgentIds ?? [];
   const curatedAgentIds = [...KNOWN_HEYANON_AGENT_IDS];
   const curatedSet = new Set<string>(curatedAgentIds);
-  const marketplaceOperatedAgentIds = options.marketplaceOperatedGridSellerAgentId
-    ? [normalizedAgentId(options.marketplaceOperatedGridSellerAgentId)].filter((agentId) => !curatedSet.has(agentId))
-    : [];
+  const operatedSource = options.marketplaceOperatedAgentIds
+    ?? (options.marketplaceOperatedGridSellerAgentId ? [options.marketplaceOperatedGridSellerAgentId] : []);
+  const marketplaceOperatedAgentIds = [...new Set(operatedSource.map(normalizedAgentId))].filter((agentId) => !curatedSet.has(agentId));
+  // Category membership of an operated seller comes from the inventory entry
+  // built for it (its slug decides the category), never from the Grid default.
+  const operatedCategories = new Map<string, MarketplaceCategory[]>();
+  for (const entry of marketplaceInventoryEntries()) {
+    if (entry.operator === "marketplace") operatedCategories.set(entry.agentId, entry.categories.map(({ category }) => category));
+  }
+  for (const agentId of marketplaceOperatedAgentIds) {
+    if (!operatedCategories.has(agentId) && agentId === options.marketplaceOperatedGridSellerAgentId) operatedCategories.set(agentId, ["grid_trading"]);
+  }
   const operatedSet = new Set(marketplaceOperatedAgentIds);
   const explicitAgentIds = [...new Set(requestedExplicitIds.map(normalizedAgentId))]
     .filter((agentId) => !curatedSet.has(agentId) && !operatedSet.has(agentId));
@@ -55,14 +66,15 @@ export async function buildBscCandidateInventory(
   const categories = Object.fromEntries(
     (Object.keys(MARKETPLACE_INVENTORY.categories) as MarketplaceCategory[]).map((category) => {
       const source = MARKETPLACE_INVENTORY.categories[category];
-      const matchingIds = category === "grid_trading" && marketplaceOperatedAgentIds.length > 0
-        ? marketplaceOperatedAgentIds
+      const operatedHere = marketplaceOperatedAgentIds.filter((agentId) => (operatedCategories.get(agentId) ?? []).includes(category));
+      const matchingIds = operatedHere.length > 0
+        ? (category === "grid_trading" ? operatedHere : [...source.agentIds, ...operatedHere])
         : [...source.agentIds];
       return [category, {
         status: matchingIds.length > 0 ? "candidates" : source.status,
         agentIds: matchingIds,
-        note: category === "grid_trading" && marketplaceOperatedAgentIds.length > 0
-          ? "One marketplace-operated deterministic Grid seller is explicitly configured; qualification remains evidence-gated."
+        note: operatedHere.length > 0
+          ? `${operatedHere.length === 1 ? "One" : operatedHere.length} marketplace-operated deterministic seller${operatedHere.length === 1 ? " is" : "s are"} explicitly configured; qualification remains evidence-gated.`
           : source.evidence,
       }];
     }),
