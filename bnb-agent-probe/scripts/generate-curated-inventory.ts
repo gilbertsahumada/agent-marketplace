@@ -6,7 +6,18 @@ import {
   type CuratedInventoryManifest,
 } from "../src/manifest/curated-inventory.ts";
 
-const GRID_AGENT_ID = "303779";
+import { HOSTED_SELLERS } from "../src/manifest/hosted-sellers.ts";
+
+// Every registered marketplace-operated seller joins the manifest through the
+// same env names the application reads, so one regeneration covers them all.
+const HOSTED_SELLER_ENV = Object.fromEntries(
+  HOSTED_SELLERS.filter((seller) => seller.agentId !== null).map((seller) => [
+    seller.slug === "grid"
+      ? "ERC8183_MAINNET_SELLER_AGENT_ID"
+      : `ERC8183_MAINNET_SELLER_${({ rebalance: "REBALANCE", yield: "YIELD", "loan-health": "HEALTH" } as const)[seller.slug]}_AGENT_ID`,
+    seller.agentId!,
+  ]),
+);
 const PROVENANCE = "derived:marketplace-inventory" as const;
 const VERIFICATION_STATUS = "candidate_unverified" as const;
 
@@ -17,9 +28,7 @@ function compareAgentIds(left: string, right: string): number {
 }
 
 export function buildCuratedInventory(): CuratedInventoryManifest {
-  const sourceEntries = marketplaceInventoryEntries({
-    ERC8183_MAINNET_SELLER_AGENT_ID: GRID_AGENT_ID,
-  });
+  const sourceEntries = marketplaceInventoryEntries(HOSTED_SELLER_ENV);
 
   const entries = sourceEntries
     .map((entry) => ({
