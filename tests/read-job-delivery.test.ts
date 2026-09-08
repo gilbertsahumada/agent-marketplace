@@ -3,8 +3,13 @@ import { encodeFunctionData, encodeEventTopics } from "viem";
 import { ERC8183_MAINNET as pins, mainnetCommerceEvidenceAbi as abi } from "../src/mainnet/contracts";
 import { readJobDelivery } from "../src/mainnet/read-job-delivery";
 import type { HireJobDetail } from "../src/business/entities/hire-job";
-const mocks = vi.hoisted(() => ({ getJob: vi.fn(), getReceipt: vi.fn(), getTx: vi.fn(), transport: vi.fn(), fetch: vi.fn(), close: vi.fn(), pins: vi.fn() }));
+const mocks = vi.hoisted(() => ({ getJob: vi.fn(), getReceipt: vi.fn(), getTx: vi.fn(), transport: vi.fn(), fetch: vi.fn(), close: vi.fn(), pins: vi.fn(), jobPolicy: vi.fn(), verify: vi.fn() }));
 vi.mock("../src/mainnet/implementation-pins", () => ({ mainnetImplementationPinsMatch: mocks.pins }));
+vi.mock("../src/mainnet/job-delivery", async original => {
+  const actual = await original<{ verifyDelivery: (...args: unknown[]) => unknown }>();
+  mocks.verify.mockImplementation((...args: unknown[]) => actual.verifyDelivery(...args));
+  return { ...actual, verifyDelivery: (...args: unknown[]) => mocks.verify(...args) };
+});
 vi.mock("../src/verification/safe-http", () => ({ createSafeEndpointTransport: mocks.transport }));
 vi.mock("viem", async original => ({ ...await original<object>(), createPublicClient: () => ({
   getChainId: async () => 56, getBlock: async () => ({ timestamp: 200n }), getTransaction: mocks.getTx, getTransactionReceipt: mocks.getReceipt,
@@ -12,15 +17,17 @@ vi.mock("viem", async original => ({ ...await original<object>(), createPublicCl
 vi.mock("@bnbagent/sdk/erc8183", async original => ({
   ...await original<object>(),
   CommerceClient: class { getJob = mocks.getJob; },
-  RouterClient: class { jobPolicy = async () => pins.policy; },
+  RouterClient: class { jobPolicy = mocks.jobPolicy; },
   PolicyClient: class { disputeWindow = async () => 100n; disputed = async () => false; check = async () => [0, "0x"]; },
 }));
 const hash = `0x${"11".repeat(32)}` as const;
 const txHash = `0x${"22".repeat(32)}` as const;
 const ledger = { chainId: 56, jobId: "1", buyer: pins.token, provider: pins.registry, status: "SUBMITTED", events: [{ eventName: "JobSubmitted", txHash, deliverable: hash }] } as unknown as HireJobDetail;
+const CLEARED_POLICY = `0x${"00".repeat(20)}`;
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.pins.mockResolvedValue(true);
+  mocks.jobPolicy.mockResolvedValue(pins.policy);
   mocks.getJob.mockResolvedValue({ status: 2, client: ledger.buyer, provider: ledger.provider, evaluator: pins.router, submittedAt: 150n, deliverable: hash });
   mocks.getReceipt.mockResolvedValue({ status: "success", logs: [{ address: pins.commerce, topics: encodeEventTopics({ abi, eventName: "JobSubmitted", args: { jobId: 1n, provider: pins.registry } }), data: hash }] });
   mocks.getTx.mockResolvedValue({ to: pins.commerce, input: encodeFunctionData({ abi, functionName: "submit", args: [1n, hash, `0x${Buffer.from(JSON.stringify({ deliverable_url: "https://seller.example/result" })).toString("hex")}`] }) });
@@ -54,4 +61,20 @@ it("keeps the review window when the delivery transport blocks an unsafe URL", a
   const report = await readJobDelivery(ledger);
   expect(report.closure).toBe("review_window");
   expect(report.delivery).toEqual({ status: "unavailable", content: null, url: null });
+});
+it("verifies a COMPLETED delivery against the pinned policy once the Router has cleared the binding", async () => {
+  mocks.jobPolicy.mockResolvedValue(CLEARED_POLICY);
+  mocks.getJob.mockResolvedValue({ status: 3, client: ledger.buyer, provider: ledger.provider, evaluator: pins.router, submittedAt: 150n, deliverable: hash });
+  const report = await readJobDelivery({ ...ledger, status: "COMPLETED" } as HireJobDetail);
+  expect(report.status).toBe("COMPLETED");
+  expect(report.closure).toBe("completed");
+  expect(report.policy).toBe(pins.policy);
+  expect(mocks.verify).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ policy: pins.policy }));
+});
+it("does not assume the pinned policy for an unsettled job with a cleared binding", async () => {
+  mocks.jobPolicy.mockResolvedValue(CLEARED_POLICY);
+  const report = await readJobDelivery(ledger);
+  expect(report.policy).toBe(CLEARED_POLICY);
+  expect(report.closure).toBe("unsupported_policy");
+  expect(mocks.verify).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ policy: CLEARED_POLICY }));
 });
