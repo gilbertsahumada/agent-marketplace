@@ -24,6 +24,8 @@ export interface Env {
   CATALOG_COMPATIBILITY_BOOTSTRAP_BATCH_SIZE?: string;
   CATALOG_QUOTE_ORIGIN_PER_MINUTE?: string;
   CATALOG_TESTNET_ENABLED?: string;
+  /** "1" re-discovers the curated inventory once per manifest version during the header phase. */
+  CATALOG_CURATED_RECONCILE_ENABLED?: string;
   CATALOG_SHARED_DISCOVERY_LIMIT?: string;
   CLOUDFLARE_WORKERS_PLAN?: string;
   KILL_SWITCH?: string;
