@@ -10,6 +10,18 @@ import type { AgentCardViewModel } from "../components/marketplace/presentation-
 
 afterEach(cleanup);
 
+it("identifies marketplace operators without inferring ownership from the name", async () => {
+  const view = render(createElement(ServiceCard, { agent }));
+  expect(screen.getByText("Marketplace operated")).toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: "Explore service" }));
+  expect(screen.getByText("Operated by the marketplace team.")).toBeInTheDocument();
+  view.unmount();
+  render(createElement(ServiceCard, { agent: { ...agent, name: "marketplace-operated-grid-planner", operator: "third_party" } }));
+  expect(screen.queryByText("Marketplace operated")).not.toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: "Explore service" }));
+  expect(screen.queryByText("Operated by the marketplace team.")).not.toBeInTheDocument();
+});
+
 it("isolates decorative motion from the cover text and background", () => {
   render(createElement(ServiceCard, { agent }));
   const cover = screen.getByTestId("service-cover");

@@ -29,7 +29,7 @@ function ServiceAvatar({ agent }: { agent: AgentCardViewModel }) {
   return <span aria-label={`${agent.name} initials`} className="grid size-7 shrink-0 place-items-center rounded-full border border-white/15 bg-zinc-800 text-[10px] font-medium text-zinc-200">{agent.name.trim().slice(0, 2).toUpperCase() || "AG"}</span>;
 }
 
-export function ServiceCover({ agent }: { agent: AgentCardViewModel }) {
+export function ServiceCover({ agent, showOperator = false }: { agent: AgentCardViewModel; showOperator?: boolean }) {
   const art = serviceArtwork(agent);
   return <div className="relative aspect-[1.65] w-full overflow-hidden rounded-xl border border-border" data-testid="service-cover">
     <svg aria-hidden="true" viewBox="0 0 400 245" className="size-full">
@@ -44,6 +44,7 @@ export function ServiceCover({ agent }: { agent: AgentCardViewModel }) {
               : <g fill="none" stroke={art.color} opacity=".4"><rect x="28" y="125" width="100" height="85" rx="12" /><rect x="150" y="125" width="100" height="85" rx="12" /><path d="M128 168h22m100 0h100" /><circle cx="355" cy="168" r="12" /></g>}
       </g>
     </svg>
+    {showOperator && agent.operator === "marketplace" && <span className="pointer-events-none absolute top-9 -right-12 w-52 rotate-45 bg-primary py-1.5 text-center text-[10px] font-semibold leading-4 text-primary-foreground shadow-sm">Marketplace operated</span>}
   </div>;
 }
 
@@ -63,7 +64,7 @@ export function ServiceCard({ agent, registry = false }: { agent: AgentCardViewM
       if ((event.target as Element).closest("a, button")) return;
       setOpen(true);
     }}>
-      <DialogTrigger asChild><button type="button" className="w-full cursor-pointer text-left focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-primary [&>div]:rounded-none [&>div]:border-0" aria-label={`Explore ${agent.name}`}><ServiceCover agent={agent} /></button></DialogTrigger>
+      <DialogTrigger asChild><button type="button" className="w-full cursor-pointer text-left focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-primary [&>div]:rounded-none [&>div]:border-0" aria-label={`Explore ${agent.name}`}><ServiceCover agent={agent} showOperator /></button></DialogTrigger>
       <div className="flex min-w-0 flex-1 flex-col gap-3 p-4">
       <div className="flex min-w-0 items-center gap-2 text-xs">
         <div className="shrink-0 [&_[data-slot=avatar]]:size-6"><ServiceAvatar agent={agent} /></div>
@@ -91,6 +92,7 @@ export function ServiceCard({ agent, registry = false }: { agent: AgentCardViewM
       </DialogHeader>
       <div className="grid min-w-0 gap-6 md:grid-cols-[minmax(0,1fr)_260px]">
         <section className="flex min-w-0 flex-col gap-4" aria-label="Service information">
+          {agent.operator === "marketplace" && <p className="text-xs text-muted-foreground">Operated by the marketplace team.</p>}
           <dl aria-label="Agent job history" className="flex gap-8 border-y border-border py-4">
             <div className="flex flex-col-reverse gap-1"><dt className="text-xs text-muted-foreground">Jobs registered</dt><dd className="text-3xl font-medium tabular-nums">{count(agent.jobCount)}</dd></div>
             <div className="flex flex-col-reverse gap-1"><dt className="text-xs text-muted-foreground">Completed</dt><dd className="text-3xl font-medium tabular-nums">{count(agent.completedJobCount)}</dd></div>
