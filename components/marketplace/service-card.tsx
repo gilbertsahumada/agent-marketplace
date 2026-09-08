@@ -77,8 +77,8 @@ export function ServiceCard({ agent, registry = false }: { agent: AgentCardViewM
     </article>
     <DialogContent className="agents-catalog max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-[960px]">
       <DialogHeader className="min-w-0 pr-8 text-left">
-        <div className="flex min-w-0 items-start gap-3">
-          <span aria-hidden="true" className="shrink-0 pt-0.5"><ServiceAvatar agent={agent} /></span>
+        <div className="flex min-w-0 items-center gap-3">
+          <span aria-hidden="true" className="size-11 shrink-0 [&>span]:size-11 [&>span]:text-sm"><ServiceAvatar agent={agent} /></span>
           <div className="min-w-0 flex-1 space-y-1.5">
             <DialogTitle className="wrap-anywhere leading-snug">{agent.name}</DialogTitle>
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
