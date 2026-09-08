@@ -12,7 +12,7 @@ export function SiteFooter() {
   const pathname = usePathname();
   if (pathname && FOOTERLESS.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`))) return null;
   return (
-    <footer className="mt-auto border-t border-border/60 bg-card/40">
+    <footer className="mt-auto overflow-hidden border-t border-border/60 bg-card/40">
       <div className="mx-auto grid max-w-[1480px] grid-cols-2 gap-8 px-5 py-8 sm:px-8 md:grid-cols-[1fr_auto_auto] md:gap-12 lg:px-12">
         <div className="col-span-2 flex flex-col items-start gap-3 md:col-span-1 md:self-end">
           <Brand />
@@ -41,6 +41,9 @@ export function SiteFooter() {
           </a>
         </nav>
       </div>
+      {/* The wordmark fades into the bottom edge; decorative, so hidden from
+          assistive tech, and the gradient is clipped to the glyphs. */}
+      <div aria-hidden="true" className="site-wordmark">MARKETPLACE</div>
     </footer>
   );
 }
