@@ -13,6 +13,7 @@ import {
   type D1QueryBudget,
 } from "./db/query-budget";
 import { recordSchedulerAttempt } from "./db/scheduler-attempt-ledger";
+import type { CatalogDiscoverySummary } from "./phases/catalog-ingest";
 import type {
   HeaderAgent,
 } from "./phases/header";
@@ -617,34 +618,18 @@ async function executeCatalogV2Phase(
   const probeQueryReserve = input.phase === "probe" && input.config.catalogProbeEnabled
     ? 1 + (4 * input.config.catalogProbeBatchSize)
     : 0;
-  const { testnetCatalogEnabled, TESTNET_DISCOVERY_PAGE_SIZE } = await import("./catalog/testnet-policy");
-  // Keep the Mainnet header path intact and reserve the probe/final-state writes.
-  // Testnet advances independently in small pages, instead of importing the
-  // whole registry into one scheduler invocation.
-  if (testnetCatalogEnabled(input.env) && input.queryBudget.remaining >= 20 + probeQueryReserve) {
-    const testnetCatalog = new Trust8004CatalogClient({
-      chainId: 97,
-      baseUrl: input.env.TRUST8004_BASE_URL ?? "https://trust8004.xyz/api/app",
-      timeoutMs: input.config.probeTimeoutMs,
-      maxResponseBytes: input.config.maxCatalogResponseBytes,
-      fetch: fetchImpl,
-    });
-    if (input.phase === "header") {
-      const page = await testnetCatalog.listHeader(TESTNET_DISCOVERY_PAGE_SIZE);
-      discovery.push(await enqueueCatalogDiscoveryPage(input.db, page.items, {
-        chainId: 97, nowMs: input.nowMs, source: "header",
-      }));
-    } else if (input.phase === "sweep") {
-      const rows = await readRuntimeStates(createDatabase(input.db), ["catalog_sweep_offset:97"]);
-      const offset = rows[0]?.integerValue ?? 0;
-      const page = await testnetCatalog.listSweepPage(TESTNET_DISCOVERY_PAGE_SIZE, offset);
-      discovery.push(await enqueueCatalogDiscoveryPage(input.db, page.items, {
-        chainId: 97, nowMs: input.nowMs, source: "sweep",
-        cursor: offset + page.items.length >= page.total ? 0 : offset + page.items.length,
-        cursorKey: "catalog_sweep_offset",
-      }));
-    }
-  }
+  const testnetDiscovery = await enqueueTestnetDiscovery({
+    env: input.env,
+    phase: input.phase,
+    db: input.db,
+    nowMs: input.nowMs,
+    remainingQueries: input.queryBudget.remaining,
+    reservedQueries: probeQueryReserve,
+    config: input.config,
+    logger: input.logger,
+    fetch: fetchImpl,
+  });
+  if (testnetDiscovery !== null) discovery.push(testnetDiscovery);
   const ingestTaskLimit = catalogIngestTaskLimitForBudget({
     remainingQueries: input.queryBudget.remaining,
     maxDeclarations: input.config.catalogDeclarationsPerTask,
@@ -779,6 +764,60 @@ function compareCatalogHighWater(
   const leftId = BigInt(left.agentId);
   const rightId = BigInt(right.agentId);
   return leftId < rightId ? -1 : leftId > rightId ? 1 : 0;
+}
+
+/**
+ * Testnet discovery is best-effort. It runs before the Mainnet ingest and probe
+ * work of the same phase, so a Testnet registry, RPC or configuration failure
+ * is logged with a sanitized code and never aborts the Mainnet path.
+ * Testnet advances independently in small pages instead of importing the whole
+ * registry into one scheduler invocation, and it yields to the Mainnet header
+ * path and the reserved probe/final-state writes when the D1 budget is tight.
+ */
+export async function enqueueTestnetDiscovery(input: {
+  readonly env: Env;
+  readonly phase: SchedulerPhase;
+  readonly db: D1DatabaseLike;
+  readonly nowMs: number;
+  readonly remainingQueries: number;
+  readonly reservedQueries: number;
+  readonly config: Pick<WorkerConfig, "probeTimeoutMs" | "maxCatalogResponseBytes">;
+  readonly logger: StructuredLogger;
+  readonly fetch: typeof fetch;
+}): Promise<CatalogDiscoverySummary | null> {
+  try {
+    const { testnetCatalogEnabled, TESTNET_DISCOVERY_PAGE_SIZE } = await import("./catalog/testnet-policy");
+    if (!testnetCatalogEnabled(input.env)) return null;
+    if (input.phase === "probe" || input.remainingQueries < 20 + input.reservedQueries) return null;
+    const { enqueueCatalogDiscoveryPage } = await import("./phases/catalog-ingest");
+    const testnetCatalog = new Trust8004CatalogClient({
+      chainId: 97,
+      baseUrl: input.env.TRUST8004_BASE_URL ?? "https://trust8004.xyz/api/app",
+      timeoutMs: input.config.probeTimeoutMs,
+      maxResponseBytes: input.config.maxCatalogResponseBytes,
+      fetch: input.fetch,
+    });
+    if (input.phase === "header") {
+      const page = await testnetCatalog.listHeader(TESTNET_DISCOVERY_PAGE_SIZE);
+      return await enqueueCatalogDiscoveryPage(input.db, page.items, {
+        chainId: 97, nowMs: input.nowMs, source: "header",
+      });
+    }
+    const rows = await readRuntimeStates(createDatabase(input.db), ["catalog_sweep_offset:97"]);
+    const offset = rows[0]?.integerValue ?? 0;
+    const page = await testnetCatalog.listSweepPage(TESTNET_DISCOVERY_PAGE_SIZE, offset);
+    return await enqueueCatalogDiscoveryPage(input.db, page.items, {
+      chainId: 97, nowMs: input.nowMs, source: "sweep",
+      cursor: offset + page.items.length >= page.total ? 0 : offset + page.items.length,
+      cursorKey: "catalog_sweep_offset",
+    });
+  } catch (error) {
+    input.logger.error("catalog.testnet.discovery.failed", {
+      phase: input.phase,
+      errorCode: catalogProbeErrorCode(error),
+    });
+    return null;
+  }
 }
 
 function catalogProbeErrorCode(error: unknown): string {
