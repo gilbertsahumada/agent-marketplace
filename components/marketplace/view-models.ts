@@ -15,11 +15,13 @@ export const hireabilityLabels: Record<AgentCardViewModel["hireability"], string
 };
 
 // Single home of the quote-on-request rule so card, profile and compare cannot disagree.
+// "Ready to quote" is reserved for recently verified quote capability; a declared
+// endpoint alone only means a quote can be requested.
 export function hireabilityLabelFor(view: AgentCardViewModel): string {
   return view.quoteRequestAvailable === true && view.hireability === "quote_stale"
     ? "Quote on request"
     : view.hireability === "listed_only" && view.quoteRequestAvailable === true
-    ? "Ready to quote"
+    ? view.capabilityState === "ready" ? "Ready to quote" : "Can request quote"
     : hireabilityLabels[view.hireability];
 }
 
