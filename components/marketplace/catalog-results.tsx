@@ -129,9 +129,9 @@ export function CatalogResults({ agents, registry = false, toolbar, filters, emp
 
   return (
     <Tabs aria-busy={pending} className="min-w-0 gap-5" defaultValue="cards">
-      <div className="grid min-w-0 items-center gap-3">
+      <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 sm:grid-cols-[minmax(0,1fr)_auto_auto_auto] lg:grid-cols-[minmax(0,1fr)_auto_auto]">
         {toolbar ?? <span />}
-        <TabsList aria-label="Catalog layout" className="h-10 shrink-0 border border-white/10 bg-black/30 justify-self-start min-[30rem]:justify-self-end">
+        <TabsList aria-label="Catalog layout" className="col-span-2 h-10 group-data-horizontal/tabs:h-10 shrink-0 border border-white/10 bg-black/30 justify-self-start sm:col-span-1 sm:justify-self-end">
           <TabsTrigger className="h-full px-3" value="cards"><LayoutGrid aria-hidden="true" data-icon="inline-start" />Cards</TabsTrigger>
           <TabsTrigger className="h-full px-3" value="table"><List aria-hidden="true" data-icon="inline-start" />Table</TabsTrigger>
         </TabsList>
