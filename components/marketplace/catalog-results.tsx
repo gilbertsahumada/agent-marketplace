@@ -13,6 +13,7 @@ import { AgentCard, agentActionIcon, agentJourneyAction, marketplaceStatus, trus
 import { EvidenceRail } from "./evidence-rail";
 import type { AgentCardViewModel, MarketplaceCategory } from "./presentation-types";
 import { CatalogResultsSkeleton } from "./catalog-loading";
+import { ServiceCard } from "./service-card";
 import { useCatalogNavigation } from "./catalog-navigation";
 
 const categoryLabels: Record<MarketplaceCategory, string> = {
@@ -55,7 +56,7 @@ function AgentComparisonTable({ agents, registry }: { agents: AgentCardViewModel
                     </div>
                     <div className="min-w-0">
                       <p className="max-w-48 truncate text-sm font-medium text-white">
-                        <Link className="hover:text-primary" href={`/hire/${agent.agentId}`} prefetch={false}>{agent.name}</Link>
+                        <Link className="hover:text-primary" href={`/hire/${agent.agentId}?network=${agent.chainId === 97 ? "testnet" : "mainnet"}`} prefetch={false}>{agent.name}</Link>
                       </p>
                       <a
                         aria-label={`View ${agent.name} on trust8004 (opens in a new tab)`}
@@ -128,7 +129,7 @@ export function CatalogResults({ agents, registry = false, toolbar, filters, emp
 
   return (
     <Tabs aria-busy={pending} className="min-w-0 gap-5" defaultValue="cards">
-      <div className="grid min-w-0 items-center gap-3 min-[30rem]:grid-cols-[minmax(0,1fr)_auto]">
+      <div className="grid min-w-0 items-center gap-3">
         {toolbar ?? <span />}
         <TabsList aria-label="Catalog layout" className="h-10 shrink-0 border border-white/10 bg-black/30 justify-self-start min-[30rem]:justify-self-end">
           <TabsTrigger className="h-full px-3" value="cards"><LayoutGrid aria-hidden="true" data-icon="inline-start" />Cards</TabsTrigger>
@@ -143,8 +144,8 @@ export function CatalogResults({ agents, registry = false, toolbar, filters, emp
       ) : visibleAgents.length > 0 ? (
         <>
           <TabsContent value="cards">
-            <div className="grid gap-5 md:grid-cols-2">
-              {visibleAgents.map((agent) => <AgentCard agent={agent} key={agent.agentId} registry={registry} />)}
+            <div className="grid gap-x-6 gap-y-9 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+              {visibleAgents.map((agent) => registry ? <AgentCard agent={agent} key={agent.agentId} registry /> : <ServiceCard agent={agent} key={agent.agentId} />)}
             </div>
           </TabsContent>
           <TabsContent value="table"><AgentComparisonTable agents={visibleAgents} registry={registry} /></TabsContent>
