@@ -105,7 +105,9 @@ export async function commerceJobsListResponse(request: Request, d1: D1Database,
   // timestamps are not chain activity; state-only backfills cannot be dated.
   if (daysRaw !== null) {
     const from = startOfUtcDay(nowMs) - (Number(daysRaw) - 1) * DAY_MS;
-    conditions.push(sql`EXISTS (SELECT 1 FROM commerce_job_events e
+    // Pin the existing per-job index: the time index would rescan the whole
+    // window for each candidate, especially expensive for state-only backfills.
+    conditions.push(sql`EXISTS (SELECT 1 FROM commerce_job_events e INDEXED BY idx_commerce_job_events_job
       WHERE e.chainId = commerce_jobs.chainId AND e.jobId = commerce_jobs.jobId
         AND e.blockTimestamp >= ${from} AND e.blockTimestamp < ${nowMs})`);
   }
@@ -145,7 +147,7 @@ export async function commerceJobsListResponse(request: Request, d1: D1Database,
     firstSeenAt: commerceJobs.firstSeenAt,
     updatedAt: commerceJobs.updatedAt,
     marketplace: marketplaceFlag,
-    registeredAt: sql<number | null>`(SELECT min(e.blockTimestamp) FROM commerce_job_events e WHERE e.chainId = commerce_jobs.chainId AND e.jobId = commerce_jobs.jobId AND e.phase = 'created')`,
+    registeredAt: sql<number | null>`(SELECT min(e.blockTimestamp) FROM commerce_job_events e INDEXED BY idx_commerce_job_events_job WHERE e.chainId = commerce_jobs.chainId AND e.jobId = commerce_jobs.jobId AND e.phase = 'created')`,
   }).from(commerceJobs).where(and(...conditions)).orderBy(desc(commerceJobs.jobId)).limit(limit + 1);
   const page = rows.slice(0, limit);
   const last = page[page.length - 1];
