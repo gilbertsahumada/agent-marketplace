@@ -1,4 +1,4 @@
-import { getHireLedger } from "@/src/business/composition";
+import { getHireLedger, resolveJobAgents } from "@/src/business/composition";
 import { HireJobNotFoundError } from "@/src/business/errors/marketplace-errors";
 import { jobIdParameter, ledgerResponse } from "@/src/presentation/http/hire-ledger-http";
 import { marketplaceErrorResponse } from "@/src/presentation/http/marketplace-http";
@@ -13,7 +13,8 @@ export async function GET(_request: Request, context: { params: Promise<{ jobId:
     const id = jobIdParameter(jobId, "jobId") as string;
     const job = await getHireLedger.getJob({ chainId: 56, jobId: id });
     if (job === null) throw new HireJobNotFoundError(56, id);
-    return ledgerResponse(job, "hire ledger job");
+    const resolutions = await resolveJobAgents.execute([job]);
+    return ledgerResponse({ ...job, agentResolution: resolutions[`56:${id}`] }, "hire ledger job");
   } catch (error) {
     return marketplaceErrorResponse(error);
   }
