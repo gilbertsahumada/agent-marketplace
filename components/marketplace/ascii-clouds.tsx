@@ -6,13 +6,18 @@ import { useEffect, useRef } from "react";
 // character grid and drawn to a canvas, so a few thousand glyphs per frame
 // cost nothing in the DOM. Glyph density follows the noise, colour is the
 // signal yellow at low alpha, and the CSS mask fades it toward the text.
-// One frame is drawn and the loop stops when the viewer prefers reduced
-// motion; the loop also pauses off-screen and in hidden tabs.
+// Cells flip between two glyph ramps on their own rhythm, so characters
+// change as well as drift, and a soft halo follows the pointer and brightens
+// the glyphs it touches. One frame is drawn and the loop stops when the
+// viewer prefers reduced motion (the halo still redraws on pointer moves);
+// the loop also pauses off-screen and in hidden tabs.
 
-const GLYPHS = " ·:+*";
+export const GLYPHS = " ·:∴≈∿◌◍░▒";
+export const ALT_GLYPHS = " ˙∙∵~≋○●▚▞";
 const CELL = 14;
 const FRAME_MS = 1_000 / 24;
 const THRESHOLD = 0.4;
+export const GLOW_RADIUS = 150;
 
 function hash(x: number, y: number): number {
   const n = Math.sin(x * 127.1 + y * 311.7) * 43_758.5453;
@@ -54,20 +59,51 @@ export function shimmer(column: number, row: number, time: number): number {
   return 0.07 * Math.sin(time * 4.2 + hash(column, row) * Math.PI * 2);
 }
 
-export function glyphFor(density: number): string {
+export function glyphFor(density: number, ramp: string = GLYPHS): string {
   if (density < THRESHOLD) return " ";
-  const index = Math.min(GLYPHS.length - 1, 1 + Math.floor(((density - THRESHOLD) / (1 - THRESHOLD)) * (GLYPHS.length - 1)));
-  return GLYPHS[index]!;
+  const index = Math.min(ramp.length - 1, 1 + Math.floor(((density - THRESHOLD) / (1 - THRESHOLD)) * (ramp.length - 1)));
+  return [...ramp][index]!;
 }
 
-export function AsciiClouds({ className = "hero-clouds" }: { className?: string }) {
+// Each cell swaps to the alternate ramp for a short while on its own phase,
+// so at any moment roughly a quarter of the visible glyphs are "mutated".
+export function mutates(column: number, row: number, time: number): boolean {
+  return Math.sin(time * 0.9 + hash(column * 3.1, row * 1.7) * Math.PI * 2) > 0.72;
+}
+
+export function glyphAt(density: number, column: number, row: number, time: number): string {
+  return glyphFor(density, mutates(column, row, time) ? ALT_GLYPHS : GLYPHS);
+}
+
+// 1 under the pointer, 0 at the radius, eased so the halo has a soft edge.
+export function glowAt(dx: number, dy: number, radius: number = GLOW_RADIUS): number {
+  const linear = Math.max(0, 1 - Math.hypot(dx, dy) / radius);
+  return linear * linear;
+}
+
+export interface AsciiCloudsProps {
+  className?: string;
+  /** Glyph colour as an "r g b" triple. */
+  color?: string;
+  /** Colour of glyphs inside the pointer halo. */
+  glowColor?: string;
+  /** Alpha ramp slope; lower is fainter. */
+  alpha?: number;
+}
+
+export function AsciiClouds({
+  className = "hero-clouds",
+  color = "255 233 0",
+  glowColor = "255 251 209",
+  alpha = 0.95,
+}: AsciiCloudsProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
     const canvas = canvasRef.current;
     if (canvas === null || typeof window.requestAnimationFrame !== "function") return;
-    const context = canvas.getContext("2d");
-    if (context === null) return;
+    const context = typeof canvas.getContext === "function" ? canvas.getContext("2d") : null;
+    if (context === null || context === undefined) return;
     const reduced = typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
     let width = 0;
@@ -81,27 +117,54 @@ export function AsciiClouds({ className = "hero-clouds" }: { className?: string 
       canvas.width = Math.floor(width * scale);
       canvas.height = Math.floor(height * scale);
       context.setTransform(scale, 0, 0, scale, 0, 0);
-      context.font = `600 ${CELL * 0.82}px ${getComputedStyle(canvas).fontFamily || "monospace"}`;
+      context.font = `600 ${CELL * 0.86}px ${getComputedStyle(canvas).fontFamily || "monospace"}`;
       context.textBaseline = "top";
     };
     resize();
     const resizeObserver = typeof ResizeObserver === "function" ? new ResizeObserver(resize) : null;
     resizeObserver?.observe(canvas);
 
+    // The canvas ignores pointer events so the page underneath stays
+    // interactive; the halo tracks the pointer over the parent instead.
+    const host = canvas.parentElement ?? canvas;
+    let pointerX = Number.NEGATIVE_INFINITY;
+    let pointerY = Number.NEGATIVE_INFINITY;
+    let lastTime = 0;
+
     const draw = (time: number) => {
+      lastTime = time;
       context.clearRect(0, 0, width, height);
       const columns = Math.ceil(width / CELL);
       const rows = Math.ceil(height / CELL);
       for (let row = 0; row < rows; row += 1) {
         for (let column = 0; column < columns; column += 1) {
-          const density = cloudDensity(column * 0.09, row * 0.14, time) + shimmer(column, row, time);
-          const glyph = glyphFor(density);
+          let density = cloudDensity(column * 0.09, row * 0.14, time) + shimmer(column, row, time);
+          const glow = glowAt(column * CELL + CELL / 2 - pointerX, row * CELL + CELL / 2 - pointerY);
+          if (density < THRESHOLD && glow < 0.05) continue;
+          // Hidden cells surface under the pointer, then fade back out.
+          if (density < THRESHOLD) density = THRESHOLD + glow * 0.5;
+          const glyph = glyphAt(density, column, row, time);
           if (glyph === " ") continue;
-          context.fillStyle = `rgb(255 233 0 / ${(0.1 + (density - THRESHOLD) * 0.95).toFixed(3)})`;
+          const level = Math.min(1, 0.1 + (density - THRESHOLD) * alpha + glow * 0.9);
+          context.fillStyle = `rgb(${glow > 0.02 ? glowColor : color} / ${level.toFixed(3)})`;
           context.fillText(glyph, column * CELL, row * CELL);
         }
       }
     };
+
+    const onPointerMove = (event: PointerEvent) => {
+      const box = canvas.getBoundingClientRect();
+      pointerX = event.clientX - box.left;
+      pointerY = event.clientY - box.top;
+      if (reduced) draw(lastTime);
+    };
+    const onPointerLeave = () => {
+      pointerX = Number.NEGATIVE_INFINITY;
+      pointerY = Number.NEGATIVE_INFINITY;
+      if (reduced) draw(lastTime);
+    };
+    host.addEventListener("pointermove", onPointerMove, { passive: true });
+    host.addEventListener("pointerleave", onPointerLeave);
 
     let visible = true;
     let cancelled = false;
@@ -130,10 +193,12 @@ export function AsciiClouds({ className = "hero-clouds" }: { className?: string 
     return () => {
       cancelled = true;
       window.cancelAnimationFrame(frame);
+      host.removeEventListener("pointermove", onPointerMove);
+      host.removeEventListener("pointerleave", onPointerLeave);
       observer?.disconnect();
       resizeObserver?.disconnect();
     };
-  }, []);
+  }, [alpha, color, glowColor]);
 
   return <canvas aria-hidden="true" className={className} ref={canvasRef} />;
 }

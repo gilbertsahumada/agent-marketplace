@@ -16,6 +16,15 @@ it("renders the footer on ordinary pages", () => {
   expect(screen.getByRole("navigation", { name: "Footer marketplace" })).toBeInTheDocument();
 });
 
+it("closes with a decorative wordmark that assistive tech skips", () => {
+  pathname.current = "/agents";
+  const { container } = render(<SiteFooter />);
+  const wordmark = container.querySelector(".site-wordmark");
+  expect(wordmark).toHaveTextContent("MARKETPLACE");
+  expect(wordmark).toHaveAttribute("aria-hidden", "true");
+  expect(screen.queryByText("MARKETPLACE")).not.toBeNull();
+});
+
 it("stays out of the concierge, which is a full-height chat", () => {
   pathname.current = "/ask";
   render(<SiteFooter />);
