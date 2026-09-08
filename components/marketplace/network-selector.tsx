@@ -15,7 +15,9 @@ export function NetworkSelector({ network, hrefs, onSelect, pending = false, lab
     {(["mainnet", "testnet"] as const).map(value => {
       const className = cn("flex items-center rounded-md px-3 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal disabled:cursor-wait", value === network ? "bg-signal/5 text-signal ring-1 ring-signal/70" : "text-muted-foreground hover:text-foreground");
       const text = value === "mainnet" ? "BSC Mainnet" : "BSC Testnet";
-      return onSelect
+      return pending
+        ? <button key={value} type="button" disabled aria-current={value === network ? "page" : undefined} className={className}>{text}</button>
+        : onSelect
         ? <button key={value} type="button" aria-current={value === network ? "page" : undefined} disabled={pending} className={className} onClick={() => { if (value !== network) onSelect(value); }}>{text}</button>
         : <Link key={value} aria-current={value === network ? "page" : undefined} className={className} href={hrefs[value]}>{text}</Link>;
     })}
