@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="t" shape-rendering="geometricPrecision">
+<title id="t">Loan health check portrait</title>
+<defs>
+<pattern id="dots" width="24" height="24" patternUnits="userSpaceOnUse"><circle cx="12" cy="12" r="1.2" fill="#a8a9b2" fill-opacity=".2"/></pattern>
+<radialGradient id="glow" cx="50%" cy="50%" r="50%"><stop offset="0" stop-color="#f0b90b" stop-opacity=".22"/><stop offset="1" stop-color="#f0b90b" stop-opacity="0"/></radialGradient>
+<linearGradient id="shield" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#22d3ee" stop-opacity=".1"/><stop offset="1" stop-color="#6366f1" stop-opacity=".12"/></linearGradient>
+<g id="tri"><circle cx="0" cy="-4" r="2"/><circle cx="-4" cy="3" r="2"/><circle cx="4" cy="3" r="2"/></g>
+</defs>
+<rect width="512" height="512" rx="56" fill="#14151a"/>
+<rect x="1.5" y="1.5" width="509" height="509" rx="55" fill="#181a1e" stroke="#373943" stroke-width="3"/>
+<rect width="512" height="512" rx="56" fill="url(#dots)"/>
+<ellipse cx="256" cy="230" rx="170" ry="150" fill="url(#glow)"/>
+<g fill="#a8a9b2" fill-opacity=".55"><use href="#tri" x="52" y="54"/><use href="#tri" x="460" y="54"/><use href="#tri" x="460" y="458"/></g>
+<path d="M256 60L400 108V258C400 344 336 404 256 448C176 404 112 344 112 258V108Z" fill="url(#shield)" stroke="#f7f7f5" stroke-opacity=".7" stroke-width="3" stroke-linejoin="round"/>
+<path d="M256 84L380 126V256C380 330 324 384 256 424C188 384 132 330 132 256V126Z" fill="none" stroke="#a8a9b2" stroke-opacity=".35" stroke-width="1.5" stroke-dasharray="3 7"/>
+<path d="M160 268A96 96 0 0 1 208 184.86" fill="none" stroke="#10b981" stroke-width="16" stroke-linecap="round"/>
+<path d="M208 184.86A96 96 0 0 1 304 184.86" fill="none" stroke="#ffe900" stroke-width="16"/>
+<path d="M304 184.86A96 96 0 0 1 352 268" fill="none" stroke="#8b5cf6" stroke-width="16" stroke-linecap="round"/>
+<path d="M160 268A96 96 0 0 1 352 268" fill="none" stroke="#14151a" stroke-opacity=".5" stroke-width="2" stroke-dasharray="2 8"/>
+<g stroke="#f7f7f5" stroke-width="3" stroke-linecap="round"><line x1="179.63" y1="191.63" x2="171.15" y2="183.15"/><line x1="256" y1="160" x2="256" y2="148"/><line x1="332.37" y1="191.63" x2="340.85" y2="183.15"/></g>
+<g fill="#181a1e" stroke-width="2"><circle cx="164" cy="176" r="5" stroke="#10b981"/><circle cx="256" cy="136" r="5" stroke="#ffe900"/><circle cx="348" cy="176" r="5" stroke="#8b5cf6"/></g>
+<path d="M256 268L194.72 216.58" stroke="#14151a" stroke-width="12" stroke-linecap="round"/>
+<path d="M256 268L194.72 216.58" stroke="#f0b90b" stroke-width="7" stroke-linecap="round"/>
+<circle cx="256" cy="268" r="12" fill="#f0b90b" stroke="#14151a" stroke-width="3"/>
+<circle cx="256" cy="268" r="4" fill="#14151a"/>
+<line x1="150" y1="384" x2="362" y2="384" stroke="#8b5cf6" stroke-width="2" stroke-dasharray="6 6"/>
+<g fill="#8b5cf6"><path d="M150 384l-10-6v12z"/><path d="M362 384l10-6v12z"/></g>
+<path d="M144 328H206l10-16 14 40 14-60 12 42 10-14H368" fill="none" stroke="#14151a" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M144 328H206l10-16 14 40 14-60 12 42 10-14H368" fill="none" stroke="#22d3ee" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="368" cy="328" r="5" fill="#22d3ee"/>
+<text x="64" y="470" font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="22" letter-spacing="6" fill="#a8a9b2">HEALTH</text>
+</svg>

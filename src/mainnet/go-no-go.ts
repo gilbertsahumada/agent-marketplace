@@ -13,6 +13,9 @@ import { fetchAgentCard } from "../a2a.ts";
 import { hasErc8183SellerSkills } from "../erc8183/skills.ts";
 import { createSafeEndpointTransport } from "../verification/safe-http.ts";
 import { ERC1967_IMPLEMENTATION_SLOT, ERC8183_MAINNET } from "./contracts.ts";
+import type { HostedSellerSlug } from "../business/entities/hosted-seller-service.ts";
+import { hostedSellerEndpoint, hostedSellerMessageUrl, hostedSellerService } from "../business/policies/hosted-seller-catalog.ts";
+import { hostedSellerEnvNames } from "../shared/hosted-seller-env.ts";
 
 const commerceAbi = parseAbi(["function paymentToken() view returns (address)"]);
 const routerAbi = parseAbi(["function policyWhitelist(address) view returns (bool)"]);
@@ -67,8 +70,9 @@ export function createMainnetReadClient(): PublicClient {
   });
 }
 
-async function probeProductionSeller(origin: string): Promise<boolean> {
-  const endpoint = `${origin}/grid`;
+async function probeProductionSeller(origin: string, seller: HostedSellerSlug = "grid"): Promise<boolean> {
+  const service = hostedSellerService(seller);
+  const endpoint = hostedSellerEndpoint(origin, seller);
   let transport: Awaited<ReturnType<typeof createSafeEndpointTransport>> | null = null;
   try {
     transport = await createSafeEndpointTransport(endpoint, {
@@ -76,8 +80,8 @@ async function probeProductionSeller(origin: string): Promise<boolean> {
       maxResponseBytes: 64 * 1024,
     });
     const card = await fetchAgentCard(endpoint, null, transport.fetch);
-    return card.name === "marketplace-operated-grid-planner"
-      && card.url === `${origin}/api/sellers/grid/a2a`
+    return card.name === service.name
+      && card.url === hostedSellerMessageUrl(origin, seller)
       && hasErc8183SellerSkills(card.skills);
   } catch {
     return false;
@@ -90,13 +94,16 @@ export async function evaluateMainnetGoNoGo(options: {
   client?: PublicClient;
   env?: Readonly<Record<string, string | undefined>>;
   now?: () => Date;
-  sellerEndpointProbe?: (origin: string) => Promise<boolean>;
+  sellerEndpointProbe?: (origin: string, seller?: HostedSellerSlug) => Promise<boolean>;
+  /** Which marketplace-operated seller the address, gas and endpoint checks refer to. */
+  seller?: HostedSellerSlug;
 } = {}): Promise<MainnetGoNoGoReport> {
+  const seller = options.seller ?? "grid";
   const client = options.client ?? createMainnetReadClient();
   const env = options.env ?? process.env;
   const now = options.now ?? (() => new Date());
   const sellerEndpointProbe = options.sellerEndpointProbe ?? probeProductionSeller;
-  const sellerAddressRaw = Reflect.get(env, "ERC8183_MAINNET_SELLER_ADDRESS")?.trim() ?? "";
+  const sellerAddressRaw = Reflect.get(env, hostedSellerEnvNames(seller).address)?.trim() ?? "";
   const sellerAddress = isAddress(sellerAddressRaw) ? getAddress(sellerAddressRaw) : null;
   const sellerOriginRaw = Reflect.get(env, "ERC8183_MAINNET_SELLER_ORIGIN")?.trim() ?? "";
   let sellerOrigin: string | null = null;
@@ -133,7 +140,7 @@ export async function evaluateMainnetGoNoGo(options: {
     client.readContract({ address: ERC8183_MAINNET.token, abi: tokenAbi, functionName: "decimals", blockNumber }),
     sellerAddress ? client.getBalance({ address: sellerAddress, blockNumber }) : Promise.resolve(null),
     sellerOrigin === "https://bnb-agent-marketplace-ruby.vercel.app"
-      ? sellerEndpointProbe(sellerOrigin)
+      ? sellerEndpointProbe(sellerOrigin, seller)
       : Promise.resolve(false),
   ]);
   const commerceImplementation = implementationAddress(commerceStorage);
@@ -157,7 +164,7 @@ export async function evaluateMainnetGoNoGo(options: {
     dedicatedSellerAddress: check(Boolean(sellerAddress), "dedicated Mainnet seller public address", sellerAddress ?? "not configured", "operator:public-config"),
     sellerGasBalance: check(sellerGasBalance !== null && sellerGasBalance >= 2_000_000_000_000_000n, "at least 0.002 BNB", sellerGasBalance ?? "unavailable", "onchain:bsc-rpc"),
     productionSellerOrigin: check(sellerOrigin === "https://bnb-agent-marketplace-ruby.vercel.app", "https://bnb-agent-marketplace-ruby.vercel.app", sellerOrigin ?? "not configured", "operator:public-config"),
-    productionSellerEndpoint: check(sellerEndpointReachable, "DNS-pinned production Agent Card with Grid negotiation and notify skills", sellerEndpointReachable ? "reachable and matched" : "unavailable or mismatched", "observed:https-dns-pinned"),
+    productionSellerEndpoint: check(sellerEndpointReachable, `DNS-pinned production Agent Card for the ${seller} seller with negotiation and notify skills`, sellerEndpointReachable ? "reachable and matched" : "unavailable or mismatched", "observed:https-dns-pinned"),
   };
   const reasons = Object.entries(checks).filter(([, value]) => !value.passed).map(([name]) => name);
   const warnings = activeVoterCount < voteQuorum * 3

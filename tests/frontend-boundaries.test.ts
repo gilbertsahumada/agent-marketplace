@@ -66,6 +66,7 @@ describe("three-layer dependency boundaries", () => {
     const secretModules = [
       "src/data/erc8183/hosted-seller-config.ts",
       "src/mainnet/grid-seller-config.ts",
+      "src/mainnet/hosted-seller-config.ts",
       "src/mainnet/mainnet-write-gate.ts",
     ];
     const clientFiles = clientReachableFiles();

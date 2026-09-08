@@ -257,6 +257,6 @@ describe("Mainnet security decision", () => {
       passed: true,
       provenance: "observed:https-dns-pinned",
     });
-    expect(sellerEndpointProbe).toHaveBeenCalledWith("https://bnb-agent-marketplace-ruby.vercel.app");
+    expect(sellerEndpointProbe).toHaveBeenCalledWith("https://bnb-agent-marketplace-ruby.vercel.app", "grid");
   });
 });

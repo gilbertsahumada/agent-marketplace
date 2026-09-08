@@ -29,6 +29,7 @@ import { resolveIdentity } from "../identity.ts";
 import { readBoundedJson } from "../verification/bounded-json.ts";
 import { createSafeEndpointTransport } from "../verification/safe-http.ts";
 import { loadMainnetBrowserDemoConfig } from "./browser-demo-config.ts";
+import { hostedSellerDeliverableUrl, hostedSellerForTask } from "../business/policies/hosted-seller-catalog.ts";
 import { ERC8183_MAINNET } from "./contracts.ts";
 import { mainnetImplementationPinsMatch } from "./implementation-pins.ts";
 
@@ -107,11 +108,19 @@ export function assertAcceptableQuoteWindow(input: {
   ) throw new Erc8183SpikeUnavailableError("Seller quote is stale or exceeds the SDK validity window");
 }
 
+// The deliverable lives under the seller that quoted the job; the task
+// prefix inside the signed description names that seller.
+function jobDeliverableUrl(origin: string, description: string, jobId: bigint): string | null {
+  const service = hostedSellerForTask(parseJobDescription(description)?.task ?? "");
+  return service ? hostedSellerDeliverableUrl(origin, service.slug, jobId) : null;
+}
+
 async function verifiedResult(
   origin: string,
-  job: { id: bigint; deliverable: `0x${string}` },
+  job: { id: bigint; deliverable: `0x${string}`; description: string },
 ): Promise<Erc8183JobFacts["result"]> {
-  const url = `${origin}/api/sellers/grid/job/${job.id}/response`;
+  const url = jobDeliverableUrl(origin, job.description, job.id);
+  if (url === null) return null;
   try {
     return await withSellerTransport(origin, async (fetchImpl) => {
       const response = await fetchImpl(url, { redirect: "error" });
@@ -305,7 +314,7 @@ export class MainnetErc8183Repository implements Erc8183SpikeRepository {
       const policy = await client.router.jobPolicy(jobId);
       const parsed = parseJobDescription(job.description);
       const deliverableUrl = job.status === JobStatus.SUBMITTED || job.status === JobStatus.COMPLETED
-        ? `${config.sellerOrigin}/api/sellers/grid/job/${jobId}/response`
+        ? jobDeliverableUrl(config.sellerOrigin, job.description, jobId)
         : null;
       return {
         chainId: 56,
