@@ -77,7 +77,7 @@ export function HireLedgerPage({ chainId, summary, page, activity = null, activi
   const query = search.trim().toLowerCase().replace(/^#/, "");
   const exactId = /^[1-9]\d{0,15}$/.test(query) ? query : null;
   const lookupKey = `${chainId}:${search}`;
-  const [lookup, setLookup] = useState<{ key: string; state: "found" | "missing" | "error"; job?: HireJob } | null>(null);
+  const [lookup, setLookup] = useState<{ key: string; state: "found" | "missing" | "error"; job?: HireJob & { agentResolution?: JobAgentResolution } } | null>(null);
   const loadedExact = exactId !== null && Boolean(page?.jobs.some(job => job.jobId === exactId));
   useEffect(() => {
     if (!exactId || loadedExact) return;
@@ -109,12 +109,15 @@ export function HireLedgerPage({ chainId, summary, page, activity = null, activi
   }, [chainId, exactId, loadedExact, lookupKey]);
   const searching = Boolean(exactId && !loadedExact && lookup?.key !== lookupKey);
   const pending = navigating || searching;
+  const resolutions = lookup?.key === lookupKey && lookup.job?.agentResolution
+    ? { ...agentResolutions, [`${chainId}:${lookup.job.jobId}`]: lookup.job.agentResolution }
+    : agentResolutions;
   const sourceJobs = exactId ? loadedExact ? page!.jobs.filter(job => job.jobId === exactId)
     : lookup?.key === lookupKey && lookup.job ? [lookup.job] : [] : page?.jobs ?? [];
   const jobs = sourceJobs.filter((job) => [job.jobId, job.buyer, job.provider, job.status, jobNextStep(job, now).label, job.marketplace ? "marketplace" : "unattributed",
-    ...(agentResolutions[`${chainId}:${job.jobId}`]?.agents.flatMap(agent => [agent.agentId, agent.name ?? ""]) ?? []),
+    ...(resolutions[`${chainId}:${job.jobId}`]?.agents.flatMap(agent => [agent.agentId, agent.name ?? ""]) ?? []),
   ].some((value) => value.toLowerCase().includes(query)));
-  const agentName = (id: string) => agentResolutions[`${chainId}:${id}`]?.agents.map(agent => agent.name || agent.agentId).join(" ") ?? "";
+  const agentName = (id: string) => resolutions[`${chainId}:${id}`]?.agents.map(agent => agent.name || agent.agentId).join(" ") ?? "";
   jobs.sort((a, b) => {
     let order = 0;
     switch (sort.column) {
@@ -179,7 +182,7 @@ export function HireLedgerPage({ chainId, summary, page, activity = null, activi
                 </TableHead>)}<TableHead scope="col"><span className="sr-only">Details</span></TableHead></TableRow></TableHeader>
                 <TableBody aria-busy={pending}>{pending ? Array.from({ length: 5 }, (_, row) => <TableRow key={row}><TableCell colSpan={9}><Skeleton className="my-3 h-8 w-full" /><span className="sr-only">Loading jobs…</span></TableCell></TableRow>) : jobs.map((job) => <TableRow key={job.jobId}>
                   <TableHead scope="row"><Link className="font-hash hover:text-signal" href={`/jobs/${networkSlug(chainId)}/${job.jobId}`}><span className="sr-only">Job </span>#{job.jobId}</Link></TableHead>
-                  <TableCell><JobAgentCell resolution={agentResolutions[`${chainId}:${job.jobId}`]} /></TableCell>
+                  <TableCell><JobAgentCell resolution={resolutions[`${chainId}:${job.jobId}`]} /></TableCell>
                   <TableCell><Badge variant="outline" className={`jobs-state jobs-state--${job.status.toLowerCase()}`}>{jobStatusLabel(job.status)}</Badge></TableCell>
                   <TableCell className="whitespace-nowrap">
                     {jobNextStep(job, now).actionable
