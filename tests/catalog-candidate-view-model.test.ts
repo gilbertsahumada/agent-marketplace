@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { catalogBlockingMessage, catalogCandidateCard } from "../components/marketplace/catalog-candidate-view-model.ts";
+import { hireabilityLabelFor } from "../components/marketplace/view-models.ts";
 import type { CatalogCandidate } from "../src/business/entities/catalog-candidate.ts";
 
 const NOW = 1_788_000_000_000;
@@ -34,6 +35,18 @@ describe("catalog candidate card", () => {
       validationKind: "quote", verificationLevel: "cryptographic", outcome: "quote_verified", observedAt: NOW - 120_000,
       expiresAt: NOW - 60_000, httpStatus: 200, errorCode: null, durationMs: 25, details: {} });
     const card = catalogCandidateCard(value, NOW);
+    expect(card.passportState).toBe("hireable");
+    expect(card.buyerAction).toBe("request_quote");
+    expect(card.hireability).toBe("hireable");
+    expect(hireabilityLabelFor(card)).toBe("Ready to quote");
+    value.state.capabilityExpiresAt = NOW;
+    const expiredCapability = catalogCandidateCard(value, NOW);
+    expect(expiredCapability.passportState).not.toBe("hireable");
+    expect(hireabilityLabelFor(expiredCapability)).toBe("Quote on request");
+    value.state.canRequestQuote = false;
+    expect(hireabilityLabelFor(catalogCandidateCard(value, NOW))).toBe("Quote expired");
+    value.state.canRequestQuote = true;
+    value.state.capabilityExpiresAt = NOW + 86_400_000;
     expect(card.monitoring).toMatchObject({ source: "negotiation_discovery", lastAttemptAt: new Date(NOW).toISOString() });
     expect(card.monitoring).not.toHaveProperty("latestHttpStatus");
     expect(card.monitoring).not.toHaveProperty("latestDurationMs");
@@ -354,6 +367,7 @@ describe("catalog candidate card", () => {
     const card = catalogCandidateCard(value, NOW);
     expect(card.evidence.find(({ kind }) => kind === "quote")).toMatchObject({ status: "unknown" });
     expect(card.evidence.find(({ kind }) => kind === "reachable")).toMatchObject({ status: "verified" });
-    expect(card.hireability).toBe("hireable");
+    // A public quote alone cannot establish current seller capability.
+    expect(card.hireability).toBe("listed_only");
   });
 });

@@ -245,7 +245,7 @@ export function catalogCandidateCard(
     protocols: declaredProtocols(candidate),
     ...(candidate.state?.capabilityTransport ? { negotiationProtocol: candidate.state.capabilityTransport === "a2a" ? "A2A" as const : candidate.state.capabilityTransport === "mcp" ? "MCP" as const : "ERC-8183 HTTP" as const } : {}),
     href: `/hire/${candidate.agentId}${candidate.chainId === 97 ? "?network=testnet" : ""}`,
-    hireability: candidate.state?.canPrepareHire === true && freshQuote
+    hireability: capabilityReady
       ? "hireable"
       : candidate.declarations.some((declaration) => isCatalogOperationalDeclaration(declaration)
         && (declaration.validationProtocol ?? declaration.protocol) === "mcp")
@@ -257,7 +257,7 @@ export function catalogCandidateCard(
           ? "quote_stale"
           : "listed_only",
     evidence,
-    passportState: freshQuote && candidate.state?.canPrepareHire === true ? "hireable"
+    passportState: capabilityReady ? "hireable"
       : platform.length > 0 || capabilityObservation !== undefined || candidate.state?.capabilityState === "ready" ? "evaluated" : "registered",
     monitoring: discoveryIsLatest ? {
       state: "probed",

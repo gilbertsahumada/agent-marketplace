@@ -21,8 +21,18 @@ it("renders seller text without HTML execution or a quality claim", async () => 
   expect(screen.getByText("<script>alert(1)</script>")).toBeInTheDocument();
   expect(container.querySelector("script")).toBeNull();
   expect(screen.queryByText("Integrity verified")).not.toBeInTheDocument();
-  expect(screen.getByText("Review window open")).toBeInTheDocument();
-  expect(screen.getByRole("link", { name: "Seller source" })).toHaveAttribute("rel", "noopener noreferrer");
+  expect(screen.getByRole("heading", { name: "Delivery received · Review required" })).toBeInTheDocument();
+  expect(screen.getByRole("link", { name: "Seller source", hidden: true })).toHaveAttribute("rel", "noopener noreferrer");
+});
+it("keeps the result and technical data collapsed while the review deadline stays visible", async () => {
+  vi.stubGlobal("fetch", vi.fn(async () => Response.json(report)));
+  const { container } = render(<JobDeliveryPanel jobId="56719" />);
+  await screen.findByText("View result");
+  const details = [...container.querySelectorAll("details")];
+  expect(details.map(node => node.querySelector("summary")?.textContent)).toEqual(["View result", "Technical details"]);
+  expect(details.every(node => !node.open)).toBe(true);
+  expect(container.querySelector("pre")?.closest("details")).toBe(details[0]);
+  expect(container.querySelector("time")?.closest("details")).toBeNull();
 });
 it("does not present a rejection verdict as a successful completion", async () => {
   vi.stubGlobal("fetch", vi.fn(async () => Response.json({ ...report, closure: "settlement_available", settlementOutcome: "rejected" })));

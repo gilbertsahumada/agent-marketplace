@@ -55,7 +55,7 @@ export function marketplaceStatus(agent: AgentCardViewModel, registry = false) {
   };
   const buyerAction = agent.buyerAction ?? (agent.quoteRequestAvailable === true ? "request_quote" : "unavailable");
   if (buyerAction === "prepare_hire") return {
-    label: "Ready to hire",
+    label: "Ready to quote",
     className: "border-emerald-400/40 bg-emerald-400/10 text-emerald-300",
     icon: ShieldCheck,
   };

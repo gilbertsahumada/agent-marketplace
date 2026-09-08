@@ -513,7 +513,7 @@ describe("HireJobLedgerPage", () => {
 
     expect(screen.queryByText("Budget (raw token units)")).not.toBeInTheDocument();
     expect(screen.queryByText("Budget raw")).not.toBeInTheDocument();
-    expect(screen.getByText(/Integrity confirms the content matches its on-chain hash, not that it meets your requirements/)).toBeInTheDocument();
+    expect(screen.getByRole("status", { name: "Loading delivery" })).toBeInTheDocument();
     expect(screen.getByText("Hired via this marketplace")).toBeInTheDocument();
     expect(screen.queryByText(/Processed through this marketplace/)).not.toBeInTheDocument();
   });

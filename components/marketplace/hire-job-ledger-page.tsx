@@ -5,13 +5,9 @@ import { Card, CardContent, CardDescription, CardHeader } from "@/components/ui/
 import type { HireJobDetail } from "@/src/business/entities/hire-job";
 import { explorerUrl, jobStatusLabel } from "./hire-job-rows";
 import { Breadcrumb } from "./page-primitives";
-import { AddressLink } from "./address-link";
-import { JobAgentCell } from "./job-agent-cell";
 import type { JobAgentResolution } from "@/src/business/entities/job-agent-resolution";
 import { JobDeliveryPanel } from "./job-delivery-panel";
 import { TestnetClosurePanel } from "./testnet-closure-panel";
-import { formatTokenAmount } from "@/src/business/entities/token-amount";
-import { ERC8183_MAINNET } from "@/src/mainnet/contracts";
 import { JobNotificationStatus } from "./job-notification-status";
 
 const EXPLORER_LINK = "inline-flex items-center gap-1.5 text-signal underline decoration-signal/30 underline-offset-4 hover:decoration-signal focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-signal";
@@ -40,16 +36,6 @@ function LedgerCardTitle({ children }: { children: ReactNode }) {
 // chain-verified hire event exists: the hire started here, nothing more.
 export function HireJobLedgerPage({ job, agentResolution }: { job: HireJobDetail; agentResolution?: JobAgentResolution | undefined }) {
   const explorer = explorerUrl(job.chainId);
-  const submission = job.deliverable ? job.events.findLast((event) => event.eventName === "JobSubmitted" && event.deliverable?.toLowerCase() === job.deliverable?.toLowerCase()) : undefined;
-  const facts: Array<[string, string]> = [
-    ["Buyer", job.buyer],
-    ["Provider", job.provider],
-    ["Evaluator", job.evaluator],
-    ...(job.chainId === 97 ? [["Budget (raw token units)", job.budgetRaw] as [string, string]] : []),
-    ["Expires", when(job.expiresAt)],
-    ["Submitted", when(job.submittedAt)],
-    ["Deliverable hash", job.deliverable ?? "—"],
-  ];
   return (
     <main className="mx-auto w-full max-w-5xl px-4 py-10 sm:px-6 lg:px-8 lg:py-14" id="main-content">
       <Breadcrumb current={`Job #${job.jobId}`} trail={[{ href: "/", label: "Home" }, { href: `/jobs?chainId=${job.chainId}`, label: "Jobs" }]} />
@@ -61,68 +47,9 @@ export function HireJobLedgerPage({ job, agentResolution }: { job: HireJobDetail
       {job.chainId === 56 ? <JobDeliveryPanel jobId={job.jobId} /> : <TestnetClosurePanel jobId={job.jobId} />}
       <JobNotificationStatus chainId={job.chainId} jobId={job.jobId} />
 
-      <Card className="mt-8">
-        <CardHeader><LedgerCardTitle>Indexed job state</LedgerCardTitle><CardDescription>Read from the Commerce contract by the observation Worker.</CardDescription></CardHeader>
-        <CardContent className="space-y-4 text-sm">
-          <div className="grid gap-1 border-b border-border pb-3 sm:grid-cols-[10rem_1fr]">
-            <span className="text-muted-foreground">Chain</span>
-            <div className="flex items-center gap-3">
-              <img alt="" width={24} height={24} className="size-6 shrink-0" src="/logo/SVG/BNB Chain_Symbol_Yellow.svg" />
-              <div>
-                <p>{job.chainId === 56 ? "BNB Smart Chain Mainnet" : "BNB Smart Chain Testnet"}</p>
-                <p className="text-xs text-muted-foreground">Chain ID: {job.chainId}</p>
-              </div>
-            </div>
-          </div>
-          <div className="grid gap-1 border-b border-border pb-3 sm:grid-cols-[10rem_1fr]">
-            <span className="text-muted-foreground">Agent</span><JobAgentCell resolution={agentResolution} />
-          </div>
-          {job.chainId === 56 ? <div className="grid gap-1 border-b border-border pb-3 sm:grid-cols-[10rem_1fr]">
-            <span className="text-muted-foreground">Budget</span>
-            <p className="flex items-center gap-1.5">
-              <span>{formatTokenAmount(job.budgetRaw, 18)}</span>
-              <a className={EXPLORER_LINK} href={`${explorer}/address/${ERC8183_MAINNET.token}`} target="_blank" rel="noopener noreferrer" aria-label="U token on explorer, opens in a new tab">U<ExternalLink aria-hidden="true" className="size-3" /></a>
-            </p>
-          </div> : null}
-          {facts.map(([label, value]) => (
-            <div className="grid gap-1 border-b border-white/[0.06] pb-3 sm:grid-cols-[10rem_1fr]" key={label}>
-              <span className="text-zinc-500">{label}</span>
-              <span className="font-hash break-all text-xs text-zinc-200">{["Buyer", "Provider", "Evaluator"].includes(label) ? <AddressLink address={value} chainId={job.chainId} full /> : value}</span>
-            </div>
-          ))}
-          {job.deliverable ? <div className="space-y-2 text-sm text-muted-foreground">
-            <p>The provider recorded this deliverable hash when submitting the result on-chain. It identifies the delivered content, not a transaction. Matching the hash verifies integrity, not the quality of the work.</p>
-            {submission ? <a className={EXPLORER_LINK} href={`${explorer}/tx/${submission.txHash}`} target="_blank" rel="noopener noreferrer">View submission transaction<ExternalLink aria-hidden="true" className="size-3.5" /></a> : <p>Submission transaction not yet indexed.</p>}
-          </div> : null}
-        </CardContent>
-      </Card>
+      <JobStateCard job={job} agentResolution={agentResolution} />
 
-      <Card className="mt-6">
-        <CardHeader><LedgerCardTitle>Phase ledger</LedgerCardTitle><CardDescription>One entry per Commerce event, in block order.</CardDescription></CardHeader>
-        <CardContent>
-          {job.events.length === 0 ? (
-            <p className="text-sm text-zinc-500">No phase events indexed for this job yet. Jobs backfilled by state have no event history until a new phase lands on chain.</p>
-          ) : (
-            <ul aria-label="Indexed phase events" className="divide-y divide-white/10 text-sm">
-              {job.events.map((event, index) => (
-                <li className="flex flex-wrap items-center justify-between gap-2 py-3" key={`${event.txHash}:${event.blockNumber}:${event.eventName}:${index}`}>
-                  <span className="font-medium capitalize text-white">{event.phase}</span>
-                  <span className="text-zinc-500">{when(event.occurredAt)}</span>
-                  <a
-                    aria-label={`${capitalize(event.phase)} transaction on explorer, opens in a new tab`}
-                    className={EXPLORER_LINK}
-                    href={`${explorer}/tx/${event.txHash}`}
-                    rel="noopener noreferrer"
-                    target="_blank"
-                  >
-                    Transaction on explorer<ExternalLink aria-hidden="true" className="size-3.5" />
-                  </a>
-                </li>
-              ))}
-            </ul>
-          )}
-        </CardContent>
-      </Card>
+      <JobPhaseLedger chainId={job.chainId} events={job.events} />
 
       {job.hireEvents.length > 0 ? (
         <Card className="mt-6">
@@ -145,3 +72,5 @@ export function HireJobLedgerPage({ job, agentResolution }: { job: HireJobDetail
     </main>
   );
 }
+import { JobStateCard } from "./job-state-card";
+import { JobPhaseLedger } from "./job-phase-ledger";

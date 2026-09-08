@@ -152,6 +152,9 @@ export class GetAgentEvidencePassport {
     // hide a compatible discovered seller.
     const canHire = catalogCandidate?.state?.canRequestQuote === true
       && compatibleDeclaration;
+    const capabilityExpiresAt = catalogCandidate?.state?.capabilityExpiresAt;
+    const capabilityCurrent = canHire && catalogCandidate?.state?.capabilityState === "ready"
+      && capabilityExpiresAt != null && capabilityExpiresAt > now;
     const hireabilityStatus = quoteIsFresh
       ? "quote_verified" as const
       : quote
@@ -187,6 +190,10 @@ export class GetAgentEvidencePassport {
         canHire,
         status: hireabilityStatus,
         observedAt: quote ? new Date(quote.observedAt).toISOString() : observedAt,
+      },
+      quoteCapability: {
+        verified: capabilityCurrent,
+        expiresAt: capabilityExpiresAt == null ? null : new Date(capabilityExpiresAt).toISOString(),
       },
       jobProofs,
       hireEvents,
