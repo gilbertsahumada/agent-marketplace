@@ -8,6 +8,8 @@ import { ERC8183_MAINNET as pins, mainnetCommerceEvidenceAbi } from "./contracts
 import { mainnetImplementationPinsMatch } from "./implementation-pins.ts";
 import { closureState, verifyDelivery, requestTextsFromDescription, type DeliveryReport } from "./job-delivery.ts";
 
+const CLEARED_POLICY = "0x0000000000000000000000000000000000000000";
+
 /** Read-only: no wallet, no settle/dispute calls, no speculative URL discovery. */
 export async function readJobDelivery(ledger: HireJobDetail): Promise<DeliveryReport> {
   const report: DeliveryReport = { jobId: ledger.jobId, status: ledger.status, checkedAt: new Date().toISOString(),
@@ -21,7 +23,13 @@ export async function readJobDelivery(ledger: HireJobDetail): Promise<DeliveryRe
     if (!isAddressEqual(job.client, ledger.buyer) || !isAddressEqual(job.provider, ledger.provider)) return report;
     report.status = JobStatus[job.status];
     report.requestTexts = requestTextsFromDescription(job.description);
-    report.policy = policy;
+    // The Router clears the policy binding once a job is COMPLETED. A settled job under the pinned
+    // evaluator was registered with the pinned policy, so verify its delivery manifest against that
+    // policy instead of the cleared address. Unsettled jobs keep the live binding.
+    const boundPolicy = report.status === "COMPLETED" && isAddressEqual(job.evaluator, pins.router) && isAddressEqual(policy, CLEARED_POLICY)
+      ? pins.policy
+      : policy;
+    report.policy = boundPolicy;
     if (["COMPLETED", "REJECTED", "EXPIRED"].includes(report.status)) report.closure = closureState(report.status, false, 0, 0, 0);
     // A different evaluator/policy must not inherit our optimistic-policy rules.
     if (isAddressEqual(job.evaluator, pins.router) && isAddressEqual(policy, pins.policy)) {
@@ -56,7 +64,7 @@ export async function readJobDelivery(ledger: HireJobDetail): Promise<DeliveryRe
       const response = await transport.fetch(transport.url, { cache: "no-store" });
       if (!response.ok) return report;
       const raw = await readBoundedJson(response, { maxBytes: 64 * 1024, tooLargeMessage: "Delivery too large", invalidJsonMessage: "Invalid delivery" });
-      report.delivery = { ...verifyDelivery(raw, { jobId: ledger.jobId, hash: job.deliverable, policy }), url: transport.url.href };
+      report.delivery = { ...verifyDelivery(raw, { jobId: ledger.jobId, hash: job.deliverable, policy: boundPolicy }), url: transport.url.href };
     } finally { await transport.close(); }
   } catch { /* Keep chain/policy and delivery failures separate, without leaking upstream errors. */ }
   return report;
