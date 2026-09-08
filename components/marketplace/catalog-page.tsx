@@ -8,7 +8,7 @@ import {
   type MarketplaceSort,
 } from "@/src/business/use-cases/list-marketplace-agents";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { ServiceCatalogControls } from "./service-catalog-controls";
+import { ServiceCatalogControls, ServiceCatalogSidebar } from "./service-catalog-controls";
 import { CatalogResults } from "./catalog-results";
 import { PaginationLinks } from "./page-primitives";
 import { agentCardWithObservations } from "./view-models";
@@ -40,6 +40,7 @@ export function CatalogPage({
   query,
   provenAgentId,
   filterCounts,
+  scopeCounts,
 }: {
   data?: MarketplaceAgentPage;
   catalog?: CatalogCandidatePage;
@@ -61,6 +62,7 @@ export function CatalogPage({
   registryTotal?: number;
   operationalTotal?: number;
   filterCounts?: CatalogFacetCounts;
+  scopeCounts?: { hiring?: number; evaluation?: number };
 }) {
   if (!data && !catalog) throw new Error("CATALOG_PAGE_DATA_REQUIRED");
   const allView = query.view === "all";
@@ -161,6 +163,8 @@ export function CatalogPage({
       </header>
       <CatalogReturnRefresh />
       <CatalogNavigationProvider network={network} navigationKey={JSON.stringify(query)} {...(query.scope ? { scope: query.scope } : {})}>
+        <div className={allView ? "" : "grid items-start gap-6 lg:grid-cols-[250px_minmax(0,1fr)]"}>
+        {!allView && <ServiceCatalogSidebar href={hrefForPage(currentPage)} {...(filterCounts ? { counts: filterCounts } : {})} {...(scopeCounts ? { scopeCounts } : {})} />}
         <section aria-label="Agent results" className="flex min-w-0 flex-col gap-6">
           <CatalogResults agents={cards} emptyContent={emptyContent} registry={allView}
             toolbar={<ServiceCatalogControls key="service-controls" href={hrefForPage(currentPage)} search={searchForm} total={total} {...(filterCounts ? { counts: filterCounts } : {})} registry={allView} />}
@@ -168,6 +172,7 @@ export function CatalogPage({
           <PaginationLinks hrefFor={hrefForPage} page={currentPage} totalPages={totalPages} />
           <p className="text-xs text-muted-foreground">Catalogue: Trust8004 · Marketplace observations · Captured {dataCapturedAt(data, catalog)}. Recorded activity is not a quality rating.</p>
         </section>
+        </div>
       </CatalogNavigationProvider>
     </main>
   );
