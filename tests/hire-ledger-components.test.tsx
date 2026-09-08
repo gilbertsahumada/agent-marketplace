@@ -288,13 +288,18 @@ describe("HireLedgerPage", () => {
     expect(screen.queryByRole("link", { name: "Withdrawal available" })).not.toBeInTheDocument();
   });
   it("finds an exact Testnet job outside the loaded page", async () => {
-    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(Response.json(job("1066", { chainId: 97 })));
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(Response.json({
+      ...job("1066", { chainId: 97 }),
+      agentResolution: { status: "registered", agents: [{ chainId: 97, registryAddress: SELLER, agentId: "2197", name: "Testnet seller", profileAvailable: false }], evidence: [], coverage: "partial" },
+    }));
     try {
       render(createElement(HireLedgerPage, { chainId: 97, summary: null, page: { ...page, jobs: [] } }));
       fireEvent.change(screen.getByRole("textbox", { name: "Search this page" }), { target: { value: "#1066" } });
       expect(screen.getAllByText("Loading jobs…")).toHaveLength(5);
       expect(screen.getByRole("button", { name: "BSC Mainnet" })).toBeDisabled();
       expect(await screen.findByRole("link", { name: "Job #1066" })).toHaveAttribute("href", "/jobs/testnet/1066");
+      expect(screen.getByText("Testnet seller · #2197")).toBeInTheDocument();
+      expect(screen.getByText("Recorded association")).toBeInTheDocument();
       expect(screen.queryByText(/Open job #1066/)).not.toBeInTheDocument();
       expect(screen.queryByRole("navigation", { name: "Jobs pagination" })).not.toBeInTheDocument();
       expect(fetchMock).toHaveBeenCalledWith("/api/marketplace/jobs/testnet/1066/ledger", expect.any(Object));
