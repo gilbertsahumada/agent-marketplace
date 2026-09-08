@@ -1,0 +1,43 @@
+.graphic rect,
+.graphic path {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+/* No idle animation: the decorative artwork responds only to interaction. */
+@media (prefers-reduced-motion: no-preference) {
+  .graphic rect,
+  .graphic path {
+    transition: transform 450ms ease-out;
+  }
+
+  :global(article:focus-within) .graphic[data-artwork="grid"] rect {
+    transform: scaleY(1.14);
+  }
+
+  :global(article:focus-within) .graphic[data-artwork="yield"] rect {
+    transform: scaleX(1.035);
+  }
+
+  :global(article:focus-within) .graphic[data-artwork="monitor"] path,
+  :global(article:focus-within) .graphic[data-artwork="range"] path,
+  :global(article:focus-within) .graphic[data-artwork="generic"] path {
+    transform: translateY(-4px);
+  }
+}
+
+@media (hover: hover) and (prefers-reduced-motion: no-preference) {
+  :global(article:hover) .graphic[data-artwork="grid"] rect {
+    transform: scaleY(1.14);
+  }
+
+  :global(article:hover) .graphic[data-artwork="yield"] rect {
+    transform: scaleX(1.035);
+  }
+
+  :global(article:hover) .graphic[data-artwork="monitor"] path,
+  :global(article:hover) .graphic[data-artwork="range"] path,
+  :global(article:hover) .graphic[data-artwork="generic"] path {
+    transform: translateY(-4px);
+  }
+}

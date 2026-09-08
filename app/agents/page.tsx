@@ -71,7 +71,8 @@ export default async function AgentsPage({ searchParams }: { searchParams: Promi
       limit: 1,
       sort: DEFAULT_REGISTERED_AGENT_SORT,
     }).catch(() => null),
-    getCatalogCandidatePage({ chainId, status: "requestable", page: 1, limit: 1, ...(fresh ? { fresh } : {}) }).catch(() => null),
+    getCatalogCandidatePage({ chainId, scope: "hiring", page: 1, limit: 1, ...(fresh ? { fresh } : {}) }).catch(() => null),
+    getCatalogCandidatePage({ chainId, scope: "evaluation", page: 1, limit: 1, ...(fresh ? { fresh } : {}) }).catch(() => null),
   ]);
   const catalog = view === "marketplace" || chainId === 97 ? await getCatalogCandidatePage({
     chainId, ...(view === "all" ? { inventory: "registry" as const } : { scope }), statuses, categories, protocols, reachability, page, limit: 24, includeFacets: true, ...optional, ...(fresh ? { fresh } : {}),
@@ -91,12 +92,13 @@ export default async function AgentsPage({ searchParams }: { searchParams: Promi
   const observations = view === "marketplace" && chainId === 56
     ? await getWorkerObservations()
     : { status: "unavailable" as const, feed: null };
-  const [registryMetric, operationalMetric] = await metricsPromise;
+  const [registryMetric, operationalMetric, evaluationMetric] = await metricsPromise;
   const registryTotal = registryMetric?.pagination.total
     ?? (view === "all" && !q ? data?.pagination.total : undefined);
   const operationalTotal = operationalMetric?.total
     ?? (scope === "hiring" && (statuses.length === 0 || (statuses.length === 1 && statuses[0] === "declared")) && !q && categories.length === 0 ? catalog?.total : undefined);
   return <CatalogPage
+    scopeCounts={{ ...(operationalMetric ? { hiring: operationalMetric.total } : {}), ...(evaluationMetric ? { evaluation: evaluationMetric.total } : {}) }}
     {...(data ? { data } : {})}
     {...(catalog ? { catalog } : {})}
     observations={observations}

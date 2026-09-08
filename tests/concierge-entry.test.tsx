@@ -65,7 +65,7 @@ describe("concierge entry points", () => {
     expect(screen.queryByRole("form", { name: "Ask the concierge" })).not.toBeInTheDocument();
     expect(screen.queryByText("Checked quote forms. No previous quote or job required.")).not.toBeInTheDocument();
     expect(screen.getByRole("main")).toHaveClass("agents-catalog");
-    expect((await axe.run(screen.getByRole("navigation", { name: "Agent network" }))).violations).toEqual([]);
+    expect((await axe.run(screen.getByRole("combobox", { name: "Agent network" }))).violations).toEqual([]);
   });
 
   it("does not render the ask-the-concierge form when conciergeEnabled is not set", () => {
