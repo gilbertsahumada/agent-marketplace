@@ -99,6 +99,37 @@ beforeEach(async () => {
 });
 
 describe("commerceActivityResponse", () => {
+  it("uses job-indexed event probes for sparse period-filtered pages and scoped totals", async () => {
+    await seedLedger();
+    for (let id = 1_000; id < 1_100; id++) await seedJob(56, id, SELLER);
+    const queries: Array<{ sql: string; values: unknown[] }> = [];
+    const traced: D1Database = {
+      prepare(sql: string) {
+        const statement = env.DB.prepare(sql);
+        return new Proxy(statement, {
+          get(target, property) {
+            if (property === "bind") return (...values: unknown[]) => {
+              queries.push({ sql, values });
+              return target.bind(...values);
+            };
+            const value = Reflect.get(target, property);
+            return typeof value === "function" ? value.bind(target) : value;
+          },
+        });
+      },
+    };
+    const response = await commerceJobsListResponse(new Request(`https://worker.test/commerce-jobs?chainId=56&days=7&provider=${SELLER}`), traced, NOW);
+    expect(await response.json()).toMatchObject({ jobs: [{ jobId: "901" }], nextBefore: null });
+    const filtered = queries.filter(query => query.sql.includes("EXISTS"));
+    expect(filtered).toHaveLength(2); // scope totals and page
+    for (const query of filtered) {
+      const plan = await env.DB.prepare(`EXPLAIN QUERY PLAN ${query.sql}`).bind(...query.values).all<{ detail: string }>();
+      const steps = (plan.results ?? []).map(row => row.detail).join("\n");
+      expect(steps).toContain("idx_commerce_job_events_job");
+      expect(steps).not.toContain("idx_commerce_job_events_time");
+    }
+  });
+
   it("filters table jobs by the same UTC event window before pagination, without duplicates or observation-time fallbacks", async () => {
     await seedJob(56, 1, SELLER);
     await seedJob(56, 2, SELLER);
