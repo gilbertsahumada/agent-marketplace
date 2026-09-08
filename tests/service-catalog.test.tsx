@@ -5,10 +5,36 @@ import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, it } from "vitest";
 import { ServiceCard, serviceArtwork } from "../components/marketplace/service-card";
-import { serviceFilterHref } from "../components/marketplace/service-catalog-controls";
+import { serviceFilterHref, serviceFacetCount } from "../components/marketplace/service-catalog-controls";
 import type { AgentCardViewModel } from "../components/marketplace/presentation-types";
 
 afterEach(cleanup);
+
+it("isolates decorative motion from the cover text and background", () => {
+  render(createElement(ServiceCard, { agent }));
+  const cover = screen.getByTestId("service-cover");
+  const graphic = cover.querySelector('[data-artwork="grid"]');
+  expect(graphic).not.toBeNull();
+  expect(graphic?.querySelectorAll("rect")).toHaveLength(7);
+  expect(graphic?.querySelector("text")).toBeNull();
+  expect(cover.querySelectorAll("text")).toHaveLength(3);
+});
+
+it("opens from the card surface without intercepting the identity link", async () => {
+  render(createElement(ServiceCard, { agent }));
+  const card = screen.getByRole("article", { name: `${agent.name} service` });
+  expect(card).toHaveClass("cursor-pointer", "duration-300", "hover:border-primary/25");
+  await userEvent.click(screen.getByRole("link", { name: /Agent 2197 on Trust8004/ }));
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  await userEvent.click(card);
+  expect(screen.getByRole("dialog", { name: agent.name })).toBeInTheDocument();
+});
+
+it("keeps missing facet counts distinct from zero", () => {
+  expect(serviceFacetCount(undefined, "category", "grid_trading")).toBeUndefined();
+  expect(serviceFacetCount({ categories: { grid_trading: 0, rebalancing: 3, yield_optimisation: 0, health_factor_monitoring: 0 }, statuses: {} as never, protocols: { a2a: 23 } }, "protocol", "a2a")).toBe(23);
+  expect(serviceFacetCount({ categories: { grid_trading: 0, rebalancing: 3, yield_optimisation: 0, health_factor_monitoring: 0 }, statuses: {} as never }, "category", "grid_trading")).toBe(0);
+});
 const agent: AgentCardViewModel = {
   agentId: "2197", chainId: 97, name: "Grid provider", description: "A declared service description.",
   operator: "marketplace", categories: ["grid_trading"], href: "/hire/2197?network=testnet",
@@ -37,6 +63,8 @@ it("opens a compact service dialog with visible history and the correct network 
   expect(screen.getByRole("button", { name: agent.description })).toHaveClass("line-clamp-3");
   await userEvent.click(screen.getByRole("button", { name: "Explore service" }));
   const dialog = screen.getByRole("dialog", { name: agent.name });
+  expect(within(dialog).getByText("BSC Testnet")).toBeInTheDocument();
+  expect(within(dialog).getByRole("link", { name: /Identity for agent 2197/ })).toHaveTextContent("Identity · #2197");
   expect(within(dialog).getByText("5")).toBeInTheDocument();
   expect(within(dialog).getByText("1")).toBeInTheDocument();
   expect(dialog.querySelector("details")).toBeNull();
