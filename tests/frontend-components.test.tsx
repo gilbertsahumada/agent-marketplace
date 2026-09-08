@@ -994,7 +994,7 @@ describe("marketplace presentation rules", () => {
     expect(screen.getByRole("link", { name: "Return to marketplace status" })).toHaveAttribute("href", "/");
   });
 
-  it("shows registry and operational totals without explanatory copy", () => {
+  it("shows a clear directory heading and result count without a KPI bar", () => {
     const page: MarketplaceAgentPage = {
       view: "all",
       items: [],
@@ -1009,16 +1009,9 @@ describe("marketplace presentation rules", () => {
       query: { view: "all", sort: "newest" },
       registryTotal: 80_058,
     }));
-    expect(screen.getByRole("heading", { name: "Agents" })).toHaveClass("sr-only");
-    const totals = screen.getByLabelText("Catalog totals");
-    expect(within(totals).getByText("ERC-8004 registered")).toBeInTheDocument();
-    expect(within(totals).getByText("80,058")).toBeInTheDocument();
-    expect(within(totals).getByText("Can request quote")).toBeInTheDocument();
-    expect(within(totals).getByText("30,006")).toBeInTheDocument();
-    expect(screen.queryByRole("navigation", { name: "Catalog scope" })).not.toBeInTheDocument();
-    expect(screen.getByTestId("catalog-summary")).toContainElement(totals);
-    expect(screen.queryByText(/Registration alone is not evaluation or hireability/)).not.toBeInTheDocument();
-    expect(screen.queryByText(/trust8004 response\.total/)).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Agent directory" })).toBeInTheDocument();
+    expect(screen.getByText("80,058 results")).toBeInTheDocument();
+    expect(screen.queryByTestId("catalog-summary")).not.toBeInTheDocument();
     expect(screen.getByRole("combobox", { name: "Sort agents" })).toHaveValue("newest");
   });
 
@@ -1045,42 +1038,17 @@ describe("marketplace presentation rules", () => {
     expect(screen.queryByText("One registry: all identities, or only identities that declare a usable public service endpoint.")).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Operational candidates" })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "All registered agents" })).not.toBeInTheDocument();
-    const mobileFilterButton = screen.getByRole("button", { name: "Filters" });
-    const mobileFilterDetails = mobileFilterButton.closest("details");
-    const searchInput = screen.getByRole("textbox", { name: "Search agents" });
-    expect(mobileFilterDetails).not.toHaveAttribute("open");
-    expect(mobileFilterDetails?.nextElementSibling).toContainElement(searchInput);
-    expect(mobileFilterButton.querySelector(".lucide-list-filter")).not.toBeNull();
-    expect(mobileFilterButton.closest("form")).toHaveClass("w-full", "lg:block");
-    expect(searchInput.closest("label")).toHaveClass("w-full", "min-w-0");
-    expect(searchInput).toHaveClass("focus-visible:ring-0");
-    expect(screen.getByRole("tablist", { name: "Catalog layout" }).parentElement).toHaveClass("min-[30rem]:grid-cols-[minmax(0,1fr)_auto]");
-    expect(screen.getByRole("tablist", { name: "Catalog layout" })).toHaveClass("h-10");
-    await user.click(mobileFilterButton);
-    expect(mobileFilterDetails).toHaveAttribute("open");
-    await user.click(mobileFilterButton);
-    expect(mobileFilterDetails).not.toHaveAttribute("open");
-    expect(screen.getByRole("complementary", { name: "Catalog filters" })).toHaveClass("lg:sticky", "lg:overflow-y-auto");
-    expect(screen.getByRole("region", { name: "Agent results" })).toHaveClass("lg:h-full", "lg:overflow-y-auto");
-    expect(container.querySelector(".lucide-search")).toHaveClass("top-1/2", "-translate-y-1/2");
-    expect(screen.getAllByRole("checkbox", { name: "Declared endpoints" })).toHaveLength(2);
-    expect(screen.getAllByRole("checkbox", { name: "Declared endpoints" }).every((checkbox) => checkbox.getAttribute("data-state") === "unchecked")).toBe(true);
-    expect(screen.getAllByRole("checkbox", { name: "Ready to quote" }).every((checkbox) => checkbox.getAttribute("data-state") === "unchecked")).toBe(true);
-    expect(screen.getAllByRole("checkbox", { name: "Grid trading" }).every((checkbox) => checkbox.getAttribute("data-state") === "unchecked")).toBe(true);
-    expect(screen.getByRole("tab", { name: "Cards" })).toHaveAttribute("data-state", "active");
-    expect(screen.getByRole("tab", { name: "Cards" })).toHaveClass("cursor-pointer");
-    expect(screen.queryByRole("navigation", { name: "Catalog scope" })).not.toBeInTheDocument();
-    const quickFilters = screen.getByTestId("catalog-quick-filters");
-    expect(screen.getByRole("button", { name: /Ready to quote/ })).toHaveClass("h-8", "rounded-md", "w-auto");
-    expect(searchInput.closest("form")?.parentElement?.nextElementSibling).toBe(quickFilters);
-    expect(screen.getByRole("complementary", { name: "Catalog filters" })).toHaveClass("marketplace-surface", "rounded-xl");
-    expect(screen.getByText("Catalog data")).toBeInTheDocument();
-    expect(screen.getByText("trust8004 catalog + marketplace observation Worker")).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "Search agents" })).toBeInTheDocument();
+    expect(screen.queryByRole("complementary", { name: "Catalog filters" })).not.toBeInTheDocument();
+    expect(container.querySelector(".lucide-sliders-horizontal")).not.toBeNull();
+    await user.click(screen.getByRole("button", { name: "Filters" }));
+    expect(screen.getByRole("dialog", { name: "Filters" })).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: "Declared endpoints" })).not.toBeChecked();
+    await user.click(screen.getByRole("button", { name: "Close" }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Agent 45650 on Trust8004/i })).toHaveAttribute("href", "https://trust8004.xyz/agents/56:45650");
+    expect(screen.getByTestId("service-cover")).toBeInTheDocument();
     expect(screen.queryByRole("table", { name: "Agent comparison" })).not.toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /View .* on trust8004/i })).toHaveAttribute(
-      "href",
-      "https://trust8004.xyz/agents/56:45650",
-    );
 
     await user.click(screen.getByRole("tab", { name: "Table" }));
     const comparisonTable = screen.getByRole("table", { name: "Agent comparison" });
@@ -1095,7 +1063,7 @@ describe("marketplace presentation rules", () => {
     consoleError.mockRestore();
   });
 
-  it("renders combined filters, a clear action, and an agents-specific loading skeleton", () => {
+  it("renders combined filters, a clear action, and an agents-specific loading skeleton", async () => {
     const page: MarketplaceAgentPage = {
       view: "marketplace",
       items: [],
@@ -1115,21 +1083,19 @@ describe("marketplace presentation rules", () => {
       },
     }));
 
-    expect(screen.getAllByRole("checkbox", { name: "Declared endpoints" }).every((item) => item.getAttribute("data-state") === "checked")).toBe(true);
-    expect(screen.getAllByRole("checkbox", { name: "A2A" }).every((item) => item.getAttribute("data-state") === "checked")).toBe(true);
-    expect(screen.getAllByRole("checkbox", { name: "Grid trading" }).every((item) => item.getAttribute("data-state") === "checked")).toBe(true);
-    expect(screen.getAllByRole("checkbox", { name: "Rebalancing" }).every((item) => item.getAttribute("data-state") === "checked")).toBe(true);
-    expect(screen.getAllByRole("button", { name: "Clear filters" })).toHaveLength(3);
-    expect(screen.getByTestId("catalog-quick-filters")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Reachable now/ })).toHaveAttribute("aria-pressed", "false");
-
+    expect(screen.getByRole("button", { name: "Remove Grid trading filter" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Clear all" })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /Filters/ }));
+    for (const name of ["Declared endpoints", "A2A", "Grid trading", "Rebalancing"]) {
+      expect(screen.getByRole("checkbox", { name })).toBeChecked();
+    }
     cleanup();
     render(createElement(AgentsLoading));
     expect(screen.getByRole("status", { name: "Loading agents" })).toBeInTheDocument();
     expect(screen.getByTestId("agents-loading-results")).toBeInTheDocument();
   });
 
-  it("allows clearing the last evidence filter and shows global counts beside every filter", async () => {
+  it("allows clearing the last evidence filter from its active chip", async () => {
     const user = userEvent.setup();
     const page: MarketplaceAgentPage = {
       view: "marketplace",
@@ -1165,12 +1131,8 @@ describe("marketplace presentation rules", () => {
       query: { view: "marketplace", statuses: ["declared"] },
     }));
 
-    expect(screen.getAllByText("30,024")).toHaveLength(2);
-    expect(screen.getAllByText("7")).toHaveLength(2);
-    expect(screen.getAllByText("9,999")).toHaveLength(3);
-    expect(screen.getByRole("button", { name: /Reachable now 9,999/ })).toBeInTheDocument();
-    await user.click(screen.getAllByRole("checkbox", { name: "Declared endpoints" })[0]!);
-    expect(routerPush).toHaveBeenCalledWith("/agents?view=marketplace");
+    await user.click(screen.getByRole("button", { name: "Remove Declared endpoints filter" }));
+    expect(routerPush).toHaveBeenCalledWith("/agents?view=marketplace&limit=24&network=mainnet");
   });
 
   it("removes the final quick status without replacing it or dropping other groups", async () => {
@@ -1178,8 +1140,8 @@ describe("marketplace presentation rules", () => {
     routerPush.mockClear();
     const page: MarketplaceAgentPage = { view: "marketplace", items: [], pagination: { page: 1, pageSize: 12, total: 0, totalPages: 0 }, categories: [], catalogCoverage: "partial", fetchedAt: "2026-08-17T00:00:00.000Z" };
     render(createElement(CatalogPage, { data: page, query: { view: "marketplace", statuses: ["requestable"], protocols: ["mcp"], q: "grid" } }));
-    await user.click(screen.getByRole("button", { name: /^Can request quote/ }));
-    expect(routerPush).toHaveBeenCalledWith("/agents?view=marketplace&protocol=mcp&q=grid");
+    await user.click(screen.getByRole("button", { name: "Remove Can request quote filter" }));
+    expect(routerPush).toHaveBeenCalledWith("/agents?view=marketplace&limit=24&network=mainnet&protocol=mcp&q=grid");
   });
 
   it("shows result skeletons while applying a second evidence filter", async () => {
@@ -1195,9 +1157,12 @@ describe("marketplace presentation rules", () => {
     routerPush.mockClear();
     render(createElement(CatalogPage, { data: page, query: { view: "marketplace", statuses: ["declared"] } }));
 
-    await user.click(screen.getAllByRole("checkbox", { name: "A2A" })[0]!);
+    await user.click(screen.getByRole("button", { name: /Filters/ }));
+    await user.click(screen.getByRole("checkbox", { name: "A2A" }));
+    expect(routerPush).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "Show results" }));
 
-    expect(routerPush).toHaveBeenCalledWith("/agents?view=marketplace&status=declared&protocol=a2a");
+    expect(routerPush).toHaveBeenCalledWith("/agents?view=marketplace&limit=24&network=mainnet&scope=hiring&status=declared&protocol=a2a");
     expect(screen.getByRole("status", { name: "Loading agents" })).toBeInTheDocument();
     expect(screen.queryByText("V3 Pools powered by HeyAnon")).not.toBeInTheDocument();
   });
@@ -1218,10 +1183,12 @@ describe("marketplace presentation rules", () => {
       query: { view: "marketplace", statuses: ["declared"], reachability: ["live"] },
     }));
 
+    await user.click(screen.getByRole("button", { name: /Filters/ }));
     expect(screen.getAllByRole("checkbox", { name: "Reachable now" }).every((item) => item.getAttribute("data-state") === "checked")).toBe(true);
-    expect(screen.getByRole("button", { name: /Reachable now/ })).toHaveAttribute("aria-pressed", "true");
+
     await user.click(screen.getAllByRole("checkbox", { name: "MCP" })[0]!);
-    expect(routerPush).toHaveBeenCalledWith("/agents?view=marketplace&status=declared&reachability=live&protocol=mcp");
+    await user.click(screen.getByRole("button", { name: "Show results" }));
+    expect(routerPush).toHaveBeenCalledWith("/agents?view=marketplace&limit=24&network=mainnet&scope=hiring&status=declared&reachability=live&protocol=mcp");
   });
 
   it("searches while typing with one focus border and preserves active filters", () => {
@@ -1252,7 +1219,7 @@ describe("marketplace presentation rules", () => {
     expect(routerReplace).not.toHaveBeenCalled();
     act(() => vi.advanceTimersByTime(300));
 
-    expect(routerReplace).toHaveBeenCalledWith("/agents?view=marketplace&status=declared&status=a2a&category=grid_trading&reachability=live&q=grid");
+    expect(routerReplace).toHaveBeenCalledWith("/agents?view=marketplace&status=declared&status=a2a&category=grid_trading&reachability=live&q=grid&network=mainnet");
     expect(screen.getByRole("status", { name: "Loading agents" })).toBeInTheDocument();
     vi.useRealTimers();
   });
