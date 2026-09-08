@@ -47,10 +47,10 @@ export default async function JobsPage({ searchParams }: { searchParams: Promise
   const [summary, page, activity] = await Promise.all([
     getHireLedger.summary({ chainId }),
     provider === undefined
-      ? getHireLedger.listRecentJobs({ chainId, ...cursor })
-      : getHireLedger.listJobsByProvider({ chainId, provider, ...cursor }),
+      ? getHireLedger.listRecentJobs({ chainId, ...cursor, days: activityDays })
+      : getHireLedger.listJobsByProvider({ chainId, provider, ...cursor, days: activityDays }),
     // Preserve the shared default cache entry for 30 days. Alternate windows
-    // are explicit and never change list pagination.
+    // are explicit. The table uses the same window before pagination.
     getHireLedger.activity({ chainId, ...scope, ...(activityDays === 30 ? {} : { days: activityDays }) }),
   ]);
   const agentResolutions = await resolveJobAgents.execute(page?.jobs ?? []);
@@ -59,7 +59,7 @@ export default async function JobsPage({ searchParams }: { searchParams: Promise
       activity={activity}
       activityDays={activityDays}
       cursorTrail={cursorTrail}
-      key={`${chainId}:${provider ?? "all"}:${before ?? "newest"}`}
+      key={`${chainId}:${provider ?? "all"}:${before ?? "newest"}:${activityDays}`}
       chainId={chainId}
       page={page}
       summary={summary}
