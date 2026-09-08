@@ -234,6 +234,18 @@ describe("hire ledger feed", () => {
     expect(requested).toHaveLength(3);
   });
 
+  it("sends the table period to the Worker and keeps period caches separate", async () => {
+    const fetchMock = vi.fn(async () => Response.json(page()));
+    vi.stubGlobal("fetch", fetchMock);
+    for (const days of [7, 30, 90]) {
+      await getHireJobs({ chainId: 56, days, before: "4321", env: ENV });
+    }
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(fetchMock.mock.calls.map(call => String((call as unknown[])[0]))).toEqual([7, 30, 90].map(days => `https://probe.example.workers.dev/commerce-jobs?chainId=56&limit=25&before=4321&days=${days}`));
+    await expect(getHireJobs({ chainId: 56, days: 91, env: ENV })).resolves.toBeNull();
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
   // The Worker validates addresses with a strict EIP-55 check; the marketplace
   // accepts any 0x + 40 hex input and hands it over lowercased, so a wrongly
   // cased address is still a valid query, not a 400 the caller cannot explain.
