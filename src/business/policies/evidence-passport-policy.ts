@@ -30,6 +30,8 @@ export interface EvidencePassportInput {
     observedAt: string | null;
   };
   jobProofs: MainnetJobProof[];
+  /** Public capability is evidence only, never a buyer's executable quote. */
+  quoteCapability?: { verified: boolean; expiresAt: string | null };
   hireEvents: VerifiedHireEvent[];
   generatedAt: string;
 }
@@ -261,8 +263,11 @@ export function buildEvidencePassport(input: EvidencePassportInput): AgentEviden
         detail: "No chain-verified hire activity is linked to this agent.",
       };
 
+  const capabilityCurrent = input.quoteCapability?.verified === true
+    && input.quoteCapability.expiresAt !== null
+    && Date.parse(input.quoteCapability.expiresAt) > Date.parse(input.generatedAt);
   const attentionReasons: string[] = [];
-  if (input.verification?.freshness === "stale") attentionReasons.push("Verification evidence is stale.");
+  if (input.verification?.freshness === "stale" && !capabilityCurrent) attentionReasons.push("Verification evidence is stale.");
   if (input.verification?.freshness === "current" && input.verification.endpointStatus === "failed") {
     attentionReasons.push("The bounded endpoint evaluation failed.");
   }
@@ -278,7 +283,8 @@ export function buildEvidencePassport(input: EvidencePassportInput): AgentEviden
 
   let state: EvidencePassportState = "registered";
   if (endpoint.status === "verified" && identity.status === "verified") state = "evaluated";
-  if (quote.status === "verified" && input.hireability.canHire && identity.status === "verified") state = "hireable";
+  if ((input.quoteCapability ? capabilityCurrent : quote.status === "verified")
+    && input.hireability.canHire && identity.status === "verified") state = "hireable";
   if (latestJob && identity.status === "verified") state = "job_proven";
   if (attentionReasons.length > 0) state = "attention";
 

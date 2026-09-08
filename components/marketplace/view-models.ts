@@ -7,7 +7,7 @@ import type { AgentProtocolLabel } from "./presentation-types";
 import type { WorkerObservationTarget } from "@/src/business/entities/worker-observations";
 
 export const hireabilityLabels: Record<AgentCardViewModel["hireability"], string> = {
-  hireable: "Ready to hire",
+  hireable: "Ready to quote",
   mcp_only: "MCP only",
   quote_stale: "Quote expired",
   wallet_ambiguous: "Wallet attribution ambiguous",
@@ -16,7 +16,9 @@ export const hireabilityLabels: Record<AgentCardViewModel["hireability"], string
 
 // Single home of the quote-on-request rule so card, profile and compare cannot disagree.
 export function hireabilityLabelFor(view: AgentCardViewModel): string {
-  return view.hireability === "listed_only" && view.quoteRequestAvailable === true
+  return view.quoteRequestAvailable === true && view.hireability === "quote_stale"
+    ? "Quote on request"
+    : view.hireability === "listed_only" && view.quoteRequestAvailable === true
     ? "Ready to quote"
     : hireabilityLabels[view.hireability];
 }

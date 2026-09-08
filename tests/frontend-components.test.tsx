@@ -418,7 +418,7 @@ describe("marketplace presentation rules", () => {
     expect(screen.getByRole("heading", { name: "Indexed Evidence Passport" })).toBeInTheDocument();
     expect(screen.getByText("Registered")).toBeInTheDocument();
     expect(screen.getByText("Not probed")).toBeInTheDocument();
-    expect(screen.getByText(/indexed identity and declaration snapshot/i)).toBeInTheDocument();
+    expect(screen.getByText(/each buyer needs a new verified quote for their specific job/i)).toBeInTheDocument();
     expect(screen.queryByText(/NFT/i)).not.toBeInTheDocument();
 
     rerender(createElement("main", {}, createElement(EvidencePassportCard, { passport: evidencePassport("job_proven"), apiHref: "/api/marketplace/agents/303779/passport" })));
@@ -605,7 +605,7 @@ describe("marketplace presentation rules", () => {
       passportState: "hireable",
     } }));
 
-    expect(screen.getByText("Ready to hire")).toBeInTheDocument();
+    expect(screen.getByText("Ready to quote")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /hire agent/i })).toHaveAttribute("href", "/hire/303779#hire-flow");
   });
 

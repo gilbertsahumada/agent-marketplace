@@ -10,7 +10,7 @@ import { ProvenanceBadge } from "./provenance-badge";
 const stateLabels: Record<AgentEvidencePassport["state"], string> = {
   registered: "Registered",
   evaluated: "Evaluated",
-  hireable: "Hireable",
+  hireable: "Ready to quote",
   job_proven: "Job proven",
   attention: "Attention",
 };
@@ -65,7 +65,7 @@ export function EvidencePassportCard({
         <div>
           <p className="font-eyebrow text-zinc-400">BSC · Agent #{passport.agentId}</p>
           <h2 className="mt-2 text-xl font-medium tracking-tight text-white">Indexed Evidence Passport</h2>
-          <p className="mt-2 text-sm text-zinc-400">Indexed identity and declaration snapshot — current Worker observations are shown separately.</p>
+          <p className="mt-2 text-sm text-zinc-400">Public capability evidence. Each buyer needs a new verified quote for their specific job before funding.</p>
         </div>
         <div className="flex flex-col items-start gap-2 sm:items-end">
           <Badge className="passport-state-badge" variant="outline">{stateLabels[passport.state]}</Badge>

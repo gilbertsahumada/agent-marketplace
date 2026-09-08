@@ -73,6 +73,28 @@ function proof(overrides: Partial<MainnetJobProof> = {}): MainnetJobProof {
 }
 
 describe("Evidence Passport policy", () => {
+  it("keeps requestable capability separate from an expired public quote", () => {
+    const passport = buildEvidencePassport(input({
+      quoteCapability: { verified: true, expiresAt: "2026-08-27T10:00:00.000Z" },
+      hireability: { canHire: true, status: "quote_stale", observedAt: OBSERVED_AT },
+    }));
+    expect(passport.state).toBe("hireable");
+    expect(passport.checks.quote.status).toBe("stale");
+  });
+  it.each([false, true])("does not promote missing or expired capability (%s)", (verified) => {
+    const passport = buildEvidencePassport(input({
+      quoteCapability: { verified, expiresAt: OBSERVED_AT },
+      hireability: { canHire: true, status: "quote_stale", observedAt: OBSERVED_AT },
+    }));
+    expect(passport.state).not.toBe("hireable");
+  });
+  it.each(["mismatch", "unavailable"] as const)("capability cannot override identity %s", (status) => {
+    expect(buildEvidencePassport(input({
+      quoteCapability: { verified: true, expiresAt: "2026-08-27T10:00:00.000Z" },
+      hireability: { canHire: true, status: "quote_stale", observedAt: OBSERVED_AT },
+      onchainIdentity: { status, observedAt: OBSERVED_AT, blockNumber: null },
+    })).state).toBe("attention");
+  });
   it("keeps a directly registered but unprobed agent at Registered", () => {
     const passport = buildEvidencePassport(input());
 
@@ -377,13 +399,25 @@ describe("GetAgentEvidencePassport", () => {
       { execute: async () => candidate },
     ).execute({ agentId: "303779" });
 
-    expect(passport.state).toBe("hireable");
+    expect(passport.state).toBe("evaluated");
     expect(passport.checks.endpoint).toMatchObject({ status: "verified", provenance: "observed" });
     expect(passport.checks.quote).toMatchObject({
       status: "verified",
       provenance: "observed",
       hireabilityStatus: "quote_verified",
     });
+    // The public quote can expire while independently verified capability remains current.
+    candidate.state!.canPrepareHire = false;
+    candidate.state!.buyerAction = "request_quote";
+    candidate.state!.capabilityState = "ready";
+    candidate.state!.capabilityExpiresAt = now + 86_400_000;
+    candidate.observations[0]!.expiresAt = now - 1;
+    const refreshed = await new GetAgentEvidencePassport(
+      { execute: async () => agent }, { listByAgentId: () => [] }, () => now,
+      { execute: async () => candidate },
+    ).execute({ agentId: "303779" });
+    expect(refreshed.state).toBe("hireable");
+    expect(refreshed.checks.quote.status).toBe("stale");
   });
 
   it("fails closed when only the legacy marketplace flag is present", async () => {

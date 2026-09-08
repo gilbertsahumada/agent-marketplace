@@ -11,8 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { EvidenceRail } from "./evidence-rail";
-import { Breadcrumb, PageIntro } from "./page-primitives";
-import { JobAgentCell } from "./job-agent-cell";
+import { Breadcrumb } from "./page-primitives";
 import { TestnetClosurePanel } from "./testnet-closure-panel";
 import { JobNotificationStatus } from "./job-notification-status";
 import type { JobAgentResolution } from "@/src/business/entities/job-agent-resolution";
@@ -30,20 +29,6 @@ function sameAddress(left: string, right: string): boolean {
   return left.toLowerCase() === right.toLowerCase();
 }
 
-function timestamp(seconds: string | undefined): string {
-  if (!seconds || !/^\d+$/.test(seconds)) return "Unavailable";
-  const milliseconds = Number(BigInt(seconds) * 1_000n);
-  return Number.isSafeInteger(milliseconds) ? new Date(milliseconds).toISOString() : "Unavailable";
-}
-
-function Fact({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="border-b border-white/10 py-3 last:border-0 sm:grid sm:grid-cols-[9rem_1fr] sm:gap-4">
-      <dt className="text-xs text-muted-foreground">{label}</dt>
-      <dd className="font-hash mt-1 text-xs text-zinc-200 sm:mt-0">{value}</dd>
-    </div>
-  );
-}
 
 export function TestnetJobTracker({ tracking, agentResolution }: { tracking: Erc8183TestnetJobTracking; agentResolution?: JobAgentResolution | undefined }) {
   const router = useRouter();
@@ -79,14 +64,11 @@ export function TestnetJobTracker({ tracking, agentResolution }: { tracking: Erc
     : [];
 
   return (
-    <main id="main-content" className="mx-auto w-full max-w-6xl flex-1 px-4 py-12 sm:px-6 lg:px-8">
-      <Breadcrumb current={`ERC-8183 Job #${jobId}`} trail={[{ href: "/", label: "Home" }]} />
+    <main id="main-content" className="mx-auto w-full max-w-5xl px-4 py-10 sm:px-6 lg:px-8 lg:py-14">
+      <Breadcrumb current={`Job #${jobId}`} trail={[{ href: "/", label: "Home" }, { href: "/jobs?chainId=97", label: "Jobs" }]} />
       <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
-        <PageIntro eyebrow="BSC Testnet job tracker" title={`ERC-8183 Job #${jobId}`}>
-          Direct contract state is authoritative. Versioned evidence and this browser&apos;s journal remain separate supporting records.
-        </PageIntro>
+        <h1 className="mt-5 text-3xl font-light tracking-tight sm:text-5xl">ERC-8183 Job #{jobId}</h1>
         <div className="flex flex-wrap gap-2">
-          <Badge className="border-primary/30 bg-primary/10 text-primary" variant="outline">Chain 97</Badge>
           <Badge variant="outline">{job?.status ?? snapshot?.lifecycle.expectedState ?? "Unavailable"}</Badge>
         </div>
       </div>
@@ -107,21 +89,24 @@ export function TestnetJobTracker({ tracking, agentResolution }: { tracking: Erc
         </Alert>
       )}
 
-      <Card className="marketplace-surface mt-7">
+      <details className="mt-6">
+      <summary className="cursor-pointer text-sm text-muted-foreground">Verification details</summary>
+      <Card className="mt-4">
         <CardHeader>
           <CardTitle>Evidence line</CardTitle>
           <CardDescription>Declared, observed and onchain facts are never collapsed into one status.</CardDescription>
         </CardHeader>
         <CardContent><EvidenceRail ariaLabel={`Evidence for Testnet Job ${jobId}`} steps={steps} /></CardContent>
       </Card>
+      </details>
 
-      <div className="mt-6 grid gap-6 lg:grid-cols-[0.85fr_1.15fr]">
-        <Card className="marketplace-surface">
-          <CardHeader><CardTitle>Verified job facts</CardTitle></CardHeader>
-          <CardContent>
-            <dl>
-              <Fact label="Buyer" value={buyer} />
-              {tracking.buyerIdentity.kind === "demo_agent" && (
+      <div className="mt-6 flex flex-col gap-6">
+        {job ? <JobStateCard job={directJobState(job)} source="direct" agentResolution={agentResolution} /> : snapshot ? <JobStateCard source="snapshot" agentResolution={agentResolution} job={{
+          chainId: 97, buyer: snapshot.buyer, provider: snapshot.seller, evaluator: null,
+          budgetRaw: snapshot.payment.budgetRaw, expiresAt: snapshot.lifecycle.deadline.iso,
+          submittedAt: null, deliverable: snapshot.deliverable.hash, events: [],
+        }} /> : null}
+        <dl>              {tracking.buyerIdentity.kind === "demo_agent" && (
                 <div className="border-b border-white/10 py-3 last:border-0 sm:grid sm:grid-cols-[9rem_1fr] sm:gap-4">
                   <dt className="text-xs text-muted-foreground">Buyer identity</dt>
                   <dd className="mt-1 flex flex-wrap items-center gap-2 sm:mt-0">
@@ -139,21 +124,11 @@ export function TestnetJobTracker({ tracking, agentResolution }: { tracking: Erc
                     )}
                   </dd>
                 </div>
-              )}
-              <Fact label="Seller" value={seller} />
-              <div className="border-b border-border py-3 sm:grid sm:grid-cols-[9rem_1fr] sm:gap-4">
-                <dt className="text-xs text-muted-foreground">Seller agent</dt>
-                <dd><JobAgentCell resolution={agentResolution} /></dd>
-              </div>
-              <Fact label="Payment token" value={job?.quotedToken ?? snapshot?.payment.token ?? "Unavailable"} />
-              <Fact label="Budget" value={`${job?.budgetRaw ?? snapshot?.payment.budgetRaw ?? "Unavailable"} raw units`} />
-              <Fact label="Deadline" value={job ? timestamp(job.deadline) : snapshot?.lifecycle.deadline.iso ?? "Unavailable"} />
-              <Fact label="Deliverable" value={job?.deliverableHash ?? snapshot?.deliverable.hash ?? "Unavailable"} />
-            </dl>
-          </CardContent>
-        </Card>
+              )}</dl>
 
-        <Card className="marketplace-surface">
+        <details>
+        <summary className="cursor-pointer text-sm text-muted-foreground">Transaction history</summary>
+        <Card className="mt-4">
           <CardHeader>
             <CardTitle>Receipt spine</CardTitle>
             <CardDescription>{snapshotTransactions.length ? "Versioned public transaction evidence." : journal ? "Transactions retained only by this browser." : "No transaction hashes are available in this browser."}</CardDescription>
@@ -174,6 +149,7 @@ export function TestnetJobTracker({ tracking, agentResolution }: { tracking: Erc
             ))}
           </CardContent>
         </Card>
+        </details>
       </div>
 
       {tracking.verifiedPhases.length > 0 && (
@@ -216,3 +192,5 @@ export function TestnetJobTracker({ tracking, agentResolution }: { tracking: Erc
     </main>
   );
 }
+import { JobStateCard } from "./job-state-card";
+import { directJobState } from "./direct-job-state";
