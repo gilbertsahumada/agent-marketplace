@@ -1010,7 +1010,7 @@ describe("marketplace presentation rules", () => {
       registryTotal: 80_058,
     }));
     expect(screen.getByRole("heading", { name: "Agent directory" })).toBeInTheDocument();
-    expect(screen.getByText("80,058 results")).toBeInTheDocument();
+    expect(screen.getByText("80,058 registered agents")).toBeInTheDocument();
     expect(screen.queryByTestId("catalog-summary")).not.toBeInTheDocument();
     expect(screen.getByRole("combobox", { name: "Sort agents" })).toHaveValue("newest");
   });
@@ -1039,7 +1039,9 @@ describe("marketplace presentation rules", () => {
     expect(screen.queryByRole("link", { name: "Operational candidates" })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "All registered agents" })).not.toBeInTheDocument();
     expect(screen.getByRole("textbox", { name: "Search agents" })).toBeInTheDocument();
-    expect(screen.queryByRole("complementary", { name: "Catalog filters" })).not.toBeInTheDocument();
+    expect(screen.getByRole("complementary", { name: "Catalog filters" })).toHaveClass("lg:block");
+    expect(screen.getByRole("radio", { name: "Available to quote" })).toBeChecked();
+    expect(screen.getByRole("radio", { name: "Under evaluation" })).not.toBeChecked();
     expect(container.querySelector(".lucide-sliders-horizontal")).not.toBeNull();
     await user.click(screen.getByRole("button", { name: "Filters" }));
     expect(screen.getByRole("dialog", { name: "Filters" })).toBeInTheDocument();
