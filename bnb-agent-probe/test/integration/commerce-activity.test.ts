@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import { HIRE_CHAIN_PHASES } from "../../src/db/schema";
 import { createWorker } from "../../src/index";
-import { COMMERCE_ACTIVITY_CACHE_SECONDS, commerceActivityResponse } from "../../src/routes/commerce-jobs";
+import { COMMERCE_ACTIVITY_CACHE_SECONDS, commerceActivityResponse, commerceJobsListResponse } from "../../src/routes/commerce-jobs";
 import type { D1Database, Env } from "../../src/types";
 
 const NOW = 1_788_000_000_000; // 2026-08-29T10:40:00.000Z
@@ -99,6 +99,61 @@ beforeEach(async () => {
 });
 
 describe("commerceActivityResponse", () => {
+  it("uses job-indexed event probes for sparse period-filtered pages and scoped totals", async () => {
+    await seedLedger();
+    for (let id = 1_000; id < 1_100; id++) await seedJob(56, id, SELLER);
+    const queries: Array<{ sql: string; values: unknown[] }> = [];
+    const traced: D1Database = {
+      prepare(sql: string) {
+        const statement = env.DB.prepare(sql);
+        return new Proxy(statement, {
+          get(target, property) {
+            if (property === "bind") return (...values: unknown[]) => {
+              queries.push({ sql, values });
+              return target.bind(...values);
+            };
+            const value = Reflect.get(target, property);
+            return typeof value === "function" ? value.bind(target) : value;
+          },
+        });
+      },
+    };
+    const response = await commerceJobsListResponse(new Request(`https://worker.test/commerce-jobs?chainId=56&days=7&provider=${SELLER}`), traced, NOW);
+    expect(await response.json()).toMatchObject({ jobs: [{ jobId: "901" }], nextBefore: null });
+    const filtered = queries.filter(query => query.sql.includes("EXISTS"));
+    expect(filtered).toHaveLength(2); // scope totals and page
+    for (const query of filtered) {
+      const plan = await env.DB.prepare(`EXPLAIN QUERY PLAN ${query.sql}`).bind(...query.values).all<{ detail: string }>();
+      const steps = (plan.results ?? []).map(row => row.detail).join("\n");
+      expect(steps).toContain("idx_commerce_job_events_job");
+      expect(steps).not.toContain("idx_commerce_job_events_time");
+    }
+  });
+
+  it("filters table jobs by the same UTC event window before pagination, without duplicates or observation-time fallbacks", async () => {
+    await seedJob(56, 1, SELLER);
+    await seedJob(56, 2, SELLER);
+    await seedJob(56, 3, SELLER);
+    await seedJob(56, 4, SELLER); // recent observation, no dated events
+    await seedJob(97, 5, SELLER);
+    const from7 = TODAY - 6 * DAY;
+    await seedEvent(56, 1, "created", from7);
+    await seedEvent(56, 1, "funded", NOW - 1);
+    await seedEvent(56, 2, "created", from7 - 1);
+    await seedEvent(56, 3, "created", NOW); // exclusive upper bound
+    await seedEvent(97, 5, "created", NOW - 1);
+    const list = async (query: string) => (await commerceJobsListResponse(new Request(`https://worker.test/commerce-jobs?${query}`), env.DB as unknown as D1Database, NOW)).json() as Promise<{ jobs: { jobId: string }[]; nextBefore: string | null }>;
+    expect(await list("chainId=56&days=7&limit=1")).toMatchObject({ jobs: [{ jobId: "1" }], nextBefore: null });
+    expect(await list("chainId=56&days=30&limit=1")).toMatchObject({ jobs: [{ jobId: "2" }], nextBefore: "2" });
+    expect(await list("chainId=56&days=30&limit=1&before=2")).toMatchObject({ jobs: [{ jobId: "1" }], nextBefore: null });
+    expect(await list(`chainId=56&days=30&provider=${OTHER}`)).toMatchObject({ jobs: [] });
+    expect(await list("chainId=97&days=7")).toMatchObject({ jobs: [{ jobId: "5" }] });
+  });
+
+  it.each(["0", "91", "7.5", "abc"])("rejects invalid table days %s", async days => {
+    const response = await commerceJobsListResponse(new Request(`https://worker.test/commerce-jobs?chainId=56&days=${days}`), env.DB as unknown as D1Database, NOW);
+    expect(response.status).toBe(400);
+  });
   it("groups phase events per UTC day inside the default 30-day window, ascending, only days with events", async () => {
     await seedLedger();
     const response = await activity("chainId=56");

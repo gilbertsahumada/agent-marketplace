@@ -12,7 +12,8 @@ const ledger = vi.hoisted(() => ({
   activity: vi.fn(),
 }));
 
-vi.mock("@/src/business/composition", () => ({ getHireLedger: ledger }));
+const identities = vi.hoisted(() => ({ execute: vi.fn().mockResolvedValue({}) }));
+vi.mock("@/src/business/composition", () => ({ getHireLedger: ledger, resolveJobAgents: identities }));
 
 const jobs = await import("../app/api/marketplace/jobs/route.ts");
 const summary = await import("../app/api/marketplace/jobs/summary/route.ts");
@@ -25,6 +26,27 @@ const PAGE = { chainId: 56, jobs: [], nextBefore: null };
 
 describe("hire ledger controllers", () => {
   beforeEach(() => vi.clearAllMocks());
+
+  it("keeps the job available when identity evidence is unavailable", async () => {
+    const job = { chainId: 97, jobId: "1066", provider: BUYER };
+    const unavailable = { status: "unavailable", agents: [], evidence: [], coverage: "partial" };
+    ledger.getJob.mockResolvedValueOnce(job);
+    identities.execute.mockResolvedValueOnce({ "97:1066": unavailable });
+    const response = await testnetLedger.GET(new Request("https://app.test/ledger"), { params: Promise.resolve({ jobId: "1066" }) });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ...job, agentResolution: unavailable });
+  });
+
+  it.each([[56, mainnetLedger], [97, testnetLedger]] as const)("enriches an exact job on chain %s with its resolved identity", async (chainId, route) => {
+    const job = { chainId, jobId: "1066", provider: BUYER };
+    const resolution = { status: "registered", agents: [{ agentId: "303779" }], evidence: [], coverage: "partial" };
+    ledger.getJob.mockResolvedValueOnce(job);
+    identities.execute.mockResolvedValueOnce({ [`${chainId}:1066`]: resolution });
+    const response = await route.GET(new Request("https://app.test/ledger"), { params: Promise.resolve({ jobId: "1066" }) });
+    expect(response.status).toBe(200);
+    expect(identities.execute).toHaveBeenCalledWith([job]);
+    expect(await response.json()).toEqual({ ...job, agentResolution: resolution });
+  });
 
   it("routes each identity filter to its reader and passes the cursor through", async () => {
     ledger.listRecentJobs.mockResolvedValue(PAGE);

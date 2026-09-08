@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { NetworkSelector } from "./network-selector";
 import { ArrowDown, ArrowUp, ArrowUpDown, ChevronDown, ChevronLeft, ChevronRight, Database, ListChecks, Search, X } from "lucide-react";
@@ -8,8 +9,9 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import type { HireActivity, HireAddress, HireChainId, HireJobPage, HireLedgerSummary } from "@/src/business/entities/hire-job";
+import type { HireActivity, HireAddress, HireChainId, HireJob, HireJobPage, HireLedgerSummary } from "@/src/business/entities/hire-job";
 import type { JobAgentResolution } from "@/src/business/entities/job-agent-resolution";
 import { AddressLink } from "./address-link";
 import { HireActivityWindow } from "./hire-activity-window";
@@ -52,6 +54,8 @@ export function HireLedgerPage({ chainId, summary, page, activity = null, activi
   provider?: HireAddress;
   agentResolutions?: Record<string, JobAgentResolution>;
 }) {
+  const router = useRouter();
+  const [navigating, startTransition] = useTransition();
   const scope = provider ? { provider } : {};
   const periodScope = { ...scope, ...(activityDays === 30 ? {} : { days: activityDays }) };
   const trail = before ? cursorTrail : [];
@@ -72,13 +76,14 @@ export function HireLedgerPage({ chainId, summary, page, activity = null, activi
   const [sort, setSort] = useState<{ column: SortColumn; ascending: boolean }>({ column: "Job", ascending: false });
   const query = search.trim().toLowerCase().replace(/^#/, "");
   const exactId = /^[1-9]\d{0,15}$/.test(query) ? query : null;
-  const lookupKey = `${chainId}:${exactId}`;
-  const [lookup, setLookup] = useState<{ key: string; state: "found" | "missing" | "error" } | null>(null);
+  const lookupKey = `${chainId}:${search}`;
+  const [lookup, setLookup] = useState<{ key: string; state: "found" | "missing" | "error"; job?: HireJob & { agentResolution?: JobAgentResolution } } | null>(null);
   const loadedExact = exactId !== null && Boolean(page?.jobs.some(job => job.jobId === exactId));
   useEffect(() => {
     if (!exactId || loadedExact) return;
     const controller = new AbortController();
     let active = true;
+    const timeout = setTimeout(() => { controller.abort(); if (active) setLookup({ key: lookupKey, state: "error" }); active = false; }, 15_000);
     const timer = setTimeout(async () => {
       try {
         const response = await fetch(`/api/marketplace/jobs/${networkSlug(chainId)}/${exactId}/ledger`, { signal: controller.signal });
@@ -88,18 +93,31 @@ export function HireLedgerPage({ chainId, summary, page, activity = null, activi
         }
         if (!response.ok) throw new Error("Lookup unavailable");
         const data = await response.json();
-        if (data.jobId !== exactId || data.chainId !== chainId) throw new Error("Invalid job response");
-        if (active) setLookup({ key: lookupKey, state: "found" });
+        if (data.jobId !== exactId || data.chainId !== chainId ||
+          typeof data.buyer !== "string" || !/^0x[\da-f]{40}$/i.test(data.buyer) ||
+          typeof data.provider !== "string" || !/^0x[\da-f]{40}$/i.test(data.provider) ||
+          !STATUSES.includes(data.status) || !Number.isFinite(Date.parse(data.updatedAt)) ||
+          !Number.isFinite(Date.parse(data.expiresAt)) || typeof data.marketplace !== "boolean") throw new Error("Invalid job response");
+        if (active) setLookup({ key: lookupKey, state: "found", job: data });
       } catch {
         if (active) setLookup({ key: lookupKey, state: "error" });
+      } finally {
+        clearTimeout(timeout);
       }
     }, 300);
-    return () => { active = false; clearTimeout(timer); controller.abort(); };
+    return () => { active = false; clearTimeout(timer); clearTimeout(timeout); controller.abort(); };
   }, [chainId, exactId, loadedExact, lookupKey]);
-  const jobs = page?.jobs.filter((job) => [job.jobId, job.buyer, job.provider, job.status, jobNextStep(job, now).label, job.marketplace ? "marketplace" : "unattributed",
-    ...(agentResolutions[`${chainId}:${job.jobId}`]?.agents.flatMap(agent => [agent.agentId, agent.name ?? ""]) ?? []),
-  ].some((value) => value.toLowerCase().includes(query))) ?? [];
-  const agentName = (id: string) => agentResolutions[`${chainId}:${id}`]?.agents.map(agent => agent.name || agent.agentId).join(" ") ?? "";
+  const searching = Boolean(exactId && !loadedExact && lookup?.key !== lookupKey);
+  const pending = navigating || searching;
+  const resolutions = lookup?.key === lookupKey && lookup.job?.agentResolution
+    ? { ...agentResolutions, [`${chainId}:${lookup.job.jobId}`]: lookup.job.agentResolution }
+    : agentResolutions;
+  const sourceJobs = exactId ? loadedExact ? page!.jobs.filter(job => job.jobId === exactId)
+    : lookup?.key === lookupKey && lookup.job ? [lookup.job] : [] : page?.jobs ?? [];
+  const jobs = sourceJobs.filter((job) => [job.jobId, job.buyer, job.provider, job.status, jobNextStep(job, now).label, job.marketplace ? "marketplace" : "unattributed",
+    ...(resolutions[`${chainId}:${job.jobId}`]?.agents.flatMap(agent => [agent.agentId, agent.name ?? ""]) ?? []),
+  ].some((value) => value.toLowerCase().includes(query)));
+  const agentName = (id: string) => resolutions[`${chainId}:${id}`]?.agents.map(agent => agent.name || agent.agentId).join(" ") ?? "";
   jobs.sort((a, b) => {
     let order = 0;
     switch (sort.column) {
@@ -116,10 +134,15 @@ export function HireLedgerPage({ chainId, summary, page, activity = null, activi
   });
 
   const networkSelector = <NetworkSelector network={chainId === 56 ? "mainnet" : "testnet"}
-    hrefs={{ mainnet: jobsHref(56, periodScope), testnet: jobsHref(97, periodScope) }} />;
+    hrefs={{ mainnet: jobsHref(56, periodScope), testnet: jobsHref(97, periodScope) }} pending={pending} />;
 
   return (
-    <main className="jobs-explorer mx-auto w-full max-w-[1480px] flex-1 px-5 py-8 sm:px-8 lg:px-12" id="main-content">
+    <main className="jobs-explorer mx-auto w-full max-w-[1480px] flex-1 px-5 py-8 sm:px-8 lg:px-12" id="main-content" onClickCapture={event => {
+      const anchor = (event.target as HTMLElement).closest<HTMLAnchorElement>('a[href^="/jobs?"]');
+      if (!anchor || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) return;
+      event.preventDefault();
+      if (!pending) { setSearch(""); setLookup(null); startTransition(() => router.push(anchor.getAttribute("href")!, { scroll: false })); }
+    }}>
       <Breadcrumb current="Jobs" trail={[{ href: "/", label: "Home" }]} />
       <div className="mb-7 flex flex-wrap items-center justify-between gap-6">
         <div>
@@ -127,41 +150,39 @@ export function HireLedgerPage({ chainId, summary, page, activity = null, activi
         </div>
       </div>
 
-      {activity !== null
-        ? <div className="mt-6"><HireActivityWindow activity={activity} networkSelector={networkSelector} periodHrefs={{
+      <div className="mt-6"><HireActivityWindow activity={activity} showUnavailable={summary !== null || page !== null} days={activityDays} chainId={chainId} pending={pending} networkSelector={networkSelector} periodHrefs={{
             7: jobsHref(chainId, { ...scope, days: 7 }),
             30: jobsHref(chainId, scope),
             90: jobsHref(chainId, { ...scope, days: 90 }),
           }} /></div>
-        : <div>{networkSelector}{(summary !== null || page !== null) && <p className="mt-6 text-sm text-muted-foreground" role="status">Recent activity temporarily unavailable.</p>}</div>}
 
       <section className="mt-7" aria-label="Indexed jobs">
         <div className="relative mb-4">
           <label className="sr-only" htmlFor="jobs-search">Search this page</label>
           <Search aria-hidden="true" className="absolute top-1/2 left-4 size-4 -translate-y-1/2 text-zinc-500" />
-          <Input id="jobs-search" className="catalog-search-input h-10 pr-11 pl-11 focus-visible:ring-0" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Find any job by exact ID, or filter this page by text" maxLength={120} />
+          <Input id="jobs-search" className="catalog-search-input h-10 pr-11 pl-11 focus-visible:ring-0" disabled={navigating} value={search} onChange={(event) => { setLookup(null); setSearch(event.target.value); }} placeholder="Find any job by exact ID, or filter this page by text" maxLength={120} />
           {search && <Button aria-label="Clear search" className="absolute top-1/2 right-1.5 size-7 -translate-y-1/2 text-muted-foreground hover:text-foreground" variant="ghost" size="icon" onClick={() => setSearch("")}><X aria-hidden="true" /></Button>}
         </div>
         {exactId && !loadedExact && <p role="status" className="mb-4 text-sm">
           {lookup?.key !== lookupKey ? "Searching the selected network…" : lookup.state === "found"
-            ? <Link className="text-signal hover:underline" href={`/jobs/${networkSlug(chainId)}/${exactId}`}>Open job #{exactId} · {chainId === 97 ? "Testnet" : "Mainnet"}</Link>
+            ? "Exact ID result · all dates on the selected network"
             : lookup.state === "missing" ? "This job is not indexed on the selected network."
               : "Job search is temporarily unavailable. Clear the search and retry."}
         </p>}
         <Card className="jobs-card jobs-records gap-0 py-0">
           {provider && <div className="flex flex-wrap items-center gap-3 px-6 py-3 text-sm">Provider <AddressLink address={provider} chainId={chainId} /><Link className="text-signal hover:underline" href={jobsHref(chainId, activityDays === 30 ? {} : { days: activityDays })}>All jobs</Link></div>}
           <CardContent className="px-0">
-            {page === null ? <div className="jobs-empty" role="status"><h3>Indexed ledger temporarily unavailable.</h3><p>Job records could not be loaded. Try again shortly.</p><Button asChild variant="outline"><Link href={retryHref}>Try again</Link></Button></div> : page.jobs.length === 0 ? <div className="jobs-empty"><ListChecks aria-hidden="true" className="mx-auto mb-4 size-7 text-muted-foreground" /><h3>{before ? "No records on this page." : provider ? "No indexed jobs for this provider." : "No records in this index yet."}</h3><p>Historical coverage is not confirmed. This does not establish zero activity on the network.</p><div className="flex justify-center gap-3"><Button asChild><Link href="/agents">Explore agents</Link></Button><Button asChild variant="ghost"><Link href={jobsHref(otherChain, periodScope)}>View {otherChain === 56 ? "Mainnet" : "Testnet"}</Link></Button></div></div> : <div className="overflow-x-auto rounded-sm focus-visible:ring-2 focus-visible:ring-signal" tabIndex={0} role="region" aria-label="Job records, scroll horizontally for all columns">
+            {!exactId && !pending && page === null ? <div className="jobs-empty" role="status"><h3>Indexed ledger temporarily unavailable.</h3><p>Job records could not be loaded. Try again shortly.</p><Button asChild variant="outline"><Link href={retryHref}>Try again</Link></Button></div> : !exactId && !pending && page?.jobs.length === 0 ? <div className="jobs-empty"><ListChecks aria-hidden="true" className="mx-auto mb-4 size-7 text-muted-foreground" /><h3>{before ? "No records on this page." : provider ? "No indexed jobs for this provider." : `No jobs with indexed activity in the past ${activityDays} days.`}</h3><p>Historical coverage is not confirmed. This does not establish zero activity on the network.</p><div className="flex justify-center gap-3"><Button asChild><Link href="/agents">Explore agents</Link></Button><Button asChild variant="ghost"><Link href={jobsHref(otherChain, periodScope)}>View {otherChain === 56 ? "Mainnet" : "Testnet"}</Link></Button></div></div> : <div className="overflow-x-auto rounded-sm focus-visible:ring-2 focus-visible:ring-signal" tabIndex={0} role="region" aria-label="Job records, scroll horizontally for all columns">
               <Table className="jobs-table" containerLabel="Indexed jobs table">
                 <TableCaption className="sr-only">Indexed ERC-8183 jobs. Sorted by {sort.column}, {sort.ascending ? "ascending" : "descending"}, within this page. Observation times in UTC.</TableCaption>
                 <TableHeader><TableRow>{COLUMNS.map((label) => <TableHead scope="col" key={label} aria-sort={sort.column === label ? sort.ascending ? "ascending" : "descending" : "none"}>
-                  <button type="button" className="inline-flex cursor-pointer items-center gap-2 whitespace-nowrap rounded-sm py-2 hover:text-signal focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-signal" onClick={() => setSort(current => ({ column: label, ascending: current.column === label ? !current.ascending : true }))}>
+                  <button type="button" className="inline-flex cursor-pointer items-center gap-2 whitespace-nowrap rounded-sm py-2 hover:text-signal focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-signal" disabled={pending} onClick={() => setSort(current => ({ column: label, ascending: current.column === label ? !current.ascending : true }))}>
                     {label}{sort.column === label ? sort.ascending ? <ArrowUp aria-hidden="true" className="size-3.5 text-signal" /> : <ArrowDown aria-hidden="true" className="size-3.5 text-signal" /> : <ArrowUpDown aria-hidden="true" className="size-3.5" />}
                   </button>
                 </TableHead>)}<TableHead scope="col"><span className="sr-only">Details</span></TableHead></TableRow></TableHeader>
-                <TableBody>{jobs.map((job) => <TableRow key={job.jobId}>
+                <TableBody aria-busy={pending}>{pending ? Array.from({ length: 5 }, (_, row) => <TableRow key={row}><TableCell colSpan={9}><Skeleton className="my-3 h-8 w-full" /><span className="sr-only">Loading jobs…</span></TableCell></TableRow>) : jobs.map((job) => <TableRow key={job.jobId}>
                   <TableHead scope="row"><Link className="font-hash hover:text-signal" href={`/jobs/${networkSlug(chainId)}/${job.jobId}`}><span className="sr-only">Job </span>#{job.jobId}</Link></TableHead>
-                  <TableCell><JobAgentCell resolution={agentResolutions[`${chainId}:${job.jobId}`]} /></TableCell>
+                  <TableCell><JobAgentCell resolution={resolutions[`${chainId}:${job.jobId}`]} /></TableCell>
                   <TableCell><Badge variant="outline" className={`jobs-state jobs-state--${job.status.toLowerCase()}`}>{jobStatusLabel(job.status)}</Badge></TableCell>
                   <TableCell className="whitespace-nowrap">
                     {jobNextStep(job, now).actionable
@@ -173,17 +194,17 @@ export function HireLedgerPage({ chainId, summary, page, activity = null, activi
                   <TableCell><span className={job.marketplace ? "inline-flex items-center gap-2 text-signal" : "text-muted-foreground"}>{job.marketplace && <Database aria-hidden="true" className="size-4" />}{job.marketplace ? "Marketplace" : "Unattributed"}</span></TableCell>
                   <TableCell className="text-muted-foreground"><time dateTime={job.updatedAt}>{DATE.format(new Date(job.updatedAt))} UTC</time></TableCell>
                   <TableCell><Button asChild variant="ghost" size="icon"><Link aria-label={`View job #${job.jobId}`} href={`/jobs/${networkSlug(chainId)}/${job.jobId}`}><ChevronRight aria-hidden="true" /></Link></Button></TableCell>
-                </TableRow>)}{jobs.length === 0 && <TableRow><TableCell colSpan={9} className="h-32 text-center">No matching records on this page. Clear the search or browse older jobs.</TableCell></TableRow>}</TableBody>
+                </TableRow>)}{!pending && jobs.length === 0 && <TableRow><TableCell colSpan={9} className="h-32 text-center">{exactId ? lookup?.state === "missing" ? "No job found on the selected network." : "Job search unavailable. Clear the search and retry." : "No matching records on this page. Clear the search or browse older jobs."}</TableCell></TableRow>}</TableBody>
               </Table>
             </div>}
           </CardContent>
-          {page && <CardFooter className="block">
+          {page && !exactId && <CardFooter className="block">
             <div className="flex flex-wrap items-center justify-between gap-4 border-t border-white/10 pt-6">
               <span className="font-stat text-xs text-zinc-400">{summary ? `${summary.protocol.jobs.toLocaleString("en")} indexed` : "Indexed total unavailable"}</span>
               <nav aria-label="Jobs pagination" className="flex items-center gap-4">
-                {before ? <Button asChild variant="outline"><Link href={previousHref}><ChevronLeft aria-hidden="true" />Previous</Link></Button> : <Button disabled variant="outline"><ChevronLeft aria-hidden="true" />Previous</Button>}
+                {before && !pending ? <Button asChild variant="outline"><Link href={previousHref}><ChevronLeft aria-hidden="true" />Previous</Link></Button> : <Button disabled variant="outline"><ChevronLeft aria-hidden="true" />Previous</Button>}
                 <span className="font-stat text-xs text-zinc-400">Page {pageNumber}</span>
-                {nextHref ? <Button asChild variant="outline"><Link href={nextHref}>Next<ChevronRight aria-hidden="true" /></Link></Button> : <Button disabled variant="outline">Next<ChevronRight aria-hidden="true" /></Button>}
+                {nextHref && !pending ? <Button asChild variant="outline"><Link href={nextHref}>Next<ChevronRight aria-hidden="true" /></Link></Button> : <Button disabled variant="outline">Next<ChevronRight aria-hidden="true" /></Button>}
               </nav>
             </div>
           </CardFooter>}
@@ -197,6 +218,7 @@ export function HireLedgerPage({ chainId, summary, page, activity = null, activi
             <div className="mt-5 flex flex-col gap-3">
               <p>Counts reflect indexed records. Marketplace attribution confirms a recorded hire event, not deliverable quality.</p>
               <p>Historical coverage is not confirmed. Totals cover the configured Commerce contract on this network, and remain network-wide when filtering by provider.</p>
+              <p>The period filters jobs with indexed on-chain events in that UTC window, not their last observation time. Exact ID searches cover all dates. Jobs without dated events are excluded from the period view.</p>
               <p>“Unattributed” means no marketplace attribution is recorded. Last observed is the index observation time, not the transaction time.</p>
               {summary ? <>
                 <p className="font-hash text-xs">{summary.indexedThrough ? `Index cursor ${summary.indexedThrough.blockNumber} · Cursor updated ${DATE.format(new Date(summary.indexedThrough.at))} UTC` : "Indexer not started on this network yet."}</p>

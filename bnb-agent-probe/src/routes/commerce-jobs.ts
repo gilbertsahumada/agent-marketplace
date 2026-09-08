@@ -76,9 +76,9 @@ function publicJob(row: CommerceJobRow & { marketplace: number; registeredAt?: n
   };
 }
 
-export async function commerceJobsListResponse(request: Request, d1: D1Database): Promise<Response> {
+export async function commerceJobsListResponse(request: Request, d1: D1Database, nowMs = Date.now()): Promise<Response> {
   const url = new URL(request.url);
-  const allowed = new Set(["chainId", "buyer", "provider", "agentId", "status", "limit", "before"]);
+  const allowed = new Set(["chainId", "buyer", "provider", "agentId", "status", "limit", "before", "days"]);
   if (!queryKeysAllowed(url, allowed)) return invalidRequest();
   const chainId = chainIdParameter(url.searchParams.get("chainId"));
   if (chainId === null) return invalidRequest();
@@ -88,6 +88,8 @@ export async function commerceJobsListResponse(request: Request, d1: D1Database)
   const status = url.searchParams.get("status");
   const limitRaw = url.searchParams.get("limit");
   const before = url.searchParams.get("before");
+  const daysRaw = url.searchParams.get("days");
+  if (daysRaw !== null && (!/^[1-9]\d?$/.test(daysRaw) || Number(daysRaw) > 90)) return invalidRequest();
   if ([buyer, provider, agentId].filter((value) => value !== null).length > 1) return invalidRequest();
   if ((buyer !== null && !isAddress(buyer)) || (provider !== null && !isAddress(provider))) return invalidRequest();
   if (agentId !== null && !AGENT_ID.test(agentId)) return invalidRequest();
@@ -99,6 +101,16 @@ export async function commerceJobsListResponse(request: Request, d1: D1Database)
 
   const db = createDatabase(d1 as unknown as D1DatabaseLike);
   const conditions = [eq(commerceJobs.chainId, chainId)];
+  // Match the charts' UTC activity window, before pagination. Observation
+  // timestamps are not chain activity; state-only backfills cannot be dated.
+  if (daysRaw !== null) {
+    const from = startOfUtcDay(nowMs) - (Number(daysRaw) - 1) * DAY_MS;
+    // Pin the existing per-job index: the time index would rescan the whole
+    // window for each candidate, especially expensive for state-only backfills.
+    conditions.push(sql`EXISTS (SELECT 1 FROM commerce_job_events e INDEXED BY idx_commerce_job_events_job
+      WHERE e.chainId = commerce_jobs.chainId AND e.jobId = commerce_jobs.jobId
+        AND e.blockTimestamp >= ${from} AND e.blockTimestamp < ${nowMs})`);
+  }
   if (buyer !== null) conditions.push(eq(commerceJobs.client, getAddress(buyer)));
   if (provider !== null) conditions.push(eq(commerceJobs.provider, getAddress(provider)));
   if (agentId !== null) {
@@ -135,7 +147,7 @@ export async function commerceJobsListResponse(request: Request, d1: D1Database)
     firstSeenAt: commerceJobs.firstSeenAt,
     updatedAt: commerceJobs.updatedAt,
     marketplace: marketplaceFlag,
-    registeredAt: sql<number | null>`(SELECT min(e.blockTimestamp) FROM commerce_job_events e WHERE e.chainId = commerce_jobs.chainId AND e.jobId = commerce_jobs.jobId AND e.phase = 'created')`,
+    registeredAt: sql<number | null>`(SELECT min(e.blockTimestamp) FROM commerce_job_events e INDEXED BY idx_commerce_job_events_job WHERE e.chainId = commerce_jobs.chainId AND e.jobId = commerce_jobs.jobId AND e.phase = 'created')`,
   }).from(commerceJobs).where(and(...conditions)).orderBy(desc(commerceJobs.jobId)).limit(limit + 1);
   const page = rows.slice(0, limit);
   const last = page[page.length - 1];

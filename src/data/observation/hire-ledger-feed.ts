@@ -320,6 +320,7 @@ export async function getHireJobs(input: {
   provider?: HireAddress;
   agentId?: string;
   before?: string;
+  days?: number;
   env?: Env;
 }): Promise<HireJobPage | null> {
   const filters = [input.buyer, input.provider, input.agentId].filter((value) => value !== undefined);
@@ -328,6 +329,7 @@ export async function getHireJobs(input: {
   if (input.provider !== undefined && !ADDRESS.test(input.provider)) return null;
   if (input.agentId !== undefined && !AGENT_ID.test(input.agentId)) return null;
   if (input.before !== undefined && !JOB_ID.test(input.before)) return null;
+  if (input.days !== undefined && (!Number.isInteger(input.days) || input.days < 1 || input.days > 90)) return null;
   const url = catalogUrl("/commerce-jobs", input.env ?? process.env);
   if (!url) return null;
   url.searchParams.set("chainId", String(input.chainId));
@@ -336,6 +338,7 @@ export async function getHireJobs(input: {
   if (input.provider !== undefined) url.searchParams.set("provider", queryAddress(input.provider));
   if (input.agentId !== undefined) url.searchParams.set("agentId", input.agentId);
   if (input.before !== undefined) url.searchParams.set("before", input.before);
+  if (input.days !== undefined) url.searchParams.set("days", String(input.days));
   return readOrNull(`commerce-jobs:${url}`, url, (value) => parseHireJobPage(value, input.chainId));
 }
 

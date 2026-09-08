@@ -32,6 +32,7 @@ vi.mock("@/components/marketplace/my-hire-jobs", () => ({
 }));
 
 vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push: vi.fn() }),
   notFound: () => {
     throw new Error("NEXT_NOT_FOUND");
   },
@@ -83,6 +84,15 @@ async function render(searchParams: Record<string, string> = {}): Promise<string
 }
 
 describe("/jobs ledger page", () => {
+  it.each([7, 30, 90])("applies the %s-day window to the table and keeps it in pagination", async days => {
+    ledger.summary.mockResolvedValue(summary());
+    ledger.activity.mockResolvedValue(null);
+    ledger.listRecentJobs.mockResolvedValue({ chainId: 56, jobs: [job("100")], nextBefore: "100" });
+    const result = await JobsPage({ searchParams: Promise.resolve({ days: String(days) }) });
+    expect(ledger.listRecentJobs).toHaveBeenCalledWith({ chainId: 56, days });
+    expect(result.key).toBe(`56:all:newest:${days}`);
+    expect(renderToStaticMarkup(result)).toContain(`href="/jobs?chainId=56&amp;before=100${days === 30 ? "" : `&amp;days=${days}`}"`);
+  });
   beforeEach(() => {
     vi.clearAllMocks();
     ledger.activity.mockResolvedValue(null);
@@ -95,7 +105,7 @@ describe("/jobs ledger page", () => {
     const html = await render();
 
     expect(ledger.summary).toHaveBeenCalledWith({ chainId: 56 });
-    expect(ledger.listRecentJobs).toHaveBeenCalledWith({ chainId: 56 });
+    expect(ledger.listRecentJobs).toHaveBeenCalledWith({ chainId: 56, days: 30 });
     expect(html).toContain("56,697 indexed");
     expect(html).toContain("Index cursor 119000000");
     expect(html).toContain('href="/jobs/mainnet/56696"');
@@ -164,7 +174,7 @@ describe("/jobs ledger page", () => {
 
     const html = await render({ chainId: "97", before: "600" });
 
-    expect(ledger.listRecentJobs).toHaveBeenCalledWith({ chainId: 97, before: "600" });
+    expect(ledger.listRecentJobs).toHaveBeenCalledWith({ chainId: 97, before: "600", days: 30 });
     expect(html).toContain('href="/jobs/testnet/551"');
     expect(html).not.toContain("before #600");
     expect(html).not.toContain('href="/jobs?chainId=97&amp;before=');
@@ -179,7 +189,7 @@ describe("/jobs ledger page", () => {
 
     const html = await render({ before });
 
-    expect(ledger.listRecentJobs).toHaveBeenCalledWith({ chainId: 56 });
+    expect(ledger.listRecentJobs).toHaveBeenCalledWith({ chainId: 56, days: 30 });
     expect(html).not.toContain("Jobs before #");
     expect(html).toContain("Indexed ledger temporarily unavailable");
     expect(html).toContain("Counts temporarily unavailable");
@@ -218,7 +228,7 @@ describe("/jobs ledger page", () => {
 
     const html = await render({ chainId: "56", provider: BUYER, before: "600" });
 
-    expect(ledger.listJobsByProvider).toHaveBeenCalledWith({ chainId: 56, provider: BUYER, before: "600" });
+    expect(ledger.listJobsByProvider).toHaveBeenCalledWith({ chainId: 56, provider: BUYER, before: "600", days: 30 });
     expect(ledger.listRecentJobs).not.toHaveBeenCalled();
     expect(ledger.summary).toHaveBeenCalledWith({ chainId: 56 });
     expect(html).not.toContain("Jobs sold by ");

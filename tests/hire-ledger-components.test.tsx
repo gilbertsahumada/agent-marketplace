@@ -8,6 +8,9 @@ import axe from "axe-core";
 import { AddressLink } from "../components/marketplace/address-link";
 import type { HireActivity, HireJob, HireJobDetail, HireJobEvent, HireLedgerSummary } from "../src/business/entities/hire-job.ts";
 
+const navigation = vi.hoisted(() => ({ push: vi.fn() }));
+vi.mock("next/navigation", () => ({ useRouter: () => navigation }));
+
 const walletState = vi.hoisted(() => ({ address: null as `0x${string}` | null }));
 
 vi.mock("wagmi", async (importOriginal) => {
@@ -246,6 +249,36 @@ describe("AddressLink", () => {
 });
 
 describe("HireLedgerPage", () => {
+  it("blocks period/network/pagination controls and replaces old rows during period navigation", async () => {
+    let finish!: () => void;
+    navigation.push.mockImplementationOnce(() => new Promise<void>(resolve => { finish = resolve; }));
+    render(createElement(HireLedgerPage, { chainId: 56, summary: summary(), page }));
+    const period = screen.getByText("Past 30 days", { selector: "summary" }).closest("details")!;
+    period.open = true;
+    fireEvent.click(within(period).getByRole("link", { name: "Past 7 days" }));
+    expect(navigation.push).toHaveBeenCalledWith("/jobs?chainId=56&days=7", { scroll: false });
+    expect(screen.getByRole("button", { name: "Loading…" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "BSC Testnet" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Next" })).toBeDisabled();
+    expect(screen.getAllByText("Loading jobs…")).toHaveLength(5);
+    expect(screen.queryByRole("link", { name: "Job #56696" })).not.toBeInTheDocument();
+    finish();
+    await waitFor(() => expect(screen.queryByText("Loading…")).not.toBeInTheDocument());
+  });
+
+  it("discards a late ID response after clearing the search", async () => {
+    let finish!: (response: Response) => void;
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+    try {
+      render(createElement(HireLedgerPage, { chainId: 56, summary: null, page }));
+      fireEvent.change(screen.getByRole("textbox"), { target: { value: "1081" } });
+      await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+      fireEvent.click(screen.getByRole("button", { name: "Clear search" }));
+      finish(Response.json(job("1081")));
+      await waitFor(() => expect(screen.getByRole("link", { name: "Job #56696" })).toBeInTheDocument());
+      expect(screen.queryByRole("link", { name: "Job #1081" })).not.toBeInTheDocument();
+    } finally { fetchMock.mockRestore(); }
+  });
   it("links a pending withdrawal to the correct network and removes the action after withdrawal", () => {
     const records = { chainId: 97 as const, jobs: [job("1066", { chainId: 97, expiresAt: "2000-01-01T00:00:00Z" })], nextBefore: null };
     const view = render(createElement(HireLedgerPage, { chainId: 97, summary: null, page: records }));
@@ -255,11 +288,20 @@ describe("HireLedgerPage", () => {
     expect(screen.queryByRole("link", { name: "Withdrawal available" })).not.toBeInTheDocument();
   });
   it("finds an exact Testnet job outside the loaded page", async () => {
-    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(Response.json({ jobId: "1066", chainId: 97 }));
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(Response.json({
+      ...job("1066", { chainId: 97 }),
+      agentResolution: { status: "registered", agents: [{ chainId: 97, registryAddress: SELLER, agentId: "2197", name: "Testnet seller", profileAvailable: false }], evidence: [], coverage: "partial" },
+    }));
     try {
       render(createElement(HireLedgerPage, { chainId: 97, summary: null, page: { ...page, jobs: [] } }));
       fireEvent.change(screen.getByRole("textbox", { name: "Search this page" }), { target: { value: "#1066" } });
-      expect(await screen.findByRole("link", { name: "Open job #1066 · Testnet" })).toHaveAttribute("href", "/jobs/testnet/1066");
+      expect(screen.getAllByText("Loading jobs…")).toHaveLength(5);
+      expect(screen.getByRole("button", { name: "BSC Mainnet" })).toBeDisabled();
+      expect(await screen.findByRole("link", { name: "Job #1066" })).toHaveAttribute("href", "/jobs/testnet/1066");
+      expect(screen.getByText("Testnet seller · #2197")).toBeInTheDocument();
+      expect(screen.getByText("Recorded association")).toBeInTheDocument();
+      expect(screen.queryByText(/Open job #1066/)).not.toBeInTheDocument();
+      expect(screen.queryByRole("navigation", { name: "Jobs pagination" })).not.toBeInTheDocument();
       expect(fetchMock).toHaveBeenCalledWith("/api/marketplace/jobs/testnet/1066/ledger", expect.any(Object));
     } finally { fetchMock.mockRestore(); }
   });
@@ -326,8 +368,7 @@ describe("HireLedgerPage", () => {
     fireEvent.change(search, { target: { value: "#56696" } });
     expect(screen.getByRole("link", { name: "Job #56696" })).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Job #56695" })).not.toBeInTheDocument();
-    expect(screen.getByText(/56,697 indexed/)).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Next" })).toHaveAttribute("href", "/jobs?chainId=56&before=56695");
+    expect(screen.queryByRole("navigation", { name: "Jobs pagination" })).not.toBeInTheDocument();
     fireEvent.change(search, { target: { value: "no-match" } });
     expect(screen.getByText(/No matching records on this page/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Clear search" }));
@@ -337,7 +378,7 @@ describe("HireLedgerPage", () => {
     expect(screen.queryByRole("link", { name: "Job #56695" })).not.toBeInTheDocument();
   });
 
-  it("searches resolved agent names and IDs and links to their profile", () => {
+  it("searches resolved agent names and links to their profile (numeric searches are job IDs)", () => {
     render(createElement(HireLedgerPage, { chainId: 56, summary: summary(), page, agentResolutions: {
       "56:56696": { status: "wallet_match", coverage: "partial", evidence: [], agents: [{
         chainId: 56, registryAddress: "0x8004a169fb4a3325136eb29fa0ceb6d2e539a432",
@@ -345,7 +386,7 @@ describe("HireLedgerPage", () => {
       }] },
     } }));
     const search = screen.getByRole("textbox", { name: "Search this page" });
-    for (const value of ["grid agent", "#303779"]) {
+    for (const value of ["grid agent", "GRID"]) {
       fireEvent.change(search, { target: { value } });
       expect(screen.getByRole("link", { name: "Grid Agent · #303779" })).toHaveAttribute("href", "/agents/303779");
       expect(screen.queryByRole("link", { name: "Job #56695" })).not.toBeInTheDocument();
