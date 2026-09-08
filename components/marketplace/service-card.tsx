@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useState } from "react";
 import { ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -8,6 +9,7 @@ import { Separator } from "@/components/ui/separator";
 import { AgentAvatar } from "./agent-avatar";
 import { agentActionIcon, agentJourneyAction, marketplaceStatus, trust8004AgentHref } from "./agent-card";
 import type { AgentCardViewModel } from "./presentation-types";
+import styles from "./service-cover.module.css";
 
 // Decorative summaries of provider declarations, not verified capabilities or filter categories.
 export function serviceArtwork(agent: AgentCardViewModel) {
@@ -34,11 +36,13 @@ export function ServiceCover({ agent }: { agent: AgentCardViewModel }) {
       <rect width="400" height="245" fill={art.background} />
       <text x="26" y="36" fill={art.color} fontSize="12">Service illustration</text>
       {art.title.split("\n").map((line, index) => <text key={index} x="25" y={72 + index * 36} fill="#f5f5ef" fontSize="31" fontWeight="500">{line}</text>)}
+      <g className={styles.graphic} data-artwork={art.kind}>
       {art.kind === "grid" ? Array.from({ length: 7 }, (_, i) => <g key={i}><path d={`M28 ${125 + i * 13}H372`} stroke={art.color} opacity=".2" /><rect x={40 + i * 44} y={190 - i * 10} width="9" height={16 + i * 3} fill={art.color} /></g>)
         : art.kind === "yield" ? Array.from({ length: 4 }, (_, i) => <rect key={i} x="28" y={130 + i * 22} width={305 - i * 48} height="11" rx="3" fill={art.color} opacity={1 - i * .18} />)
           : art.kind === "monitor" ? <path d="M28 190H85l15-40 24 60 27-80 25 60h42l20-36 21 36h112" fill="none" stroke={art.color} strokeWidth="3" />
             : art.kind === "range" || art.kind === "generic" ? <><rect x="140" y="120" width="130" height="100" fill={art.color} opacity=".12" /><path d="M28 200C90 212 85 138 142 165S205 186 226 142 290 176 370 115" fill="none" stroke={art.color} strokeWidth="3" /></>
               : <g fill="none" stroke={art.color} opacity=".4"><rect x="28" y="125" width="100" height="85" rx="12" /><rect x="150" y="125" width="100" height="85" rx="12" /><path d="M128 168h22m100 0h100" /><circle cx="355" cy="168" r="12" /></g>}
+      </g>
     </svg>
   </div>;
 }
@@ -48,14 +52,19 @@ function IdentityLink({ agent }: { agent: AgentCardViewModel }) {
 }
 
 export function ServiceCard({ agent, registry = false }: { agent: AgentCardViewModel; registry?: boolean }) {
+  const [open, setOpen] = useState(false);
   const status = marketplaceStatus(agent, registry);
   const action = agentJourneyAction(agent);
   const ActionIcon = agentActionIcon(action.label);
   const description = agent.description.trim() || "No service description declared.";
   const count = (value: number | undefined) => typeof value === "number" && Number.isFinite(value) && value >= 0 ? value.toLocaleString("en-US") : "—";
-  return <Dialog>
-    <article className="flex min-w-0 flex-col gap-3" aria-label={`${agent.name} service`}>
-      <DialogTrigger asChild><button type="button" className="rounded-xl text-left focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary" aria-label={`Explore ${agent.name}`}><ServiceCover agent={agent} /></button></DialogTrigger>
+  return <Dialog open={open} onOpenChange={setOpen}>
+    <article className="group flex min-w-0 cursor-pointer flex-col overflow-hidden rounded-xl border border-border bg-card transition-colors duration-300 ease-out hover:border-primary/25 hover:bg-[color-mix(in_srgb,var(--card),white_3%)] focus-within:border-primary/25 focus-within:bg-[color-mix(in_srgb,var(--card),white_3%)] motion-reduce:transition-none [&_button]:cursor-pointer" aria-label={`${agent.name} service`} onClick={event => {
+      if ((event.target as Element).closest("a, button")) return;
+      setOpen(true);
+    }}>
+      <DialogTrigger asChild><button type="button" className="w-full cursor-pointer text-left focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-primary [&>div]:rounded-none [&>div]:border-0" aria-label={`Explore ${agent.name}`}><ServiceCover agent={agent} /></button></DialogTrigger>
+      <div className="flex min-w-0 flex-1 flex-col gap-3 p-4">
       <div className="flex min-w-0 items-center gap-2 text-xs">
         <div className="shrink-0 [&_[data-slot=avatar]]:size-6"><ServiceAvatar agent={agent} /></div>
         <span className="min-w-0 flex-1 truncate" title={agent.name}>{agent.name}</span><IdentityLink agent={agent} />
@@ -64,9 +73,22 @@ export function ServiceCard({ agent, registry = false }: { agent: AgentCardViewM
       <p className="flex items-center gap-1.5 text-xs text-muted-foreground"><status.icon aria-hidden="true" className="size-3.5" />{status.label}</p>
       <Separator />
       <div className="flex items-center justify-between gap-2"><span className="text-xs text-muted-foreground">{agent.quoteRequestAvailable ? "Price after quotation" : "Quote unavailable"}</span><DialogTrigger asChild><Button variant="link">Explore service<ExternalLink aria-hidden="true" data-icon="inline-end" /></Button></DialogTrigger></div>
+      </div>
     </article>
     <DialogContent className="agents-catalog max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-[960px]">
-      <DialogHeader className="pr-8"><DialogTitle className="flex items-center gap-3"><span aria-hidden="true"><ServiceAvatar agent={agent} /></span>{agent.name}</DialogTitle><DialogDescription>Service details · {agent.chainId === 97 ? "BSC Testnet" : "BSC Mainnet"}</DialogDescription><IdentityLink agent={agent} /></DialogHeader>
+      <DialogHeader className="min-w-0 pr-8 text-left">
+        <div className="flex min-w-0 items-start gap-3">
+          <span aria-hidden="true" className="shrink-0 pt-0.5"><ServiceAvatar agent={agent} /></span>
+          <div className="min-w-0 flex-1 space-y-1.5">
+            <DialogTitle className="wrap-anywhere leading-snug">{agent.name}</DialogTitle>
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+              <DialogDescription className="inline-flex items-center gap-1.5 text-xs"><img alt="" width={16} height={16} className="size-4 shrink-0" src="/logo/SVG/BNB Chain_Symbol_Yellow.svg" />{agent.chainId === 97 ? "BSC Testnet" : "BSC Mainnet"}</DialogDescription>
+              <span aria-hidden="true" className="text-muted-foreground">·</span>
+              <a className="inline-flex items-center gap-1 text-primary hover:underline" href={trust8004AgentHref(agent.agentId, agent.chainId)} target="_blank" rel="noopener noreferrer" aria-label={`Identity for agent ${agent.agentId} (opens in a new tab)`}>Identity · #{agent.agentId}<ExternalLink aria-hidden="true" className="size-3" /></a>
+            </div>
+          </div>
+        </div>
+      </DialogHeader>
       <div className="grid min-w-0 gap-6 md:grid-cols-[minmax(0,1fr)_260px]">
         <section className="flex min-w-0 flex-col gap-4" aria-label="Service information">
           <dl aria-label="Agent job history" className="flex gap-8 border-y border-border py-4">
