@@ -794,7 +794,8 @@ describe("marketplace presentation rules", () => {
     expect(screen.getByRole("heading", { name: "Marketplace Grid Planner" })).toBeInTheDocument();
     expect(screen.queryByText("Readiness at a glance")).not.toBeInTheDocument();
     expect(screen.getByText("Identity declared")).toBeInTheDocument();
-    expect(screen.getByText("Job totals unavailable")).toBeInTheDocument();
+    expect(screen.getByText("1 result-verified job")).toBeInTheDocument();
+    expect(screen.queryByText("Job totals unavailable")).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Hire agent" })).not.toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "ERC-8183 job history", hidden: true })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "View job 700" })).toHaveAttribute("href", "/jobs/mainnet/700");

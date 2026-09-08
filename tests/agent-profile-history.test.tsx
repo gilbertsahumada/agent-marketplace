@@ -27,3 +27,15 @@ it("labels wallet activity, uses all-page totals and keeps Testnet navigation sc
   expect(markup).toContain("jobsNetwork=testnet&amp;jobsBefore=7");
   expect(markup.indexOf("Provider wallet jobs")).toBeLessThan(markup.indexOf("Quote history"));
 });
+
+it("shows the result-verified job count instead of 'Agent jobs unverified' when the passport has a proven job", () => {
+  const markup = renderToStaticMarkup(createElement(AgentProfile, {
+    agent: { agentId: "303779", name: "Grid planner", services: [], endpoints: [] } as never,
+    passport: { checks: { quote: { status: "stale" }, hireActivity: { status: "verified" }, job: { status: "verified" } }, trackRecord: { provenJobs: 1 } } as never,
+    hireJobsScope: "wallet", jobsChainId: 56,
+    hireJobsTotals: { total: 7, completed: 1, funded: 1, submitted: 4 },
+    hireJobs: [{ chainId: 56, jobId: "56662", buyer: `0x${"1".repeat(40)}`, provider: `0x${"2".repeat(40)}`, status: "COMPLETED", budgetRaw: "1", expiresAt: "2026-09-02T00:00:00Z", submittedAt: null, marketplace: true, updatedAt: "2026-09-07T00:00:00Z" }],
+  }));
+  expect(markup).toContain("1 result-verified job");
+  expect(markup).not.toContain("Agent jobs unverified");
+});
