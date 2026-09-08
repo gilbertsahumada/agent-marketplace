@@ -112,10 +112,10 @@ export interface HireActivity {
 // failure, timeout, malformed payload, unconfigured origin), so an outage is
 // never reported as a missing job.
 export interface HireLedger {
-  listRecentJobs(input: { chainId: HireChainId; before?: string }): Promise<HireJobPage | null>;
-  listJobsByBuyer(input: { chainId: HireChainId; buyer: HireAddress; before?: string }): Promise<HireJobPage | null>;
-  listJobsByProvider(input: { chainId: HireChainId; provider: HireAddress; before?: string }): Promise<HireJobPage | null>;
-  listJobsByAgent(input: { chainId: HireChainId; agentId: string; before?: string }): Promise<HireJobPage | null>;
+  listRecentJobs(input: { chainId: HireChainId; before?: string; days?: number }): Promise<HireJobPage | null>;
+  listJobsByBuyer(input: { chainId: HireChainId; buyer: HireAddress; before?: string; days?: number }): Promise<HireJobPage | null>;
+  listJobsByProvider(input: { chainId: HireChainId; provider: HireAddress; before?: string; days?: number }): Promise<HireJobPage | null>;
+  listJobsByAgent(input: { chainId: HireChainId; agentId: string; before?: string; days?: number }): Promise<HireJobPage | null>;
   getJob(input: { chainId: HireChainId; jobId: string }): Promise<HireJobDetail | null>;
   summary(input: { chainId: HireChainId }): Promise<HireLedgerSummary | null>;
   // Trailing window of phase events (HIRE_ACTIVITY_DEFAULT_DAYS when `days` is
