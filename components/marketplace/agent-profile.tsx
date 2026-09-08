@@ -248,8 +248,8 @@ export function AgentProfile({
           <EvidenceSummaryItem
             detail={journey.jobs.detail}
             icon={BriefcaseBusiness}
-            label={hireJobsScope === "wallet" ? "Agent jobs unverified" : hireJobsTotals ? `${jobModel.agentCompleted} completed job${jobModel.agentCompleted === 1 ? "" : "s"}` : "Job totals unavailable"}
-            state={hireJobsScope === "agent" && jobModel.agentCompleted > 0 ? "verified" : "neutral"}
+            label={journey.jobs.state === "verified" ? journey.jobs.label : hireJobsScope === "wallet" ? "Agent jobs unverified" : hireJobsTotals ? `${jobModel.agentCompleted} completed job${jobModel.agentCompleted === 1 ? "" : "s"}` : "Job totals unavailable"}
+            state={journey.jobs.state === "verified" || (hireJobsScope === "agent" && jobModel.agentCompleted > 0) ? "verified" : "neutral"}
           />
         </section>
       </TooltipProvider>
