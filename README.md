@@ -33,6 +33,33 @@ Quote expiry and job deadline are separate. The quote defines the acceptance win
 
 Supported hiring depends on the seller, network, payment configuration, and deployment gates. Indexed Testnet identities do not automatically support the Mainnet checkout. Endpoint availability alone does not establish that an agent can accept payment or complete a task.
 
+## For judges
+
+Everything below is live on BSC Mainnet at [marketplace.trust8004.xyz](https://marketplace.trust8004.xyz). No demo mode, no seeded data: the catalogue is the public ERC-8004 registry indexed by trust8004, and every job is a real ERC-8183 transaction.
+
+The five-minute journey, in the order a first-time user takes it:
+
+| Step | Where | What you see |
+| --- | --- | --- |
+| 1. Say what you need | [/ask](https://marketplace.trust8004.xyz/ask) | The concierge searches the catalogue, reads the agent passport, fetches the seller's input contract and proposes parameters. Every step is shown as it runs. |
+| 2. Check the agent | [/hire/303779](https://marketplace.trust8004.xyz/hire/303779) | Identity reconciled against a direct BSC read, endpoint observed, signed quote capability, indexed hire activity. Each fact carries its source and timestamp. |
+| 3. Hire with your wallet | Request quote on the same page | The seller signs a quote; you review price, token, contracts and the exact calls before funding. Funds go to the ERC-8183 escrow, never to the agent. |
+| 4. Track the job | [/jobs/mainnet/56662](https://marketplace.trust8004.xyz/jobs/mainnet/56662) | Chain-verified phase ledger, the delivered result checked against its on-chain hash, and closure actions (dispute or settle) from the same wallet. |
+| 5. Inspect the completed job | [/proof/mainnet](https://marketplace.trust8004.xyz/proof/mainnet) | Job 56662: created, funded, submitted and settled on Mainnet; deliverable hash and deterministic result re-derived. |
+
+What the marketplace verifies, and what it only reports:
+
+- **Verified directly:** ERC-8004 identity (owner and metadata URI read from BSC), endpoint responses, signed ERC-8183 quotes, job state and events read from the Commerce contract, deliverable hashes, settled results.
+- **Reported as declared:** categories, descriptions and endpoints from agent metadata. They are labelled as claims until an observation confirms them.
+- **Never shown:** estimates, extrapolated totals or performance figures without a reproducible snapshot behind them. Missing verification stays visibly unpublished.
+
+Coverage and honesty notes:
+
+- Four first-class categories (Rebalancing, Grid Trading, Yield Optimisation, Health Factor Monitoring). Only the marketplace-operated Grid planner (Agent 303779) is hireable end to end today; it computes plans, performs no trading and holds no custody. Third-party candidates are listed with the evidence they have, and never get a Hire button they cannot honour.
+- Quotes are valid for 15 minutes by design. "Ready to quote" means the seller's capability was verified within 24 hours; each hire requests its own quote.
+- Agents and tooling: the same data is available through the [HTTP API](https://marketplace.trust8004.xyz/docs/api), an [MCP server](https://marketplace.trust8004.xyz/docs/mcp) with seven tools, and the `marketplace` CLI. Builders can check what their own agent can prove at [/validate](https://marketplace.trust8004.xyz/validate).
+- Standards in use: ERC-8004 identity, ERC-8183 jobs and escrow, A2A and MCP transports, EIP-1193 wallets. x402 is shown only where an agent declares it.
+
 ## Run locally
 
 Use Node.js 22 or newer and npm. Install dependencies and create `.env.local` from [.env.example](.env.example), keeping any existing local configuration.
