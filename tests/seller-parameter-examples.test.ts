@@ -2,6 +2,7 @@ import { expect, it } from "vitest";
 import { sellerParameterExample, parameterPlaceholder } from "../components/marketplace/seller-parameter-examples";
 import { normalizeNegotiationContract, validateParameters } from "../src/shared/negotiation-input";
 import { gridSellerAgentCard } from "../src/business/policies/grid-seller-policy";
+import { HOSTED_SELLER_SERVICES, hostedSellerAgentCard } from "../src/business/policies/hosted-seller-catalog";
 
 it("loads the existing Grid fixture with valid numeric types and bounds", () => {
   const card = gridSellerAgentCard("https://seller.example.com");
@@ -14,11 +15,20 @@ it("loads the existing Grid fixture with valid numeric types and bounds", () => 
 });
 
 it("preserves nested published examples including false and zero", () => {
-  const grid = normalizeNegotiationContract(gridSellerAgentCard("https://seller.example.com").capabilities.extensions![0]!.params);
+  // The Grid probe parameters belong to the Grid schema; this custom contract publishes only schema examples.
+  const { capabilityProbeParameters: _gridProbe, ...grid } = normalizeNegotiationContract(gridSellerAgentCard("https://seller.example.com").capabilities.extensions![0]!.params);
   const contract = normalizeNegotiationContract({ ...grid, taskDescriptionPrefix: "CUSTOM_V1:", inputSchema: {
     type: "object", required: ["options"], properties: { options: { type: "object", required: ["enabled", "count"], properties: {
       enabled: { type: "boolean", examples: [false] }, count: { type: "integer", minimum: 0, examples: [-1, 0] },
     } } },
   } });
   expect(sellerParameterExample(contract)).toEqual({ options: { enabled: false, count: 0 } });
+});
+
+it("offers every hosted seller's canonical input as the example", () => {
+  for (const service of HOSTED_SELLER_SERVICES) {
+    const card = hostedSellerAgentCard(service, "https://seller.example.com");
+    const contract = normalizeNegotiationContract(card.capabilities.extensions![0]!.params);
+    expect(sellerParameterExample(contract)).toEqual(service.planner.canonicalInput);
+  }
 });

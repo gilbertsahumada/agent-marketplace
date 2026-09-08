@@ -136,6 +136,10 @@ export function hostedSellerAgentCard(service: HostedSellerService, origin: stri
       params: {
         skill: "negotiate-erc8183-job",
         taskDescriptionPrefix: service.planner.taskPrefix,
+        // The Worker's capability probe requests a signed quote with these
+        // parameters, so the seller stays "ready" without a browser visit.
+        // They are the canonical input, the one a public proof is captured from.
+        capabilityProbeParameters: structuredClone(service.planner.canonicalInput) as Record<string, unknown>,
         inputSchema: service.planner.inputSchema,
         terms: {
           deliverables: service.planner.terms.deliverables,
