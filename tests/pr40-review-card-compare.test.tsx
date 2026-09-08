@@ -5,6 +5,7 @@ import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AgentCard } from "../components/marketplace/agent-card.tsx";
 import { ComparePage } from "../components/marketplace/compare-page.tsx";
+import { hireabilityLabelFor } from "../components/marketplace/view-models.ts";
 import type { EvidenceRecord, MarketplaceAgent } from "../src/business/entities/marketplace-agent.ts";
 
 vi.mock("next/navigation", () => ({
@@ -166,14 +167,39 @@ describe("PR40 review: card badge and compare hireability labels", () => {
   });
 
   // C3 — compare must reflect quote-on-request availability like the card does.
-  it("renders Ready to quote in compare for a seller with a declared A2A endpoint", () => {
+  // A declared endpoint alone means a quote can be requested; "Ready to quote"
+  // is reserved for sellers whose quote capability was verified recently.
+  it("renders Can request quote in compare for a seller with only a declared A2A endpoint", () => {
     const first = marketplaceAgent();
     const second = { ...marketplaceAgent(), agentId: "45381", name: "Aave powered by HeyAnon" };
     second.operator = "marketplace";
     second.services = [{ name: "A2A", endpoint: "https://seller.example", version: null, tools: [], capabilities: [] }];
     renderCompare(first, second);
 
-    expect(screen.getByText("Ready to quote")).toBeInTheDocument();
-    expect(hireabilityCells()[1]).toBe("Ready to quote");
+    expect(screen.queryByText("Ready to quote")).not.toBeInTheDocument();
+    expect(hireabilityCells()).toEqual(["Not evaluated", "Can request quote"]);
+  });
+
+  // C4 — the shared label keeps "Ready to quote" only for verified capability.
+  it("labels a listed-only seller Ready to quote only when its capability is ready", () => {
+    const base = {
+      agentId: "45381",
+      name: "Aave powered by HeyAnon",
+      description: "Agent",
+      operator: "marketplace" as const,
+      categories: ["rebalancing" as const],
+      protocols: ["A2A" as const],
+      href: "/hire/45381",
+      hireability: "listed_only" as const,
+      quoteRequestAvailable: true,
+      evidence,
+      passportState: "registered" as const,
+    };
+
+    expect(hireabilityLabelFor(base)).toBe("Can request quote");
+    expect(hireabilityLabelFor({ ...base, capabilityState: "discovered" })).toBe("Can request quote");
+    expect(hireabilityLabelFor({ ...base, capabilityState: "stale" })).toBe("Can request quote");
+    expect(hireabilityLabelFor({ ...base, capabilityState: "ready" })).toBe("Ready to quote");
+    expect(hireabilityLabelFor({ ...base, quoteRequestAvailable: false })).toBe("Not evaluated");
   });
 });
