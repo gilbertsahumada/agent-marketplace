@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { executeBrowserClosure, type ClosureAction, type ClosureAttempt } from "@/src/business/browser/job-closure";
 import { ERC8183_MAINNET } from "@/src/mainnet/contracts";
 import type { DeliveryReport } from "@/src/mainnet/job-delivery";
-type ClosureSummary = Pick<DeliveryReport, "jobId" | "closure" | "settlementOutcome"> & { refundAvailable?: boolean; buyer?: string };
+type ClosureSummary = Pick<DeliveryReport, "jobId" | "closure" | "settlementOutcome"> & { refundAvailable?: boolean; buyer?: string; reviewEndsAt?: string | null };
 const networks = { mainnet: { chainId: 56, name: "Mainnet", explorerUrl: ERC8183_MAINNET.explorerUrl }, testnet: { chainId: 97, name: "Testnet", explorerUrl: "https://testnet.bscscan.com" } };
 
 export function JobClosureActions({ report, refresh, network = "mainnet" }: { report: ClosureSummary; refresh: () => void; network?: "mainnet" | "testnet" }) {
@@ -45,9 +45,14 @@ function ClosureControls({ report, wallet, getProvider, refresh, network }: { re
   return <fieldset className="space-y-3 border-t border-border pt-4" disabled={busy} aria-busy={busy}>
     <legend className={refund ? "sr-only" : "text-sm font-medium"}>{refund ? "Withdraw deposit" : "Close this job"}</legend>
     {!refund && <p className="text-sm text-muted-foreground">A closure transaction uses gas but does not fund the job again. Settlement applies the policy verdict; it is not a personal quality approval. Only the original buyer can dispute.</p>}
+    {action === "dispute" ? <p className="text-sm">
+      {report.reviewEndsAt
+        ? <>Nothing to do until settlement opens on <time dateTime={report.reviewEndsAt}>{new Date(report.reviewEndsAt).toUTCString()}</time>. Dispute only if the delivery does not match your request.</>
+        : "Nothing to do until the review window ends. Dispute only if the delivery does not match your request."}
+    </p> : null}
     {action ? <>
       <label className="flex items-start gap-2 text-sm"><input type="checkbox" className="mt-1 accent-signal" checked={reviewed} onChange={event => setReviewed(event.target.checked)} />{refund ? "I understand this requests a refund for this expired job and uses gas." : "I reviewed the delivery and understand this on-chain action."}</label>
-      <Button disabled={!reviewed || busy} onClick={() => void run(action, "send")}>{busy ? <LoaderCircle aria-hidden="true" data-icon="inline-start" className="animate-spin" /> : null}{action === "refund" ? "Withdraw deposit" : action === "dispute" ? "Dispute with wallet" : report.settlementOutcome === "rejected" ? "Settle rejection with wallet" : "Settle with wallet"}</Button>
+      <Button variant={action === "dispute" ? "outline" : "default"} disabled={!reviewed || busy} onClick={() => void run(action, "send")}>{busy ? <LoaderCircle aria-hidden="true" data-icon="inline-start" className="animate-spin" /> : null}{action === "refund" ? "Withdraw deposit" : action === "dispute" ? "Dispute with wallet" : report.settlementOutcome === "rejected" ? "Settle rejection with wallet" : "Settle with wallet"}</Button>
     </> : null}
     <details><summary className="cursor-pointer text-sm text-muted-foreground">Previous transactions</summary><div className="mt-3 flex flex-wrap gap-2">
       {network === "testnet" && <button className={button} onClick={() => void run("refund", "resume")}>Check previous refund transaction</button>}
