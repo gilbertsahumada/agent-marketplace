@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import { HIRE_CHAIN_PHASES } from "../../src/db/schema";
 import { createWorker } from "../../src/index";
-import { COMMERCE_ACTIVITY_CACHE_SECONDS, commerceActivityResponse } from "../../src/routes/commerce-jobs";
+import { COMMERCE_ACTIVITY_CACHE_SECONDS, commerceActivityResponse, commerceJobsListResponse } from "../../src/routes/commerce-jobs";
 import type { D1Database, Env } from "../../src/types";
 
 const NOW = 1_788_000_000_000; // 2026-08-29T10:40:00.000Z
@@ -99,6 +99,30 @@ beforeEach(async () => {
 });
 
 describe("commerceActivityResponse", () => {
+  it("filters table jobs by the same UTC event window before pagination, without duplicates or observation-time fallbacks", async () => {
+    await seedJob(56, 1, SELLER);
+    await seedJob(56, 2, SELLER);
+    await seedJob(56, 3, SELLER);
+    await seedJob(56, 4, SELLER); // recent observation, no dated events
+    await seedJob(97, 5, SELLER);
+    const from7 = TODAY - 6 * DAY;
+    await seedEvent(56, 1, "created", from7);
+    await seedEvent(56, 1, "funded", NOW - 1);
+    await seedEvent(56, 2, "created", from7 - 1);
+    await seedEvent(56, 3, "created", NOW); // exclusive upper bound
+    await seedEvent(97, 5, "created", NOW - 1);
+    const list = async (query: string) => (await commerceJobsListResponse(new Request(`https://worker.test/commerce-jobs?${query}`), env.DB as unknown as D1Database, NOW)).json() as Promise<{ jobs: { jobId: string }[]; nextBefore: string | null }>;
+    expect(await list("chainId=56&days=7&limit=1")).toMatchObject({ jobs: [{ jobId: "1" }], nextBefore: null });
+    expect(await list("chainId=56&days=30&limit=1")).toMatchObject({ jobs: [{ jobId: "2" }], nextBefore: "2" });
+    expect(await list("chainId=56&days=30&limit=1&before=2")).toMatchObject({ jobs: [{ jobId: "1" }], nextBefore: null });
+    expect(await list(`chainId=56&days=30&provider=${OTHER}`)).toMatchObject({ jobs: [] });
+    expect(await list("chainId=97&days=7")).toMatchObject({ jobs: [{ jobId: "5" }] });
+  });
+
+  it.each(["0", "91", "7.5", "abc"])("rejects invalid table days %s", async days => {
+    const response = await commerceJobsListResponse(new Request(`https://worker.test/commerce-jobs?chainId=56&days=${days}`), env.DB as unknown as D1Database, NOW);
+    expect(response.status).toBe(400);
+  });
   it("groups phase events per UTC day inside the default 30-day window, ascending, only days with events", async () => {
     await seedLedger();
     const response = await activity("chainId=56");
