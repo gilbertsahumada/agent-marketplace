@@ -139,6 +139,16 @@ export function CatalogPage({
       <AlertTitle>Testnet agent discovery is not configured yet</AlertTitle>
       <AlertDescription>Testnet jobs are indexed separately. They do not establish that a Testnet agent can accept quotes here.</AlertDescription>
     </Alert>
+  ) : !allView && query.scope !== "evaluation" && scopeCounts?.hiring === 0 && (scopeCounts.evaluation ?? 0) > 0 ? (
+    <Alert>
+      <AlertTitle>No agents available to quote on {network === "testnet" ? "BSC Testnet" : "BSC Mainnet"} yet</AlertTitle>
+      <AlertDescription>
+        <span>Agents are listed, but their quote requirements have not been verified for hiring.</span>
+        <Link className="text-primary underline underline-offset-4" href={`/agents?network=${network}&scope=evaluation&view=marketplace&page=1`}>
+          Browse {scopeCounts.evaluation} agents under evaluation
+        </Link>
+      </AlertDescription>
+    </Alert>
   ) : selectedCategories.length === 1 && selectedCategories[0] === "grid_trading" ? (
     <Alert className="border-zinc-800 bg-zinc-950">
       <AlertTitle>No verified Grid Trading agent yet</AlertTitle>
