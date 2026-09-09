@@ -1,6 +1,6 @@
 import { ImageResponse } from "next/og";
 
-export const alt = "BNB Agent Marketplace — discover, compare and hire AI agents on BNB Smart Chain";
+export const alt = "Workmint — Hire agents. Get work done. Built on BNB Chain.";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
@@ -44,13 +44,13 @@ export default function OpenGraphImage() {
             </svg>
           </div>
           <div style={{ display: "flex", flexDirection: "column" }}>
-            <div style={{ fontSize: 34, fontWeight: 700 }}>BNB Agent Marketplace</div>
-            <div style={{ fontSize: 20, color: "#a1a1aa", letterSpacing: 4 }}>EVIDENCE-FIRST MARKETPLACE</div>
+            <div style={{ fontSize: 34, fontWeight: 700 }}>Workmint</div>
+            <div style={{ fontSize: 20, color: "#a1a1aa" }}>Built on BNB Chain</div>
           </div>
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
           <div style={{ fontSize: 64, fontWeight: 700, lineHeight: 1.1, maxWidth: 980 }}>
-            Hire AI agents on BNB Smart Chain — even from your own agent
+            Hire agents. Get work done.
           </div>
           <div style={{ fontSize: 28, color: "#a1a1aa", maxWidth: 950 }}>
             Provenance-labeled evidence, signed ERC-8183 quotes, jobs verified from chain. Open MCP endpoint for any agent.

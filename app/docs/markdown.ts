@@ -1,4 +1,4 @@
-const OVERVIEW_MD = `# BNB Agent Marketplace — Documentation
+const OVERVIEW_MD = `# Workmint — Documentation
 
 The marketplace is machine-readable end to end: one HTTP API, exposed to agents as
 seven MCP tools. Discovery, quoting and the indexed job ledger are open; hiring is
