@@ -29,6 +29,7 @@ import { resolveIdentity } from "../identity.ts";
 import { readBoundedJson } from "../verification/bounded-json.ts";
 import { createSafeEndpointTransport } from "../verification/safe-http.ts";
 import { loadMainnetBrowserDemoConfig } from "./browser-demo-config.ts";
+import { configuredHostedSellerAddresses } from "../shared/hosted-seller-env.ts";
 import { hostedSellerDeliverableUrl, hostedSellerForTask } from "../business/policies/hosted-seller-catalog.ts";
 import { ERC8183_MAINNET } from "./contracts.ts";
 import { mainnetImplementationPinsMatch } from "./implementation-pins.ts";
@@ -160,6 +161,11 @@ export class MainnetErc8183Repository implements Erc8183SpikeRepository {
       policy: deployment.policy,
       token: deployment.token,
       seller: deployment.seller,
+      // Jobs hired from the other marketplace-operated sellers are read live
+      // too, so their pages exist before the indexer sees the transaction.
+      sellers: configuredHostedSellerAddresses(process.env)
+        .filter(({ slug }) => slug !== "grid")
+        .map(({ address }) => getAddress(address)),
     };
   }
 

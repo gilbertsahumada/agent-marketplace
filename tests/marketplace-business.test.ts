@@ -458,6 +458,23 @@ describe("GetErc8183JobStatus", () => {
     expect(undecided.getJob).toHaveBeenCalledWith(9n);
   });
 
+  it("reads a job from any other marketplace-operated seller named in the allowlist", async () => {
+    const OTHER = "0x3230768BD8EC81C1764974CF813a7EBc248CdaFf" as Address;
+    const facts: Erc8183JobFacts = {
+      chainId: 56, jobId: "56756", buyer: ADDRESS, provider: OTHER, evaluator: ADDRESS,
+      policy: ADDRESS, description: "", budgetRaw: "1", deadline: "1", status: "SUBMITTED", submittedAt: "1",
+      deliverableHash: `0x${"1".repeat(64)}`, deliverableUrl: null, result: null,
+      quotedToken: ADDRESS, quotedPriceRaw: "1", quoteExpiresAt: null,
+    };
+    const widened = repository({ allowlist: { ...allowlist, sellers: [OTHER] }, getJob: vi.fn(async () => facts) });
+    await expect(new GetErc8183JobStatus(widened).execute({ jobId: "56756" })).resolves.toEqual(facts);
+    // The list widens fixtures only; the Grid seller and foreign providers keep their outcomes.
+    const grid = repository({ allowlist: { ...allowlist, sellers: [OTHER] }, getJob: vi.fn(async () => ({ ...facts, provider: ADDRESS })) });
+    await expect(new GetErc8183JobStatus(grid).execute({ jobId: "56756" })).resolves.toMatchObject({ provider: ADDRESS });
+    const narrow = repository({ getJob: vi.fn(async () => facts) });
+    await expect(new GetErc8183JobStatus(narrow).execute({ jobId: "56756" })).rejects.toBeInstanceOf(Erc8183DemoJobNotFoundError);
+  });
+
   it("keeps the post-read fixture assertion for a job the chain returns outside the allowlist", async () => {
     const foreign = repository({
       getJob: vi.fn(async (): Promise<Erc8183JobFacts> => ({
