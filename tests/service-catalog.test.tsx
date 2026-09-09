@@ -25,6 +25,11 @@ it("identifies marketplace operators without inferring ownership from the name",
 it("isolates decorative motion from the cover text and background", () => {
   render(createElement(ServiceCard, { agent }));
   const cover = screen.getByTestId("service-cover");
+  // Let the SVG's intrinsic ratio size the cover: a competing aspect ratio
+  // introduces unpainted strips at the card edges.
+  expect(cover).not.toHaveClass("aspect-[1.65]");
+  expect(cover.querySelector("svg")).toHaveClass("block", "h-auto", "w-full");
+  expect(cover.querySelector('g[transform="translate(8 5) scale(0.96)"]')).not.toBeNull();
   const graphic = cover.querySelector('[data-artwork="grid"]');
   expect(graphic).not.toBeNull();
   expect(graphic?.querySelectorAll("rect")).toHaveLength(7);
