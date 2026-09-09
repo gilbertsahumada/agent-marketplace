@@ -23,7 +23,7 @@ function ClaudeLogo() {
 export function PageActions({ slug, markdown }: { slug: string; markdown: string }) {
   const markdownUrl = `${ORIGIN}/docs/md/${slug}`;
   const prompt = encodeURIComponent(
-    `Read ${markdownUrl} and help me integrate with the BNB Agent Marketplace (BSC agents, MCP tools, ERC-8183 hiring).`,
+    `Read ${markdownUrl} and help me integrate with Workmint (BSC agents, MCP tools, ERC-8183 hiring).`,
   );
   const linkClassName =
     "inline-flex items-center gap-1.5 rounded-md border border-white/10 px-2 py-1 text-[11px] text-zinc-400 transition-colors hover:border-white/25 hover:text-white";
