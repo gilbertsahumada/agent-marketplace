@@ -144,6 +144,35 @@ describe("resumable catalog discovery ingest", () => {
       .toEqual({ textValue: `${NOW + 8}:8`, integerValue: null });
   });
 
+  it("writes the curated category and marketplace flag when a marketplace-operated seller is ingested", async () => {
+    const seller = sharedOriginAgent("341563", "https://bnb-agent-marketplace-ruby.vercel.app/rebalance");
+    await enqueueCatalogDiscoveryPage(env.DB as unknown as D1DatabaseLike, [seller], {
+      nowMs: NOW,
+      source: "sweep",
+    });
+    for (const offset of [1, 2]) {
+      await processNextCatalogIngestTask(env.DB as unknown as D1DatabaseLike, {
+        nowMs: NOW + offset,
+        maxDeclarations: 4,
+        fetchAgent: async () => seller,
+      });
+    }
+
+    expect(await env.DB.prepare(`SELECT categoriesJson, marketplaceConfigured, priority
+      FROM catalog_agents WHERE agentKey = 'eip155:56:341563'`).first())
+      .toEqual({ categoriesJson: '["rebalancing"]', marketplaceConfigured: 1, priority: 100 });
+    expect(await env.DB.prepare(`SELECT state, commerceTransport, reasonCode
+      FROM catalog_agent_admission WHERE agentKey = 'eip155:56:341563'`).first())
+      .toEqual({ state: "candidate", commerceTransport: "a2a", reasonCode: "QUOTE_VERIFICATION_REQUIRED" });
+
+    // Same upstream metadata again: nothing to re-ingest.
+    const again = await enqueueCatalogDiscoveryPage(env.DB as unknown as D1DatabaseLike, [seller], {
+      nowMs: NOW + 3,
+      source: "sweep",
+    });
+    expect(again.d1RowsWritten).toBe(0);
+  });
+
   it("does not assign an origin representative to a different declared path", async () => {
     const first = sharedOriginAgent("100", "https://shared.example.com/first");
     await enqueueCatalogDiscoveryPage(env.DB as unknown as D1DatabaseLike, [first], {

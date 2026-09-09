@@ -31,7 +31,7 @@ export function SiteFooter() {
           <Link className="hover:text-foreground" href="/evidence/verification">Methodology</Link>
           <Link className="hover:text-foreground" href="/jobs/testnet/551">Public proof</Link>
           <a
-            aria-label="BNB Agent Marketplace on GitHub"
+            aria-label="Workmint on GitHub"
             className="inline-flex items-center gap-1.5 hover:text-foreground"
             href="https://github.com/gilbertsahumada/bnb-agent-marketplace"
             rel="noreferrer"
@@ -43,7 +43,7 @@ export function SiteFooter() {
       </div>
       {/* The wordmark fades into the bottom edge; decorative, so hidden from
           assistive tech, and the gradient is clipped to the glyphs. */}
-      <div aria-hidden="true" className="site-wordmark">MARKETPLACE</div>
+      <div aria-hidden="true" className="site-wordmark">WORKMINT</div>
     </footer>
   );
 }

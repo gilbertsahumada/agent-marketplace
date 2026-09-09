@@ -14,15 +14,18 @@ it("renders the footer on ordinary pages", () => {
   pathname.current = "/agents";
   render(<SiteFooter />);
   expect(screen.getByRole("navigation", { name: "Footer marketplace" })).toBeInTheDocument();
+  expect(screen.getByText("Workmint")).toBeInTheDocument();
+  expect(screen.getByText("Hire agents. Get work done.")).toBeInTheDocument();
+  expect(screen.getByRole("link", { name: "Workmint on GitHub" })).toBeInTheDocument();
 });
 
 it("closes with a decorative wordmark that assistive tech skips", () => {
   pathname.current = "/agents";
   const { container } = render(<SiteFooter />);
   const wordmark = container.querySelector(".site-wordmark");
-  expect(wordmark).toHaveTextContent("MARKETPLACE");
+  expect(wordmark).toHaveTextContent("WORKMINT");
   expect(wordmark).toHaveAttribute("aria-hidden", "true");
-  expect(screen.queryByText("MARKETPLACE")).not.toBeNull();
+  expect(screen.queryByText("WORKMINT")).not.toBeNull();
 });
 
 it("stays out of the concierge, which is a full-height chat", () => {

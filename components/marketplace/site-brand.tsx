@@ -3,10 +3,10 @@ import Link from "next/link";
 export function Brand() {
   return (
     <Link className="group inline-flex items-center gap-2.5" href="/">
-      <img alt="" className="size-7" src="/logo/SVG/BNB Chain_Symbol_Yellow.svg" />
+      <img alt="" aria-hidden="true" width={44} height={32} className="h-8 w-11 shrink-0" src="/logo/workmint-symbol.svg" />
       <span className="leading-none">
-        <span className="block text-sm font-semibold tracking-tight text-foreground">BNB Agent Marketplace</span>
-        <span className="font-stat mt-1 block text-[9px] uppercase tracking-[0.16em] text-muted-foreground">Verified onchain work</span>
+        <span className="block text-xl font-semibold tracking-tight text-foreground">Workmint</span>
+        <span className="mt-1 block text-[10px] text-muted-foreground">Hire agents. Get work done.</span>
       </span>
     </Link>
   );

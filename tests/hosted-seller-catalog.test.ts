@@ -57,6 +57,9 @@ describe("hosted seller catalog", () => {
       expect(contract).not.toBeNull();
       expect(contract!.taskDescriptionPrefix).toBe(service.planner.taskPrefix);
       expect(validateParameters(contract!.inputSchema, service.planner.canonicalInput)).toBe(true);
+      // The Worker's capability probe quotes with the canonical input, so every
+      // seller keeps a fresh signed quote without a browser visit.
+      expect(contract!.capabilityProbeParameters).toEqual(service.planner.canonicalInput);
       expect(card.url).toBe(hostedSellerMessageUrl(ORIGIN, service.slug));
       expect(card.skills.map(({ id }) => id)).toEqual(["negotiate-erc8183-job", "negotiate", "notify_funded"]);
       expect(JSON.stringify(card)).not.toMatch(BANNED);

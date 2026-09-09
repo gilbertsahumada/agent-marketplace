@@ -14,6 +14,7 @@ import {
 } from "./db/query-budget";
 import { recordSchedulerAttempt } from "./db/scheduler-attempt-ledger";
 import type { CatalogDiscoverySummary } from "./phases/catalog-ingest";
+import type { CuratedReconcileSummary } from "./phases/curated-reconcile";
 import type {
   HeaderAgent,
 } from "./phases/header";
@@ -614,6 +615,18 @@ async function executeCatalogV2Phase(
   const probeQueryReserve = input.phase === "probe" && input.config.catalogProbeEnabled
     ? 1 + (4 * input.config.catalogProbeBatchSize)
     : 0;
+  let curatedReconcile: CuratedReconcileSummary | null = null;
+  if (input.phase === "header" && input.env.CATALOG_CURATED_RECONCILE_ENABLED === "1") {
+    const { reconcileCuratedInventory } = await import("./phases/curated-reconcile");
+    curatedReconcile = await reconcileCuratedInventory({
+      db: input.db,
+      nowMs: input.nowMs,
+      maxAgents: Math.min(4, pageSize),
+      remainingQueries: input.queryBudget.remaining,
+      getAgent: (agentId) => catalog.getAgent(agentId),
+    });
+    if (curatedReconcile !== null) input.logger.info("catalog.curated.reconcile", curatedReconcile);
+  }
   const testnetDiscovery = await enqueueTestnetDiscovery({
     env: input.env,
     phase: input.phase,
@@ -685,6 +698,7 @@ async function executeCatalogV2Phase(
     headerSaturated,
     ingest: ingestSummaries,
     ingestBudgetDeferred: ingestTaskLimit < input.config.catalogIngestTasksPerRun,
+    curatedReconcile,
     probe: probeSummary,
     wallTimeMs: Math.max(0, finishedAt - input.startedAtMs),
   };

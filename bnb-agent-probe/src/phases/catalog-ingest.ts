@@ -82,6 +82,11 @@ function categories(agentId: string, chainId: CatalogChainId): string[] {
     ?.categories.map(({ category }) => category) ?? [];
 }
 
+function marketplaceConfigured(agentId: string, chainId: CatalogChainId): 0 | 1 {
+  return chainId === 56
+    && CURATED_INVENTORY.entries.find((entry) => entry.agentId === agentId)?.operator === "marketplace" ? 1 : 0;
+}
+
 async function preparedAgent(agent: CatalogAgent) {
   const resources = await Promise.all((agent.indexEndpoints ?? []).map(normalizeCatalogResource));
   const uniqueResources = [...new Map(resources.map((resource) => [resource.endpointKey, resource])).values()];
@@ -136,7 +141,7 @@ export async function enqueueCatalogDiscoveryPage(
       description: agent.description,
       imageUrl: agent.imageUrl,
       categoriesJson: JSON.stringify(categories(agent.agentId, agent.chainId)),
-      marketplaceConfigured: 0,
+      marketplaceConfigured: marketplaceConfigured(agent.agentId, agent.chainId),
       metadataState: agent.metadataAvailable ? "ok" : "other",
       indexState: "current",
       registeredAt: agent.registeredAt,
@@ -179,6 +184,7 @@ export async function enqueueCatalogDiscoveryPage(
         blockNumber: sql.raw("excluded.blockNumber"),
         name: sql.raw("excluded.name"), description: sql.raw("excluded.description"),
         imageUrl: sql.raw("excluded.imageUrl"), categoriesJson: sql.raw("excluded.categoriesJson"),
+        marketplaceConfigured: sql.raw("excluded.marketplaceConfigured"),
         metadataState: sql.raw("excluded.metadataState"), indexState: "current",
         registeredAt: sql.raw("excluded.registeredAt"), lastSeenAt: sql.raw("excluded.lastSeenAt"),
         priority: sql.raw("excluded.priority"), metadataVersion: sql.raw("excluded.metadataVersion"),
@@ -512,7 +518,7 @@ export async function processNextCatalogIngestTask(
       description: agent.description,
       imageUrl: agent.imageUrl,
       categoriesJson: JSON.stringify(categories(agentId, chainId)),
-      marketplaceConfigured: 0,
+      marketplaceConfigured: marketplaceConfigured(agentId, chainId),
       metadataState: agent.metadataAvailable ? "ok" : "other",
       indexState: "current",
       registeredAt: agent.registeredAt,
@@ -527,7 +533,8 @@ export async function processNextCatalogIngestTask(
       set: {
         owner: agent.owner, metadataUri: agent.metadataUri, blockNumber: agent.blockNumber,
         name: agent.name, description: agent.description, imageUrl: agent.imageUrl,
-        categoriesJson: JSON.stringify(categories(agentId, chainId)), metadataState: agent.metadataAvailable ? "ok" : "other",
+        categoriesJson: JSON.stringify(categories(agentId, chainId)),
+        marketplaceConfigured: marketplaceConfigured(agentId, chainId), metadataState: agent.metadataAvailable ? "ok" : "other",
         indexState: "current", registeredAt: agent.registeredAt, lastSeenAt: input.nowMs,
         priority: current.priority, metadataVersion: current.metadataVersion,
         metadataObservedAt: agent.metadataUpdatedAt ?? input.nowMs, policyVersion: 2,
