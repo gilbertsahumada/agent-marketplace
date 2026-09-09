@@ -1054,8 +1054,39 @@ body {
 
 /* Landing: request-first home. The technical detail lives one click deeper,
    so these blocks only carry plain-language copy and the ASCII texture. */
+.home-landing {
+  --primary: var(--signal);
+  --ring: var(--signal);
+}
+
+@keyframes home-arrive {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .home-landing [data-reveal-pending] { opacity: 0; }
+  .home-landing [data-reveal-pending]:focus-within { opacity: 1; }
+  .home-hero > div > * {
+    animation: home-arrive 650ms cubic-bezier(0.2, 0.7, 0.2, 1) backwards;
+  }
+  .home-hero > div > :nth-child(2) { animation-delay: 80ms; }
+  .home-hero > div > :nth-child(3) { animation-delay: 150ms; }
+  .home-hero > div > :nth-child(4) { animation-delay: 220ms; }
+  .home-hero > div > :nth-child(n+5) { animation-delay: 300ms; }
+  .home-landing [data-slot="button"] {
+    transition: background-color 200ms ease, transform 200ms ease;
+  }
+  .home-landing [data-slot="button"]:hover { transform: translateY(-2px); }
+  .home-landing [data-slot="button"]:active { transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .home-landing .home-clouds { animation: none; }
+}
+
 .home-hero {
-  background: radial-gradient(760px 380px at 50% -12%, rgb(240 185 11 / 16%), transparent 62%);
+  background: radial-gradient(760px 380px at 50% -12%, rgb(255 233 0 / 16%), transparent 62%);
 }
 
 .home-clouds {
@@ -1084,13 +1115,13 @@ body {
   border-radius: 18px;
   background: var(--card);
   padding: 1rem 1rem 0.75rem;
-  box-shadow: 0 0 0 1px rgb(240 185 11 / 14%), 0 40px 80px -50px rgb(240 185 11 / 45%);
+  box-shadow: 0 0 0 1px rgb(255 233 0 / 14%), 0 40px 80px -50px rgb(255 233 0 / 45%);
   transition: border-color 200ms, box-shadow 200ms;
 }
 
 .home-ask:focus-within {
-  border-color: rgb(240 185 11 / 60%);
-  box-shadow: 0 0 0 1px rgb(240 185 11 / 35%), 0 40px 80px -50px rgb(240 185 11 / 55%);
+  border-color: rgb(255 233 0 / 60%);
+  box-shadow: 0 0 0 1px rgb(255 233 0 / 35%), 0 40px 80px -50px rgb(255 233 0 / 55%);
 }
 
 .home-ask__input {
