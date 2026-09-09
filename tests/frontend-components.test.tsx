@@ -985,6 +985,18 @@ describe("marketplace presentation rules", () => {
     expect(screen.queryByText(/0 reported/)).not.toBeInTheDocument();
   });
 
+  it("links empty Testnet hiring inventory to evaluation without calling those agents available", () => {
+    const page: MarketplaceAgentPage = {
+      view: "marketplace", items: [],
+      pagination: { page: 1, pageSize: 24, total: 0, totalPages: 0 },
+      categories: [], catalogCoverage: "partial", fetchedAt: "2026-08-17T00:00:00.000Z",
+    };
+    render(createElement(CatalogPage, { data: page, scopeCounts: { hiring: 0, evaluation: 66 }, query: { view: "marketplace", network: "testnet", scope: "hiring" } }));
+    expect(screen.getByText("No agents available to quote on BSC Testnet yet")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Browse 66 agents under evaluation" })).toHaveAttribute("href", "/agents?network=testnet&scope=evaluation&view=marketplace&page=1");
+    expect(screen.queryByText("66 agents available to quote")).not.toBeInTheDocument();
+  });
+
   it("renders a recoverable catalogue outage without fabricating fallback rows", () => {
     render(createElement(CatalogUnavailable, { retryHref: "/agents?view=all&page=2" }));
     expect(screen.getByText("Live catalogue temporarily unavailable")).toBeInTheDocument();

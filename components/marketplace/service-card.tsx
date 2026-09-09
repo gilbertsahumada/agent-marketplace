@@ -31,9 +31,10 @@ function ServiceAvatar({ agent }: { agent: AgentCardViewModel }) {
 
 export function ServiceCover({ agent, showOperator = false }: { agent: AgentCardViewModel; showOperator?: boolean }) {
   const art = serviceArtwork(agent);
-  return <div className="relative aspect-[1.65] w-full overflow-hidden rounded-xl border border-border" data-testid="service-cover">
-    <svg aria-hidden="true" viewBox="0 0 400 245" className="size-full">
+  return <div className="relative w-full overflow-hidden rounded-xl border border-border" data-testid="service-cover">
+    <svg aria-hidden="true" viewBox="0 0 400 245" className="block h-auto w-full">
       <rect width="400" height="245" fill={art.background} />
+      <g transform="translate(8 5) scale(0.96)">
       <text x="26" y="36" fill={art.color} fontSize="12">Service illustration</text>
       {art.title.split("\n").map((line, index) => <text key={index} x="25" y={72 + index * 36} fill="#f5f5ef" fontSize="31" fontWeight="500">{line}</text>)}
       <g className={styles.graphic} data-artwork={art.kind}>
@@ -42,6 +43,7 @@ export function ServiceCover({ agent, showOperator = false }: { agent: AgentCard
           : art.kind === "monitor" ? <path d="M28 190H85l15-40 24 60 27-80 25 60h42l20-36 21 36h112" fill="none" stroke={art.color} strokeWidth="3" />
             : art.kind === "range" || art.kind === "generic" ? <><rect x="140" y="120" width="130" height="100" fill={art.color} opacity=".12" /><path d="M28 200C90 212 85 138 142 165S205 186 226 142 290 176 370 115" fill="none" stroke={art.color} strokeWidth="3" /></>
               : <g fill="none" stroke={art.color} opacity=".4"><rect x="28" y="125" width="100" height="85" rx="12" /><rect x="150" y="125" width="100" height="85" rx="12" /><path d="M128 168h22m100 0h100" /><circle cx="355" cy="168" r="12" /></g>}
+      </g>
       </g>
     </svg>
     {showOperator && agent.operator === "marketplace" && <span className="pointer-events-none absolute top-9 -right-12 w-52 rotate-45 bg-primary py-1.5 text-center text-[10px] font-semibold leading-4 text-primary-foreground shadow-sm">Marketplace operated</span>}
@@ -73,7 +75,8 @@ export function ServiceCard({ agent, registry = false }: { agent: AgentCardViewM
       <DialogTrigger asChild><button type="button" className="h-[4.5em] line-clamp-3 text-left text-base leading-normal font-medium wrap-anywhere hover:text-primary focus-visible:outline-2 focus-visible:outline-primary">{description}</button></DialogTrigger>
       <p className="flex items-center gap-1.5 text-xs text-muted-foreground"><status.icon aria-hidden="true" className="size-3.5" />{status.label}</p>
       <Separator />
-      <div className="flex items-center justify-between gap-2"><span className="text-xs text-muted-foreground">{agent.quoteRequestAvailable ? "Price after quotation" : "Quote unavailable"}</span><DialogTrigger asChild><Button variant="link">Explore service<ExternalLink aria-hidden="true" data-icon="inline-end" /></Button></DialogTrigger></div>
+      <div className="flex flex-wrap items-center justify-between gap-2"><span className="text-xs text-muted-foreground">{agent.quoteRequestAvailable ? "Price after quotation" : "Quote unavailable"}</span><DialogTrigger asChild><Button variant="link">Explore service<ExternalLink aria-hidden="true" data-icon="inline-end" /></Button></DialogTrigger></div>
+      <Link className="w-fit text-xs text-muted-foreground underline underline-offset-4 hover:text-primary" href={`/compare?network=${agent.chainId === 97 ? "testnet" : "mainnet"}&agentId=${agent.agentId}`}>Compare this service</Link>
       </div>
     </article>
     <DialogContent className="agents-catalog max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-[960px]">

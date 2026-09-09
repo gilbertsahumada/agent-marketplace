@@ -3,6 +3,7 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import type { ReactNode } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { paginationSummary } from "./pagination-summary";
 
 export function Breadcrumb({ trail, current }: { trail: { href: string; label: string }[]; current: string }) {
   return (
@@ -39,15 +40,13 @@ export function CoverageBadge({ total, scope = "marketplace" }: { total?: number
   );
 }
 
-export function PaginationLinks({ page, totalPages, hrefFor, total, pageSize, shown }: { page: number; totalPages: number; hrefFor: (page: number) => string; total: number; pageSize: number; shown: number }) {
-  const start = shown > 0 ? (page - 1) * pageSize + 1 : 0;
-  const end = shown > 0 ? Math.min(total, start + shown - 1) : 0;
+export function PaginationLinks({ page, totalPages, hrefFor, total, shown }: { page: number; totalPages: number; hrefFor: (page: number) => string; total: number; pageSize: number; shown: number }) {
   return (
-    <nav aria-label="Catalog pagination" className="mt-8 flex items-center justify-between gap-4 border-t border-white/10 pt-6">
+    <nav aria-label="Catalog pagination" className="mt-8 grid grid-cols-[1fr_auto_1fr] items-center gap-2 border-t border-white/10 pt-6 [&>a:first-child]:justify-self-start [&>button:first-child]:justify-self-start [&>a:last-child]:justify-self-end [&>button:last-child]:justify-self-end">
       {page > 1
         ? <Button asChild variant="outline"><Link href={hrefFor(page - 1)}><ChevronLeft aria-hidden="true" />Previous</Link></Button>
         : <Button disabled variant="outline"><ChevronLeft aria-hidden="true" />Previous</Button>}
-      <span role="status" className="font-stat flex-1 text-center text-xs text-zinc-400">Showing {start.toLocaleString("en")}–{end.toLocaleString("en")} of {total.toLocaleString("en")}</span>
+      <span role="status" className="font-stat max-w-32 text-center text-xs text-muted-foreground sm:max-w-none">{paginationSummary(shown, total)}</span>
       {page < totalPages
         ? <Button asChild variant="outline"><Link href={hrefFor(page + 1)}>Next<ChevronRight aria-hidden="true" /></Link></Button>
         : <Button disabled variant="outline">Next<ChevronRight aria-hidden="true" /></Button>}

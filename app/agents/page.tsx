@@ -71,8 +71,8 @@ export default async function AgentsPage({ searchParams }: { searchParams: Promi
       limit: 1,
       sort: DEFAULT_REGISTERED_AGENT_SORT,
     }).catch(() => null),
-    getCatalogCandidatePage({ chainId, scope: "hiring", page: 1, limit: 1, ...(fresh ? { fresh } : {}) }).catch(() => null),
-    getCatalogCandidatePage({ chainId, scope: "evaluation", page: 1, limit: 1, ...(fresh ? { fresh } : {}) }).catch(() => null),
+    getCatalogCandidatePage({ chainId, scope: "hiring", statuses: [], page: 1, limit: 1, ...(fresh ? { fresh } : {}) }).catch(() => null),
+    getCatalogCandidatePage({ chainId, scope: "evaluation", statuses: [], page: 1, limit: 1, ...(fresh ? { fresh } : {}) }).catch(() => null),
   ]);
   const catalog = view === "marketplace" || chainId === 97 ? await getCatalogCandidatePage({
     chainId, ...(view === "all" ? { inventory: "registry" as const } : { scope }), statuses, categories, protocols, reachability, page, limit: 24, includeFacets: true, ...optional, ...(fresh ? { fresh } : {}),

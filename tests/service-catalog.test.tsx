@@ -3,12 +3,25 @@ import "@testing-library/jest-dom/vitest";
 import { createElement } from "react";
 import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import { ServiceCard, serviceArtwork } from "../components/marketplace/service-card";
-import { serviceFilterHref, serviceFacetCount } from "../components/marketplace/service-catalog-controls";
+import { ServiceCatalogSidebar, serviceFilterHref, serviceFacetCount } from "../components/marketplace/service-catalog-controls";
 import type { AgentCardViewModel } from "../components/marketplace/presentation-types";
 
 afterEach(cleanup);
+
+vi.mock("../components/marketplace/catalog-navigation", () => ({
+  useCatalogNavigation: () => ({ pending: false, navigate: vi.fn() }),
+}));
+
+it("keeps filter explanations in keyboard-accessible help tooltips", async () => {
+  render(createElement(ServiceCatalogSidebar, { href: "/agents?network=testnet&scope=evaluation", scopeCounts: { hiring: 0, evaluation: 66 } }));
+  expect(screen.queryByText(/Under evaluation: checks/)).not.toBeInTheDocument();
+  const help = screen.getByRole("button", { name: "About Browse agents" });
+  help.focus();
+  expect(await screen.findByRole("tooltip")).toHaveTextContent("Under evaluation: checks are incomplete");
+  expect(screen.getByRole("button", { name: "About Availability" })).toBeInTheDocument();
+});
 
 it("identifies marketplace operators without inferring ownership from the name", async () => {
   const view = render(createElement(ServiceCard, { agent }));
@@ -25,6 +38,11 @@ it("identifies marketplace operators without inferring ownership from the name",
 it("isolates decorative motion from the cover text and background", () => {
   render(createElement(ServiceCard, { agent }));
   const cover = screen.getByTestId("service-cover");
+  // Let the SVG's intrinsic ratio size the cover: a competing aspect ratio
+  // introduces unpainted strips at the card edges.
+  expect(cover).not.toHaveClass("aspect-[1.65]");
+  expect(cover.querySelector("svg")).toHaveClass("block", "h-auto", "w-full");
+  expect(cover.querySelector('g[transform="translate(8 5) scale(0.96)"]')).not.toBeNull();
   const graphic = cover.querySelector('[data-artwork="grid"]');
   expect(graphic).not.toBeNull();
   expect(graphic?.querySelectorAll("rect")).toHaveLength(7);
