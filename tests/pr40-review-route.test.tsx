@@ -69,6 +69,20 @@ describe("agents page category handling", () => {
     expect(catalogDataCalls()[0]).toMatchObject({ statuses: [] });
   });
 
+  it("counts both scopes without silently filtering them to requestable agents", async () => {
+    catalogCandidatePage.mockImplementation(async (input) => ({
+      items: [], total: input.scope === "evaluation" ? 66 : 0,
+    }));
+    const el = await renderPage({ network: "testnet", scope: "evaluation" });
+    const metrics = catalogCandidatePage.mock.calls.map(call => call[0]).filter(input => input.limit === 1);
+    expect(metrics).toHaveLength(2);
+    expect(metrics).toEqual(expect.arrayContaining([
+      expect.objectContaining({ chainId: 97, scope: "hiring", statuses: [] }),
+      expect.objectContaining({ chainId: 97, scope: "evaluation", statuses: [] }),
+    ]));
+    expect(el.props.scopeCounts).toEqual({ hiring: 0, evaluation: 66 });
+  });
+
   function queryCategories(query: Record<string, unknown>): string[] {
     if (Array.isArray(query.categories)) return query.categories as string[];
     return typeof query.category === "string" ? [query.category] : [];

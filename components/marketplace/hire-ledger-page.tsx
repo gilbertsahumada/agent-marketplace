@@ -4,6 +4,7 @@ import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { NetworkSelector } from "./network-selector";
+import { paginationSummary } from "./pagination-summary";
 import { ArrowDown, ArrowUp, ArrowUpDown, ChevronDown, ChevronLeft, ChevronRight, Database, ListChecks, Search, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -200,9 +201,9 @@ export function HireLedgerPage({ chainId, summary, page, activity = null, activi
           </CardContent>
           {page && !exactId && <CardFooter className="block">
             <div className="flex flex-wrap items-center justify-between gap-4 border-t border-white/10 pt-6">
-              <nav aria-label="Jobs pagination" className="flex w-full items-center justify-between gap-4">
+              <nav aria-label="Jobs pagination" className="grid w-full grid-cols-[1fr_auto_1fr] items-center gap-2 [&>a:first-child]:justify-self-start [&>button:first-child]:justify-self-start [&>a:last-child]:justify-self-end [&>button:last-child]:justify-self-end">
                 {before && !pending ? <Button asChild variant="outline"><Link href={previousHref}><ChevronLeft aria-hidden="true" />Previous</Link></Button> : <Button disabled variant="outline"><ChevronLeft aria-hidden="true" />Previous</Button>}
-                <span aria-live="polite" className="font-stat flex-1 text-center text-xs text-zinc-400">{pending ? "Updating results…" : `Showing ${jobs.length.toLocaleString("en")} of ${query ? page.jobs.length.toLocaleString("en") : page.totals ? page.totals.total.toLocaleString("en") : "—"}`}{query ? " on this page" : ""}<span className="mt-1 block">Page {pageNumber}</span></span>
+                <span aria-live="polite" className="font-stat max-w-32 text-center text-xs text-muted-foreground sm:max-w-none">{pending ? "Updating results…" : paginationSummary(jobs.length, query ? page.jobs.length : page.totals?.total)}{query ? " on this page" : ""}<span className="mt-1 block">Page {pageNumber}</span></span>
                 {nextHref && !pending ? <Button asChild variant="outline"><Link href={nextHref}>Next<ChevronRight aria-hidden="true" /></Link></Button> : <Button disabled variant="outline">Next<ChevronRight aria-hidden="true" /></Button>}
               </nav>
             </div>
