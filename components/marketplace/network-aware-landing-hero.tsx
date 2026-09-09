@@ -141,7 +141,7 @@ export function NetworkAwareLandingHero({ mainnet, testnet, ledgerPulse = null }
       <AsciiClouds />
       <div className="mx-auto grid max-w-[1480px] gap-12 px-5 py-16 sm:px-8 sm:py-20 lg:grid-cols-[0.94fr_1.06fr] lg:items-center lg:px-12 lg:py-28">
         <div className="relative">
-          <p className="hero-kicker hero-enter font-eyebrow text-signal" style={{ "--enter": 0 } as CSSProperties}>BNB Agent Marketplace</p>
+          <p className="hero-kicker hero-enter font-eyebrow text-signal" style={{ "--enter": 0 } as CSSProperties}>Workmint</p>
           <h1 className="hero-enter mt-5 max-w-3xl text-[clamp(3rem,4vw,5rem)] font-bold leading-[0.96] tracking-[-0.05em] text-foreground" style={{ "--enter": 1 } as CSSProperties}>
             Find the agent.<br />Verify the work.
           </h1>
