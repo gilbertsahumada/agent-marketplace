@@ -1,112 +1,11 @@
 "use client";
 
 import { useMemo, type ReactNode } from "react";
-import Link from "next/link";
-import { ExternalLink, LayoutGrid, List, LockKeyhole } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { cn } from "@/lib/utils";
-import { AgentAvatar } from "./agent-avatar";
-import { AgentCard, agentActionIcon, agentJourneyAction, marketplaceStatus, trust8004AgentHref } from "./agent-card";
-import { EvidenceRail } from "./evidence-rail";
-import type { AgentCardViewModel, MarketplaceCategory } from "./presentation-types";
+import { AgentCard } from "./agent-card";
+import type { AgentCardViewModel } from "./presentation-types";
 import { CatalogResultsSkeleton } from "./catalog-loading";
 import { ServiceCard } from "./service-card";
 import { useCatalogNavigation } from "./catalog-navigation";
-
-const categoryLabels: Record<MarketplaceCategory, string> = {
-  rebalancing: "Rebalancing",
-  grid_trading: "Grid trading",
-  yield_optimisation: "Yield optimisation",
-  health_factor_monitoring: "Health factor monitoring",
-};
-
-function outcomeLabel(agent: AgentCardViewModel) {
-  return agent.categories.map((category) => categoryLabels[category]).join(" + ") || "Not classified";
-}
-
-function AgentComparisonTable({ agents, registry }: { agents: AgentCardViewModel[]; registry: boolean }) {
-  return (
-    <div className="marketplace-surface overflow-hidden rounded-xl border border-white/10">
-      <Table aria-label="Agent comparison" containerLabel="Scrollable agent comparison">
-        <TableHeader>
-          <TableRow className="bg-white/[0.02] hover:bg-white/[0.02]">
-            <TableHead className="h-10 min-w-56 px-4 text-xs font-medium text-zinc-400">Agent</TableHead>
-            <TableHead className="h-10 min-w-36 text-xs font-medium text-zinc-400">Outcome</TableHead>
-            <TableHead className="h-10 min-w-40 text-xs font-medium text-zinc-400">Hiring status</TableHead>
-            <TableHead className="h-10 min-w-80 text-xs font-medium text-zinc-400">Evidence</TableHead>
-            <TableHead className="h-10 min-w-24 text-xs font-medium text-zinc-400">Trust</TableHead>
-            <TableHead className="h-10 min-w-32 px-4 text-right text-xs font-medium text-zinc-400">Action</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {agents.map((agent) => {
-            const status = marketplaceStatus(agent, registry);
-            const canRequestQuote = agent.quoteRequestAvailable === true;
-            const action = agentJourneyAction(agent);
-            const ActionIcon = agentActionIcon(action.label);
-            return (
-              <TableRow className={cn(canRequestQuote && "bg-primary/[0.02]")} key={agent.agentId}>
-                <TableCell className="px-4 py-4">
-                  <div className="flex items-center gap-3">
-                    <div className="shrink-0 [&_[data-slot=avatar]]:size-9">
-                      <AgentAvatar {...(agent.imageUrl ? { imageUrl: agent.imageUrl } : {})} name={agent.name} />
-                    </div>
-                    <div className="min-w-0">
-                      <p className="max-w-48 truncate text-sm font-medium text-white">
-                        <Link className="hover:text-primary" href={`/hire/${agent.agentId}?network=${agent.chainId === 97 ? "testnet" : "mainnet"}`} prefetch={false}>{agent.name}</Link>
-                      </p>
-                      <a
-                        aria-label={`View ${agent.name} on trust8004 (opens in a new tab)`}
-                        className="mt-1 inline-flex items-center gap-1 text-[11px] text-zinc-500 hover:text-white"
-                        href={trust8004AgentHref(agent.agentId, agent.chainId)}
-                        rel="noopener noreferrer"
-                        target="_blank"
-                      >
-                        Agent #{agent.agentId}
-                        <ExternalLink aria-hidden="true" className="size-3" />
-                      </a>
-                    </div>
-                  </div>
-                </TableCell>
-                <TableCell className="whitespace-normal text-sm text-zinc-300">{outcomeLabel(agent)}</TableCell>
-                <TableCell>
-                  <Badge className={cn("text-xs", status.className)} variant="outline">
-                    <status.icon aria-hidden="true" className="size-3.5" />
-                    {status.label}
-                  </Badge>
-                </TableCell>
-                <TableCell className="py-4">
-                  <EvidenceRail ariaLabel={`Evidence for ${agent.name}`} density="table" steps={agent.evidence} />
-                </TableCell>
-                <TableCell className="text-sm text-zinc-400">{typeof agent.trustScore === "number" ? "Derived" : "Unavailable"}</TableCell>
-                <TableCell className="px-4">
-                  <div className="flex justify-end">
-                    {action.disabled ? (
-                      <Button aria-disabled="true" disabled size="sm" title="No compatible hiring transport is declared for this agent." variant="outline">
-                        {action.label}
-                        <LockKeyhole aria-hidden="true" data-icon="inline-end" />
-                      </Button>
-                    ) : (
-                      <Button asChild size="sm" variant={action.label === "Hire agent" || action.label === "Request quote" || action.label === "Retry quote" ? "default" : "outline"}>
-                        <Link href={action.href} prefetch={false}>
-                          <ActionIcon aria-hidden="true" data-icon="inline-start" />
-                          {action.label}
-                        </Link>
-                      </Button>
-                    )}
-                  </div>
-                </TableCell>
-              </TableRow>
-            );
-          })}
-        </TableBody>
-      </Table>
-    </div>
-  );
-}
 
 export function CatalogResults({ agents, registry = false, toolbar, filters, emptyContent }: {
   agents: AgentCardViewModel[];
@@ -128,13 +27,9 @@ export function CatalogResults({ agents, registry = false, toolbar, filters, emp
   }, [agents]);
 
   return (
-    <Tabs aria-busy={pending} className="min-w-0 gap-5" defaultValue="cards">
-      <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 sm:grid-cols-[minmax(0,1fr)_auto_auto_auto] lg:grid-cols-[minmax(0,1fr)_auto_auto]">
+    <div aria-busy={pending} className="flex min-w-0 flex-col gap-5">
+      <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 sm:grid-cols-[minmax(0,1fr)_auto_auto] lg:grid-cols-[minmax(0,1fr)_auto]">
         {toolbar ?? <span />}
-        <TabsList aria-label="Catalog layout" className="col-span-2 h-10 group-data-horizontal/tabs:h-10 shrink-0 border border-white/10 bg-black/30 justify-self-start sm:col-span-1 sm:justify-self-end">
-          <TabsTrigger className="h-full px-3" value="cards"><LayoutGrid aria-hidden="true" data-icon="inline-start" />Cards</TabsTrigger>
-          <TabsTrigger className="h-full px-3" value="table"><List aria-hidden="true" data-icon="inline-start" />Table</TabsTrigger>
-        </TabsList>
       </div>
 
       {filters}
@@ -143,16 +38,16 @@ export function CatalogResults({ agents, registry = false, toolbar, filters, emp
         <CatalogResultsSkeleton />
       ) : visibleAgents.length > 0 ? (
         <>
-          <TabsContent value="cards">
+
             <div className="grid gap-x-6 gap-y-9 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
               {visibleAgents.map((agent) => registry ? <AgentCard agent={agent} key={agent.agentId} registry /> : <ServiceCard agent={agent} key={agent.agentId} />)}
             </div>
-          </TabsContent>
-          <TabsContent value="table"><AgentComparisonTable agents={visibleAgents} registry={registry} /></TabsContent>
+
+
         </>
       ) : (
         emptyContent ?? <p className="rounded-xl border border-white/10 p-6 text-sm text-zinc-400">No agents match this view.</p>
       )}
-    </Tabs>
+    </div>
   );
 }
