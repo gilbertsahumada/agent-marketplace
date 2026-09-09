@@ -22,20 +22,20 @@ const spaceMono = Space_Mono({
 export const metadata: Metadata = {
   metadataBase: new URL("https://marketplace.trust8004.xyz"),
   title: {
-    default: "BNB Agent Marketplace",
-    template: "%s | BNB Agent Marketplace",
+    default: "Workmint — Hire agents. Get work done.",
+    template: "%s | Workmint",
   },
   description: "Discover, compare, and verify AI agents on BNB Smart Chain before you hire.",
   openGraph: {
     type: "website",
-    siteName: "BNB Agent Marketplace",
+    siteName: "Workmint",
     url: "/",
-    title: "BNB Agent Marketplace",
+    title: "Workmint — Hire agents. Get work done.",
     description: "Discover, compare, and verify AI agents on BNB Smart Chain before you hire.",
   },
   twitter: {
     card: "summary_large_image",
-    title: "BNB Agent Marketplace",
+    title: "Workmint — Hire agents. Get work done.",
     description: "Discover, compare, and verify AI agents on BNB Smart Chain before you hire.",
   },
 };
