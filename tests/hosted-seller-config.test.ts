@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { HostedSellerUnavailableError } from "../src/business/errors/hosted-seller-errors.ts";
 import { loadMainnetGridSellerConfig } from "../src/mainnet/grid-seller-config.ts";
 import { hostedSellerPrivateKeyEnvName, loadMainnetHostedSellerConfig } from "../src/mainnet/hosted-seller-config.ts";
-import { configuredHostedSellerAgentIds, hostedSellerEnvNames } from "../src/shared/hosted-seller-env.ts";
+import { configuredHostedSellerAddresses, configuredHostedSellerAgentIds, hostedSellerEnvNames } from "../src/shared/hosted-seller-env.ts";
 
 const ORIGIN = "https://bnb-agent-marketplace-ruby.vercel.app";
 const GRID_KEY = `0x${"11".repeat(32)}` as const;
@@ -65,6 +65,15 @@ describe("hosted seller configuration", () => {
     expect(() => loadMainnetHostedSellerConfig("yield", env({ ERC8183_MAINNET_SELLER_ENABLED: "false" }))).toThrow(/disabled/);
     expect(() => loadMainnetHostedSellerConfig("yield", env({ ERC8183_MAINNET_SELLER_ORIGIN: "https://evil.example" }))).toThrow(/origin/);
     expect(loadMainnetHostedSellerConfig("grid", env())).toBeTruthy();
+  });
+
+  it("reports configured seller addresses without reading keys", () => {
+    expect(configuredHostedSellerAddresses(env())).toEqual([
+      { slug: "grid", address: privateKeyToAccount(GRID_KEY).address },
+      { slug: "yield", address: privateKeyToAccount(YIELD_KEY).address },
+    ]);
+    expect(configuredHostedSellerAddresses({ ERC8183_MAINNET_SELLER_HEALTH_ADDRESS: "not-an-address" })).toEqual([]);
+    expect(configuredHostedSellerAddresses({})).toEqual([]);
   });
 
   it("reports configured Agent IDs without reading keys", () => {

@@ -52,3 +52,14 @@ it("stops loading on failure and offers a read-only retry", async () => {
   expect(fetcher).toHaveBeenCalledTimes(2);
   expect(fetcher.mock.calls.every(([, init]) => !init.method || init.method === "GET")).toBe(true);
 });
+
+it("waits for the indexer instead of failing when the job is not indexed yet, then retries by itself", async () => {
+  const fetcher = vi.fn().mockResolvedValueOnce(Response.json({ error: "Job not indexed" }, { status: 404 })).mockResolvedValueOnce(Response.json({ ...report, jobId: "56756" }));
+  vi.stubGlobal("fetch", fetcher);
+  render(<JobDeliveryPanel jobId="56756" indexingRetryMs={50} />);
+  await screen.findByText(/has not seen this job yet/);
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Refresh status" })).toBeEnabled();
+  await screen.findByText("Unverified format");
+  expect(fetcher).toHaveBeenCalledTimes(2);
+});

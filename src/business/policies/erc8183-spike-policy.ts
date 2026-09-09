@@ -19,6 +19,12 @@ export interface Erc8183SpikeAllowlist {
   policy: Address;
   token: Address;
   seller: Address;
+  /**
+   * Other marketplace-operated sellers whose jobs the live reader may show.
+   * The hire flow itself stays bound to `seller`; this only widens which
+   * chain jobs count as marketplace fixtures instead of foreign jobs.
+   */
+  sellers?: readonly Address[];
   // When the deployment can name its demo jobs, readers decide by id before
   // any chain read; absent, only the post-read fixture assertion can decide.
   demoJobIds?: readonly string[];
@@ -110,9 +116,11 @@ export function assertTrackableFixtureJob(
   allowlist: Erc8183SpikeAllowlist,
 ): void {
   const zeroAddress = /^0x0{40}$/i.test(job.policy);
+  const marketplaceSeller = sameAddress(job.provider, allowlist.seller)
+    || (allowlist.sellers ?? []).some((seller) => sameAddress(job.provider, seller));
   if (
     job.chainId !== allowlist.chainId ||
-    !sameAddress(job.provider, allowlist.seller) ||
+    !marketplaceSeller ||
     !sameAddress(job.evaluator, allowlist.router) ||
     (!zeroAddress && !sameAddress(job.policy, allowlist.policy)) ||
     job.quotedToken === null ||

@@ -22,6 +22,17 @@ export function hostedSellerEnvNames(slug: HostedSellerSlugLike): { address: str
   return { address: `ERC8183_MAINNET_SELLER_${key}_ADDRESS`, agentId: `ERC8183_MAINNET_SELLER_${key}_AGENT_ID` };
 }
 
+/** Public wallet addresses of every configured seller; never reads keys. */
+export function configuredHostedSellerAddresses(
+  env: Readonly<Record<string, string | undefined>>,
+  slugs: readonly HostedSellerSlugLike[] = HOSTED_SELLER_SLUGS_ORDERED,
+): Array<{ slug: HostedSellerSlugLike; address: string }> {
+  return slugs.flatMap((slug) => {
+    const raw = Reflect.get(env, hostedSellerEnvNames(slug).address)?.trim();
+    return raw && /^0x[0-9a-fA-F]{40}$/.test(raw) ? [{ slug, address: raw }] : [];
+  });
+}
+
 /** Agent IDs of every seller whose identity is configured; never reads keys. */
 export function configuredHostedSellerAgentIds(
   env: Readonly<Record<string, string | undefined>>,
