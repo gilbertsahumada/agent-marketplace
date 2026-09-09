@@ -120,7 +120,7 @@ function toAgentCard(agent: MarketplaceAgent): ConciergeAgentCard {
 
 // System prompt rules are literal contract, not loose guidance: tests pin the
 // wording (propose/search_agents/never, and the single prohibition sentence).
-export const CONCIERGE_SYSTEM_PROMPT = `You are the hiring concierge of the BNB Agent Marketplace.
+export const CONCIERGE_SYSTEM_PROMPT = `You are the hiring concierge of Workmint, an agent marketplace built on BNB Chain.
 
 Your job: turn a plain-language need into a short brief, a short list of
 candidate agents, and a set of seller parameters ready for a quote.
