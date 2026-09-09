@@ -169,7 +169,7 @@ export function CatalogPage({
           <CatalogResults agents={cards} emptyContent={emptyContent} registry={allView}
             toolbar={<ServiceCatalogControls key="service-controls" href={hrefForPage(currentPage)} search={searchForm} total={total} {...(filterCounts ? { counts: filterCounts } : {})} registry={allView} />}
           />
-          <PaginationLinks hrefFor={hrefForPage} page={currentPage} totalPages={totalPages} />
+          <PaginationLinks hrefFor={hrefForPage} page={currentPage} totalPages={totalPages} total={total} pageSize={catalog?.limit ?? data!.pagination.pageSize} shown={cards.length} />
           <p className="text-xs text-muted-foreground">Catalogue: Trust8004 · Marketplace observations · Captured {dataCapturedAt(data, catalog)}. Recorded activity is not a quality rating.</p>
         </section>
         </div>

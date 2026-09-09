@@ -200,10 +200,9 @@ export function HireLedgerPage({ chainId, summary, page, activity = null, activi
           </CardContent>
           {page && !exactId && <CardFooter className="block">
             <div className="flex flex-wrap items-center justify-between gap-4 border-t border-white/10 pt-6">
-              <span className="font-stat text-xs text-zinc-400">{summary ? `${summary.protocol.jobs.toLocaleString("en")} indexed` : "Indexed total unavailable"}</span>
-              <nav aria-label="Jobs pagination" className="flex items-center gap-4">
+              <nav aria-label="Jobs pagination" className="flex w-full items-center justify-between gap-4">
                 {before && !pending ? <Button asChild variant="outline"><Link href={previousHref}><ChevronLeft aria-hidden="true" />Previous</Link></Button> : <Button disabled variant="outline"><ChevronLeft aria-hidden="true" />Previous</Button>}
-                <span className="font-stat text-xs text-zinc-400">Page {pageNumber}</span>
+                <span aria-live="polite" className="font-stat flex-1 text-center text-xs text-zinc-400">{pending ? "Updating results…" : `Showing ${jobs.length.toLocaleString("en")} of ${query ? page.jobs.length.toLocaleString("en") : page.totals ? page.totals.total.toLocaleString("en") : "—"}`}{query ? " on this page" : ""}<span className="mt-1 block">Page {pageNumber}</span></span>
                 {nextHref && !pending ? <Button asChild variant="outline"><Link href={nextHref}>Next<ChevronRight aria-hidden="true" /></Link></Button> : <Button disabled variant="outline">Next<ChevronRight aria-hidden="true" /></Button>}
               </nav>
             </div>
@@ -216,6 +215,7 @@ export function HireLedgerPage({ chainId, summary, page, activity = null, activi
           <details className="group/coverage">
             <summary className="jobs-coverage-summary flex cursor-pointer items-center gap-4 text-foreground"><Database aria-hidden="true" className="size-6 shrink-0 text-signal" /><span className="flex flex-1 flex-col gap-1"><span>Coverage details</span><span className="text-sm text-muted-foreground">Indexed activity is not proof of deliverable quality.</span></span><ChevronDown aria-hidden="true" className="size-4 shrink-0 group-open/coverage:rotate-180" /></summary>
             <div className="mt-5 flex flex-col gap-3">
+              <p>{summary ? `${summary.protocol.jobs.toLocaleString("en")} indexed` : "Indexed total unavailable"}</p>
               <p>Counts reflect indexed records. Marketplace attribution confirms a recorded hire event, not deliverable quality.</p>
               <p>Historical coverage is not confirmed. Totals cover the configured Commerce contract on this network, and remain network-wide when filtering by provider.</p>
               <p>The period filters jobs with indexed on-chain events in that UTC window, not their last observation time. Exact ID searches cover all dates. Jobs without dated events are excluded from the period view.</p>

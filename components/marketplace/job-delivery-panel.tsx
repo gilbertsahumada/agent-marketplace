@@ -28,17 +28,27 @@ function HighlightedDelivery({ content, requests }: { content: string; requests:
     : part)}</>;
 }
 
-export function JobDeliveryPanel({ jobId }: { jobId: string }) {
+export const INDEXING_RETRY_MS = 20_000;
+
+export function JobDeliveryPanel({ jobId, indexingRetryMs = INDEXING_RETRY_MS }: { jobId: string; indexingRetryMs?: number }) {
   const [report, setReport] = useState<DeliveryReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
+  const [indexing, setIndexing] = useState(false);
   const [revision, setRevision] = useState(0);
   useEffect(() => {
     const controller = new AbortController();
-    setReport(null); setLoading(true); setError(false);
+    let retry: ReturnType<typeof setTimeout> | null = null;
+    setReport(null); setLoading(true); setError(false); setIndexing(false);
     void (async () => {
       try {
         const response = await fetch(`/api/marketplace/jobs/mainnet/${jobId}/delivery`, { cache: "no-store", signal: AbortSignal.any([controller.signal, AbortSignal.timeout(25_000)]) });
+        if (response.status === 404) {
+          // A job read live from the chain can reach this page before the
+          // indexer has seen its transaction; that is a wait, not a failure.
+          if (!controller.signal.aborted) { setIndexing(true); retry = setTimeout(() => setRevision(value => value + 1), indexingRetryMs); }
+          return;
+        }
         if (!response.ok) throw new Error("Unavailable");
         const data = await response.json() as DeliveryReport;
         if (data.jobId !== jobId || !data.delivery || !(data.delivery.status in integrityLabels) || !(data.closure in closureLabels)) throw new Error("Invalid response");
@@ -46,8 +56,8 @@ export function JobDeliveryPanel({ jobId }: { jobId: string }) {
       } catch { if (!controller.signal.aborted) setError(true); }
       finally { if (!controller.signal.aborted) setLoading(false); }
     })();
-    return () => controller.abort();
-  }, [jobId, revision]);
+    return () => { controller.abort(); if (retry !== null) clearTimeout(retry); };
+  }, [jobId, revision, indexingRetryMs]);
   const grid = report?.delivery.status === "verified" && report.delivery.content ? parseGridDelivery(report.delivery.content) : null;
   return <Card className="mt-6">
     <CardHeader>
@@ -61,6 +71,7 @@ export function JobDeliveryPanel({ jobId }: { jobId: string }) {
     <CardContent className="flex flex-col gap-4" aria-busy={loading}>
       {loading ? <div role="status" aria-label="Loading delivery" className="flex flex-col gap-3"><Skeleton className="h-6 w-48" /><Skeleton className="h-32 w-full" /></div> : null}
       {error ? <p role="alert">Could not check the delivery. Your job and payment have not changed. Retry shortly.</p> : null}
+      {indexing ? <p role="status">The marketplace index has not seen this job yet. It usually catches up within a minute; this check retries on its own.</p> : null}
       {report ? <>
         {report.delivery.status === "mismatch" ? <p role="alert" className="text-sm text-destructive">Hash mismatch. Do not rely on this result; its content differs from the on-chain commitment.</p> : null}
         {report.delivery.content !== null ? <>

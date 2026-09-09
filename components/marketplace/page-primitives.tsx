@@ -39,14 +39,15 @@ export function CoverageBadge({ total, scope = "marketplace" }: { total?: number
   );
 }
 
-export function PaginationLinks({ page, totalPages, hrefFor }: { page: number; totalPages: number; hrefFor: (page: number) => string }) {
-  if (totalPages <= 1) return null;
+export function PaginationLinks({ page, totalPages, hrefFor, total, pageSize, shown }: { page: number; totalPages: number; hrefFor: (page: number) => string; total: number; pageSize: number; shown: number }) {
+  const start = shown > 0 ? (page - 1) * pageSize + 1 : 0;
+  const end = shown > 0 ? Math.min(total, start + shown - 1) : 0;
   return (
     <nav aria-label="Catalog pagination" className="mt-8 flex items-center justify-between gap-4 border-t border-white/10 pt-6">
       {page > 1
         ? <Button asChild variant="outline"><Link href={hrefFor(page - 1)}><ChevronLeft aria-hidden="true" />Previous</Link></Button>
         : <Button disabled variant="outline"><ChevronLeft aria-hidden="true" />Previous</Button>}
-      <span className="font-stat text-xs text-zinc-400">Page {page} of {totalPages}</span>
+      <span role="status" className="font-stat flex-1 text-center text-xs text-zinc-400">Showing {start.toLocaleString("en")}–{end.toLocaleString("en")} of {total.toLocaleString("en")}</span>
       {page < totalPages
         ? <Button asChild variant="outline"><Link href={hrefFor(page + 1)}>Next<ChevronRight aria-hidden="true" /></Link></Button>
         : <Button disabled variant="outline">Next<ChevronRight aria-hidden="true" /></Button>}
