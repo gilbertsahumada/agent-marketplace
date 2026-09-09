@@ -1,12 +1,13 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
-import { Layers, SlidersHorizontal, X } from "lucide-react";
+import { CircleHelp, Layers, SlidersHorizontal, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Field, FieldDescription, FieldGroup, FieldLabel, FieldLegend, FieldSet } from "@/components/ui/field";
+import { Field, FieldGroup, FieldLabel, FieldLegend, FieldSet } from "@/components/ui/field";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { CatalogFacetCounts } from "@/src/business/entities/catalog-candidate";
 import { useCatalogNavigation } from "./catalog-navigation";
@@ -21,8 +22,11 @@ const groups = [
 ] as const;
 const filterKeys = ["category", "status", "reachability", "protocol"] as const;
 
-function AvailabilityHelp() {
-  return <FieldDescription>Available to quote: you can request a price for your job. Ready to quote: quote capability was recently checked. You still need your own quote before hiring.</FieldDescription>;
+const browseHelp = "Under evaluation: checks are incomplete or need updating. Listing is not proof of delivery.";
+const availabilityHelp = "Available to quote: you can request a price for your job. Ready to quote: quote capability was recently checked. You still need your own quote before hiring.";
+
+function FilterHelp({ label, children }: { label: string; children: ReactNode }) {
+  return <TooltipProvider><Tooltip><TooltipTrigger asChild><Button type="button" variant="ghost" size="icon-sm" aria-label={`About ${label}`}><CircleHelp aria-hidden="true" /></Button></TooltipTrigger><TooltipContent side="top" className="max-w-72"><p>{children}</p></TooltipContent></Tooltip></TooltipProvider>;
 }
 
 function FilterCount({ value }: { value: number | undefined }) {
@@ -40,8 +44,7 @@ export function ServiceCatalogSidebar({ href, counts, scopeCounts }: { href: str
   return <aside aria-label="Catalog filters" aria-busy={pending} className="hidden self-start rounded-xl border border-border bg-card p-4 lg:sticky lg:top-4 lg:block lg:max-h-[calc(100dvh-2rem)] lg:overflow-y-auto">
     <div className="mb-5 flex items-center justify-between"><h2 className="text-sm font-medium">Filters</h2><Button variant="ghost" size="sm" disabled={pending} onClick={() => navigate(serviceFilterHref(href, { category: [], status: [], reachability: [], protocol: [] }))}>Clear filters</Button></div>
     <FieldGroup>
-      <FieldSet><FieldLegend variant="label">Browse agents</FieldLegend>
-        <FieldDescription>Under evaluation: checks are incomplete or need updating. Listing is not proof of delivery.</FieldDescription>
+      <FieldSet><FieldLegend variant="label" className="flex items-center gap-1">Browse agents<FilterHelp label="Browse agents">{browseHelp}</FilterHelp></FieldLegend>
         <FieldGroup className="gap-3">
           {([["hiring", "Available to quote"], ["evaluation", "Under evaluation"]] as const).map(([value, label]) => <Field key={value} orientation="horizontal" data-disabled={pending}>
             <input className="size-4 shrink-0 accent-primary" type="radio" name="sidebar-scope" id={`sidebar-scope-${value}`} value={value} checked={(params.get("scope") ?? "hiring") === value} disabled={pending} onChange={() => navigate(serviceFilterHref(href, { scope: [value] }))} />
@@ -49,7 +52,7 @@ export function ServiceCatalogSidebar({ href, counts, scopeCounts }: { href: str
           </Field>)}
         </FieldGroup>
       </FieldSet>
-      {groups.map(group => <FieldSet key={group.title}><FieldLegend variant="label">{group.title}</FieldLegend>{group.title === "Availability" && <AvailabilityHelp />}<FieldGroup className="gap-3">
+      {groups.map(group => <FieldSet key={group.title}><FieldLegend variant="label" className="flex items-center gap-1">{group.title}{group.title === "Availability" && <FilterHelp label="Availability">{availabilityHelp}</FilterHelp>}</FieldLegend><FieldGroup className="gap-3">
         {group.options.map(([value, label]) => <Field key={value} orientation="horizontal" data-disabled={pending}>
           <Checkbox id={`sidebar-${value}`} disabled={pending} checked={params.getAll(group.key).includes(value)} onCheckedChange={checked => navigate(serviceFilterHref(href, { [group.key]: checked ? [...params.getAll(group.key), value] : params.getAll(group.key).filter(item => item !== value) }))} />
           <FieldLabel className="flex flex-1 justify-between gap-3" htmlFor={`sidebar-${value}`}>{label}<FilterCount value={serviceFacetCount(counts, group.key, value)} /></FieldLabel>
@@ -108,9 +111,8 @@ export function ServiceCatalogControls({ href, search, total, counts, registry =
             navigate(serviceFilterHref(href, changes)); setOpen(false);
           }}>
             <FieldGroup>
-              <Field><FieldLabel htmlFor="service-scope">Browse</FieldLabel><Select value={draftParams.get("scope") ?? "hiring"} disabled={pending} onValueChange={value => setDraftValue("scope", value, true, true)}><SelectTrigger id="service-scope" className="w-full"><SelectValue /></SelectTrigger><SelectContent><SelectGroup><SelectItem value="hiring">For hiring</SelectItem><SelectItem value="evaluation">Under evaluation</SelectItem></SelectGroup></SelectContent></Select></Field>
-              <FieldDescription>Under evaluation: checks are incomplete or need updating. Listing is not proof of delivery.</FieldDescription>
-              {groups.map(group => <FieldSet key={group.title}><FieldLegend variant="label">{group.title}</FieldLegend>{group.title === "Availability" && <AvailabilityHelp />}<FieldGroup>
+              <Field><div className="flex items-center gap-1"><FieldLabel htmlFor="service-scope">Browse agents</FieldLabel><FilterHelp label="Browse agents">{browseHelp}</FilterHelp></div><Select value={draftParams.get("scope") ?? "hiring"} disabled={pending} onValueChange={value => setDraftValue("scope", value, true, true)}><SelectTrigger id="service-scope" className="w-full"><SelectValue /></SelectTrigger><SelectContent><SelectGroup><SelectItem value="hiring">Available to quote</SelectItem><SelectItem value="evaluation">Under evaluation</SelectItem></SelectGroup></SelectContent></Select></Field>
+              {groups.map(group => <FieldSet key={group.title}><FieldLegend variant="label" className="flex items-center gap-1">{group.title}{group.title === "Availability" && <FilterHelp label="Availability">{availabilityHelp}</FilterHelp>}</FieldLegend><FieldGroup>
                 {group.options.filter(([value]) => group.key !== "category" || !counts || counts.categories[value as keyof typeof counts.categories] > 0 || draftParams.getAll(group.key).includes(value)).map(([value, label]) => <Field orientation="horizontal" key={value}>
                   <Checkbox id={`service-filter-${value}`} disabled={pending} checked={draftParams.getAll(group.key).includes(value)} onCheckedChange={checked => setDraftValue(group.key, value, checked === true)} />
                   <FieldLabel className="flex flex-1 justify-between gap-3" htmlFor={`service-filter-${value}`}>{label}<FilterCount value={serviceFacetCount(counts, group.key, value)} /></FieldLabel>
