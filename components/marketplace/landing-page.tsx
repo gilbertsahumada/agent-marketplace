@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { AsciiClouds } from "./ascii-clouds";
 import type { AgentCardViewModel, CategoryCardViewModel, LedgerPulseViewModel, MarketplaceCategory } from "./presentation-types";
 import { RequestHero, TASK_STATUS_WORDS, requestAction } from "./request-hero";
+import { LandingMotion } from "./landing-motion";
 
 // The landing reads like a task marketplace: what you can get done, how it
 // works for a buyer, what others are getting done, and why it is safe. The
@@ -118,7 +119,8 @@ export function MarketplaceLanding({
   const postHref = conciergeEnabled ? requestAction(true) : "/agents?view=marketplace";
 
   return (
-    <main id="main-content">
+    <main className="home-landing" id="main-content">
+      <LandingMotion />
       <RequestHero conciergeEnabled={conciergeEnabled} proofHref={proofSummary?.href ?? null} pulse={ledgerPulse} />
 
       <section aria-labelledby="home-steps-heading" className="border-b border-border/60">
