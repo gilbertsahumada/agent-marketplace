@@ -77,6 +77,30 @@ function message(body: unknown, attempts = 1) {
 }
 
 describe("WP2 Free queue dispatch", () => {
+  it.each([56, 97])("dispatches capability messages for chain %s", async (chainId) => {
+    const nowMs = 1_800_000_000_000;
+    const runCatalogCapabilityProbe = vi.fn().mockResolvedValue({
+      status: "skipped", agentKey: `eip155:${chainId}:2284`, endpointKey: "a".repeat(64),
+      requestId: null, attemptId: null, errorCode: "BUYER_INPUT_REQUIRED", durationMs: 0,
+    });
+    const worker = createWorker({ now: () => nowMs, runCatalogCapabilityProbe, logger: { info: vi.fn(), error: vi.fn() } }) as unknown as QueueWorker;
+    const activeEnv = { ...queueEnv(), CATALOG_PROBE_ENABLED: "1", CATALOG_V2_WRITES_ENABLED: "1", PROBE_GENERAL_EGRESS_APPROVED: "1" };
+    const body = { schemaVersion: 2, kind: "catalog_capability_probe", agentKey: `eip155:${chainId}:2284`, endpointKey: "a".repeat(64), enqueuedAt: nowMs };
+    const item = message(body);
+    await worker.queue({ messages: [item] }, activeEnv, context);
+    expect(runCatalogCapabilityProbe).toHaveBeenCalledWith(body, activeEnv, expect.anything());
+    expect(item.ack).toHaveBeenCalledOnce();
+  });
+
+  it.each(["eip155:1:2284", "eip155:097:2284", "eip155:97:0", "eip155:97:2284:extra"])("rejects invalid capability identity %s", async (agentKey) => {
+    const runCatalogCapabilityProbe = vi.fn();
+    const worker = createWorker({ now: () => 1_800_000_000_000, runCatalogCapabilityProbe }) as unknown as QueueWorker;
+    const item = message({ schemaVersion: 2, kind: "catalog_capability_probe", agentKey, endpointKey: "a".repeat(64), enqueuedAt: 1_800_000_000_000 });
+    await expect(worker.queue({ messages: [item] }, queueEnv(), context)).rejects.toThrow("WP2_QUEUE_MESSAGE_INVALID");
+    expect(runCatalogCapabilityProbe).not.toHaveBeenCalled();
+    expect(item.ack).not.toHaveBeenCalled();
+  });
+
   it("emits structured Cron and Queue lifecycle logs without payload data", async () => {
     const logger = { info: vi.fn(), error: vi.fn() };
     const runScheduled = vi.fn().mockResolvedValue("completed");

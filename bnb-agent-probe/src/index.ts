@@ -152,7 +152,7 @@ function queueWork(body: unknown, currentTime: number): QueueWork {
   if (value.schemaVersion === 2
     && value.kind === "catalog_capability_probe"
     && typeof value.agentKey === "string"
-    && /^eip155:56:[1-9]\d{0,19}$/.test(value.agentKey)
+    && /^eip155:(56|97):[1-9]\d{0,19}$/.test(value.agentKey)
     && typeof value.endpointKey === "string"
     && /^[a-f0-9]{64}$/.test(value.endpointKey)
     && enqueuedAtValid) {
