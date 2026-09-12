@@ -2,6 +2,8 @@ import { env } from "cloudflare:workers";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { loadConfig } from "../../src/config";
+import { createWorker } from "../../src/index";
+import { SellerProbeError } from "../../src/lib/seller-client";
 import { recordCompatibility } from "../../src/catalog/compatibility";
 import { recordSweepMetrics, needsProviderChange } from "../../src/catalog/sweep-metrics";
 import { createDatabase } from "../../src/db/orm";
@@ -72,6 +74,51 @@ beforeEach(async () => {
 });
 
 describe("catalog quote-capability scheduler", () => {
+  it.each(["timeout", "invalid-schema"])("does not admit Testnet when discovery returns %s", async (mode) => {
+    const candidate = await insertCandidate("2285", ENDPOINT_KEY, "testnet-origin", "discovered", null, 97);
+    await env.DB.prepare("UPDATE catalog_endpoints SET endpoint='https://seller.example.com/a2a' WHERE endpointKey=?").bind(ENDPOINT_KEY).run();
+    const fetchImpl = vi.fn(async () => {
+      if (mode === "timeout") throw new SellerProbeError("SELLER_TIMEOUT");
+      return Response.json({ url: "https://seller.example.com/a2a", skills: [{ id: "negotiate" }], capabilities: { extensions: [{ uri: "https://marketplace.trust8004.xyz/extensions/negotiation-input/v1", params: { inputSchema: { type: "invalid" } } }] } });
+    }) as typeof fetch;
+    const result = await runCatalogCapabilityProbe(work(candidate.agentKey), env as unknown as Env, loadConfig({}), { now: () => NOW, fetchImpl });
+    expect(result.requestId).toBeNull();
+    expect(result.errorCode).not.toBeNull();
+    expect(fetchImpl).toHaveBeenCalled();
+    const row = await env.DB.prepare("SELECT compatibilityState,compatibilityErrorCode,nextProbeAt FROM catalog_seller_capabilities WHERE agentKey=?").bind(candidate.agentKey).first<{ compatibilityState: string; compatibilityErrorCode: string; nextProbeAt: number }>();
+    expect(row!.compatibilityState).not.toBe("compatible");
+    expect(row!.compatibilityErrorCode).not.toBeNull();
+    expect(row!.nextProbeAt).toBeGreaterThan(NOW);
+    expect(await env.DB.prepare("SELECT COUNT(*) AS total FROM catalog_quote_requests").first()).toMatchObject({ total: 0 });
+  });
+
+  it("carries a Testnet discovery through the real queue into hiring without a sample quote", async () => {
+    const mainnet = await insertCandidate("2284", "a".repeat(64), "mainnet-origin");
+    const testnet = await insertCandidate("2284", ENDPOINT_KEY, "testnet-origin", "discovered", null, 97);
+    await env.DB.prepare("UPDATE catalog_endpoints SET endpoint='https://seller.example.com/a2a' WHERE endpointKey=?").bind(ENDPOINT_KEY).run();
+    const contract = { encoding: "prefixed-json", taskDescriptionPrefix: "SERVICE_V1:", inputSchema: { type: "object", required: ["topic"], properties: { topic: { type: "string" } } }, terms: { deliverables: "Report", quality_standards: "Cited", evaluation_required: true, evaluator_type: "uma_oov3" } };
+    const fetchImpl = vi.fn(async () => Response.json({ url: "https://seller.example.com/a2a", skills: [{ id: "negotiate" }], capabilities: { extensions: [{ uri: "https://marketplace.trust8004.xyz/extensions/negotiation-input/v1", params: contract }] } })) as typeof fetch;
+    const runner = vi.fn((work: CatalogCapabilityWork, workerEnv: Env, config: ReturnType<typeof loadConfig>) => runCatalogCapabilityProbe(work, workerEnv, config, { now: () => NOW, fetchImpl }));
+    const app = createWorker({ now: () => NOW, runCatalogCapabilityProbe: runner, logger: { info: vi.fn(), error: vi.fn() } });
+    const workerEnv = { ...env, KILL_SWITCH: "0", CATALOG_PROBE_ENABLED: "1", CATALOG_V2_WRITES_ENABLED: "1", CATALOG_V2_READS_ENABLED: "1", CATALOG_TESTNET_ENABLED: "1", PROBE_GENERAL_EGRESS_APPROVED: "1", BSC_TESTNET_RPC_URL: "https://rpc.invalid" } as unknown as Env;
+    const send = vi.fn().mockResolvedValue(undefined);
+    await enqueueDueCatalogCapabilities(env.DB as unknown as D1DatabaseLike, { send }, { nowMs: NOW, limit: 1, chainId: 97 });
+    const body = send.mock.calls[0]![0];
+    const ack = vi.fn();
+    await app.queue({ messages: [{ id: "testnet-regression", timestamp: new Date(NOW), body, attempts: 1, ack, retry: vi.fn() }] }, workerEnv, { waitUntil: vi.fn(), passThroughOnException: vi.fn() });
+    expect(ack).toHaveBeenCalledOnce();
+    expect(runner).toHaveBeenCalledWith(expect.objectContaining({ agentKey: testnet.agentKey }), workerEnv, expect.anything());
+    expect(await runner.mock.results[0]!.value).toMatchObject({ errorCode: "BUYER_INPUT_REQUIRED" });
+    expect(fetchImpl).toHaveBeenCalledOnce();
+    expect(await env.DB.prepare("SELECT compatibilityState FROM catalog_seller_capabilities WHERE agentKey=?").bind(testnet.agentKey).first()).toMatchObject({ compatibilityState: "compatible" });
+    expect(await env.DB.prepare("SELECT compatibilityState FROM catalog_seller_capabilities WHERE agentKey=?").bind(mainnet.agentKey).first()).toMatchObject({ compatibilityState: "pending" });
+    expect(await env.DB.prepare("SELECT COUNT(*) AS total FROM catalog_quote_requests").first()).toMatchObject({ total: 0 });
+    const hiring = await app.fetch(new Request("https://worker.test/catalog-agents?chain=97&status=declared&scope=hiring&facets=true"), workerEnv);
+    expect(await hiring.json()).toMatchObject({ total: 1, items: [{ agentId: "2284", state: { canRequestQuote: true, canPrepareHire: false } }], facets: { statuses: { requestable: 1 } } });
+    const evaluation = await app.fetch(new Request("https://worker.test/catalog-agents?chain=97&status=declared&scope=evaluation"), workerEnv);
+    expect(await evaluation.json()).toMatchObject({ total: 0 });
+  });
+
   it("dispatches only the requested network, including colliding agent IDs", async () => {
     await insertCandidate("42", "a".repeat(64), "mainnet-host");
     await insertCandidate("42", "b".repeat(64), "testnet-host", "discovered", null, 97);
@@ -83,6 +130,16 @@ describe("catalog quote-capability scheduler", () => {
     await enqueueDueCatalogCapabilities(env.DB as unknown as D1DatabaseLike, { send }, { nowMs: NOW, limit: 2 });
     expect(send).toHaveBeenCalledTimes(1);
     expect(send.mock.calls[0]?.[0]).toMatchObject({ agentKey: "eip155:56:42" });
+  });
+
+  it("releases a Testnet claim after queue publication fails and retries without manufacturing evidence", async () => {
+    const candidate = await insertCandidate("2286", ENDPOINT_KEY, "testnet-origin", "discovered", null, 97);
+    const failedSend = vi.fn().mockRejectedValue(new Error("queue unavailable"));
+    expect(await enqueueDueCatalogCapabilities(env.DB as unknown as D1DatabaseLike, { send: failedSend }, { nowMs: NOW, limit: 1, chainId: 97 })).toMatchObject({ enqueued: 0, skipped: 1 });
+    expect(await env.DB.prepare("SELECT nextProbeAt,compatibilityState,compatibilityCheckedAt FROM catalog_seller_capabilities WHERE agentKey=?").bind(candidate.agentKey).first()).toMatchObject({ nextProbeAt: NOW, compatibilityState: "pending", compatibilityCheckedAt: null });
+    const send = vi.fn().mockResolvedValue(undefined);
+    expect(await enqueueDueCatalogCapabilities(env.DB as unknown as D1DatabaseLike, { send }, { nowMs: NOW + 60_000, limit: 1, chainId: 97 })).toMatchObject({ enqueued: 1 });
+    expect(send).toHaveBeenCalledWith(expect.objectContaining({ agentKey: candidate.agentKey }));
   });
   it("does not dispatch valid compatibility and quote evidence even with an obsolete due marker", async () => {
     await insertCandidate("42", ENDPOINT_KEY, "seller-origin", "ready", NOW + 86_400_000);
