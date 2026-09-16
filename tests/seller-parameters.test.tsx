@@ -68,7 +68,7 @@ it("blocks quotes when parameters are not published", async () => {
   vi.stubGlobal("fetch", vi.fn(async () => Response.json({ error: "NEGOTIATION_PARAMETERS_UNAVAILABLE" }, { status: 409 })));
   render(<QuoteRequestPanel agentId="42" />);
   expect(screen.queryByRole("button", { name: "Request quote" })).not.toBeInTheDocument();
-  await screen.findByText(/does not publish a supported quote form/);
+  await screen.findByText("Quote requirements not published");
   expect(screen.queryByText("Review enabled")).not.toBeInTheDocument();
 });
 it("uses seller fields, preserves one request through fallback, and clears the quote on edit", async () => {
