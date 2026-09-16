@@ -91,10 +91,10 @@ describe("public marketplace CLI", () => {
   });
 
   it("defaults to the marketplace domain, or the deployment's own production domain on Vercel", () => {
-    expect(defaultMarketplaceOrigin({})).toBe("https://marketplace.trust8004.xyz");
-    expect(defaultMarketplaceOrigin({ VERCEL_PROJECT_PRODUCTION_URL: "marketplace.trust8004.xyz" }))
-      .toBe("https://marketplace.trust8004.xyz");
+    expect(defaultMarketplaceOrigin({})).toBe("https://workmint.trust8004.xyz");
+    expect(defaultMarketplaceOrigin({ VERCEL_PROJECT_PRODUCTION_URL: "workmint.trust8004.xyz" }))
+      .toBe("https://workmint.trust8004.xyz");
     const args = parseMarketplaceCliArguments(["agent", "inspect", "56:45650"], { NODE_ENV: "test" });
-    expect(args.origin).toBe("https://marketplace.trust8004.xyz");
+    expect(args.origin).toBe("https://workmint.trust8004.xyz");
   });
 });

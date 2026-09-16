@@ -1,4 +1,4 @@
-export const DEFAULT_ORIGIN = "https://marketplace.trust8004.xyz";
+export const DEFAULT_ORIGIN = "https://workmint.trust8004.xyz";
 
 // On Vercel the deployment's own production domain is available programmatically;
 // elsewhere (CLI, stdio MCP on a user machine) the pinned custom domain is the default.

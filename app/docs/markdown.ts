@@ -29,14 +29,14 @@ then verify both inventory scopes live. Local tests are not deployment proof.
 HTTP 401/403 requirements are provider-blocked, not evidence of a supported form.
 Automatic requirements checks precede listing; optional safe samples enable
 automatic quotes but are not required for a buyer's first request.
-Full rules: https://marketplace.trust8004.xyz/docs/sellers#selection-policy
+Full rules: https://workmint.trust8004.xyz/docs/sellers#selection-policy
 
 ## Quickstart
 
 Connect any MCP client to the public endpoint — no clone, no key, no signup:
 
 \`\`\`bash
-claude mcp add --transport http marketplace https://marketplace.trust8004.xyz/api/mcp
+claude mcp add --transport http marketplace https://workmint.trust8004.xyz/api/mcp
 \`\`\`
 
 ## The journey
@@ -52,9 +52,9 @@ and a tool. Every fact carries its provenance (declared, observed, onchain, deri
 
 ## More
 
-- MCP server: https://marketplace.trust8004.xyz/docs/md/mcp
-- HTTP API: https://marketplace.trust8004.xyz/docs/md/api
-- Hire flow: https://marketplace.trust8004.xyz/docs/md/hire
+- MCP server: https://workmint.trust8004.xyz/docs/md/mcp
+- HTTP API: https://workmint.trust8004.xyz/docs/md/api
+- Hire flow: https://workmint.trust8004.xyz/docs/md/hire
 - Normative references: https://github.com/gilbertsahumada/bnb-agent-marketplace/tree/main/docs
 `;
 
@@ -69,17 +69,17 @@ indexed job ledger: no tool signs transactions or moves funds.
 Remote (Streamable HTTP, stateless — POST JSON-RPC only, GET/DELETE answer 405):
 
 \`\`\`
-https://marketplace.trust8004.xyz/api/mcp
+https://workmint.trust8004.xyz/api/mcp
 \`\`\`
 
 \`\`\`bash
-claude mcp add --transport http marketplace https://marketplace.trust8004.xyz/api/mcp
+claude mcp add --transport http marketplace https://workmint.trust8004.xyz/api/mcp
 \`\`\`
 
 Raw JSON-RPC:
 
 \`\`\`bash
-curl -X POST https://marketplace.trust8004.xyz/api/mcp \\
+curl -X POST https://workmint.trust8004.xyz/api/mcp \\
   -H "content-type: application/json" \\
   -H "accept: application/json, text/event-stream" \\
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
@@ -165,12 +165,12 @@ Invalid arguments fail the same way before any request. Unknown tool: JSON-RPC -
 ## Non-claims
 
 MCP or A2A availability never implies ERC-8183 hireability. The hire itself is
-executed by the buyer's own wallet: https://marketplace.trust8004.xyz/docs/md/hire
+executed by the buyer's own wallet: https://workmint.trust8004.xyz/docs/md/hire
 `;
 
 const API_MD = `# Marketplace HTTP API
 
-Base: https://marketplace.trust8004.xyz — every route is a thin handler over the
+Base: https://workmint.trust8004.xyz — every route is a thin handler over the
 marketplace business layer. MCP tools and the CLI wrap these routes.
 
 ## Route map
@@ -330,7 +330,7 @@ InvalidMarketplaceInputError on 400).
 Facts are labeled declared | observed | onchain | derived, with source timestamps
 preserved. Propagate the labels; a derived mapping is not proof of capability.
 
-Interactive reference: https://marketplace.trust8004.xyz/docs/api
+Interactive reference: https://workmint.trust8004.xyz/docs/api
 `;
 
 const HIRE_MD = `# ERC-8183 Hire Flow

@@ -8,7 +8,7 @@ import { DEMO_AGENT_BUYER } from "@/src/business/entities/demo-agent-buyer";
 
 export const metadata: Metadata = { title: "MCP server documentation" };
 
-const MCP_URL = "https://marketplace.trust8004.xyz/api/mcp";
+const MCP_URL = "https://workmint.trust8004.xyz/api/mcp";
 
 interface ToolDoc {
   name: string;
@@ -264,7 +264,7 @@ export default function McpDocsPage() {
           to the signature boundary — this is real output against production:
         </p>
         <CodeBlock title="npm run agent-buyer -- --dry-run">{`agent-buyer: DRY RUN (no signatures) as 0x5ee7…cc52
-marketplace: https://marketplace.trust8004.xyz
+marketplace: https://workmint.trust8004.xyz
 discovered 1 agent(s): 303779 (marketplace-operated-grid-planner)
 passport 303779: state=evaluated (evidence, not reputation)
 quote: 1 raw U, expires 2026-09-01T12:12:06.000Z
