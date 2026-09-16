@@ -48,7 +48,7 @@ export default function ApiDocsPage() {
         <h1 className="mt-2 text-3xl font-semibold tracking-tight text-white">HTTP API</h1>
         <p className="mt-3 text-sm leading-relaxed text-zinc-400">
           Every route is a thin handler over the marketplace&apos;s business layer, served from{" "}
-          <InlineCode>https://marketplace.trust8004.xyz</InlineCode>. The MCP tools and the CLI wrap
+          <InlineCode>https://workmint.trust8004.xyz</InlineCode>. The MCP tools and the CLI wrap
           these routes — consuming them directly is equally supported.
         </p>
         <div className="mt-4"><PageActions markdown={DOCS_MARKDOWN.api!} slug="api" /></div>
@@ -78,7 +78,7 @@ export default function ApiDocsPage() {
           </table>
         </div>
         <p>Try it now — the catalogue is public:</p>
-        <CodeBlock title="curl">{`curl "https://marketplace.trust8004.xyz/api/marketplace/agents?view=marketplace&limit=5"`}</CodeBlock>
+        <CodeBlock title="curl">{`curl "https://workmint.trust8004.xyz/api/marketplace/agents?view=marketplace&limit=5"`}</CodeBlock>
         <Callout tone="note">
           <p>
             The demo hire routes are env-gated per network (<InlineCode>erc8183</InlineCode> = BSC
