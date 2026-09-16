@@ -31,7 +31,7 @@ export default function DocsOverviewPage() {
 
       <DocsSection id="quickstart" title="Quickstart">
         <p>Connect any MCP client to the public endpoint — no clone, no key, no signup:</p>
-        <CodeBlock title="terminal">{`claude mcp add --transport http marketplace https://marketplace.trust8004.xyz/api/mcp`}</CodeBlock>
+        <CodeBlock title="terminal">{`claude mcp add --transport http marketplace https://workmint.trust8004.xyz/api/mcp`}</CodeBlock>
         <p>
           Then ask your agent to <InlineCode>search_agents</InlineCode>, read a passport, and request
           a Testnet quote. Every tool is free and signs nothing; the wallet only appears when the
