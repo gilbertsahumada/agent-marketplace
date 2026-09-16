@@ -176,7 +176,10 @@ describe("deriveAgentJourney", () => {
     expect(model.hire.label).toBe("Check compatibility");
   });
   it("distinguishes unsupported requirements from temporary discovery failure", () => {
-    expect(deriveAgentJourney({ ...base, state: state({ canRequestQuote: false, compatibilityState: "unsupported" }) }).quote.label).toBe("Integration required");
-    expect(deriveAgentJourney({ ...base, state: state({ canRequestQuote: false, compatibilityState: "unavailable" }) }).quote.label).toBe("Compatibility unavailable");
+    const unsupported = deriveAgentJourney({ ...base, state: state({ canRequestQuote: false, compatibilityState: "unsupported" }) });
+    expect(unsupported.quote.label).toBe("Quote requirements not supported");
+    expect(unsupported.hire).toMatchObject({ state: "locked", label: "Provider update needed" });
+    expect(unsupported.nextAction).toContain("provider needs to update");
+    expect(deriveAgentJourney({ ...base, state: state({ canRequestQuote: false, compatibilityState: "unavailable" }) }).quote.label).toBe("Requirements check unavailable");
   });
 });
