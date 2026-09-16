@@ -2,7 +2,7 @@
 
 import { CopyButton } from "./copy-button";
 
-const ORIGIN = "https://marketplace.trust8004.xyz";
+const ORIGIN = "https://workmint.trust8004.xyz";
 
 function OpenAiLogo() {
   return (
