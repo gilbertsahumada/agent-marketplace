@@ -30,7 +30,7 @@ describe("explicit inventory scope", () => {
   });
   it("distinguishes provider access denial from missing integration", () => {
     expect(compatibilityMessage("SELLER_ACCESS_DENIED").title).toBe("Requirements blocked by provider");
-    expect(compatibilityMessage("A2A_REQUIRED_SKILLS").title).toBe("Integration required");
+    expect(compatibilityMessage("A2A_REQUIRED_SKILLS").title).toBe("Quote integration unavailable");
     expect(compatibilityMessage("SELLER_RATE_LIMITED").title).toBe("Provider rate limit");
   });
 });
