@@ -62,12 +62,15 @@ export function deriveAgentJourney(input: {
   const quote: AgentJourneyStage = canRequestQuote
     ? { state: capabilityState === "ready" ? "verified" : "current", label: capabilityState === "ready" ? "Ready to quote" : "Inputs verified", detail: capabilityState === "ready" ? "Recent quote capability and usable requirements are verified. A new session quote is still required." : "Compatible seller inputs are available. No prior quote or job is required." }
     : state?.compatibilityState === "unsupported"
-      ? { state: "locked", label: "Integration required", detail: "The seller does not publish supported negotiation requirements." }
+      ? { state: "locked", label: compatibilityMessage(state.compatibilityErrorCode ?? "NEGOTIATION_SCHEMA_UNSUPPORTED").title, detail: compatibilityMessage(state.compatibilityErrorCode ?? "NEGOTIATION_SCHEMA_UNSUPPORTED").detail }
       : state?.compatibilityState === "unavailable"
         ? { state: "attention", label: compatibilityMessage(state.compatibilityErrorCode).title, detail: compatibilityMessage(state.compatibilityErrorCode).detail }
         : { state: "locked", label: "Requirements unverified", detail: "Check the seller's negotiation requirements before requesting a quote." };
 
-  const hire: AgentJourneyStage = !live && !canRequestQuote && input.validationAvailable
+  const providerActionRequired = !canRequestQuote && state?.compatibilityState === "unsupported";
+  const hire: AgentJourneyStage = providerActionRequired
+    ? { state: "locked", label: "Provider update needed", detail: quote.detail }
+    : !live && !canRequestQuote && input.validationAvailable
     ? { state: "locked", label: failed ? "Retry availability" : "Check availability", detail: "Once connected, you can request a quote." }
     : canRequestQuote && input.hireFlowAvailable
       ? { state: "current", label: "Start hiring", detail: "Request a fresh quote below, then review the exact transaction plan." }
@@ -82,7 +85,9 @@ export function deriveAgentJourney(input: {
       ? { state: "current", label: `${indexedJobs} job${indexedJobs === 1 ? "" : "s"}`, detail: "Indexed onchain activity is shown below; completion and result verification are tracked separately." }
       : { state: "locked", label: "No jobs yet", detail: "Indexed ERC-8183 work will appear here after a job is created." };
 
-  const nextAction = input.hireFlowAvailable && canRequestQuote
+  const nextAction = providerActionRequired
+      ? "The provider needs to update its quote integration. You can choose another agent while this one remains under evaluation."
+      : input.hireFlowAvailable && canRequestQuote
       ? "Request a fresh quote below; no wallet signature is needed for this step."
       : input.validationAvailable && !live
         ? "Check availability below to update shared evidence for everyone."
