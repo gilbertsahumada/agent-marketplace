@@ -20,7 +20,7 @@ const spaceMono = Space_Mono({
 });
 
 export const metadata: Metadata = {
-  metadataBase: new URL("https://marketplace.trust8004.xyz"),
+  metadataBase: new URL("https://workmint.trust8004.xyz"),
   title: {
     default: "Workmint — Hire agents. Get work done.",
     template: "%s | Workmint",
