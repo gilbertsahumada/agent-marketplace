@@ -98,7 +98,19 @@ export async function enqueueDueCatalogCapabilities(
     eq(catalogSellerCapabilities.state, "ready"),
     lte(catalogSellerCapabilities.capabilityExpiresAt, input.nowMs),
   ));
-  const selectDue = (bootstrap: boolean | null, window: number) => db.all<{
+  const selectDue = (bootstrap: boolean | null, window: number) => {
+    const index = bootstrap ? sql`idx_catalog_capabilities_pending_due` : sql`idx_catalog_capabilities_maintenance_due`;
+    const cohort = bootstrap ? sql`compatibilityState='pending'` : sql`compatibilityState<>'pending'`;
+    const dueRange = (nullDate: boolean) => sql`SELECT nextProbeAt,agentKey,endpointKey,updatedAt,transport,state,
+      compatibilityState,capabilityExpiresAt,compatibilityExpiresAt,lastSuccessAt
+      FROM catalog_seller_capabilities INDEXED BY ${index}
+      WHERE state IN ('discovered','ready','stale','failed') AND ${cohort}
+      AND ${nullDate ? sql`nextProbeAt IS NULL` : sql`nextProbeAt <= ${input.nowMs}`}`;
+    // Disjoint date ranges avoid SQLite scanning the whole partial index for OR.
+    // No limit before origin ranking: every eligible provider remains represented.
+    const source = bootstrap === null ? sql`catalog_seller_capabilities`
+      : sql`/* indexed-due */ (${dueRange(true)} UNION ALL ${dueRange(false)}) /* end-indexed-due */`;
+    return db.all<{
     agentKey: string; endpointKey: string; originKey: string; compatibilityState: string; nextProbeAt: number | null;
   }>(sql`
     WITH ranked AS (
@@ -113,7 +125,7 @@ export async function enqueueDueCatalogCapabilities(
             CASE WHEN c.transport='erc8183_http' THEN 0 ELSE 1 END,
             c.nextProbeAt, c.updatedAt, c.agentKey, c.endpointKey
         ) AS originRank
-      FROM catalog_seller_capabilities c
+      FROM ${source} c
       JOIN catalog_agents a ON a.agentKey=c.agentKey AND a.indexState='current' AND a.chainId=${chainId}
       JOIN catalog_agent_endpoints ae ON ae.agentKey=c.agentKey AND ae.endpointKey=c.endpointKey AND ae.declarationState='current'
       JOIN catalog_endpoints e ON e.endpointKey=c.endpointKey AND e.role='operational' AND e.eligibility='eligible'
@@ -133,6 +145,7 @@ export async function enqueueDueCatalogCapabilities(
     ORDER BY originRank, onlineRank, transportRank, nextProbeAt, updatedAt, agentKey, endpointKey
     LIMIT ${Math.min(1000, window * 10)}
   `);
+  };
   // Independent candidate windows: retries on reachable hosts must not crowd
   // first-time discovery out of the bounded SQL result (or vice versa).
   const cohorts = bootstrapLimit > 0
