@@ -1,3 +1,4 @@
+-- Apply before the Worker code that explicitly selects these access paths.
 CREATE INDEX idx_catalog_agents_identity_discovery
 ON catalog_agents(chainId, indexState, agentKey, agentId);
 
