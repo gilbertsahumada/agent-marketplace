@@ -10,6 +10,8 @@ import {
 import { CatalogHttpError } from "../../src/trust8004/client";
 import type { CatalogAgent } from "../../src/trust8004/types";
 import { clearCatalogFixtures } from "./catalog-fixtures";
+import { metered, type ReadRecord } from "./d1-meter";
+import type { D1Database } from "../../src/types";
 
 const NOW = 1_788_000_000_000;
 
@@ -64,6 +66,38 @@ beforeEach(async () => {
 });
 
 describe("resumable catalog discovery ingest", () => {
+  it("avoids rewriting a freshly discovered unchanged identity but persists changes", async () => {
+    const records: ReadRecord[] = [];
+    const db = metered(env.DB as unknown as D1Database, records) as unknown as D1DatabaseLike;
+    const original = agent('901', 4);
+    await enqueueCatalogDiscoveryPage(db, [original], {nowMs: NOW, source:'header'});
+    records.length = 0;
+    await processNextCatalogIngestTask(db, {nowMs:NOW+1,maxDeclarations:1,fetchAgent:async()=>original});
+    expect(records.filter(r=>r.sql.startsWith('insert into "catalog_agents"')).reduce((n,r)=>n+r.rowsWritten,0)).toBe(0);
+    expect(records.reduce((n,r)=>n+r.rowsWritten,0)).toBeLessThanOrEqual(34);
+    const changed = {...original, name:'Changed identity'};
+    records.length = 0;
+    await processNextCatalogIngestTask(db, {nowMs:NOW+2,maxDeclarations:1,fetchAgent:async()=>changed});
+    expect(records.reduce((n,r)=>n+r.rowsWritten,0)).toBeLessThanOrEqual(34);
+    expect(await env.DB.prepare("SELECT name FROM catalog_agents WHERE agentId='901'").first()).toEqual({name:'Changed identity'});
+  });
+  it("admits only tasks that fit row writes including the reserved final state", () => {
+    const input = {remainingQueries:100,maxDeclarations:1,requestedTasks:2,reserveQueries:1,reserveRowWrites:6};
+    expect(catalogIngestTaskLimitForBudget({...input,remainingRowWrites:39})).toBe(0);
+    expect(catalogIngestTaskLimitForBudget({...input,remainingRowWrites:40})).toBe(1);
+    expect(catalogIngestTaskLimitForBudget({...input,remainingRowWrites:74})).toBe(2);
+  });
+  it.each(['removed','old','policy'])("refreshes unchanged metadata when identity is %s", async kind => {
+    const db = env.DB as unknown as D1DatabaseLike;
+    const original = agent('902',4);
+    await enqueueCatalogDiscoveryPage(db,[original],{nowMs:NOW,source:'header'});
+    if(kind==='removed') await env.DB.prepare("UPDATE catalog_agents SET indexState='removed' WHERE agentId='902'").run();
+    if(kind==='policy') await env.DB.prepare("UPDATE catalog_agents SET policyVersion=1 WHERE agentId='902'").run();
+    const now = kind==='old' ? NOW+3600001 : NOW+1;
+    await processNextCatalogIngestTask(db,{nowMs:now,maxDeclarations:1,fetchAgent:async()=>original});
+    expect(await env.DB.prepare("SELECT indexState,policyVersion,lastSeenAt FROM catalog_agents WHERE agentId='902'").first())
+      .toEqual({indexState:'current',policyVersion:2,lastSeenAt:now});
+  });
   it("isolates Testnet cursor updates and rejects cross-network cursor pages", async () => {
     await clearCatalogFixtures();
     const db = env.DB as unknown as D1DatabaseLike;
