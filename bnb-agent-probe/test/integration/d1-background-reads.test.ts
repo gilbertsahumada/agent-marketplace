@@ -35,14 +35,14 @@ const wallet = "0x1111111111111111111111111111111111111111";
 const reader = { getChainId: async () => 56, getBlockNumber: async () => 100n,
   multicall: vi.fn(async ({ contracts }: { contracts: unknown[] }) => contracts.map(() => ({ status: "success", result: wallet }))) };
 
-async function seed(size: number) {
+async function seed(size: number, networkStride = 10) {
   await clearCatalogFixtures();
   await db.prepare("DELETE FROM agent_identities").run();
   await db.prepare("DELETE FROM runtime_state WHERE key LIKE 'agent_identity_cursor:%' OR key LIKE 'catalog_sweep_origin:%'").run();
   await db.prepare(`WITH RECURSIVE n(x) AS (SELECT 1 UNION ALL SELECT x+1 FROM n WHERE x < ?)
     INSERT INTO catalog_agents(agentKey,agentId,chainId,metadataState,indexState,firstSeenAt,lastSeenAt)
-    SELECT 'eip155:' || CASE WHEN x%10=0 THEN 97 ELSE 56 END || ':' || x,CAST(x AS TEXT),
-      CASE WHEN x%10=0 THEN 97 ELSE 56 END,'ok','current',0,0 FROM n`).bind(size).run();
+    SELECT 'eip155:' || CASE WHEN x%?=0 THEN 97 ELSE 56 END || ':' || x,CAST(x AS TEXT),
+      CASE WHEN x%?=0 THEN 97 ELSE 56 END,'ok','current',0,0 FROM n`).bind(size,networkStride,networkStride).run();
   await db.prepare(`INSERT INTO catalog_endpoints(endpointKey,protocol,endpoint,originKey,safety,role,eligibility,validationProtocol,nextProbeAt)
     SELECT agentKey,'a2a','https://seller.example/a2a','origin-' || (CAST(agentId AS INTEGER)%100),'safe','operational','eligible','a2a',0 FROM catalog_agents`).run();
   await db.prepare(`INSERT INTO catalog_agent_endpoints(agentKey,endpointKey,declarationState,firstSeenAt,lastSeenAt)
@@ -136,6 +136,41 @@ it.each([
   }
   for (const result of results.slice(1)) expect(result.messages).toEqual(results[0]!.messages);
   results[3]!.reads.forEach((reads,i)=>expect(reads).toBeLessThanOrEqual(results[0]!.reads[i]!));
+},60000);
+
+it.each([0,60000])("preserves rare-network selection and read budgets with independent cohorts at offset %i", async offset => {
+  const results: { messages: unknown[]; reads: number[] }[] = [];
+  for (const original of [true,false]) {
+    // Only 77 of 20,000 agents belong to Testnet. Coprime divisors keep
+    // network, cohort, due date and shared origin independent of each other.
+    await seed(20000,257);
+    await db.prepare(`UPDATE catalog_seller_capabilities SET
+      compatibilityState=CASE WHEN CAST(substr(agentKey,11) AS INTEGER)%3=0 THEN 'pending' ELSE 'unsupported' END,
+      nextProbeAt=CASE WHEN CAST(substr(agentKey,11) AS INTEGER)%7=0 THEN ?
+        WHEN CAST(substr(agentKey,11) AS INTEGER)%5=0 THEN NULL ELSE 0 END`).bind(NOW+86400000).run();
+    await db.prepare("UPDATE catalog_endpoints SET originKey='shared-' || (CAST(substr(endpointKey,11) AS INTEGER)%11)").run();
+    const composition = await db.prepare(`SELECT c.compatibilityState, COUNT(*) n
+      FROM catalog_seller_capabilities c JOIN catalog_agents a ON a.agentKey=c.agentKey
+      WHERE a.chainId=97 AND (c.nextProbeAt IS NULL OR c.nextProbeAt<=?)
+      GROUP BY c.compatibilityState ORDER BY c.compatibilityState`).bind(NOW).all<{compatibilityState:string;n:number}>();
+    expect(composition.results!.map(row=>row.compatibilityState)).toEqual(['pending','unsupported']);
+    expect(composition.results!.every(row=>row.n>5)).toBe(true);
+    await removeIndexes();
+    if (!original) await restoreIndexes();
+    await db.prepare("ANALYZE").run();
+    const records: ReadRecord[] = [];
+    const messages: unknown[] = [];
+    await enqueueDueCatalogCapabilities(measured(records,original), {send:async (message:unknown)=>{messages.push(message);}} as never,
+      {nowMs:NOW+offset,limit:5,bootstrapLimit:5,chainId:97});
+    const selects = records.filter(record=>record.sql.includes('WITH ranked AS'));
+    expect(selects).toHaveLength(2);
+    expect(messages.length).toBeGreaterThan(0);
+    const plans = await Promise.all(selects.map(record=>db.prepare(`EXPLAIN QUERY PLAN ${record.sql}`).bind(...record.values).all()));
+    console.log(JSON.stringify({scenario:'rare-network-independent-cohorts',offset,original,reads:selects.map(record=>record.rowsRead),plans:plans.map(plan=>plan.results)}));
+    results.push({messages,reads:selects.map(record=>record.rowsRead)});
+  }
+  expect(results[1]!.messages).toEqual(results[0]!.messages);
+  results[1]!.reads.forEach((reads,index)=>expect(reads).toBeLessThanOrEqual(results[0]!.reads[index]!));
 },60000);
 
 it("does not run Mainnet rediscovery from the Testnet scheduler", async () => {
