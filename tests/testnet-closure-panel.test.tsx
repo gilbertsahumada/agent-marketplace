@@ -11,7 +11,8 @@ it("automatically explains the expired job and the deposit", async () => {
   vi.stubGlobal("fetch", vi.fn(async () => Response.json(report)));
   render(<TestnetClosurePanel jobId="1066" />);
   expect(await screen.findByText("Deadline passed · deposit available")).toBeInTheDocument();
-  expect(screen.getByText("0.1 U")).toBeInTheDocument();
+  expect(screen.getByText("0.1")).toBeInTheDocument();
+  expect(screen.getByRole("link", { name: /U token on explorer/ })).toBeInTheDocument();
   expect(screen.getByText("Wallet actions")).toBeInTheDocument();
 });
 it("hides actions during refresh and after failure", async () => {
