@@ -103,6 +103,7 @@ export function TestnetJobTracker({ tracking, agentResolution }: { tracking: Erc
       <div className="mt-6 flex flex-col gap-6">
         {job ? <JobStateCard job={directJobState(job)} source="direct" agentResolution={agentResolution} /> : snapshot ? <JobStateCard source="snapshot" agentResolution={agentResolution} job={{
           chainId: 97, buyer: snapshot.buyer, provider: snapshot.seller, evaluator: null,
+          paymentToken: snapshot.payment.token,
           budgetRaw: snapshot.payment.budgetRaw, expiresAt: snapshot.lifecycle.deadline.iso,
           submittedAt: null, deliverable: snapshot.deliverable.hash, events: [],
         }} /> : null}

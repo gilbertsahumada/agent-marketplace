@@ -27,6 +27,7 @@ import { Input } from "@/components/ui/input";
 import { markCatalogForRefresh } from "@/components/marketplace/catalog-return-refresh";
 import { WalletConnectButton } from "@/components/marketplace/wallet-connect-button";
 import { relativeAge } from "@/components/marketplace/relative-time";
+import { PaymentTokenAmount } from "@/components/marketplace/payment-token";
 import {
   type Erc8183BrowserJournal,
   type Erc8183HirePlan,
@@ -861,7 +862,7 @@ function Erc8183BrowserDemo({ mode, deployment, agentName, embedded = false, rec
                     <dl className="grid gap-3 sm:grid-cols-2">
                       <div className="rounded-lg border border-white/10 px-4 py-3">
                         <dt className="text-xs text-zinc-500">Price</dt>
-                        <dd className="mt-1 text-sm font-medium text-white">{quote.priceDisplay} {quote.tokenSymbol}</dd>
+                        <dd className="mt-1 text-sm font-medium text-white"><PaymentTokenAmount address={quote.token} amountRaw={quote.priceRaw} chainId={quote.chainId} /></dd>
                       </div>
                       <div className="rounded-lg border border-white/10 px-4 py-3">
                         <dt className="text-xs text-zinc-500">Valid until</dt>
@@ -881,7 +882,7 @@ function Erc8183BrowserDemo({ mode, deployment, agentName, embedded = false, rec
                 {plan ? (
                   <>
                     <dl className="grid gap-x-5 gap-y-3 sm:grid-cols-2">
-                      <div><dt className="text-xs text-zinc-500">Balance</dt><dd className="mt-1 text-sm text-zinc-200">{displayUnits(plan.tokenBalanceRaw, plan.quote.tokenDecimals)} {plan.quote.tokenSymbol}</dd></div>
+                      <div><dt className="text-xs text-zinc-500">Balance</dt><dd className="mt-1 text-sm text-zinc-200"><PaymentTokenAmount address={plan.quote.token} amountRaw={plan.tokenBalanceRaw} chainId={plan.quote.chainId} /></dd></div>
                       <div><dt className="text-xs text-zinc-500">Allowance</dt><dd className="mt-1 text-sm text-zinc-200">{plan.approvalRequired ? `Exact ${plan.quote.priceDisplay} ${plan.quote.tokenSymbol}` : "Ready"}</dd></div>
                     </dl>
                     <div className="mt-4">{journalRestored && job ? <p role="status">Resumed job #{job.jobId} · {job.status}. Previous receipts are available in <Link className="underline" href={`${jobPageBase}/${job.jobId}`}>job history</Link>.</p> : <Erc8183TransactionList explorerUrl={deployment.explorerUrl} intents={plan.transactions} journal={journal} mode={hireMode} />}</div>

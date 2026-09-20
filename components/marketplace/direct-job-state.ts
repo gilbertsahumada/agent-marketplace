@@ -10,6 +10,7 @@ export function directJobState(job: Erc8183JobFacts): JobStateFacts {
   return {
     chainId: job.chainId, buyer: job.buyer, provider: job.provider, evaluator: job.evaluator,
     policy: job.policy,
+    ...(job.quotedToken ? { paymentToken: job.quotedToken } : {}),
     budgetRaw: job.budgetRaw, expiresAt: date(job.deadline) ?? "", submittedAt: date(job.submittedAt),
     deliverable: /^0x0+$/.test(job.deliverableHash) ? null : job.deliverableHash,
     // Do not invent transaction history from the current state.

@@ -309,6 +309,7 @@ export const commerceJobs = sqliteTable(
     client: text().notNull(),
     provider: text().notNull(),
     evaluator: text().notNull(),
+    paymentToken: text(),
     budget: text().notNull(),
     expiredAt: integer().notNull(),
     status: integer().notNull(),
