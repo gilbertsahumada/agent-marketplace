@@ -23,6 +23,8 @@ export interface HireJob {
   jobId: string;
   buyer: HireAddress;
   provider: HireAddress;
+  /** Token used by this job. Absent only for legacy index rows awaiting backfill. */
+  paymentToken?: HireAddress | null;
   budgetRaw: string;
   status: HireJobStatus;
   expiresAt: string;

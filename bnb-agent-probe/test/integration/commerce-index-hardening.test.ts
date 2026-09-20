@@ -99,11 +99,12 @@ function reader(options: ReaderOptions = {}) {
       await options.onGetBlock?.();
       return { timestamp: 1_700_000_000n + input.blockNumber };
     },
-    async multicall(input: { contracts: Array<{ args: [bigint] }>; blockNumber?: bigint; allowFailure?: boolean }) {
-      calls.multicall.push({ blockNumber: input.blockNumber, allowFailure: input.allowFailure, ids: input.contracts.map((c) => c.args[0]) });
+    async multicall(input: { contracts: Array<{ args: [bigint]; functionName: string }>; blockNumber?: bigint; allowFailure?: boolean }) {
+      calls.multicall.push({ blockNumber: input.blockNumber, allowFailure: input.allowFailure, ids: input.contracts.filter((c) => c.functionName === "getJob").map((c) => c.args[0]) });
       if (options.multicallResult !== undefined) return options.multicallResult;
       return input.contracts.map((contract) => {
         const id = contract.args[0];
+        if (contract.functionName === "jobPaymentToken") return { status: "success", result: DEPLOYMENTS[56].token };
         const result = jobs.get(id) ?? job(id, { client: ZERO, provider: ZERO, evaluator: ZERO, hook: ZERO, budget: 0n, expiredAt: 0n, status: 0 });
         if (input.allowFailure !== true) {
           if (options.failJobIds?.includes(id)) throw new Error("execution reverted");

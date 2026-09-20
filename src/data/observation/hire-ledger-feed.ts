@@ -93,11 +93,15 @@ function job(entry: unknown, chain: HireChainId): HireJob {
   if (typeof value.jobId !== "string" || !JOB_ID.test(value.jobId)) invalid();
   if (typeof value.budget !== "string" || !DECIMAL.test(value.budget)) invalid();
   if (typeof value.marketplace !== "boolean") invalid();
+  const paymentToken = value.paymentToken === undefined
+    ? undefined
+    : value.paymentToken === null ? null : address(value.paymentToken);
   return {
     chainId: chain,
     jobId: value.jobId,
     buyer: address(value.client),
     provider: address(value.provider),
+    ...(paymentToken === undefined ? {} : { paymentToken }),
     budgetRaw: value.budget,
     status: status(value.status),
     expiresAt: timestamp(value.expiredAt),

@@ -78,13 +78,12 @@ function reader(options: {
       return (options.logs ?? []).filter((entry) => entry.blockNumber >= input.fromBlock && entry.blockNumber <= input.toBlock);
     },
     async getBlock(input: { blockNumber: bigint }) { return { timestamp: 1_700_000_000n + input.blockNumber }; },
-    async multicall(input: { contracts: Array<{ args: [bigint] }> }) {
+    async multicall(input: { contracts: Array<{ args: [bigint]; functionName: string }> }) {
       calls.multicall += 1;
-      return input.contracts.map((contract) => ({
-        status: "success",
-        result: jobs.get(contract.args[0])
-          ?? job(contract.args[0], { client: ZERO, provider: ZERO, evaluator: ZERO, hook: ZERO, budget: 0n, expiredAt: 0n, status: 0 }),
-      }));
+      return input.contracts.map((contract) => ({ status: "success", result: contract.functionName === "jobPaymentToken"
+        ? DEPLOYMENTS[56].token
+        : jobs.get(contract.args[0])
+          ?? job(contract.args[0], { client: ZERO, provider: ZERO, evaluator: ZERO, hook: ZERO, budget: 0n, expiredAt: 0n, status: 0 }) }));
     },
   };
   return { reader: fake as unknown as CommerceIndexReader, calls };
@@ -296,7 +295,7 @@ describe("Commerce read routes", () => {
     const body = await response.json() as { jobs: Array<Record<string, unknown>>; nextBefore: string | null };
     expect(body.jobs.map((entry) => [entry.jobId, entry.marketplace])).toEqual([["802", false], ["801", true]]);
     expect(body.jobs[1]?.registeredAt).toBe((1_700_000_000 + 1_001) * 1_000);
-    expect(body.jobs[1]).toMatchObject({ client: BUYER, provider: SELLER, budget: "10000000000000000", status: 1, expiredAt: 1_788_600_000_000, submittedAt: null });
+    expect(body.jobs[1]).toMatchObject({ client: BUYER, provider: SELLER, paymentToken: DEPLOYMENTS[56].token, budget: "10000000000000000", status: 1, expiredAt: 1_788_600_000_000, submittedAt: null });
     expect(body.nextBefore).toBeNull();
 
     const byBuyer = await (await commerceJobsListResponse(new Request(`https://worker.test/commerce-jobs?chainId=56&buyer=${BUYER.toLowerCase()}`), env.DB)).json() as { jobs: Array<{ jobId: string }> };
