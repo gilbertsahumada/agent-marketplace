@@ -87,6 +87,14 @@ describe("Commerce index schema", () => {
     expect(model?.config.columns.map((column) => (is(column, Column) ? column.name : undefined))).toEqual(["chainId", "blockTimestamp"]);
   });
 
+  it("indexes only jobs that still need payment-token repair", () => {
+    const db = migratedDatabase();
+    const created = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'index' AND name = ?")
+      .get("idx_commerce_jobs_missing_payment_token") as { sql: string };
+    expect(created.sql.replaceAll(/\s+/g, " ")).toContain("ON commerce_jobs (chainId, jobId DESC) WHERE paymentToken IS NULL");
+    db.close();
+  });
+
   it("documents the rollback order for the deployer: triggers, then indexes, then tables", () => {
     const header = migration.slice(0, migration.indexOf("CREATE TABLE"));
     expect(header).toMatch(/[Rr]ollback/);
