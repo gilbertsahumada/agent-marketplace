@@ -26,13 +26,14 @@ import type { Env } from "../types";
  * Commerce indexer. Two queue messages feed it:
  *
  * - `index_range`: read Commerce logs for a block range and record one
- *   `commerce_job_events` row per log plus the current `getJob()` state of every
+ *   `commerce_job_events` row per log plus the current `getJob()` state and
+ *   payment token of every
  *   job those logs touched. Without an explicit range the message means "from
  *   the chain cursor to head minus the finality margin", and the cursor advances
  *   in the same D1 batch as the rows. An explicit range (backfill) never moves
  *   the cursor and stops at the same safe head; if it has to be truncated, the
  *   remainder is re-enqueued (unless the producer kill switch is on).
- * - `index_jobs`: read `getJob()` for an id range and upsert `commerce_jobs`
+ * - `index_jobs`: read `getJob()` and `jobPaymentToken()` for an id range and upsert `commerce_jobs`
  *   (state backfill; jobs whose client is the zero address do not exist).
  *
  * Two guards keep a run from stalling or overspending: the per-chain block
@@ -180,6 +181,7 @@ interface JobState {
   readonly hook: Address;
   readonly submittedAt: bigint;
   readonly deliverable: `0x${string}`;
+  readonly paymentToken: Address | null;
 }
 
 // Whole blocks in order until either cap would be exceeded. When the first
@@ -246,6 +248,7 @@ function jobRow(chainId: CommerceIndexChainId, job: JobState, nowMs: number) {
     client: getAddress(job.client),
     provider: getAddress(job.provider),
     evaluator: getAddress(job.evaluator),
+    paymentToken: job.paymentToken,
     budget: job.budget.toString(),
     expiredAt: epochMs(job.expiredAt),
     status: Number(job.status),
@@ -288,7 +291,8 @@ function eventRow(chainId: CommerceIndexChainId, log: DecodedCommerceLog, blockT
   };
 }
 
-// getJob() for every id, pinned at `blockNumber` so job state never runs
+// getJob() and the per-job payment token for every id, pinned at `blockNumber`
+// so job state never runs
 // ahead of the ledger. One reverting read skips that job (counted) instead of
 // failing the run; a transport failure surfacing per item still fails it.
 // Pinned eth_call needs the provider to hold state for that block: cursor mode
@@ -305,12 +309,10 @@ async function readJobs(
     let results: readonly unknown[];
     try {
       results = await reader.multicall({
-        contracts: batch.map((jobId) => ({
-          address: DEPLOYMENTS[chainId].commerce,
-          abi: commerceReadAbi,
-          functionName: "getJob",
-          args: [jobId],
-        })),
+        contracts: batch.flatMap((jobId) => ([
+          { address: DEPLOYMENTS[chainId].commerce, abi: commerceReadAbi, functionName: "getJob", args: [jobId] },
+          { address: DEPLOYMENTS[chainId].commerce, abi: commerceReadAbi, functionName: "jobPaymentToken", args: [jobId] },
+        ])),
         allowFailure: true,
         blockNumber,
       }) as readonly unknown[];
@@ -320,7 +322,9 @@ async function readJobs(
       throw new BscProbeError("BSC_READS");
     }
     if (!Array.isArray(results)) throw new BscProbeError("BSC_READS");
-    for (const item of results) {
+    for (let index = 0; index < results.length; index += 2) {
+      const item = results[index];
+      const tokenItem = results[index + 1];
       if (!item || typeof item !== "object") throw new BscProbeError("BSC_READS");
       const { status, result, error } = item as { status?: unknown; result?: unknown; error?: unknown };
       if (status === "failure") {
@@ -332,7 +336,13 @@ async function readJobs(
       if (status !== "success" || !result || typeof result !== "object" || typeof (result as JobState).id !== "bigint") {
         throw new BscProbeError("BSC_READS");
       }
-      jobs.push(result as JobState);
+      const tokenResult = tokenItem && typeof tokenItem === "object"
+        ? tokenItem as { status?: unknown; result?: unknown }
+        : null;
+      const paymentToken = tokenResult?.status === "success" && typeof tokenResult.result === "string" && isAddress(tokenResult.result)
+        ? getAddress(tokenResult.result)
+        : chainId === 97 ? DEPLOYMENTS[97].token : null;
+      jobs.push({ ...(result as Omit<JobState, "paymentToken">), paymentToken });
     }
   }
   return { jobs, failed };
@@ -345,6 +355,7 @@ function upsertJobs(db: ReturnType<typeof createDatabase>, rows: ReturnType<type
       client: sql.raw("excluded.client"),
       provider: sql.raw("excluded.provider"),
       evaluator: sql.raw("excluded.evaluator"),
+      paymentToken: sql.raw("excluded.paymentToken"),
       budget: sql.raw("excluded.budget"),
       expiredAt: sql.raw("excluded.expiredAt"),
       status: sql.raw("excluded.status"),
