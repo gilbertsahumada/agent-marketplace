@@ -95,10 +95,14 @@ describe("WP1 Wrangler scaffold", () => {
     for (const vars of [wrangler.vars, wrangler.env?.staging?.vars, wrangler.env?.validation?.vars]) {
       expect(vars?.CATALOG_PROBE_ENABLED).toBeDefined();
       expect(vars?.COMMERCE_INDEX_ENABLED).toBeDefined();
+      expect(vars?.COMMERCE_TOKEN_BACKFILL_ENABLED).toBeDefined();
     }
     expect(wrangler.env?.staging?.vars?.COMMERCE_INDEX_ENABLED).toBe("1");
+    expect(wrangler.env?.staging?.vars?.COMMERCE_TOKEN_BACKFILL_ENABLED).toBe("1");
     expect(wrangler.vars?.COMMERCE_INDEX_ENABLED).toBe("0");
+    expect(wrangler.vars?.COMMERCE_TOKEN_BACKFILL_ENABLED).toBe("0");
     expect(wrangler.env?.validation?.vars?.COMMERCE_INDEX_ENABLED).toBe("0");
+    expect(wrangler.env?.validation?.vars?.COMMERCE_TOKEN_BACKFILL_ENABLED).toBe("0");
   });
 
   it("keeps product monitoring active only in the isolated staging environment", () => {

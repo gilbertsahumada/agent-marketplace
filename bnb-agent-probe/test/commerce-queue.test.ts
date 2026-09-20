@@ -69,6 +69,44 @@ describe("Commerce indexer queue wiring", () => {
     expect(disabled.WP2_QUEUE.send).toHaveBeenCalledTimes(1);
   });
 
+  it("enqueues payment-token repair only when its staging flag is enabled", async () => {
+    const repairDb: D1Database = {
+      prepare(): D1PreparedStatement {
+        let chainId = 56;
+        return {
+          bind(value: unknown) { chainId = Number(value); return this; },
+          async first<T>() { return (chainId === 56 ? { jobId: 56_796 } : null) as T | null; },
+          async all<T>() {
+            return { success: true, results: (chainId === 56 ? [{ jobId: 56_796 }] : []) as T[] };
+          },
+          async raw<T extends unknown[]>() {
+            return (chainId === 56 ? [[56_796]] : []) as T[];
+          },
+          async run() { return { success: true }; },
+        };
+      },
+    };
+    const worker = createWorker({ now: () => NOW, runScheduled: vi.fn() });
+    const env = activeEnv({
+      DB: repairDb,
+      BSC_RPC_URL: "https://rpc.example/bsc",
+      CLOUDFLARE_WORKERS_PLAN: "paid",
+      COMMERCE_INDEX_JOBS_PER_RUN: "28",
+      COMMERCE_TOKEN_BACKFILL_ENABLED: "1",
+    });
+
+    await worker.scheduled({ scheduledTime: NOW, cron: "*/10 * * * *" }, env, context);
+
+    expect(env.WP2_QUEUE.send.mock.calls.map(([body]) => body)).toContainEqual({
+      schemaVersion: 2,
+      kind: "index_jobs",
+      chainId: 56,
+      fromJobId: 56_769,
+      toJobId: 56_796,
+      enqueuedAt: NOW,
+    });
+  });
+
   it("logs a skipped chain when the indexer is on but its RPC URL secret is missing", async () => {
     const logger = { info: vi.fn(), error: vi.fn() };
     const worker = createWorker({ now: () => NOW, runScheduled: vi.fn(), logger });
