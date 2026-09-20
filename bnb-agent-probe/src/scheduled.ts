@@ -59,6 +59,7 @@ interface PhaseExecution {
   readonly phase: SchedulerPhase;
   readonly db: D1DatabaseLike;
   readonly queryBudget: D1QueryBudget;
+  readonly remainingRowWrites: () => number;
   readonly env: Env;
   readonly config: WorkerConfig;
   readonly nowMs: number;
@@ -265,6 +266,7 @@ export function createWp2ScheduledRunner(dependencies: ScheduledRuntimeDependenc
         phase,
         db,
         queryBudget: budget,
+        remainingRowWrites: () => Math.max(0, config.d1RowsWrittenPerRun - usage.rowsWritten),
         env,
         config,
         nowMs: now(),
@@ -644,6 +646,11 @@ async function executeCatalogV2Phase(
     maxDeclarations: input.config.catalogDeclarationsPerTask,
     requestedTasks: input.config.catalogIngestTasksPerRun,
     reserveQueries: 1 + probeQueryReserve,
+    remainingRowWrites: input.remainingRowWrites(),
+    // Phase summary, next phase, optional queue watermark; leave probe writes
+    // their existing allowance rather than consuming it with ingestion.
+    reserveRowWrites: 6 + (input.phase === "probe" && input.config.catalogProbeEnabled
+      ? 20 * input.config.catalogProbeBatchSize : 0),
   });
   for (let index = 0; index < ingestTaskLimit; index += 1) {
     const summary = await processNextCatalogIngestTask(input.db, {
