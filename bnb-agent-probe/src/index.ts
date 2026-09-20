@@ -580,6 +580,22 @@ export function createWorker(dependencies: WorkerDependencies = {}): WorkerEntry
         // One cursor-driven index_range per chain that has an RPC URL; the
         // consumer reads from the chain cursor to the safe head.
         await enqueueCommerceIndexTicks(env, env.WP2_QUEUE, now(), logger);
+        if (env.COMMERCE_TOKEN_BACKFILL_ENABLED === "1") {
+          try {
+            const { enqueueCommerceTokenBackfill } = await import("./phases/commerce-token-backfill");
+            const chains = ([56, 97] as const).filter((chainId) => (
+              chainId === 56 ? env.BSC_RPC_URL !== undefined : env.BSC_TESTNET_RPC_URL !== undefined
+            ));
+            const summary = await enqueueCommerceTokenBackfill(
+              env.DB, env.WP2_QUEUE, chains, config.commerceIndexJobsPerRun, now(),
+            );
+            if (summary.enqueued.length > 0) logger.info("commerce.token_backfill.enqueued", summary);
+          } catch {
+            // The cursor index remains available even if the optional repair
+            // producer cannot read D1; the next cron tick retries the backlog.
+            logger.error("commerce.token_backfill.failed", { errorCode: "COMMERCE_TOKEN_BACKFILL_ENQUEUE" });
+          }
+        }
       }
       if (config.catalogProbeEnabled && config.catalogV2WritesEnabled && env.CATALOG_QUOTE_QUEUE !== undefined) {
         const { enqueueDueCatalogCapabilities } = await import("./phases/catalog-capability");
