@@ -7,7 +7,7 @@ export const ERC8183_MAINNET = Object.freeze({
   explorerUrl: "https://bscscan.com",
   registry: getAddress("0x8004A169FB4a3325136EB29fA0ceB6D2e539a432"),
   commerce: getAddress("0xEa4DAa3100A767e86FDed867729ae7446476EBA6"),
-  commerceImplementation: getAddress("0xd5f9b570c96b5d67702d508c0bfb8b3b09209787"),
+  commerceImplementation: getAddress("0xe8d47866E2CC3dCAa50F0aD980355695b2F1D533"),
   router: getAddress("0x51895229E12F9876011789B04f8698af06cCD6DA"),
   routerImplementation: getAddress("0xf0cf8f47e5c035f16247ff16e9f367e477ee5007"),
   policy: getAddress("0x9C01845705b3078Aa2e8cfF7520a6376FD766dE5"),
