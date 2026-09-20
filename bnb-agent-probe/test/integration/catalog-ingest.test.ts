@@ -66,6 +66,86 @@ beforeEach(async () => {
 });
 
 describe("resumable catalog discovery ingest", () => {
+  function commerceAgent(agentId: string, declarations: number, version = 1): CatalogAgent {
+    return {
+      ...agent(agentId, declarations, version),
+      declarations: { a2a: false, erc8183: true },
+      indexEndpoints: Array.from({ length: declarations }, (_, index) => ({
+        protocol: "erc8183_http" as const,
+        endpoint: `https://agent-${agentId}.example.com/${version}/commerce-${index}`,
+        rawProtocol: "ERC-8183",
+        source: "services" as const,
+        sourceIndex: index,
+      })),
+    };
+  }
+
+  async function measuredIngest(candidate: CatalogAgent, maxDeclarations: number, nowMs: number) {
+    const records: ReadRecord[] = [];
+    const db = metered(env.DB as unknown as D1Database, records) as unknown as D1DatabaseLike;
+    const summary = await processNextCatalogIngestTask(db, {
+      nowMs, maxDeclarations, fetchAgent: async () => candidate,
+      leaseOwner: "write-budget-test",
+    });
+    const writes = records.reduce((total, record) => total + record.rowsWritten, 0);
+    expect(writes).toBeGreaterThan(0);
+    expect(writes).toBeLessThanOrEqual(14 + 20 * maxDeclarations);
+    return summary;
+  }
+
+  it.each([1, 4])("bounds final ERC8183 admission writes for %i declarations", async (maxDeclarations) => {
+    const seller = commerceAgent("903", maxDeclarations);
+    await enqueueCatalogDiscoveryPage(env.DB as unknown as D1DatabaseLike, [seller], { nowMs: NOW, source: "header" });
+
+    expect(await measuredIngest(seller, maxDeclarations, NOW + 1)).toMatchObject({
+      status: "retiring", declarationsProcessed: maxDeclarations, errorCode: null,
+    });
+    expect(await env.DB.prepare("SELECT state, commerceTransport FROM catalog_agent_admission WHERE agentKey = 'eip155:56:903'").first())
+      .toEqual({ state: "candidate", commerceTransport: "erc8183_http" });
+    expect(await env.DB.prepare("SELECT COUNT(*) AS count FROM catalog_seller_capabilities WHERE agentKey = 'eip155:56:903'").first())
+      .toEqual({ count: maxDeclarations });
+  });
+
+  it.each([1, 4])("bounds changed-generation writes with %i declarations and an existing capability", async (maxDeclarations) => {
+    const original = commerceAgent("904", maxDeclarations + 1);
+    await enqueueCatalogDiscoveryPage(env.DB as unknown as D1DatabaseLike, [original], { nowMs: NOW, source: "header" });
+    expect(await measuredIngest(original, maxDeclarations, NOW + 1)).toMatchObject({ status: "partial" });
+
+    // Change metadata between discovery and the next fetch, not through a new discovery task.
+    const replacement = commerceAgent("904", maxDeclarations, 2);
+    expect(await measuredIngest(replacement, maxDeclarations, NOW + 2)).toMatchObject({
+      status: "retiring", declarationsProcessed: maxDeclarations, errorCode: null,
+    });
+    expect(await env.DB.prepare("SELECT name FROM catalog_agents WHERE agentKey = 'eip155:56:904'").first())
+      .toEqual({ name: "Agent 904 v2" });
+    expect(await env.DB.prepare("SELECT COUNT(*) AS count FROM catalog_seller_capabilities WHERE agentKey = 'eip155:56:904'").first())
+      .toEqual({ count: 2 * maxDeclarations });
+    expect(await env.DB.prepare("SELECT state FROM catalog_agent_admission WHERE agentKey = 'eip155:56:904'").first())
+      .toEqual({ state: "candidate" });
+  });
+
+  it.each([1, 4])("bounds retirement writes including %i old capabilities and admission suspension", async (maxDeclarations) => {
+    const original = commerceAgent("905", maxDeclarations);
+    await enqueueCatalogDiscoveryPage(env.DB as unknown as D1DatabaseLike, [original], { nowMs: NOW, source: "header" });
+    await measuredIngest(original, maxDeclarations, NOW + 1);
+    await measuredIngest(original, maxDeclarations, NOW + 2);
+    expect(await env.DB.prepare("SELECT COUNT(*) AS count FROM catalog_seller_capabilities WHERE agentKey = 'eip155:56:905'").first())
+      .toEqual({ count: maxDeclarations });
+    const replacement = commerceAgent("905", 0, 2);
+    await enqueueCatalogDiscoveryPage(env.DB as unknown as D1DatabaseLike, [replacement], { nowMs: NOW + 3, source: "reconciliation" });
+
+    expect(await measuredIngest(replacement, maxDeclarations, NOW + 4)).toMatchObject({
+      status: "retiring", declarationsRetired: maxDeclarations, errorCode: null,
+    });
+    expect(await env.DB.prepare("SELECT COUNT(*) AS count FROM catalog_seller_capabilities WHERE agentKey = 'eip155:56:905'").first())
+      .toEqual({ count: 0 });
+    expect(await env.DB.prepare("SELECT state, reasonCode FROM catalog_agent_admission WHERE agentKey = 'eip155:56:905'").first())
+      .toEqual({ state: "suspended", reasonCode: "NO_COMMERCE_ENDPOINT" });
+    expect(await measuredIngest(replacement, maxDeclarations, NOW + 5)).toMatchObject({
+      status: "completed", declarationsRetired: 0, errorCode: null,
+    });
+  });
+
   it("avoids rewriting a freshly discovered unchanged identity but persists changes", async () => {
     const records: ReadRecord[] = [];
     const db = metered(env.DB as unknown as D1Database, records) as unknown as D1DatabaseLike;
