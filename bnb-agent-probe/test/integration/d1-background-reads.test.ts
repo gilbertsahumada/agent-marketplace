@@ -1,5 +1,5 @@
 import { env } from "cloudflare:workers";
-import { expect, it, vi } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import { runIdentityIndex } from "../../src/identity/indexer";
 import { enqueueDueCatalogCapabilities } from "../../src/phases/catalog-capability";
 import { revisitOldInputFailures } from "../../src/catalog/rediscover-inputs";
@@ -13,14 +13,23 @@ const indexNames = ["idx_catalog_agents_identity_discovery", "idx_catalog_capabi
 async function removeIndexes() {
   for (const name of indexNames) await db.prepare(`DROP INDEX IF EXISTS ${name}`).run();
 }
-async function restoreIndexes() {
-  const migration = env.TEST_MIGRATIONS.find(m => m.name === "0029_background_read_indexes.sql");
+async function restoreIndexes(records?: ReadRecord[]) {
+  const migration = env.TEST_MIGRATIONS.find(m => m.name === "0030_background_read_indexes.sql");
   if (!migration) throw new Error("Missing background read migration");
-  for (const query of migration.queries) await db.prepare(query).run();
+  for (const query of migration.queries) await (records ? measured(records) : db).prepare(query).run();
 }
-function measured(log: ReadRecord[]) { return metered(env.DB as unknown as D1Database, log) as unknown as D1DatabaseLike; }
+function measured(log: ReadRecord[], originalSelection = false) {
+  const source = env.DB as unknown as D1Database;
+  const meter = metered(source, log);
+  return (originalSelection ? {...meter, prepare(query: string) {
+    const replaced = query.includes('/* indexed-due */');
+    const statement = meter.prepare(query.replace(/\/\* indexed-due \*\/[\s\S]*?\/\* end-indexed-due \*\//, 'catalog_seller_capabilities'));
+    return replaced ? {...statement, bind: (...values: unknown[]) => statement.bind(...values.slice(1))} : statement;
+  }} : meter) as unknown as D1DatabaseLike;
+}
 
 const db = env.DB as unknown as D1DatabaseLike;
+afterEach(async () => { await removeIndexes(); await restoreIndexes(); });
 const NOW = 1_800_000_000_000;
 const wallet = "0x1111111111111111111111111111111111111111";
 const reader = { getChainId: async () => 56, getBlockNumber: async () => 100n,
@@ -78,17 +87,28 @@ it("never discovers Testnet-only identities through the Mainnet reader", async (
   expect(reader.multicall).not.toHaveBeenCalled();
 });
 
-it.each([2000,20000])("preserves candidate order and read budgets at %i agents", async size => {
+it.each([
+  {size:2000, chainId:56 as const, dense:false, analyzed:true, offset:0},
+  {size:20000, chainId:56 as const, dense:false, analyzed:true, offset:0},
+  {size:2000, chainId:97 as const, dense:true, analyzed:true, offset:60000},
+  {size:20000, chainId:97 as const, dense:true, analyzed:false, offset:60000},
+  {size:2000, chainId:56 as const, dense:false, analyzed:true, offset:0, bootstrap:0},
+])("preserves candidate order and read budgets: $size / $chainId / dense=$dense / analyzed=$analyzed", async ({size,chainId,dense,analyzed,offset,bootstrap=5}) => {
   const results: { messages: unknown[]; reads: number[] }[] = [];
   for (const indexed of ["baseline","identity-only","candidates-only","all"]) {
     await seed(size);
+    if (dense) {
+      await db.prepare("UPDATE catalog_seller_capabilities SET nextProbeAt=CASE WHEN CAST(substr(agentKey,11) AS INTEGER)%3=0 THEN NULL ELSE 0 END, compatibilityState=CASE WHEN CAST(substr(agentKey,11) AS INTEGER)%4=0 THEN 'pending' ELSE 'unsupported' END").run();
+      await db.prepare("UPDATE catalog_seller_capabilities SET state='suspended' WHERE CAST(substr(agentKey,11) AS INTEGER)%17=0").run();
+      await db.prepare("UPDATE catalog_seller_capabilities SET state='ready', compatibilityState='compatible', capabilityExpiresAt=?,compatibilityExpiresAt=?,lastSuccessAt=? WHERE CAST(substr(agentKey,11) AS INTEGER)%19=0").bind(NOW+86400000,NOW+86400000,NOW).run();
+    }
     // Both cohorts contain due and future rows and shared origins. The existing
     // capability suite separately exercises expiry, leases and retry fairness.
     if (indexed === "baseline") {
       await removeIndexes();
       // Keep rediscovery's required access path; this comparison isolates the
       // candidate selector indexes, not the already-tested legacy scan.
-      const migration = env.TEST_MIGRATIONS.find(m=>m.name === '0029_background_read_indexes.sql')!;
+      const migration = env.TEST_MIGRATIONS.find(m=>m.name === '0030_background_read_indexes.sql')!;
       await db.prepare(migration.queries.find(q=>q.includes('idx_catalog_capabilities_legacy_inputs'))!).run();
     } else {
       await removeIndexes();
@@ -99,15 +119,19 @@ it.each([2000,20000])("preserves candidate order and read budgets at %i agents",
       }
       if (indexed === "candidates-only") await db.prepare("DROP INDEX idx_catalog_agents_identity_discovery").run();
     }
-    await db.prepare("ANALYZE").run();
+    if (analyzed) await db.prepare("ANALYZE").run();
+    else {
+      await db.prepare("DELETE FROM sqlite_stat1").run();
+      await db.prepare("ANALYZE sqlite_schema").run();
+    }
     const records: ReadRecord[] = [];
     const messages: unknown[] = [];
-    await enqueueDueCatalogCapabilities(measured(records), {send: async (m: unknown) => { messages.push(m); }} as never,
-      {nowMs:NOW,limit:5,bootstrapLimit:5,chainId:56});
+    await enqueueDueCatalogCapabilities(measured(records, indexed === 'baseline' || indexed === 'identity-only'), {send: async (m: unknown) => { messages.push(m); }} as never,
+      {nowMs:NOW+offset,limit:5,bootstrapLimit:bootstrap,chainId});
     const selects = records.filter(r => r.sql.includes("WITH ranked AS"));
-    expect(selects).toHaveLength(2);
+    expect(selects).toHaveLength(bootstrap ? 2 : 1);
     const plans = await Promise.all(selects.map(r => db.prepare(`EXPLAIN QUERY PLAN ${r.sql}`).bind(...r.values).all()));
-    console.log(JSON.stringify({size,indexed,reads:selects.map(r=>r.rowsRead),plans:plans.map(p=>p.results)}));
+    console.log(JSON.stringify({size,chainId,dense,analyzed,bootstrap,indexed,reads:selects.map(r=>r.rowsRead),durationMs:selects.map(r=>r.durationMs),plans:plans.map(p=>p.results)}));
     results.push({messages,reads:selects.map(r=>r.rowsRead)});
   }
   for (const result of results.slice(1)) expect(result.messages).toEqual(results[0]!.messages);
@@ -163,10 +187,11 @@ it("measures additive index storage and write cost on an existing database", asy
   const query = "UPDATE catalog_seller_capabilities SET nextProbeAt=? WHERE agentKey='eip155:56:2'";
   await measured(before).prepare(query).bind(NOW).run();
   const countBefore = await db.prepare("SELECT COUNT(*) n FROM catalog_seller_capabilities").first();
-  await restoreIndexes();
+  const indexBuild: ReadRecord[] = [];
+  await restoreIndexes(indexBuild);
   await measured(after).prepare(query).bind(NOW+1).run();
   expect(await db.prepare("SELECT COUNT(*) n FROM catalog_seller_capabilities").first()).toEqual(countBefore);
   const definitions = await db.prepare("SELECT name,sql FROM sqlite_master WHERE type='index' AND name IN (?,?,?,?)").bind(...indexNames).all();
   expect(definitions.results).toHaveLength(4);
-  console.log(JSON.stringify({writeCost:{before,after},definitions:definitions.results}));
+  console.log(JSON.stringify({writeCost:{before,after},indexBuild,definitions:definitions.results}));
 });
