@@ -125,6 +125,18 @@ export function createDatabase(d1: D1DatabaseLike): Database {
   return drizzle(d1 as Parameters<typeof drizzle>[0], { schema });
 }
 
+export async function readNewestCommerceJobMissingPaymentToken(
+  db: Database,
+  chainId: 56 | 97,
+): Promise<number | null> {
+  const [row] = await db.select({ jobId: commerceJobs.jobId })
+    .from(commerceJobs)
+    .where(and(eq(commerceJobs.chainId, chainId), isNull(commerceJobs.paymentToken)))
+    .orderBy(desc(commerceJobs.jobId))
+    .limit(1);
+  return row?.jobId ?? null;
+}
+
 /**
  * Return global reachability facets without expanding the same correlated
  * predicates once per facet. The catalogue route also exposes status and
