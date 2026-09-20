@@ -22,9 +22,11 @@ import {
 import { providerIdentity } from "../../../shared/agent-identity";
 import {
   BSC_COMMERCE,
+  BSC_PAYMENT_TOKEN,
   BSC_REGISTRY,
   BSC_TESTNET_COMMERCE,
   BSC_TESTNET_REGISTRY,
+  PROBE_DEPLOYMENTS,
   BscProbeError,
   createCountedBscClient,
 } from "../lib/chain";
@@ -65,9 +67,10 @@ export const DEPLOYMENTS: Record<HireChainId, {
   readonly chain: typeof bsc | typeof bscTestnet;
   readonly commerce: Address;
   readonly registry: Address;
+  readonly token: Address;
 }> = {
-  56: { chain: bsc, commerce: BSC_COMMERCE, registry: BSC_REGISTRY },
-  97: { chain: bscTestnet, commerce: BSC_TESTNET_COMMERCE, registry: BSC_TESTNET_REGISTRY },
+  56: { chain: bsc, commerce: BSC_COMMERCE, registry: BSC_REGISTRY, token: BSC_PAYMENT_TOKEN },
+  97: { chain: bscTestnet, commerce: BSC_TESTNET_COMMERCE, registry: BSC_TESTNET_REGISTRY, token: PROBE_DEPLOYMENTS[97].token },
 };
 
 export const commerceEventsAbi = parseAbi([
@@ -80,6 +83,7 @@ export const commerceEventsAbi = parseAbi([
 ]);
 export const commerceReadAbi = parseAbi([
   "function getJob(uint256 jobId) view returns ((uint256 id, address client, address provider, address evaluator, string description, uint256 budget, uint256 expiredAt, uint8 status, address hook, uint256 submittedAt, bytes32 deliverable))",
+  "function jobPaymentToken(uint256 jobId) view returns (address)",
 ]);
 const registryAbi = parseAbi([
   "function getAgentWallet(uint256 agentId) view returns (address)",
