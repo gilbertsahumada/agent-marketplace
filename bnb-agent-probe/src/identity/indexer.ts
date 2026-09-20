@@ -46,7 +46,7 @@ export async function runIdentityIndex(db: D1DatabaseLike, chainId: IdentityChai
   const cursor = await orm.select({ textValue: runtimeState.textValue }).from(runtimeState).where(eq(runtimeState.key, key)).get();
   const discovery = chainId === 56
     ? await orm.select({ agentId: catalogAgents.agentId, cursor: catalogAgents.agentKey }).from(catalogAgents)
-      .where(and(gt(catalogAgents.agentKey, cursor?.textValue ?? ""), eq(catalogAgents.indexState, "current")))
+      .where(and(eq(catalogAgents.chainId, 56), gt(catalogAgents.agentKey, cursor?.textValue ?? ""), eq(catalogAgents.indexState, "current")))
       .orderBy(asc(catalogAgents.agentKey)).limit(DISCOVERY_LIMIT)
     : await orm.selectDistinct({ agentId: hireEvents.agentId, cursor: hireEvents.agentId }).from(hireEvents)
       .where(and(eq(hireEvents.chainId, 97), eq(hireEvents.provenance, "chain_verified"), gt(hireEvents.agentId, cursor?.textValue ?? "")))

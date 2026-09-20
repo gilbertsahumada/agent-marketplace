@@ -2866,9 +2866,15 @@ describe("WP1 in the Workers runtime", () => {
     expect(await env.DB.prepare("SELECT COUNT(*) AS count FROM catalog_agents").first())
       .toEqual({ count: 4 });
     expect(await env.DB.prepare("SELECT COUNT(*) AS count FROM catalog_endpoints").first())
-      .toEqual({ count: 1 });
+      .toEqual({ count: 0 });
+    expect(JSON.parse((await runtimeText("last_sweep_summary"))!).ingestBudgetDeferred).toBe(true);
     expect(await env.DB.prepare("SELECT COUNT(*) AS count FROM catalog_ingest_tasks WHERE status = 'pending'").first())
       .toEqual({ count: 4 });
+    // No task was claimed/lost. With discovery already persisted the next
+    // invocation can process it under the same 60-write limit.
+    expect(config.d1RowsWrittenPerRun).toBe(60);
+    await expect(runner({scheduledTime:50_100,cron:"*/5 * * * *"},env,createExecutionContext(),config)).resolves.toBe("completed");
+    expect(await env.DB.prepare("SELECT COUNT(*) AS count FROM catalog_endpoints").first()).toEqual({count:1});
   });
 });
 

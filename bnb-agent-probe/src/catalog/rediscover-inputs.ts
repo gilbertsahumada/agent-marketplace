@@ -9,9 +9,11 @@ import { NEGOTIATION_DETECTOR_VERSION } from "../../../src/shared/negotiation-pr
 export async function revisitOldInputFailures(db: ReturnType<typeof createDatabase>, now: number, limit: number): Promise<void> {
   if (!Number.isSafeInteger(limit) || limit < 0 || limit > 100) throw new Error("DISCOVERY_REVISIT_LIMIT");
   if (!limit) return;
+  // Require migration 0030 first. Without this access path SQLite may start
+  // from all Mainnet agents even when no older detector versions exist.
   await db.run(sql`UPDATE catalog_seller_capabilities SET compatibilityState='pending',nextProbeAt=${now}
     WHERE (agentKey,endpointKey) IN (
-      SELECT c.agentKey,c.endpointKey FROM catalog_seller_capabilities c
+      SELECT c.agentKey,c.endpointKey FROM catalog_seller_capabilities c INDEXED BY idx_catalog_capabilities_legacy_inputs
       JOIN catalog_agents a ON a.agentKey=c.agentKey AND a.chainId=56 AND a.indexState='current'
       JOIN catalog_agent_endpoints ae ON ae.agentKey=c.agentKey AND ae.endpointKey=c.endpointKey AND ae.declarationState='current'
       JOIN catalog_endpoints e ON e.endpointKey=c.endpointKey AND e.safety='safe' AND e.eligibility='eligible'
