@@ -511,6 +511,13 @@ describe("HireJobLedgerPage", () => {
     expect(screen.getByRole("link", { name: /U token on explorer/ })).toHaveAttribute("href", "https://bscscan.com/address/0xcE24439F2D9C6a2289F741120FE202248B666666");
   });
 
+  it("selects the payment-token identity from the job address", () => {
+    const usdc = "0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d" as const;
+    const { container } = render(createElement(HireJobLedgerPage, { job: detail({ paymentToken: usdc }) }));
+    expect(screen.getByRole("link", { name: /USDC token on explorer/ })).toHaveAttribute("href", `https://bscscan.com/address/${usdc}`);
+    expect(container.querySelector(`img[src*="${usdc}"]`)).toBeInTheDocument();
+  });
+
   it("links transactions on the selected network without repeating blocks", () => {
     const hash = `0x${"ab".repeat(32)}`;
     render(createElement(HireJobLedgerPage, { job: detail({ chainId: 97, deliverable: hash, events: [event("submitted", "JobSubmitted", { deliverable: hash })] }) }));
