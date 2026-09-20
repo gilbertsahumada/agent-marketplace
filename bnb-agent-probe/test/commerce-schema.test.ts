@@ -8,6 +8,11 @@ import { commerceJobCounts, commerceJobEvents, commerceJobs } from "../src/db/sc
 
 const migrationsDir = new URL("../migrations/", import.meta.url);
 const migration = readFileSync(new URL("0022_commerce_index.sql", migrationsDir), "utf8");
+const laterCommerceMigrations = readdirSync(migrationsDir)
+  .filter((name) => name.endsWith(".sql") && name > "0022_commerce_index.sql")
+  .sort()
+  .map((name) => readFileSync(new URL(name, migrationsDir), "utf8"))
+  .join("\n");
 
 // The whole migration chain applied to an in-memory SQLite, so index shape is
 // asserted on what the engine built rather than on the SQL text alone.
@@ -20,13 +25,15 @@ function migratedDatabase(): DatabaseSync {
 }
 
 describe("Commerce index schema", () => {
-  it("keeps the Drizzle model reconciled with migration 0022", () => {
+  it("keeps the Drizzle model reconciled with the Commerce migration chain", () => {
     for (const table of [commerceJobs, commerceJobCounts, commerceJobEvents]) {
       const tableName = getTableName(table);
       const migrationTable = migration.match(new RegExp(`CREATE TABLE ${tableName} \\(([\\s\\S]*?)\\n\\);`))?.[1];
       expect(migrationTable, `missing migration table ${tableName}`).toBeDefined();
       for (const column of Object.values(getTableColumns(table)).map((entry) => entry.name)) {
-        expect(new RegExp(`(^|\\n)\\s*${column}\\s`, "m").test(migrationTable!), `${tableName}.${column}`).toBe(true);
+        const createdWithTable = new RegExp(`(^|\\n)\\s*${column}\\s`, "m").test(migrationTable!);
+        const addedLater = new RegExp(`ALTER TABLE\\s+${tableName}\\s+ADD COLUMN\\s+${column}\\s`, "i").test(laterCommerceMigrations);
+        expect(createdWithTable || addedLater, `${tableName}.${column}`).toBe(true);
       }
     }
   });
