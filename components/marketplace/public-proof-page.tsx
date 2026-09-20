@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { EvidenceRail } from "./evidence-rail";
 import { PageIntro } from "./page-primitives";
+import { PaymentTokenIdentity } from "./payment-token";
 
 export function PublicProofPage({ proof }: { proof: PublicJobProof }) {
   const { snapshot, live } = proof;
@@ -59,8 +60,9 @@ export function PublicProofPage({ proof }: { proof: PublicJobProof }) {
           <CardContent><dl className="space-y-3 text-sm">
             {[
               ["Chain", `${snapshot.network} · ${snapshot.chainId}`], ["Seller agent", snapshot.sellerAgentId], ["Buyer", snapshot.buyer], ["Seller", snapshot.seller],
-              ["Payment token", `${snapshot.payment.symbol} · ${snapshot.payment.token}`], ["Budget (raw)", snapshot.payment.budgetRaw], ["Deadline", snapshot.lifecycle.deadline.iso], ["Submitted", snapshot.lifecycle.submittedAt.iso],
+              ["Budget (raw)", snapshot.payment.budgetRaw], ["Deadline", snapshot.lifecycle.deadline.iso], ["Submitted", snapshot.lifecycle.submittedAt.iso],
             ].map(([label, value]) => <div className="grid gap-1 border-b border-white/10 pb-3 sm:grid-cols-[9rem_1fr]" key={label}><dt className="text-zinc-500">{label}</dt><dd className="font-hash text-xs text-zinc-200">{value}</dd></div>)}
+            <div className="grid gap-1 border-b border-white/10 pb-3 sm:grid-cols-[9rem_1fr]"><dt className="text-zinc-500">Payment token</dt><dd><PaymentTokenIdentity address={snapshot.payment.token} chainId={97} /></dd></div>
           </dl></CardContent>
         </Card>
         <Card className="marketplace-surface">
