@@ -39,12 +39,20 @@ export function catalogIngestTaskLimitForBudget(input: {
   readonly maxDeclarations: number;
   readonly requestedTasks: number;
   readonly reserveQueries: number;
+  readonly remainingRowWrites?: number;
+  readonly reserveRowWrites?: number;
 }): number {
   const queryCeilingPerTask = 6
     + Math.ceil(input.maxDeclarations / ENDPOINT_CHUNK)
     + Math.ceil(input.maxDeclarations / RELATION_CHUNK);
   const usable = Math.max(0, input.remainingQueries - input.reserveQueries);
-  return Math.min(input.requestedTasks, Math.floor(usable / queryCeilingPerTask));
+  // Include table and index writes, not just changed logical rows. Fixed
+  // headroom covers identity/lease/task bookkeeping; per-declaration headroom
+  // covers endpoint, relation, capability and admission/retirement updates.
+  const writeCeilingPerTask = 14 + 20 * input.maxDeclarations;
+  const writeTasks = input.remainingRowWrites === undefined ? input.requestedTasks
+    : Math.floor(Math.max(0, input.remainingRowWrites - (input.reserveRowWrites ?? 0)) / writeCeilingPerTask);
+  return Math.min(input.requestedTasks, Math.floor(usable / queryCeilingPerTask), writeTasks);
 }
 
 export interface CatalogDiscoverySummary {
@@ -539,6 +547,17 @@ export async function processNextCatalogIngestTask(
         priority: current.priority, metadataVersion: current.metadataVersion,
         metadataObservedAt: agent.metadataUpdatedAt ?? input.nowMs, policyVersion: 2,
       },
+      // Discovery already persisted this generation. Avoid rewriting the same
+      // identity and its indexes for every resumable declaration chunk. Keep
+      // the existing hourly lastSeen cadence and immediately repair changes.
+      setWhere: or(
+        isNull(catalogAgents.metadataVersion),
+        ne(catalogAgents.metadataVersion, current.metadataVersion),
+        ne(catalogAgents.indexState, "current"),
+        ne(catalogAgents.metadataState, agent.metadataAvailable ? "ok" : "other"),
+        ne(catalogAgents.policyVersion, 2),
+        lte(catalogAgents.lastSeenAt, input.nowMs - LAST_SEEN_REFRESH_MS),
+      )!,
     }),
     ...chunks(endpointRows, ENDPOINT_CHUNK).map((rows) => db.insert(catalogEndpoints).values(rows)
       .onConflictDoUpdate({
