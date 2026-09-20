@@ -113,9 +113,9 @@ network IDs, empty and later legacy candidates, suspension/ineligible exclusions
 network/cohort selection equivalence, and row admission plus eventual processing.
 Existing suites cover concurrent leases, failed sends, retries and per-origin limits.
 
-Before integrating the concurrent payment change: **337 integration tests and
-658 unit tests passed**, plus Worker typecheck. Final post-integration results are
-reported in the PR update. Fresh databases apply all migrations in test setup;
+After integrating concurrent main commit 470c4a4 (PR #154): **337 integration tests
+and 658 unit tests passed**, plus Worker typecheck and diff whitespace checks.
+Fresh databases apply all migrations in test setup;
 upgrade tests remove only the proposed indexes and apply the real migration to
 populated tables. No existing migration is edited.
 
