@@ -51,6 +51,8 @@ export interface Env {
   HIRE_EVENTS_PER_CALLER_DAY?: string;
   AGENT_IDENTITY_INDEX_ENABLED?: string;
   COMMERCE_INDEX_ENABLED?: string;
+  /** Temporary self-healing pass for indexed jobs missing their payment token. */
+  COMMERCE_TOKEN_BACKFILL_ENABLED?: string;
   COMMERCE_INDEX_BLOCKS_PER_RUN?: string;
   COMMERCE_INDEX_FINALITY_BLOCKS?: string;
   COMMERCE_INDEX_JOBS_PER_RUN?: string;
