@@ -5,9 +5,7 @@ import type { JobAgentResolution } from "@/src/business/entities/job-agent-resol
 import { explorerUrl } from "./hire-job-rows";
 import { AddressLink } from "./address-link";
 import { JobAgentCell } from "./job-agent-cell";
-import { formatTokenAmount } from "@/src/business/entities/token-amount";
-import { ERC8183_MAINNET } from "@/src/mainnet/contracts";
-import { ERC8183_TESTNET } from "@/src/business/browser/erc8183-browser-wallet";
+import { PaymentTokenAmount } from "./payment-token";
 const EXPLORER_LINK = "inline-flex items-center gap-1.5 text-signal underline decoration-signal/30 underline-offset-4 hover:decoration-signal focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-signal";
 
 const UTC_DATE_TIME = new Intl.DateTimeFormat("en", {
@@ -18,7 +16,7 @@ function when(value: string | null): string {
   return !value || !Number.isFinite(Date.parse(value)) ? "—" : `${UTC_DATE_TIME.format(new Date(value))} UTC`;
 }
 
-export type JobStateFacts = Pick<HireJobDetail, "chainId" | "buyer" | "provider" | "budgetRaw" | "expiresAt" | "submittedAt" | "deliverable" | "events"> & { evaluator: string | null; policy?: string };
+export type JobStateFacts = Pick<HireJobDetail, "chainId" | "buyer" | "provider" | "paymentToken" | "budgetRaw" | "expiresAt" | "submittedAt" | "deliverable" | "events"> & { evaluator: string | null; policy?: string };
 
 export function JobStateCard({ job, agentResolution, source = "indexed" }: { job: JobStateFacts; agentResolution?: JobAgentResolution | undefined; source?: "indexed" | "direct" | "snapshot" }) {
   const explorer = explorerUrl(job.chainId);
@@ -51,10 +49,7 @@ export function JobStateCard({ job, agentResolution, source = "indexed" }: { job
           </div>
           <div className="grid gap-1 border-b border-border pb-3 sm:grid-cols-[10rem_1fr]">
             <span className="text-muted-foreground">Budget</span>
-            <p className="flex items-center gap-1.5">
-              <span>{formatTokenAmount(job.budgetRaw, 18)}</span>
-              <a className={EXPLORER_LINK} href={`${explorer}/address/${job.chainId === 56 ? ERC8183_MAINNET.token : ERC8183_TESTNET.token}`} target="_blank" rel="noopener noreferrer" aria-label="U token on explorer, opens in a new tab">U<ExternalLink aria-hidden="true" className="size-3" /></a>
-            </p>
+            <PaymentTokenAmount {...(job.paymentToken === undefined ? {} : { address: job.paymentToken })} amountRaw={job.budgetRaw} chainId={job.chainId} />
           </div>
           {facts.map(([label, value]) => (
             <div className="grid gap-1 border-b border-white/[0.06] pb-3 sm:grid-cols-[10rem_1fr]" key={label}>
