@@ -83,7 +83,7 @@ export async function enqueueDueCatalogCapabilities(
   if (!Number.isSafeInteger(bootstrapLimit) || bootstrapLimit < 0 || bootstrapLimit > 100) throw new Error("CATALOG_COMPATIBILITY_BOOTSTRAP_BATCH_SIZE");
   if (!Number.isSafeInteger(concurrency) || concurrency < 1) throw new Error("CATALOG_QUOTE_CONCURRENCY");
   const db = createDatabase(dbBinding);
-  await revisitOldInputFailures(db, input.nowMs, bootstrapLimit);
+  if (chainId === 56) await revisitOldInputFailures(db, input.nowMs, bootstrapLimit);
   // Repair stale scheduling markers from earlier discovery runs without
   // manufacturing new quote evidence or extending its expiry.
   await db.run(sql`UPDATE catalog_seller_capabilities SET state='ready', updatedAt=${input.nowMs}
