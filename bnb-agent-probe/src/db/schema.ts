@@ -232,6 +232,10 @@ export const catalogSellerCapabilities = sqliteTable(
     primaryKey({ columns: [table.agentKey, table.endpointKey] }),
     index("idx_catalog_seller_capabilities_queue").on(table.state, table.nextProbeAt, table.updatedAt),
     index("idx_catalog_seller_capabilities_agent").on(table.agentKey, desc(table.updatedAt)),
+    index("idx_catalog_capabilities_ready_expiry").on(table.capabilityExpiresAt, table.agentKey, table.endpointKey)
+      .where(sql`${table.state} = 'ready'`),
+    index("idx_catalog_capabilities_restorable").on(sql`MIN(${table.capabilityExpiresAt}, ${table.compatibilityExpiresAt})`, table.agentKey, table.endpointKey)
+      .where(sql`${table.state} = 'stale' AND ${table.compatibilityState} = 'compatible' AND ${table.lastSuccessAt} IS NOT NULL AND ${table.consecutiveFailures} = 0 AND ${table.lastErrorCode} IS NULL`),
     index("idx_catalog_capabilities_legacy_inputs").on(table.detectorVersion, table.agentKey, table.endpointKey, table.compatibilityCheckedAt)
       .where(sql`${table.compatibilityState} = 'unsupported' AND ${table.state} <> 'suspended' AND ${table.compatibilityErrorCode} IN ('NEGOTIATION_PARAMETERS_UNAVAILABLE','NEGOTIATION_SCHEMA_UNSUPPORTED')`),
     index("idx_catalog_capabilities_pending_due").on(table.nextProbeAt, table.agentKey, table.endpointKey, table.updatedAt, table.transport, table.state, table.compatibilityState, table.capabilityExpiresAt, table.compatibilityExpiresAt, table.lastSuccessAt)
