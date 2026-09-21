@@ -113,6 +113,7 @@ describe("D1 schema", () => {
     const projectRoot = resolve(fileURLToPath(new URL("..", import.meta.url)));
     const sourceRoot = resolve(projectRoot, "src");
     const allowlist = new Map([
+      ["src/db/background-budget.ts", 4],
       ["src/db/query-budget.ts", 1],
       ["src/lib/scheduler-lease.ts", 2],
     ]);
