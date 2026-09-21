@@ -1,3 +1,4 @@
+import { effectiveCapability, effectiveCapabilityReadySql } from "../catalog/effective-capability";
 import { and, eq, inArray, isNull, lte, or, sql } from "drizzle-orm";
 
 import { createDatabase, readRuntimeState, type CatalogSellerCapabilityRow } from "../db/orm";
@@ -66,26 +67,13 @@ function capabilityPayload(row: Pick<CatalogSellerCapabilityRow, "agentKey" | "e
   };
 }
 
-/** Reconcile global scheduling markers once before selecting either network. */
-export async function repairCatalogCapabilities(dbBinding: D1DatabaseLike, nowMs: number): Promise<void> {
-  const db = createDatabase(dbBinding);
-  // Repair scheduling markers only; never manufacture or extend evidence.
-  await db.run(sql`UPDATE catalog_seller_capabilities SET state='ready', updatedAt=${nowMs}
-    WHERE state='stale' AND compatibilityState='compatible'
-      AND compatibilityExpiresAt > ${nowMs} AND capabilityExpiresAt > ${nowMs}
-      AND lastSuccessAt IS NOT NULL AND consecutiveFailures=0 AND lastErrorCode IS NULL`);
-  await db.update(catalogSellerCapabilities).set({ state: "stale", nextProbeAt: nowMs, updatedAt: nowMs })
-    .where(and(eq(catalogSellerCapabilities.state, "ready"), lte(catalogSellerCapabilities.capabilityExpiresAt, nowMs)));
-}
-
 /**
  * Claim due rows before sending so overlapping ticks cannot duplicate probes.
- * Callers selecting both networks can repair once and pass skipRepairs=true.
  */
 export async function enqueueDueCatalogCapabilities(
   dbBinding: D1DatabaseLike,
   queue: QueueProducer,
-  input: { readonly nowMs: number; readonly limit: number; readonly chainId?: 56 | 97; readonly concurrency?: number; readonly bootstrapLimit?: number; readonly originPerMinute?: number; readonly skipRepairs?: boolean },
+  input: { readonly nowMs: number; readonly limit: number; readonly chainId?: 56 | 97; readonly concurrency?: number; readonly bootstrapLimit?: number; readonly originPerMinute?: number; },
 ): Promise<CatalogCapabilityQueueSummary> {
   const chainId = input.chainId ?? 56;
   if (chainId !== 56 && chainId !== 97) throw new Error("CATALOG_CHAIN_UNSUPPORTED");
@@ -98,7 +86,6 @@ export async function enqueueDueCatalogCapabilities(
   if (!Number.isSafeInteger(concurrency) || concurrency < 1) throw new Error("CATALOG_QUOTE_CONCURRENCY");
   const db = createDatabase(dbBinding);
   if (chainId === 56) await revisitOldInputFailures(db, input.nowMs, bootstrapLimit);
-  if (!input.skipRepairs) await repairCatalogCapabilities(dbBinding, input.nowMs);
   const selectDue = (bootstrap: boolean | null, window: number) => {
     const index = bootstrap ? sql`idx_catalog_capabilities_pending_due` : sql`idx_catalog_capabilities_maintenance_due`;
     const cohort = bootstrap ? sql`compatibilityState='pending'` : sql`compatibilityState<>'pending'`;
@@ -117,7 +104,18 @@ export async function enqueueDueCatalogCapabilities(
     // INDEXED BY constrains the access path, not the loop order. With partial
     // statistics SQLite can otherwise repeat the entire due range per agent.
     // Keep the range before the identity lookup; preserve the combined path.
-    const lookupJoin = useDueRanges ? sql`CROSS JOIN` : sql`JOIN`;
+    const lookupJoin = sql`CROSS JOIN`;
+    // Keep Testnet's small identity slice first; adding effective-state
+    // predicates must not let SQLite expand all endpoints before filtering chain.
+    const sourceJoin = useDueRanges
+      ? sql`FROM ${source} c CROSS JOIN catalog_agents a ON a.agentKey=c.agentKey AND a.indexState='current' AND a.chainId=${chainId}`
+      : sql`FROM catalog_agents a CROSS JOIN catalog_seller_capabilities c ON c.agentKey=a.agentKey AND a.indexState='current' AND a.chainId=${chainId}`;
+    // Keep due-range scans covering. Only a stale row with live evidence needs
+    // failure details; CASE short-circuits these bounded primary-key lookups.
+    const effectiveReady = effectiveCapabilityReadySql({ state: sql`c.state`, capabilityExpiresAt: sql`c.capabilityExpiresAt`, compatibilityState: sql`c.compatibilityState`, compatibilityExpiresAt: sql`c.compatibilityExpiresAt`, lastSuccessAt: sql`c.lastSuccessAt`,
+      consecutiveFailures: useDueRanges ? sql`(SELECT f.consecutiveFailures FROM catalog_seller_capabilities f WHERE f.agentKey=c.agentKey AND f.endpointKey=c.endpointKey)` : sql`c.consecutiveFailures`,
+      lastErrorCode: useDueRanges ? sql`(SELECT f.lastErrorCode FROM catalog_seller_capabilities f WHERE f.agentKey=c.agentKey AND f.endpointKey=c.endpointKey)` : sql`c.lastErrorCode`,
+    }, input.nowMs);
     return db.all<{
     agentKey: string; endpointKey: string; originKey: string; compatibilityState: string; nextProbeAt: number | null;
   }>(sql`
@@ -133,13 +131,12 @@ export async function enqueueDueCatalogCapabilities(
             CASE WHEN c.transport='erc8183_http' THEN 0 ELSE 1 END,
             c.nextProbeAt, c.updatedAt, c.agentKey, c.endpointKey
         ) AS originRank
-      FROM ${source} c
-      ${lookupJoin} catalog_agents a ON a.agentKey=c.agentKey AND a.indexState='current' AND a.chainId=${chainId}
+      ${sourceJoin}
       ${lookupJoin} catalog_agent_endpoints ae ON ae.agentKey=c.agentKey AND ae.endpointKey=c.endpointKey AND ae.declarationState='current'
       ${lookupJoin} catalog_endpoints e ON e.endpointKey=c.endpointKey AND e.role='operational' AND e.eligibility='eligible'
       WHERE c.state IN ('discovered','ready','stale','failed')
         AND (c.nextProbeAt IS NULL OR c.nextProbeAt <= ${input.nowMs})
-        AND NOT (c.state='ready' AND COALESCE(c.capabilityExpiresAt,0) > ${input.nowMs}
+        AND NOT (${effectiveReady} AND COALESCE(c.capabilityExpiresAt,0) > ${input.nowMs}
           AND c.compatibilityState='compatible' AND COALESCE(c.compatibilityExpiresAt,0) > ${input.nowMs}
           AND c.lastSuccessAt IS NOT NULL)
         AND NOT EXISTS (SELECT 1 FROM runtime_state r
@@ -284,7 +281,7 @@ export async function runCatalogCapabilityProbe(
     eq(catalogSellerCapabilities.agentKey, work.agentKey),
     eq(catalogSellerCapabilities.endpointKey, work.endpointKey),
   )).limit(1);
-  const capability = capabilityRows[0];
+  const capability = capabilityRows[0] ? effectiveCapability(capabilityRows[0], startedAt) : undefined;
   if (!capability || capability.state === "unsupported" || capability.state === "suspended") {
     return { status: "skipped", agentKey: work.agentKey, endpointKey: work.endpointKey, requestId: null, attemptId: null, errorCode: null, durationMs: 0 };
   }
