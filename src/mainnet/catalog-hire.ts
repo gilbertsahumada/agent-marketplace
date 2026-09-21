@@ -14,10 +14,10 @@ export class CatalogHireUnavailableError extends Error {
 export async function resolveCatalogHireTarget(
   agentId: string,
   quoteRequestId: number,
-  options: { allowExpired?: boolean; chainId?: 56 | 97 } = {},
+  options: { allowExpired?: boolean; chainId?: 56 | 97; backgroundJobs?:boolean } = {},
 ): Promise<CatalogHireTarget> {
   const chainId = options.chainId ?? 56;
-  const row = await resolveBuyerQuoteRequest(agentId, quoteRequestId, { chainId });
+  const row = await resolveBuyerQuoteRequest(agentId, quoteRequestId, { chainId, ...(options.backgroundJobs ? {backgroundJobs:true} : {}) });
   if (!row || row.resultObservationId === null || !["succeeded", "expired"].includes(row.status)) {
     throw new CatalogHireUnavailableError(options.allowExpired
       ? "The original verified quote could not be found. Keep this job for recovery; do not fund another job."

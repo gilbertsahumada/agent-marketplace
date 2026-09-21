@@ -9,14 +9,14 @@ import { resolveCatalogHireTarget } from "./catalog-hire.ts";
 import { catalogHireWritesEnabled } from "./catalog-hire-network.ts";
 import { assertJobQuoteBinding } from "../business/policies/job-quote-binding.ts";
 
-export async function processHireNotification(chainId: 56 | 97, jobId: string) {
+export async function processHireNotification(chainId: 56 | 97, jobId: string, options: {backgroundJobs?:boolean} = {}) {
   if (process.env.HIRE_NOTIFICATION_RECOVERY_ENABLED !== "1" || !catalogHireWritesEnabled(chainId)) return null;
   const key = { chainId, jobId };
   return recoverHireNotification({
     now: Date.now,
-    claim: () => notificationStore<HireNotification | null>({ action: "claim", ...key }),
+    claim: () => notificationStore<HireNotification | null>({ action: "claim", ...key }, options),
     prepare: async row => {
-      const target = await resolveCatalogHireTarget(row.agentId, row.quoteRequestId, { chainId, allowExpired: true });
+      const target = await resolveCatalogHireTarget(row.agentId, row.quoteRequestId, { chainId, allowExpired: true, ...(options.backgroundJobs ? {backgroundJobs:true} : {}) });
       const repo = new CatalogErc8183Repository(target);
       const job = await repo.getJob(BigInt(jobId));
       assertJobQuoteBinding(job.description, target.negotiationHash);
@@ -26,7 +26,7 @@ export async function processHireNotification(chainId: 56 | 97, jobId: string) {
       }
       return { job, notify: (beforeSend) => repo.notifyFunded(BigInt(jobId), beforeSend) };
     },
-    sending: async row => { await notificationStore({ action: "sending", ...key, token: row.leaseToken }); },
-    finish: async (row, state) => { await notificationStore({ action: "finish", ...key, token: row.leaseToken, state }); },
+    sending: async row => { await notificationStore({ action: "sending", ...key, token: row.leaseToken }, options); },
+    finish: async (row, state) => { await notificationStore({ action: "finish", ...key, token: row.leaseToken, state }, options); },
   });
 }

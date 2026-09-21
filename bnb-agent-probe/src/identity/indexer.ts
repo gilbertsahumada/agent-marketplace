@@ -1,7 +1,7 @@
 import { parseAbi, type PublicClient } from "viem";
 import { bsc, bscTestnet } from "viem/chains";
 import type { D1DatabaseLike } from "../db/client";
-import { and, asc, eq, gt, lte, sql } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, lte, sql } from "drizzle-orm";
 import { createDatabase } from "../db/orm";
 import { agentIdentities, catalogAgents, hireEvents, runtimeState } from "../db/schema";
 import { createCountedBscClient } from "../lib/chain";
@@ -43,6 +43,7 @@ export async function runIdentityIndex(db: D1DatabaseLike, chainId: IdentityChai
   const orm = createDatabase(db);
   const registry = IDENTITY_REGISTRIES[chainId];
   const key = `agent_identity_cursor:${chainId}:${registry}`;
+  const retryPrefix = `agent_identity_retry:${chainId}:${registry}:`;
   const cursor = await orm.select({ textValue: runtimeState.textValue }).from(runtimeState).where(eq(runtimeState.key, key)).get();
   const discovery = chainId === 56
     ? await orm.select({ agentId: catalogAgents.agentId, cursor: catalogAgents.agentKey }).from(catalogAgents)
@@ -60,33 +61,57 @@ export async function runIdentityIndex(db: D1DatabaseLike, chainId: IdentityChai
       SELECT agentId FROM hire_events WHERE chainId = ${chainId} AND provenance = 'chain_verified'
       UNION SELECT agentId FROM probe_targets WHERE chainId = ${chainId} AND declarationState = 'current'
     ) known LEFT JOIN agent_identities i ON i.chainId = ${chainId} AND i.registryAddress = ${registry} AND i.agentId = known.agentId
-    WHERE i.agentId IS NULL OR i.nextCheckAt <= ${now} ORDER BY known.agentId LIMIT 10`);
-  const ids = [...new Set([...priority.map(row => row.agentId),
+    WHERE (i.agentId IS NULL OR i.nextCheckAt <= ${now})
+      AND NOT EXISTS (SELECT 1 FROM runtime_state r WHERE r.key = ${retryPrefix} || known.agentId AND r.integerValue > ${now})
+    ORDER BY known.agentId LIMIT 10`);
+  const candidates = [...new Set([...priority.map(row => row.agentId),
     ...discovery.map(row => row.agentId), ...refresh.map(row => row.agentId)])];
-  if (ids.some(id => !/^[1-9]\d{0,19}$/.test(id))) throw new Error("IDENTITY_INDEX_INVALID_ID");
+  // A malformed source row must not poison an entire page. Keep the raw page
+  // for cursor advancement, including when every item on it is invalid.
+  const valid = candidates.filter(id => /^[1-9]\d{0,19}$/.test(id));
+  const retries = valid.length ? await orm.select({ key: runtimeState.key }).from(runtimeState)
+    .where(and(inArray(runtimeState.key, valid.map(id => retryPrefix + id)), gt(runtimeState.integerValue, now))) : [];
+  const deferred = new Set(retries.map(row => row.key));
+  const ids = valid.filter(id => !deferred.has(retryPrefix + id));
   let stored = 0;
   if (ids.length) {
-    if (await reader.getChainId() !== chainId) throw new Error("IDENTITY_INDEX_WRONG_CHAIN");
-    const block = await reader.getBlockNumber();
+    const retryStatements = (agentId: string) => {
+      // Retry state is never attribution evidence, including for new IDs.
+      const retry = { key: retryPrefix + agentId, integerValue: now + 60 * 60 * 1000, updatedAt: now };
+      return [orm.update(agentIdentities).set({ nextCheckAt: retry.integerValue })
+        .where(and(eq(agentIdentities.chainId, chainId), eq(agentIdentities.registryAddress, registry),
+          eq(agentIdentities.agentId, agentId), lte(agentIdentities.observedAt, now))),
+        orm.insert(runtimeState).values(retry).onConflictDoUpdate({ target: runtimeState.key, set: retry,
+          setWhere: lte(runtimeState.updatedAt, now) })];
+    };
+    const registryRead = async <T>(read: () => Promise<T>): Promise<T> => {
+      try { return await read(); }
+      catch (error) {
+        const retry = ids.flatMap(retryStatements);
+        await orm.batch([retry[0]!, ...retry.slice(1)]);
+        // Preserve the failure and cursor; the next pass skips backed-off IDs.
+        throw error;
+      }
+    };
+    if (await registryRead(() => reader.getChainId()) !== chainId) throw new Error("IDENTITY_INDEX_WRONG_CHAIN");
+    const block = await registryRead(() => reader.getBlockNumber());
     if (!Number.isSafeInteger(Number(block))) throw new Error("IDENTITY_INDEX_INVALID_BLOCK");
-    const reads = await reader.multicall({ blockNumber: block, allowFailure: true, contracts: ids.flatMap(agentId => [
+    const reads = await registryRead(() => reader.multicall({ blockNumber: block, allowFailure: true, contracts: ids.flatMap(agentId => [
       { address: registry, abi: ABI, functionName: "getAgentWallet" as const, args: [BigInt(agentId)] },
       { address: registry, abi: ABI, functionName: "ownerOf" as const, args: [BigInt(agentId)] },
-    ]) });
+    ]) }));
     const statements = ids.map((agentId, index) => {
       const wallet = reads[index * 2];
       const owner = reads[index * 2 + 1];
       if (wallet?.status !== "success" || owner?.status !== "success"
         || typeof wallet.result !== "string" || typeof owner.result !== "string") {
-        // Failed identities back off independently instead of monopolising the refresh window.
-        return orm.update(agentIdentities).set({ nextCheckAt: now + 60 * 60 * 1000 })
-          .where(and(eq(agentIdentities.chainId, chainId), eq(agentIdentities.registryAddress, registry),
-            eq(agentIdentities.agentId, agentId), lte(agentIdentities.observedAt, now)));
+        return retryStatements(agentId);
       }
       stored++;
-      return identitySnapshotStatement(db, { chainId, agentId, blockNumber: Number(block), observedAt: now,
-        agentWallet: wallet.result, owner: owner.result });
-    });
+      return [identitySnapshotStatement(db, { chainId, agentId, blockNumber: Number(block), observedAt: now,
+        agentWallet: wallet.result, owner: owner.result }),
+        orm.delete(runtimeState).where(and(eq(runtimeState.key, retryPrefix + agentId), lte(runtimeState.updatedAt, now)))];
+    }).flat();
     if (statements.length) await orm.batch([statements[0]!, ...statements.slice(1)]);
   }
   const rows = discovery;
@@ -95,5 +120,6 @@ export async function runIdentityIndex(db: D1DatabaseLike, chainId: IdentityChai
     target: runtimeState.key, set: { textValue: next, updatedAt: now },
     setWhere: lte(runtimeState.updatedAt, now),
   });
-  return { chainId, checked: ids.length, stored, coverage: "partial" as const };
+  return { chainId, checked: ids.length, stored, invalidIds: candidates.length - valid.length,
+    deferred: deferred.size, coverage: "partial" as const };
 }

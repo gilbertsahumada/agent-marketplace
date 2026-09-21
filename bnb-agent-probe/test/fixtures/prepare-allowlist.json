@@ -1,6 +1,34 @@
 {
   "entries": [
     {
+      "file": "src/db/background-budget.ts",
+      "function": "closeLane",
+      "fingerprint": "bf688896183d",
+      "count": 1,
+      "normative": true
+    },
+    {
+      "file": "src/db/background-budget.ts",
+      "function": "closeLane",
+      "fingerprint": "d3743f931bdf",
+      "count": 1,
+      "normative": true
+    },
+    {
+      "file": "src/db/background-budget.ts",
+      "function": "output",
+      "fingerprint": "a8b771920b83",
+      "count": 1,
+      "normative": true
+    },
+    {
+      "file": "src/db/background-budget.ts",
+      "function": "settlement",
+      "fingerprint": "341372ef6943",
+      "count": 1,
+      "normative": true
+    },
+    {
       "file": "src/db/query-budget.ts",
       "function": "values",
       "fingerprint": "a8b771920b83",

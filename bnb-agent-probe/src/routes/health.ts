@@ -1,4 +1,4 @@
-import { sql } from "drizzle-orm";
+import { CAPABILITY_STATS_KEY, CAPABILITY_STATS_INTERVAL_MS, readCapabilityStats } from "../catalog/capability-stats";
 import type { WorkerConfig } from "../config";
 import type { D1Database } from "../types";
 import type { D1DatabaseLike } from "../db/client";
@@ -231,38 +231,31 @@ export async function healthResponse(
   try {
     const utcDate = new Date(now).toISOString().slice(0, 10);
     const dailyBudgetKey = `daily_budget_${utcDate.replaceAll("-", "")}`;
-    const runtimeKeys = [...RUNTIME_KEYS, dailyBudgetKey, "catalog_sweep_hour"];
+    const runtimeKeys = [...RUNTIME_KEYS, dailyBudgetKey, "catalog_sweep_hour", CAPABILITY_STATS_KEY];
     const rows = await readRuntimeStates(
       createDatabase(db as unknown as D1DatabaseLike), runtimeKeys,
     ) as RuntimeRow[];
-    const quoteQueue = config.catalogV2WritesEnabled
-      ? await (async () => {
-        const quoteDb = createDatabase(db as unknown as D1DatabaseLike);
-        const [counts, latest, compatibility] = await Promise.all([
-          quoteDb.all<{ state: string; total: number }>(sql`SELECT state, COUNT(*) AS total FROM catalog_seller_capabilities GROUP BY state`),
-          quoteDb.all<{ lastAttemptAt: number | null; nextProbeAt: number | null }>(sql`SELECT MAX(lastAttemptAt) AS lastAttemptAt, MIN(CASE WHEN state IN ('discovered','stale','failed') THEN nextProbeAt END) AS nextProbeAt FROM catalog_seller_capabilities`),
-          quoteDb.all<{ state: string; endpoints: number; agents: number; lastCheckedAt: number | null }>(sql`SELECT compatibilityState AS state, COUNT(*) AS endpoints, COUNT(DISTINCT agentKey) AS agents, MAX(compatibilityCheckedAt) AS lastCheckedAt FROM catalog_seller_capabilities GROUP BY compatibilityState`),
-        ]);
-        const count = (state: string) => Number(counts.find((row) => row.state === state)?.total ?? 0);
-        const row = latest[0];
+    const quoteQueue = (() => {
+        const stats = readCapabilityStats(rows.find(row => row.key === CAPABILITY_STATS_KEY), now);
         return {
           available: options.quoteQueueAvailable === true,
+          statsStatus: stats === null ? "missing" : now - stats.updatedAt >= CAPABILITY_STATS_INTERVAL_MS ? "stale" : "fresh",
+          statsUpdatedAt: stats?.updatedAt ?? null,
           sweep: (() => {
             const metrics = rows.find(entry => entry.key === "catalog_sweep_hour");
             if (!metrics?.textValue) return null;
             return { windowStart: metrics.integerValue, updatedAt: metrics.updatedAt, unit: "physical executions", counters: JSON.parse(metrics.textValue), note: "UTC-hour counters; not unique agents or a queue backlog. Compare enqueued/completed with queue wait and errors." };
           })(),
-          pending: count("discovered") + count("stale") + count("failed"),
-          ready: count("ready"),
-          stale: count("stale"),
-          failed: count("failed"),
-          lastQuoteAttemptAt: row?.lastAttemptAt ?? null,
-          lastProcessedAt: Math.max(row?.lastAttemptAt ?? 0, ...compatibility.map((entry) => entry.lastCheckedAt ?? 0)) || null,
-          nextProbeAt: row?.nextProbeAt ?? null,
-          compatibility: { unit: "endpoints", states: compatibility, note: "Pending is not incompatible; agent counts across states may overlap." },
+          pending: stats?.pending ?? null,
+          ready: stats?.ready ?? null,
+          stale: stats?.stale ?? null,
+          failed: stats?.failed ?? null,
+          lastQuoteAttemptAt: stats?.lastQuoteAttemptAt ?? null,
+          lastProcessedAt: stats?.lastProcessedAt ?? null,
+          nextProbeAt: stats?.nextProbeAt ?? null,
+          compatibility: { unit: "endpoints", states: stats?.compatibility ?? null, note: "Pending is not incompatible; agent counts across states may overlap." },
         };
-      })()
-      : { available: options.quoteQueueAvailable === true, pending: 0, ready: 0, stale: 0, failed: 0, lastProcessedAt: null, nextProbeAt: null };
+      })();
     const byKey = new Map(rows.map((row) => [row.key, row]));
     const summaryRows = [
       byKey.get("last_header_summary"),

@@ -10,6 +10,9 @@
   "vars": {
     "DEPLOYMENT_ENV": "production",
     "STAGING_MANUAL_RUN": "0",
+    "BACKGROUND_COST_CONTROLS_ENABLED": "1",
+    "BACKGROUND_MAINTENANCE_PAUSED": "1",
+    "BACKGROUND_JOBS_PAUSED": "1",
     "TRUST8004_BASE_URL": "https://trust8004.xyz/api/app",
     "CLOUDFLARE_WORKERS_PLAN": "free",
     "KILL_SWITCH": "1",
@@ -97,6 +100,9 @@
       "vars": {
         "DEPLOYMENT_ENV": "staging",
         "STAGING_MANUAL_RUN": "0",
+        "BACKGROUND_COST_CONTROLS_ENABLED": "1",
+        "BACKGROUND_MAINTENANCE_PAUSED": "1",
+        "BACKGROUND_JOBS_PAUSED": "1",
         "TRUST8004_BASE_URL": "https://trust8004.xyz/api/app",
         "CLOUDFLARE_WORKERS_PLAN": "paid",
         "KILL_SWITCH": "0",
@@ -186,6 +192,9 @@
       "vars": {
         "DEPLOYMENT_ENV": "validation",
         "STAGING_MANUAL_RUN": "0",
+        "BACKGROUND_COST_CONTROLS_ENABLED": "1",
+        "BACKGROUND_MAINTENANCE_PAUSED": "1",
+        "BACKGROUND_JOBS_PAUSED": "1",
         "TRUST8004_BASE_URL": "https://trust8004.xyz/api/app",
         "CLOUDFLARE_WORKERS_PLAN": "free",
         "KILL_SWITCH": "1",

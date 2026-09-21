@@ -32,6 +32,7 @@ describe("raw .prepare( allowlist gate", () => {
   it("keeps the normative exemptions confined to the lease and the budget wrapper", () => {
     const normativeFiles = new Set(entries.filter((e) => e.normative).map((e) => e.file));
     expect([...normativeFiles].sort()).toEqual([
+      "src/db/background-budget.ts",
       "src/db/query-budget.ts",
       "src/lib/scheduler-lease.ts",
     ]);

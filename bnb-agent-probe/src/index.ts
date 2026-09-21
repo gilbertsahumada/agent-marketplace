@@ -1,5 +1,7 @@
 import { ConfigError, loadConfig, type WorkerConfig } from "./config";
 import type { D1DatabaseLike } from "./db/client";
+import {runMaintenanceWindow, runBackgroundWindow, JOBS_INTERVAL_MS, MAINTENANCE_INTERVAL_MS} from './phases/background-cadence';
+import {runWithBackgroundBudget,runBackgroundControl} from './db/background-budget';
 import type { CommerceIndexSummary, CommerceIndexWork } from "./phases/commerce-index";
 import type { CatalogCapabilityProbeSummary, CatalogCapabilityWork } from "./phases/catalog-capability";
 import type {
@@ -222,8 +224,33 @@ function queueWork(body: unknown, currentTime: number): QueueWork {
 export function createWorker(dependencies: WorkerDependencies = {}): WorkerEntrypoint {
   const now = dependencies.now ?? Date.now;
   const logger = dependencies.logger ?? console;
+  // An optimization only: the daily ledger also persists denial across cold
+  // isolates. Cached deadlines never authorize work or replace atomic admission.
+  const laneNotBefore = new Map<'jobs' | 'maintenance', number>();
+  // Call only after the private service's bearer authentication. Event-driven
+  // buyer requests do not carry this marker and retain their immediate path.
+  const backgroundJobsResponse = async (request: Request, env: Env, run: (db: Env['DB']) => Promise<Response>) => {
+    if (env.BACKGROUND_COST_CONTROLS_ENABLED !== '1' || request.headers.get('x-marketplace-background-jobs') !== '1') {
+      return run(env.DB);
+    }
+    const deferred = (notBeforeMs = now() + MAINTENANCE_INTERVAL_MS) => Response.json(
+      { error: 'background_deferred', notBeforeMs }, { status: 503, headers: { 'cache-control': 'no-store', 'retry-after': String(Math.max(1,Math.ceil((notBeforeMs-now())/1000))) } },
+    );
+    if (env.BACKGROUND_JOBS_PAUSED === '1') return deferred();
+    const blockedUntil = laneNotBefore.get('jobs') ?? 0;
+    if (blockedUntil > now()) return deferred(blockedUntil);
+    try {
+      const result = await runWithBackgroundBudget(env.DB as unknown as D1DatabaseLike, 'jobs', 'notification-http', now(), db => run(db as unknown as Env['DB']));
+      if (result.status === 'completed') return result.value;
+      laneNotBefore.set('jobs',result.notBeforeMs);
+      return deferred(result.notBeforeMs);
+    } catch {
+      // A fenced sending/uncertain notification remains durable for recovery.
+      return deferred();
+    }
+  };
 
-  return {
+  const worker: WorkerEntrypoint = {
     async fetch(request, env, context) {
       let config: WorkerConfig;
       try {
@@ -354,7 +381,7 @@ export function createWorker(dependencies: WorkerDependencies = {}): WorkerEntry
           return errorResponse("unauthorized", 401);
         }
         const { createCatalogQuoteRequestResponse, catalogQuoteHistoryResponse, callerForQuote } = await import("./routes/catalog-quotes");
-        if (request.method === "GET") return catalogQuoteHistoryResponse(request, env.DB, url.pathname.split("/").at(-1)!, now());
+        if (request.method === "GET") return backgroundJobsResponse(request, env, db => catalogQuoteHistoryResponse(request, db, url.pathname.split("/").at(-1)!, now()));
         return createCatalogQuoteRequestResponse(request, env.DB, {
           nowMs: now(),
           caller: callerForQuote(request),
@@ -411,7 +438,7 @@ export function createWorker(dependencies: WorkerDependencies = {}): WorkerEntry
       if (request.method === "POST" && url.pathname === "/hire-notifications") {
         if (!env.BUYER_OBSERVATION_SECRET || !await bearerMatches(request.headers.get("authorization"), env.BUYER_OBSERVATION_SECRET)) return errorResponse("unauthorized", 401);
         const { hireNotificationsResponse } = await import("./routes/hire-notifications");
-        return hireNotificationsResponse(request, env.DB as never, now());
+        return backgroundJobsResponse(request, env, db => hireNotificationsResponse(request, db as never, now()));
       }
       if (request.method === "GET" && url.pathname === "/hire-events") {
         const { hireEventsListResponse } = await import("./routes/hire-events");
@@ -556,8 +583,6 @@ export function createWorker(dependencies: WorkerDependencies = {}): WorkerEntry
     async scheduled(controller, env, _context) {
       const config = loadConfig(env);
       if (config.killSwitch || config.producerKillSwitch) return;
-      const { hireNotificationTick } = await import("./phases/hire-notification-tick");
-      _context.waitUntil(hireNotificationTick(env).catch(() => logger.error("hire.notification.tick.failed")));
       logger.info("wp2.cron.received", {
         cron: controller.cron,
         scheduledTime: controller.scheduledTime,
@@ -567,19 +592,28 @@ export function createWorker(dependencies: WorkerDependencies = {}): WorkerEntry
         : `*/${config.cronIntervalMinutes} * * * *`;
       if (controller.cron !== expectedCron) throw new Error("WP2_CRON_MISMATCH");
       if (env.WP2_QUEUE === undefined) throw new Error("WP2_QUEUE_BINDING_REQUIRED");
-      await env.WP2_QUEUE.send({ schemaVersion: 1, scheduledTime: controller.scheduledTime });
-      logger.info("wp2.cron.enqueued", { scheduledTime: controller.scheduledTime });
-      if (env.AGENT_IDENTITY_INDEX_ENABLED === "1") {
-        for (const chainId of [56, 97] as const) {
-          if (chainId === 56 ? env.BSC_RPC_URL : env.BSC_TESTNET_RPC_URL) {
-            await env.WP2_QUEUE.send({ schemaVersion: 1, kind: "index_identities", chainId, enqueuedAt: now() });
-          }
-        }
-      }
+      const controlled=env.BACKGROUND_COST_CONTROLS_ENABLED==='1';
+      if (controlled && env.STAGING_MANUAL_RUN === '1') return;
+      const originalEnv=env;
+      const replay = async (env: Env, lane: 'jobs' | 'maintenance') => {
+        const { replayDeferred } = await import('./db/deferred-background');
+        await runBackgroundWindow(env.DB as unknown as D1DatabaseLike, `${lane}_replay`, now(), MAINTENANCE_INTERVAL_MS, async () => {
+          await replayDeferred(env.DB as unknown as D1DatabaseLike, lane, { send: async body => {
+            const work = queueWork(body, now());
+            const queue = work.kind === 'catalog_capability_probe' ? env.CATALOG_QUOTE_QUEUE : env.WP2_QUEUE;
+            if (!queue) throw new Error('BACKGROUND_REPLAY_QUEUE_REQUIRED');
+            await queue.send(body);
+          } }, now());
+        });
+      };
+      const jobs=async (env:Env)=>{
+      if (controlled) await replay(env, 'jobs');
+      const { hireNotificationTick } = await import("./phases/hire-notification-tick");
+      await hireNotificationTick(env).catch(() => logger.error("hire.notification.tick.failed"));
       if (config.commerceIndexEnabled) {
         // One cursor-driven index_range per chain that has an RPC URL; the
         // consumer reads from the chain cursor to the safe head.
-        await enqueueCommerceIndexTicks(env, env.WP2_QUEUE, now(), logger);
+        await enqueueCommerceIndexTicks(env, env.WP2_QUEUE!, now(), logger);
         if (env.COMMERCE_TOKEN_BACKFILL_ENABLED === "1") {
           try {
             const { enqueueCommerceTokenBackfill } = await import("./phases/commerce-token-backfill");
@@ -587,7 +621,7 @@ export function createWorker(dependencies: WorkerDependencies = {}): WorkerEntry
               chainId === 56 ? env.BSC_RPC_URL !== undefined : env.BSC_TESTNET_RPC_URL !== undefined
             ));
             const summary = await enqueueCommerceTokenBackfill(
-              env.DB, env.WP2_QUEUE, chains, config.commerceIndexJobsPerRun, now(),
+              env.DB, env.WP2_QUEUE!, chains, config.commerceIndexJobsPerRun, now(),
             );
             if (summary.enqueued.length > 0) logger.info("commerce.token_backfill.enqueued", summary);
           } catch {
@@ -597,13 +631,35 @@ export function createWorker(dependencies: WorkerDependencies = {}): WorkerEntry
           }
         }
       }
+      };
+      const maintenance=async(env:Env)=>{
+      if (controlled) {
+        await replay(env, 'maintenance');
+        const {refreshCapabilityStats}=await import('./catalog/capability-stats');
+        await refreshCapabilityStats(env.DB as never,now());
+      }
+      if (controlled) {
+        await env.WP2_QUEUE!.send({ schemaVersion: 1, scheduledTime: controller.scheduledTime });
+        logger.info("wp2.cron.enqueued", { scheduledTime: controller.scheduledTime });
+      }
+      if (env.AGENT_IDENTITY_INDEX_ENABLED === "1") {
+        for (const chainId of [56, 97] as const) {
+          if (chainId === 56 ? env.BSC_RPC_URL : env.BSC_TESTNET_RPC_URL) {
+            await env.WP2_QUEUE!.send({ schemaVersion: 1, kind: "index_identities", chainId, enqueuedAt: now() });
+          }
+        }
+      }
       if (config.catalogProbeEnabled && config.catalogV2WritesEnabled && env.CATALOG_QUOTE_QUEUE !== undefined) {
-        const { enqueueDueCatalogCapabilities } = await import("./phases/catalog-capability");
+        const { enqueueDueCatalogCapabilities, repairCatalogCapabilities } = await import("./phases/catalog-capability");
+        if(controlled){
+          await repairCatalogCapabilities(env.DB as never,now());
+        }
         const { projectSharedDiscoveryFailures } = await import("./catalog/shared-discovery");
         const projected = await projectSharedDiscoveryFailures(env.DB as never, now(), Number(env.CATALOG_SHARED_DISCOVERY_LIMIT ?? "0"));
         if (projected) logger.info("catalog.discovery.shared", { projected, unit: "endpoint declarations", quoteAttemptsCreated: 0 });
         const summary = await enqueueDueCatalogCapabilities(env.DB as never, env.CATALOG_QUOTE_QUEUE, {
           nowMs: now(),
+          skipRepairs: controlled,
           limit: config.catalogQuoteBatchSize,
           concurrency: config.catalogQuoteConcurrency,
           bootstrapLimit: Number(env.CATALOG_COMPATIBILITY_BOOTSTRAP_BATCH_SIZE ?? "0"),
@@ -618,6 +674,7 @@ export function createWorker(dependencies: WorkerDependencies = {}): WorkerEntry
         if (testnetCatalogEnabled(env)) {
           const testnet = await enqueueDueCatalogCapabilities(env.DB as never, env.CATALOG_QUOTE_QUEUE, {
             nowMs: now(), chainId: 97,
+            skipRepairs: controlled,
             limit: TESTNET_QUOTE_BATCH_SIZE, concurrency: 1,
             bootstrapLimit: TESTNET_QUOTE_BATCH_SIZE, originPerMinute: 1,
           });
@@ -628,6 +685,25 @@ export function createWorker(dependencies: WorkerDependencies = {}): WorkerEntry
           } catch { logger.error("catalog.sweep.metrics.unavailable", { stage: "testnet-producer" }); }
         }
       }
+      };
+      if(!controlled){
+        await env.WP2_QUEUE.send({ schemaVersion: 1, scheduledTime: controller.scheduledTime });
+        logger.info("wp2.cron.enqueued", { scheduledTime: controller.scheduledTime });
+        await jobs(env);await maintenance(env);return;
+      }
+      // A failed jobs operation must not prevent the independent maintenance
+      // lane (or vice versa). Window claims remain durable after failure.
+      const lanes: Promise<unknown>[] = [];
+      const rememberDenial = (result: {status:string;notBeforeMs?:number}, lane:'jobs'|'maintenance') => {
+        if(result.status==='denied' && result.notBeforeMs!==undefined) laneNotBefore.set(lane,result.notBeforeMs);
+      };
+      if(env.BACKGROUND_JOBS_PAUSED!=='1' && (laneNotBefore.get('jobs')??0)<=now()) lanes.push(runWithBackgroundBudget(env.DB as never,'jobs','producer',now(),async db=>{
+        await runBackgroundWindow(db,'jobs',now(),JOBS_INTERVAL_MS,()=>jobs({...originalEnv,DB:db as unknown as Env['DB']}));
+      }).then(result=>rememberDenial(result,'jobs')).catch(() => logger.error('background.jobs.deferred')));
+      if(env.BACKGROUND_MAINTENANCE_PAUSED!=='1' && (laneNotBefore.get('maintenance')??0)<=now()) lanes.push(runWithBackgroundBudget(env.DB as never,'maintenance','producer',now(),async db=>{
+        await runMaintenanceWindow(db,now(),()=>maintenance({...originalEnv,DB:db as unknown as Env['DB']}));
+      },{estimateNanoUsd:500000}).then(result=>rememberDenial(result,'maintenance')).catch(() => logger.error('background.maintenance.deferred')));
+      await Promise.all(lanes);
     },
 
     async queue(batch: QueueBatch, env, context) {
@@ -644,6 +720,46 @@ export function createWorker(dependencies: WorkerDependencies = {}): WorkerEntry
       }
       if (message.id.length < 1 || message.id.length > 256) {
         throw new Error("WP2_QUEUE_MESSAGE_ID_INVALID");
+      }
+      if (env.BACKGROUND_COST_CONTROLS_ENABLED === '1') {
+        const { persistDeferred } = await import('./db/deferred-background');
+        const { BackgroundBudgetError } = await import('./db/background-budget');
+        const lane = work.kind === 'index_range' || work.kind === 'index_jobs' || work.kind === 'catalog_validation'
+          ? 'jobs' : 'maintenance';
+        // Persist only parsed fields, never arbitrary message extras.
+        const body = work.kind === 'index_range' && work.fromBlock === null
+          ? { schemaVersion: 2, kind: work.kind, chainId: work.chainId, enqueuedAt: work.enqueuedAt }
+          : { ...work, schemaVersion: work.kind === 'scheduled' || work.kind === 'index_identities' ? 1 : 2 };
+        const defer = (notBeforeMs?: number) => runBackgroundControl(env.DB as unknown as D1DatabaseLike,
+          lane, 'defer-message', now(), db => persistDeferred(db,
+            { id: message.id, body, ack: () => message.ack() }, lane, now(), notBeforeMs));
+        if ((lane === 'jobs' ? env.BACKGROUND_JOBS_PAUSED : env.BACKGROUND_MAINTENANCE_PAUSED) === '1') {
+          await defer();
+          return;
+        }
+        if ((laneNotBefore.get(lane)??0)>now()) {
+          await defer(laneNotBefore.get(lane));
+          return;
+        }
+        let acknowledgement: (() => void) | undefined;
+        try {
+          const result = await runWithBackgroundBudget(env.DB as unknown as D1DatabaseLike, lane, work.kind, now(), async db => {
+            await worker.queue({ messages: [{ id: message.id, body: message.body,
+              timestamp: message.timestamp, attempts: message.attempts,
+              ack: () => { acknowledgement = () => message.ack(); },
+              retry: options => { acknowledgement = () => message.retry(options); },
+            }] }, { ...env, DB: db as unknown as Env['DB'], BACKGROUND_COST_CONTROLS_ENABLED: '0' }, context);
+          });
+          if (result.status === 'denied') {
+            laneNotBefore.set(lane,result.notBeforeMs);
+            await defer(result.notBeforeMs);
+          }
+          else acknowledgement?.();
+        } catch (error) {
+          if (!(error instanceof BackgroundBudgetError)) throw error;
+          await defer();
+        }
+        return;
       }
       logger.info("wp2.queue.received", {
         attempt: message.attempts,
@@ -801,6 +917,7 @@ export function createWorker(dependencies: WorkerDependencies = {}): WorkerEntry
       });
     },
   };
+  return worker;
 }
 
 const defaultRunScheduled: NonNullable<WorkerDependencies["runScheduled"]> = async (...args) => {
