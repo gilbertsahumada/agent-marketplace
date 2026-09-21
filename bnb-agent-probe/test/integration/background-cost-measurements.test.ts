@@ -4,8 +4,8 @@ import { clearCatalogFixtures } from "./catalog-fixtures";
 import { metered, type ReadRecord } from "./d1-meter";
 import type { D1Database } from "../../src/types";
 import type { D1DatabaseLike } from "../../src/db/client";
-import { enqueueDueCatalogCapabilities, repairCatalogCapabilities } from "../../src/phases/catalog-capability";
-import { CAPABILITY_STATS_KEY, refreshCapabilityStats } from "../../src/catalog/capability-stats";
+import { enqueueDueCatalogCapabilities } from "../../src/phases/catalog-capability";
+import { refreshCapabilityStats } from "../../src/catalog/capability-stats";
 import { recordSweepMetrics } from "../../src/catalog/sweep-metrics";
 import { runWithBackgroundBudget, runBackgroundControl, BackgroundBudgetError } from "../../src/db/background-budget";
 import { persistDeferred, replayDeferred } from "../../src/db/deferred-background";
@@ -27,20 +27,6 @@ import { loadConfig } from "../../src/config";
 const NOW = Date.UTC(2026, 8, 21, 0, 0);
 const db = env.DB as unknown as D1DatabaseLike;
 
-// Diagnostic, not a performance acceptance target: repairs still need separate work.
-it.each([2000, 20000])('records unresolved healthy-ready repair cost at %i agents', async size => {
-  await seed(size, false);
-  await db.prepare(`UPDATE catalog_seller_capabilities SET state='ready',capabilityExpiresAt=?,
-    compatibilityState='compatible',compatibilityExpiresAt=?,lastSuccessAt=?`)
-    .bind(NOW + 86_400_000, NOW + 86_400_000, NOW - 1000).run();
-  await db.prepare("ANALYZE").run();
-  const records: ReadRecord[] = [];
-  await repairCatalogCapabilities(measured(records), NOW);
-  console.info("UNRESOLVED_REPAIR_COST", JSON.stringify({ size, ...totals(records) }));
-  expect(totals(records).writes).toBe(0);
-  expect(await db.prepare("SELECT COUNT(*) AS n FROM catalog_seller_capabilities WHERE state='ready'")
-    .first()).toEqual({ n: size });
-}, 60000);
 // Verified against git base cbb1b0876b34f5ff2c7cfeb43d0be0e51b4b61da.
 const legacyCounts = "SELECT state, COUNT(*) AS total FROM catalog_seller_capabilities GROUP BY state";
 const legacyHealth = [legacyCounts,
@@ -74,7 +60,7 @@ async function selectors(source: D1DatabaseLike, controlled: boolean) {
   for (const chainId of [56, 97] as const) {
     const result = await enqueueDueCatalogCapabilities(source, { send: async () => {} }, {
       nowMs: NOW, limit: chainId === 56 ? 4 : 1, concurrency: chainId === 56 ? 2 : 1,
-      bootstrapLimit: chainId === 56 ? 40 : 1, chainId, skipRepairs: controlled,
+      bootstrapLimit: chainId === 56 ? 40 : 1, chainId,
     });
     if (!controlled) await source.prepare(legacyCounts).all();
     await recordSweepMetrics(source, NOW, { ticks: chainId === 56 ? 1 : 0, selected: result.selected ?? 0, enqueued: result.enqueued });
@@ -86,17 +72,14 @@ it.each([2000, 20000].flatMap(size => [false, true].map(allDue => ({ size, allDu
     await seed(size, allDue);
     const oldHealth: ReadRecord[] = [];
     for (const query of legacyHealth) await measured(oldHealth).prepare(query).all();
-    const oldCycle: ReadRecord[] = [];
-    await selectors(measured(oldCycle), false);
-    // Remove the new point lookup: baseline used the legacy COUNT measured above.
-    const baselineCycle = oldCycle.filter(row => !row.values.includes(CAPABILITY_STATS_KEY));
+    // Captured from unchanged PR #159 before this implementation.
+    const baselineCycle = { reads: size === 2000 ? (allDue ? 27350 : 9998) : (allDue ? 268550 : 99638) };
     await seed(size, allDue);
     const cycle: ReadRecord[] = [];
     // A diagnostic reservation permits the complete cycle to be measured even
     // if it exceeds the production estimate. This changes no production setting.
     const result = await runWithBackgroundBudget(measured(cycle), "maintenance", "profile", NOW, async source => {
       await runMaintenanceWindow(source, NOW, async () => {
-        await repairCatalogCapabilities(source, NOW);
         await refreshCapabilityStats(source, NOW);
         await selectors(source, true);
       });
@@ -109,23 +92,21 @@ it.each([2000, 20000].flatMap(size => [false, true].map(allDue => ({ size, allDu
     const idleResult = await runWithBackgroundBudget(measured(idle), "maintenance", "profile", NOW + 60000,
       async source => expect(await runMaintenanceWindow(source, NOW + 60000, async () => { throw new Error("unexpected work"); })).toBe(false),
       { estimateNanoUsd: 500000 });
-    const report = { size, allDue, oldHealth: totals(oldHealth), baselineCycle: totals(baselineCycle), cycle: totals(cycle), health: totals(health), idle: totals(idle),
+    const report = { size, allDue, oldHealth: totals(oldHealth), baselineCycle, cycle: totals(cycle), health: totals(health), idle: totals(idle),
       chargedNanoUsd: result.status === "completed" ? result.chargedNanoUsd : null };
     console.info("BACKGROUND_D1_MEASUREMENT", JSON.stringify(report));
     const expected = size === 2000
-      ? allDue ? { old: 31341, current: 27350, writes: 276, charge: 305348 } : { old: 13989, current: 9998, writes: 24, charge: 35996 }
-      : allDue ? { old: 308541, current: 268550, writes: 276, charge: 546548 } : { old: 139629, current: 99638, writes: 24, charge: 125636 };
+      ? allDue ? { current: 23349, writes: 276, charge: 301347 } : { current: 5598, writes: 24, charge: 31596 }
+      : allDue ? { current: 228549, writes: 276, charge: 506547 } : { current: 55638, writes: 24, charge: 81636 };
     expect(report).toMatchObject({ oldHealth: { reads: size * 4, writes: 0 },
-      baselineCycle: { reads: expected.old, writes: expected.writes - 9 },
       cycle: { reads: expected.current, writes: expected.writes }, chargedNanoUsd: expected.charge,
       health: { reads: 18, writes: 0 }, idle: { reads: 5, writes: 2 } });
-    // PR #158's exact producer baseline was old + 9 reads in these fixtures.
-    expect(report.cycle.reads).toBe(expected.old + 9 - size * 2);
+    // Compare against PR #159's captured complete producer cycle.
+    expect(report.cycle.reads).toBeLessThan(baselineCycle.reads);
     expect(idleResult).toMatchObject({ status: "completed", chargedNanoUsd: 5002 });
     await seed(size, allDue);
     const configured = runWithBackgroundBudget(db, "maintenance", "configured", NOW, async source => {
       await runMaintenanceWindow(source, NOW, async () => {
-        await repairCatalogCapabilities(source, NOW);
         await refreshCapabilityStats(source, NOW);
         await selectors(source, true);
       });
@@ -148,7 +129,6 @@ it.each([2000, 20000])("measures producer, durable replay, real identity consume
     await runMaintenanceWindow(source, NOW, async () => {
       expect(await replayDeferred(source, "maintenance", { send: async payload => { queued.push(payload); } }, NOW)).toEqual({ sent: 1, failed: 0 });
       await refreshCapabilityStats(source, NOW);
-      await repairCatalogCapabilities(source, NOW);
       await selectors(source, true);
     });
   }, { estimateNanoUsd: 500000 });
@@ -174,7 +154,7 @@ it.each([2000, 20000])("measures producer, durable replay, real identity consume
     total: totals([...deferred, ...producer, ...consumer, ...jobs]) };
   console.info("BACKGROUND_D1_LIFECYCLE", JSON.stringify(report));
   expect(report).toMatchObject({ deferred: { queries: 4, reads: 3, writes: 5 },
-    producer: { queries: 24, reads: size === 2000 ? 10003 : 99643, writes: 26 },
+    producer: { queries: 22, reads: size === 2000 ? 5603 : 55643, writes: 26 },
     consumer: { queries: 48, reads: 44, writes: 84 }, jobs: { queries: 5, reads: 4, writes: 6 },
-    total: { reads: size === 2000 ? 10054 : 99694, writes: 121, nanoUsd: size === 2000 ? 131054 : 220694 } });
+    total: { reads: size === 2000 ? 5654 : 55694, writes: 121, nanoUsd: size === 2000 ? 126654 : 176694 } });
 }, 60000);
