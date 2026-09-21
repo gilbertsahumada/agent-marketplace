@@ -3,19 +3,39 @@ import { enqueueCommerceTokenBackfill } from "../src/phases/commerce-token-backf
 import type { D1Database, D1PreparedStatement } from "../src/types";
 
 function database(rows: Partial<Record<56 | 97, number>>) {
-  let chainId: 56 | 97 = 56;
-  const statement: D1PreparedStatement = {
-    bind(value: unknown) { chainId = value as 56 | 97; return this; },
-    async first<T>() { return null as T | null; },
-    async all<T>() {
-      return { success: true, results: (rows[chainId] === undefined ? [] : [{ jobId: rows[chainId] }]) as T[] };
+  const markers = new Map<string, { integerValue: number; updatedAt: number }>();
+  return {
+    prepare(query: string): D1PreparedStatement {
+      let values: unknown[] = [];
+      return {
+        bind(...bound: unknown[]) { values = bound; return this; },
+        async first<T>() { return null as T | null; },
+        async all<T>() { return { success: true, results: [] as T[] }; },
+        async raw<T extends unknown[]>() {
+          if (query.includes('from "commerce_jobs"')) {
+            const jobId = rows[values[0] as 56 | 97];
+            return (jobId === undefined ? [] : [[jobId]]) as T[];
+          }
+          if (query.includes('from "runtime_state"')) {
+            const marker = markers.get(String(values[0]));
+            return (marker === undefined
+              ? []
+              : [[String(values[0]), null, marker.integerValue, marker.updatedAt]]) as T[];
+          }
+          return [];
+        },
+        async run() {
+          if (query.includes('insert into "runtime_state"')) {
+            markers.set(String(values[0]), {
+              integerValue: Number(values[2]),
+              updatedAt: Number(values[3]),
+            });
+          }
+          return { success: true };
+        },
+      };
     },
-    async raw<T extends unknown[]>() {
-      return (rows[chainId] === undefined ? [] : [[rows[chainId]]]) as T[];
-    },
-    async run() { return { success: true }; },
-  };
-  return { prepare: vi.fn(() => statement) } as unknown as D1Database;
+  } as unknown as D1Database;
 }
 
 describe("Commerce payment-token backfill producer", () => {
@@ -38,5 +58,17 @@ describe("Commerce payment-token backfill producer", () => {
     const queue = { send: vi.fn() };
     await expect(enqueueCommerceTokenBackfill(database({}), queue, [56, 97], 28, 1)).resolves.toEqual({ enqueued: [] });
     expect(queue.send).not.toHaveBeenCalled();
+  });
+
+  it("deduplicates an in-flight range and retries it after the recovery window", async () => {
+    const db = database({ 56: 56_796 });
+    const queue = { send: vi.fn().mockResolvedValue(undefined) };
+
+    await enqueueCommerceTokenBackfill(db, queue, [56], 28, 1_800_000_000_000);
+    await enqueueCommerceTokenBackfill(db, queue, [56], 28, 1_800_000_060_000);
+    expect(queue.send).toHaveBeenCalledTimes(1);
+
+    await enqueueCommerceTokenBackfill(db, queue, [56], 28, 1_800_000_900_000);
+    expect(queue.send).toHaveBeenCalledTimes(2);
   });
 });
