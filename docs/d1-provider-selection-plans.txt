@@ -1,0 +1,208 @@
+before
+Query 0
+CO-ROUTINE ranked
+CO-ROUTINE (subquery-8)
+MERGE (UNION ALL)
+LEFT
+SEARCH catalog_seller_capabilities USING COVERING INDEX idx_catalog_capabilities_pending_due (nextProbeAt=?)
+CORRELATED SCALAR SUBQUERY 3
+SEARCH f USING INDEX sqlite_autoindex_catalog_seller_capabilities_1 (agentKey=? AND endpointKey=?)
+CORRELATED SCALAR SUBQUERY 4
+SEARCH f USING INDEX sqlite_autoindex_catalog_seller_capabilities_1 (agentKey=? AND endpointKey=?)
+SEARCH a USING COVERING INDEX idx_catalog_agents_identity_discovery (chainId=? AND indexState=? AND agentKey=?)
+SEARCH ae USING COVERING INDEX idx_catalog_agent_endpoints_current_endpoint (endpointKey=? AND agentKey=?)
+SEARCH e USING INDEX sqlite_autoindex_catalog_endpoints_1 (endpointKey=?)
+CORRELATED SCALAR SUBQUERY 5
+SEARCH r USING INDEX sqlite_autoindex_runtime_state_1 (key=?)
+USE TEMP B-TREE FOR ORDER BY
+RIGHT
+SEARCH catalog_seller_capabilities USING COVERING INDEX idx_catalog_capabilities_pending_due (nextProbeAt<?)
+CORRELATED SCALAR SUBQUERY 3
+SEARCH f USING INDEX sqlite_autoindex_catalog_seller_capabilities_1 (agentKey=? AND endpointKey=?)
+CORRELATED SCALAR SUBQUERY 4
+SEARCH f USING INDEX sqlite_autoindex_catalog_seller_capabilities_1 (agentKey=? AND endpointKey=?)
+SEARCH a USING COVERING INDEX idx_catalog_agents_identity_discovery (chainId=? AND indexState=? AND agentKey=?)
+SEARCH ae USING COVERING INDEX idx_catalog_agent_endpoints_current_endpoint (endpointKey=? AND agentKey=?)
+SEARCH e USING INDEX sqlite_autoindex_catalog_endpoints_1 (endpointKey=?)
+CORRELATED SCALAR SUBQUERY 5
+SEARCH r USING INDEX sqlite_autoindex_runtime_state_1 (key=?)
+USE TEMP B-TREE FOR ORDER BY
+SCAN (subquery-8)
+SCAN ranked
+USE TEMP B-TREE FOR ORDER BY
+Query 1
+CO-ROUTINE ranked
+CO-ROUTINE (subquery-8)
+MERGE (UNION ALL)
+LEFT
+SEARCH catalog_seller_capabilities USING COVERING INDEX idx_catalog_capabilities_maintenance_due (nextProbeAt=?)
+CORRELATED SCALAR SUBQUERY 3
+SEARCH f USING INDEX sqlite_autoindex_catalog_seller_capabilities_1 (agentKey=? AND endpointKey=?)
+CORRELATED SCALAR SUBQUERY 4
+SEARCH f USING INDEX sqlite_autoindex_catalog_seller_capabilities_1 (agentKey=? AND endpointKey=?)
+SEARCH a USING COVERING INDEX idx_catalog_agents_identity_discovery (chainId=? AND indexState=? AND agentKey=?)
+SEARCH ae USING COVERING INDEX idx_catalog_agent_endpoints_current_endpoint (endpointKey=? AND agentKey=?)
+SEARCH e USING INDEX sqlite_autoindex_catalog_endpoints_1 (endpointKey=?)
+CORRELATED SCALAR SUBQUERY 5
+SEARCH r USING INDEX sqlite_autoindex_runtime_state_1 (key=?)
+USE TEMP B-TREE FOR ORDER BY
+RIGHT
+SEARCH catalog_seller_capabilities USING COVERING INDEX idx_catalog_capabilities_maintenance_due (nextProbeAt<?)
+CORRELATED SCALAR SUBQUERY 3
+SEARCH f USING INDEX sqlite_autoindex_catalog_seller_capabilities_1 (agentKey=? AND endpointKey=?)
+CORRELATED SCALAR SUBQUERY 4
+SEARCH f USING INDEX sqlite_autoindex_catalog_seller_capabilities_1 (agentKey=? AND endpointKey=?)
+SEARCH a USING COVERING INDEX idx_catalog_agents_identity_discovery (chainId=? AND indexState=? AND agentKey=?)
+SEARCH ae USING COVERING INDEX idx_catalog_agent_endpoints_current_endpoint (endpointKey=? AND agentKey=?)
+SEARCH e USING INDEX sqlite_autoindex_catalog_endpoints_1 (endpointKey=?)
+CORRELATED SCALAR SUBQUERY 5
+SEARCH r USING INDEX sqlite_autoindex_runtime_state_1 (key=?)
+USE TEMP B-TREE FOR ORDER BY
+SCAN (subquery-8)
+SCAN ranked
+USE TEMP B-TREE FOR ORDER BY
+Query 2
+CO-ROUTINE ranked
+CO-ROUTINE (subquery-4)
+SEARCH a USING COVERING INDEX idx_catalog_agents_identity_discovery (chainId=? AND indexState=?)
+SEARCH c USING INDEX idx_catalog_seller_capabilities_agent (agentKey=?)
+SEARCH ae USING COVERING INDEX idx_catalog_agent_endpoints_current_endpoint (endpointKey=? AND agentKey=?)
+SEARCH e USING INDEX sqlite_autoindex_catalog_endpoints_1 (endpointKey=?)
+CORRELATED SCALAR SUBQUERY 1
+SEARCH r USING INDEX sqlite_autoindex_runtime_state_1 (key=?)
+USE TEMP B-TREE FOR ORDER BY
+SCAN (subquery-4)
+SCAN ranked
+USE TEMP B-TREE FOR ORDER BY
+Query 3
+CO-ROUTINE ranked
+CO-ROUTINE (subquery-4)
+SEARCH a USING COVERING INDEX idx_catalog_agents_identity_discovery (chainId=? AND indexState=?)
+SEARCH c USING INDEX idx_catalog_seller_capabilities_agent (agentKey=?)
+SEARCH ae USING COVERING INDEX idx_catalog_agent_endpoints_current_endpoint (endpointKey=? AND agentKey=?)
+SEARCH e USING INDEX sqlite_autoindex_catalog_endpoints_1 (endpointKey=?)
+CORRELATED SCALAR SUBQUERY 1
+SEARCH r USING INDEX sqlite_autoindex_runtime_state_1 (key=?)
+USE TEMP B-TREE FOR ORDER BY
+SCAN (subquery-4)
+SCAN ranked
+USE TEMP B-TREE FOR ORDER BY
+after
+Query 0
+CO-ROUTINE ranked
+CO-ROUTINE (subquery-11)
+MATERIALIZE eligible
+COMPOUND QUERY
+LEFT-MOST SUBQUERY
+SEARCH catalog_seller_capabilities USING COVERING INDEX idx_catalog_capabilities_pending_due (nextProbeAt=?)
+CORRELATED SCALAR SUBQUERY 3
+SEARCH f USING INDEX sqlite_autoindex_catalog_seller_capabilities_1 (agentKey=? AND endpointKey=?)
+CORRELATED SCALAR SUBQUERY 4
+SEARCH f USING INDEX sqlite_autoindex_catalog_seller_capabilities_1 (agentKey=? AND endpointKey=?)
+SEARCH a USING COVERING INDEX idx_catalog_agents_identity_discovery (chainId=? AND indexState=? AND agentKey=?)
+SEARCH ae USING COVERING INDEX idx_catalog_agent_endpoints_current_endpoint (endpointKey=? AND agentKey=?)
+SEARCH e USING INDEX sqlite_autoindex_catalog_endpoints_1 (endpointKey=?)
+UNION ALL
+SEARCH catalog_seller_capabilities USING COVERING INDEX idx_catalog_capabilities_pending_due (nextProbeAt<?)
+CORRELATED SCALAR SUBQUERY 3
+SEARCH f USING INDEX sqlite_autoindex_catalog_seller_capabilities_1 (agentKey=? AND endpointKey=?)
+CORRELATED SCALAR SUBQUERY 4
+SEARCH f USING INDEX sqlite_autoindex_catalog_seller_capabilities_1 (agentKey=? AND endpointKey=?)
+SEARCH a USING COVERING INDEX idx_catalog_agents_identity_discovery (chainId=? AND indexState=? AND agentKey=?)
+SEARCH ae USING COVERING INDEX idx_catalog_agent_endpoints_current_endpoint (endpointKey=? AND agentKey=?)
+SEARCH e USING INDEX sqlite_autoindex_catalog_endpoints_1 (endpointKey=?)
+MATERIALIZE available_origins
+MATERIALIZE origins
+SCAN eligible
+USE TEMP B-TREE FOR DISTINCT
+SCAN o
+CORRELATED SCALAR SUBQUERY 7
+SEARCH r USING INDEX sqlite_autoindex_runtime_state_1 (key=?)
+SCAN c
+BLOOM FILTER ON o (originKey=?)
+SEARCH o USING AUTOMATIC COVERING INDEX (originKey=?)
+USE TEMP B-TREE FOR ORDER BY
+SCAN (subquery-11)
+SCAN ranked
+USE TEMP B-TREE FOR ORDER BY
+Query 1
+CO-ROUTINE ranked
+CO-ROUTINE (subquery-11)
+MATERIALIZE eligible
+COMPOUND QUERY
+LEFT-MOST SUBQUERY
+SEARCH catalog_seller_capabilities USING COVERING INDEX idx_catalog_capabilities_maintenance_due (nextProbeAt=?)
+CORRELATED SCALAR SUBQUERY 3
+SEARCH f USING INDEX sqlite_autoindex_catalog_seller_capabilities_1 (agentKey=? AND endpointKey=?)
+CORRELATED SCALAR SUBQUERY 4
+SEARCH f USING INDEX sqlite_autoindex_catalog_seller_capabilities_1 (agentKey=? AND endpointKey=?)
+SEARCH a USING COVERING INDEX idx_catalog_agents_identity_discovery (chainId=? AND indexState=? AND agentKey=?)
+SEARCH ae USING COVERING INDEX idx_catalog_agent_endpoints_current_endpoint (endpointKey=? AND agentKey=?)
+SEARCH e USING INDEX sqlite_autoindex_catalog_endpoints_1 (endpointKey=?)
+UNION ALL
+SEARCH catalog_seller_capabilities USING COVERING INDEX idx_catalog_capabilities_maintenance_due (nextProbeAt<?)
+CORRELATED SCALAR SUBQUERY 3
+SEARCH f USING INDEX sqlite_autoindex_catalog_seller_capabilities_1 (agentKey=? AND endpointKey=?)
+CORRELATED SCALAR SUBQUERY 4
+SEARCH f USING INDEX sqlite_autoindex_catalog_seller_capabilities_1 (agentKey=? AND endpointKey=?)
+SEARCH a USING COVERING INDEX idx_catalog_agents_identity_discovery (chainId=? AND indexState=? AND agentKey=?)
+SEARCH ae USING COVERING INDEX idx_catalog_agent_endpoints_current_endpoint (endpointKey=? AND agentKey=?)
+SEARCH e USING INDEX sqlite_autoindex_catalog_endpoints_1 (endpointKey=?)
+MATERIALIZE available_origins
+MATERIALIZE origins
+SCAN eligible
+USE TEMP B-TREE FOR DISTINCT
+SCAN o
+CORRELATED SCALAR SUBQUERY 7
+SEARCH r USING INDEX sqlite_autoindex_runtime_state_1 (key=?)
+SCAN c
+BLOOM FILTER ON o (originKey=?)
+SEARCH o USING AUTOMATIC COVERING INDEX (originKey=?)
+USE TEMP B-TREE FOR ORDER BY
+SCAN (subquery-11)
+SCAN ranked
+USE TEMP B-TREE FOR ORDER BY
+Query 2
+CO-ROUTINE ranked
+CO-ROUTINE (subquery-7)
+MATERIALIZE eligible
+SEARCH a USING COVERING INDEX idx_catalog_agents_identity_discovery (chainId=? AND indexState=?)
+SEARCH c USING INDEX idx_catalog_seller_capabilities_agent (agentKey=?)
+SEARCH ae USING COVERING INDEX idx_catalog_agent_endpoints_current_endpoint (endpointKey=? AND agentKey=?)
+SEARCH e USING INDEX sqlite_autoindex_catalog_endpoints_1 (endpointKey=?)
+MATERIALIZE available_origins
+MATERIALIZE origins
+SCAN eligible
+USE TEMP B-TREE FOR DISTINCT
+SCAN o
+CORRELATED SCALAR SUBQUERY 3
+SEARCH r USING INDEX sqlite_autoindex_runtime_state_1 (key=?)
+SCAN c
+BLOOM FILTER ON o (originKey=?)
+SEARCH o USING AUTOMATIC COVERING INDEX (originKey=?)
+USE TEMP B-TREE FOR ORDER BY
+SCAN (subquery-7)
+SCAN ranked
+USE TEMP B-TREE FOR ORDER BY
+Query 3
+CO-ROUTINE ranked
+CO-ROUTINE (subquery-7)
+MATERIALIZE eligible
+SEARCH a USING COVERING INDEX idx_catalog_agents_identity_discovery (chainId=? AND indexState=?)
+SEARCH c USING INDEX idx_catalog_seller_capabilities_agent (agentKey=?)
+SEARCH ae USING COVERING INDEX idx_catalog_agent_endpoints_current_endpoint (endpointKey=? AND agentKey=?)
+SEARCH e USING INDEX sqlite_autoindex_catalog_endpoints_1 (endpointKey=?)
+MATERIALIZE available_origins
+MATERIALIZE origins
+SCAN eligible
+USE TEMP B-TREE FOR DISTINCT
+SCAN o
+CORRELATED SCALAR SUBQUERY 3
+SEARCH r USING INDEX sqlite_autoindex_runtime_state_1 (key=?)
+SCAN c
+BLOOM FILTER ON o (originKey=?)
+SEARCH o USING AUTOMATIC COVERING INDEX (originKey=?)
+USE TEMP B-TREE FOR ORDER BY
+SCAN (subquery-7)
+SCAN ranked
+USE TEMP B-TREE FOR ORDER BY
