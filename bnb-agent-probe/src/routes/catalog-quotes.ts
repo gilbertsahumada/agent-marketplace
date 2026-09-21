@@ -1,3 +1,4 @@
+import { effectiveCapabilityReadySql } from "../catalog/effective-capability";
 import { and, asc, count, desc, eq, gt, inArray, lt, sql } from "drizzle-orm";
 import { NegotiationRequest, buildJobDescription, verifyQuoteSignature } from "@bnbagent/sdk/erc8183";
 import { formatUnits, parseAbi, type PublicClient } from "viem";
@@ -312,7 +313,7 @@ export async function createCatalogQuoteRequestResponse(
     .from(catalogSellerCapabilities)
     .where(and(
       eq(catalogSellerCapabilities.agentKey, `eip155:${chainId}:${agentId}`),
-      eq(catalogSellerCapabilities.state, "ready"),
+      effectiveCapabilityReadySql(catalogSellerCapabilities, options.nowMs),
       gt(catalogSellerCapabilities.capabilityExpiresAt, options.nowMs),
     ))
     .orderBy(desc(catalogSellerCapabilities.updatedAt), catalogSellerCapabilities.endpointKey)

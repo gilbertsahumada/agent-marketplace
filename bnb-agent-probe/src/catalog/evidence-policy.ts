@@ -1,3 +1,5 @@
+import { effectiveCapability } from "./effective-capability";
+
 export type OperationalStatus =
   | "pending"
   | "browser_observed"
@@ -66,6 +68,7 @@ export function selectBestCapability<T extends CapabilityFact>(
   nowMs: number,
   context?: { endpoints: readonly EndpointFact[]; observations: readonly ObservationFact[] },
 ): T | null {
+  rows = rows.map(row => effectiveCapability(row, nowMs));
   if (context) {
     // SQL facets include an agent if ANY current endpoint is requestable.
     // Select from precisely that set before ranking historical readiness.
@@ -91,14 +94,7 @@ export function selectBestCapability<T extends CapabilityFact>(
   // ticks). Do not leak an expired `ready` projection into the public state in
   // that gap. It is still useful evidence, but it is now stale and must not be
   // counted by the Ready-to-quote facet.
-  const normalizedRows = rows.map((row) => row.state === "ready"
-    && (row.capabilityExpiresAt === null
-      || row.capabilityExpiresAt === undefined
-      || row.capabilityExpiresAt <= nowMs)
-    ? { ...row, state: row.capabilityExpiresAt === null || row.capabilityExpiresAt === undefined
-      ? "discovered" as SellerCapabilityState
-      : "stale" as SellerCapabilityState } as T
-    : row);
+  const normalizedRows = rows;
   const rank: Record<SellerCapabilityState, number> = {
     discovered: 4,
     stale: 3,
@@ -223,13 +219,7 @@ export function deriveCatalogEvidenceState(input: {
     ? { state: "discovered" }
     : null;
   const rawCapability = input.capability ?? fallbackCapability;
-  const capability = rawCapability?.state === "ready"
-    ? rawCapability.capabilityExpiresAt === null || rawCapability.capabilityExpiresAt === undefined
-      ? { ...rawCapability, state: "discovered" as const }
-      : rawCapability.capabilityExpiresAt <= input.nowMs
-        ? { ...rawCapability, state: "stale" as const }
-        : rawCapability
-    : rawCapability;
+  const capability = rawCapability ? effectiveCapability(rawCapability, input.nowMs) : null;
   const capabilityState = capability?.state ?? "unsupported";
   const capabilityExpiresAt = capability?.capabilityExpiresAt ?? null;
   // `catalog_agent_admission` is retained only as a migration/backfill input;

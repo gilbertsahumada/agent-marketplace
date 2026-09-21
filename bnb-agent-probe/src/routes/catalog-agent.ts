@@ -1,3 +1,4 @@
+import { effectiveCapability } from "../catalog/effective-capability";
 import type { D1DatabaseLike } from "../db/client";
 import { createDatabase, readCatalogAgentEvidence } from "../db/orm";
 import { deriveCatalogEvidenceState, selectBestCapability, type CapabilityFact } from "../catalog/evidence-policy";
@@ -160,7 +161,7 @@ export async function catalogAgentResponse(
     capabilities: evidence.capabilities.map((capability) => ({
       endpointKey: capability.endpointKey,
       transport: capability.transport,
-      state: capability.state,
+      state: effectiveCapability(capability, nowMs).state,
       lastSuccessAt: capability.lastSuccessAt,
       capabilityExpiresAt: capability.capabilityExpiresAt,
       nextProbeAt: capability.nextProbeAt,

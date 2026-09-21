@@ -1,3 +1,4 @@
+import { effectiveCapabilityStateSql, effectiveCapabilityReadySql } from "../catalog/effective-capability";
 import {
   and,
   count,
@@ -168,7 +169,7 @@ export async function catalogAgentsResponse(
     .innerJoin(catalogEndpoints, eq(catalogEndpoints.endpointKey, catalogSellerCapabilities.endpointKey))
     .where(and(
       eq(catalogSellerCapabilities.agentKey, catalogAgents.agentKey),
-      ready ? eq(catalogSellerCapabilities.state, "ready") : not(inArray(catalogSellerCapabilities.state, ["unsupported", "suspended"])),
+      ready ? effectiveCapabilityReadySql(catalogSellerCapabilities, nowMs) : not(inArray(catalogSellerCapabilities.state, ["unsupported", "suspended"])),
       ready ? gt(catalogSellerCapabilities.capabilityExpiresAt, nowMs) : undefined,
       eq(catalogSellerCapabilities.compatibilityState, "compatible"),
       sql`${catalogSellerCapabilities.schemaHash} IS NOT NULL`,
@@ -310,7 +311,7 @@ export async function catalogAgentsResponse(
     .where(and(
       eq(catalogSellerCapabilities.agentKey, catalogObservations.agentKey),
       eq(catalogSellerCapabilities.endpointKey, catalogObservations.endpointKey),
-      eq(catalogSellerCapabilities.state, "ready"),
+      effectiveCapabilityReadySql(catalogSellerCapabilities, nowMs),
       gt(catalogSellerCapabilities.capabilityExpiresAt, nowMs),
     )));
   const quoteOnKnownCapability = exists(db.select({ value: sql`1` })
@@ -434,7 +435,7 @@ export async function catalogAgentsResponse(
     .where(and(
       eq(catalogSellerCapabilities.agentKey, catalogAgents.agentKey),
       eq(catalogAgentEndpoints.declarationState,"current"),
-      eq(catalogSellerCapabilities.state, state),
+      eq(effectiveCapabilityStateSql(catalogSellerCapabilities, nowMs), state),
     )));
   // Older discovery failures also set capability.state='failed'. Only a real
   // failed negotiation attempt is evidence for the Quote failed filter.
