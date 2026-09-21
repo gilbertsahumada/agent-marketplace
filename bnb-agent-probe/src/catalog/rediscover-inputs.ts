@@ -11,12 +11,14 @@ export async function revisitOldInputFailures(db: ReturnType<typeof createDataba
   if (!limit) return;
   // Require migration 0030 first. Without this access path SQLite may start
   // from all Mainnet agents even when no older detector versions exist.
+  // CROSS JOIN keeps this selective range outermost even with partial stats;
+  // INDEXED BY alone does not prevent a repeated range scan per joined row.
   await db.run(sql`UPDATE catalog_seller_capabilities SET compatibilityState='pending',nextProbeAt=${now}
     WHERE (agentKey,endpointKey) IN (
       SELECT c.agentKey,c.endpointKey FROM catalog_seller_capabilities c INDEXED BY idx_catalog_capabilities_legacy_inputs
-      JOIN catalog_agents a ON a.agentKey=c.agentKey AND a.chainId=56 AND a.indexState='current'
-      JOIN catalog_agent_endpoints ae ON ae.agentKey=c.agentKey AND ae.endpointKey=c.endpointKey AND ae.declarationState='current'
-      JOIN catalog_endpoints e ON e.endpointKey=c.endpointKey AND e.safety='safe' AND e.eligibility='eligible'
+      CROSS JOIN catalog_agents a ON a.agentKey=c.agentKey AND a.chainId=56 AND a.indexState='current'
+      CROSS JOIN catalog_agent_endpoints ae ON ae.agentKey=c.agentKey AND ae.endpointKey=c.endpointKey AND ae.declarationState='current'
+      CROSS JOIN catalog_endpoints e ON e.endpointKey=c.endpointKey AND e.safety='safe' AND e.eligibility='eligible'
       WHERE c.detectorVersion < ${NEGOTIATION_DETECTOR_VERSION} AND c.compatibilityState='unsupported'
         AND c.state <> 'suspended'
         AND c.compatibilityErrorCode IN ('NEGOTIATION_PARAMETERS_UNAVAILABLE','NEGOTIATION_SCHEMA_UNSUPPORTED')

@@ -108,8 +108,15 @@ export async function enqueueDueCatalogCapabilities(
       AND ${nullDate ? sql`nextProbeAt IS NULL` : sql`nextProbeAt <= ${input.nowMs}`}`;
     // Disjoint date ranges avoid SQLite scanning the whole partial index for OR.
     // No limit before origin ranking: every eligible provider remains represented.
-    const source = bootstrap === null ? sql`catalog_seller_capabilities`
+    // Testnet's small network slice is cheaper through agent-key lookups than
+    // a global due-range scan. Keep its original, unconstrained access path.
+    const useDueRanges = bootstrap !== null && chainId === 56;
+    const source = !useDueRanges ? sql`catalog_seller_capabilities`
       : sql`/* indexed-due */ (${dueRange(true)} UNION ALL ${dueRange(false)}) /* end-indexed-due */`;
+    // INDEXED BY constrains the access path, not the loop order. With partial
+    // statistics SQLite can otherwise repeat the entire due range per agent.
+    // Keep the range before the identity lookup; preserve the combined path.
+    const lookupJoin = useDueRanges ? sql`CROSS JOIN` : sql`JOIN`;
     return db.all<{
     agentKey: string; endpointKey: string; originKey: string; compatibilityState: string; nextProbeAt: number | null;
   }>(sql`
@@ -126,9 +133,9 @@ export async function enqueueDueCatalogCapabilities(
             c.nextProbeAt, c.updatedAt, c.agentKey, c.endpointKey
         ) AS originRank
       FROM ${source} c
-      JOIN catalog_agents a ON a.agentKey=c.agentKey AND a.indexState='current' AND a.chainId=${chainId}
-      JOIN catalog_agent_endpoints ae ON ae.agentKey=c.agentKey AND ae.endpointKey=c.endpointKey AND ae.declarationState='current'
-      JOIN catalog_endpoints e ON e.endpointKey=c.endpointKey AND e.role='operational' AND e.eligibility='eligible'
+      ${lookupJoin} catalog_agents a ON a.agentKey=c.agentKey AND a.indexState='current' AND a.chainId=${chainId}
+      ${lookupJoin} catalog_agent_endpoints ae ON ae.agentKey=c.agentKey AND ae.endpointKey=c.endpointKey AND ae.declarationState='current'
+      ${lookupJoin} catalog_endpoints e ON e.endpointKey=c.endpointKey AND e.role='operational' AND e.eligibility='eligible'
       WHERE c.state IN ('discovered','ready','stale','failed')
         AND (c.nextProbeAt IS NULL OR c.nextProbeAt <= ${input.nowMs})
         AND NOT (c.state='ready' AND COALESCE(c.capabilityExpiresAt,0) > ${input.nowMs}

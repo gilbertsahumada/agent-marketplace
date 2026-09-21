@@ -23,7 +23,8 @@ function measured(log: ReadRecord[], originalSelection = false) {
   const meter = metered(source, log);
   return (originalSelection ? {...meter, prepare(query: string) {
     const replaced = query.includes('/* indexed-due */');
-    const statement = meter.prepare(query.replace(/\/\* indexed-due \*\/[\s\S]*?\/\* end-indexed-due \*\//, 'catalog_seller_capabilities'));
+    const statement = meter.prepare(query.replace(/\/\* indexed-due \*\/[\s\S]*?\/\* end-indexed-due \*\//, 'catalog_seller_capabilities')
+      .replaceAll('CROSS JOIN catalog_', 'JOIN catalog_'));
     return replaced ? {...statement, bind: (...values: unknown[]) => statement.bind(...values.slice(1))} : statement;
   }} : meter) as unknown as D1DatabaseLike;
 }
@@ -32,6 +33,26 @@ const db = env.DB as unknown as D1DatabaseLike;
 afterEach(async () => { await removeIndexes(); await restoreIndexes(); });
 const NOW = 1_800_000_000_000;
 const wallet = "0x1111111111111111111111111111111111111111";
+
+it.each([2000, 20000])("does not rescan due ranges per agent with partial statistics at %i agents", async size => {
+  await seed(size);
+  await db.prepare("UPDATE catalog_seller_capabilities SET nextProbeAt=0").run();
+  await db.prepare("ANALYZE").run();
+  // A snapshot can have statistics for endpoint joins but none for the new
+  // indexes or identity/capability tables. Do not assume a full ANALYZE.
+  await db.prepare("DELETE FROM sqlite_stat1 WHERE tbl IN ('catalog_agents','catalog_seller_capabilities')").run();
+  await db.prepare("ANALYZE sqlite_schema").run();
+  const legacy: ReadRecord[] = [];
+  await revisitOldInputFailures(createDatabase(measured(legacy)), NOW, 40);
+  expect(legacy[0]!.rowsRead).toBeLessThanOrEqual(10);
+  const records: ReadRecord[] = [];
+  await enqueueDueCatalogCapabilities(measured(records), {send:async()=>{}} as never,
+    {nowMs:NOW,limit:4,bootstrapLimit:40,chainId:56});
+  const selects = records.filter(record=>record.sql.includes('WITH ranked AS'));
+  expect(selects).toHaveLength(2);
+  for (const query of selects) expect(query.rowsRead).toBeLessThan(size * 30);
+  console.log(JSON.stringify({scenario:'partial-statistics',size,reads:selects.map(query=>query.rowsRead)}));
+},60000);
 const reader = { getChainId: async () => 56, getBlockNumber: async () => 100n,
   multicall: vi.fn(async ({ contracts }: { contracts: unknown[] }) => contracts.map(() => ({ status: "success", result: wallet }))) };
 
@@ -63,7 +84,8 @@ it.each([2000,20000])("bounds identity discovery and empty rediscovery at %i age
   await restoreIndexes();
   await revisitOldInputFailures(createDatabase(measured(capture)), NOW, 40);
   await removeIndexes();
-  const baselineSql = capture[0]!.sql.replace(" INDEXED BY idx_catalog_capabilities_legacy_inputs", "");
+  const baselineSql = capture[0]!.sql.replace(" INDEXED BY idx_catalog_capabilities_legacy_inputs", "")
+    .replaceAll('CROSS JOIN catalog_', 'JOIN catalog_');
   await measured(before).prepare(baselineSql).bind(...capture[0]!.values).run();
   await restoreIndexes();
   const after: ReadRecord[] = [];
