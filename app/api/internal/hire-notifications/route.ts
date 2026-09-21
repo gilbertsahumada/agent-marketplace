@@ -14,8 +14,10 @@ export async function POST(request: Request) {
   try {
     const chainIds = ([56, 97] as const).filter(chainId => catalogHireWritesEnabled(chainId));
     if (chainIds.length === 0) return Response.json({ checked: 0, failed: 0 }, { headers: { "cache-control": "no-store" } });
-    const due = await notificationStore<Array<{ chainId: 56 | 97; jobId: string }>>({ action: "due", chainIds });
-    const results = await Promise.allSettled(due.map(row => processHireNotification(row.chainId, row.jobId)));
+    // Internal authorization above creates this context; never copy a public
+    // request header or body field into the private Worker budget marker.
+    const due = await notificationStore<Array<{ chainId: 56 | 97; jobId: string }>>({ action: "due", chainIds }, {backgroundJobs:true});
+    const results = await Promise.allSettled(due.map(row => processHireNotification(row.chainId, row.jobId, {backgroundJobs:true})));
     return Response.json({ checked: results.length, failed: results.filter(r => r.status === "rejected").length }, { headers: { "cache-control": "no-store" } });
   } catch { return Response.json({ error: "recovery_unavailable" }, { status: 503 }); }
 }
