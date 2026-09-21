@@ -10,7 +10,6 @@ import { createDatabase } from "../../src/db/orm";
 import { sha256 } from "../../src/routes/catalog-quotes";
 import {
   enqueueDueCatalogCapabilities,
-  repairCatalogCapabilities,
   runCatalogCapabilityProbe,
   type CatalogCapabilityWork,
 } from "../../src/phases/catalog-capability";
@@ -79,8 +78,30 @@ beforeEach(async () => {
 });
 
 describe("catalog quote-capability scheduler", () => {
-  it("preserves selected agents and ordering when repairs run once before both chains", async () => {
-    const run = async (sharedRepairs: boolean) => {
+  it.each([56,97] as const)('does not move an expired capability past an active lease/backoff on chain %i', async chainId => {
+    await insertCandidate('42',ENDPOINT_KEY,'seller-origin','ready',NOW,chainId);
+    await env.DB.prepare('UPDATE catalog_seller_capabilities SET nextProbeAt=?,updatedAt=?').bind(NOW+60000,NOW-1000).run();
+    const before=await env.DB.prepare('SELECT * FROM catalog_seller_capabilities').all();
+    const send=vi.fn();
+    await enqueueDueCatalogCapabilities(env.DB as unknown as D1DatabaseLike,{send},{nowMs:NOW,limit:1,chainId});
+    expect(send).not.toHaveBeenCalled();
+    expect((await env.DB.prepare('SELECT * FROM catalog_seller_capabilities').all()).results).toEqual(before.results);
+  });
+
+  it('skips still-valid stale evidence in selection and delayed consumers without repair writes',async()=>{
+    const target=await insertCandidate('42',ENDPOINT_KEY,'seller-origin','stale',NOW+60000);
+    await env.DB.prepare("UPDATE catalog_seller_capabilities SET compatibilityState='compatible',compatibilityExpiresAt=?,lastSuccessAt=?,lastErrorCode=NULL")
+      .bind(NOW+60000,NOW-1000).run();
+    const before=(await env.DB.prepare('SELECT * FROM catalog_seller_capabilities').all()).results;
+    const send=vi.fn(),fetchImpl=vi.fn();
+    await enqueueDueCatalogCapabilities(env.DB as unknown as D1DatabaseLike,{send},{nowMs:NOW,limit:1,bootstrapLimit:1});
+    expect(send).not.toHaveBeenCalled();
+    await runCatalogCapabilityProbe(work(target.agentKey),env as unknown as Env,loadConfig({}),{now:()=>NOW,fetchImpl});
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect((await env.DB.prepare('SELECT * FROM catalog_seller_capabilities').all()).results).toEqual(before);
+  });
+  it("selects both networks deterministically without repair writes", async () => {
+    const run = async () => {
       await clearCatalogFixtures();
       await env.DB.prepare("DELETE FROM runtime_state WHERE key LIKE 'catalog_sweep_origin:%'").run();
       await insertCandidate("42", "a".repeat(64), "host-a", "ready", NOW);
@@ -89,19 +110,18 @@ describe("catalog quote-capability scheduler", () => {
       await insertCandidate("45", "d".repeat(64), "host-d", "discovered", null, 97);
       const records: ReadRecord[] = [];
       const db = metered(env.DB as unknown as D1Database, records) as unknown as D1DatabaseLike;
-      if (sharedRepairs) await repairCatalogCapabilities(db, NOW);
       const messages: unknown[] = [];
       for (const chainId of [56, 97] as const) await enqueueDueCatalogCapabilities(db, { send: async message => { messages.push(message); } },
-        { nowMs: NOW, limit: 2, bootstrapLimit: 2, chainId, skipRepairs: sharedRepairs });
+        { nowMs: NOW, limit: 2, bootstrapLimit: 2, chainId });
       const repairs = records.filter(row => /^UPDATE catalog_seller_capabilities SET state='ready'/i.test(row.sql.trim())
         || (/^update "catalog_seller_capabilities" set "state"/i.test(row.sql.trim())));
-      expect(repairs).toHaveLength(sharedRepairs ? 2 : 4);
+      expect(repairs).toHaveLength(0);
       expect(records.some(row => /COUNT\(\*\)/i.test(row.sql))).toBe(false);
       return messages;
     };
-    const defaultOrder = await run(false);
+    const defaultOrder = await run();
     expect(defaultOrder).toHaveLength(4);
-    expect(await run(true)).toEqual(defaultOrder);
+    expect(await run()).toEqual(defaultOrder);
   });
 
   it("uses the dated snapshot for summary counts without rescanning", async () => {
@@ -110,7 +130,7 @@ describe("catalog quote-capability scheduler", () => {
     await refreshCapabilityStats(env.DB as unknown as D1DatabaseLike, NOW);
     const records: ReadRecord[] = [];
     const summary = await enqueueDueCatalogCapabilities(metered(env.DB as unknown as D1Database, records) as unknown as D1DatabaseLike,
-      { send: async () => {} }, { nowMs: NOW, limit: 1, skipRepairs: true });
+      { send: async () => {} }, { nowMs: NOW, limit: 1 });
     expect(summary).toMatchObject({ pending: 1, failed: 1, ready: 0, statsStatus: "fresh", statsUpdatedAt: NOW });
     expect(records.some(row => /COUNT\(\*\)/i.test(row.sql))).toBe(false);
   });
@@ -323,7 +343,7 @@ describe("catalog quote-capability scheduler", () => {
     ]);
   });
 
-  it("turns an expired ready capability stale and queues it", async () => {
+  it("queues expired ready evidence without rewriting its persisted state", async () => {
     await insertCandidate("42", ENDPOINT_KEY, "seller-origin", "ready", NOW);
     const send = vi.fn().mockResolvedValue(undefined);
     const summary = await enqueueDueCatalogCapabilities(env.DB as unknown as D1DatabaseLike, { send }, {
@@ -332,7 +352,7 @@ describe("catalog quote-capability scheduler", () => {
     });
     expect(summary).toMatchObject({ enqueued: 1, ready: null, stale: null, statsStatus: "missing" });
     await expect(env.DB.prepare(`SELECT state FROM catalog_seller_capabilities
-      WHERE agentKey = 'eip155:56:42'`).first()).resolves.toMatchObject({ state: "stale" });
+      WHERE agentKey = 'eip155:56:42'`).first()).resolves.toMatchObject({ state: "ready" });
   });
 
   it("backs off failed discovery without inventing quote requests or attempts", async () => {
