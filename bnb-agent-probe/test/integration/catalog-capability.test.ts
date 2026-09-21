@@ -93,7 +93,7 @@ describe("catalog quote-capability scheduler", () => {
       const messages: unknown[] = [];
       for (const chainId of [56, 97] as const) await enqueueDueCatalogCapabilities(db, { send: async message => { messages.push(message); } },
         { nowMs: NOW, limit: 2, bootstrapLimit: 2, chainId, skipRepairs: sharedRepairs });
-      const repairs = records.filter(row => /^UPDATE catalog_seller_capabilities SET state='ready'/i.test(row.sql.trim())
+      const repairs = records.filter(row => /^UPDATE catalog_seller_capabilities SET state='(?:ready|stale)'/i.test(row.sql.trim())
         || (/^update "catalog_seller_capabilities" set "state"/i.test(row.sql.trim())));
       expect(repairs).toHaveLength(sharedRepairs ? 2 : 4);
       expect(records.some(row => /COUNT\(\*\)/i.test(row.sql))).toBe(false);
