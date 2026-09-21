@@ -88,6 +88,7 @@ it.each([0, 6])('preserves all legacy aggregates with empty or overlapping agent
   if (!size) await db.prepare('DELETE FROM catalog_seller_capabilities').run();
   else {
     await db.prepare(`UPDATE catalog_seller_capabilities SET agentKey='eip155:56:1',
+      capabilityExpiresAt=CASE WHEN endpointKey='eip155:56:1' THEN 9999999999999 ELSE 1 END,
       compatibilityState=CASE WHEN endpointKey IN ('eip155:56:1','eip155:56:2') THEN 'compatible' ELSE 'pending' END,
       state=CASE endpointKey WHEN 'eip155:56:1' THEN 'ready' WHEN 'eip155:56:2' THEN 'failed'
         WHEN 'eip155:56:3' THEN 'stale' WHEN 'eip155:56:4' THEN 'suspended' ELSE 'discovered' END,
