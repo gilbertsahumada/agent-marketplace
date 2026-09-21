@@ -93,6 +93,11 @@ describe("WP1 Wrangler scaffold", () => {
 
   it("declares the Commerce indexer flag wherever the catalogue flags are declared, on only in staging", () => {
     for (const vars of [wrangler.vars, wrangler.env?.staging?.vars, wrangler.env?.validation?.vars]) {
+      expect(vars).toMatchObject({
+        BACKGROUND_COST_CONTROLS_ENABLED: "1",
+        BACKGROUND_MAINTENANCE_PAUSED: "1",
+        BACKGROUND_JOBS_PAUSED: "1",
+      });
       expect(vars?.CATALOG_PROBE_ENABLED).toBeDefined();
       expect(vars?.COMMERCE_INDEX_ENABLED).toBeDefined();
       expect(vars?.COMMERCE_TOKEN_BACKFILL_ENABLED).toBeDefined();
