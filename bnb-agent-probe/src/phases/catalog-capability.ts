@@ -70,12 +70,14 @@ function capabilityPayload(row: Pick<CatalogSellerCapabilityRow, "agentKey" | "e
 export async function repairCatalogCapabilities(dbBinding: D1DatabaseLike, nowMs: number): Promise<void> {
   const db = createDatabase(dbBinding);
   // Repair scheduling markers only; never manufacture or extend evidence.
+  // Scalar MIN is NULL if either expiry is NULL, matching the former two
+  // comparisons. The indexed range skips expired non-restorable rows.
   await db.run(sql`UPDATE catalog_seller_capabilities SET state='ready', updatedAt=${nowMs}
     WHERE state='stale' AND compatibilityState='compatible'
-      AND compatibilityExpiresAt > ${nowMs} AND capabilityExpiresAt > ${nowMs}
+      AND MIN(capabilityExpiresAt, compatibilityExpiresAt) > ${nowMs}
       AND lastSuccessAt IS NOT NULL AND consecutiveFailures=0 AND lastErrorCode IS NULL`);
-  await db.update(catalogSellerCapabilities).set({ state: "stale", nextProbeAt: nowMs, updatedAt: nowMs })
-    .where(and(eq(catalogSellerCapabilities.state, "ready"), lte(catalogSellerCapabilities.capabilityExpiresAt, nowMs)));
+  await db.run(sql`UPDATE catalog_seller_capabilities SET state='stale', nextProbeAt=${nowMs}, updatedAt=${nowMs}
+    WHERE state='ready' AND capabilityExpiresAt <= ${nowMs}`);
 }
 
 /**
