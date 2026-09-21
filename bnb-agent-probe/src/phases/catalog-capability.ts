@@ -1,6 +1,7 @@
 import { and, eq, inArray, isNull, lte, or, sql } from "drizzle-orm";
 
-import { createDatabase, type CatalogSellerCapabilityRow } from "../db/orm";
+import { createDatabase, readRuntimeState, type CatalogSellerCapabilityRow } from "../db/orm";
+import { CAPABILITY_STATS_KEY, CAPABILITY_STATS_INTERVAL_MS, readCapabilityStats } from "../catalog/capability-stats";
 import { catalogQuoteAttempts, catalogQuoteRequests, catalogSellerCapabilities } from "../db/schema";
 import type { D1DatabaseLike } from "../db/client";
 import { discoverNegotiationInput, probeA2aSeller, probeErc8183HttpSeller, probeMcpSeller, SellerProbeError } from "../lib/seller-client";
@@ -31,10 +32,12 @@ export interface CatalogCapabilityQueueSummary {
   readonly selected?: number;
   readonly enqueued: number;
   readonly skipped: number;
-  readonly pending: number;
-  readonly ready: number;
-  readonly stale: number;
-  readonly failed: number;
+  readonly pending: number | null;
+  readonly ready: number | null;
+  readonly stale: number | null;
+  readonly failed: number | null;
+  readonly statsStatus: "fresh" | "stale" | "missing";
+  readonly statsUpdatedAt: number | null;
 }
 
 export interface CatalogCapabilityProbeSummary {
@@ -63,15 +66,26 @@ function capabilityPayload(row: Pick<CatalogSellerCapabilityRow, "agentKey" | "e
   };
 }
 
+/** Reconcile global scheduling markers once before selecting either network. */
+export async function repairCatalogCapabilities(dbBinding: D1DatabaseLike, nowMs: number): Promise<void> {
+  const db = createDatabase(dbBinding);
+  // Repair scheduling markers only; never manufacture or extend evidence.
+  await db.run(sql`UPDATE catalog_seller_capabilities SET state='ready', updatedAt=${nowMs}
+    WHERE state='stale' AND compatibilityState='compatible'
+      AND compatibilityExpiresAt > ${nowMs} AND capabilityExpiresAt > ${nowMs}
+      AND lastSuccessAt IS NOT NULL AND consecutiveFailures=0 AND lastErrorCode IS NULL`);
+  await db.update(catalogSellerCapabilities).set({ state: "stale", nextProbeAt: nowMs, updatedAt: nowMs })
+    .where(and(eq(catalogSellerCapabilities.state, "ready"), lte(catalogSellerCapabilities.capabilityExpiresAt, nowMs)));
+}
+
 /**
- * Claim due capability rows and enqueue one physical probe per seller. The
- * claim moves nextProbeAt into a short lease before sending so two cron ticks
- * cannot fan out duplicate probes. A send failure releases that lease.
+ * Claim due rows before sending so overlapping ticks cannot duplicate probes.
+ * Callers selecting both networks can repair once and pass skipRepairs=true.
  */
 export async function enqueueDueCatalogCapabilities(
   dbBinding: D1DatabaseLike,
   queue: QueueProducer,
-  input: { readonly nowMs: number; readonly limit: number; readonly chainId?: 56 | 97; readonly concurrency?: number; readonly bootstrapLimit?: number; readonly originPerMinute?: number },
+  input: { readonly nowMs: number; readonly limit: number; readonly chainId?: 56 | 97; readonly concurrency?: number; readonly bootstrapLimit?: number; readonly originPerMinute?: number; readonly skipRepairs?: boolean },
 ): Promise<CatalogCapabilityQueueSummary> {
   const chainId = input.chainId ?? 56;
   if (chainId !== 56 && chainId !== 97) throw new Error("CATALOG_CHAIN_UNSUPPORTED");
@@ -84,20 +98,7 @@ export async function enqueueDueCatalogCapabilities(
   if (!Number.isSafeInteger(concurrency) || concurrency < 1) throw new Error("CATALOG_QUOTE_CONCURRENCY");
   const db = createDatabase(dbBinding);
   if (chainId === 56) await revisitOldInputFailures(db, input.nowMs, bootstrapLimit);
-  // Repair stale scheduling markers from earlier discovery runs without
-  // manufacturing new quote evidence or extending its expiry.
-  await db.run(sql`UPDATE catalog_seller_capabilities SET state='ready', updatedAt=${input.nowMs}
-    WHERE state='stale' AND compatibilityState='compatible'
-      AND compatibilityExpiresAt > ${input.nowMs} AND capabilityExpiresAt > ${input.nowMs}
-      AND lastSuccessAt IS NOT NULL AND consecutiveFailures=0 AND lastErrorCode IS NULL`);
-  await db.update(catalogSellerCapabilities).set({
-    state: "stale",
-    nextProbeAt: input.nowMs,
-    updatedAt: input.nowMs,
-  }).where(and(
-    eq(catalogSellerCapabilities.state, "ready"),
-    lte(catalogSellerCapabilities.capabilityExpiresAt, input.nowMs),
-  ));
+  if (!input.skipRepairs) await repairCatalogCapabilities(dbBinding, input.nowMs);
   const selectDue = (bootstrap: boolean | null, window: number) => {
     const index = bootstrap ? sql`idx_catalog_capabilities_pending_due` : sql`idx_catalog_capabilities_maintenance_due`;
     const cohort = bootstrap ? sql`compatibilityState='pending'` : sql`compatibilityState<>'pending'`;
@@ -226,24 +227,19 @@ export async function enqueueDueCatalogCapabilities(
         .where(and(eq(catalogSellerCapabilities.agentKey, row.agentKey), eq(catalogSellerCapabilities.endpointKey, row.endpointKey)));
     }
   }
-  // Keep the queue summary bounded. The previous implementation loaded every
-  // capability row into the Worker just to count states, which made the
-  // minute tick grow linearly with the catalogue. D1 can aggregate this using
-  // the state index and return at most six rows.
-  const counts = await db.all<{ state: string; total: number }>(sql`
-    SELECT state, COUNT(*) AS total
-    FROM catalog_seller_capabilities
-    GROUP BY state
-  `);
-  const count = (state: string) => Number(counts.find((row) => row.state === state)?.total ?? 0);
+  const stats = readCapabilityStats((await readRuntimeState(db, CAPABILITY_STATS_KEY)) ?? undefined, input.nowMs);
   return {
     selected: selected.length,
     enqueued,
     skipped,
-    pending: count("discovered"),
-    ready: count("ready"),
-    stale: count("stale"),
-    failed: count("failed"),
+    // Legacy queue summary calls only discovered rows pending, whereas health
+    // includes stale and failed rows in its pending aggregate.
+    pending: stats ? stats.pending - stats.stale - stats.failed : null,
+    ready: stats?.ready ?? null,
+    stale: stats?.stale ?? null,
+    failed: stats?.failed ?? null,
+    statsStatus: !stats ? "missing" : input.nowMs - stats.updatedAt >= CAPABILITY_STATS_INTERVAL_MS ? "stale" : "fresh",
+    statsUpdatedAt: stats?.updatedAt ?? null,
   };
 }
 
