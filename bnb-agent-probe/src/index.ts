@@ -650,16 +650,12 @@ export function createWorker(dependencies: WorkerDependencies = {}): WorkerEntry
         }
       }
       if (config.catalogProbeEnabled && config.catalogV2WritesEnabled && env.CATALOG_QUOTE_QUEUE !== undefined) {
-        const { enqueueDueCatalogCapabilities, repairCatalogCapabilities } = await import("./phases/catalog-capability");
-        if(controlled){
-          await repairCatalogCapabilities(env.DB as never,now());
-        }
+        const { enqueueDueCatalogCapabilities } = await import("./phases/catalog-capability");
         const { projectSharedDiscoveryFailures } = await import("./catalog/shared-discovery");
         const projected = await projectSharedDiscoveryFailures(env.DB as never, now(), Number(env.CATALOG_SHARED_DISCOVERY_LIMIT ?? "0"));
         if (projected) logger.info("catalog.discovery.shared", { projected, unit: "endpoint declarations", quoteAttemptsCreated: 0 });
         const summary = await enqueueDueCatalogCapabilities(env.DB as never, env.CATALOG_QUOTE_QUEUE, {
           nowMs: now(),
-          skipRepairs: controlled,
           limit: config.catalogQuoteBatchSize,
           concurrency: config.catalogQuoteConcurrency,
           bootstrapLimit: Number(env.CATALOG_COMPATIBILITY_BOOTSTRAP_BATCH_SIZE ?? "0"),
@@ -674,7 +670,6 @@ export function createWorker(dependencies: WorkerDependencies = {}): WorkerEntry
         if (testnetCatalogEnabled(env)) {
           const testnet = await enqueueDueCatalogCapabilities(env.DB as never, env.CATALOG_QUOTE_QUEUE, {
             nowMs: now(), chainId: 97,
-            skipRepairs: controlled,
             limit: TESTNET_QUOTE_BATCH_SIZE, concurrency: 1,
             bootstrapLimit: TESTNET_QUOTE_BATCH_SIZE, originPerMinute: 1,
           });
