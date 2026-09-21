@@ -57,7 +57,7 @@ it("only permits one concurrent refresh per fifteen-minute interval", async () =
   const source = metered(env.DB as unknown as D1Database, records) as unknown as D1DatabaseLike;
   const results = await Promise.all(Array.from({ length: 8 }, () => refreshCapabilityStats(source, NOW)));
   expect(results.filter(Boolean)).toHaveLength(1);
-  expect(records.filter(row => row.sql.includes("FROM catalog_seller_capabilities"))).toHaveLength(3);
+  expect(records.filter(row => row.sql.includes("FROM catalog_seller_capabilities"))).toHaveLength(1);
   expect(await refreshCapabilityStats(db, NOW + CAPABILITY_STATS_INTERVAL_MS)).toBe(true);
 });
 
@@ -81,4 +81,30 @@ it("does not turn corrupt or future snapshots into zero counts", async () => {
     expect(await health(NOW)).toMatchObject({ statsStatus: "missing", pending: null, statsUpdatedAt: null });
     expect(readCapabilityStats({ textValue: value }, NOW)).toBe(null);
   }
+});
+
+it.each([0, 6])('preserves all legacy aggregates with empty or overlapping agent groups (%i)', async size => {
+  await seed(size || 1);
+  if (!size) await db.prepare('DELETE FROM catalog_seller_capabilities').run();
+  else {
+    await db.prepare(`UPDATE catalog_seller_capabilities SET agentKey='eip155:56:1',
+      compatibilityState=CASE WHEN endpointKey IN ('eip155:56:1','eip155:56:2') THEN 'compatible' ELSE 'pending' END,
+      state=CASE endpointKey WHEN 'eip155:56:1' THEN 'ready' WHEN 'eip155:56:2' THEN 'failed'
+        WHEN 'eip155:56:3' THEN 'stale' WHEN 'eip155:56:4' THEN 'suspended' ELSE 'discovered' END,
+      lastAttemptAt=CASE WHEN endpointKey='eip155:56:2' THEN 500 ELSE NULL END,
+      compatibilityCheckedAt=CASE WHEN endpointKey='eip155:56:3' THEN 600 ELSE NULL END,
+      nextProbeAt=CASE WHEN endpointKey='eip155:56:1' THEN 1 WHEN endpointKey='eip155:56:2' THEN NULL ELSE 700 END`).run();
+  }
+  const compatibility = await db.prepare(`SELECT compatibilityState AS state, COUNT(*) AS endpoints,
+    COUNT(DISTINCT agentKey) AS agents, MAX(compatibilityCheckedAt) AS lastCheckedAt
+    FROM catalog_seller_capabilities GROUP BY compatibilityState`).all();
+  const counts = await db.prepare('SELECT state,COUNT(*) AS total FROM catalog_seller_capabilities GROUP BY state').all<{state:string;total:number}>();
+  const latest = await db.prepare(`SELECT MAX(lastAttemptAt) AS attempt,
+    MIN(CASE WHEN state IN ('discovered','stale','failed') THEN nextProbeAt END) AS due
+    FROM catalog_seller_capabilities`).first<{attempt:number|null;due:number|null}>();
+  const count = (state:string) => counts.results?.find(row=>row.state===state)?.total ?? 0;
+  await refreshCapabilityStats(db,NOW);
+  const snapshot = readCapabilityStats((await db.prepare('SELECT textValue FROM runtime_state WHERE key=?').bind(CAPABILITY_STATS_KEY).first<{textValue:string}>())!,NOW);
+  expect(snapshot).toMatchObject({pending:count('discovered')+count('stale')+count('failed'),ready:count('ready'),stale:count('stale'),failed:count('failed'),
+    lastQuoteAttemptAt:latest?.attempt,nextProbeAt:latest?.due,lastProcessedAt:size?600:null,compatibility:compatibility.results});
 });

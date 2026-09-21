@@ -45,20 +45,32 @@ export async function refreshCapabilityStats(db: D1DatabaseLike, nowMs: number):
       integerValue=excluded.integerValue,updatedAt=excluded.updatedAt
     WHERE runtime_state.integerValue <= ${nowMs} RETURNING key`);
   if (claimed.length === 0) return false;
-  const [counts, latest, compatibility] = await Promise.all([
-    orm.all<{state: string; total: number}>(sql`SELECT state, COUNT(*) AS total FROM catalog_seller_capabilities GROUP BY state`),
-    orm.all<{lastAttemptAt: number | null; nextProbeAt: number | null}>(sql`SELECT MAX(lastAttemptAt) AS lastAttemptAt, MIN(CASE WHEN state IN ('discovered','stale','failed') THEN nextProbeAt END) AS nextProbeAt FROM catalog_seller_capabilities`),
-    orm.all<Compatibility>(sql`SELECT compatibilityState AS state, COUNT(*) AS endpoints, COUNT(DISTINCT agentKey) AS agents, MAX(compatibilityCheckedAt) AS lastCheckedAt FROM catalog_seller_capabilities GROUP BY compatibilityState`),
-  ]);
-  const count = (state: string) => Number(counts.find(row => row.state === state)?.total ?? 0);
-  const row = latest[0];
-  const states = compatibility;
+  // Sum state counts and reduce time extrema across compatibility groups.
+  // Count distinct agents inside each group, not across state subgroups: one
+  // agent may expose several endpoints with different scheduling states.
+  const groups = await orm.all<Compatibility & {
+    pending: number; ready: number; stale: number; failed: number;
+    lastAttemptAt: number | null; nextProbeAt: number | null;
+  }>(sql`SELECT compatibilityState AS state, COUNT(*) AS endpoints,
+    COUNT(DISTINCT agentKey) AS agents, MAX(compatibilityCheckedAt) AS lastCheckedAt,
+    COUNT(CASE WHEN state IN ('discovered','stale','failed') THEN 1 END) AS pending,
+    COUNT(CASE WHEN state='ready' THEN 1 END) AS ready,
+    COUNT(CASE WHEN state='stale' THEN 1 END) AS stale,
+    COUNT(CASE WHEN state='failed' THEN 1 END) AS failed,
+    MAX(lastAttemptAt) AS lastAttemptAt,
+    MIN(CASE WHEN state IN ('discovered','stale','failed') THEN nextProbeAt END) AS nextProbeAt
+    FROM catalog_seller_capabilities GROUP BY compatibilityState`);
+  const count = (field: 'pending' | 'ready' | 'stale' | 'failed') => groups.reduce((sum, row) => sum + row[field], 0);
+  const timestamps = groups.flatMap(row => row.lastAttemptAt === null ? [] : [row.lastAttemptAt]);
+  const deadlines = groups.flatMap(row => row.nextProbeAt === null ? [] : [row.nextProbeAt]);
+  const lastAttemptAt = timestamps.length ? Math.max(...timestamps) : null;
+  const states = groups.map(({ state, endpoints, agents, lastCheckedAt }) => ({ state, endpoints, agents, lastCheckedAt }));
   const snapshot: Snapshot = { schemaVersion: 1, updatedAt: nowMs,
-    pending: count("discovered") + count("stale") + count("failed"),
+    pending: count("pending"),
     ready: count("ready"), stale: count("stale"), failed: count("failed"),
-    lastQuoteAttemptAt: row?.lastAttemptAt ?? null,
-    lastProcessedAt: states.reduce((max, entry) => Math.max(max, entry.lastCheckedAt ?? 0), row?.lastAttemptAt ?? 0) || null,
-    nextProbeAt: row?.nextProbeAt ?? null, compatibility: states };
+    lastQuoteAttemptAt: lastAttemptAt,
+    lastProcessedAt: states.reduce((max, entry) => Math.max(max, entry.lastCheckedAt ?? 0), lastAttemptAt ?? 0) || null,
+    nextProbeAt: deadlines.length ? Math.min(...deadlines) : null, compatibility: states };
   const saved = await orm.all<{ key: string }>(sql`INSERT INTO runtime_state(key,textValue,integerValue,updatedAt)
     SELECT ${CAPABILITY_STATS_KEY},${JSON.stringify(snapshot)},NULL,${nowMs}
     WHERE EXISTS (SELECT 1 FROM runtime_state WHERE key=${CAPABILITY_STATS_LEASE_KEY} AND textValue=${token})
