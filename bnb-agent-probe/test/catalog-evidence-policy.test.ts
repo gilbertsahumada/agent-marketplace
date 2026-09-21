@@ -2,6 +2,12 @@ import { describe, expect, it } from "vitest";
 import { deriveCatalogEvidenceState } from "../src/catalog/evidence-policy";
 
 const NOW = 2_000_000;
+it('derives ready from still-valid stale evidence without a repair write', () => {
+  const result = deriveCatalogEvidenceState({ endpoints: [{endpointKey:'endpoint',role:'operational',eligibility:'eligible',validationProtocol:'a2a'}], observations: [], admission: null, nowMs: NOW,
+    capability: { state: 'stale', endpointKey:'endpoint',schemaHash:'hash', capabilityExpiresAt: NOW + 1, compatibilityExpiresAt: NOW + 1,
+      compatibilityState: 'compatible', lastSuccessAt: NOW - 1, consecutiveFailures: 0, lastErrorCode: null } });
+  expect(result.capabilityState).toBe('ready');
+});
 const endpoint = {
   endpointKey: "endpoint",
   role: "operational",
