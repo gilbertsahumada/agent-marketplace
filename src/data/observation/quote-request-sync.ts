@@ -71,7 +71,7 @@ function urlFor(env: Environment, path: string): URL | null {
 async function requestWorker(
   path: string,
   init: RequestInit,
-  options: { chainId?: 56 | 97; env?: Environment; fetchImpl?: typeof fetch; caller?: string } = {},
+  options: { chainId?: 56 | 97; env?: Environment; fetchImpl?: typeof fetch; caller?: string; backgroundJobs?:boolean } = {},
 ): Promise<{ status: number; body: unknown } | null> {
   const env = options.env ?? process.env;
   const destination = urlFor(env, path);
@@ -87,6 +87,7 @@ async function requestWorker(
         authorization: `Bearer ${secret}`,
         accept: "application/json",
         ...(init.headers ?? {}),
+        ...(options.backgroundJobs ? {"x-marketplace-background-jobs":"1"} : {}),
         "x-marketplace-caller": callerFingerprint("quote-request-caller", options.caller, secret),
       },
       // Negotiation plus independent chain/signature verification must finish
@@ -170,7 +171,7 @@ export async function fallbackBuyerQuote(
 
 export async function getBuyerQuoteHistory(
   agentId: string,
-  options: { chainId?: 56 | 97; env?: Environment; fetchImpl?: typeof fetch; page?: number } = {},
+  options: { chainId?: 56 | 97; env?: Environment; fetchImpl?: typeof fetch; page?: number; backgroundJobs?:boolean } = {},
 ) {
   return requestWorker(`/catalog-quotes/${agentId}${options.page ? `?page=${options.page}` : ""}`, { method: "GET" }, options);
 }
@@ -183,7 +184,7 @@ export async function getBuyerQuoteHistory(
 export async function resolveBuyerQuoteRequest(
   agentId: string,
   requestId: number,
-  options: { chainId?: 56 | 97; env?: Environment; fetchImpl?: typeof fetch } = {},
+  options: { chainId?: 56 | 97; env?: Environment; fetchImpl?: typeof fetch; backgroundJobs?:boolean } = {},
 ): Promise<BuyerQuoteHistoryRequest | null> {
   if (!Number.isSafeInteger(requestId) || requestId < 1) return null;
   let result = await requestWorker(`/catalog-quotes/${agentId}?requestId=${requestId}`, { method: "GET" }, options);
