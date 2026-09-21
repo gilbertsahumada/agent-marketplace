@@ -60,6 +60,15 @@ function env(db = database()): Env {
 }
 
 describe("Worker runtime", () => {
+  it.each(["0", "1"])("does not aggregate capability tables when the snapshot is missing (writes %s)", async writes => {
+    const db = database();
+    const prepare = vi.spyOn(db, "prepare");
+    const response = await createWorker().fetch(new Request("https://worker.test/health"), { ...env(db), CATALOG_V2_WRITES_ENABLED: writes });
+    const body = await response.json() as { quoteQueue: unknown };
+    expect(body.quoteQueue).toMatchObject({ statsStatus: "missing", pending: null, ready: null });
+    expect(prepare).toHaveBeenCalledTimes(1);
+    expect(prepare.mock.calls.every(([query]) => !query.includes("catalog_seller_capabilities"))).toBe(true);
+  });
   it("returns a public, sanitized Free health response", async () => {
     const now = 1_800_000_000_000;
     const db = database();
