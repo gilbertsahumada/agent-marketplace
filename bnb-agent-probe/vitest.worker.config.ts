@@ -11,6 +11,9 @@ export default defineConfig({
         bindings: {
           TEST_MIGRATIONS: await readD1Migrations(path.join(import.meta.dirname, "migrations")),
           CATALOG_V2_READS_ENABLED: "1",
+          // Legacy behavior remains covered explicitly; the new integration
+          // suite enables controls and sets each lane's pause state itself.
+          BACKGROUND_COST_CONTROLS_ENABLED: "0",
           // Production caches public reads (wrangler.jsonc); the Workers Cache
           // is shared across test files, so tests opt in per request instead.
           CATALOG_RESPONSE_CACHE_SECONDS: "0",
