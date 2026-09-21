@@ -1,0 +1,1118 @@
+[
+  {
+    "size": 2000,
+    "backlog": "empty",
+    "distribution": "shared",
+    "analyze": false,
+    "before": {
+      "reads": 1214,
+      "writes": 0,
+      "ms": 1,
+      "queries": 4
+    },
+    "after": {
+      "reads": 1216,
+      "writes": 0,
+      "ms": 1,
+      "queries": 4
+    },
+    "totalBefore": {
+      "reads": 1218,
+      "writes": 0,
+      "ms": 2,
+      "queries": 7
+    },
+    "totalAfter": {
+      "reads": 1220,
+      "writes": 0,
+      "ms": 1,
+      "queries": 7
+    },
+    "sameMessages": true
+  },
+  {
+    "size": 2000,
+    "backlog": "empty",
+    "distribution": "shared",
+    "analyze": true,
+    "before": {
+      "reads": 1214,
+      "writes": 0,
+      "ms": 1,
+      "queries": 4
+    },
+    "after": {
+      "reads": 1216,
+      "writes": 0,
+      "ms": 1,
+      "queries": 4
+    },
+    "totalBefore": {
+      "reads": 1218,
+      "writes": 0,
+      "ms": 2,
+      "queries": 7
+    },
+    "totalAfter": {
+      "reads": 1220,
+      "writes": 0,
+      "ms": 1,
+      "queries": 7
+    },
+    "sameMessages": true
+  },
+  {
+    "size": 2000,
+    "backlog": "empty",
+    "distribution": "unique",
+    "analyze": false,
+    "before": {
+      "reads": 1214,
+      "writes": 0,
+      "ms": 2,
+      "queries": 4
+    },
+    "after": {
+      "reads": 1216,
+      "writes": 0,
+      "ms": 1,
+      "queries": 4
+    },
+    "totalBefore": {
+      "reads": 1218,
+      "writes": 0,
+      "ms": 2,
+      "queries": 7
+    },
+    "totalAfter": {
+      "reads": 1220,
+      "writes": 0,
+      "ms": 1,
+      "queries": 7
+    },
+    "sameMessages": true
+  },
+  {
+    "size": 2000,
+    "backlog": "empty",
+    "distribution": "unique",
+    "analyze": true,
+    "before": {
+      "reads": 1214,
+      "writes": 0,
+      "ms": 1,
+      "queries": 4
+    },
+    "after": {
+      "reads": 1216,
+      "writes": 0,
+      "ms": 1,
+      "queries": 4
+    },
+    "totalBefore": {
+      "reads": 1218,
+      "writes": 0,
+      "ms": 1,
+      "queries": 7
+    },
+    "totalAfter": {
+      "reads": 1220,
+      "writes": 0,
+      "ms": 1,
+      "queries": 7
+    },
+    "sameMessages": true
+  },
+  {
+    "size": 2000,
+    "backlog": "empty",
+    "distribution": "skew",
+    "analyze": false,
+    "before": {
+      "reads": 1214,
+      "writes": 0,
+      "ms": 2,
+      "queries": 4
+    },
+    "after": {
+      "reads": 1216,
+      "writes": 0,
+      "ms": 2,
+      "queries": 4
+    },
+    "totalBefore": {
+      "reads": 1218,
+      "writes": 0,
+      "ms": 3,
+      "queries": 7
+    },
+    "totalAfter": {
+      "reads": 1220,
+      "writes": 0,
+      "ms": 2,
+      "queries": 7
+    },
+    "sameMessages": true
+  },
+  {
+    "size": 2000,
+    "backlog": "empty",
+    "distribution": "skew",
+    "analyze": true,
+    "before": {
+      "reads": 1214,
+      "writes": 0,
+      "ms": 2,
+      "queries": 4
+    },
+    "after": {
+      "reads": 1216,
+      "writes": 0,
+      "ms": 2,
+      "queries": 4
+    },
+    "totalBefore": {
+      "reads": 1218,
+      "writes": 0,
+      "ms": 2,
+      "queries": 7
+    },
+    "totalAfter": {
+      "reads": 1220,
+      "writes": 0,
+      "ms": 2,
+      "queries": 7
+    },
+    "sameMessages": true
+  },
+  {
+    "size": 2000,
+    "backlog": "sparse",
+    "distribution": "shared",
+    "analyze": false,
+    "before": {
+      "reads": 1498,
+      "writes": 0,
+      "ms": 0,
+      "queries": 4
+    },
+    "after": {
+      "reads": 1646,
+      "writes": 0,
+      "ms": 3,
+      "queries": 4
+    },
+    "totalBefore": {
+      "reads": 1508,
+      "writes": 12,
+      "ms": 0,
+      "queries": 11
+    },
+    "totalAfter": {
+      "reads": 1656,
+      "writes": 12,
+      "ms": 3,
+      "queries": 11
+    },
+    "sameMessages": true
+  },
+  {
+    "size": 2000,
+    "backlog": "sparse",
+    "distribution": "shared",
+    "analyze": true,
+    "before": {
+      "reads": 1578,
+      "writes": 0,
+      "ms": 2,
+      "queries": 4
+    },
+    "after": {
+      "reads": 1726,
+      "writes": 0,
+      "ms": 2,
+      "queries": 4
+    },
+    "totalBefore": {
+      "reads": 1588,
+      "writes": 12,
+      "ms": 2,
+      "queries": 11
+    },
+    "totalAfter": {
+      "reads": 1736,
+      "writes": 12,
+      "ms": 2,
+      "queries": 11
+    },
+    "sameMessages": true
+  },
+  {
+    "size": 2000,
+    "backlog": "sparse",
+    "distribution": "unique",
+    "analyze": false,
+    "before": {
+      "reads": 1570,
+      "writes": 0,
+      "ms": 2,
+      "queries": 4
+    },
+    "after": {
+      "reads": 1808,
+      "writes": 0,
+      "ms": 3,
+      "queries": 4
+    },
+    "totalBefore": {
+      "reads": 1661,
+      "writes": 174,
+      "ms": 5,
+      "queries": 65
+    },
+    "totalAfter": {
+      "reads": 1899,
+      "writes": 174,
+      "ms": 7,
+      "queries": 65
+    },
+    "sameMessages": true
+  },
+  {
+    "size": 2000,
+    "backlog": "sparse",
+    "distribution": "unique",
+    "analyze": true,
+    "before": {
+      "reads": 1650,
+      "writes": 0,
+      "ms": 2,
+      "queries": 4
+    },
+    "after": {
+      "reads": 1888,
+      "writes": 0,
+      "ms": 0,
+      "queries": 4
+    },
+    "totalBefore": {
+      "reads": 1741,
+      "writes": 174,
+      "ms": 6,
+      "queries": 65
+    },
+    "totalAfter": {
+      "reads": 1979,
+      "writes": 174,
+      "ms": 2,
+      "queries": 65
+    },
+    "sameMessages": true
+  },
+  {
+    "size": 2000,
+    "backlog": "sparse",
+    "distribution": "skew",
+    "analyze": false,
+    "before": {
+      "reads": 1534,
+      "writes": 0,
+      "ms": 1,
+      "queries": 4
+    },
+    "after": {
+      "reads": 1718,
+      "writes": 0,
+      "ms": 2,
+      "queries": 4
+    },
+    "totalBefore": {
+      "reads": 1589,
+      "writes": 102,
+      "ms": 2,
+      "queries": 41
+    },
+    "totalAfter": {
+      "reads": 1773,
+      "writes": 102,
+      "ms": 5,
+      "queries": 41
+    },
+    "sameMessages": true
+  },
+  {
+    "size": 2000,
+    "backlog": "sparse",
+    "distribution": "skew",
+    "analyze": true,
+    "before": {
+      "reads": 1614,
+      "writes": 0,
+      "ms": 0,
+      "queries": 4
+    },
+    "after": {
+      "reads": 1798,
+      "writes": 0,
+      "ms": 2,
+      "queries": 4
+    },
+    "totalBefore": {
+      "reads": 1669,
+      "writes": 102,
+      "ms": 0,
+      "queries": 41
+    },
+    "totalAfter": {
+      "reads": 1853,
+      "writes": 102,
+      "ms": 4,
+      "queries": 41
+    },
+    "sameMessages": true
+  },
+  {
+    "size": 2000,
+    "backlog": "dense",
+    "distribution": "shared",
+    "analyze": false,
+    "before": {
+      "reads": 15604,
+      "writes": 0,
+      "ms": 8,
+      "queries": 4
+    },
+    "after": {
+      "reads": 23962,
+      "writes": 0,
+      "ms": 7,
+      "queries": 4
+    },
+    "totalBefore": {
+      "reads": 15740,
+      "writes": 264,
+      "ms": 11,
+      "queries": 95
+    },
+    "totalAfter": {
+      "reads": 24098,
+      "writes": 264,
+      "ms": 7,
+      "queries": 95
+    },
+    "sameMessages": true
+  },
+  {
+    "size": 2000,
+    "backlog": "dense",
+    "distribution": "shared",
+    "analyze": true,
+    "before": {
+      "reads": 19203,
+      "writes": 0,
+      "ms": 5,
+      "queries": 4
+    },
+    "after": {
+      "reads": 27561,
+      "writes": 0,
+      "ms": 8,
+      "queries": 4
+    },
+    "totalBefore": {
+      "reads": 19339,
+      "writes": 264,
+      "ms": 10,
+      "queries": 95
+    },
+    "totalAfter": {
+      "reads": 27697,
+      "writes": 264,
+      "ms": 9,
+      "queries": 95
+    },
+    "sameMessages": true
+  },
+  {
+    "size": 2000,
+    "backlog": "dense",
+    "distribution": "unique",
+    "analyze": false,
+    "before": {
+      "reads": 19204,
+      "writes": 0,
+      "ms": 7,
+      "queries": 4
+    },
+    "after": {
+      "reads": 31198,
+      "writes": 0,
+      "ms": 9,
+      "queries": 4
+    },
+    "totalBefore": {
+      "reads": 19340,
+      "writes": 264,
+      "ms": 10,
+      "queries": 95
+    },
+    "totalAfter": {
+      "reads": 31334,
+      "writes": 264,
+      "ms": 16,
+      "queries": 95
+    },
+    "sameMessages": true
+  },
+  {
+    "size": 2000,
+    "backlog": "dense",
+    "distribution": "unique",
+    "analyze": true,
+    "before": {
+      "reads": 22803,
+      "writes": 0,
+      "ms": 7,
+      "queries": 4
+    },
+    "after": {
+      "reads": 34797,
+      "writes": 0,
+      "ms": 7,
+      "queries": 4
+    },
+    "totalBefore": {
+      "reads": 22939,
+      "writes": 264,
+      "ms": 9,
+      "queries": 95
+    },
+    "totalAfter": {
+      "reads": 34933,
+      "writes": 264,
+      "ms": 8,
+      "queries": 95
+    },
+    "sameMessages": true
+  },
+  {
+    "size": 2000,
+    "backlog": "dense",
+    "distribution": "skew",
+    "analyze": false,
+    "before": {
+      "reads": 15212,
+      "writes": 0,
+      "ms": 7,
+      "queries": 4
+    },
+    "after": {
+      "reads": 21222,
+      "writes": 0,
+      "ms": 7,
+      "queries": 4
+    },
+    "totalBefore": {
+      "reads": 15342,
+      "writes": 252,
+      "ms": 9,
+      "queries": 91
+    },
+    "totalAfter": {
+      "reads": 21352,
+      "writes": 252,
+      "ms": 11,
+      "queries": 91
+    },
+    "sameMessages": true
+  },
+  {
+    "size": 2000,
+    "backlog": "dense",
+    "distribution": "skew",
+    "analyze": true,
+    "before": {
+      "reads": 18811,
+      "writes": 0,
+      "ms": 6,
+      "queries": 4
+    },
+    "after": {
+      "reads": 24821,
+      "writes": 0,
+      "ms": 6,
+      "queries": 4
+    },
+    "totalBefore": {
+      "reads": 18941,
+      "writes": 252,
+      "ms": 9,
+      "queries": 91
+    },
+    "totalAfter": {
+      "reads": 24951,
+      "writes": 252,
+      "ms": 12,
+      "queries": 91
+    },
+    "sameMessages": true
+  },
+  {
+    "size": 20000,
+    "backlog": "empty",
+    "distribution": "shared",
+    "analyze": false,
+    "before": {
+      "reads": 12014,
+      "writes": 0,
+      "ms": 2,
+      "queries": 4
+    },
+    "after": {
+      "reads": 12016,
+      "writes": 0,
+      "ms": 3,
+      "queries": 4
+    },
+    "totalBefore": {
+      "reads": 12018,
+      "writes": 0,
+      "ms": 2,
+      "queries": 7
+    },
+    "totalAfter": {
+      "reads": 12020,
+      "writes": 0,
+      "ms": 3,
+      "queries": 7
+    },
+    "sameMessages": true
+  },
+  {
+    "size": 20000,
+    "backlog": "empty",
+    "distribution": "shared",
+    "analyze": true,
+    "before": {
+      "reads": 12014,
+      "writes": 0,
+      "ms": 2,
+      "queries": 4
+    },
+    "after": {
+      "reads": 12016,
+      "writes": 0,
+      "ms": 3,
+      "queries": 4
+    },
+    "totalBefore": {
+      "reads": 12018,
+      "writes": 0,
+      "ms": 2,
+      "queries": 7
+    },
+    "totalAfter": {
+      "reads": 12020,
+      "writes": 0,
+      "ms": 4,
+      "queries": 7
+    },
+    "sameMessages": true
+  },
+  {
+    "size": 20000,
+    "backlog": "empty",
+    "distribution": "unique",
+    "analyze": false,
+    "before": {
+      "reads": 12014,
+      "writes": 0,
+      "ms": 2,
+      "queries": 4
+    },
+    "after": {
+      "reads": 12016,
+      "writes": 0,
+      "ms": 3,
+      "queries": 4
+    },
+    "totalBefore": {
+      "reads": 12018,
+      "writes": 0,
+      "ms": 3,
+      "queries": 7
+    },
+    "totalAfter": {
+      "reads": 12020,
+      "writes": 0,
+      "ms": 3,
+      "queries": 7
+    },
+    "sameMessages": true
+  },
+  {
+    "size": 20000,
+    "backlog": "empty",
+    "distribution": "unique",
+    "analyze": true,
+    "before": {
+      "reads": 12014,
+      "writes": 0,
+      "ms": 2,
+      "queries": 4
+    },
+    "after": {
+      "reads": 12016,
+      "writes": 0,
+      "ms": 3,
+      "queries": 4
+    },
+    "totalBefore": {
+      "reads": 12018,
+      "writes": 0,
+      "ms": 2,
+      "queries": 7
+    },
+    "totalAfter": {
+      "reads": 12020,
+      "writes": 0,
+      "ms": 3,
+      "queries": 7
+    },
+    "sameMessages": true
+  },
+  {
+    "size": 20000,
+    "backlog": "empty",
+    "distribution": "skew",
+    "analyze": false,
+    "before": {
+      "reads": 12014,
+      "writes": 0,
+      "ms": 3,
+      "queries": 4
+    },
+    "after": {
+      "reads": 12016,
+      "writes": 0,
+      "ms": 4,
+      "queries": 4
+    },
+    "totalBefore": {
+      "reads": 12018,
+      "writes": 0,
+      "ms": 4,
+      "queries": 7
+    },
+    "totalAfter": {
+      "reads": 12020,
+      "writes": 0,
+      "ms": 4,
+      "queries": 7
+    },
+    "sameMessages": true
+  },
+  {
+    "size": 20000,
+    "backlog": "empty",
+    "distribution": "skew",
+    "analyze": true,
+    "before": {
+      "reads": 12014,
+      "writes": 0,
+      "ms": 3,
+      "queries": 4
+    },
+    "after": {
+      "reads": 12016,
+      "writes": 0,
+      "ms": 3,
+      "queries": 4
+    },
+    "totalBefore": {
+      "reads": 12018,
+      "writes": 0,
+      "ms": 3,
+      "queries": 7
+    },
+    "totalAfter": {
+      "reads": 12020,
+      "writes": 0,
+      "ms": 4,
+      "queries": 7
+    },
+    "sameMessages": true
+  },
+  {
+    "size": 20000,
+    "backlog": "sparse",
+    "distribution": "shared",
+    "analyze": false,
+    "before": {
+      "reads": 14818,
+      "writes": 0,
+      "ms": 6,
+      "queries": 4
+    },
+    "after": {
+      "reads": 16226,
+      "writes": 0,
+      "ms": 6,
+      "queries": 4
+    },
+    "totalBefore": {
+      "reads": 14828,
+      "writes": 12,
+      "ms": 6,
+      "queries": 11
+    },
+    "totalAfter": {
+      "reads": 16236,
+      "writes": 12,
+      "ms": 6,
+      "queries": 11
+    },
+    "sameMessages": true
+  },
+  {
+    "size": 20000,
+    "backlog": "sparse",
+    "distribution": "shared",
+    "analyze": true,
+    "before": {
+      "reads": 15618,
+      "writes": 0,
+      "ms": 5,
+      "queries": 4
+    },
+    "after": {
+      "reads": 17026,
+      "writes": 0,
+      "ms": 11,
+      "queries": 4
+    },
+    "totalBefore": {
+      "reads": 15628,
+      "writes": 12,
+      "ms": 5,
+      "queries": 11
+    },
+    "totalAfter": {
+      "reads": 17036,
+      "writes": 12,
+      "ms": 12,
+      "queries": 11
+    },
+    "sameMessages": true
+  },
+  {
+    "size": 20000,
+    "backlog": "sparse",
+    "distribution": "unique",
+    "analyze": false,
+    "before": {
+      "reads": 15610,
+      "writes": 0,
+      "ms": 6,
+      "queries": 4
+    },
+    "after": {
+      "reads": 18008,
+      "writes": 0,
+      "ms": 6,
+      "queries": 4
+    },
+    "totalBefore": {
+      "reads": 15740,
+      "writes": 252,
+      "ms": 9,
+      "queries": 91
+    },
+    "totalAfter": {
+      "reads": 18138,
+      "writes": 252,
+      "ms": 12,
+      "queries": 91
+    },
+    "sameMessages": true
+  },
+  {
+    "size": 20000,
+    "backlog": "sparse",
+    "distribution": "unique",
+    "analyze": true,
+    "before": {
+      "reads": 16410,
+      "writes": 0,
+      "ms": 6,
+      "queries": 4
+    },
+    "after": {
+      "reads": 18808,
+      "writes": 0,
+      "ms": 6,
+      "queries": 4
+    },
+    "totalBefore": {
+      "reads": 16540,
+      "writes": 252,
+      "ms": 9,
+      "queries": 91
+    },
+    "totalAfter": {
+      "reads": 18938,
+      "writes": 252,
+      "ms": 9,
+      "queries": 91
+    },
+    "sameMessages": true
+  },
+  {
+    "size": 20000,
+    "backlog": "sparse",
+    "distribution": "skew",
+    "analyze": false,
+    "before": {
+      "reads": 15214,
+      "writes": 0,
+      "ms": 7,
+      "queries": 4
+    },
+    "after": {
+      "reads": 17018,
+      "writes": 0,
+      "ms": 8,
+      "queries": 4
+    },
+    "totalBefore": {
+      "reads": 15344,
+      "writes": 252,
+      "ms": 11,
+      "queries": 91
+    },
+    "totalAfter": {
+      "reads": 17148,
+      "writes": 252,
+      "ms": 12,
+      "queries": 91
+    },
+    "sameMessages": true
+  },
+  {
+    "size": 20000,
+    "backlog": "sparse",
+    "distribution": "skew",
+    "analyze": true,
+    "before": {
+      "reads": 16014,
+      "writes": 0,
+      "ms": 6,
+      "queries": 4
+    },
+    "after": {
+      "reads": 17818,
+      "writes": 0,
+      "ms": 6,
+      "queries": 4
+    },
+    "totalBefore": {
+      "reads": 16144,
+      "writes": 252,
+      "ms": 10,
+      "queries": 91
+    },
+    "totalAfter": {
+      "reads": 17948,
+      "writes": 252,
+      "ms": 9,
+      "queries": 91
+    },
+    "sameMessages": true
+  },
+  {
+    "size": 20000,
+    "backlog": "dense",
+    "distribution": "shared",
+    "analyze": false,
+    "before": {
+      "reads": 152404,
+      "writes": 0,
+      "ms": 59,
+      "queries": 4
+    },
+    "after": {
+      "reads": 232402,
+      "writes": 0,
+      "ms": 63,
+      "queries": 4
+    },
+    "totalBefore": {
+      "reads": 152540,
+      "writes": 264,
+      "ms": 65,
+      "queries": 95
+    },
+    "totalAfter": {
+      "reads": 232538,
+      "writes": 264,
+      "ms": 71,
+      "queries": 95
+    },
+    "sameMessages": true
+  },
+  {
+    "size": 20000,
+    "backlog": "dense",
+    "distribution": "shared",
+    "analyze": true,
+    "before": {
+      "reads": 188403,
+      "writes": 0,
+      "ms": 57,
+      "queries": 4
+    },
+    "after": {
+      "reads": 268401,
+      "writes": 0,
+      "ms": 62,
+      "queries": 4
+    },
+    "totalBefore": {
+      "reads": 188539,
+      "writes": 264,
+      "ms": 63,
+      "queries": 95
+    },
+    "totalAfter": {
+      "reads": 268537,
+      "writes": 264,
+      "ms": 66,
+      "queries": 95
+    },
+    "sameMessages": true
+  },
+  {
+    "size": 20000,
+    "backlog": "dense",
+    "distribution": "unique",
+    "analyze": false,
+    "before": {
+      "reads": 192004,
+      "writes": 0,
+      "ms": 75,
+      "queries": 4
+    },
+    "after": {
+      "reads": 311998,
+      "writes": 0,
+      "ms": 75,
+      "queries": 4
+    },
+    "totalBefore": {
+      "reads": 192140,
+      "writes": 264,
+      "ms": 78,
+      "queries": 95
+    },
+    "totalAfter": {
+      "reads": 312134,
+      "writes": 264,
+      "ms": 81,
+      "queries": 95
+    },
+    "sameMessages": true
+  },
+  {
+    "size": 20000,
+    "backlog": "dense",
+    "distribution": "unique",
+    "analyze": true,
+    "before": {
+      "reads": 228003,
+      "writes": 0,
+      "ms": 55,
+      "queries": 4
+    },
+    "after": {
+      "reads": 347997,
+      "writes": 0,
+      "ms": 77,
+      "queries": 4
+    },
+    "totalBefore": {
+      "reads": 228139,
+      "writes": 264,
+      "ms": 60,
+      "queries": 95
+    },
+    "totalAfter": {
+      "reads": 348133,
+      "writes": 264,
+      "ms": 81,
+      "queries": 95
+    },
+    "sameMessages": true
+  },
+  {
+    "size": 20000,
+    "backlog": "dense",
+    "distribution": "skew",
+    "analyze": false,
+    "before": {
+      "reads": 152012,
+      "writes": 0,
+      "ms": 56,
+      "queries": 4
+    },
+    "after": {
+      "reads": 212022,
+      "writes": 0,
+      "ms": 60,
+      "queries": 4
+    },
+    "totalBefore": {
+      "reads": 152142,
+      "writes": 252,
+      "ms": 59,
+      "queries": 91
+    },
+    "totalAfter": {
+      "reads": 212152,
+      "writes": 252,
+      "ms": 63,
+      "queries": 91
+    },
+    "sameMessages": true
+  },
+  {
+    "size": 20000,
+    "backlog": "dense",
+    "distribution": "skew",
+    "analyze": true,
+    "before": {
+      "reads": 188011,
+      "writes": 0,
+      "ms": 58,
+      "queries": 4
+    },
+    "after": {
+      "reads": 248021,
+      "writes": 0,
+      "ms": 60,
+      "queries": 4
+    },
+    "totalBefore": {
+      "reads": 188141,
+      "writes": 252,
+      "ms": 64,
+      "queries": 91
+    },
+    "totalAfter": {
+      "reads": 248151,
+      "writes": 252,
+      "ms": 66,
+      "queries": 91
+    },
+    "sameMessages": true
+  }
+]
