@@ -10,12 +10,16 @@ import { createDatabase } from "../../src/db/orm";
 import { sha256 } from "../../src/routes/catalog-quotes";
 import {
   enqueueDueCatalogCapabilities,
+  repairCatalogCapabilities,
   runCatalogCapabilityProbe,
   type CatalogCapabilityWork,
 } from "../../src/phases/catalog-capability";
 import type { D1DatabaseLike } from "../../src/db/client";
 import type { Env } from "../../src/types";
 import { clearCatalogFixtures } from "./catalog-fixtures";
+import { metered, type ReadRecord } from "./d1-meter";
+import type { D1Database } from "../../src/types";
+import { CAPABILITY_STATS_KEY, CAPABILITY_STATS_LEASE_KEY, refreshCapabilityStats } from "../../src/catalog/capability-stats";
 
 const NOW = 1_800_000_000_000;
 const ENDPOINT_KEY = "e".repeat(64);
@@ -71,9 +75,53 @@ function work(agentKey: string, endpointKey = ENDPOINT_KEY, enqueuedAt = NOW): C
 beforeEach(async () => {
   await clearCatalogFixtures();
   await env.DB.prepare("DELETE FROM runtime_state WHERE key LIKE 'catalog_sweep_origin:%'").run();
+  await env.DB.prepare("DELETE FROM runtime_state WHERE key IN (?,?)").bind(CAPABILITY_STATS_KEY, CAPABILITY_STATS_LEASE_KEY).run();
 });
 
 describe("catalog quote-capability scheduler", () => {
+  it("preserves selected agents and ordering when repairs run once before both chains", async () => {
+    const run = async (sharedRepairs: boolean) => {
+      await clearCatalogFixtures();
+      await env.DB.prepare("DELETE FROM runtime_state WHERE key LIKE 'catalog_sweep_origin:%'").run();
+      await insertCandidate("42", "a".repeat(64), "host-a", "ready", NOW);
+      await insertCandidate("43", "b".repeat(64), "host-b");
+      await insertCandidate("44", "c".repeat(64), "host-c", "ready", NOW, 97);
+      await insertCandidate("45", "d".repeat(64), "host-d", "discovered", null, 97);
+      const records: ReadRecord[] = [];
+      const db = metered(env.DB as unknown as D1Database, records) as unknown as D1DatabaseLike;
+      if (sharedRepairs) await repairCatalogCapabilities(db, NOW);
+      const messages: unknown[] = [];
+      for (const chainId of [56, 97] as const) await enqueueDueCatalogCapabilities(db, { send: async message => { messages.push(message); } },
+        { nowMs: NOW, limit: 2, bootstrapLimit: 2, chainId, skipRepairs: sharedRepairs });
+      const repairs = records.filter(row => /^UPDATE catalog_seller_capabilities SET state='ready'/i.test(row.sql.trim())
+        || (/^update "catalog_seller_capabilities" set "state"/i.test(row.sql.trim())));
+      expect(repairs).toHaveLength(sharedRepairs ? 2 : 4);
+      expect(records.some(row => /COUNT\(\*\)/i.test(row.sql))).toBe(false);
+      return messages;
+    };
+    const defaultOrder = await run(false);
+    expect(defaultOrder).toHaveLength(4);
+    expect(await run(true)).toEqual(defaultOrder);
+  });
+
+  it("uses the dated snapshot for summary counts without rescanning", async () => {
+    await insertCandidate("42", "a".repeat(64), "host-a");
+    await insertCandidate("43", "b".repeat(64), "host-b", "failed");
+    await refreshCapabilityStats(env.DB as unknown as D1DatabaseLike, NOW);
+    const records: ReadRecord[] = [];
+    const summary = await enqueueDueCatalogCapabilities(metered(env.DB as unknown as D1Database, records) as unknown as D1DatabaseLike,
+      { send: async () => {} }, { nowMs: NOW, limit: 1, skipRepairs: true });
+    expect(summary).toMatchObject({ pending: 1, failed: 1, ready: 0, statsStatus: "fresh", statsUpdatedAt: NOW });
+    expect(records.some(row => /COUNT\(\*\)/i.test(row.sql))).toBe(false);
+  });
+  it("does not scan capability counts for the per-tick summary", async () => {
+    await insertCandidate("42");
+    const records: ReadRecord[] = [];
+    const summary = await enqueueDueCatalogCapabilities(metered(env.DB as unknown as D1Database, records) as unknown as D1DatabaseLike,
+      { send: async () => {} }, { nowMs: NOW, limit: 1 });
+    expect(summary).toMatchObject({ pending: null, ready: null, statsStatus: "missing", statsUpdatedAt: null });
+    expect(records.some(row => /COUNT\(\*\)/i.test(row.sql))).toBe(false);
+  });
   it.each(["timeout", "invalid-schema"])("does not admit Testnet when discovery returns %s", async (mode) => {
     const candidate = await insertCandidate("2285", ENDPOINT_KEY, "testnet-origin", "discovered", null, 97);
     await env.DB.prepare("UPDATE catalog_endpoints SET endpoint='https://seller.example.com/a2a' WHERE endpointKey=?").bind(ENDPOINT_KEY).run();
@@ -257,7 +305,7 @@ describe("catalog quote-capability scheduler", () => {
       limit: 4,
       concurrency: 4,
     });
-    expect(first).toMatchObject({ enqueued: 1, pending: 2 });
+    expect(first).toMatchObject({ enqueued: 1, pending: null, statsStatus: "missing" });
     expect(send).toHaveBeenCalledOnce();
 
     const second = await enqueueDueCatalogCapabilities(env.DB as unknown as D1DatabaseLike, { send }, {
@@ -282,7 +330,7 @@ describe("catalog quote-capability scheduler", () => {
       nowMs: NOW,
       limit: 1,
     });
-    expect(summary).toMatchObject({ enqueued: 1, ready: 0, stale: 1 });
+    expect(summary).toMatchObject({ enqueued: 1, ready: null, stale: null, statsStatus: "missing" });
     await expect(env.DB.prepare(`SELECT state FROM catalog_seller_capabilities
       WHERE agentKey = 'eip155:56:42'`).first()).resolves.toMatchObject({ state: "stale" });
   });
