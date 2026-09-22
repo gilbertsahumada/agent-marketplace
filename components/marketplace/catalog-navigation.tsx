@@ -12,14 +12,14 @@ const NAVIGATION_TIMEOUT_MS = 15_000;
 
 const CatalogNavigationContext = createContext<CatalogNavigationValue | null>(null);
 
-export function catalogScopedHref(href: string, scope?: "hiring" | "evaluation", network?: "mainnet" | "testnet") {
+export function catalogScopedHref(href: string, scope?: "all" | "hiring" | "evaluation", network?: "mainnet" | "testnet") {
   const url = new URL(href, "https://marketplace.invalid");
   if (scope && url.pathname === "/agents" && url.searchParams.get("view") !== "all" && !url.searchParams.has("scope")) url.searchParams.set("scope", scope);
   if (network && url.pathname === "/agents" && !url.searchParams.has("network")) url.searchParams.set("network", network);
   return `${url.pathname}${url.search}${url.hash}`;
 }
 
-export function CatalogNavigationProvider({ children, navigationKey, scope, network }: { children: ReactNode; navigationKey: string; scope?: "hiring" | "evaluation"; network?: "mainnet" | "testnet" }) {
+export function CatalogNavigationProvider({ children, navigationKey, scope, network }: { children: ReactNode; navigationKey: string; scope?: "all" | "hiring" | "evaluation"; network?: "mainnet" | "testnet" }) {
   const router = useRouter();
   const [targetHref, setTargetHref] = useState<string | null>(null);
   const [transitionPending, startTransition] = useTransition();
