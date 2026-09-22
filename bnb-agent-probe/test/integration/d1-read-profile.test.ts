@@ -118,6 +118,10 @@ describe("D1 read profile at catalogue scale", () => {
       expect(response.status).toBe(200);
       await report(`${route}`, log, 3);
       const total = log.reduce((sum, entry) => sum + entry.rowsRead, 0);
+      console.log(JSON.stringify({ route, rowsRead: total, queries: log.length }));
+      if (route.includes("facets=true")) {
+        expect(log.filter(entry => entry.sql.startsWith('select count(*) from "catalog_agents"')).length).toBe(1);
+      }
       expect(total, `${route}\n${REPORT.at(-1)}`).toBeLessThanOrEqual(ceiling);
     }
   }, 300_000);

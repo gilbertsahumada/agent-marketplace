@@ -565,8 +565,6 @@ export async function catalogAgentsResponse(
     quoteCondition,
     latestFailure === null ? undefined : latestFailure ? failureExists : not(failureExists),
   );
-  const countFacet = (status: CatalogStatus) => db.select({ count: count() })
-    .from(catalogAgents).where(and(operationalBase, categoryCondition, protocolCondition, reachabilityCondition, statusCondition(status).inlineParams()));
   const unfilteredFacetScope = scope === null && !q && categories.length === 0 && protocols.length === 0
     && commerce.length === 0 && quote.length === 0 && latestFailure === null
     && statuses.every((status) => status === "declared");
@@ -580,6 +578,11 @@ export async function catalogAgentsResponse(
         requestable: facetCount(requestableCondition),
         quoteFailed: facetCount(quoteFailedCondition),
         completedJobs: facetCount(completedJobsCondition),
+        pending: facetCount(statusCondition("pending")),
+        a2a: facetCount(statusCondition("a2a")),
+        mcp: facetCount(statusCondition("mcp")),
+        quoteCapable: facetCount(statusCondition("quote_capable")),
+        failed: facetCount(statusCondition("failed")),
       }).from(catalogAgents).where(and(operationalBase, categoryCondition, protocolCondition, reachabilityCondition)),
       db.select({
         rebalancing: categoryFacetCount("rebalancing"),
@@ -587,11 +590,6 @@ export async function catalogAgentsResponse(
         yieldOptimisation: categoryFacetCount("yield_optimisation"),
         healthFactorMonitoring: categoryFacetCount("health_factor_monitoring"),
       }).from(catalogAgents).where(and(operationalBase, statusConditionCombined, protocolCondition, reachabilityCondition)),
-      countFacet("pending"),
-      countFacet("a2a"),
-      countFacet("mcp"),
-      countFacet("quote_capable"),
-      countFacet("failed"),
       unfilteredFacetScope ? readCatalogReachabilityFacets(db, nowMs, chainId).then((row) => [row]) : db.select({
         live: facetCount(anyFreshProtocol!),
         historical: facetCount(and(anyPlatformSuccess, not(anyFreshProtocol!))!),
@@ -603,15 +601,10 @@ export async function catalogAgentsResponse(
         mcpTransport: facetCount(declaredProtocolCondition(["mcp"])),
         httpTransport: facetCount(declaredProtocolCondition(["erc8183_http"])),
       }).from(catalogAgents).where(and(operationalBase,statusConditionCombined,categoryCondition,reachabilityCondition)),
-    ]).then(([simple, categoryFacets, pending, a2a, mcp, quoteCapable, failed, reachabilityFacets, transportFacets]) => [{
+    ]).then(([simple, categoryFacets, reachabilityFacets, transportFacets]) => [{
       ...simple[0]!,
       ...categoryFacets[0]!,
       ...transportFacets[0]!,
-      pending: pending[0]?.count ?? 0,
-      a2a: a2a[0]?.count ?? 0,
-      mcp: mcp[0]?.count ?? 0,
-      quoteCapable: quoteCapable[0]?.count ?? 0,
-      failed: failed[0]?.count ?? 0,
       live: reachabilityFacets[0]?.live ?? 0,
       historical: reachabilityFacets[0]?.historical ?? 0,
       never: reachabilityFacets[0]?.never ?? 0,
@@ -700,6 +693,9 @@ export async function catalogAgentsResponse(
     }).from(hireEvents)
       .innerJoin(commerceJobs, and(
         eq(hireEvents.chainId, commerceJobs.chainId),
+        // Seek by the existing numeric PK, retaining the text equality below
+        // so malformed/noncanonical IDs cannot become new associations.
+        eq(commerceJobs.jobId, sql`CAST(${hireEvents.jobId} AS INTEGER)`),
         eq(hireEvents.jobId, sql`CAST(${commerceJobs.jobId} AS TEXT)`),
       ))
       .where(and(
