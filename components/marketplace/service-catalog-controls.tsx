@@ -41,14 +41,15 @@ export function serviceFacetCount(counts: CatalogFacetCounts | undefined, key: s
 export function ServiceCatalogSidebar({ href, counts, scopeCounts }: { href: string; counts?: CatalogFacetCounts; scopeCounts?: { hiring?: number; evaluation?: number } }) {
   const { pending, navigate } = useCatalogNavigation();
   const params = new URL(href, "https://marketplace.invalid").searchParams;
+  const totals = { ...scopeCounts, all: typeof scopeCounts?.hiring === "number" && typeof scopeCounts?.evaluation === "number" ? scopeCounts.hiring + scopeCounts.evaluation : undefined };
   return <aside aria-label="Catalog filters" aria-busy={pending} className="hidden self-start rounded-xl border border-border bg-card p-4 lg:sticky lg:top-4 lg:block lg:max-h-[calc(100dvh-2rem)] lg:overflow-y-auto">
-    <div className="mb-5 flex items-center justify-between"><h2 className="text-sm font-medium">Filters</h2><Button variant="ghost" size="sm" disabled={pending} onClick={() => navigate(serviceFilterHref(href, { category: [], status: [], reachability: [], protocol: [] }))}>Clear filters</Button></div>
+    <div className="mb-5 flex items-center justify-between"><h2 className="text-sm font-medium">Filters</h2><Button variant="ghost" size="sm" disabled={pending} onClick={() => navigate(serviceFilterHref(href, { category: [], status: [], reachability: [], protocol: [], scope: ["all"] }))}>Clear filters</Button></div>
     <FieldGroup>
       <FieldSet><FieldLegend variant="label" className="flex items-center gap-1">Browse agents<FilterHelp label="Browse agents">{browseHelp}</FilterHelp></FieldLegend>
         <FieldGroup className="gap-3">
-          {([["hiring", "Available to quote"], ["evaluation", "Under evaluation"]] as const).map(([value, label]) => <Field key={value} orientation="horizontal" data-disabled={pending}>
-            <input className="size-4 shrink-0 accent-primary" type="radio" name="sidebar-scope" id={`sidebar-scope-${value}`} value={value} checked={(params.get("scope") ?? "hiring") === value} disabled={pending} onChange={() => navigate(serviceFilterHref(href, { scope: [value] }))} />
-            <FieldLabel className="flex flex-1 justify-between gap-3" htmlFor={`sidebar-scope-${value}`}>{label}<FilterCount value={scopeCounts?.[value]} /></FieldLabel>
+          {([["all", "All agents"], ["hiring", "Available to quote"], ["evaluation", "Under evaluation"]] as const).map(([value, label]) => <Field key={value} orientation="horizontal" data-disabled={pending}>
+            <input className="size-4 shrink-0 accent-primary" type="radio" name="sidebar-scope" id={`sidebar-scope-${value}`} value={value} checked={(params.get("scope") ?? "all") === value} disabled={pending} onChange={() => navigate(serviceFilterHref(href, { scope: [value] }))} />
+            <FieldLabel className="flex flex-1 justify-between gap-3" htmlFor={`sidebar-scope-${value}`}>{label}<FilterCount value={totals[value]} /></FieldLabel>
           </Field>)}
         </FieldGroup>
       </FieldSet>
@@ -83,7 +84,8 @@ export function ServiceCatalogControls({ href, search, total, counts, registry =
   const draftParams = new URLSearchParams(draft);
   const active = filterKeys.flatMap(key => params.getAll(key).map(value => ({ key, value, label: groups.flatMap(g => g.key === key ? [...g.options] : []).find(([v]) => v === value)?.[1] ?? value })));
   if (params.get("scope") === "evaluation") active.push({ key: "status", value: "__evaluation", label: "Under evaluation" });
-  const clear = () => navigate(serviceFilterHref(href, { category: [], status: [], reachability: [], protocol: [], scope: ["hiring"] }));
+  if (params.get("scope") === "hiring") active.push({ key: "status", value: "__hiring", label: "Available to quote" });
+  const clear = () => navigate(serviceFilterHref(href, { category: [], status: [], reachability: [], protocol: [], scope: ["all"] }));
   const setDraftValue = (key: string, value: string, checked = true, single = false) => {
     setDraft(current => {
       const next = new URLSearchParams(current);
@@ -106,27 +108,27 @@ export function ServiceCatalogControls({ href, search, total, counts, registry =
           <DialogHeader><DialogTitle>Filters</DialogTitle><DialogDescription>Find services by availability, type and recorded work.</DialogDescription></DialogHeader>
           <form onSubmit={event => {
             event.preventDefault();
-            const changes: Record<string, string[]> = { scope: [draftParams.get("scope") ?? "hiring"] };
+            const changes: Record<string, string[]> = { scope: [draftParams.get("scope") ?? "all"] };
             for (const key of filterKeys) changes[key] = draftParams.getAll(key);
             navigate(serviceFilterHref(href, changes)); setOpen(false);
           }}>
             <FieldGroup>
-              <Field><div className="flex items-center gap-1"><FieldLabel htmlFor="service-scope">Browse agents</FieldLabel><FilterHelp label="Browse agents">{browseHelp}</FilterHelp></div><Select value={draftParams.get("scope") ?? "hiring"} disabled={pending} onValueChange={value => setDraftValue("scope", value, true, true)}><SelectTrigger id="service-scope" className="w-full"><SelectValue /></SelectTrigger><SelectContent><SelectGroup><SelectItem value="hiring">Available to quote</SelectItem><SelectItem value="evaluation">Under evaluation</SelectItem></SelectGroup></SelectContent></Select></Field>
+              <Field><div className="flex items-center gap-1"><FieldLabel htmlFor="service-scope">Browse agents</FieldLabel><FilterHelp label="Browse agents">{browseHelp}</FilterHelp></div><Select value={draftParams.get("scope") ?? "all"} disabled={pending} onValueChange={value => setDraftValue("scope", value, true, true)}><SelectTrigger id="service-scope" className="w-full"><SelectValue /></SelectTrigger><SelectContent><SelectGroup><SelectItem value="all">All agents</SelectItem><SelectItem value="hiring">Available to quote</SelectItem><SelectItem value="evaluation">Under evaluation</SelectItem></SelectGroup></SelectContent></Select></Field>
               {groups.map(group => <FieldSet key={group.title}><FieldLegend variant="label" className="flex items-center gap-1">{group.title}{group.title === "Availability" && <FilterHelp label="Availability">{availabilityHelp}</FilterHelp>}</FieldLegend><FieldGroup>
                 {group.options.filter(([value]) => group.key !== "category" || !counts || counts.categories[value as keyof typeof counts.categories] > 0 || draftParams.getAll(group.key).includes(value)).map(([value, label]) => <Field orientation="horizontal" key={value}>
                   <Checkbox id={`service-filter-${value}`} disabled={pending} checked={draftParams.getAll(group.key).includes(value)} onCheckedChange={checked => setDraftValue(group.key, value, checked === true)} />
                   <FieldLabel className="flex flex-1 justify-between gap-3" htmlFor={`service-filter-${value}`}>{label}<FilterCount value={serviceFacetCount(counts, group.key, value)} /></FieldLabel>
                 </Field>)}
               </FieldGroup></FieldSet>)}
-              <div className="sticky bottom-0 flex gap-3 bg-popover py-3"><Button variant="outline" type="button" disabled={pending} onClick={() => { const next = new URLSearchParams(draft); for (const key of filterKeys) next.delete(key); next.set("scope", "hiring"); setDraft(next.toString()); }}>Clear filters</Button><Button type="submit" disabled={pending}>Show results</Button></div>
+              <div className="sticky bottom-0 flex gap-3 bg-popover py-3"><Button variant="outline" type="button" disabled={pending} onClick={() => { const next = new URLSearchParams(draft); for (const key of filterKeys) next.delete(key); next.set("scope", "all"); setDraft(next.toString()); }}>Clear filters</Button><Button type="submit" disabled={pending}>Show results</Button></div>
             </FieldGroup>
           </form>
         </DialogContent>
       </Dialog>}
     </div>
     <div className="order-last col-span-full flex flex-wrap items-center gap-2" aria-label="Active filters">
-      <p className="mr-auto text-xs text-muted-foreground" role="status">{pending ? "Updating results…" : `${total.toLocaleString("en-US")} ${registry ? "registered agents" : params.get("scope") === "evaluation" ? "agents under evaluation" : "agents available to quote"}`}</p>
-      {active.map(({ key, value, label }) => <Button key={`${key}:${value}`} variant="outline" size="sm" disabled={pending} aria-label={`Remove ${label} filter`} onClick={() => navigate(serviceFilterHref(href, value === "__evaluation" ? { scope: ["hiring"] } : { [key]: params.getAll(key).filter(v => v !== value) }))}>{label}<X aria-hidden="true" data-icon="inline-end" /></Button>)}
+      <p className="mr-auto text-xs text-muted-foreground" role="status">{pending ? "Updating results…" : `${total.toLocaleString("en-US")} ${registry ? "registered agents" : params.get("scope") === "evaluation" ? "agents under evaluation" : params.get("scope") === "hiring" ? "agents available to quote" : "listed agents"}`}</p>
+      {active.map(({ key, value, label }) => <Button key={`${key}:${value}`} variant="outline" size="sm" disabled={pending} aria-label={`Remove ${label} filter`} onClick={() => navigate(serviceFilterHref(href, (value === "__evaluation" || value === "__hiring") ? { scope: ["all"] } : { [key]: params.getAll(key).filter(v => v !== value) }))}>{label}<X aria-hidden="true" data-icon="inline-end" /></Button>)}
       {active.length > 0 && <Button size="sm" variant="ghost" disabled={pending} onClick={clear}>Clear all</Button>}
     </div>
   </div>;
