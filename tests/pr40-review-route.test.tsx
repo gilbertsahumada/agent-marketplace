@@ -67,6 +67,20 @@ describe("agents page category handling", () => {
   it("does not silently select a status after clearing filters", async () => {
     await renderPage({ view: "marketplace" });
     expect(catalogDataCalls()[0]).toMatchObject({ statuses: [] });
+    expect(catalogDataCalls()[0]).not.toHaveProperty("scope");
+  });
+
+  it("shows listed agents by default on both networks, without changing explicit hiring", async () => {
+    for (const network of ["mainnet", "testnet"]) {
+      for (const scope of [undefined, "all", "hiring", "evaluation"]) {
+        catalogCandidatePage.mockClear();
+        await renderPage({ network, ...(scope ? { scope } : {}) });
+        const input = catalogDataCalls()[0];
+        expect(input.chainId).toBe(network === "testnet" ? 97 : 56);
+        if (!scope || scope === "all") expect(input).not.toHaveProperty("scope");
+        else expect(input.scope).toBe(scope);
+      }
+    }
   });
 
   it("counts both scopes without silently filtering them to requestable agents", async () => {
@@ -120,7 +134,7 @@ describe("agents page category handling", () => {
   });
 
   it("R4: scoped inventory never falls back to unchecked declarations", async () => {
-    const el = await renderPage({ view: "marketplace", status: "declared", category: "grid_trading" });
+    const el = await renderPage({ view: "marketplace", scope: "hiring", status: "declared", category: "grid_trading" });
     expect(el.props.retryHref).toContain("scope=hiring");
     const catalogCalls = catalogDataCalls();
     expect(catalogCalls).toHaveLength(1);
