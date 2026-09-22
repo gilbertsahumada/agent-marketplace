@@ -25,6 +25,8 @@ describe("explicit inventory scope", () => {
     }
   });
   it("allows explicit scope switches and leaves registry browsing alone", () => {
+    expect(catalogScopedHref("/agents?page=2", "all")).toContain("scope=all");
+    expect(catalogScopedHref("/agents?scope=all", "hiring")).toBe("/agents?scope=all");
     expect(catalogScopedHref("/agents?scope=hiring", "evaluation")).toBe("/agents?scope=hiring");
     expect(catalogScopedHref("/agents?view=all", "hiring")).toBe("/agents?view=all");
   });
