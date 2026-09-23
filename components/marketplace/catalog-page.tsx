@@ -48,7 +48,7 @@ export function CatalogPage({
   query: {
     network?: "mainnet" | "testnet";
     view: "all" | "marketplace";
-    scope?: "hiring" | "evaluation";
+    scope?: "all" | "hiring" | "evaluation";
     status?: CatalogStatus;
     category?: MarketplaceCategory;
     statuses?: CatalogStatus[];
@@ -139,7 +139,7 @@ export function CatalogPage({
       <AlertTitle>Testnet agent discovery is not configured yet</AlertTitle>
       <AlertDescription>Testnet jobs are indexed separately. They do not establish that a Testnet agent can accept quotes here.</AlertDescription>
     </Alert>
-  ) : !allView && query.scope !== "evaluation" && scopeCounts?.hiring === 0 && (scopeCounts.evaluation ?? 0) > 0 ? (
+  ) : !allView && query.scope === "hiring" && scopeCounts?.hiring === 0 && (scopeCounts.evaluation ?? 0) > 0 ? (
     <Alert>
       <AlertTitle>No agents available to quote on {network === "testnet" ? "BSC Testnet" : "BSC Mainnet"} yet</AlertTitle>
       <AlertDescription>

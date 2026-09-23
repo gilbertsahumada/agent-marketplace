@@ -1051,7 +1051,8 @@ describe("marketplace presentation rules", () => {
     expect(screen.queryByRole("link", { name: "All registered agents" })).not.toBeInTheDocument();
     expect(screen.getByRole("textbox", { name: "Search agents" })).toBeInTheDocument();
     expect(screen.getByRole("complementary", { name: "Catalog filters" })).toHaveClass("lg:block");
-    expect(screen.getByRole("radio", { name: "Available to quote" })).toBeChecked();
+    expect(screen.getByRole("radio", { name: "All agents" })).toBeChecked();
+    expect(screen.getByRole("radio", { name: "Available to quote" })).not.toBeChecked();
     expect(screen.getByRole("radio", { name: "Under evaluation" })).not.toBeChecked();
     expect(container.querySelector(".lucide-sliders-horizontal")).not.toBeNull();
     await user.click(screen.getByRole("button", { name: "Filters" }));
@@ -1168,7 +1169,7 @@ describe("marketplace presentation rules", () => {
     expect(routerPush).not.toHaveBeenCalled();
     await user.click(screen.getByRole("button", { name: "Show results" }));
 
-    expect(routerPush).toHaveBeenCalledWith("/agents?view=marketplace&limit=24&network=mainnet&scope=hiring&status=declared&protocol=a2a");
+    expect(routerPush).toHaveBeenCalledWith("/agents?view=marketplace&limit=24&network=mainnet&scope=all&status=declared&protocol=a2a");
     expect(screen.getByRole("status", { name: "Loading agents" })).toBeInTheDocument();
     expect(screen.queryByText("V3 Pools powered by HeyAnon")).not.toBeInTheDocument();
   });
@@ -1194,7 +1195,7 @@ describe("marketplace presentation rules", () => {
 
     await user.click(screen.getAllByRole("checkbox", { name: "MCP" })[0]!);
     await user.click(screen.getByRole("button", { name: "Show results" }));
-    expect(routerPush).toHaveBeenCalledWith("/agents?view=marketplace&limit=24&network=mainnet&scope=hiring&status=declared&reachability=live&protocol=mcp");
+    expect(routerPush).toHaveBeenCalledWith("/agents?view=marketplace&limit=24&network=mainnet&scope=all&status=declared&reachability=live&protocol=mcp");
   });
 
   it("searches while typing with one focus border and preserves active filters", () => {

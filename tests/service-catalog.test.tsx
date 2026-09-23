@@ -113,6 +113,12 @@ it("does not turn missing history into zero or names into service claims", async
   expect(within(dialog).getByRole("button", { name: "Not available" })).toBeDisabled();
 });
 
+it("selects all listed agents by default without claiming quote availability", () => {
+  render(createElement(ServiceCatalogSidebar, { href: "/agents", scopeCounts: { hiring: 0, evaluation: 66 } }));
+  expect(screen.getByRole("radio", { name: "All agents" })).toBeChecked();
+  expect(screen.getByRole("radio", { name: "Available to quote" })).not.toBeChecked();
+});
+
 it("updates filter groups without losing search, scope or network and resets pagination", () => {
   const url = new URL(serviceFilterHref("/agents?network=testnet&scope=evaluation&q=grid&page=4&cursor=old&status=pending&protocol=mcp", { status: ["quote_capable", "completed_jobs"] }), "http://localhost");
   expect(url.searchParams.get("network")).toBe("testnet");
