@@ -24,7 +24,7 @@ function hex64(seed: number, salt: string): string {
   return (salt + seed.toString(16).padStart(12, "0")).padEnd(64, "0").slice(0, 64);
 }
 
-async function seed(): Promise<void> {
+async function seed(agentCount = AGENTS): Promise<void> {
   await clearCatalogFixtures();
   const statements: string[] = [];
   const agentRows: string[] = [];
@@ -33,7 +33,7 @@ async function seed(): Promise<void> {
   const observationRows: string[] = [];
   const admissionRows: string[] = [];
   let attempt = 0;
-  for (let index = 0; index < AGENTS; index += 1) {
+  for (let index = 0; index < agentCount; index += 1) {
     const agentId = 100_000 + index;
     const agentKey = `eip155:56:${agentId}`;
     const category = ["grid_trading", "rebalancing", "yield_optimisation", "health_factor_monitoring"][index % 4];
@@ -121,10 +121,40 @@ describe("D1 read profile at catalogue scale", () => {
       console.log(JSON.stringify({ route, rowsRead: total, queries: log.length }));
       if (route.includes("facets=true")) {
         expect(log.filter(entry => entry.sql.startsWith('select count(*) from "catalog_agents"')).length).toBe(1);
+        expect(log.some(entry => entry.sql.includes("SELECT declaration.agentKey")), REPORT.at(-1)).toBe(false);
+        expect({ rowsRead: total, queries: log.length }).toMatchInlineSnapshot(`
+          {
+            "queries": 12,
+            "rowsRead": 223687,
+          }
+        `);
       }
       expect(total, `${route}\n${REPORT.at(-1)}`).toBeLessThanOrEqual(ceiling);
     }
   }, 300_000);
+
+  it("returns only aggregate counts at 20,000 agents without catalog-wide JS projections", async () => {
+    await seed(20_000);
+    const log: ReadRecord[] = [];
+    const response = await createWorker({ now: () => NOW }).fetch(
+      new Request("https://worker.test/catalog-agents?status=declared&facets=true"),
+      { ...env, DB: metered(env.DB, log) } as unknown as Env, createExecutionContext());
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ total: 20_000, facets: {
+      statuses: { declared: 20_000, requestable: 0, pending: 20_000 },
+      categories: { grid_trading: 5_000 },
+      reachability: { live: 16_000, historical: 4_000, never: 0, browser_observed: 0 },
+    } });
+    expect(log.some(entry => entry.sql.includes("SELECT declaration.agentKey"))).toBe(false);
+    expect(log.reduce((sum, entry) => sum + entry.rowsWritten, 0)).toBe(0);
+    expect({ rowsRead: log.reduce((sum, entry) => sum + entry.rowsRead, 0), queries: log.length }).toMatchInlineSnapshot(`
+      {
+        "queries": 12,
+        "rowsRead": 2182084,
+      }
+    `);
+    await seed();
+  }, 120_000);
 
   it("serves repeated catalogue reads from the Workers Cache when configured", async () => {
     const probe = `/catalog-agents?q=cache-probe-${NOW}`;
