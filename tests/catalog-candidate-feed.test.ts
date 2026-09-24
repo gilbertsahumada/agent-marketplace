@@ -10,6 +10,56 @@ import {
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 describe("catalog candidate feed", () => {
+  it.each([false, true])("allows a six-second catalogue response (facets: %s)", async (includeFacets) => {
+    vi.useFakeTimers();
+    try {
+      const fixtures = JSON.parse(readFileSync(new URL("../contracts/catalog-api-v2.fixtures.json", import.meta.url), "utf8"));
+      const timeout = vi.spyOn(AbortSignal, "timeout").mockImplementation(ms => {
+        const controller = new AbortController();
+        setTimeout(() => controller.abort(), ms);
+        return controller.signal;
+      });
+      const fetcher = vi.fn((_url: unknown, init?: RequestInit) => new Promise<Response>((resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => reject(new Error("timeout")), { once: true });
+        setTimeout(() => resolve(Response.json(fixtures.list)), 6_000);
+      }));
+      vi.stubGlobal("fetch", fetcher);
+      const result = getCatalogCandidatePage({ page: 1, limit: 24, includeFacets, fresh: true, env: { OBSERVATIONS_URL: "https://timeout-worker.example/observations" } });
+      await vi.advanceTimersByTimeAsync(6_000);
+      expect(await result).toMatchObject({ total: fixtures.list.total });
+      expect(timeout).toHaveBeenCalledWith(15_000);
+      expect(fetcher).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.clearAllTimers();
+      vi.useRealTimers();
+    }
+  });
+
+  it("stops waiting at fifteen seconds without automatically retrying", async () => {
+    vi.useFakeTimers();
+    try {
+      vi.spyOn(AbortSignal, "timeout").mockImplementation(ms => {
+        const controller = new AbortController();
+        setTimeout(() => controller.abort(), ms);
+        return controller.signal;
+      });
+      const fetcher = vi.fn((_url: unknown, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => reject(new Error("timeout")), { once: true });
+      }));
+      vi.stubGlobal("fetch", fetcher);
+      let settled = false;
+      const result = getCatalogCandidatePage({ page: 1, limit: 24, fresh: true, env: { OBSERVATIONS_URL: "https://timeout-worker.example/observations" } }).then(value => { settled = true; return value; });
+      await vi.advanceTimersByTimeAsync(14_999);
+      expect(settled).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(await result).toBeNull();
+      expect(fetcher).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.clearAllTimers();
+      vi.useRealTimers();
+    }
+  });
+
   it("isolates Testnet pages and rejects cross-chain rows and responses", async () => {
     const fixtures = JSON.parse(readFileSync(new URL("../contracts/catalog-api-v2.fixtures.json", import.meta.url), "utf8"));
     const list = { ...fixtures.list, chainId: 97, items: fixtures.list.items.map((item: Record<string, unknown>) => ({ ...item, chainId: 97, agentKey: `eip155:97:${item.agentId}` })) };
