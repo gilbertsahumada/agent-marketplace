@@ -64,13 +64,37 @@ describe("agents page category handling", () => {
     return catalogCandidatePage.mock.calls.map((call) => call[0]).filter((input) => input.limit !== 1);
   }
 
-  it("renders catalog rows without blocking on expensive facet aggregates", async () => {
+  it("renders catalog rows when optional facet aggregates are unavailable", async () => {
     const catalog = { items: [], total: 33653 };
     catalogCandidatePage.mockImplementation(async (input) => input.includeFacets ? null : catalog);
     const el = await renderPage({});
     expect(el.props.catalog).toBe(catalog);
     expect(el.props.filterCounts).toBeUndefined();
     expect(catalogDataCalls()).toHaveLength(1);
+    expect(catalogDataCalls()[0].includeFacets).not.toBe(true);
+  });
+
+  it("does not replace the catalogue with an error when the counts request rejects", async () => {
+    const catalog = { items: [], total: 33653 };
+    catalogCandidatePage.mockImplementation(async input => {
+      if (input.includeFacets) throw new Error("Counts timed out");
+      return catalog;
+    });
+    const el = await renderPage({});
+    expect(el.props.catalog).toBe(catalog);
+    expect(el.props.filterCounts).toBeUndefined();
+  });
+
+  it("restores available counts through a separate canonical request and retains filters", async () => {
+    const facets = { statuses: { requestable: 0 } };
+    catalogCandidatePage.mockImplementation(async input => ({ items: [], total: 1, ...(input.includeFacets ? { facets } : {}) }));
+    const el = await renderPage({ network: "testnet", scope: "evaluation", page: "3", category: "grid_trading", protocol: "mcp", q: "seller" });
+    expect(el.props.filterCounts).toBe(facets);
+    expect(catalogCandidatePage).toHaveBeenCalledWith(expect.objectContaining({
+      chainId: 97, scope: "evaluation", page: 1, limit: 1, includeFacets: true,
+      categories: ["grid_trading"], protocols: ["mcp"], q: "seller",
+    }));
+    expect(catalogDataCalls()[0]).toMatchObject({ page: 3, limit: 24 });
     expect(catalogDataCalls()[0].includeFacets).not.toBe(true);
   });
 
@@ -98,7 +122,7 @@ describe("agents page category handling", () => {
       items: [], total: input.scope === "evaluation" ? 66 : 0,
     }));
     const el = await renderPage({ network: "testnet", scope: "evaluation" });
-    const metrics = catalogCandidatePage.mock.calls.map(call => call[0]).filter(input => input.limit === 1);
+    const metrics = catalogCandidatePage.mock.calls.map(call => call[0]).filter(input => input.limit === 1 && !input.includeFacets);
     expect(metrics).toHaveLength(2);
     expect(metrics).toEqual(expect.arrayContaining([
       expect.objectContaining({ chainId: 97, scope: "hiring", statuses: [] }),
