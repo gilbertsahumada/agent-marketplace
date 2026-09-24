@@ -18,7 +18,6 @@ import {
 import type { D1DatabaseLike } from "../db/client";
 import {
   createDatabase,
-  readCatalogReachabilityFacets,
   readEffectiveAgentObservations,
   readEffectiveCatalogObservationsForAgents,
   readLatestBrowserObservationsForAgents,
@@ -549,67 +548,88 @@ export async function catalogAgentsResponse(
     latestFailure === null ? undefined : latestFailure ? failureExists : not(failureExists),
     eq(catalogAgents.chainId, chainId),
   );
-  const facetCount = (condition: ReturnType<typeof statusCondition>) =>
-    sql<number>`COALESCE(SUM(CASE WHEN ${condition.inlineParams()} THEN 1 ELSE 0 END), 0)`;
-  const categoryFacetCount = (category: (typeof CATEGORIES)[number]) =>
-    sql<number>`COALESCE(SUM(CASE WHEN EXISTS (
-      SELECT 1 FROM json_each(${catalogAgents.categoriesJson}) WHERE value = ${category}
-    ) THEN 1 ELSE 0 END), 0)`;
-  const operationalBase = and(
-    eq(catalogAgents.chainId, chainId),
-    scopeCondition?.inlineParams(),
-    eq(catalogAgents.indexState, "current"),
-    operationalDeclarationExists,
-    searchCondition,
-    commerceCondition,
-    quoteCondition,
-    latestFailure === null ? undefined : latestFailure ? failureExists : not(failureExists),
-  );
-  const unfilteredFacetScope = scope === null && !q && categories.length === 0 && protocols.length === 0
-    && commerce.length === 0 && quote.length === 0 && latestFailure === null
-    && statuses.every((status) => status === "declared");
+  // Compute evidence once per agent and return one aggregate row, not the
+  // complete endpoint catalogue. Each facet excludes only its own selections.
+  const categoryFlag = (category: (typeof CATEGORIES)[number]) => sql`EXISTS (
+    SELECT 1 FROM json_each(${catalogAgents.categoriesJson}) WHERE value = ${category}
+  )`;
+  const evidence = {
+    requestable: requestableCondition,
+    quoteCapable: quoteCapableCondition,
+    hasMcp: mcpDeclarationExists,
+    hasSeller: sellerDeclarationExists,
+    needsVerification: needsVerificationCondition,
+    a2a: freshProtocol("a2a"),
+    mcp: freshProtocol("mcp"),
+    httpFresh: freshProtocol("erc8183_http"),
+    platformSuccess: anyPlatformSuccess,
+    browserSuccess,
+  };
+  const flags = {
+    declared: sql`1`,
+    mcpOnly: sql`hasMcp AND NOT hasSeller AND NOT quoteCapable`,
+    erc8183: erc8183Declaration,
+    quoteCapable: sql`quoteCapable`,
+    requestable: sql`requestable`,
+    quoteFailed: quoteFailedCondition,
+    completedJobs: completedJobsCondition,
+    pending: sql`NOT requestable AND needsVerification`,
+    a2a: sql`a2a`,
+    mcp: sql`mcp`,
+    failed: statusCondition("failed"),
+    rebalancing: categoryFlag("rebalancing"),
+    gridTrading: categoryFlag("grid_trading"),
+    yieldOptimisation: categoryFlag("yield_optimisation"),
+    healthFactorMonitoring: categoryFlag("health_factor_monitoring"),
+    live: sql`a2a OR mcp OR httpFresh`,
+    historical: sql`platformSuccess AND NOT (a2a OR mcp OR httpFresh)`,
+    never: sql`NOT platformSuccess`,
+    browserObserved: sql`browserSuccess AND NOT platformSuccess`,
+    a2aTransport: declaredProtocolCondition(["a2a"]),
+    mcpTransport: declaredProtocolCondition(["mcp"]),
+    httpTransport: declaredProtocolCondition(["erc8183_http"]),
+  };
+  type FacetKey = keyof typeof flags;
+  const statusKeys: Record<CatalogStatus, FacetKey> = {
+    declared: "declared", pending: "pending", a2a: "a2a", mcp: "mcp",
+    mcp_only: "mcpOnly", erc8183: "erc8183", quote_capable: "quoteCapable",
+    hireable: "quoteCapable", failed: "failed", requestable: "requestable",
+    quote_failed: "quoteFailed", completed_jobs: "completedJobs",
+  };
+  const categoryKeys = { rebalancing: "rebalancing", grid_trading: "gridTrading", yield_optimisation: "yieldOptimisation", health_factor_monitoring: "healthFactorMonitoring" } as const;
+  const protocolKeys = { a2a: "a2aTransport", mcp: "mcpTransport", erc8183_http: "httpTransport" } as const;
+  const reachabilityKeys = { live: "live", historical: "historical", never: "never", browser_observed: "browserObserved" } as const;
+  const matchFlags = (keys: FacetKey[]) => keys.length ? or(...keys.map(key => sql`${sql.identifier(key)} = 1`))! : sql`1`;
+  const matchesStatus = matchFlags(statuses.filter(status => status !== "declared").map(status => statusKeys[status as CatalogStatus]));
+  const matchesCategory = matchFlags(categories.map(category => categoryKeys[category as keyof typeof categoryKeys]));
+  const matchesProtocol = matchFlags(protocols.map(protocol => protocolKeys[protocol]));
+  const matchesReachability = matchFlags(reachability.map(value => reachabilityKeys[value]));
+  const statusFacetKeys: FacetKey[] = ["declared", "mcpOnly", "erc8183", "quoteCapable", "requestable", "quoteFailed", "completedJobs", "pending", "a2a", "mcp", "failed"];
+  const categoryFacetKeys: FacetKey[] = Object.values(categoryKeys);
+  const protocolFacetKeys: FacetKey[] = Object.values(protocolKeys);
+  const reachabilityFacetKeys: FacetKey[] = Object.values(reachabilityKeys);
+  const aggregate = (keys: FacetKey[], condition: ReturnType<typeof and>) => keys.map(key =>
+    sql`COALESCE(SUM(CASE WHEN ${condition} AND ${sql.identifier(key)} = 1 THEN 1 ELSE 0 END), 0) AS ${sql.identifier(key)}`);
   const facetRowsPromise = includeFacets
-    ? Promise.all([
-      db.select({
-        declared: count(),
-        mcpOnly: facetCount(statusCondition("mcp_only")),
-        erc8183: facetCount(statusCondition("erc8183")),
-        hireable: facetCount(statusCondition("hireable")),
-        requestable: facetCount(requestableCondition),
-        quoteFailed: facetCount(quoteFailedCondition),
-        completedJobs: facetCount(completedJobsCondition),
-        pending: facetCount(statusCondition("pending")),
-        a2a: facetCount(statusCondition("a2a")),
-        mcp: facetCount(statusCondition("mcp")),
-        quoteCapable: facetCount(statusCondition("quote_capable")),
-        failed: facetCount(statusCondition("failed")),
-      }).from(catalogAgents).where(and(operationalBase, categoryCondition, protocolCondition, reachabilityCondition)),
-      db.select({
-        rebalancing: categoryFacetCount("rebalancing"),
-        gridTrading: categoryFacetCount("grid_trading"),
-        yieldOptimisation: categoryFacetCount("yield_optimisation"),
-        healthFactorMonitoring: categoryFacetCount("health_factor_monitoring"),
-      }).from(catalogAgents).where(and(operationalBase, statusConditionCombined, protocolCondition, reachabilityCondition)),
-      unfilteredFacetScope ? readCatalogReachabilityFacets(db, nowMs, chainId).then((row) => [row]) : db.select({
-        live: facetCount(anyFreshProtocol!),
-        historical: facetCount(and(anyPlatformSuccess, not(anyFreshProtocol!))!),
-        never: facetCount(not(anyPlatformSuccess)),
-        browserObserved: facetCount(and(browserSuccess, not(anyPlatformSuccess))!),
-      }).from(catalogAgents).where(and(operationalBase, statusConditionCombined, categoryCondition, protocolCondition)),
-      db.select({
-        a2aTransport: facetCount(declaredProtocolCondition(["a2a"])),
-        mcpTransport: facetCount(declaredProtocolCondition(["mcp"])),
-        httpTransport: facetCount(declaredProtocolCondition(["erc8183_http"])),
-      }).from(catalogAgents).where(and(operationalBase,statusConditionCombined,categoryCondition,reachabilityCondition)),
-    ]).then(([simple, categoryFacets, reachabilityFacets, transportFacets]) => [{
-      ...simple[0]!,
-      ...categoryFacets[0]!,
-      ...transportFacets[0]!,
-      live: reachabilityFacets[0]?.live ?? 0,
-      historical: reachabilityFacets[0]?.historical ?? 0,
-      never: reachabilityFacets[0]?.never ?? 0,
-      browserObserved: reachabilityFacets[0]?.browserObserved ?? 0,
-    }])
+    ? db.all<Record<FacetKey, number>>(sql`
+      WITH evidence AS MATERIALIZED (
+        SELECT ${catalogAgents.agentKey}, ${catalogAgents.agentId},
+          ${catalogAgents.chainId}, ${catalogAgents.categoriesJson},
+          ${sql.join(Object.entries(evidence).map(([key, condition]) => sql`CASE WHEN ${condition} THEN 1 ELSE 0 END AS ${sql.identifier(key)}`), sql`, `)}
+        FROM ${catalogAgents}
+        WHERE ${and(eq(catalogAgents.chainId, chainId), scopeCondition, eq(catalogAgents.indexState, "current"), operationalDeclarationExists, searchCondition, commerceCondition, quoteCondition, latestFailure === null ? undefined : latestFailure ? failureExists : not(failureExists))}
+      ), facet_flags AS MATERIALIZED (
+        SELECT ${sql.join(Object.entries(flags).map(([key, condition]) => sql`CASE WHEN ${condition} THEN 1 ELSE 0 END AS ${sql.identifier(key)}`), sql`, `)}
+        FROM evidence AS catalog_agents
+      )
+      SELECT ${sql.join([
+        ...aggregate(statusFacetKeys, and(matchesCategory, matchesProtocol, matchesReachability)),
+        ...aggregate(categoryFacetKeys, and(matchesStatus, matchesProtocol, matchesReachability)),
+        ...aggregate(protocolFacetKeys, and(matchesStatus, matchesCategory, matchesReachability)),
+        ...aggregate(reachabilityFacetKeys, and(matchesStatus, matchesCategory, matchesProtocol)),
+      ], sql`, `)}
+      FROM facet_flags
+    `.inlineParams()).then(rows => rows.map(row => ({ ...row, hireable: row.quoteCapable })))
     : Promise.resolve([]);
   const cursorCondition = cursor === undefined ? undefined : or(
     lt(catalogAgents.priority, cursor.priority),
