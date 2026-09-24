@@ -74,8 +74,11 @@ export default async function AgentsPage({ searchParams }: { searchParams: Promi
     getCatalogCandidatePage({ chainId, scope: "hiring", statuses: [], page: 1, limit: 1, ...(fresh ? { fresh } : {}) }).catch(() => null),
     getCatalogCandidatePage({ chainId, scope: "evaluation", statuses: [], page: 1, limit: 1, ...(fresh ? { fresh } : {}) }).catch(() => null),
   ]);
+  // Facet-wide aggregates currently exceed the catalog request deadline on
+  // Mainnet. Keep browsing/filtering available without these optional counts;
+  // the existing controls display unknown counts as "—", never fabricated zeroes.
   const catalog = view === "marketplace" || chainId === 97 ? await getCatalogCandidatePage({
-    chainId, ...(view === "all" ? { inventory: "registry" as const } : scope === "all" ? {} : { scope }), statuses, categories, protocols, reachability, page, limit: 24, includeFacets: true, ...optional, ...(fresh ? { fresh } : {}),
+    chainId, ...(view === "all" ? { inventory: "registry" as const } : scope === "all" ? {} : { scope }), statuses, categories, protocols, reachability, page, limit: 24, ...optional, ...(fresh ? { fresh } : {}),
   }) : null;
   let data;
   if (!catalog) {

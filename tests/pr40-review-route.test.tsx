@@ -64,6 +64,16 @@ describe("agents page category handling", () => {
     return catalogCandidatePage.mock.calls.map((call) => call[0]).filter((input) => input.limit !== 1);
   }
 
+  it("renders catalog rows without blocking on expensive facet aggregates", async () => {
+    const catalog = { items: [], total: 33653 };
+    catalogCandidatePage.mockImplementation(async (input) => input.includeFacets ? null : catalog);
+    const el = await renderPage({});
+    expect(el.props.catalog).toBe(catalog);
+    expect(el.props.filterCounts).toBeUndefined();
+    expect(catalogDataCalls()).toHaveLength(1);
+    expect(catalogDataCalls()[0].includeFacets).not.toBe(true);
+  });
+
   it("does not silently select a status after clearing filters", async () => {
     await renderPage({ view: "marketplace" });
     expect(catalogDataCalls()[0]).toMatchObject({ statuses: [] });
