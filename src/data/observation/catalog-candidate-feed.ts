@@ -404,7 +404,7 @@ export async function getCatalogCandidatePage(input: {
       const response = await fetch(base, {
         cache: "no-store",
         headers: catalogReadHeaders(input.env ?? process.env, input.fresh === true),
-        signal: AbortSignal.timeout(5_000),
+        signal: AbortSignal.timeout(15_000),
       });
       if (!response.ok) throw new Error("CATALOG_FEED_UNAVAILABLE");
       const parsed = parseCatalogCandidatePage(await response.json());
