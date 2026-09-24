@@ -74,9 +74,13 @@ export default async function AgentsPage({ searchParams }: { searchParams: Promi
     getCatalogCandidatePage({ chainId, scope: "hiring", statuses: [], page: 1, limit: 1, ...(fresh ? { fresh } : {}) }).catch(() => null),
     getCatalogCandidatePage({ chainId, scope: "evaluation", statuses: [], page: 1, limit: 1, ...(fresh ? { fresh } : {}) }).catch(() => null),
   ]);
-  // Facet-wide aggregates currently exceed the catalog request deadline on
-  // Mainnet. Keep browsing/filtering available without these optional counts;
-  // the existing controls display unknown counts as "—", never fabricated zeroes.
+  // Counts are optional and independent of the rows. A failed aggregate must
+  // not hide valid agents. Canonical pagination lets pages reuse cached counts.
+  const facetsPromise = view === "marketplace" || chainId === 97 ? getCatalogCandidatePage({
+    chainId, ...(view === "all" ? { inventory: "registry" as const } : scope === "all" ? {} : { scope }),
+    statuses, categories, protocols, reachability, page: 1, limit: 1, includeFacets: true,
+    ...optional, ...(fresh ? { fresh } : {}),
+  }).catch(() => null) : Promise.resolve(null);
   const catalog = view === "marketplace" || chainId === 97 ? await getCatalogCandidatePage({
     chainId, ...(view === "all" ? { inventory: "registry" as const } : scope === "all" ? {} : { scope }), statuses, categories, protocols, reachability, page, limit: 24, ...optional, ...(fresh ? { fresh } : {}),
   }) : null;
@@ -95,7 +99,7 @@ export default async function AgentsPage({ searchParams }: { searchParams: Promi
   const observations = view === "marketplace" && chainId === 56
     ? await getWorkerObservations()
     : { status: "unavailable" as const, feed: null };
-  const [registryMetric, operationalMetric, evaluationMetric] = await metricsPromise;
+  const [[registryMetric, operationalMetric, evaluationMetric], facetPage] = await Promise.all([metricsPromise, facetsPromise]);
   const registryTotal = registryMetric?.pagination.total
     ?? (view === "all" && !q ? data?.pagination.total : undefined);
   const operationalTotal = operationalMetric?.total
@@ -109,6 +113,6 @@ export default async function AgentsPage({ searchParams }: { searchParams: Promi
     {...(mainnetProof ? { provenAgentId: mainnetProof.agentId } : {})}
     {...(typeof registryTotal === "number" ? { registryTotal } : {})}
     {...(typeof operationalTotal === "number" ? { operationalTotal } : {})}
-    {...(catalog?.facets ? { filterCounts: catalog.facets } : {})}
+    {...(facetPage?.facets ? { filterCounts: facetPage.facets } : {})}
   />;
 }
