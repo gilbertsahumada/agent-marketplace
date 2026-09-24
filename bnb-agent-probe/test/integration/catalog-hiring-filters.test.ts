@@ -5,6 +5,27 @@ import { clearCatalogFixtures } from "./catalog-fixtures";
 const now = 1_788_000_000_000;
 beforeEach(clearCatalogFixtures);
 
+it("does not share reachability counts between agents declaring the same endpoint", async () => {
+  const endpoint = "a".repeat(64);
+  await env.DB.prepare(`INSERT INTO catalog_endpoints
+    (endpointKey,protocol,endpoint,safety,declaredProtocol,role,validationProtocol,eligibility,nextProbeAt,lastAttemptAt,lastAttemptOutcome,lastSuccessfulAt)
+    VALUES (?,'a2a','https://shared.example','safe','a2a','operational','a2a','eligible',0,?,'protocol_valid',?)`).bind(endpoint,now,now).run();
+  for (const id of ["301", "302"]) {
+    const key = `eip155:56:${id}`;
+    await env.DB.prepare("INSERT INTO catalog_agents (agentKey,agentId,chainId,metadataState,indexState,firstSeenAt,lastSeenAt) VALUES (?,?,56,'ok','current',?,?)").bind(key,id,now,now).run();
+    await env.DB.prepare("INSERT INTO catalog_agent_endpoints (agentKey,endpointKey,declarationState,firstSeenAt,lastSeenAt) VALUES (?,?,'current',?,?)").bind(key,endpoint,now,now).run();
+  }
+  await env.DB.prepare(`INSERT INTO catalog_observations (agentKey,endpointKey,protocol,source,outcome,observedAt,expiresAt,durationMs,validationKind,verificationLevel)
+    VALUES ('eip155:56:301',?,'a2a','worker_probe','protocol_valid',?,?,1,'protocol','platform_observed')`).bind(endpoint,now,now+1000).run();
+  const app = createWorker({ now: () => now });
+  const result = await app.fetch(new Request("https://worker.test/catalog-agents?status=declared&facets=true"),env);
+  expect(await result.json()).toMatchObject({ total: 2, facets: { reachability: { live: 1, never: 1, historical: 0 } } });
+  const live = await app.fetch(new Request("https://worker.test/catalog-agents?status=declared&reachability=live"),env);
+  expect(await live.json()).toMatchObject({ total: 1, items: [{ agentId: "301" }] });
+  const expired = await createWorker({ now: () => now+1000 }).fetch(new Request("https://worker.test/catalog-agents?status=declared&facets=true"),env);
+  expect(await expired.json()).toMatchObject({ facets: { reachability: { live: 0, historical: 1, never: 1 } } });
+});
+
 it.each(["failed", "rejected"])("counts genuine %s quote attempts, not discovery failures", async (status) => {
   for (const id of ["201", "202"]) {
     const key = `eip155:56:${id}`;
