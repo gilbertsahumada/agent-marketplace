@@ -6,6 +6,7 @@
   "workers_dev": true,
   "preview_urls": false,
   "observability": { "enabled": true },
+  "version_metadata": { "binding": "CF_VERSION_METADATA" },
   "triggers": { "crons": [] },
   "vars": {
     "DEPLOYMENT_ENV": "production",
@@ -96,6 +97,7 @@
   "env": {
     "staging": {
       "name": "bnb-agent-probe-staging",
+      "version_metadata": { "binding": "CF_VERSION_METADATA" },
       "triggers": { "crons": ["* * * * *"] },
       "vars": {
         "DEPLOYMENT_ENV": "staging",
@@ -188,6 +190,7 @@
     },
     "validation": {
       "name": "bnb-agent-probe-validation",
+      "version_metadata": { "binding": "CF_VERSION_METADATA" },
       "triggers": { "crons": [] },
       "vars": {
         "DEPLOYMENT_ENV": "validation",
