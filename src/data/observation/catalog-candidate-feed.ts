@@ -1,4 +1,5 @@
 import { AsyncTtlCache } from "../cache/async-ttl-cache.ts";
+import type { CatalogReadResult, CatalogReadError } from "../../business/entities/catalog-resource.ts";
 import {
   CATALOG_STATUSES,
   type CatalogCandidate,
@@ -357,7 +358,7 @@ export function catalogUrl(
   }
 }
 
-export async function getCatalogCandidatePage(input: {
+export type CatalogPageInput = {
   chainId?: 56 | 97;
   status?: CatalogStatus;
   statuses?: CatalogStatus[];
@@ -377,9 +378,16 @@ export async function getCatalogCandidatePage(input: {
   includeFacets?: boolean;
   fresh?: boolean;
   env?: Readonly<Record<string, string | undefined>>;
-}): Promise<CatalogCandidatePage | null> {
+};
+
+export async function getCatalogCandidatePage(input: CatalogPageInput): Promise<CatalogCandidatePage | null> {
+  const result = await getCatalogCandidatePageResult(input);
+  return result.ok ? result.data : null;
+}
+
+export async function getCatalogCandidatePageResult(input: CatalogPageInput): Promise<CatalogReadResult<CatalogCandidatePage>> {
   const base = catalogUrl("/catalog-agents", input.env ?? process.env);
-  if (!base) return null;
+  if (!base) return { ok: false, error: { kind: "unavailable" } };
   if (input.chainId !== undefined) base.searchParams.set("chain", String(input.chainId));
   // An explicit empty UI selection means the operational catalogue, not a
   // hidden requestable filter. Omitted status retains the API's default.
@@ -401,19 +409,27 @@ export async function getCatalogCandidatePage(input: {
   if (input.includeFacets) base.searchParams.set("facets", "true");
   try {
     const read = async () => {
-      const response = await fetch(base, {
+      let response: Response;
+      const signal = AbortSignal.timeout(15_000);
+      try { response = await fetch(base, {
         cache: "no-store",
         headers: catalogReadHeaders(input.env ?? process.env, input.fresh === true),
-        signal: AbortSignal.timeout(15_000),
-      });
-      if (!response.ok) throw new Error("CATALOG_FEED_UNAVAILABLE");
-      const parsed = parseCatalogCandidatePage(await response.json());
-      if (parsed.chainId !== (input.chainId ?? 56)) throw new Error("CATALOG_FEED_INVALID");
-      return parsed;
+        signal,
+      }); } catch (error) {
+        throw { kind: signal.aborted || error instanceof Error && ["TimeoutError", "AbortError"].includes(error.name) ? "timeout" : "network" } satisfies CatalogReadError;
+      }
+      if (!response.ok) throw { kind: "upstream", status: response.status } satisfies CatalogReadError;
+      try {
+        const parsed = parseCatalogCandidatePage(await response.json());
+        if (parsed.chainId !== (input.chainId ?? 56)) throw new Error("CATALOG_FEED_INVALID");
+        return parsed;
+      } catch (error) {
+        throw { kind: signal.aborted || error instanceof Error && ["TimeoutError", "AbortError"].includes(error.name) ? "timeout" : "invalid_response", status: response.status } satisfies CatalogReadError;
+      }
     };
-    return await (input.fresh ? read() : cache.get(`catalog:${base}`, CACHE_TTL_MS, read));
-  } catch {
-    return null;
+    return { ok: true, data: await (input.fresh ? read() : cache.get(`catalog:${base}`, CACHE_TTL_MS, read)) };
+  } catch (error) {
+    return { ok: false, error: error && typeof error === "object" && "kind" in error ? error as CatalogReadError : { kind: "unavailable" } };
   }
 }
 
