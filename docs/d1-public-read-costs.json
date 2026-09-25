@@ -1,0 +1,133 @@
+{
+  "schemaVersion": 1,
+  "measuredOn": "2026-09-25",
+  "baseCommit": "631709b",
+  "environment": "local Cloudflare Worker D1 emulator",
+  "remoteRequests": false,
+  "cache": "bypass",
+  "command": "npm run test:worker -- test/integration/catalog-counter-routes.test.ts test/integration/d1-read-profile.test.ts -t 'full cold page|seeks completed jobs' --reporter=verbose",
+  "commandWorkingDirectory": "bnb-agent-probe",
+  "run": { "testFilesPassed": 2, "testsPassed": 3, "testsSkipped": 32, "durationSeconds": 12.92 },
+  "units": {
+    "rowsRead": "sum of D1 meta.rows_read",
+    "rowsWritten": "sum of D1 meta.rows_written",
+    "d1DurationMs": "sum of D1 meta.duration; local database time, not end-to-end or concurrent page latency"
+  },
+  "fixture": {
+    "chainId": 56,
+    "endpointsPerAgent": 2,
+    "observationsPerEndpoint": 8,
+    "compatibleCapabilities": 0,
+    "commerceJobs": 0,
+    "hiringPopulation": 0,
+    "evaluationPopulation": "all seeded agents",
+    "limitations": [
+      "Hiring is empty: its reduction is not representative of a populated hiring catalogue.",
+      "No production traffic mix, refresh frequency, regional cache misses, or daily weighted cost is inferred.",
+      "The job-history fixture is measured separately.",
+      "Timing values vary across emulator runs and are not pass/fail thresholds."
+    ]
+  },
+  "fullColdPages": [
+    {
+      "agentCount": 2000,
+      "scope": "hiring",
+      "before": { "requests": 4, "queries": 17, "rowsRead": 20212, "rowsWritten": 0, "d1DurationMs": 10 },
+      "after": { "requests": 3, "queries": 4, "rowsRead": 14002, "rowsWritten": 0, "d1DurationMs": 5 },
+      "facets": { "queries": 1, "rowsRead": 2002, "rowsWritten": 0, "d1DurationMs": 1 },
+      "summary": { "queries": 1, "rowsRead": 8000, "rowsWritten": 0, "d1DurationMs": 2 }
+    },
+    {
+      "agentCount": 2000,
+      "scope": "evaluation",
+      "before": { "requests": 4, "queries": 34, "rowsRead": 240107, "rowsWritten": 0, "d1DurationMs": 119 },
+      "after": { "requests": 3, "queries": 13, "rowsRead": 231687, "rowsWritten": 0, "d1DurationMs": 109 },
+      "facets": { "queries": 1, "rowsRead": 211597, "rowsWritten": 0, "d1DurationMs": 101 },
+      "summary": { "queries": 1, "rowsRead": 8000, "rowsWritten": 0, "d1DurationMs": 3 }
+    },
+    {
+      "agentCount": 20000,
+      "scope": "hiring",
+      "before": { "requests": 4, "queries": 17, "rowsRead": 200212, "rowsWritten": 0, "d1DurationMs": 68 },
+      "after": { "requests": 3, "queries": 4, "rowsRead": 140002, "rowsWritten": 0, "d1DurationMs": 40 },
+      "facets": { "queries": 1, "rowsRead": 20002, "rowsWritten": 0, "d1DurationMs": 4 },
+      "summary": { "queries": 1, "rowsRead": 80000, "rowsWritten": 0, "d1DurationMs": 24 }
+    },
+    {
+      "agentCount": 20000,
+      "scope": "evaluation",
+      "before": { "requests": 4, "queries": 34, "rowsRead": 2342504, "rowsWritten": 0, "d1DurationMs": 1207 },
+      "after": { "requests": 3, "queries": 13, "rowsRead": 2262084, "rowsWritten": 0, "d1DurationMs": 1160 },
+      "facets": { "queries": 1, "rowsRead": 2115997, "rowsWritten": 0, "d1DurationMs": 1110 },
+      "summary": { "queries": 1, "rowsRead": 80000, "rowsWritten": 0, "d1DurationMs": 24 }
+    }
+  ],
+  "completedJobFacets": {
+    "jobsPerNetwork": 20000,
+    "networks": [56, 97],
+    "resultParity": true,
+    "reference": { "predicate": "original text-only join", "queries": 1, "rowsRead": 160138, "rowsWritten": 0, "d1DurationMs": 10 },
+    "after": [
+      {
+        "analyzed": false,
+        "queries": 1,
+        "rowsRead": 146,
+        "rowsWritten": 0,
+        "d1DurationMs": 2,
+        "plan": "SEARCH commerce_jobs USING INDEX sqlite_autoindex_commerce_jobs_1 (chainId=? AND jobId=?)"
+      },
+      {
+        "analyzed": true,
+        "queries": 1,
+        "rowsRead": 155,
+        "rowsWritten": 0,
+        "d1DurationMs": 1,
+        "plan": "SEARCH commerce_jobs USING COVERING INDEX idx_commerce_jobs_status (chainId=? AND status=? AND jobId=?)"
+      }
+    ],
+    "rowsReadCeilingExclusive": 200
+  },
+  "frozenOriginalBaseline": {
+    "capturedBeforeProductionEdits": true,
+    "testDurationSeconds": 10.21,
+    "perQueryDurationsCaptured": false,
+    "agents": 2000,
+    "routes": [
+      { "route": "/catalog-agents", "queries": 11, "rowsRead": 12090, "rowsWritten": 0 },
+      { "route": "/catalog-agents?status=hireable", "queries": 2, "rowsRead": 4000, "rowsWritten": 0 },
+      { "route": "/catalog-agents?status=a2a", "queries": 11, "rowsRead": 26677, "rowsWritten": 0 },
+      { "route": "/catalog-agents?status=mcp&reachability=live", "queries": 11, "rowsRead": 45302, "rowsWritten": 0 },
+      { "route": "/catalog-agents?facets=true", "queries": 12, "rowsRead": 223687, "rowsWritten": 0 },
+      { "route": "/catalog-agent/100042", "queries": 12, "rowsRead": 287, "rowsWritten": 0 }
+    ],
+    "legacyFacets20000": { "queries": 12, "rowsRead": 2182084, "rowsWritten": 0, "snapshotUnchanged": true },
+    "red": {
+      "workerCounterTestsFailedBeforeImplementation": 27,
+      "frontendTestsFailedBeforeImplementation": 12,
+      "frontendTestsPassedBeforeImplementation": 1
+    }
+  },
+  "jobKeyAccess": {
+    "resultParity": true,
+    "rowsWritten": 0,
+    "statisticsResetBetweenScenarios": true,
+    "detail": { "beforeReads": 180018, "afterReads": 17, "beforeMs": 9, "afterMs": 0 },
+    "providers": [
+      { "jobs": 20000, "statistics": "absent", "beforeReads": 20001, "afterReads": 50, "beforeMs": 2, "afterMs": 0 },
+      { "jobs": 20000, "statistics": "complete", "beforeReads": 50, "afterReads": 50, "beforeMs": 0, "afterMs": 0 },
+      { "jobs": 20000, "statistics": "partial", "beforeReads": 20001, "afterReads": 50, "beforeMs": 2, "afterMs": 0 },
+      { "jobs": 50000, "statistics": "absent", "beforeReads": 50001, "afterReads": 50, "beforeMs": 3, "afterMs": 0 },
+      { "jobs": 50000, "statistics": "complete", "beforeReads": 50, "afterReads": 50, "beforeMs": 0, "afterMs": 0 },
+      { "jobs": 50000, "statistics": "partial", "beforeReads": 50001, "afterReads": 50, "beforeMs": 3, "afterMs": 1 }
+    ]
+  },
+  "gates": {
+    "counterResultParity": "passed",
+    "oneQueryPerAggregate": "passed",
+    "zeroPublicReadWrites": "passed",
+    "ninetyPercentCompleteColdReadReductionAt20000": "not met by A",
+    "dailyWeightedCostIncludingReadModelWrites": "not established; read model B is not implemented",
+    "completeProductionPerInvocationAttribution": "partial: native raw exposes no metadata; unknown totals are explicit",
+    "resumeCronOrQueues": "not authorized"
+  }
+}
