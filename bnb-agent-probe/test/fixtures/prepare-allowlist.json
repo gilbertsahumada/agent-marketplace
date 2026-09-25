@@ -1,6 +1,13 @@
 {
   "entries": [
     {
+      "file": "src/db/invocation-metrics.ts",
+      "function": "values",
+      "fingerprint": "a8b771920b83",
+      "count": 1,
+      "normative": true
+    },
+    {
       "file": "src/db/background-budget.ts",
       "function": "closeLane",
       "fingerprint": "bf688896183d",

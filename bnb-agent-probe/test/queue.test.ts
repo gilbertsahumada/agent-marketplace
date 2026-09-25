@@ -88,7 +88,7 @@ describe("WP2 Free queue dispatch", () => {
     const body = { schemaVersion: 2, kind: "catalog_capability_probe", agentKey: `eip155:${chainId}:2284`, endpointKey: "a".repeat(64), enqueuedAt: nowMs };
     const item = message(body);
     await worker.queue({ messages: [item] }, activeEnv, context);
-    expect(runCatalogCapabilityProbe).toHaveBeenCalledWith(body, activeEnv, expect.anything());
+    expect(runCatalogCapabilityProbe).toHaveBeenCalledWith(body, { ...activeEnv, DB: expect.objectContaining({ prepare: expect.any(Function) }) }, expect.anything());
     expect(item.ack).toHaveBeenCalledOnce();
   });
 
@@ -115,12 +115,13 @@ describe("WP2 Free queue dispatch", () => {
     await worker.scheduled({ scheduledTime: 1_800_000_000_000, cron: "*/5 * * * *" }, activeEnv, context);
     await worker.queue({ messages: [tick] }, activeEnv, context);
 
-    expect(logger.info.mock.calls).toEqual([
+    expect(logger.info.mock.calls.filter(([event]) => !event.startsWith('d1.'))).toEqual([
       ["wp2.cron.received", { cron: "*/5 * * * *", scheduledTime: 1_800_000_000_000 }],
       ["wp2.cron.enqueued", { scheduledTime: 1_800_000_000_000 }],
       ["wp2.queue.received", { attempt: 1, kind: "scheduled", scheduledTime: 1_800_000_000_000 }],
       ["wp2.queue.completed", { attempt: 1, outcome: "completed", scheduledTime: 1_800_000_000_000 }],
     ]);
+    expect(logger.info.mock.calls.filter(([event]) => event === 'd1.background.invocation')).toHaveLength(2);
     expect(logger.error).not.toHaveBeenCalled();
   });
 
@@ -180,8 +181,8 @@ describe("WP2 Free queue dispatch", () => {
     expect(runScheduled).toHaveBeenCalledOnce();
     expect(runScheduled).toHaveBeenCalledWith(
       { scheduledTime: 1_800_000_000_000, cron: "queue", attempt: 1, messageId: "message-1" },
-      activeEnv,
-      context,
+      { ...activeEnv, DB: expect.objectContaining({ prepare: expect.any(Function) }) },
+      expect.objectContaining({ waitUntil: expect.any(Function), passThroughOnException: expect.any(Function) }),
       expect.objectContaining({ plan: "free", killSwitch: false }),
     );
     expect(tick.ack).toHaveBeenCalledOnce();
@@ -198,8 +199,8 @@ describe("WP2 Free queue dispatch", () => {
 
     expect(runScheduled).toHaveBeenCalledWith(
       { scheduledTime: now, cron: "queue", attempt: 1, messageId: "message-1" },
-      activeEnv,
-      context,
+      { ...activeEnv, DB: expect.objectContaining({ prepare: expect.any(Function) }) },
+      expect.objectContaining({ waitUntil: expect.any(Function), passThroughOnException: expect.any(Function) }),
       expect.objectContaining({ plan: "free", killSwitch: false }),
     );
     expect(tick.ack).toHaveBeenCalledOnce();

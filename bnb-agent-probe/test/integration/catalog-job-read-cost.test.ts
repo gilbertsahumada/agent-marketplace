@@ -3,6 +3,9 @@ import { beforeAll, expect, it } from "vitest";
 import { catalogAgentsResponse } from "../../src/routes/catalog-agents";
 import { metered, type ReadRecord } from "./d1-meter";
 import { clearCatalogFixtures } from "./catalog-fixtures";
+import { createDatabase, readCatalogAgentEvidence } from "../../src/db/orm";
+import { D1AgentIdentityRepository } from "../../src/identity/repository";
+import type { D1DatabaseLike } from "../../src/db/client";
 
 const NOW = 1_800_000_000_000;
 beforeAll(async () => {
@@ -44,4 +47,51 @@ it('uses indexed job lookups without changing canonical text ID matching or coun
   console.log(JSON.stringify({rowsRead:entry.rowsRead,rowsWritten:entry.rowsWritten,plan:(await env.DB.prepare(`EXPLAIN QUERY PLAN ${entry.sql}`).bind(...entry.values).all()).results}));
   expect(entry.rowsRead).toBeLessThan(200);
   expect(entry.rowsWritten).toBe(0);
+});
+
+it('bounds detail job history reads and preserves canonical deduplication', async () => {
+  const log: ReadRecord[] = [];
+  await readCatalogAgentEvidence(createDatabase(metered(env.DB, log) as unknown as D1DatabaseLike), '123', 50, 56);
+  const entry = log.find(row => row.sql.includes('commerce_jobs') && row.sql.includes('count(distinct'))!;
+  expect(entry).toBeDefined();
+  const result = await env.DB.prepare(entry.sql).bind(...entry.values).all();
+  expect(Object.values(result.results![0]!)).toEqual([2, 2, 0, 0]);
+  const legacySql = entry.sql.replace('"commerce_jobs"."jobId" = CAST("hire_events"."jobId" AS INTEGER) and ', '');
+  expect(legacySql).not.toBe(entry.sql);
+  const referenceLog: ReadRecord[] = [];
+  const reference = await metered(env.DB, referenceLog).prepare(legacySql).bind(...entry.values).all();
+  expect(reference.results).toEqual(result.results);
+  console.log(JSON.stringify({ operation: 'detail-job-history', rowsRead: entry.rowsRead,
+    rowsWritten: entry.rowsWritten, durationMs: entry.durationMs, before: referenceLog.map(({ rowsRead, rowsWritten, durationMs }) => ({ rowsRead, rowsWritten, durationMs })),
+    plan: (await env.DB.prepare(`EXPLAIN QUERY PLAN ${entry.sql}`).bind(...entry.values).all()).results }));
+  expect(entry.rowsRead).toBeLessThan(200);
+  expect(entry.rowsWritten).toBe(0);
+});
+
+it.each([20_000, 50_000])('bounds provider lookups for 25 jobs in a %i-job history', async size => {
+  if (size > 20_000) await env.DB.prepare(`WITH RECURSIVE n(x) AS (SELECT 20001 UNION ALL SELECT x+1 FROM n WHERE x<?)
+    INSERT INTO commerce_jobs (chainId,jobId,client,provider,evaluator,budget,expiredAt,status,hook,firstSeenAt,updatedAt)
+    SELECT 56,x,'client','provider','evaluator','1',?,3,'hook',?,? FROM n`)
+    .bind(size, NOW, NOW, NOW).run();
+  const ids = Array.from({ length: 25 }, (_, i) => String(size - i));
+  for (const statistics of ['absent', 'complete', 'partial']) {
+    await env.DB.prepare('ANALYZE').run();
+    if (statistics !== 'complete') {
+      await env.DB.prepare(statistics === 'absent' ? 'DELETE FROM sqlite_stat1'
+        : "DELETE FROM sqlite_stat1 WHERE idx <> 'sqlite_autoindex_commerce_jobs_1'").run();
+      await env.DB.prepare('ANALYZE sqlite_schema').run();
+    }
+    const log: ReadRecord[] = [];
+    const result = await new D1AgentIdentityRepository(metered(env.DB, log) as unknown as D1DatabaseLike).readJobEvidence(56, ids);
+    expect(result.jobs.map(row => row.jobId).sort((a, b) => a - b)).toEqual(ids.map(Number).sort((a, b) => a - b));
+    const entry = log.find(row => row.sql.includes('commerce_jobs'))!;
+    const referenceLog: ReadRecord[] = [];
+    const reference = await metered(env.DB, referenceLog).prepare(entry.sql.replace(' INDEXED BY sqlite_autoindex_commerce_jobs_1', '')).bind(...entry.values).all<{ jobId: number; provider: string }>();
+    expect(reference.results?.map(row => row.jobId).sort((a, b) => a - b)).toEqual(result.jobs.map(row => row.jobId).sort((a, b) => a - b));
+    console.log(JSON.stringify({ operation: 'job-providers', size, statistics, rowsRead: entry.rowsRead,
+      rowsWritten: entry.rowsWritten, durationMs: entry.durationMs, before: referenceLog.map(({ rowsRead, rowsWritten, durationMs }) => ({ rowsRead, rowsWritten, durationMs })),
+      plan: (await env.DB.prepare(`EXPLAIN QUERY PLAN ${entry.sql}`).bind(...entry.values).all()).results }));
+    expect(entry.rowsRead).toBeLessThanOrEqual(200);
+    expect(entry.rowsWritten).toBe(0);
+  }
 });

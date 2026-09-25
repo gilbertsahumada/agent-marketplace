@@ -17,6 +17,7 @@ export interface D1Database {
 }
 
 export interface Env {
+  CF_VERSION_METADATA?: { id: string; tag?: string; timestamp?: string };
   DB: D1Database;
   WP2_QUEUE?: QueueProducer;
   /** Dedicated queue for seller capability/quote probes. */

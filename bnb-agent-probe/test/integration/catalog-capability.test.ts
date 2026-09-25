@@ -175,7 +175,9 @@ describe("catalog quote-capability scheduler", () => {
     const ack = vi.fn();
     await app.queue({ messages: [{ id: "testnet-regression", timestamp: new Date(NOW), body, attempts: 1, ack, retry: vi.fn() }] }, workerEnv, { waitUntil: vi.fn(), passThroughOnException: vi.fn() });
     expect(ack).toHaveBeenCalledOnce();
-    expect(runner).toHaveBeenCalledWith(expect.objectContaining({ agentKey: testnet.agentKey }), workerEnv, expect.anything());
+    expect(runner).toHaveBeenCalledWith(expect.objectContaining({ agentKey: testnet.agentKey }),
+      expect.objectContaining({ BSC_TESTNET_RPC_URL: workerEnv.BSC_TESTNET_RPC_URL,
+        CATALOG_TESTNET_ENABLED: '1', DB: expect.objectContaining({ prepare: expect.any(Function) }) }), expect.anything());
     expect(await runner.mock.results[0]!.value).toMatchObject({ errorCode: "BUYER_INPUT_REQUIRED" });
     expect(fetchImpl).toHaveBeenCalledOnce();
     expect(await env.DB.prepare("SELECT compatibilityState FROM catalog_seller_capabilities WHERE agentKey=?").bind(testnet.agentKey).first()).toMatchObject({ compatibilityState: "compatible" });

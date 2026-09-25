@@ -106,17 +106,63 @@ function encodeCursor(cursor: CatalogCursor): string {
   return btoa(JSON.stringify(cursor)).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "");
 }
 
-export async function catalogAgentsResponse(
+function publicResponse(body: unknown): Response {
+  return Response.json(body, { headers: {
+    "cache-control": "public, max-age=30, stale-while-revalidate=60",
+    "x-content-type-options": "nosniff",
+  } });
+}
+
+function publicFacets(row: Record<string, number>) {
+  return {
+    protocols: { a2a: Number(row.a2aTransport), mcp: Number(row.mcpTransport), erc8183_http: Number(row.httpTransport) },
+    statuses: {
+      declared: Number(row.declared), pending: Number(row.pending), a2a: Number(row.a2a), mcp: Number(row.mcp),
+      mcp_only: Number(row.mcpOnly), erc8183: Number(row.erc8183), quote_capable: Number(row.quoteCapable),
+      hireable: Number(row.quoteCapable), failed: Number(row.failed), requestable: Number(row.requestable),
+      quote_failed: Number(row.quoteFailed), completed_jobs: Number(row.completedJobs),
+    },
+    categories: {
+      rebalancing: Number(row.rebalancing), grid_trading: Number(row.gridTrading),
+      yield_optimisation: Number(row.yieldOptimisation), health_factor_monitoring: Number(row.healthFactorMonitoring),
+    },
+    reachability: {
+      live: Number(row.live), historical: Number(row.historical), never: Number(row.never), browser_observed: Number(row.browserObserved),
+    },
+  };
+}
+
+export function catalogAgentsResponse(
   request: Request,
   d1: D1Database,
   nowMs: number,
   responseVersion: 1 | 2 = 2,
   testnetEnabled = false,
 ): Promise<Response> {
+  return catalogReadResponse(request, d1, nowMs, responseVersion, testnetEnabled, "list");
+}
+
+export function catalogSummaryResponse(request: Request, d1: D1Database, nowMs: number, testnetEnabled = false): Promise<Response> {
+  return catalogReadResponse(request, d1, nowMs, 2, testnetEnabled, "summary");
+}
+
+export function catalogFacetsResponse(request: Request, d1: D1Database, nowMs: number, testnetEnabled = false): Promise<Response> {
+  return catalogReadResponse(request, d1, nowMs, 2, testnetEnabled, "facets");
+}
+
+async function catalogReadResponse(
+  request: Request,
+  d1: D1Database,
+  nowMs: number,
+  responseVersion: 1 | 2,
+  testnetEnabled: boolean,
+  resource: "list" | "summary" | "facets",
+): Promise<Response> {
   const url = new URL(request.url);
-  const allowedKeys = [
-    "status", "page", "cursor", "limit", "q", "category", "protocol", "reachability",
-    "commerce", "quote", "latestFailure", "chain", "inventory", "facets", "scope",
+  const allowedKeys = resource === "summary" ? ["chain"] : [
+    "status", "q", "category", "protocol", "reachability",
+    "commerce", "quote", "latestFailure", "chain", "inventory", "scope",
+    ...(resource === "list" ? ["page", "cursor", "limit", "facets"] : []),
   ];
   if ([...url.searchParams.keys()].some((key) => !allowedKeys.includes(key))) return invalid();
   const scope = url.searchParams.get("scope");
@@ -153,7 +199,7 @@ export async function catalogAgentsResponse(
   if (!(["operational", "registry"] as const).includes(inventory as "operational" | "registry")) return invalid();
   const rawFacets = url.searchParams.get("facets");
   if (rawFacets !== null && rawFacets !== "true") return invalid();
-  const includeFacets = responseVersion === 2 && rawFacets === "true";
+  const includeFacets = resource === "facets" || responseVersion === 2 && rawFacets === "true";
 
   const db = createDatabase(d1 as unknown as D1DatabaseLike);
   // Ready-to-quote is a capability projection, not an active buyer quote. A
@@ -207,6 +253,20 @@ export async function catalogAgentsResponse(
       eq(catalogEndpoints.role, "operational"),
       eq(catalogEndpoints.eligibility, "eligible"),
     )));
+  if (resource === "summary") {
+    const [counts] = await db.all<{ hiring: number; evaluation: number }>(sql`
+      WITH scope_flags AS MATERIALIZED (
+        SELECT CASE WHEN ${requestableCondition} THEN 1 ELSE 0 END AS hiring
+        FROM ${catalogAgents}
+        WHERE ${and(eq(catalogAgents.chainId, chainId), eq(catalogAgents.indexState, "current"), operationalDeclarationExists)}
+      )
+      SELECT COALESCE(SUM(hiring), 0) AS hiring,
+        COUNT(*) - COALESCE(SUM(hiring), 0) AS evaluation
+      FROM scope_flags
+    `.inlineParams());
+    return publicResponse({ schemaVersion: 2, apiVersion: CATALOG_API_VERSION, chainId, generatedAt: nowMs,
+      counts: { hiring: Number(counts?.hiring ?? 0), evaluation: Number(counts?.evaluation ?? 0) } });
+  }
   const observationBelongsToAgent = and(
     exists(db.select({ value: sql`1` })
       .from(catalogAgentEndpoints)
@@ -457,7 +517,9 @@ export async function catalogAgentsResponse(
       inArray(catalogQuoteAttempts.status, ["failed", "rejected"]),
     )));
   const completedJobsCondition = exists(db.select({value:sql`1`}).from(hireEvents)
-    .innerJoin(commerceJobs,and(eq(hireEvents.chainId,commerceJobs.chainId),eq(hireEvents.jobId,sql`CAST(${commerceJobs.jobId} AS TEXT)`)))
+    .innerJoin(commerceJobs,and(eq(hireEvents.chainId,commerceJobs.chainId),
+      eq(commerceJobs.jobId,sql`CAST(${hireEvents.jobId} AS INTEGER)`),
+      eq(hireEvents.jobId,sql`CAST(${commerceJobs.jobId} AS TEXT)`)))
     .where(and(eq(hireEvents.agentId,catalogAgents.agentId),eq(hireEvents.chainId,catalogAgents.chainId),eq(hireEvents.provenance,"chain_verified"),eq(commerceJobs.status,3))));
   const needsVerificationCondition = sql`EXISTS (
     SELECT 1 FROM catalog_agent_endpoints declaration
@@ -631,6 +693,11 @@ export async function catalogAgentsResponse(
       FROM facet_flags
     `.inlineParams()).then(rows => rows.map(row => ({ ...row, hireable: row.quoteCapable })))
     : Promise.resolve([]);
+  if (resource === "facets") {
+    const [row] = await facetRowsPromise;
+    return publicResponse({ schemaVersion: 2, apiVersion: CATALOG_API_VERSION, chainId, generatedAt: nowMs,
+      facets: publicFacets(row!) });
+  }
   const cursorCondition = cursor === undefined ? undefined : or(
     lt(catalogAgents.priority, cursor.priority),
     and(
@@ -820,35 +887,7 @@ export async function catalogAgentsResponse(
     item.state.blockingReasons = [...item.state.blockingReasons, "NETWORK_QUOTE_NOT_CONFIGURED"];
   }
   const facetRow = facetRows[0];
-  const facets = facetRow ? {
-    protocols: { a2a: Number(facetRow.a2aTransport), mcp: Number(facetRow.mcpTransport), erc8183_http: Number(facetRow.httpTransport) },
-    statuses: {
-      declared: Number(facetRow.declared),
-      pending: Number(facetRow.pending),
-      a2a: Number(facetRow.a2a),
-      mcp: Number(facetRow.mcp),
-      mcp_only: Number(facetRow.mcpOnly),
-      erc8183: Number(facetRow.erc8183),
-      quote_capable: Number(facetRow.quoteCapable),
-      hireable: Number(facetRow.hireable),
-      failed: Number(facetRow.failed),
-      requestable: Number(facetRow.requestable),
-      quote_failed: Number(facetRow.quoteFailed),
-      completed_jobs: Number(facetRow.completedJobs),
-    },
-    categories: {
-      rebalancing: Number(facetRow.rebalancing),
-      grid_trading: Number(facetRow.gridTrading),
-      yield_optimisation: Number(facetRow.yieldOptimisation),
-      health_factor_monitoring: Number(facetRow.healthFactorMonitoring),
-    },
-    reachability: {
-      live: Number(facetRow.live),
-      historical: Number(facetRow.historical),
-      never: Number(facetRow.never),
-      browser_observed: Number(facetRow.browserObserved),
-    },
-  } : undefined;
+  const facets = facetRow ? publicFacets(facetRow) : undefined;
   const body = responseVersion === 1 ? {
     schemaVersion: 1,
     chainId,
@@ -891,10 +930,5 @@ export async function catalogAgentsResponse(
     }) : null,
     items,
   };
-  return Response.json(body, {
-    headers: {
-      "cache-control": "public, max-age=30, stale-while-revalidate=60",
-      "x-content-type-options": "nosniff",
-    },
-  });
+  return publicResponse(body);
 }

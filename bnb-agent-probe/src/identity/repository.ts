@@ -11,7 +11,10 @@ export class D1AgentIdentityRepository {
 
   async readJobEvidence(chainId: IdentityChainId, ids: string[]) {
     const [jobs, events] = await Promise.all([
-      this.db.select({ jobId: commerceJobs.jobId, provider: commerceJobs.provider }).from(commerceJobs)
+      // Without this key hint SQLite can choose the provider covering index
+      // and scan every job on the network for a small ID batch.
+      this.db.select({ jobId: sql<number>`${commerceJobs.jobId}`, provider: sql<string>`${commerceJobs.provider}` })
+        .from(sql`${commerceJobs} INDEXED BY sqlite_autoindex_commerce_jobs_1`)
         .where(and(eq(commerceJobs.chainId, chainId), inArray(commerceJobs.jobId, ids.map(Number)))),
       this.db.select({ jobId: hireEvents.jobId, agentId: hireEvents.agentId, txHash: hireEvents.txHash,
         verifiedAt: sql<number | null>`MAX(${hireEvents.verifiedAt})` }).from(hireEvents)

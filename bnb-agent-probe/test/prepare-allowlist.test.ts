@@ -29,10 +29,11 @@ describe("raw .prepare( allowlist gate", () => {
     expect(stale, `Allowlist entries whose callsites no longer exist — delete them:\n${stale.map(keyOf).join("\n")}`).toEqual([]);
   });
 
-  it("keeps the normative exemptions confined to the lease and the budget wrapper", () => {
+  it("keeps normative exemptions confined to lease, budget and accounting boundaries", () => {
     const normativeFiles = new Set(entries.filter((e) => e.normative).map((e) => e.file));
     expect([...normativeFiles].sort()).toEqual([
       "src/db/background-budget.ts",
+      "src/db/invocation-metrics.ts",
       "src/db/query-budget.ts",
       "src/lib/scheduler-lease.ts",
     ]);

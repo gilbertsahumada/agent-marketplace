@@ -8,6 +8,7 @@ import { createWp2ScheduledRunner } from "../../src/scheduled";
 import type { Env } from "../../src/types";
 import { metered, type ReadRecord } from "./d1-meter";
 import { clearCatalogFixtures } from "./catalog-fixtures";
+import { catalogAgentsResponse, catalogFacetsResponse, catalogSummaryResponse } from "../../src/routes/catalog-agents";
 
 // D1 read budget guard: seeds a realistic catalogue volume and measures
 // rows_read per statement for each public route, the metric D1's daily Free
@@ -176,6 +177,46 @@ describe("D1 read profile at catalogue scale", () => {
     await app.fetch(new Request(`https://worker.test${probe}&limit=1`), { ...env, DB: metered(env.DB, live) } as unknown as Env, createExecutionContext());
     expect(live.length).toBeGreaterThan(0);
   });
+
+  it.each([2_000, 20_000])("measures the full cold page before and after aggregate-only counters at %i agents", async agentCount => {
+    await seed(agentCount);
+    for (const scope of ["hiring", "evaluation"] as const) {
+      const legacyLog: ReadRecord[] = [];
+      const nextLog: ReadRecord[] = [];
+      const pageQuery = `chain=56&scope=${scope}&status=declared`;
+      const readPage = (query: string, log: ReadRecord[]) => catalogAgentsResponse(
+        new Request(`https://worker.test/catalog-agents?${query}`),metered(env.DB,log),NOW);
+      const oldPage = await readPage(`${pageQuery}&page=1&limit=24`,legacyLog);
+      const oldFacets = await readPage(`${pageQuery}&page=1&limit=1&facets=true`,legacyLog);
+      const oldHiring = await readPage("chain=56&scope=hiring&status=declared&page=1&limit=1",legacyLog);
+      const oldEvaluation = await readPage("chain=56&scope=evaluation&status=declared&page=1&limit=1",legacyLog);
+      const newPage = await readPage(`${pageQuery}&page=1&limit=24`,nextLog);
+      const facetsLog: ReadRecord[] = [];
+      const summaryLog: ReadRecord[] = [];
+      const newFacets = await catalogFacetsResponse(new Request(`https://worker.test/catalog-facets?${pageQuery}`),metered(env.DB,facetsLog),NOW);
+      const newSummary = await catalogSummaryResponse(new Request("https://worker.test/catalog-summary?chain=56"),metered(env.DB,summaryLog),NOW);
+      nextLog.push(...facetsLog,...summaryLog);
+      expect(await newPage.json()).toEqual(await oldPage.json());
+      expect((await newFacets.json() as { facets: unknown }).facets).toEqual((await oldFacets.json() as { facets: unknown }).facets);
+      expect((await newSummary.json() as { counts: unknown }).counts).toEqual({
+        hiring: (await oldHiring.json() as { total: number }).total,
+        evaluation: (await oldEvaluation.json() as { total: number }).total,
+      });
+      const rows = (log: ReadRecord[]) => log.reduce((sum, entry) => sum + entry.rowsRead,0);
+      const metrics = (log: ReadRecord[]) => ({ queries: log.length, rowsRead: rows(log),
+        rowsWritten: log.reduce((sum,entry) => sum + entry.rowsWritten,0),
+        d1DurationMs: Number(log.reduce((sum,entry) => sum + entry.durationMs,0).toFixed(3)) });
+      console.log(JSON.stringify({ operation: "full-cold-catalogue-page", agentCount, scope,
+        before: { requests: 4, ...metrics(legacyLog) },
+        after: { requests: 3, ...metrics(nextLog) },
+        facets: metrics(facetsLog), summary: metrics(summaryLog) }));
+      expect(facetsLog).toHaveLength(1);
+      expect(summaryLog).toHaveLength(1);
+      expect(rows(nextLog)).toBeLessThan(rows(legacyLog));
+      expect(nextLog.reduce((sum,entry) => sum + entry.rowsWritten,0)).toBe(0);
+    }
+    await seed();
+  }, 120_000);
 });
 
 // One catalogue v2 tick per phase, driven exactly like the queue consumer,

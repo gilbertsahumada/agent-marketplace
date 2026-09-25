@@ -115,6 +115,8 @@ describe("D1 schema", () => {
     const allowlist = new Map([
       ["src/db/background-budget.ts", 4],
       ["src/db/query-budget.ts", 1],
+      // Transparent metering wrapper; introduces no application SQL.
+      ["src/db/invocation-metrics.ts", 1],
       ["src/lib/scheduler-lease.ts", 2],
     ]);
     const actual = new Map<string, number>();

@@ -400,6 +400,9 @@ export async function readCatalogAgentEvidence(
     }).from(hireEvents)
       .innerJoin(commerceJobs, and(
         eq(hireEvents.chainId, commerceJobs.chainId),
+        // Seek by the composite key; retain the text comparison to reject
+        // noncanonical IDs such as 0003, 4x or 6.0 after SQLite's cast.
+        eq(commerceJobs.jobId, sql`CAST(${hireEvents.jobId} AS INTEGER)`),
         eq(hireEvents.jobId, sql`CAST(${commerceJobs.jobId} AS TEXT)`),
       ))
       .where(and(
