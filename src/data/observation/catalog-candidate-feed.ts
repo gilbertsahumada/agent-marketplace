@@ -340,7 +340,7 @@ export function parseCatalogCandidatePage(value: unknown): CatalogCandidatePage 
 }
 
 export function catalogUrl(
-  pathname: "/catalog-agents" | "/catalog-agent" | "/hire-events" | "/commerce-jobs" | "/commerce-summary" | "/commerce-activity" | "/job-agent-identities" | `/commerce-jobs/${56 | 97}/${string}`,
+  pathname: "/catalog-agents" | "/catalog-agent" | "/catalog-summary" | "/catalog-facets" | "/hire-events" | "/commerce-jobs" | "/commerce-summary" | "/commerce-activity" | "/job-agent-identities" | `/commerce-jobs/${56 | 97}/${string}`,
   env: Readonly<Record<string, string | undefined>>,
 ): URL | null {
   const observations = env.OBSERVATIONS_URL?.trim();
@@ -386,16 +386,55 @@ export async function getCatalogCandidatePage(input: CatalogPageInput): Promise<
 }
 
 export async function getCatalogCandidatePageResult(input: CatalogPageInput): Promise<CatalogReadResult<CatalogCandidatePage>> {
-  const base = catalogUrl("/catalog-agents", input.env ?? process.env);
-  if (!base) return { ok: false, error: { kind: "unavailable" } };
+  const base = catalogFilteredUrl("/catalog-agents", input);
+  return readCatalogFeed(base, input, value => {
+    const parsed = parseCatalogCandidatePage(value);
+    if (parsed.chainId !== (input.chainId ?? 56)) throw new Error("CATALOG_FEED_INVALID");
+    return parsed;
+  });
+}
+
+type CatalogFacetInput = Omit<CatalogPageInput, "page" | "limit" | "cursor" | "includeFacets">;
+type CatalogSummaryInput = Pick<CatalogPageInput, "chainId" | "fresh" | "env">;
+
+export async function getCatalogFacetCountsResult(input: CatalogFacetInput): Promise<CatalogReadResult<CatalogFacetCounts>> {
+  return readCatalogFeed(catalogFilteredUrl("/catalog-facets", input), input, value => {
+    const data = catalogCounterEnvelope(value, input.chainId ?? 56);
+    return facets(data.facets);
+  });
+}
+
+export async function getCatalogSummaryResult(input: CatalogSummaryInput): Promise<CatalogReadResult<{ hiring: number; evaluation: number }>> {
+  const base = catalogUrl("/catalog-summary", input.env ?? process.env);
+  if (base) base.searchParams.set("chain", String(input.chainId ?? 56));
+  return readCatalogFeed(base, input, value => {
+    const data = catalogCounterEnvelope(value, input.chainId ?? 56);
+    const counts = record(data.counts);
+    return { hiring: integer(counts.hiring)!, evaluation: integer(counts.evaluation)! };
+  });
+}
+
+function catalogCounterEnvelope(value: unknown, chainId: 56 | 97): Record<string, unknown> {
+  const data = record(value);
+  if (data.schemaVersion !== 2 || data.chainId !== chainId) throw new Error("CATALOG_FEED_INVALID");
+  integer(data.generatedAt);
+  return data;
+}
+
+function catalogFilteredUrl(pathname: "/catalog-agents" | "/catalog-facets", input: CatalogPageInput | CatalogFacetInput): URL | null {
+  const base = catalogUrl(pathname, input.env ?? process.env);
+  if (!base) return null;
   if (input.chainId !== undefined) base.searchParams.set("chain", String(input.chainId));
   // An explicit empty UI selection means the operational catalogue, not a
   // hidden requestable filter. Omitted status retains the API's default.
   const statuses = input.statuses?.length ? input.statuses : [input.status ?? (input.statuses !== undefined || input.inventory === "registry" ? "declared" : "requestable")];
   for (const status of statuses) base.searchParams.append("status", status);
-  if (input.cursor) base.searchParams.set("cursor", input.cursor);
-  else base.searchParams.set("page", String(input.page));
-  base.searchParams.set("limit", String(input.limit));
+  if ("page" in input) {
+    if (input.cursor) base.searchParams.set("cursor", input.cursor);
+    else base.searchParams.set("page", String(input.page));
+    base.searchParams.set("limit", String(input.limit));
+    if (input.includeFacets) base.searchParams.set("facets", "true");
+  }
   if (input.q) base.searchParams.set("q", input.q);
   const categories = input.categories?.length ? input.categories : input.category ? [input.category] : [];
   for (const category of categories) base.searchParams.append("category", category);
@@ -406,7 +445,11 @@ export async function getCatalogCandidatePageResult(input: CatalogPageInput): Pr
   if (input.latestFailure !== undefined) base.searchParams.set("latestFailure", String(input.latestFailure));
   if (input.inventory) base.searchParams.set("inventory", input.inventory);
   if (input.scope) base.searchParams.set("scope", input.scope);
-  if (input.includeFacets) base.searchParams.set("facets", "true");
+  return base;
+}
+
+async function readCatalogFeed<T>(base: URL | null, input: CatalogSummaryInput, parse: (value: unknown) => T): Promise<CatalogReadResult<T>> {
+  if (!base) return { ok: false, error: { kind: "unavailable" } };
   try {
     const read = async () => {
       let response: Response;
@@ -420,9 +463,7 @@ export async function getCatalogCandidatePageResult(input: CatalogPageInput): Pr
       }
       if (!response.ok) throw { kind: "upstream", status: response.status } satisfies CatalogReadError;
       try {
-        const parsed = parseCatalogCandidatePage(await response.json());
-        if (parsed.chainId !== (input.chainId ?? 56)) throw new Error("CATALOG_FEED_INVALID");
-        return parsed;
+        return parse(await response.json());
       } catch (error) {
         throw { kind: signal.aborted || error instanceof Error && ["TimeoutError", "AbortError"].includes(error.name) ? "timeout" : "invalid_response", status: response.status } satisfies CatalogReadError;
       }
