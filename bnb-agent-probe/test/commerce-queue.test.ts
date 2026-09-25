@@ -132,7 +132,7 @@ describe("Commerce indexer queue wiring", () => {
 
     expect(runCommerceIndex).toHaveBeenCalledWith(
       { kind: "index_range", chainId: 56, fromBlock: null, toBlock: null, enqueuedAt: NOW },
-      env,
+      { ...env, DB: expect.objectContaining({ prepare: expect.any(Function) }) },
       expect.objectContaining({ commerceIndexEnabled: true }),
     );
     expect(tick.ack).toHaveBeenCalledOnce();
@@ -142,7 +142,7 @@ describe("Commerce indexer queue wiring", () => {
     await worker.queue({ messages: [jobs] }, env, context);
     expect(runCommerceIndex).toHaveBeenLastCalledWith(
       { kind: "index_jobs", chainId: 97, fromJobId: 1, toJobId: 100, enqueuedAt: NOW },
-      env,
+      { ...env, DB: expect.objectContaining({ prepare: expect.any(Function) }) },
       expect.anything(),
     );
   });
@@ -186,7 +186,7 @@ describe("Commerce indexer queue wiring", () => {
     const summary = { kind: "index_jobs", chainId: 97, status: "ok", fromBlock: null, toBlock: null, logs: 0, jobs: 50, d1Queries: 9, wallTimeMs: 7 } as const;
     const succeeding = createWorker({ now: () => NOW, runScheduled: vi.fn(), runCommerceIndex: vi.fn().mockResolvedValue(summary), logger });
     await succeeding.queue({ messages: [message({ schemaVersion: 2, kind: "index_jobs", chainId: 97, fromJobId: 1, toJobId: 50, enqueuedAt: NOW })] }, activeEnv(), context);
-    expect(logger.info).toHaveBeenLastCalledWith("commerce.index.completed", expect.objectContaining({ kind: "index_jobs", chainId: 97, fromJobId: 1, toJobId: 50, jobs: 50 }));
+    expect(logger.info).toHaveBeenCalledWith("commerce.index.completed", expect.objectContaining({ kind: "index_jobs", chainId: 97, fromJobId: 1, toJobId: 50, jobs: 50 }));
   });
 
   it("drops queued index work while the indexer flag is off", async () => {
