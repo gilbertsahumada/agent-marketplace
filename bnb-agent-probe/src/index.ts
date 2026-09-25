@@ -1,5 +1,6 @@
 import { ConfigError, loadConfig, type WorkerConfig } from "./config";
 import type { D1DatabaseLike } from "./db/client";
+import { measureD1Invocation, publicOperation, invocationCache } from './db/invocation-metrics';
 import {runMaintenanceWindow, runBackgroundWindow, JOBS_INTERVAL_MS, MAINTENANCE_INTERVAL_MS} from './phases/background-cadence';
 import {runWithBackgroundBudget,runBackgroundControl} from './db/background-budget';
 import type { CommerceIndexSummary, CommerceIndexWork } from "./phases/commerce-index";
@@ -110,16 +111,18 @@ async function cachedCatalogResponse(
   fresh = false,
 ): Promise<Response> {
   if (fresh) {
+    invocationCache.set(request, 'bypass');
     const response = await produce();
     const headers = new Headers(response.headers);
     headers.set("cache-control", "no-store");
     return new Response(response.body, { status: response.status, headers });
   }
-  if (seconds <= 0) return produce();
+  if (seconds <= 0) { invocationCache.set(request, 'bypass'); return produce(); }
   const cache = (caches as unknown as { default: Cache }).default;
   const key = canonicalCacheKey(new URL(request.url));
   const hit = await cache.match(key);
-  if (hit) return hit;
+  if (hit) { invocationCache.set(request, 'hit'); return hit; }
+  invocationCache.set(request, 'miss');
   const response = await produce();
   if (!response.ok) return response;
   const headers = new Headers(response.headers);
@@ -288,7 +291,8 @@ export function createWorker(dependencies: WorkerDependencies = {}): WorkerEntry
         const scopeHash = Array.from(new Uint8Array(scopeDigest), (byte) => byte.toString(16).padStart(2, "0")).join("");
         const cacheKey = new Request(`${url.origin}/observations/__scope/${scopeHash}`, { method: "GET" });
         const cached = await publicCache.match(cacheKey);
-        if (cached) return cached;
+        if (cached) { invocationCache.set(request, 'hit'); return cached; }
+        invocationCache.set(request, 'miss');
         const { observationsResponse } = await import("./routes/observations");
         const response = await observationsResponse(env.DB, now(), config.probeAgentAllowlist, {
           producerEnabled: !config.producerKillSwitch,
@@ -313,6 +317,15 @@ export function createWorker(dependencies: WorkerDependencies = {}): WorkerEntry
         return cachedCatalogResponse(request, fresh ? 0 : config.catalogResponseCacheSeconds, () => (
           catalogAgentsResponse(request, env.DB, now(), config.catalogV2ReadsEnabled ? 2 : 1, env.CATALOG_TESTNET_ENABLED === "1" && Boolean(env.BSC_TESTNET_RPC_URL?.trim()))
         ), fresh);
+      }
+      if (request.method === 'GET' && (url.pathname === '/catalog-summary' || url.pathname === '/catalog-facets')) {
+        if (!config.catalogV2ReadsEnabled) return errorResponse('not_found', 404);
+        const { catalogSummaryResponse, catalogFacetsResponse } = await import('./routes/catalog-agents');
+        const fresh = request.headers.get('x-marketplace-refresh') === '1' && Boolean(env.BUYER_OBSERVATION_SECRET)
+          && await bearerMatches(request.headers.get('authorization'), env.BUYER_OBSERVATION_SECRET!);
+        const produce = url.pathname === '/catalog-summary' ? catalogSummaryResponse : catalogFacetsResponse;
+        return cachedCatalogResponse(request, fresh ? 0 : config.catalogResponseCacheSeconds,
+          () => produce(request, env.DB, now(), env.CATALOG_TESTNET_ENABLED === '1' && Boolean(env.BSC_TESTNET_RPC_URL?.trim())), fresh);
       }
       if (request.method === "GET" && /^\/catalog-validations\/\d+$/.test(url.pathname)) {
         if (env.BUYER_OBSERVATION_SECRET === undefined) return errorResponse("not_found", 404);
@@ -912,7 +925,60 @@ export function createWorker(dependencies: WorkerDependencies = {}): WorkerEntry
       });
     },
   };
-  return worker;
+  const measuredBackground = async (
+    operation: 'scheduled' | 'queue', env: Env, context: ExecutionContext,
+    run: (measuredEnv: Env, measuredContext: ExecutionContext) => Promise<void>,
+  ) => {
+    const metrics = measureD1Invocation(env.DB);
+    const pending: Promise<unknown>[] = [];
+    const started = performance.now();
+    let failed = false;
+    const measuredContext: ExecutionContext = {
+      waitUntil(promise) { pending.push(promise); context.waitUntil(promise); },
+      passThroughOnException: () => context.passThroughOnException(),
+    };
+    try { await run({ ...env, DB: metrics.db }, measuredContext); }
+    catch (error) { failed = true; throw error; }
+    finally {
+      const finish = async () => {
+        const results = await Promise.allSettled(pending);
+        logger.info('d1.background.invocation', {
+          operation, version: env.CF_VERSION_METADATA?.id ?? 'unknown', chainId: null,
+          cache: 'not_applicable', durationMs: Math.round(performance.now() - started),
+          ...metrics.snapshot(), result: failed || results.some(result => result.status === 'rejected') ? 'error' : 'ok',
+        });
+      };
+      if (pending.length) context.waitUntil(finish());
+      else await finish();
+    }
+  };
+  return {
+    ...worker,
+    scheduled: (controller, env, context) => measuredBackground('scheduled', env, context,
+      (measuredEnv, measuredContext) => worker.scheduled(controller, measuredEnv, measuredContext)),
+    queue: (batch, env, context) => measuredBackground('queue', env, context,
+      (measuredEnv, measuredContext) => worker.queue(batch, measuredEnv, measuredContext)),
+    async fetch(request, env, context) {
+      const operation = publicOperation(request);
+      if (!operation) return worker.fetch(request, env, context);
+      const metrics = measureD1Invocation(env.DB);
+      const started = performance.now();
+      let status: number | null = null;
+      try {
+        const response = await worker.fetch(request, { ...env, DB: metrics.db }, context);
+        status = response.status;
+        return response;
+      } finally {
+        logger.info('d1.public.invocation', {
+          ...operation, version: env.CF_VERSION_METADATA?.id ?? 'unknown',
+          cache: invocationCache.get(request) ?? 'not_applicable',
+          durationMs: Math.round(performance.now() - started), ...metrics.snapshot(),
+          status, result: status === null ? 'error' : status < 400 ? 'ok' : 'rejected',
+        });
+        invocationCache.delete(request);
+      }
+    },
+  };
 }
 
 const defaultRunScheduled: NonNullable<WorkerDependencies["runScheduled"]> = async (...args) => {
