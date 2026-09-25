@@ -41,6 +41,7 @@ export function CatalogPage({
   provenAgentId,
   filterCounts,
   scopeCounts,
+  contentOnly = false,
 }: {
   data?: MarketplaceAgentPage;
   catalog?: CatalogCandidatePage;
@@ -63,6 +64,7 @@ export function CatalogPage({
   operationalTotal?: number;
   filterCounts?: CatalogFacetCounts;
   scopeCounts?: { hiring?: number; evaluation?: number };
+  contentOnly?: boolean;
 }) {
   if (!data && !catalog) throw new Error("CATALOG_PAGE_DATA_REQUIRED");
   const allView = query.view === "all";
@@ -164,6 +166,12 @@ export function CatalogPage({
       <AlertDescription>Try a different search or clear the outcome filter.</AlertDescription>
     </Alert>
   );
+
+  if (contentOnly) return <>
+    <CatalogResults agents={cards} emptyContent={emptyContent} registry={allView} contentOnly />
+    <PaginationLinks hrefFor={hrefForPage} page={currentPage} totalPages={totalPages} total={total} pageSize={catalog?.limit ?? data!.pagination.pageSize} shown={cards.length} />
+    <p className="text-xs text-muted-foreground">Catalogue: Trust8004 · Marketplace observations · Captured {dataCapturedAt(data, catalog)}. Recorded activity is not a quality rating.</p>
+  </>;
 
   return (
     <main id="main-content" className="agents-catalog mx-auto w-full max-w-[96rem] flex-1 px-4 py-8 sm:px-6 lg:px-8">
