@@ -1,0 +1,25 @@
+import { PassThrough } from "node:stream";
+import { renderToPipeableStream } from "react-dom/server";
+import { expect, it, vi } from "vitest";
+import { normalizeCatalogQuery } from "../src/presentation/catalog-query";
+import type { CatalogResources } from "../src/business/entities/catalog-resource";
+vi.mock("next/navigation", () => ({ useRouter: () => ({ push() {}, replace() {}, refresh() {} }) }));
+vi.mock("../components/marketplace/catalog-page", () => ({ CatalogPage: () => <div>STREAMED_CARDS</div> }));
+import { ProgressiveCatalog } from "../components/marketplace/progressive-catalog";
+it("streams shell, then results, while aggregates remain unresolved", async () => {
+  let resolve!: (data: Awaited<CatalogResources["results"]>) => void;
+  let finish!: (data: Awaited<CatalogResources["facets"]>) => void;
+  let scopes!: (data: Awaited<CatalogResources["scopes"]>) => void;
+  const resources: CatalogResources = { results: new Promise(r => { resolve = r; }), facets: new Promise(r => { finish = r; }), scopes: new Promise(r => { scopes = r; }) };
+  const output = new PassThrough(); let html = ""; output.on("data", chunk => { html += chunk.toString(); });
+  const ended = new Promise<void>(r => output.on("end", r));
+  const stream = renderToPipeableStream(<ProgressiveCatalog query={normalizeCatalogQuery({})} resources={resources} />, { onShellReady() { stream.pipe(output); } });
+  await vi.waitFor(() => expect(html).toContain("Find an agent for your next job"));
+  expect(html).toContain("Loading services"); expect(html).not.toContain("STREAMED_CARDS");
+  resolve({ ok: true, data: { catalog: { total: 1 } as never } });
+  await vi.waitFor(() => expect(html).toContain("STREAMED_CARDS"));
+  expect(html).toContain("Loading count");
+  finish({ ok: false, error: { kind: "timeout" } }); scopes({ ok: true, data: { hiring: 0, evaluation: 8 } });
+  await ended;
+  expect(html.replaceAll("<!-- -->", "")).toContain("Retry filter counts");
+});

@@ -3,7 +3,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 
 export function CatalogResultsSkeleton({ count = 6 }: { count?: number }) {
   return (
-    <div aria-label="Loading agents" aria-live="polite" className="grid gap-6 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4" data-testid="agents-loading-results" role="status">
+    <div aria-label="Loading agents" aria-live="polite" className="grid gap-6 motion-reduce:[&_*]:animate-none sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4" data-testid="agents-loading-results" role="status">
       <div className="col-span-full flex items-center gap-2 text-sm text-zinc-400">
         <LoaderCircle aria-hidden="true" className="size-4 animate-spin text-primary" />
         <span>Loading services…</span>

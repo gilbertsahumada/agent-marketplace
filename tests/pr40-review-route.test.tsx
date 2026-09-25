@@ -6,6 +6,12 @@ const workerObservations = vi.fn();
 const catalogCandidatePage = vi.fn();
 const refreshCookie = vi.fn();
 vi.mock("next/headers", () => ({ cookies: async () => ({ get: refreshCookie }) }));
+vi.mock("@/src/data/observation/catalog-candidate-feed", () => ({
+  getCatalogCandidatePageResult: async (input: unknown) => {
+    const data = await catalogCandidatePage(input);
+    return data ? { ok: true, data } : { ok: false, error: { kind: "unavailable" } };
+  },
+}));
 
 vi.mock("@/src/business/composition", () => ({
   listMarketplaceAgents: { execute: executeList },
@@ -33,8 +39,10 @@ function emptyPage(view: "all" | "marketplace") {
   };
 }
 
-function renderPage(params: Record<string, string>) {
-  return AgentsPage({ searchParams: Promise.resolve(params) });
+async function renderPage(params: Record<string, string>) {
+  const el = await AgentsPage({ searchParams: Promise.resolve(params) });
+  await Promise.all(Object.values(el.props.resources));
+  return el;
 }
 
 describe("agents page category handling", () => {
@@ -68,8 +76,8 @@ describe("agents page category handling", () => {
     const catalog = { items: [], total: 33653 };
     catalogCandidatePage.mockImplementation(async (input) => input.includeFacets ? null : catalog);
     const el = await renderPage({});
-    expect(el.props.catalog).toBe(catalog);
-    expect(el.props.filterCounts).toBeUndefined();
+    expect(await el.props.resources.results).toEqual({ ok: true, data: { catalog } });
+    expect(await el.props.resources.facets).toMatchObject({ ok: false });
     expect(catalogDataCalls()).toHaveLength(1);
     expect(catalogDataCalls()[0].includeFacets).not.toBe(true);
   });
@@ -81,15 +89,15 @@ describe("agents page category handling", () => {
       return catalog;
     });
     const el = await renderPage({});
-    expect(el.props.catalog).toBe(catalog);
-    expect(el.props.filterCounts).toBeUndefined();
+    expect(await el.props.resources.results).toEqual({ ok: true, data: { catalog } });
+    expect(await el.props.resources.facets).toMatchObject({ ok: false });
   });
 
   it("restores available counts through a separate canonical request and retains filters", async () => {
     const facets = { statuses: { requestable: 0 } };
     catalogCandidatePage.mockImplementation(async input => ({ items: [], total: 1, ...(input.includeFacets ? { facets } : {}) }));
     const el = await renderPage({ network: "testnet", scope: "evaluation", page: "3", category: "grid_trading", protocol: "mcp", q: "seller" });
-    expect(el.props.filterCounts).toBe(facets);
+    expect(await el.props.resources.facets).toEqual({ ok: true, data: facets });
     expect(catalogCandidatePage).toHaveBeenCalledWith(expect.objectContaining({
       chainId: 97, scope: "evaluation", page: 1, limit: 1, includeFacets: true,
       categories: ["grid_trading"], protocols: ["mcp"], q: "seller",
@@ -128,7 +136,7 @@ describe("agents page category handling", () => {
       expect.objectContaining({ chainId: 97, scope: "hiring", statuses: [] }),
       expect.objectContaining({ chainId: 97, scope: "evaluation", statuses: [] }),
     ]));
-    expect(el.props.scopeCounts).toEqual({ hiring: 0, evaluation: 66 });
+    expect(await el.props.resources.scopes).toEqual({ ok: true, data: { hiring: 0, evaluation: 66 } });
   });
 
   function queryCategories(query: Record<string, unknown>): string[] {
@@ -169,7 +177,8 @@ describe("agents page category handling", () => {
 
   it("R4: scoped inventory never falls back to unchecked declarations", async () => {
     const el = await renderPage({ view: "marketplace", scope: "hiring", status: "declared", category: "grid_trading" });
-    expect(el.props.retryHref).toContain("scope=hiring");
+    expect(el.props.query.scope).toBe("hiring");
+    expect(await el.props.resources.results).toMatchObject({ ok: false });
     const catalogCalls = catalogDataCalls();
     expect(catalogCalls).toHaveLength(1);
     expect(catalogFilter(catalogCalls[0]!)).toEqual({ categories: ["grid_trading"], statuses: ["declared"] });

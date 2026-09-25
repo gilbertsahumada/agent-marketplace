@@ -7,14 +7,16 @@ import { CatalogResultsSkeleton } from "./catalog-loading";
 import { ServiceCard } from "./service-card";
 import { useCatalogNavigation } from "./catalog-navigation";
 
-export function CatalogResults({ agents, registry = false, toolbar, filters, emptyContent }: {
+export function CatalogResults({ agents, registry = false, toolbar, filters, emptyContent, contentOnly = false }: {
   agents: AgentCardViewModel[];
   registry?: boolean;
   toolbar?: ReactNode;
   filters?: ReactNode;
   emptyContent?: ReactNode;
+  contentOnly?: boolean;
 }) {
-  const { pending } = useCatalogNavigation();
+  const navigation = useCatalogNavigation();
+  const pending = contentOnly ? navigation.navigating : navigation.pending;
   const visibleAgents = useMemo(() => {
     const priority = (agent: AgentCardViewModel) => {
       if (agent.buyerAction === "prepare_hire") return 4;
@@ -28,9 +30,9 @@ export function CatalogResults({ agents, registry = false, toolbar, filters, emp
 
   return (
     <div aria-busy={pending} className="flex min-w-0 flex-col gap-5">
-      <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 sm:grid-cols-[minmax(0,1fr)_auto_auto] lg:grid-cols-[minmax(0,1fr)_auto]">
+      {!contentOnly && <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 sm:grid-cols-[minmax(0,1fr)_auto_auto] lg:grid-cols-[minmax(0,1fr)_auto]">
         {toolbar ?? <span />}
-      </div>
+      </div>}
 
       {filters}
 
