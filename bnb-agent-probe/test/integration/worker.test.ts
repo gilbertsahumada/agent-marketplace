@@ -13,6 +13,9 @@ import { healthResponse } from "../../src/routes/health";
 import { createWp2ScheduledRunner, runWp2Scheduled } from "../../src/scheduled";
 import type { Env } from "../../src/types";
 import { clearCatalogFixtures } from "./catalog-fixtures";
+import { completeProjectionFixture } from "./public-enriched-fixture";
+import { PUBLIC_PROJECTION_CURSOR_KEY } from "../../src/catalog/public-projections";
+import {beginPublicCurrentBackfill,stepPublicCurrentBackfill,publicCurrentProjectionReady} from '../../src/catalog/public-current-backfill';
 
 const VALID_CALLER_KEY = "a".repeat(64);
 
@@ -34,6 +37,14 @@ beforeEach(async () => {
   await env.DB.prepare("DELETE FROM runtime_state").run();
   await env.DB.prepare("DELETE FROM probe_observations").run();
   await env.DB.prepare("DELETE FROM probe_targets").run();
+  // Resetting runtime_state removes the migration coverage checkpoint. Rebuild
+  // it through the real fixture backfill; subsequent source writes use triggers.
+  await env.DB.prepare("INSERT INTO runtime_state(key,textValue,integerValue,updatedAt) VALUES(?,?,0,0)")
+    .bind(PUBLIC_PROJECTION_CURSOR_KEY,JSON.stringify({version:1,phase:"evidence",agentKey:"",endpointScope:""})).run();
+  await completeProjectionFixture();
+  await beginPublicCurrentBackfill(env.DB);
+  for(let step=0;step<3&&!await publicCurrentProjectionReady(env.DB);step++)await stepPublicCurrentBackfill(env.DB,10_000_000);
+  expect(await publicCurrentProjectionReady(env.DB)).toBe(true);
 });
 
 function catalogObservationBody(overrides: Record<string, unknown> = {}) {
@@ -2082,15 +2093,14 @@ describe("WP1 in the Workers runtime", () => {
   });
 
   it("does no scheduled D1 work while the kill switch is active", async () => {
+    const before = await env.DB.prepare("SELECT * FROM runtime_state ORDER BY key").all();
     await worker.scheduled(
       { scheduledTime: Date.now(), cron: "*/5 * * * *" },
       env,
       createExecutionContext(),
     );
-    const state = await env.DB.prepare("SELECT COUNT(*) AS count FROM runtime_state")
-      .first<{ count: number }>();
-
-    expect(state?.count).toBe(0);
+    const after = await env.DB.prepare("SELECT * FROM runtime_state ORDER BY key").all();
+    expect(after.results).toEqual(before.results);
   });
 
   it("enforces the Free D1 query budget inside the Workers runtime", async () => {
