@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "capturedBeforeReaderChanges": true,
+  "referenceCommit": "1fe712a",
+  "sourceReference": "bnb-agent-probe/test/fixtures/public-read-reference",
+  "fixture": "bnb-agent-probe/test/integration/public-enriched-fixture.ts",
+  "command": "npm run test:worker -- test/integration/public-enriched-read-profile.test.ts --reporter=verbose",
+  "environment": "local Worker D1 emulator, migration 0036 present, no remote calls",
+  "results": [
+    { "agents": 2000, "hiring": 740, "evaluation": 1109,
+      "facets": { "queries": 1, "rowsRead": 224293, "rowsWritten": 0, "d1DurationMs": 122 },
+      "summary": { "queries": 1, "rowsRead": 13448, "rowsWritten": 0, "d1DurationMs": 6 },
+      "detail": { "queries": 12, "rowsRead": 338, "rowsWritten": 0, "d1DurationMs": 2 },
+      "fullCold": [
+        { "query": "scope=hiring", "queries": 13, "rowsRead": 128190, "rowsWritten": 0, "d1DurationMs": 75 },
+        { "query": "scope=evaluation", "queries": 13, "rowsRead": 169012, "rowsWritten": 0, "d1DurationMs": 97 },
+        { "query": "scope=evaluation&protocol=mcp&category=grid_trading&reachability=live", "queries": 13, "rowsRead": 195045, "rowsWritten": 0, "d1DurationMs": 112 }
+      ] },
+    { "agents": 20000, "hiring": 7388, "evaluation": 11083,
+      "facets": { "queries": 1, "rowsRead": 2239917, "rowsWritten": 0, "d1DurationMs": 1299 },
+      "summary": { "queries": 1, "rowsRead": 134413, "rowsWritten": 0, "d1DurationMs": 59 },
+      "detail": { "queries": 12, "rowsRead": 338, "rowsWritten": 0, "d1DurationMs": 0 },
+      "fullCold": [
+        { "query": "scope=hiring", "queries": 13, "rowsRead": 1221818, "rowsWritten": 0, "d1DurationMs": 985 },
+        { "query": "scope=evaluation", "queries": 13, "rowsRead": 1631632, "rowsWritten": 0, "d1DurationMs": 970 },
+        { "query": "scope=evaluation&protocol=mcp&category=grid_trading&reachability=live", "queries": 13, "rowsRead": 1869721, "rowsWritten": 0, "d1DurationMs": 1139 }
+      ] }
+  ],
+  "notes": ["Full cold is the A flow: list + facets + summary, three requests.","Fixtures include compatible vendors; hiring is not empty.","D1 duration sums are not page latency.","Existing A snapshots are not altered."]
+}
