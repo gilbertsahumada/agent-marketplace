@@ -1,0 +1,192 @@
+{
+  "status": "local_trigger_upsert_94_write_gate_restored",
+  "date": "2026-09-26",
+  "fixture": "unchanged catalog-ingest changed generation, four declarations, existing capabilities",
+  "threshold": 94,
+  "results": [
+    {
+      "mode": "source",
+      "reads": 49,
+      "writes": 82,
+      "weightedUnits": 82049,
+      "operations": [
+        {
+          "source": "catalog_ingest_tasks",
+          "reads": 3,
+          "writes": 2
+        },
+        {
+          "source": "catalog_agents",
+          "reads": 3,
+          "writes": 3
+        },
+        {
+          "source": "catalog_endpoints",
+          "reads": 8,
+          "writes": 14
+        },
+        {
+          "source": "catalog_endpoints",
+          "reads": 8,
+          "writes": 14
+        },
+        {
+          "source": "catalog_agent_endpoints",
+          "reads": 4,
+          "writes": 24
+        },
+        {
+          "source": "catalog_seller_capabilities",
+          "reads": 8,
+          "writes": 20
+        },
+        {
+          "source": "catalog_agent_admission",
+          "reads": 1,
+          "writes": 3
+        },
+        {
+          "source": "catalog_ingest_tasks",
+          "reads": 2,
+          "writes": 2
+        }
+      ]
+    },
+    {
+      "mode": "current",
+      "reads": 107,
+      "writes": 102,
+      "weightedUnits": 102107,
+      "operations": [
+        {
+          "source": "catalog_ingest_tasks",
+          "reads": 3,
+          "writes": 2
+        },
+        {
+          "source": "catalog_agents",
+          "reads": 21,
+          "writes": 11
+        },
+        {
+          "source": "catalog_endpoints",
+          "reads": 8,
+          "writes": 14
+        },
+        {
+          "source": "catalog_endpoints",
+          "reads": 8,
+          "writes": 14
+        },
+        {
+          "source": "catalog_agent_endpoints",
+          "reads": 20,
+          "writes": 28
+        },
+        {
+          "source": "catalog_seller_capabilities",
+          "reads": 32,
+          "writes": 28
+        },
+        {
+          "source": "catalog_agent_admission",
+          "reads": 1,
+          "writes": 3
+        },
+        {
+          "source": "catalog_ingest_tasks",
+          "reads": 2,
+          "writes": 2
+        }
+      ]
+    },
+    {
+      "mode": "upsert",
+      "reads": 139,
+      "writes": 94,
+      "weightedUnits": 94139,
+      "operations": [
+        {
+          "source": "catalog_ingest_tasks",
+          "reads": 3,
+          "writes": 2
+        },
+        {
+          "source": "catalog_agents",
+          "reads": 45,
+          "writes": 7
+        },
+        {
+          "source": "catalog_endpoints",
+          "reads": 8,
+          "writes": 14
+        },
+        {
+          "source": "catalog_endpoints",
+          "reads": 8,
+          "writes": 14
+        },
+        {
+          "source": "catalog_agent_endpoints",
+          "reads": 20,
+          "writes": 28
+        },
+        {
+          "source": "catalog_seller_capabilities",
+          "reads": 40,
+          "writes": 24
+        },
+        {
+          "source": "catalog_agent_admission",
+          "reads": 1,
+          "writes": 3
+        },
+        {
+          "source": "catalog_ingest_tasks",
+          "reads": 2,
+          "writes": 2
+        }
+      ]
+    }
+  ],
+  "plan": [
+    {
+      "id": 3,
+      "parent": 0,
+      "notused": 39,
+      "detail": "SEARCH catalog_public_current_endpoints USING PRIMARY KEY (agent_chainId=? AND agent_agentKey=? AND endpointKey=?)"
+    },
+    {
+      "id": 14,
+      "parent": 0,
+      "notused": 0,
+      "detail": "CORRELATED SCALAR SUBQUERY 1"
+    },
+    {
+      "id": 21,
+      "parent": 14,
+      "notused": 47,
+      "detail": "SEARCH d USING INDEX sqlite_autoindex_catalog_agent_endpoints_1 (agentKey=? AND endpointKey=?)"
+    },
+    {
+      "id": 35,
+      "parent": 14,
+      "notused": 46,
+      "detail": "SEARCH a USING INDEX sqlite_autoindex_catalog_agents_1 (agentKey=?)"
+    }
+  ],
+  "validation": {
+    "diagnosticTests": 2,
+    "ingestMigrationBackfillAndDiagnosticTests": 44,
+    "productionSqlTests": 7,
+    "sourceProgressEqual": true,
+    "projectionPayloadEqual": true
+  },
+  "limitations": [
+    "Old delete-insert reference frozen only for testing.",
+    "Additional 32 reads are included, not hidden; saving is 8 writes and 7968 weighted units versus previous triggers.",
+    "Source-only mode retains migration0036 sparse projection triggers; no sparse evidence/history source is changed by this ingest.",
+    "Whole-day receipts and wider release gates require remeasurement; no production savings claim.",
+    "No remote execution or deployment."
+  ]
+}
