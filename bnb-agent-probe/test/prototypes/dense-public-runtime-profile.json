@@ -1,0 +1,72 @@
+{
+  "date": "2026-09-26",
+  "command": "node test/prototypes/dense-public-runtime-profile.mjs",
+  "kind": "exclusive-local-workerd-profile",
+  "fixtureAgents": 20000,
+  "before": {
+    "usedSize": 1729712,
+    "totalSize": 3145728,
+    "embedderHeapUsedSize": 386904,
+    "backingStorageSize": 262808
+  },
+  "after": {
+    "usedSize": 20691132,
+    "totalSize": 39944192,
+    "embedderHeapUsedSize": 386904,
+    "backingStorageSize": 262808
+  },
+  "sampledMaxUsedHeapBytes": 20691132,
+  "heapSampleCount": 5,
+  "samplingIntervalRequestedUs": 1000,
+  "profileDurationUs": 729187,
+  "cpuSampleKinds": {
+    "idle": 1,
+    "program": 8,
+    "gc": 13,
+    "other": 112
+  },
+  "operations": [
+    {
+      "scope": "hiring",
+      "elapsedMs": 275.94116699998267,
+      "diagnostics": {
+        "classifiedAgents": 19513,
+        "materializedBytes": 3320146,
+        "classificationDurationMs": 249,
+        "jsClassificationDurationMs": 22,
+        "memoryEstimateBytes": 13280584,
+        "memoryEstimateMethod": "4x serialized classification rows; heuristic, not measured peak heap"
+      }
+    },
+    {
+      "scope": "evaluation",
+      "elapsedMs": 232.02983300000778,
+      "diagnostics": {
+        "classifiedAgents": 19513,
+        "materializedBytes": 3320146,
+        "classificationDurationMs": 217,
+        "jsClassificationDurationMs": 28,
+        "memoryEstimateBytes": 13280584,
+        "memoryEstimateMethod": "4x serialized classification rows; heuristic, not measured peak heap"
+      }
+    },
+    {
+      "scope": "hiring",
+      "elapsedMs": 211.49554100001114,
+      "diagnostics": {
+        "classifiedAgents": 19513,
+        "materializedBytes": 3320146,
+        "classificationDurationMs": 198,
+        "jsClassificationDurationMs": 22,
+        "memoryEstimateBytes": 13280584,
+        "memoryEstimateMethod": "4x serialized classification rows; heuristic, not measured peak heap"
+      }
+    }
+  ],
+  "limitations": [
+    "Sampled heap maximum is not a proven peak; no forced garbage collection.",
+    "V8 sampling is local workerd evidence, not billed production CPU or Node CPU.",
+    "Inspector polling adds overhead; D1 runs in its separate local service.",
+    "Only the worker target created by this script was inspected."
+  ]
+}
