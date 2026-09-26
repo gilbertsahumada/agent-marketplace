@@ -32,17 +32,16 @@ it('uses indexed job lookups without changing canonical text ID matching or coun
   const log: ReadRecord[] = [];
   const response = await catalogAgentsResponse(new Request('https://worker.test/catalog-agents?chain=56&inventory=registry'), metered(env.DB,log),NOW,2);
   expect(response.status).toBe(200);
-  await response.json();
-  const entry = log.find(row => row.sql.includes('COUNT(DISTINCT CASE') && row.sql.includes('commerce_jobs'))!;
+  const body = await response.json() as { items: Array<{ state: { jobCount: number; completedJobCount: number; fundedJobCount: number; submittedJobCount: number } }> };
+  const entry = log.find(row => row.sql.includes('catalog_public_agent_metrics') && row.sql.includes('WHERE agentKey IN'))!;
   expect(entry).toBeDefined();
-  const current = await env.DB.prepare(entry.sql).bind(...entry.values).all();
   const reference = await env.DB.prepare(`SELECT h.agentId, COUNT(DISTINCT CAST(j.jobId AS TEXT)) AS total,
     COUNT(DISTINCT CASE WHEN j.status=3 THEN CAST(j.jobId AS TEXT) END) AS completed,
     COUNT(DISTINCT CASE WHEN j.status=1 THEN CAST(j.jobId AS TEXT) END) AS funded,
     COUNT(DISTINCT CASE WHEN j.status=2 THEN CAST(j.jobId AS TEXT) END) AS submitted
     FROM hire_events h JOIN commerce_jobs j ON h.chainId=j.chainId AND h.jobId=CAST(j.jobId AS TEXT)
     WHERE h.chainId=56 AND h.agentId='123' AND h.provenance='chain_verified' GROUP BY h.agentId`).all();
-  expect(current.results?.map(Object.values)).toEqual(reference.results?.map(Object.values));
+  expect(body.items[0]?.state).toMatchObject({jobCount:2,completedJobCount:2,fundedJobCount:0,submittedJobCount:0});
   expect(reference.results?.[0]).toMatchObject({total:2,completed:2});
   console.log(JSON.stringify({rowsRead:entry.rowsRead,rowsWritten:entry.rowsWritten,plan:(await env.DB.prepare(`EXPLAIN QUERY PLAN ${entry.sql}`).bind(...entry.values).all()).results}));
   expect(entry.rowsRead).toBeLessThan(200);
