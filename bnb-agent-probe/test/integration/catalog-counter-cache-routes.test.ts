@@ -20,7 +20,8 @@ it.each(['/catalog-summary', '/catalog-facets'])('caches %s with zero D1 work on
     'x-marketplace-refresh': '1', authorization: 'Bearer private-test-secret',
   } }), bindings);
   expect(fresh.headers.get('cache-control')).toBe('no-store');
-  expect(logger.info.mock.calls.at(-1)?.[1]).toMatchObject({ cache: 'bypass', rowsWritten: 0, queries: 1 });
+  // A fresh aggregate checks both bounded projection-coverage keys first.
+  expect(logger.info.mock.calls.at(-1)?.[1]).toMatchObject({ cache: 'bypass', rowsWritten: 0, queries: 3 });
   expect(JSON.stringify(logger.info.mock.calls)).not.toContain('private-test-secret');
 });
 
