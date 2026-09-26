@@ -20,6 +20,8 @@ export interface Env {
   CF_VERSION_METADATA?: { id: string; tag?: string; timestamp?: string };
   DB: D1Database;
   WP2_QUEUE?: QueueProducer;
+  /** Dedicated ERC-8183 queue; mandatory when index-only production is enabled. */
+  COMMERCE_INDEX_QUEUE?: QueueProducer;
   /** Dedicated queue for seller capability/quote probes. */
   CATALOG_QUOTE_QUEUE?: QueueProducer;
   CATALOG_COMPATIBILITY_BOOTSTRAP_BATCH_SIZE?: string;
@@ -84,6 +86,10 @@ export interface Env {
   BACKGROUND_COST_CONTROLS_ENABLED?: string;
   BACKGROUND_MAINTENANCE_PAUSED?: string;
   BACKGROUND_JOBS_PAUSED?: string;
+  /** Explicit isolation mode; requires cost controls. No other lane is run. */
+  BACKGROUND_INDEX_ONLY?: string;
+  /** Index-only mode is paused unless this is explicitly "0". */
+  BACKGROUND_INDEX_PAUSED?: string;
   HIRE_NOTIFICATION_RECOVERY_ENABLED?: string;
   HIRE_NOTIFICATION_RUNNER_ORIGIN?: string;
   HIRE_NOTIFICATION_RUNNER_SECRET?: string;
