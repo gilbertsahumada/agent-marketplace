@@ -340,7 +340,7 @@ export function parseCatalogCandidatePage(value: unknown): CatalogCandidatePage 
 }
 
 export function catalogUrl(
-  pathname: "/catalog-agents" | "/catalog-agent" | "/catalog-summary" | "/catalog-facets" | "/hire-events" | "/commerce-jobs" | "/commerce-summary" | "/commerce-activity" | "/job-agent-identities" | `/commerce-jobs/${56 | 97}/${string}`,
+  pathname: "/catalog-agents" | "/catalog-agent" | "/catalog-summary" | "/catalog-facets" | "/catalog-combined" | "/hire-events" | "/commerce-jobs" | "/commerce-summary" | "/commerce-activity" | "/job-agent-identities" | `/commerce-jobs/${56 | 97}/${string}`,
   env: Readonly<Record<string, string | undefined>>,
 ): URL | null {
   const observations = env.OBSERVATIONS_URL?.trim();
@@ -397,6 +397,27 @@ export async function getCatalogCandidatePageResult(input: CatalogPageInput): Pr
 type CatalogFacetInput = Omit<CatalogPageInput, "page" | "limit" | "cursor" | "includeFacets">;
 type CatalogSummaryInput = Pick<CatalogPageInput, "chainId" | "fresh" | "env">;
 
+export type CatalogCombinedData = {
+  list: CatalogCandidatePage;
+  facets: CatalogFacetCounts;
+  summary: { hiring: number; evaluation: number };
+};
+
+/** One validated snapshot for initial marketplace rendering. Never fall back to
+ * the independent readers: that would silently repeat the expensive work. */
+export async function getCatalogCombinedResult(input: CatalogPageInput): Promise<CatalogReadResult<CatalogCombinedData>> {
+  return readCatalogFeed(catalogFilteredUrl("/catalog-combined", input), input, value => {
+    const envelope = record(value);
+    const chainId = input.chainId ?? 56;
+    catalogCounterEnvelope(envelope.list, chainId);
+    const list = parseCatalogCandidatePage(envelope.list);
+    const facetEnvelope = catalogCounterEnvelope(envelope.facets, chainId);
+    const summaryEnvelope = catalogCounterEnvelope(envelope.summary, chainId);
+    const counts = record(summaryEnvelope.counts);
+    return { list, facets: facets(facetEnvelope.facets), summary: { hiring: integer(counts.hiring)!, evaluation: integer(counts.evaluation)! } };
+  });
+}
+
 export async function getCatalogFacetCountsResult(input: CatalogFacetInput): Promise<CatalogReadResult<CatalogFacetCounts>> {
   return readCatalogFeed(catalogFilteredUrl("/catalog-facets", input), input, value => {
     const data = catalogCounterEnvelope(value, input.chainId ?? 56);
@@ -421,7 +442,7 @@ function catalogCounterEnvelope(value: unknown, chainId: 56 | 97): Record<string
   return data;
 }
 
-function catalogFilteredUrl(pathname: "/catalog-agents" | "/catalog-facets", input: CatalogPageInput | CatalogFacetInput): URL | null {
+function catalogFilteredUrl(pathname: "/catalog-agents" | "/catalog-facets" | "/catalog-combined", input: CatalogPageInput | CatalogFacetInput): URL | null {
   const base = catalogUrl(pathname, input.env ?? process.env);
   if (!base) return null;
   if (input.chainId !== undefined) base.searchParams.set("chain", String(input.chainId));
