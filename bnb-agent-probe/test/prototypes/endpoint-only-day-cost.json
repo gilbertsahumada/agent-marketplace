@@ -1,0 +1,182 @@
+{
+  "status": "endpoint_only_local_public_day_gates_passed_not_release_approval",
+  "date": "2026-09-26",
+  "workload": "dense-public-day-workload.json",
+  "workloadSha256": "2120b6bef1ad1957dd6061e454fcab938e08210f8432c9122d71215f4551a17e",
+  "command": "npm run test:worker -- test/integration/endpoint-only-day-cost.test.ts --disableConsoleIntercept",
+  "tests": {
+    "passed": 4,
+    "failed": 0,
+    "durationSeconds": 313.85,
+    "typecheck": "passed before measurement and after concurrent backfill UUID typing fix"
+  },
+  "method": {
+    "cyclesPerDay": 96,
+    "realExecution": true,
+    "costReplicationUsed": false,
+    "freshSourcesForEachVersion": true,
+    "baselineProjectionTriggersRemoved": true,
+    "baselineProjectionIndexRemoved": true,
+    "bothNetworksInFixture": true,
+    "publicReadsCold": true,
+    "publicReadWrites": 0,
+    "sourceProgressEqual": true,
+    "publicResponsesEqual": true,
+    "weight": "reads + 1000 * writes",
+    "remoteRequests": 0,
+    "projectionGrain": "current declarations only, no physical directory sentinels"
+  },
+  "results": [
+    {
+      "agents": 2000,
+      "scenario": "representative",
+      "mutationGroups": 96,
+      "readGroups": 96,
+      "before": {
+        "queries": 1944,
+        "reads": 17895551,
+        "writes": 2950,
+        "units": 20845551,
+        "publicReads": 17890419,
+        "mutationReadUnits": 5132,
+        "mutationUnits": 2955132,
+        "elapsedMs": 9948,
+        "publicOperations": 288
+      },
+      "after": {
+        "queries": 1752,
+        "reads": 1076020,
+        "writes": 3785,
+        "units": 4861020,
+        "publicReads": 1063088,
+        "mutationReadUnits": 12932,
+        "mutationUnits": 3797932,
+        "elapsedMs": 3106,
+        "publicOperations": 96
+      },
+      "weightedReduction": 0.7668077951021779,
+      "extraMutationUnits": 842800,
+      "savedPublicReadUnits": 16827331,
+      "breakEvenColdReadGroups": 5,
+      "requiredReduction": 0.5,
+      "gatePassed": true
+    },
+    {
+      "agents": 2000,
+      "scenario": "write-heavy",
+      "mutationGroups": 1536,
+      "readGroups": 1,
+      "before": {
+        "queries": 13828,
+        "reads": 357592,
+        "writes": 46122,
+        "units": 46479592,
+        "publicReads": 277636,
+        "mutationReadUnits": 79956,
+        "mutationUnits": 46201956,
+        "elapsedMs": 1996,
+        "publicOperations": 3
+      },
+      "after": {
+        "queries": 13826,
+        "reads": 213985,
+        "writes": 58923,
+        "units": 59136985,
+        "publicReads": 9631,
+        "mutationReadUnits": 204354,
+        "mutationUnits": 59127354,
+        "elapsedMs": 2728,
+        "publicOperations": 1
+      },
+      "weightedReduction": -0.27232151693586304,
+      "extraMutationUnits": 12925398,
+      "savedPublicReadUnits": 268005,
+      "breakEvenColdReadGroups": 49,
+      "requiredReduction": null,
+      "gatePassed": null
+    },
+    {
+      "agents": 20000,
+      "scenario": "representative",
+      "mutationGroups": 96,
+      "readGroups": 96,
+      "before": {
+        "queries": 1944,
+        "reads": 173838270,
+        "writes": 2784,
+        "units": 176622270,
+        "publicReads": 173833470,
+        "mutationReadUnits": 4800,
+        "mutationUnits": 2788800,
+        "elapsedMs": 90334,
+        "publicOperations": 288
+      },
+      "after": {
+        "queries": 1752,
+        "reads": 9125103,
+        "writes": 3534,
+        "units": 12659103,
+        "publicReads": 9112540,
+        "mutationReadUnits": 12563,
+        "mutationUnits": 3546563,
+        "elapsedMs": 20737,
+        "publicOperations": 96
+      },
+      "weightedReduction": 0.9283266883615526,
+      "extraMutationUnits": 757763,
+      "savedPublicReadUnits": 164720930,
+      "breakEvenColdReadGroups": 1,
+      "requiredReduction": 0.5,
+      "gatePassed": true
+    },
+    {
+      "agents": 20000,
+      "scenario": "write-heavy",
+      "mutationGroups": 1536,
+      "readGroups": 1,
+      "before": {
+        "queries": 13828,
+        "reads": 2910814,
+        "writes": 46464,
+        "units": 49374814,
+        "publicReads": 2830174,
+        "mutationReadUnits": 80640,
+        "mutationUnits": 46544640,
+        "elapsedMs": 3209,
+        "publicOperations": 3
+      },
+      "after": {
+        "queries": 13826,
+        "reads": 299912,
+        "writes": 59434,
+        "units": 59733912,
+        "publicReads": 95039,
+        "mutationReadUnits": 204873,
+        "mutationUnits": 59638873,
+        "elapsedMs": 2738,
+        "publicOperations": 1
+      },
+      "weightedReduction": -0.2098053068108774,
+      "extraMutationUnits": 13094233,
+      "savedPublicReadUnits": 2735135,
+      "breakEvenColdReadGroups": 5,
+      "requiredReduction": null,
+      "gatePassed": null
+    }
+  ],
+  "limitations": [
+    "Public A/B day only; does not approve C/background day or production savings.",
+    "Write-heavy scenario deliberately costs more; no universal savings claim.",
+    "Historical bootstrap, DDL, parity audits and fixture setup excluded from recurring totals and require separate admission.",
+    "Break-even assumes the observed cold-read mix and mutation volume; cached reads do not amortize new D1 writes.",
+    "Elapsed time is local wall time, not measured production CPU or invoice.",
+    "No production deployment, migration or reactivation performed.",
+    "An initial run using a mis-typed classifier context was aborted and its numbers are excluded; this receipt is from the corrected explicit inventory adapter.",
+    "The source hashes identify the measured bundle. After measurement the combined reader gained an optional seventh diagnostics argument defaulting to true; the measured six-argument behavior was unchanged according to the integrating owner."
+  ],
+  "sourceSha256": {
+    "classifier": "a65e216132e53f72e369c14cc472d8e4f3e6bb7d4ffc1fdae727801312cd579f",
+    "maintenance": "ddeee22b62c17b690b25450b4a68909891a901f5caee6cc6da013f7a56c7daae",
+    "combinedReader": "ea29b31558d155308fa24bc03a4b4570577f779835dea0e5c3c74173c515d2ca"
+  }
+}
