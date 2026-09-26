@@ -6,6 +6,9 @@ import { loadConfig } from "../../src/config";
 import { createWorker } from "../../src/index";
 import type { D1Database, Env } from "../../src/types";
 import { commerceJobsListResponse } from "../../src/routes/commerce-jobs";
+import { completeProjectionFixture } from "./public-enriched-fixture";
+import { PUBLIC_PROJECTION_CURSOR_KEY } from "../../src/catalog/public-projections";
+import {beginPublicCurrentBackfill,stepPublicCurrentBackfill,publicCurrentProjectionReady} from '../../src/catalog/public-current-backfill';
 
 const NOW = 1_788_000_000_000;
 const BUYER = "0x5ee75a1B1648C023e885E58bD3735Ae273f2cc52";
@@ -37,6 +40,12 @@ async function seedJobs(): Promise<void> {
 beforeEach(async () => {
   await env.DB.prepare("DELETE FROM runtime_state").run();
   await env.DB.prepare("DELETE FROM commerce_jobs").run();
+  await env.DB.prepare("INSERT INTO runtime_state(key,textValue,integerValue,updatedAt) VALUES(?,?,0,0)")
+    .bind(PUBLIC_PROJECTION_CURSOR_KEY,JSON.stringify({version:1,phase:"evidence",agentKey:"",endpointScope:""})).run();
+  await completeProjectionFixture();
+  await beginPublicCurrentBackfill(env.DB);
+  for(let step=0;step<3&&!await publicCurrentProjectionReady(env.DB);step++)await stepPublicCurrentBackfill(env.DB,10_000_000);
+  expect(await publicCurrentProjectionReady(env.DB)).toBe(true);
 });
 
 describe("Commerce GET routes through the worker", () => {
