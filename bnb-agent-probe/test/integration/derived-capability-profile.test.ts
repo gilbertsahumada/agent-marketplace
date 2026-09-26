@@ -12,6 +12,9 @@ import type { D1DatabaseLike } from '../../src/db/client';
 import type { D1Database } from '../../src/types';
 import { clearCatalogFixtures } from './catalog-fixtures';
 import { metered, type ReadRecord } from './d1-meter';
+import { completeProjectionFixture } from './public-enriched-fixture';
+import { PUBLIC_PROJECTION_CURSOR_KEY } from '../../src/catalog/public-projections';
+import {beginPublicCurrentBackfill,stepPublicCurrentBackfill,publicCurrentProjectionReady,PUBLIC_CURRENT_BACKFILL_KEY} from '../../src/catalog/public-current-backfill';
 
 const NOW=Date.UTC(2026,8,21);
 const db=env.DB as unknown as D1DatabaseLike;
@@ -20,6 +23,11 @@ const totals=(records:ReadRecord[])=>({reads:records.reduce((n,r)=>n+r.rowsRead,
 async function seed(size:number,affected:number,restore=false){
   await clearCatalogFixtures();
   await db.prepare('DELETE FROM runtime_state').run();
+  await db.prepare('INSERT INTO runtime_state(key,textValue,integerValue,updatedAt) VALUES(?,?,0,0)')
+    .bind(PUBLIC_PROJECTION_CURSOR_KEY,JSON.stringify({version:1,phase:'evidence',agentKey:'',endpointScope:''})).run();
+  await completeProjectionFixture();await beginPublicCurrentBackfill(env.DB);
+  for(let step=0;step<3&&!await publicCurrentProjectionReady(env.DB);step++)await stepPublicCurrentBackfill(env.DB,10_000_000);
+  expect(await publicCurrentProjectionReady(env.DB)).toBe(true);
   await db.prepare(`WITH RECURSIVE n(x) AS (SELECT 1 UNION ALL SELECT x+1 FROM n WHERE x<?)
     INSERT INTO catalog_agents(agentKey,agentId,chainId,metadataState,indexState,firstSeenAt,lastSeenAt)
     SELECT 'eip155:'||CASE WHEN x%2=0 THEN 97 ELSE 56 END||':'||x,CAST(x AS TEXT),CASE WHEN x%2=0 THEN 97 ELSE 56 END,'ok','current',0,0 FROM n`).bind(size).run();
@@ -36,6 +44,7 @@ async function seed(size:number,affected:number,restore=false){
 }
 it.each([2000,20000])('captures public read parity at %i agents',async size=>{
   await seed(size,0);
+  await completeProjectionFixture();
   const costs=[];
   for(const path of ['/catalog-agents','/catalog-agents?status=hireable','/catalog-agents?facets=true','/catalog-agent/1']){
     const records:ReadRecord[]=[];
@@ -43,6 +52,10 @@ it.each([2000,20000])('captures public read parity at %i agents',async size=>{
     const response=path.startsWith('/catalog-agent/')?await catalogAgentResponse(new Request('https://worker.test'+path),source,NOW):await catalogAgentsResponse(new Request('https://worker.test'+path),source,NOW);
     expect(response.status).toBe(200);
     costs.push({path,...totals(records)});
+    if(size===2000&&path.includes('hireable')){
+      const selection=records.find(row=>row.sql.includes('filtered AS NOT MATERIALIZED'))!;
+      console.info('PUBLIC_SELECTION_PLAN',JSON.stringify((await db.prepare('EXPLAIN QUERY PLAN '+selection.sql).bind(...selection.values).all()).results));
+    }
   }
   console.info('PUBLIC_BASELINE',JSON.stringify({size,costs}));
   const baseline=size===2000?[3451,5501,61463,15]:[30452,50502,610464,15];
@@ -98,6 +111,7 @@ it.each([2000,20000].flatMap(size=>['none','few','mass','restore'].map(scenario=
 
 it.each([56,97])('keeps list, facets and detail consistent across expiry without cron on chain %i',async chain=>{
   await seed(2,2,true);
+  await completeProjectionFixture();
   const original=(await db.prepare('SELECT * FROM catalog_seller_capabilities ORDER BY agentKey').all()).results;
   const agentId=chain===56?1:2;
   for(const now of [NOW,NOW+172800000]){
@@ -110,4 +124,15 @@ it.each([56,97])('keeps list, facets and detail consistent across expiry without
     expect(await detail.json()).toMatchObject({state:{capabilityState:now===NOW?'ready':'stale',canPrepareHire:false}});
   }
   expect((await db.prepare('SELECT * FROM catalog_seller_capabilities ORDER BY agentKey').all()).results).toEqual(original);
+});
+it.each([56,97])('matches the full policy and ordering on the compact hireable path for chain %i',async chain=>{
+ await seed(20,20,true);
+ for(const enabled of [false,true])for(const now of [NOW,NOW+172800000]){
+  const read=async(status:string)=>{const response=await catalogAgentsResponse(new Request(`https://worker.test/catalog-agents?chain=${chain}&${status}&limit=3`),env.DB,now,2,enabled);expect(response.status).toBe(200);return await response.json() as {items:unknown[];total:number;nextCursor:string|null};};
+  const fast=await read('status=hireable'),full=await read('status=declared&status=hireable');
+  expect(fast.items).toEqual(full.items);expect(fast.total).toBe(full.total);expect(fast.nextCursor).toBe(full.nextCursor);
+ }
+ await env.DB.prepare('DELETE FROM runtime_state WHERE key=?').bind(PUBLIC_CURRENT_BACKFILL_KEY).run();
+ const unavailable=await catalogAgentsResponse(new Request(`https://worker.test/catalog-agents?chain=${chain}&status=hireable`),env.DB,NOW,2,true);
+ expect(unavailable.status).toBe(503);
 });
