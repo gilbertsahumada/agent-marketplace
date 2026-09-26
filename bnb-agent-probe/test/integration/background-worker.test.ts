@@ -4,7 +4,7 @@ import { beforeEach, expect, it, vi } from "vitest";
 import { createWorker, type WorkerDependencies } from "../../src/index";
 import type { Env } from "../../src/types";
 import type { D1DatabaseLike } from "../../src/db/client";
-import { replayDeferred } from "../../src/db/deferred-background";
+import { persistDeferred, replayDeferred } from "../../src/db/deferred-background";
 
 const NOW=Date.UTC(2026,8,21,12);
 const day="2026-09-21";
@@ -21,6 +21,78 @@ function message(body:unknown={schemaVersion:2,kind:"index_range",chainId:56,enq
 }
 async function deferred() {return env.DB.prepare("SELECT textValue FROM runtime_state WHERE key LIKE 'deferred_background:%'").all<{textValue:string}>();}
 beforeEach(async()=>{await env.DB.prepare("DELETE FROM runtime_state").run();await env.DB.prepare("DELETE FROM hire_notifications").run();});
+
+it("index-only mode publishes no maintenance, notifications or token backfill even when their flags are enabled",async()=>{
+  const send=vi.fn();
+  const target=settings({BACKGROUND_INDEX_ONLY:"1",BACKGROUND_INDEX_PAUSED:"0",BACKGROUND_JOBS_PAUSED:"1",
+    BSC_RPC_URL:"https://rpc.example.invalid",WP2_QUEUE:{send:vi.fn(()=>{throw Error('SHARED_QUEUE_USED');})},COMMERCE_INDEX_QUEUE:{send},CATALOG_QUOTE_QUEUE:{send},
+    AGENT_IDENTITY_INDEX_ENABLED:"1",HIRE_NOTIFICATION_RECOVERY_ENABLED:"1",COMMERCE_TOKEN_BACKFILL_ENABLED:"1"} as Partial<Env>);
+  delete target.BSC_TESTNET_RPC_URL;
+  await createWorker({now:()=>NOW,logger}).scheduled({cron:"* * * * *",scheduledTime:NOW},target,createExecutionContext());
+  expect(send).toHaveBeenCalledExactlyOnceWith({schemaVersion:2,kind:"index_range",chainId:56,enqueuedAt:NOW});
+});
+
+it("index-only mode consumes index tasks while keeping unrelated work durably deferred",async()=>{
+  const index=vi.fn().mockResolvedValue(summary),validation=vi.fn();
+  const target=settings({BACKGROUND_INDEX_ONLY:"1",BACKGROUND_INDEX_PAUSED:"0",BACKGROUND_JOBS_PAUSED:"1"} as Partial<Env>);
+  const worker=createWorker({now:()=>NOW,logger,runCommerceIndex:index,runCatalogValidation:validation});
+  const indexed=message();
+  await worker.queue({messages:[indexed]},target,createExecutionContext());
+  expect(index).toHaveBeenCalledTimes(1);expect(indexed.ack).toHaveBeenCalledTimes(1);
+  const other=message({schemaVersion:2,kind:"catalog_validation",validationId:1,enqueuedAt:NOW},"held-validation");
+  await worker.queue({messages:[other]},target,createExecutionContext());
+  expect(validation).not.toHaveBeenCalled();expect(other.ack).toHaveBeenCalledTimes(1);
+  expect((await deferred()).results).toHaveLength(1);
+});
+
+it("index-only mode is paused by default and requires cost controls",async()=>{
+  const index=vi.fn().mockResolvedValue(summary),send=vi.fn();
+  const target=settings({BACKGROUND_INDEX_ONLY:"1",WP2_QUEUE:{send}} as Partial<Env>);
+  const worker=createWorker({now:()=>NOW,logger,runCommerceIndex:index});
+  await worker.scheduled({cron:"* * * * *",scheduledTime:NOW},target,createExecutionContext());
+  expect(send).not.toHaveBeenCalled();
+  await worker.queue({messages:[message()]},target,createExecutionContext());
+  expect(index).not.toHaveBeenCalled();
+  await expect(worker.queue({messages:[message()]},{...target,BACKGROUND_COST_CONTROLS_ENABLED:"0"},createExecutionContext())).rejects.toThrow("INDEX_ONLY_REQUIRES_COST_CONTROLS");
+});
+
+it("index-only replay preserves unrelated work even when it precedes due index tasks",async()=>{
+  const db=env.DB as unknown as D1DatabaseLike;
+  for(let i=0;i<7;i++) await persistDeferred(db,message({schemaVersion:2,kind:"catalog_validation",validationId:i+1,enqueuedAt:NOW},`validation-${i}`),'jobs',NOW);
+  await persistDeferred(db,message({schemaVersion:2,kind:"index_range",chainId:97,enqueuedAt:NOW},'index-replay'),'jobs',NOW);
+  const send=vi.fn();
+  expect(await replayDeferred(db,'jobs',{send},NOW+900_000,true)).toEqual({sent:1,failed:0});
+  expect(send).toHaveBeenCalledExactlyOnceWith({schemaVersion:2,kind:"index_range",chainId:97,enqueuedAt:NOW});
+  expect((await deferred()).results).toHaveLength(7);
+});
+
+it("index-only mode respects exhausted jobs budget and preserves the pending task",async()=>{
+  await env.DB.prepare("INSERT INTO runtime_state(key,integerValue,updatedAt) VALUES (?,10000000,?)").bind(`background_budget:${day}:jobs`,NOW).run();
+  const index=vi.fn(),send=vi.fn();
+  const target=settings({BACKGROUND_INDEX_ONLY:"1",BACKGROUND_INDEX_PAUSED:"0",WP2_QUEUE:{send},COMMERCE_INDEX_QUEUE:{send}});
+  const worker=createWorker({now:()=>NOW,logger,runCommerceIndex:index});
+  await worker.scheduled({cron:"* * * * *",scheduledTime:NOW},target,createExecutionContext());
+  await worker.queue({messages:[message()]},target,createExecutionContext());
+  expect(send).not.toHaveBeenCalled();expect(index).not.toHaveBeenCalled();
+  expect((await deferred()).results).toHaveLength(1);
+});
+
+it("index-only producer refuses to fall back to the shared queue",async()=>{
+  const send=vi.fn();
+  await expect(createWorker({now:()=>NOW,logger}).scheduled({cron:"* * * * *",scheduledTime:NOW},
+    settings({BACKGROUND_INDEX_ONLY:"1",BACKGROUND_INDEX_PAUSED:"0",WP2_QUEUE:{send}}),createExecutionContext())).rejects.toThrow('COMMERCE_INDEX_QUEUE_BINDING_REQUIRED');
+  expect(send).not.toHaveBeenCalled();
+});
+
+it("index-only mode keeps manual-run protection and does not lose held messages",async()=>{
+  const index=vi.fn(),send=vi.fn();
+  const target=settings({BACKGROUND_INDEX_ONLY:"1",BACKGROUND_INDEX_PAUSED:"0",STAGING_MANUAL_RUN:"1",WP2_QUEUE:{send}});
+  const worker=createWorker({now:()=>NOW,logger,runCommerceIndex:index});
+  await worker.scheduled({cron:"* * * * *",scheduledTime:NOW},target,createExecutionContext());
+  await worker.queue({messages:[message()]},target,createExecutionContext());
+  expect(send).not.toHaveBeenCalled();expect(index).not.toHaveBeenCalled();
+  expect((await deferred()).results).toHaveLength(1);
+});
 
 it("meters jobs and acknowledges only after budget settlement",async()=>{
   const msg=message();

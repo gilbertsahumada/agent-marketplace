@@ -606,8 +606,28 @@ export function createWorker(dependencies: WorkerDependencies = {}): WorkerEntry
       if (controller.cron !== expectedCron) throw new Error("WP2_CRON_MISMATCH");
       if (env.WP2_QUEUE === undefined) throw new Error("WP2_QUEUE_BINDING_REQUIRED");
       const controlled=env.BACKGROUND_COST_CONTROLS_ENABLED==='1';
+      const indexOnly=env.BACKGROUND_INDEX_ONLY==='1';
+      if(indexOnly && !controlled) throw new Error('INDEX_ONLY_REQUIRES_COST_CONTROLS');
       if (controlled && env.STAGING_MANUAL_RUN === '1') return;
       const originalEnv=env;
+      // Opt-in circuit: no notifications, token backfills, identity ingestion
+      // or capability producer, regardless of their individual flags.
+      if(indexOnly) {
+        if(env.BACKGROUND_INDEX_PAUSED!=='0' || !config.commerceIndexEnabled || (laneNotBefore.get('jobs')??0)>now()) return;
+        const indexQueue=env.COMMERCE_INDEX_QUEUE;
+        if(!indexQueue) throw new Error('COMMERCE_INDEX_QUEUE_BINDING_REQUIRED');
+        const result=await runWithBackgroundBudget(env.DB as never,'jobs','producer',now(),async db=>{
+          await runBackgroundWindow(db,'commerce_index',now(),JOBS_INTERVAL_MS,async()=>{
+            const {replayDeferred}=await import('./db/deferred-background');
+            await runBackgroundWindow(db,'commerce_index_replay',now(),MAINTENANCE_INTERVAL_MS,async()=>{
+              await replayDeferred(db,'jobs',indexQueue,now(),true);
+            });
+            await enqueueCommerceIndexTicks({...env,DB:db as unknown as Env['DB']},indexQueue,now(),logger);
+          });
+        });
+        if(result.status==='denied' && result.notBeforeMs!==undefined) laneNotBefore.set('jobs',result.notBeforeMs);
+        return;
+      }
       const replay = async (env: Env, lane: 'jobs' | 'maintenance') => {
         const { replayDeferred } = await import('./db/deferred-background');
         await runBackgroundWindow(env.DB as unknown as D1DatabaseLike, `${lane}_replay`, now(), MAINTENANCE_INTERVAL_MS, async () => {
@@ -718,6 +738,7 @@ export function createWorker(dependencies: WorkerDependencies = {}): WorkerEntry
       if (batch.messages.length !== 1) throw new Error("WP2_QUEUE_BATCH_MUST_EQUAL_ONE");
       const message = batch.messages[0]!;
       const config = loadConfig(env);
+      if(env.BACKGROUND_INDEX_ONLY==='1' && env.BACKGROUND_COST_CONTROLS_ENABLED!=='1') throw new Error('INDEX_ONLY_REQUIRES_COST_CONTROLS');
       if (config.killSwitch) {
         message.ack();
         return;
@@ -741,7 +762,12 @@ export function createWorker(dependencies: WorkerDependencies = {}): WorkerEntry
         const defer = (notBeforeMs?: number) => runBackgroundControl(env.DB as unknown as D1DatabaseLike,
           lane, 'defer-message', now(), db => persistDeferred(db,
             { id: message.id, body, ack: () => message.ack() }, lane, now(), notBeforeMs));
-        if ((lane === 'jobs' ? env.BACKGROUND_JOBS_PAUSED : env.BACKGROUND_MAINTENANCE_PAUSED) === '1') {
+        const indexOnly=env.BACKGROUND_INDEX_ONLY==='1';
+        const indexTask=work.kind==='index_range' || work.kind==='index_jobs';
+        const paused=indexOnly
+          ? !indexTask || env.BACKGROUND_INDEX_PAUSED!=='0' || env.STAGING_MANUAL_RUN==='1' || !config.commerceIndexEnabled
+          : (lane === 'jobs' ? env.BACKGROUND_JOBS_PAUSED : env.BACKGROUND_MAINTENANCE_PAUSED) === '1';
+        if (paused) {
           await defer();
           return;
         }
@@ -756,7 +782,7 @@ export function createWorker(dependencies: WorkerDependencies = {}): WorkerEntry
               timestamp: message.timestamp, attempts: message.attempts,
               ack: () => { acknowledgement = () => message.ack(); },
               retry: options => { acknowledgement = () => message.retry(options); },
-            }] }, { ...env, DB: db as unknown as Env['DB'], BACKGROUND_COST_CONTROLS_ENABLED: '0' }, context);
+            }] }, { ...env, DB: db as unknown as Env['DB'], BACKGROUND_COST_CONTROLS_ENABLED: '0', BACKGROUND_INDEX_ONLY: '0' }, context);
           });
           if (result.status === 'denied') {
             laneNotBefore.set(lane,result.notBeforeMs);
