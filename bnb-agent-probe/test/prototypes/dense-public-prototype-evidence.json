@@ -1,0 +1,481 @@
+{
+  "status": "local-prototype-only",
+  "referenceCommit": "1fe712a",
+  "date": "2026-09-26",
+  "command": "npx vitest run --config vitest.worker.config.ts test/integration/public-combined-prototype.test.ts --reporter=verbose --disableConsoleIntercept",
+  "validation": {
+    "measuredMatrix": "4/4 passed",
+    "additionalAdversarialCases": "1/1 passed",
+    "typecheck": "passed",
+    "remoteActivity": false,
+    "measuredCpuTimeMs": null,
+    "measuredPeakHeapBytes": null
+  },
+  "limitations": [
+    "D1 duration and JS performance.now durations are local elapsed time, not billed production CPU.",
+    "memoryEstimateBytes is 4x serialized classification payload, not measured peak heap.",
+    "No atomic dense projection triggers, backfill verification, frontend combined integration or 24h weighted write/read economics implemented in this prototype.",
+    "Classification transfers all classified agents for a network to the Worker; cost remains linear in catalogue size.",
+    "Planner comparisons use original source responses captured before ANALYZE. Historical rows_read baseline is not inflated using changed planner statistics."
+  ],
+  "records": [
+    {
+      "operation": "dense-prototype-construction",
+      "count": 2000,
+      "queries": 3,
+      "rowsRead": 14015,
+      "rowsWritten": 4042,
+      "d1DurationMs": 6
+    },
+    {
+      "operation": "dense-prototype-cold",
+      "count": 2000,
+      "query": "scope=hiring",
+      "before": {
+        "queries": 13,
+        "rowsRead": 128190,
+        "rowsWritten": 0,
+        "d1DurationMs": 77
+      },
+      "after": {
+        "queries": 11,
+        "rowsRead": 13754,
+        "rowsWritten": 0,
+        "d1DurationMs": 17
+      },
+      "diagnostics": {
+        "classifiedAgents": 1952,
+        "materializedBytes": 332134,
+        "classificationDurationMs": 22,
+        "jsClassificationDurationMs": 3,
+        "memoryEstimateBytes": 1328536,
+        "memoryEstimateMethod": "4x serialized classification rows; heuristic, not measured peak heap"
+      },
+      "queryReads": [
+        1,
+        11526,
+        50,
+        144,
+        156,
+        1230,
+        201,
+        99,
+        41,
+        96,
+        210
+      ]
+    },
+    {
+      "operation": "dense-prototype-plan",
+      "count": 2000,
+      "plan": [
+        {
+          "id": 2,
+          "parent": 0,
+          "notused": 0,
+          "detail": "CO-ROUTINE endpoint_flags"
+        },
+        {
+          "id": 13,
+          "parent": 2,
+          "notused": 216,
+          "detail": "SCAN d"
+        },
+        {
+          "id": 19,
+          "parent": 2,
+          "notused": 46,
+          "detail": "SEARCH e USING INDEX sqlite_autoindex_catalog_endpoints_1 (endpointKey=?) LEFT-JOIN"
+        },
+        {
+          "id": 26,
+          "parent": 2,
+          "notused": 46,
+          "detail": "SEARCH t USING INDEX sqlite_autoindex_catalog_quote_attempts_1 (id=?) LEFT-JOIN"
+        },
+        {
+          "id": 37,
+          "parent": 2,
+          "notused": 45,
+          "detail": "SEARCH r USING INTEGER PRIMARY KEY (rowid=?) LEFT-JOIN"
+        },
+        {
+          "id": 608,
+          "parent": 0,
+          "notused": 82,
+          "detail": "SCAN f"
+        },
+        {
+          "id": 611,
+          "parent": 0,
+          "notused": 45,
+          "detail": "SEARCH m USING PRIMARY KEY (agentKey=?) LEFT-JOIN"
+        }
+      ]
+    },
+    {
+      "operation": "dense-prototype-cold",
+      "count": 2000,
+      "query": "scope=evaluation",
+      "before": {
+        "queries": 13,
+        "rowsRead": 169012,
+        "rowsWritten": 0,
+        "d1DurationMs": 107
+      },
+      "after": {
+        "queries": 11,
+        "rowsRead": 13613,
+        "rowsWritten": 0,
+        "d1DurationMs": 19
+      },
+      "diagnostics": {
+        "classifiedAgents": 1952,
+        "materializedBytes": 332134,
+        "classificationDurationMs": 25,
+        "jsClassificationDurationMs": 3,
+        "memoryEstimateBytes": 1328536,
+        "memoryEstimateMethod": "4x serialized classification rows; heuristic, not measured peak heap"
+      },
+      "queryReads": [
+        1,
+        11526,
+        50,
+        144,
+        161,
+        1167,
+        150,
+        98,
+        29,
+        95,
+        192
+      ]
+    },
+    {
+      "operation": "dense-prototype-cold",
+      "count": 2000,
+      "query": "scope=evaluation&protocol=mcp&category=grid_trading&reachability=live",
+      "before": {
+        "queries": 13,
+        "rowsRead": 195045,
+        "rowsWritten": 0,
+        "d1DurationMs": 108
+      },
+      "after": {
+        "queries": 11,
+        "rowsRead": 13663,
+        "rowsWritten": 0,
+        "d1DurationMs": 18
+      },
+      "diagnostics": {
+        "classifiedAgents": 1952,
+        "materializedBytes": 332134,
+        "classificationDurationMs": 21,
+        "jsClassificationDurationMs": 2,
+        "memoryEstimateBytes": 1328536,
+        "memoryEstimateMethod": "4x serialized classification rows; heuristic, not measured peak heap"
+      },
+      "queryReads": [
+        1,
+        11526,
+        50,
+        144,
+        160,
+        1190,
+        149,
+        98,
+        41,
+        75,
+        229
+      ]
+    },
+    {
+      "operation": "dense-prototype-standalone-facets",
+      "count": 2000,
+      "queries": 2,
+      "rowsRead": 11527,
+      "rowsWritten": 0,
+      "d1DurationMs": 18
+    },
+    {
+      "operation": "dense-prototype-construction",
+      "count": 20000,
+      "queries": 3,
+      "rowsRead": 138215,
+      "rowsWritten": 40042,
+      "d1DurationMs": 73
+    },
+    {
+      "operation": "dense-prototype-cold",
+      "count": 20000,
+      "query": "scope=hiring",
+      "before": {
+        "queries": 13,
+        "rowsRead": 1221818,
+        "rowsWritten": 0,
+        "d1DurationMs": 678
+      },
+      "after": {
+        "queries": 11,
+        "rowsRead": 117185,
+        "rowsWritten": 0,
+        "d1DurationMs": 160
+      },
+      "diagnostics": {
+        "classifiedAgents": 19513,
+        "materializedBytes": 3320146,
+        "classificationDurationMs": 215,
+        "jsClassificationDurationMs": 24,
+        "memoryEstimateBytes": 13280584,
+        "memoryEstimateMethod": "4x serialized classification rows; heuristic, not measured peak heap"
+      },
+      "queryReads": [
+        1,
+        114890,
+        50,
+        144,
+        156,
+        1269,
+        222,
+        99,
+        48,
+        96,
+        210
+      ]
+    },
+    {
+      "operation": "dense-prototype-plan",
+      "count": 20000,
+      "plan": [
+        {
+          "id": 2,
+          "parent": 0,
+          "notused": 0,
+          "detail": "CO-ROUTINE endpoint_flags"
+        },
+        {
+          "id": 13,
+          "parent": 2,
+          "notused": 216,
+          "detail": "SCAN d"
+        },
+        {
+          "id": 19,
+          "parent": 2,
+          "notused": 46,
+          "detail": "SEARCH e USING INDEX sqlite_autoindex_catalog_endpoints_1 (endpointKey=?) LEFT-JOIN"
+        },
+        {
+          "id": 26,
+          "parent": 2,
+          "notused": 46,
+          "detail": "SEARCH t USING INDEX sqlite_autoindex_catalog_quote_attempts_1 (id=?) LEFT-JOIN"
+        },
+        {
+          "id": 37,
+          "parent": 2,
+          "notused": 45,
+          "detail": "SEARCH r USING INTEGER PRIMARY KEY (rowid=?) LEFT-JOIN"
+        },
+        {
+          "id": 608,
+          "parent": 0,
+          "notused": 82,
+          "detail": "SCAN f"
+        },
+        {
+          "id": 611,
+          "parent": 0,
+          "notused": 45,
+          "detail": "SEARCH m USING PRIMARY KEY (agentKey=?) LEFT-JOIN"
+        }
+      ]
+    },
+    {
+      "operation": "dense-prototype-cold",
+      "count": 20000,
+      "query": "scope=evaluation",
+      "before": {
+        "queries": 13,
+        "rowsRead": 1631632,
+        "rowsWritten": 0,
+        "d1DurationMs": 951
+      },
+      "after": {
+        "queries": 11,
+        "rowsRead": 116958,
+        "rowsWritten": 0,
+        "d1DurationMs": 159
+      },
+      "diagnostics": {
+        "classifiedAgents": 19513,
+        "materializedBytes": 3320146,
+        "classificationDurationMs": 201,
+        "jsClassificationDurationMs": 24,
+        "memoryEstimateBytes": 13280584,
+        "memoryEstimateMethod": "4x serialized classification rows; heuristic, not measured peak heap"
+      },
+      "queryReads": [
+        1,
+        114890,
+        50,
+        144,
+        159,
+        1152,
+        151,
+        99,
+        24,
+        96,
+        192
+      ]
+    },
+    {
+      "operation": "dense-prototype-cold",
+      "count": 20000,
+      "query": "scope=evaluation&protocol=mcp&category=grid_trading&reachability=live",
+      "before": {
+        "queries": 13,
+        "rowsRead": 1869721,
+        "rowsWritten": 0,
+        "d1DurationMs": 1045
+      },
+      "after": {
+        "queries": 11,
+        "rowsRead": 117057,
+        "rowsWritten": 0,
+        "d1DurationMs": 155
+      },
+      "diagnostics": {
+        "classifiedAgents": 19513,
+        "materializedBytes": 3320146,
+        "classificationDurationMs": 188,
+        "jsClassificationDurationMs": 14,
+        "memoryEstimateBytes": 13280584,
+        "memoryEstimateMethod": "4x serialized classification rows; heuristic, not measured peak heap"
+      },
+      "queryReads": [
+        1,
+        114890,
+        50,
+        144,
+        162,
+        1218,
+        151,
+        99,
+        48,
+        96,
+        198
+      ]
+    },
+    {
+      "operation": "dense-prototype-standalone-facets",
+      "count": 20000,
+      "queries": 2,
+      "rowsRead": 114891,
+      "rowsWritten": 0,
+      "d1DurationMs": 155
+    },
+    {
+      "operation": "dense-prototype-planner",
+      "count": 2000,
+      "statistics": "complete",
+      "queries": 11,
+      "rowsRead": 12752,
+      "rowsWritten": 0,
+      "d1DurationMs": 18,
+      "diagnostics": {
+        "classifiedAgents": 1952,
+        "materializedBytes": 332134,
+        "classificationDurationMs": 20,
+        "jsClassificationDurationMs": 1,
+        "memoryEstimateBytes": 1328536,
+        "memoryEstimateMethod": "4x serialized classification rows; heuristic, not measured peak heap"
+      }
+    },
+    {
+      "operation": "dense-prototype-planner",
+      "count": 2000,
+      "statistics": "partial",
+      "queries": 11,
+      "rowsRead": 12752,
+      "rowsWritten": 0,
+      "d1DurationMs": 18,
+      "diagnostics": {
+        "classifiedAgents": 1952,
+        "materializedBytes": 332134,
+        "classificationDurationMs": 20,
+        "jsClassificationDurationMs": 1,
+        "memoryEstimateBytes": 1328536,
+        "memoryEstimateMethod": "4x serialized classification rows; heuristic, not measured peak heap"
+      }
+    },
+    {
+      "operation": "dense-prototype-planner",
+      "count": 2000,
+      "statistics": "absent",
+      "queries": 11,
+      "rowsRead": 13754,
+      "rowsWritten": 0,
+      "d1DurationMs": 18,
+      "diagnostics": {
+        "classifiedAgents": 1952,
+        "materializedBytes": 332134,
+        "classificationDurationMs": 20,
+        "jsClassificationDurationMs": 1,
+        "memoryEstimateBytes": 1328536,
+        "memoryEstimateMethod": "4x serialized classification rows; heuristic, not measured peak heap"
+      }
+    },
+    {
+      "operation": "dense-prototype-planner",
+      "count": 20000,
+      "statistics": "complete",
+      "queries": 11,
+      "rowsRead": 116183,
+      "rowsWritten": 0,
+      "d1DurationMs": 155,
+      "diagnostics": {
+        "classifiedAgents": 19513,
+        "materializedBytes": 3320146,
+        "classificationDurationMs": 199,
+        "jsClassificationDurationMs": 26,
+        "memoryEstimateBytes": 13280584,
+        "memoryEstimateMethod": "4x serialized classification rows; heuristic, not measured peak heap"
+      }
+    },
+    {
+      "operation": "dense-prototype-planner",
+      "count": 20000,
+      "statistics": "partial",
+      "queries": 11,
+      "rowsRead": 116183,
+      "rowsWritten": 0,
+      "d1DurationMs": 150,
+      "diagnostics": {
+        "classifiedAgents": 19513,
+        "materializedBytes": 3320146,
+        "classificationDurationMs": 185,
+        "jsClassificationDurationMs": 18,
+        "memoryEstimateBytes": 13280584,
+        "memoryEstimateMethod": "4x serialized classification rows; heuristic, not measured peak heap"
+      }
+    },
+    {
+      "operation": "dense-prototype-planner",
+      "count": 20000,
+      "statistics": "absent",
+      "queries": 11,
+      "rowsRead": 117185,
+      "rowsWritten": 0,
+      "d1DurationMs": 152,
+      "diagnostics": {
+        "classifiedAgents": 19513,
+        "materializedBytes": 3320146,
+        "classificationDurationMs": 182,
+        "jsClassificationDurationMs": 15,
+        "memoryEstimateBytes": 13280584,
+        "memoryEstimateMethod": "4x serialized classification rows; heuristic, not measured peak heap"
+      }
+    }
+  ]
+}
