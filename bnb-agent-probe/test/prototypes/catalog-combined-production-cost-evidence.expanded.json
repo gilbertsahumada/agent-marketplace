@@ -1,0 +1,586 @@
+{
+  "date": "2026-09-26",
+  "scope": "local-only production endpoint and secondary resource gates",
+  "measurements": [
+    {
+      "kind": "production-catalog-combined-cold",
+      "count": 2000,
+      "construction": {
+        "queries": 826,
+        "rowsRead": 94011,
+        "rowsWritten": 4350,
+        "d1DurationMs": 75
+      },
+      "comparisons": [
+        {
+          "query": "scope=hiring",
+          "before": {
+            "queries": 13,
+            "rowsRead": 128190,
+            "rowsWritten": 0,
+            "d1DurationMs": 77
+          },
+          "after": {
+            "queries": 12,
+            "rowsRead": 13666,
+            "rowsWritten": 0,
+            "d1DurationMs": 17
+          },
+          "reductionFraction": 0.8933926203291989,
+          "queryReads": [
+            1,
+            1,
+            11437,
+            50,
+            144,
+            156,
+            1230,
+            201,
+            99,
+            41,
+            96,
+            210
+          ],
+          "plan": [
+            {
+              "id": 2,
+              "parent": 0,
+              "notused": 0,
+              "detail": "CO-ROUTINE endpoint_flags"
+            },
+            {
+              "id": 13,
+              "parent": 2,
+              "notused": 56,
+              "detail": "SEARCH d USING PRIMARY KEY (agent_chainId=?)"
+            },
+            {
+              "id": 21,
+              "parent": 2,
+              "notused": 46,
+              "detail": "SEARCH e USING INDEX sqlite_autoindex_catalog_endpoints_1 (endpointKey=?) LEFT-JOIN"
+            },
+            {
+              "id": 28,
+              "parent": 2,
+              "notused": 46,
+              "detail": "SEARCH t USING INDEX sqlite_autoindex_catalog_quote_attempts_1 (id=?) LEFT-JOIN"
+            },
+            {
+              "id": 39,
+              "parent": 2,
+              "notused": 45,
+              "detail": "SEARCH r USING INTEGER PRIMARY KEY (rowid=?) LEFT-JOIN"
+            },
+            {
+              "id": 609,
+              "parent": 0,
+              "notused": 82,
+              "detail": "SCAN f"
+            },
+            {
+              "id": 614,
+              "parent": 0,
+              "notused": 45,
+              "detail": "SEARCH m USING PRIMARY KEY (agentKey=?) LEFT-JOIN"
+            }
+          ]
+        },
+        {
+          "query": "scope=evaluation",
+          "before": {
+            "queries": 13,
+            "rowsRead": 169012,
+            "rowsWritten": 0,
+            "d1DurationMs": 99
+          },
+          "after": {
+            "queries": 12,
+            "rowsRead": 13525,
+            "rowsWritten": 0,
+            "d1DurationMs": 18
+          },
+          "reductionFraction": 0.9199760963718553,
+          "queryReads": [
+            1,
+            1,
+            11437,
+            50,
+            144,
+            161,
+            1167,
+            150,
+            98,
+            29,
+            95,
+            192
+          ],
+          "plan": [
+            {
+              "id": 2,
+              "parent": 0,
+              "notused": 0,
+              "detail": "CO-ROUTINE endpoint_flags"
+            },
+            {
+              "id": 13,
+              "parent": 2,
+              "notused": 56,
+              "detail": "SEARCH d USING PRIMARY KEY (agent_chainId=?)"
+            },
+            {
+              "id": 21,
+              "parent": 2,
+              "notused": 46,
+              "detail": "SEARCH e USING INDEX sqlite_autoindex_catalog_endpoints_1 (endpointKey=?) LEFT-JOIN"
+            },
+            {
+              "id": 28,
+              "parent": 2,
+              "notused": 46,
+              "detail": "SEARCH t USING INDEX sqlite_autoindex_catalog_quote_attempts_1 (id=?) LEFT-JOIN"
+            },
+            {
+              "id": 39,
+              "parent": 2,
+              "notused": 45,
+              "detail": "SEARCH r USING INTEGER PRIMARY KEY (rowid=?) LEFT-JOIN"
+            },
+            {
+              "id": 609,
+              "parent": 0,
+              "notused": 82,
+              "detail": "SCAN f"
+            },
+            {
+              "id": 614,
+              "parent": 0,
+              "notused": 45,
+              "detail": "SEARCH m USING PRIMARY KEY (agentKey=?) LEFT-JOIN"
+            }
+          ]
+        },
+        {
+          "query": "scope=evaluation&protocol=mcp&category=grid_trading&reachability=live",
+          "before": {
+            "queries": 13,
+            "rowsRead": 195045,
+            "rowsWritten": 0,
+            "d1DurationMs": 132
+          },
+          "after": {
+            "queries": 12,
+            "rowsRead": 13575,
+            "rowsWritten": 0,
+            "d1DurationMs": 18
+          },
+          "reductionFraction": 0.9304006767669,
+          "queryReads": [
+            1,
+            1,
+            11437,
+            50,
+            144,
+            160,
+            1190,
+            149,
+            98,
+            41,
+            75,
+            229
+          ],
+          "plan": [
+            {
+              "id": 2,
+              "parent": 0,
+              "notused": 0,
+              "detail": "CO-ROUTINE endpoint_flags"
+            },
+            {
+              "id": 13,
+              "parent": 2,
+              "notused": 56,
+              "detail": "SEARCH d USING PRIMARY KEY (agent_chainId=?)"
+            },
+            {
+              "id": 21,
+              "parent": 2,
+              "notused": 46,
+              "detail": "SEARCH e USING INDEX sqlite_autoindex_catalog_endpoints_1 (endpointKey=?) LEFT-JOIN"
+            },
+            {
+              "id": 28,
+              "parent": 2,
+              "notused": 46,
+              "detail": "SEARCH t USING INDEX sqlite_autoindex_catalog_quote_attempts_1 (id=?) LEFT-JOIN"
+            },
+            {
+              "id": 39,
+              "parent": 2,
+              "notused": 45,
+              "detail": "SEARCH r USING INTEGER PRIMARY KEY (rowid=?) LEFT-JOIN"
+            },
+            {
+              "id": 609,
+              "parent": 0,
+              "notused": 82,
+              "detail": "SCAN f"
+            },
+            {
+              "id": 614,
+              "parent": 0,
+              "notused": 45,
+              "detail": "SEARCH m USING PRIMARY KEY (agentKey=?) LEFT-JOIN"
+            }
+          ]
+        }
+      ],
+      "secondary": [
+        {
+          "chain": 56,
+          "resource": "facets",
+          "statistics": "default",
+          "queries": 3,
+          "rowsRead": 11439,
+          "rowsWritten": 0,
+          "d1DurationMs": 17
+        },
+        {
+          "chain": 56,
+          "resource": "summary",
+          "statistics": "default",
+          "queries": 3,
+          "rowsRead": 11439,
+          "rowsWritten": 0,
+          "d1DurationMs": 17
+        },
+        {
+          "chain": 97,
+          "resource": "facets",
+          "statistics": "default",
+          "queries": 3,
+          "rowsRead": 82,
+          "rowsWritten": 0,
+          "d1DurationMs": 1
+        },
+        {
+          "chain": 97,
+          "resource": "summary",
+          "statistics": "default",
+          "queries": 3,
+          "rowsRead": 82,
+          "rowsWritten": 0,
+          "d1DurationMs": 0
+        }
+      ]
+    },
+    {
+      "kind": "production-catalog-combined-cold",
+      "count": 20000,
+      "construction": {
+        "queries": 8026,
+        "rowsRead": 929211,
+        "rowsWritten": 43050,
+        "d1DurationMs": 719
+      },
+      "comparisons": [
+        {
+          "query": "scope=hiring",
+          "before": {
+            "queries": 13,
+            "rowsRead": 1221818,
+            "rowsWritten": 0,
+            "d1DurationMs": 679
+          },
+          "after": {
+            "queries": 12,
+            "rowsRead": 116625,
+            "rowsWritten": 0,
+            "d1DurationMs": 162
+          },
+          "reductionFraction": 0.9045479768672584,
+          "queryReads": [
+            1,
+            1,
+            114329,
+            50,
+            144,
+            156,
+            1269,
+            222,
+            99,
+            48,
+            96,
+            210
+          ],
+          "plan": [
+            {
+              "id": 2,
+              "parent": 0,
+              "notused": 0,
+              "detail": "CO-ROUTINE endpoint_flags"
+            },
+            {
+              "id": 13,
+              "parent": 2,
+              "notused": 56,
+              "detail": "SEARCH d USING PRIMARY KEY (agent_chainId=?)"
+            },
+            {
+              "id": 21,
+              "parent": 2,
+              "notused": 46,
+              "detail": "SEARCH e USING INDEX sqlite_autoindex_catalog_endpoints_1 (endpointKey=?) LEFT-JOIN"
+            },
+            {
+              "id": 28,
+              "parent": 2,
+              "notused": 46,
+              "detail": "SEARCH t USING INDEX sqlite_autoindex_catalog_quote_attempts_1 (id=?) LEFT-JOIN"
+            },
+            {
+              "id": 39,
+              "parent": 2,
+              "notused": 45,
+              "detail": "SEARCH r USING INTEGER PRIMARY KEY (rowid=?) LEFT-JOIN"
+            },
+            {
+              "id": 609,
+              "parent": 0,
+              "notused": 82,
+              "detail": "SCAN f"
+            },
+            {
+              "id": 614,
+              "parent": 0,
+              "notused": 45,
+              "detail": "SEARCH m USING PRIMARY KEY (agentKey=?) LEFT-JOIN"
+            }
+          ]
+        },
+        {
+          "query": "scope=evaluation",
+          "before": {
+            "queries": 13,
+            "rowsRead": 1631632,
+            "rowsWritten": 0,
+            "d1DurationMs": 907
+          },
+          "after": {
+            "queries": 12,
+            "rowsRead": 116398,
+            "rowsWritten": 0,
+            "d1DurationMs": 167
+          },
+          "reductionFraction": 0.9286616099708758,
+          "queryReads": [
+            1,
+            1,
+            114329,
+            50,
+            144,
+            159,
+            1152,
+            151,
+            99,
+            24,
+            96,
+            192
+          ],
+          "plan": [
+            {
+              "id": 2,
+              "parent": 0,
+              "notused": 0,
+              "detail": "CO-ROUTINE endpoint_flags"
+            },
+            {
+              "id": 13,
+              "parent": 2,
+              "notused": 56,
+              "detail": "SEARCH d USING PRIMARY KEY (agent_chainId=?)"
+            },
+            {
+              "id": 21,
+              "parent": 2,
+              "notused": 46,
+              "detail": "SEARCH e USING INDEX sqlite_autoindex_catalog_endpoints_1 (endpointKey=?) LEFT-JOIN"
+            },
+            {
+              "id": 28,
+              "parent": 2,
+              "notused": 46,
+              "detail": "SEARCH t USING INDEX sqlite_autoindex_catalog_quote_attempts_1 (id=?) LEFT-JOIN"
+            },
+            {
+              "id": 39,
+              "parent": 2,
+              "notused": 45,
+              "detail": "SEARCH r USING INTEGER PRIMARY KEY (rowid=?) LEFT-JOIN"
+            },
+            {
+              "id": 609,
+              "parent": 0,
+              "notused": 82,
+              "detail": "SCAN f"
+            },
+            {
+              "id": 614,
+              "parent": 0,
+              "notused": 45,
+              "detail": "SEARCH m USING PRIMARY KEY (agentKey=?) LEFT-JOIN"
+            }
+          ]
+        },
+        {
+          "query": "scope=evaluation&protocol=mcp&category=grid_trading&reachability=live",
+          "before": {
+            "queries": 13,
+            "rowsRead": 1869721,
+            "rowsWritten": 0,
+            "d1DurationMs": 1073
+          },
+          "after": {
+            "queries": 12,
+            "rowsRead": 116497,
+            "rowsWritten": 0,
+            "d1DurationMs": 168
+          },
+          "reductionFraction": 0.9376928429428776,
+          "queryReads": [
+            1,
+            1,
+            114329,
+            50,
+            144,
+            162,
+            1218,
+            151,
+            99,
+            48,
+            96,
+            198
+          ],
+          "plan": [
+            {
+              "id": 2,
+              "parent": 0,
+              "notused": 0,
+              "detail": "CO-ROUTINE endpoint_flags"
+            },
+            {
+              "id": 13,
+              "parent": 2,
+              "notused": 56,
+              "detail": "SEARCH d USING PRIMARY KEY (agent_chainId=?)"
+            },
+            {
+              "id": 21,
+              "parent": 2,
+              "notused": 46,
+              "detail": "SEARCH e USING INDEX sqlite_autoindex_catalog_endpoints_1 (endpointKey=?) LEFT-JOIN"
+            },
+            {
+              "id": 28,
+              "parent": 2,
+              "notused": 46,
+              "detail": "SEARCH t USING INDEX sqlite_autoindex_catalog_quote_attempts_1 (id=?) LEFT-JOIN"
+            },
+            {
+              "id": 39,
+              "parent": 2,
+              "notused": 45,
+              "detail": "SEARCH r USING INTEGER PRIMARY KEY (rowid=?) LEFT-JOIN"
+            },
+            {
+              "id": 609,
+              "parent": 0,
+              "notused": 82,
+              "detail": "SCAN f"
+            },
+            {
+              "id": 614,
+              "parent": 0,
+              "notused": 45,
+              "detail": "SEARCH m USING PRIMARY KEY (agentKey=?) LEFT-JOIN"
+            }
+          ]
+        }
+      ],
+      "secondary": [
+        {
+          "chain": 56,
+          "resource": "facets",
+          "statistics": "default",
+          "queries": 3,
+          "rowsRead": 114331,
+          "rowsWritten": 0,
+          "d1DurationMs": 164
+        },
+        {
+          "chain": 56,
+          "resource": "summary",
+          "statistics": "default",
+          "queries": 3,
+          "rowsRead": 114331,
+          "rowsWritten": 0,
+          "d1DurationMs": 159
+        },
+        {
+          "chain": 97,
+          "resource": "facets",
+          "statistics": "default",
+          "queries": 3,
+          "rowsRead": 82,
+          "rowsWritten": 0,
+          "d1DurationMs": 0
+        },
+        {
+          "chain": 97,
+          "resource": "summary",
+          "statistics": "default",
+          "queries": 3,
+          "rowsRead": 82,
+          "rowsWritten": 0,
+          "d1DurationMs": 0
+        },
+        {
+          "chain": 56,
+          "resource": "facets",
+          "statistics": "absent",
+          "queries": 3,
+          "rowsRead": 114331,
+          "rowsWritten": 0,
+          "d1DurationMs": 160
+        },
+        {
+          "chain": 56,
+          "resource": "summary",
+          "statistics": "absent",
+          "queries": 3,
+          "rowsRead": 114331,
+          "rowsWritten": 0,
+          "d1DurationMs": 158
+        },
+        {
+          "chain": 97,
+          "resource": "facets",
+          "statistics": "absent",
+          "queries": 3,
+          "rowsRead": 82,
+          "rowsWritten": 0,
+          "d1DurationMs": 0
+        },
+        {
+          "chain": 97,
+          "resource": "summary",
+          "statistics": "absent",
+          "queries": 3,
+          "rowsRead": 82,
+          "rowsWritten": 0,
+          "d1DurationMs": 0
+        }
+      ]
+    }
+  ]
+}
