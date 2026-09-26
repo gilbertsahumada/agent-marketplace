@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 1,
+  "status": "blocked-economic-gates",
+  "referenceCommit": "1fe712a",
+  "immutableBaseline": "docs/d1-public-enriched-baseline.json",
+  "referenceSources": "bnb-agent-probe/test/fixtures/public-read-reference",
+  "environment": "local Worker D1 emulator; no remote requests; production indexes unchanged",
+  "commands": [
+    "npm run test:worker -- test/integration/public-enriched-read-profile.test.ts --reporter=verbose",
+    "npm run test:worker -- test/integration/public-projected-routes.test.ts test/integration/catalog-counter-routes.test.ts --reporter=verbose",
+    "npm run test:worker -- test/integration/public-read-index-experiments.test.ts --reporter=verbose",
+    "npx tsc --noEmit"
+  ],
+  "hardGates": { "facets2000MaxReads": 44737, "facets20000MaxReads": 218208, "fullCold20000MaxBaselineFraction": 0.1, "publicRowsWritten": 0 },
+  "results": [
+    { "agents": 2000, "hiring": 740, "evaluation": 1109,
+      "facets": { "queries": 2, "rowsRead": 22756, "rowsWritten": 0, "d1DurationMs": 19 },
+      "summary": { "queries": 2, "rowsRead": 14299, "rowsWritten": 0, "d1DurationMs": 5 },
+      "detail": { "queries": 11, "rowsRead": 62, "rowsWritten": 0, "d1DurationMs": 1 },
+      "fullCold": [
+        { "query": "scope=hiring", "queries": 15, "rowsRead": 53890, "rowsWritten": 0, "d1DurationMs": 30 },
+        { "query": "scope=evaluation", "queries": 15, "rowsRead": 65591, "rowsWritten": 0, "d1DurationMs": 42 },
+        { "query": "scope=evaluation&protocol=mcp&category=grid_trading&reachability=live", "queries": 15, "rowsRead": 62767, "rowsWritten": 0, "d1DurationMs": 44 }
+      ] },
+    { "agents": 20000, "hiring": 7388, "evaluation": 11083,
+      "facets": { "queries": 2, "rowsRead": 227441, "rowsWritten": 0, "d1DurationMs": 205 },
+      "summary": { "queries": 2, "rowsRead": 142937, "rowsWritten": 0, "d1DurationMs": 57 },
+      "detail": { "queries": 11, "rowsRead": 62, "rowsWritten": 0, "d1DurationMs": 0 },
+      "fullCold": [
+        { "query": "scope=hiring", "queries": 15, "rowsRead": 518409, "rowsWritten": 0, "d1DurationMs": 317,
+          "components": { "listSelection": 201364, "facets": 171812, "summary": 142936, "pageEnrichment": 2294, "coverage": 3 }, "hardMaxReads": 122181 },
+        { "query": "scope=evaluation", "queries": 15, "rowsRead": 636830, "rowsWritten": 0, "d1DurationMs": 486,
+          "components": { "listSelection": 275466, "facets": 216358, "summary": 142936, "pageEnrichment": 2067, "coverage": 3 }, "hardMaxReads": 163163 },
+        { "query": "scope=evaluation&protocol=mcp&category=grid_trading&reachability=live", "queries": 15, "rowsRead": 608242, "rowsWritten": 0, "d1DurationMs": 420,
+          "components": { "listSelection": 246779, "facets": 216358, "summary": 142936, "pageEnrichment": 2166, "coverage": 3 }, "hardMaxReads": 186972 }
+      ] }
+  ],
+  "indexExperiments": {
+    "productionChanges": false,
+    "coveringCumulativeEarlierReaderRevision": [
+      { "index": "endpoint key plus policy columns", "creationReads": 81961, "creationWrites": 40001, "beforeFullColdReads": 671820, "afterFullColdReads": 762562 },
+      { "index": "plus capability raw fields", "creationReads": 37384, "creationWrites": 18001, "beforeFullColdReads": 671820, "afterFullColdReads": 797684 },
+      { "index": "plus agent filter/order fields", "creationReads": 40821, "creationWrites": 20021, "beforeFullColdReads": 671820, "afterFullColdReads": 797684 }
+    ],
+    "sparseCompletedJobs": { "creationReads": 11348, "creationWrites": 1334, "beforeFacetReads": 227441, "afterFacetReads": 219437, "hardMaxReads": 218208 },
+    "decision": "Do not add any experimental index to production: covering indexes increase measured reads; sparse completed index alone still misses the facet gate and does not address the full-cold gate."
+  },
+  "notes": [
+    "Each full-cold scenario is three independent requests: list plus facets plus summary. Hiring is populated.",
+    "All compared JSON outputs match the immutable source reader. Reads issue zero writes.",
+    "D1 duration sums are emulator query duration, not browser latency or production timings.",
+    "Coverage adds one measured runtime_state lookup per request. Missing or incomplete coverage produces 503 no-store, without historical fallback.",
+    "The profile is intentionally RED at 20000 agents; thresholds and reference snapshots were not relaxed.",
+    "Public page enrichment still includes native Drizzle raw calls, so production invocation telemetry remains explicitly partial for those statements. The local meter obtains D1 metadata through one all execution per statement."
+  ]
+}
