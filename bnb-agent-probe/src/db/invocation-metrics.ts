@@ -82,6 +82,7 @@ export function publicOperation(request: Request): { operation: string; chainId:
   const operations: Record<string, string> = {
     '/health': 'health', '/catalog-agents': 'catalog.results', '/catalog-facets': 'catalog.facets',
     '/catalog-summary': 'catalog.summary', '/catalog-agent': 'catalog.detail',
+    '/catalog-combined': 'catalog.combined',
     '/observations': 'observations', '/commerce-jobs': 'jobs.results',
     '/commerce-activity': 'jobs.activity', '/commerce-summary': 'jobs.summary',
     '/job-agent-identities': 'jobs.identities', '/hire-events': 'jobs.events',
