@@ -1,0 +1,35 @@
+{
+  "status":"local_public_day_gates_passed_not_release_approval",
+  "date":"2026-09-26",
+  "workload":"dense-public-day-workload.json",
+  "workloadSha256":"2120b6bef1ad1957dd6061e454fcab938e08210f8432c9122d71215f4551a17e",
+  "command":"npm run test:worker -- test/integration/dense-public-day-cost.test.ts --disableConsoleIntercept",
+  "tests":{"passed":4,"failed":0,"durationSeconds":320.85,"typecheck":"passed"},
+  "method":{"cyclesPerDay":96,"realExecution":true,"costReplicationUsed":false,"freshSourcesForEachVersion":true,"baselineProjectionTriggersRemoved":true,"baselineProjectionIndexRemoved":true,"bothNetworksInFixture":true,"publicReadsCold":true,"publicReadWrites":0,"sourceProgressEqual":true,"publicResponsesEqual":true,"weight":"reads + 1000 * writes","remoteRequests":0},
+  "results":[
+    {"agents":2000,"scenario":"representative","mutationGroups":96,"readGroups":96,
+      "before":{"queries":1944,"reads":17895551,"writes":2950,"units":20845551,"publicReads":17890419,"mutationReadUnits":5132,"mutationUnits":2955132,"elapsedMs":10042,"publicOperations":288},
+      "after":{"queries":1752,"reads":1081228,"writes":3785,"units":4866228,"publicReads":1067888,"mutationReadUnits":13340,"mutationUnits":3798340,"elapsedMs":3158,"publicOperations":96},
+      "weightedReduction":0.7665579576188704,"extraMutationUnits":843208,"savedPublicReadUnits":16822531,"breakEvenColdReadGroups":5,"requiredReduction":0.5,"gatePassed":true},
+    {"agents":2000,"scenario":"write-heavy","mutationGroups":1536,"readGroups":1,
+      "before":{"queries":13828,"reads":357592,"writes":46122,"units":46479592,"publicReads":277636,"mutationReadUnits":79956,"mutationUnits":46201956,"elapsedMs":2213,"publicOperations":3},
+      "after":{"queries":13826,"reads":220593,"writes":58923,"units":59143593,"publicReads":9681,"mutationReadUnits":210912,"mutationUnits":59133912,"elapsedMs":2881,"publicOperations":1},
+      "weightedReduction":-0.27246368685852485,"extraMutationUnits":12931956,"savedPublicReadUnits":267955,"breakEvenColdReadGroups":49,"requiredReduction":null,"gatePassed":null},
+    {"agents":20000,"scenario":"representative","mutationGroups":96,"readGroups":96,
+      "before":{"queries":1944,"reads":173838270,"writes":2784,"units":176622270,"publicReads":173833470,"mutationReadUnits":4800,"mutationUnits":2788800,"elapsedMs":90758,"publicOperations":288},
+      "after":{"queries":1752,"reads":9175626,"writes":3534,"units":12709626,"publicReads":9162652,"mutationReadUnits":12974,"mutationUnits":3546974,"elapsedMs":21332,"publicOperations":96},
+      "weightedReduction":0.9280406372310808,"extraMutationUnits":758174,"savedPublicReadUnits":164670818,"breakEvenColdReadGroups":1,"requiredReduction":0.5,"gatePassed":true},
+    {"agents":20000,"scenario":"write-heavy","mutationGroups":1536,"readGroups":1,
+      "before":{"queries":13828,"reads":2910814,"writes":46464,"units":49374814,"publicReads":2830174,"mutationReadUnits":80640,"mutationUnits":46544640,"elapsedMs":3438,"publicOperations":3},
+      "after":{"queries":13826,"reads":306995,"writes":59434,"units":59740995,"publicReads":95561,"mutationReadUnits":211434,"mutationUnits":59645434,"elapsedMs":2803,"publicOperations":1},
+      "weightedReduction":-0.209948760515837,"extraMutationUnits":13100794,"savedPublicReadUnits":2734613,"breakEvenColdReadGroups":5,"requiredReduction":null,"gatePassed":null}
+  ],
+  "limitations":[
+    "Public A/B day only; does not approve C/background day or production savings.",
+    "Write-heavy scenario deliberately costs more; no universal savings claim.",
+    "Historical bootstrap, DDL, parity audits and fixture setup excluded from recurring totals and require separate admission.",
+    "Break-even assumes the observed cold-read mix and mutation volume; cached reads do not amortize new D1 writes.",
+    "Elapsed time is local wall time, not measured production CPU or invoice.",
+    "No production deployment, migration or reactivation performed."
+  ]
+}
