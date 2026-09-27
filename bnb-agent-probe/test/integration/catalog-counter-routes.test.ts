@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { catalogAgentsResponse, catalogFacetsResponse, catalogSummaryResponse } from "../../src/routes/catalog-agents";
 import { clearCatalogFixtures } from "./catalog-fixtures";
 import { metered, type ReadRecord } from "./d1-meter";
+import { catalogFacetsResponse as sourceFacets } from "../fixtures/public-read-reference/catalog-agents";
 
 const NOW = 1_800_000_000_000;
 const SHARED_ENDPOINT = "a".repeat(64);
@@ -48,9 +49,11 @@ function request(path: string, query = ""): Request {
 }
 
 function assertAggregateOnly(log: ReadRecord[]): void {
-  expect(log).toHaveLength(1);
-  expect(log[0]!.rowsWritten).toBe(0);
-  expect(log[0]!.sql).not.toMatch(/\bLIMIT\b|\bORDER BY\b|ROW_NUMBER/i);
+  expect(log).toHaveLength(3);
+  expect(log[0]!.sql).toContain("runtime_state");
+  for (const entry of log) expect(entry.rowsWritten).toBe(0);
+  expect(log[1]!.sql).toContain('runtime_state');
+  expect(log[2]!.sql).not.toMatch(/\bLIMIT\b|\bORDER BY\b|ROW_NUMBER/i);
 }
 
 describe("aggregate-only public counters", () => {
@@ -114,7 +117,16 @@ describe("aggregate-only public counters", () => {
       const result = await catalogFacetsResponse(request("catalog-facets","status=completed_jobs"),metered(env.DB,log),NOW);
       expect(await result.json()).toMatchObject({ facets: { statuses: { completed_jobs: 1 }, categories: { grid_trading: 1, rebalancing: 0 } } });
       assertAggregateOnly(log);
-      const entry = log[0]!;
+      const compact = log[1]!;
+      expect(compact.sql).not.toMatch(/\bcommerce_jobs\b|\bhire_events\b|\bcatalog_observations\b/);
+      expect(compact.rowsRead).toBeLessThan(200);
+      // Keep A's source PK-seek regression intact even though public counters
+      // now consume the verified compact metrics instead of joining history.
+      const sourceLog: ReadRecord[] = [];
+      const source = await sourceFacets(request("catalog-facets","status=completed_jobs"),metered(env.DB,sourceLog),NOW);
+      expect(await source.json()).toMatchObject({ facets: { statuses: { completed_jobs: 1 }, categories: { grid_trading: 1, rebalancing: 0 } } });
+      expect(sourceLog).toHaveLength(1);
+      const entry = sourceLog[0]!;
       const plan = await env.DB.prepare(`EXPLAIN QUERY PLAN ${entry.sql}`).bind(...entry.values).all<{ detail: string }>();
       const jobPlans = plan.results?.filter(row => row.detail.includes("commerce_jobs"));
       console.log(JSON.stringify({ operation: "completed-job-facets", analyzed, rowsRead: entry.rowsRead, rowsWritten: entry.rowsWritten, d1DurationMs: entry.durationMs, plan: jobPlans }));

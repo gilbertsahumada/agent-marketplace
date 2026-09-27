@@ -1,6 +1,6 @@
 import { effectiveCapability } from "../catalog/effective-capability";
-import type { D1DatabaseLike } from "../db/client";
-import { createDatabase, readCatalogAgentEvidence } from "../db/orm";
+import { readPublicCatalogAgentEvidence } from "../db/orm";
+import { publicProjectionsReady } from "../catalog/public-projections";
 import { deriveCatalogEvidenceState, selectBestCapability, type CapabilityFact } from "../catalog/evidence-policy";
 import { CATALOG_API_VERSION, publicCatalogDetails, publicCatalogObservation } from "../catalog/api-contract";
 import type { D1Database } from "../types";
@@ -32,8 +32,11 @@ export async function catalogAgentResponse(
       headers: { "cache-control": "no-store" },
     });
   }
-  const evidence = await readCatalogAgentEvidence(
-    createDatabase(d1 as unknown as D1DatabaseLike),
+  if (!await publicProjectionsReady(d1)) return Response.json({ error: "catalog_projection_unavailable" }, {
+    status: 503, headers: { "cache-control": "no-store", "x-content-type-options": "nosniff" },
+  });
+  const evidence = await readPublicCatalogAgentEvidence(
+    d1,
     agentId,
     50,
     chainId,

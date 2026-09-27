@@ -1,0 +1,625 @@
+{
+  "scope": "local D1; no backfill; additive 0036 and 0037",
+  "fixtures": [
+    {
+      "observations": 0,
+      "fixed": {
+        "reads": 164,
+        "writes": 44,
+        "units": 44164
+      },
+      "index": {
+        "operation": "history-index",
+        "reads": 2,
+        "writes": 1,
+        "units": 1002
+      },
+      "costs": [
+        {
+          "operation": "0036_catalog_public_projections.sql:0",
+          "reads": 1,
+          "writes": 2,
+          "units": 2001
+        },
+        {
+          "operation": "0036_catalog_public_projections.sql:1",
+          "reads": 1,
+          "writes": 2,
+          "units": 2001
+        },
+        {
+          "operation": "history-index",
+          "reads": 2,
+          "writes": 1,
+          "units": 1002
+        },
+        {
+          "operation": "0036_catalog_public_projections.sql:3",
+          "reads": 0,
+          "writes": 2,
+          "units": 2000
+        },
+        {
+          "operation": "0036_catalog_public_projections.sql:4",
+          "reads": 0,
+          "writes": 1,
+          "units": 1000
+        },
+        {
+          "operation": "0036_catalog_public_projections.sql:5",
+          "reads": 0,
+          "writes": 1,
+          "units": 1000
+        },
+        {
+          "operation": "0036_catalog_public_projections.sql:6",
+          "reads": 0,
+          "writes": 1,
+          "units": 1000
+        },
+        {
+          "operation": "0036_catalog_public_projections.sql:7",
+          "reads": 0,
+          "writes": 1,
+          "units": 1000
+        },
+        {
+          "operation": "0036_catalog_public_projections.sql:8",
+          "reads": 0,
+          "writes": 1,
+          "units": 1000
+        },
+        {
+          "operation": "0036_catalog_public_projections.sql:9",
+          "reads": 0,
+          "writes": 1,
+          "units": 1000
+        },
+        {
+          "operation": "0036_catalog_public_projections.sql:10",
+          "reads": 0,
+          "writes": 1,
+          "units": 1000
+        },
+        {
+          "operation": "0036_catalog_public_projections.sql:11",
+          "reads": 0,
+          "writes": 1,
+          "units": 1000
+        },
+        {
+          "operation": "0036_catalog_public_projections.sql:12",
+          "reads": 0,
+          "writes": 1,
+          "units": 1000
+        },
+        {
+          "operation": "0036_catalog_public_projections.sql:13",
+          "reads": 0,
+          "writes": 1,
+          "units": 1000
+        },
+        {
+          "operation": "0036_catalog_public_projections.sql:14",
+          "reads": 0,
+          "writes": 1,
+          "units": 1000
+        },
+        {
+          "operation": "0036_catalog_public_projections.sql:15",
+          "reads": 0,
+          "writes": 1,
+          "units": 1000
+        },
+        {
+          "operation": "0036_catalog_public_projections.sql:16",
+          "reads": 0,
+          "writes": 1,
+          "units": 1000
+        },
+        {
+          "operation": "0036_catalog_public_projections.sql:17",
+          "reads": 0,
+          "writes": 1,
+          "units": 1000
+        },
+        {
+          "operation": "0036_catalog_public_projections.sql:18",
+          "reads": 0,
+          "writes": 1,
+          "units": 1000
+        },
+        {
+          "operation": "0037_catalog_public_current_endpoints.sql:0",
+          "reads": 1,
+          "writes": 2,
+          "units": 2001
+        },
+        {
+          "operation": "0037_catalog_public_current_endpoints.sql:1",
+          "reads": 0,
+          "writes": 0,
+          "units": 0
+        },
+        {
+          "operation": "0037_catalog_public_current_endpoints.sql:2",
+          "reads": 0,
+          "writes": 1,
+          "units": 1000
+        },
+        {
+          "operation": "0037_catalog_public_current_endpoints.sql:3",
+          "reads": 0,
+          "writes": 0,
+          "units": 0
+        },
+        {
+          "operation": "0037_catalog_public_current_endpoints.sql:4",
+          "reads": 0,
+          "writes": 1,
+          "units": 1000
+        },
+        {
+          "operation": "0037_catalog_public_current_endpoints.sql:5",
+          "reads": 0,
+          "writes": 0,
+          "units": 0
+        },
+        {
+          "operation": "0037_catalog_public_current_endpoints.sql:6",
+          "reads": 0,
+          "writes": 1,
+          "units": 1000
+        },
+        {
+          "operation": "0037_catalog_public_current_endpoints.sql:7",
+          "reads": 0,
+          "writes": 0,
+          "units": 0
+        },
+        {
+          "operation": "0037_catalog_public_current_endpoints.sql:8",
+          "reads": 0,
+          "writes": 1,
+          "units": 1000
+        },
+        {
+          "operation": "0037_catalog_public_current_endpoints.sql:9",
+          "reads": 0,
+          "writes": 0,
+          "units": 0
+        },
+        {
+          "operation": "0037_catalog_public_current_endpoints.sql:10",
+          "reads": 0,
+          "writes": 1,
+          "units": 1000
+        },
+        {
+          "operation": "0037_catalog_public_current_endpoints.sql:11",
+          "reads": 0,
+          "writes": 0,
+          "units": 0
+        },
+        {
+          "operation": "0037_catalog_public_current_endpoints.sql:12",
+          "reads": 0,
+          "writes": 1,
+          "units": 1000
+        },
+        {
+          "operation": "0037_catalog_public_current_endpoints.sql:13",
+          "reads": 0,
+          "writes": 0,
+          "units": 0
+        },
+        {
+          "operation": "0037_catalog_public_current_endpoints.sql:14",
+          "reads": 0,
+          "writes": 1,
+          "units": 1000
+        },
+        {
+          "operation": "0037_catalog_public_current_endpoints.sql:15",
+          "reads": 0,
+          "writes": 0,
+          "units": 0
+        },
+        {
+          "operation": "0037_catalog_public_current_endpoints.sql:16",
+          "reads": 0,
+          "writes": 1,
+          "units": 1000
+        },
+        {
+          "operation": "0037_catalog_public_current_endpoints.sql:17",
+          "reads": 0,
+          "writes": 0,
+          "units": 0
+        },
+        {
+          "operation": "0037_catalog_public_current_endpoints.sql:18",
+          "reads": 0,
+          "writes": 1,
+          "units": 1000
+        },
+        {
+          "operation": "0037_catalog_public_current_endpoints.sql:19",
+          "reads": 0,
+          "writes": 0,
+          "units": 0
+        },
+        {
+          "operation": "0037_catalog_public_current_endpoints.sql:20",
+          "reads": 0,
+          "writes": 1,
+          "units": 1000
+        },
+        {
+          "operation": "0037_catalog_public_current_endpoints.sql:21",
+          "reads": 0,
+          "writes": 0,
+          "units": 0
+        },
+        {
+          "operation": "0037_catalog_public_current_endpoints.sql:22",
+          "reads": 0,
+          "writes": 1,
+          "units": 1000
+        },
+        {
+          "operation": "0037_catalog_public_current_endpoints.sql:23",
+          "reads": 0,
+          "writes": 0,
+          "units": 0
+        },
+        {
+          "operation": "0037_catalog_public_current_endpoints.sql:24",
+          "reads": 0,
+          "writes": 1,
+          "units": 1000
+        },
+        {
+          "operation": "ledger-create",
+          "reads": 1,
+          "writes": 3,
+          "units": 3001
+        },
+        {
+          "operation": "ledger-insert",
+          "reads": 5,
+          "writes": 3,
+          "units": 3005
+        },
+        {
+          "operation": "ledger-insert",
+          "reads": 6,
+          "writes": 3,
+          "units": 3006
+        },
+        {
+          "operation": "schema-preflight",
+          "reads": 147,
+          "writes": 0,
+          "units": 147
+        },
+        {
+          "operation": "ledger-preflight",
+          "reads": 2,
+          "writes": 0,
+          "units": 2
+        }
+      ]
+    },
+    {
+      "observations": 8000,
+      "fixed": {
+        "reads": 166,
+        "writes": 44,
+        "units": 44166
+      },
+      "index": {
+        "operation": "history-index",
+        "reads": 16113,
+        "writes": 8001,
+        "units": 8017113
+      },
+      "costs": [
+        {
+          "operation": "0036_catalog_public_projections.sql:0",
+          "reads": 1,
+          "writes": 2,
+          "units": 2001
+        },
+        {
+          "operation": "0036_catalog_public_projections.sql:1",
+          "reads": 1,
+          "writes": 2,
+          "units": 2001
+        },
+        {
+          "operation": "history-index",
+          "reads": 16113,
+          "writes": 8001,
+          "units": 8017113
+        },
+        {
+          "operation": "0036_catalog_public_projections.sql:3",
+          "reads": 0,
+          "writes": 2,
+          "units": 2000
+        },
+        {
+          "operation": "0036_catalog_public_projections.sql:4",
+          "reads": 0,
+          "writes": 1,
+          "units": 1000
+        },
+        {
+          "operation": "0036_catalog_public_projections.sql:5",
+          "reads": 0,
+          "writes": 1,
+          "units": 1000
+        },
+        {
+          "operation": "0036_catalog_public_projections.sql:6",
+          "reads": 0,
+          "writes": 1,
+          "units": 1000
+        },
+        {
+          "operation": "0036_catalog_public_projections.sql:7",
+          "reads": 0,
+          "writes": 1,
+          "units": 1000
+        },
+        {
+          "operation": "0036_catalog_public_projections.sql:8",
+          "reads": 0,
+          "writes": 1,
+          "units": 1000
+        },
+        {
+          "operation": "0036_catalog_public_projections.sql:9",
+          "reads": 0,
+          "writes": 1,
+          "units": 1000
+        },
+        {
+          "operation": "0036_catalog_public_projections.sql:10",
+          "reads": 0,
+          "writes": 1,
+          "units": 1000
+        },
+        {
+          "operation": "0036_catalog_public_projections.sql:11",
+          "reads": 0,
+          "writes": 1,
+          "units": 1000
+        },
+        {
+          "operation": "0036_catalog_public_projections.sql:12",
+          "reads": 0,
+          "writes": 1,
+          "units": 1000
+        },
+        {
+          "operation": "0036_catalog_public_projections.sql:13",
+          "reads": 0,
+          "writes": 1,
+          "units": 1000
+        },
+        {
+          "operation": "0036_catalog_public_projections.sql:14",
+          "reads": 0,
+          "writes": 1,
+          "units": 1000
+        },
+        {
+          "operation": "0036_catalog_public_projections.sql:15",
+          "reads": 0,
+          "writes": 1,
+          "units": 1000
+        },
+        {
+          "operation": "0036_catalog_public_projections.sql:16",
+          "reads": 0,
+          "writes": 1,
+          "units": 1000
+        },
+        {
+          "operation": "0036_catalog_public_projections.sql:17",
+          "reads": 0,
+          "writes": 1,
+          "units": 1000
+        },
+        {
+          "operation": "0036_catalog_public_projections.sql:18",
+          "reads": 0,
+          "writes": 1,
+          "units": 1000
+        },
+        {
+          "operation": "0037_catalog_public_current_endpoints.sql:0",
+          "reads": 1,
+          "writes": 2,
+          "units": 2001
+        },
+        {
+          "operation": "0037_catalog_public_current_endpoints.sql:1",
+          "reads": 0,
+          "writes": 0,
+          "units": 0
+        },
+        {
+          "operation": "0037_catalog_public_current_endpoints.sql:2",
+          "reads": 0,
+          "writes": 1,
+          "units": 1000
+        },
+        {
+          "operation": "0037_catalog_public_current_endpoints.sql:3",
+          "reads": 0,
+          "writes": 0,
+          "units": 0
+        },
+        {
+          "operation": "0037_catalog_public_current_endpoints.sql:4",
+          "reads": 0,
+          "writes": 1,
+          "units": 1000
+        },
+        {
+          "operation": "0037_catalog_public_current_endpoints.sql:5",
+          "reads": 0,
+          "writes": 0,
+          "units": 0
+        },
+        {
+          "operation": "0037_catalog_public_current_endpoints.sql:6",
+          "reads": 0,
+          "writes": 1,
+          "units": 1000
+        },
+        {
+          "operation": "0037_catalog_public_current_endpoints.sql:7",
+          "reads": 0,
+          "writes": 0,
+          "units": 0
+        },
+        {
+          "operation": "0037_catalog_public_current_endpoints.sql:8",
+          "reads": 0,
+          "writes": 1,
+          "units": 1000
+        },
+        {
+          "operation": "0037_catalog_public_current_endpoints.sql:9",
+          "reads": 0,
+          "writes": 0,
+          "units": 0
+        },
+        {
+          "operation": "0037_catalog_public_current_endpoints.sql:10",
+          "reads": 0,
+          "writes": 1,
+          "units": 1000
+        },
+        {
+          "operation": "0037_catalog_public_current_endpoints.sql:11",
+          "reads": 0,
+          "writes": 0,
+          "units": 0
+        },
+        {
+          "operation": "0037_catalog_public_current_endpoints.sql:12",
+          "reads": 0,
+          "writes": 1,
+          "units": 1000
+        },
+        {
+          "operation": "0037_catalog_public_current_endpoints.sql:13",
+          "reads": 0,
+          "writes": 0,
+          "units": 0
+        },
+        {
+          "operation": "0037_catalog_public_current_endpoints.sql:14",
+          "reads": 0,
+          "writes": 1,
+          "units": 1000
+        },
+        {
+          "operation": "0037_catalog_public_current_endpoints.sql:15",
+          "reads": 0,
+          "writes": 0,
+          "units": 0
+        },
+        {
+          "operation": "0037_catalog_public_current_endpoints.sql:16",
+          "reads": 0,
+          "writes": 1,
+          "units": 1000
+        },
+        {
+          "operation": "0037_catalog_public_current_endpoints.sql:17",
+          "reads": 0,
+          "writes": 0,
+          "units": 0
+        },
+        {
+          "operation": "0037_catalog_public_current_endpoints.sql:18",
+          "reads": 0,
+          "writes": 1,
+          "units": 1000
+        },
+        {
+          "operation": "0037_catalog_public_current_endpoints.sql:19",
+          "reads": 0,
+          "writes": 0,
+          "units": 0
+        },
+        {
+          "operation": "0037_catalog_public_current_endpoints.sql:20",
+          "reads": 0,
+          "writes": 1,
+          "units": 1000
+        },
+        {
+          "operation": "0037_catalog_public_current_endpoints.sql:21",
+          "reads": 0,
+          "writes": 0,
+          "units": 0
+        },
+        {
+          "operation": "0037_catalog_public_current_endpoints.sql:22",
+          "reads": 0,
+          "writes": 1,
+          "units": 1000
+        },
+        {
+          "operation": "0037_catalog_public_current_endpoints.sql:23",
+          "reads": 0,
+          "writes": 0,
+          "units": 0
+        },
+        {
+          "operation": "0037_catalog_public_current_endpoints.sql:24",
+          "reads": 0,
+          "writes": 1,
+          "units": 1000
+        },
+        {
+          "operation": "ledger-create",
+          "reads": 1,
+          "writes": 3,
+          "units": 3001
+        },
+        {
+          "operation": "ledger-insert",
+          "reads": 6,
+          "writes": 3,
+          "units": 3006
+        },
+        {
+          "operation": "ledger-insert",
+          "reads": 7,
+          "writes": 3,
+          "units": 3007
+        },
+        {
+          "operation": "schema-preflight",
+          "reads": 147,
+          "writes": 0,
+          "units": 147
+        },
+        {
+          "operation": "ledger-preflight",
+          "reads": 2,
+          "writes": 0,
+          "units": 2
+        }
+      ]
+    }
+  ]
+}

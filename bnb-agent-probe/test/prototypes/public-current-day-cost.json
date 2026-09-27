@@ -1,0 +1,293 @@
+{
+  "status": "production_code_local_public_day_gates_passed_not_release_approval",
+  "date": "2026-09-26",
+  "command": "npm run test:worker -- test/integration/public-current-day-cost.test.ts --disableConsoleIntercept",
+  "tests": {
+    "passed": 4,
+    "failed": 0,
+    "durationSeconds": 352.67,
+    "typecheck": "passed before run"
+  },
+  "workload": "dense-public-day-workload.json",
+  "workloadSha256": "2120b6bef1ad1957dd6061e454fcab938e08210f8432c9122d71215f4551a17e",
+  "sourceSha256": {
+    "sql": "c167390d6ee34630fdaffa800667ca7f059dc9a5bd0cf1b0ea5b0ae5d12c8a86",
+    "backfill": "c604c6cd68cdb622611a3dbbb885bd06ba0e36e7586cb29024d0fc78e050d82c",
+    "classification": "439637ddecb4d808ae85b880e0f76067b1faaf0095c264b075e4028caf3a5e9c",
+    "route": "4040d3aa2f54508757a0972bed73ac32243cba3c7c6fb3f3c23d36c97dda9641"
+  },
+  "method": {
+    "cycles": 96,
+    "realCycles": true,
+    "productionRoute": true,
+    "productionTriggers": true,
+    "productionBackfill": true,
+    "prototypeTriggers": false,
+    "baselineDropsSparseAndCurrentTriggers": true,
+    "baselineDropsObservationIndex": true,
+    "bothNetworksInFixture": true,
+    "publicQueriesMainnet": true,
+    "publicReadWrites": 0,
+    "networkAndSellersSimulated": true,
+    "noRemote": true,
+    "weight": "reads + 1000 * writes",
+    "constructionSeparate": true
+  },
+  "results": [
+    {
+      "count": 2000,
+      "scenario": "representative",
+      "construction": {
+        "queries": 826,
+        "reads": 94008,
+        "writes": 4351,
+        "units": 4445008
+      },
+      "before": {
+        "reads": {
+          "queries": 1080,
+          "reads": 17890419,
+          "writes": 0,
+          "units": 17890419
+        },
+        "writes": {
+          "queries": 864,
+          "reads": 5132,
+          "writes": 2950,
+          "units": 2955132
+        },
+        "total": {
+          "queries": 1944,
+          "reads": 17895551,
+          "writes": 2950,
+          "units": 20845551
+        },
+        "elapsedMs": 9144,
+        "mutationGroups": 96,
+        "publicOperations": 288
+      },
+      "after": {
+        "reads": {
+          "queries": 984,
+          "reads": 1059440,
+          "writes": 0,
+          "units": 1059440
+        },
+        "writes": {
+          "queries": 864,
+          "reads": 14436,
+          "writes": 3601,
+          "units": 3615436
+        },
+        "total": {
+          "queries": 1848,
+          "reads": 1073876,
+          "writes": 3601,
+          "units": 4674876
+        },
+        "elapsedMs": 2807,
+        "mutationGroups": 96,
+        "publicOperations": 96
+      },
+      "weightedReduction": 0.7757374703120105,
+      "extraWriteUnits": 660304,
+      "savedReadUnits": 16830979,
+      "readGroups": 96,
+      "breakEvenReadGroups": 4,
+      "progressEqual": true
+    },
+    {
+      "count": 2000,
+      "scenario": "write-heavy",
+      "construction": {
+        "queries": 826,
+        "reads": 94008,
+        "writes": 4351,
+        "units": 4445008
+      },
+      "before": {
+        "reads": {
+          "queries": 4,
+          "reads": 277636,
+          "writes": 0,
+          "units": 277636
+        },
+        "writes": {
+          "queries": 13824,
+          "reads": 79956,
+          "writes": 46122,
+          "units": 46201956
+        },
+        "total": {
+          "queries": 13828,
+          "reads": 357592,
+          "writes": 46122,
+          "units": 46479592
+        },
+        "elapsedMs": 1837,
+        "mutationGroups": 1536,
+        "publicOperations": 3
+      },
+      "after": {
+        "reads": {
+          "queries": 3,
+          "reads": 9593,
+          "writes": 0,
+          "units": 9593
+        },
+        "writes": {
+          "queries": 13824,
+          "reads": 228378,
+          "writes": 55989,
+          "units": 56217378
+        },
+        "total": {
+          "queries": 13827,
+          "reads": 237971,
+          "writes": 55989,
+          "units": 56226971
+        },
+        "elapsedMs": 2375,
+        "mutationGroups": 1536,
+        "publicOperations": 1
+      },
+      "weightedReduction": -0.20971309300649632,
+      "extraWriteUnits": 10015422,
+      "savedReadUnits": 268043,
+      "readGroups": 1,
+      "breakEvenReadGroups": 38,
+      "progressEqual": true
+    },
+    {
+      "count": 20000,
+      "scenario": "representative",
+      "construction": {
+        "queries": 8026,
+        "reads": 929208,
+        "writes": 43051,
+        "units": 43980208
+      },
+      "before": {
+        "reads": {
+          "queries": 1080,
+          "reads": 173833470,
+          "writes": 0,
+          "units": 173833470
+        },
+        "writes": {
+          "queries": 864,
+          "reads": 4800,
+          "writes": 2784,
+          "units": 2788800
+        },
+        "total": {
+          "queries": 1944,
+          "reads": 173838270,
+          "writes": 2784,
+          "units": 176622270
+        },
+        "elapsedMs": 103262,
+        "mutationGroups": 96,
+        "publicOperations": 288
+      },
+      "after": {
+        "reads": {
+          "queries": 984,
+          "reads": 9108892,
+          "writes": 0,
+          "units": 9108892
+        },
+        "writes": {
+          "queries": 864,
+          "reads": 14063,
+          "writes": 3351,
+          "units": 3365063
+        },
+        "total": {
+          "queries": 1848,
+          "reads": 9122955,
+          "writes": 3351,
+          "units": 12473955
+        },
+        "elapsedMs": 18711,
+        "mutationGroups": 96,
+        "publicOperations": 96
+      },
+      "weightedReduction": 0.9293749593411975,
+      "extraWriteUnits": 576263,
+      "savedReadUnits": 164724578,
+      "readGroups": 96,
+      "breakEvenReadGroups": 1,
+      "progressEqual": true
+    },
+    {
+      "count": 20000,
+      "scenario": "write-heavy",
+      "construction": {
+        "queries": 8026,
+        "reads": 929208,
+        "writes": 43051,
+        "units": 43980208
+      },
+      "before": {
+        "reads": {
+          "queries": 4,
+          "reads": 2830174,
+          "writes": 0,
+          "units": 2830174
+        },
+        "writes": {
+          "queries": 13824,
+          "reads": 80640,
+          "writes": 46464,
+          "units": 46544640
+        },
+        "total": {
+          "queries": 13828,
+          "reads": 2910814,
+          "writes": 46464,
+          "units": 49374814
+        },
+        "elapsedMs": 2921,
+        "mutationGroups": 1536,
+        "publicOperations": 3
+      },
+      "after": {
+        "reads": {
+          "queries": 3,
+          "reads": 95001,
+          "writes": 0,
+          "units": 95001
+        },
+        "writes": {
+          "queries": 13824,
+          "reads": 228893,
+          "writes": 56501,
+          "units": 56729893
+        },
+        "total": {
+          "queries": 13827,
+          "reads": 323894,
+          "writes": 56501,
+          "units": 56824894
+        },
+        "elapsedMs": 2255,
+        "mutationGroups": 1536,
+        "publicOperations": 1
+      },
+      "weightedReduction": -0.15088826461199423,
+      "extraWriteUnits": 10185253,
+      "savedReadUnits": 2735173,
+      "readGroups": 1,
+      "breakEvenReadGroups": 4,
+      "progressEqual": true
+    }
+  ],
+  "limitations": [
+    "B public reads and source-write day only; no claim to execute C actual producer/consumer/scheduler/budget controls.",
+    "Production readiness lookups and backfill controls are metered; fixture setup and parity audits are excluded.",
+    "Construction counters cover current-projection bootstrap only, not sparse0036 backfill, DDL or shared release admission.",
+    "Write-heavy cases are adverse and cost more; >=50% threshold applies unchanged to representative workload only.",
+    "No invoice cap, production savings or rollout readiness claim. No deployment or remote operations."
+  ]
+}

@@ -2,6 +2,8 @@ import { and, count, countDistinct, desc, eq, getTableColumns, inArray, isNull, 
 import { drizzle, type DrizzleD1Database } from "drizzle-orm/d1";
 
 import type { D1DatabaseLike } from "./client";
+import type { D1Database } from "../types";
+import { readPublicAgentMetrics, readPublicEndpointEvidence, readPublicProjectedObservations } from "../catalog/public-projections";
 import {
   catalogAgents,
   catalogSellerCapabilities,
@@ -490,6 +492,49 @@ export async function readCatalogAgentEvidence(
       funded: Number(jobStatsRows[0]?.funded ?? 0),
       submitted: Number(jobStatsRows[0]?.submitted ?? 0),
     },
+  };
+}
+
+/** Public detail reader, called only after complete projection coverage. The
+ * source reader above deliberately remains authoritative for quote admission.
+ * Recent history is bounded to the detail page; effective evidence uses IDs. */
+export async function readPublicCatalogAgentEvidence(
+  d1: D1Database, agentId: string, observationLimit = 50, chainId: 56 | 97 = 56,
+): Promise<CatalogAgentEvidenceRows> {
+  const db = createDatabase(d1 as unknown as D1DatabaseLike);
+  const agentKey = `eip155:${chainId}:${agentId}`;
+  const [agents,declarations,ingestTasks,capabilities,metrics,endpointEvidence] = await Promise.all([
+    db.select().from(catalogAgents).where(eq(catalogAgents.agentKey,agentKey)).limit(1),
+    db.select().from(catalogAgentEndpoints).where(and(eq(catalogAgentEndpoints.agentKey,agentKey),eq(catalogAgentEndpoints.declarationState,"current")))
+      .orderBy(desc(catalogAgentEndpoints.priority),catalogAgentEndpoints.endpointKey),
+    db.select().from(catalogIngestTasks).where(eq(catalogIngestTasks.agentKey,agentKey)).limit(1),
+    db.select().from(catalogSellerCapabilities).where(eq(catalogSellerCapabilities.agentKey,agentKey)).orderBy(desc(catalogSellerCapabilities.updatedAt)),
+    readPublicAgentMetrics(d1,[agentKey]),
+    readPublicEndpointEvidence(d1,[agentKey]),
+  ]);
+  const endpointKeys = declarations.map(row => row.endpointKey);
+  const [endpoints,recentObservations,effectiveEndpointObservations,effectiveAgentObservations] = await Promise.all([
+    endpointKeys.length ? db.select().from(catalogEndpoints).where(inArray(catalogEndpoints.endpointKey,endpointKeys))
+      .orderBy(catalogEndpoints.protocol,catalogEndpoints.endpointKey) : Promise.resolve([]),
+    db.select().from(catalogObservations).where(eq(catalogObservations.agentKey,agentKey))
+      .orderBy(desc(catalogObservations.observedAt),desc(catalogObservations.id)).limit(observationLimit),
+    readPublicProjectedObservations(d1,[agentKey],"platform",endpointKeys),
+    readPublicProjectedObservations(d1,[agentKey],"agent"),
+  ]);
+  const operational = new Set(endpoints.filter(row => row.role === "operational" && row.eligibility === "eligible").map(row => row.endpointKey));
+  const attempts = endpointEvidence.filter(row => operational.has(row.endpointScope));
+  const metric = metrics[0];
+  return {
+    agent: agents[0] ?? null, declarations, endpoints, capabilities, admission: null,
+    ingestTask: ingestTasks[0] ?? null,
+    observations: [...new Map([...recentObservations,...effectiveEndpointObservations,...effectiveAgentObservations]
+      .map(row => [row.id,row])).values()].sort((a,b) => b.observedAt-a.observedAt || b.id-a.id),
+    platformAttemptCount: attempts.reduce((sum,row) => sum+row.platformAttemptCount,0),
+    platformAttemptCountByEndpoint: new Map(attempts.map(row => [row.endpointScope,row.platformAttemptCount])),
+    quoteStats: { requestCount: metric?.buyerQuoteRequestCount ?? 0, successCount: metric?.buyerQuoteSuccessCount ?? 0,
+      lastAttemptAt: metric?.buyerQuoteLastAttemptAt ?? null },
+    jobStats: { total: metric?.jobCount ?? 0, completed: metric?.jobCompleted ?? 0,
+      funded: metric?.jobFunded ?? 0, submitted: metric?.jobSubmitted ?? 0 },
   };
 }
 

@@ -4,6 +4,9 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { normalizeCatalogQuery } from "../src/presentation/catalog-query";
 import type { CatalogResources } from "../src/business/entities/catalog-resource";
+import { createCatalogResources } from "../src/presentation/catalog-resources";
+import type { CatalogReadResult } from "../src/business/entities/catalog-resource";
+import type { CatalogCombinedData } from "../src/data/observation/catalog-candidate-feed";
 const router = vi.hoisted(() => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn() }));
 vi.mock("next/navigation", () => ({ useRouter: () => router }));
 vi.mock("../components/marketplace/catalog-page", () => ({ CatalogPage: ({ catalog }: { catalog: { total: number } }) => <div>Cards: {catalog.total}</div> }));
@@ -61,5 +64,36 @@ describe("progressive catalogue sections", () => {
     expect(await screen.findByText("Cards: 7")).toBeTruthy();
     expect(screen.queryByText("Cards: 3")).toBeNull();
     expect(screen.queryByText("99")).toBeNull();
+  });
+  it("resolves the actual shared coordinator into cards and all counts without browser requests",async()=>{
+    const pending=deferred<CatalogReadResult<CatalogCombinedData>>();
+    const readers={combined:vi.fn(()=>pending.promise),read:vi.fn(),facets:vi.fn(),summary:vi.fn(),directory:vi.fn()};
+    const query=normalizeCatalogQuery({});const resources=createCatalogResources(query,false,readers);
+    const fetcher=vi.fn();vi.stubGlobal("fetch",fetcher);
+    await act(async()=>{render(<ProgressiveCatalog query={query} resources={resources}/>);});
+    expect(screen.getByTestId("agents-loading-results")).toBeTruthy();
+    expect(screen.getAllByLabelText("Loading count").length).toBeGreaterThan(0);
+    await act(async()=>pending.resolve({ok:true,data:{list:{total:3} as never,facets:{statuses:{},categories:{},protocols:{},reachability:{}} as never,summary:{hiring:3,evaluation:8}}}));
+    expect(await screen.findByText("Cards: 3")).toBeTruthy();
+    await waitFor(()=>expect(screen.queryAllByLabelText("Loading count")).toHaveLength(0));
+    expect(screen.getByRole("textbox",{name:"Search agents"})).toBeEnabled();
+    expect(readers.combined).toHaveBeenCalledOnce();expect(fetcher).not.toHaveBeenCalled();
+    expect(readers.read).not.toHaveBeenCalled();expect(readers.facets).not.toHaveBeenCalled();expect(readers.summary).not.toHaveBeenCalled();
+  });
+  it("keeps combined old-network success from restoring cards after navigation",async()=>{
+    const old=deferred<CatalogReadResult<CatalogCombinedData>>(),next=deferred<CatalogReadResult<CatalogCombinedData>>();
+    const readers={combined:vi.fn().mockReturnValueOnce(old.promise).mockReturnValueOnce(next.promise),read:vi.fn(),facets:vi.fn(),summary:vi.fn(),directory:vi.fn()};
+    const firstQuery=normalizeCatalogQuery({}),nextQuery=normalizeCatalogQuery({network:"testnet"});
+    const first=createCatalogResources(firstQuery,false,readers),second=createCatalogResources(nextQuery,false,readers);
+    const fetcher=vi.fn();vi.stubGlobal("fetch",fetcher);
+    let rerender!:ReturnType<typeof render>["rerender"];
+    await act(async()=>{({rerender}=render(<ProgressiveCatalog key="mainnet" query={firstQuery} resources={first}/>));});
+    await act(async()=>{rerender(<ProgressiveCatalog key="testnet" query={nextQuery} resources={second}/>);});
+    const data=(total:number):CatalogReadResult<CatalogCombinedData>=>({ok:true,data:{list:{total} as never,facets:{statuses:{},categories:{},protocols:{},reachability:{}} as never,summary:{hiring:total,evaluation:0}}});
+    await act(async()=>old.resolve(data(99)));
+    expect(screen.queryByText("Cards: 99")).toBeNull();expect(screen.getByTestId("agents-loading-results")).toBeTruthy();
+    await act(async()=>next.resolve(data(7)));
+    expect(await screen.findByText("Cards: 7")).toBeTruthy();expect(screen.queryByText("99")).toBeNull();
+    expect(fetcher).not.toHaveBeenCalled();expect(readers.combined).toHaveBeenCalledTimes(2);
   });
 });

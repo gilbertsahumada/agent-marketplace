@@ -16,6 +16,8 @@ describe('per-invocation D1 metrics', () => {
     expect(publicOperation(new Request('https://worker.test/job-agent-identities?chainId=97&jobIds=123')))
       .toEqual({ operation: 'jobs.identities', chainId: 97 });
     expect(publicOperation(new Request('https://worker.test/health'))).toEqual({ operation: 'health', chainId: null });
+    expect(publicOperation(new Request('https://worker.test/catalog-combined?chain=97&q=private')))
+      .toEqual({ operation: 'catalog.combined', chainId: 97 });
     expect(publicOperation(new Request('https://worker.test/private-path'))).toBeNull();
   });
   it('counts each physical first, raw, run and batch once without adding writes', async () => {

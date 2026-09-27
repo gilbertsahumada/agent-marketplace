@@ -641,6 +641,7 @@ export const catalogObservations = sqliteTable(
     index("idx_catalog_observations_quote_latest")
       .on(table.agentKey, table.endpointKey, desc(table.observedAt), desc(table.id))
       .where(sql`${table.validationKind} = 'quote' AND ${table.verificationLevel} = 'cryptographic'`),
+    index("idx_catalog_observations_public_tuple").on(table.agentKey, sql`COALESCE(${table.endpointKey},'')`, desc(table.observedAt), desc(table.id)),
     uniqueIndex("idx_catalog_observations_attempt")
       .on(table.attemptId)
       .where(sql`${table.attemptId} IS NOT NULL`),
@@ -690,6 +691,104 @@ export const catalogObservations = sqliteTable(
     ),
   ],
 );
+
+// History-derived public facts only. Runtime readiness/eligibility stay in source tables.
+// See migration 0036 for transactional source triggers and the bounded backfill.
+// Both projection tables use WITHOUT ROWID in literal DDL (Drizzle's schema
+// builder has no corresponding option), so natural-key reads need no second seek.
+export const catalogPublicEndpointEvidence = sqliteTable("catalog_public_endpoint_evidence", {
+  agentKey: text().notNull(),
+  endpointScope: text().notNull(),
+  latestPlatformId: integer(),
+  latestPlatformProtocol: text(),
+  latestPlatformOutcome: text(),
+  latestPlatformObservedAt: integer(),
+  latestPlatformExpiresAt: integer(),
+  latestPlatformSuccessId: integer(),
+  latestPlatformSuccessAt: integer(),
+  platformAttemptCount: integer().notNull().default(0),
+  browserReachabilityId: integer(),
+  browserProtocolId: integer(),
+  browserQuoteId: integer(),
+  browserChainId: integer(),
+  hasBrowserProtocolSuccessEver: integer().notNull().default(0),
+  latestQuoteId: integer(),
+  latestQuoteOutcome: text(),
+  latestQuoteObservedAt: integer(),
+  latestQuoteExpiresAt: integer(),
+  latestQuoteIsBuyer: integer().notNull().default(0),
+  hasBuyerVerifiedQuoteEver: integer().notNull().default(0),
+  latestChainId: integer(),
+  projectionVersion: integer().notNull().default(1),
+  lastObservationMutationId: integer(),
+}, table => [
+  primaryKey({ columns: [table.agentKey, table.endpointScope] }),
+  check("catalog_public_endpoint_version", sql`${table.projectionVersion}=1`),
+  check("catalog_public_endpoint_attempts", sql`${table.platformAttemptCount}>=0`),
+  check("catalog_public_endpoint_browser_success", sql`${table.hasBrowserProtocolSuccessEver} IN (0,1)`),
+  check("catalog_public_endpoint_quote_success", sql`${table.hasBuyerVerifiedQuoteEver} IN (0,1)`),
+  check("catalog_public_endpoint_quote_kind", sql`${table.latestQuoteIsBuyer} IN (0,1)`),
+]);
+
+export const catalogPublicAgentMetrics = sqliteTable("catalog_public_agent_metrics", {
+  agentKey: text().primaryKey().notNull(),
+  buyerQuoteRequestCount: integer().notNull().default(0),
+  buyerQuoteSuccessCount: integer().notNull().default(0),
+  buyerQuoteLastAttemptAt: integer(),
+  jobCount: integer().notNull().default(0),
+  jobCompleted: integer().notNull().default(0),
+  jobFunded: integer().notNull().default(0),
+  jobSubmitted: integer().notNull().default(0),
+  projectionVersion: integer().notNull().default(1),
+}, table => [
+  check("catalog_public_metrics_version", sql`${table.projectionVersion}=1`),
+  check("catalog_public_metrics_buyerQuoteRequestCount", sql`${table.buyerQuoteRequestCount}>=0`),
+  check("catalog_public_metrics_buyerQuoteSuccessCount", sql`${table.buyerQuoteSuccessCount}>=0`),
+  check("catalog_public_metrics_jobCount", sql`${table.jobCount}>=0`),
+  check("catalog_public_metrics_jobCompleted", sql`${table.jobCompleted}>=0`),
+  check("catalog_public_metrics_jobFunded", sql`${table.jobFunded}>=0`),
+  check("catalog_public_metrics_jobSubmitted", sql`${table.jobSubmitted}>=0`),
+]);
+
+// Current declared tuples only; shared endpoint policy remains live in its source.
+// Migration 0037 creates this table WITHOUT ROWID and its transactional triggers.
+// Drizzle has no WITHOUT ROWID option; migration parity tests verify physical DDL.
+export const catalogPublicCurrentEndpoints = sqliteTable("catalog_public_current_endpoints", {
+  agent_agentKey: text().notNull(),
+  agent_agentId: text(),
+  agent_chainId: integer().notNull(),
+  agent_name: text(),
+  agent_categoriesJson: text(),
+  agent_priority: integer(),
+  agent_registeredAt: integer(),
+  agent_indexState: text(),
+  cap_agentKey: text(),
+  cap_endpointKey: text(),
+  cap_state: text(),
+  cap_compatibilityState: text(),
+  cap_schemaHash: text(),
+  cap_compatibilityCheckedAt: integer(),
+  cap_compatibilityExpiresAt: integer(),
+  cap_capabilityExpiresAt: integer(),
+  cap_lastSuccessAt: integer(),
+  cap_consecutiveFailures: integer(),
+  cap_lastErrorCode: text(),
+  cap_lastAttemptId: text(),
+  evidence_latestPlatformOutcome: text(),
+  evidence_latestPlatformObservedAt: integer(),
+  evidence_latestPlatformExpiresAt: integer(),
+  evidence_latestPlatformProtocol: text(),
+  evidence_latestPlatformSuccessId: integer(),
+  evidence_hasBrowserProtocolSuccessEver: integer(),
+  evidence_latestQuoteOutcome: text(),
+  evidence_latestQuoteIsBuyer: integer(),
+  evidence_latestQuoteExpiresAt: integer(),
+  evidence_hasBuyerVerifiedQuoteEver: integer(),
+  endpointKey: text().notNull(),
+  declarationState: text(),
+}, table => [
+  primaryKey({ columns: [table.agent_chainId, table.agent_agentKey, table.endpointKey] }),
+]);
 
 export const catalogValidationRequests = sqliteTable(
   "catalog_validation_requests",
@@ -897,6 +996,9 @@ export const schema = {
   catalogEndpoints,
   catalogAgentEndpoints,
   catalogObservations,
+  catalogPublicEndpointEvidence,
+  catalogPublicAgentMetrics,
+  catalogPublicCurrentEndpoints,
   catalogValidationRequests,
   catalogAgentAdmission,
   catalogIngestTasks,

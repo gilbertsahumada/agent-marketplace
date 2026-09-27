@@ -1,0 +1,16 @@
+{
+  "version":1,
+  "frozenOn":"2026-09-26",
+  "reference":"1fe712a public-read-reference plus pre-0036 writer schema",
+  "agentCounts":[2000,20000],
+  "cycles":96,
+  "intervalMs":900000,
+  "queries":["scope=hiring","scope=evaluation","scope=evaluation&protocol=mcp&category=grid_trading&reachability=live"],
+  "scenarios":[
+    {"name":"representative","mutationGroupsPerCycle":1,"readEveryCycles":1,"requiredWeightedReduction":0.5},
+    {"name":"write-heavy","mutationGroupsPerCycle":16,"readEveryCycles":96,"requiredWeightedReduction":null}
+  ],
+  "mutationsPerGroup":["agent timestamp only","capability scheduling only","capability evidence renewal","new protocol observation","late protocol observation","duplicate same observation ID","unchanged capability state","existing job status","existing quote attempt status"],
+  "setupExcluded":"Fixture creation and historical projection construction are one-time costs, not recurring day cost; measured elsewhere.",
+  "claimsExcluded":["No remote traffic or billing measurements","No scheduler or queue savings claimed","No demand or tariff forecast","No real quotes requested"]
+}

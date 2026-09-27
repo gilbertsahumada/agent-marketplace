@@ -4,6 +4,9 @@ export async function clearCatalogObservationFixtures(): Promise<void> {
   await env.DB.prepare("DROP TRIGGER IF EXISTS catalog_observations_no_update").run();
   await env.DB.prepare("DROP TRIGGER IF EXISTS catalog_observations_no_delete").run();
   await env.DB.prepare("DELETE FROM catalog_observations").run();
+  // Production history is append-only. Test resets deliberately bypass that
+  // invariant, so reset its sparse read model with it rather than leave orphans.
+  await env.DB.prepare("DELETE FROM catalog_public_endpoint_evidence").run();
   await env.DB.prepare("DELETE FROM sqlite_sequence WHERE name='catalog_observations'").run();
   await env.DB.prepare(`CREATE TRIGGER catalog_observations_no_update
     BEFORE UPDATE ON catalog_observations
@@ -19,6 +22,7 @@ export async function clearCatalogFixtures(): Promise<void> {
   await env.DB.prepare("DELETE FROM commerce_jobs").run();
   await env.DB.prepare("DELETE FROM catalog_quote_attempts").run();
   await env.DB.prepare("DELETE FROM catalog_quote_requests").run();
+  await env.DB.prepare("DELETE FROM catalog_public_agent_metrics").run();
   await env.DB.prepare("DELETE FROM catalog_seller_capabilities").run();
   await env.DB.prepare("DELETE FROM catalog_validation_requests").run();
   await env.DB.prepare("DELETE FROM catalog_ingest_tasks").run();

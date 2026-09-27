@@ -6,6 +6,7 @@ const workerObservations = vi.fn();
 const catalogCandidatePage = vi.fn();
 const catalogFacetCounts = vi.fn();
 const catalogSummary = vi.fn();
+const catalogCombined = vi.fn();
 const refreshCookie = vi.fn();
 vi.mock("next/headers", () => ({ cookies: async () => ({ get: refreshCookie }) }));
 vi.mock("@/src/data/observation/catalog-candidate-feed", () => ({
@@ -15,6 +16,7 @@ vi.mock("@/src/data/observation/catalog-candidate-feed", () => ({
   },
   getCatalogFacetCountsResult: catalogFacetCounts,
   getCatalogSummaryResult: catalogSummary,
+  getCatalogCombinedResult: catalogCombined,
 }));
 
 vi.mock("@/src/business/composition", () => ({
@@ -56,6 +58,7 @@ describe("agents page category handling", () => {
     executeList.mockImplementation(({ view }: { view: "all" | "marketplace" }) => Promise.resolve(emptyPage(view)));
     executeMainnetProof.mockReturnValue(null);
     catalogCandidatePage.mockResolvedValue(null);
+    catalogCombined.mockResolvedValue({ ok: false, error: { kind: "unavailable" } });
     catalogFacetCounts.mockResolvedValue({ ok: false, error: { kind: "unavailable" } });
     catalogSummary.mockResolvedValue({ ok: false, error: { kind: "unavailable" } });
     workerObservations.mockResolvedValue({ status: "unavailable", feed: null });
@@ -69,45 +72,44 @@ describe("agents page category handling", () => {
   it("requests fresh catalog and metrics after a buyer mutation", async () => {
     refreshCookie.mockReturnValue({ value: "1" });
     await renderPage({});
-    expect(catalogCandidatePage).toHaveBeenCalledWith(expect.objectContaining({ fresh: true, limit: 24 }));
-    expect(catalogFacetCounts).toHaveBeenCalledWith(expect.objectContaining({ fresh: true }));
-    expect(catalogSummary).toHaveBeenCalledExactlyOnceWith({ chainId: 56, fresh: true });
+    expect(catalogCombined).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ chainId: 56, fresh: true, limit: 24 }));
+    expect(catalogCandidatePage).not.toHaveBeenCalled();
+    expect(catalogFacetCounts).not.toHaveBeenCalled();
+    expect(catalogSummary).not.toHaveBeenCalled();
   });
 
   function catalogDataCalls() {
-    return catalogCandidatePage.mock.calls.map((call) => call[0]).filter((input) => input.limit !== 1);
+    return catalogCombined.mock.calls.map((call) => call[0]);
   }
 
-  it("renders catalog rows when optional facet aggregates are unavailable", async () => {
+  it("renders rows and counts from one validated snapshot", async () => {
     const catalog = { items: [], total: 33653 };
-    catalogCandidatePage.mockResolvedValue(catalog);
+    catalogCombined.mockResolvedValue({ ok: true, data: { list: catalog, facets: {}, summary: { hiring: 2, evaluation: 3 } } });
     const el = await renderPage({});
     expect(await el.props.resources.results).toEqual({ ok: true, data: { catalog } });
-    expect(await el.props.resources.facets).toMatchObject({ ok: false });
+    expect(await el.props.resources.facets).toEqual({ ok: true, data: {} });
     expect(catalogDataCalls()).toHaveLength(1);
     expect(catalogDataCalls()[0].includeFacets).not.toBe(true);
   });
 
-  it("does not replace the catalogue with an error when the counts request rejects", async () => {
-    const catalog = { items: [], total: 33653 };
-    catalogCandidatePage.mockResolvedValue(catalog);
-    catalogFacetCounts.mockRejectedValue(new Error("Counts timed out"));
+  it("exposes a combined failure without silently falling back to independent scans", async () => {
+    catalogCombined.mockResolvedValue({ ok: false, error: { kind: "timeout" } });
     const el = await renderPage({});
-    expect(await el.props.resources.results).toEqual({ ok: true, data: { catalog } });
+    expect(await el.props.resources.results).toEqual({ ok: false, error: { kind: "timeout" } });
     expect(await el.props.resources.facets).toMatchObject({ ok: false });
+    expect(catalogCandidatePage).not.toHaveBeenCalled();expect(catalogFacetCounts).not.toHaveBeenCalled();expect(catalogSummary).not.toHaveBeenCalled();
   });
 
-  it("restores available counts through a separate canonical request and retains filters", async () => {
+  it("returns available counts in the canonical combined request and retains filters", async () => {
     const facets = { statuses: { requestable: 0 } };
-    catalogCandidatePage.mockResolvedValue({ items: [], total: 1 });
-    catalogFacetCounts.mockResolvedValue({ ok: true, data: facets });
+    catalogCombined.mockResolvedValue({ ok: true, data: { list: { items: [], total: 1 }, facets, summary: { hiring: 0, evaluation: 1 } } });
     const el = await renderPage({ network: "testnet", scope: "evaluation", page: "3", category: "grid_trading", protocol: "mcp", q: "seller" });
     expect(await el.props.resources.facets).toEqual({ ok: true, data: facets });
-    expect(catalogFacetCounts).toHaveBeenCalledWith(expect.objectContaining({
+    expect(catalogCombined).toHaveBeenCalledWith(expect.objectContaining({
       chainId: 97, scope: "evaluation",
       categories: ["grid_trading"], protocols: ["mcp"], q: "seller",
     }));
-    expect(catalogFacetCounts.mock.calls[0]?.[0]).not.toHaveProperty("page");
+    expect(catalogFacetCounts).not.toHaveBeenCalled();
     expect(catalogDataCalls()[0]).toMatchObject({ page: 3, limit: 24 });
     expect(catalogDataCalls()[0].includeFacets).not.toBe(true);
   });
@@ -121,7 +123,7 @@ describe("agents page category handling", () => {
   it("shows listed agents by default on both networks, without changing explicit hiring", async () => {
     for (const network of ["mainnet", "testnet"]) {
       for (const scope of [undefined, "all", "hiring", "evaluation"]) {
-        catalogCandidatePage.mockClear();
+        catalogCombined.mockClear();
         await renderPage({ network, ...(scope ? { scope } : {}) });
         const input = catalogDataCalls()[0];
         expect(input.chainId).toBe(network === "testnet" ? 97 : 56);
@@ -132,11 +134,10 @@ describe("agents page category handling", () => {
   });
 
   it("counts both scopes without silently filtering them to requestable agents", async () => {
-    catalogCandidatePage.mockResolvedValue({ items: [], total: 66 });
-    catalogSummary.mockResolvedValue({ ok: true, data: { hiring: 0, evaluation: 66 } });
+    catalogCombined.mockResolvedValue({ ok: true, data: { list: { items: [], total: 66 }, facets: {}, summary: { hiring: 0, evaluation: 66 } } });
     const el = await renderPage({ network: "testnet", scope: "evaluation" });
-    expect(catalogCandidatePage).toHaveBeenCalledTimes(1);
-    expect(catalogSummary).toHaveBeenCalledExactlyOnceWith({ chainId: 97, fresh: false });
+    expect(catalogCombined).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ chainId: 97, fresh: false }));
+    expect(catalogSummary).not.toHaveBeenCalled();
     expect(await el.props.resources.scopes).toEqual({ ok: true, data: { hiring: 0, evaluation: 66 } });
   });
 

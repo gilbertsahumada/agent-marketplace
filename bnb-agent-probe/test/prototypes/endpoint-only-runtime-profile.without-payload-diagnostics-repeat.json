@@ -1,0 +1,216 @@
+{
+  "date": "2026-09-26",
+  "capturePayloadDiagnostics": false,
+  "command": "node test/prototypes/endpoint-only-runtime-profile.mjs",
+  "kind": "endpoint-only-local-workerd-concurrency-profile",
+  "fixtureAgents": 183506,
+  "fixtureDeclarations": 40767,
+  "fixtureMainnetOperationalAgents": 35230,
+  "syntheticCapabilities": 12,
+  "syntheticObservations": 12,
+  "productionReplica": false,
+  "scenarios": [
+    {
+      "concurrency": 1,
+      "before": {
+        "usedSize": 1740844,
+        "totalSize": 3145728,
+        "embedderHeapUsedSize": 386904,
+        "backingStorageSize": 262808
+      },
+      "after": {
+        "usedSize": 23302116,
+        "totalSize": 58933248,
+        "embedderHeapUsedSize": 386904,
+        "backingStorageSize": 262808
+      },
+      "sampledMaxUsedHeapBytes": 23302116,
+      "heapSampleCount": 4,
+      "samplingIntervalRequestedUs": 1000,
+      "profileDurationUs": 696313,
+      "cpuSampleKinds": {
+        "idle": 2,
+        "program": 13,
+        "gc": 24,
+        "other": 134
+      },
+      "operations": [
+        {
+          "scope": "hiring",
+          "elapsedMs": 224.49829199999976,
+          "total": 12,
+          "returnedCards": 12,
+          "availabilityCounts": {
+            "hiring": 12,
+            "evaluation": 35218
+          },
+          "diagnostics": {
+            "classifiedAgents": 35230,
+            "materializedBytes": null,
+            "classificationDurationMs": 202,
+            "jsClassificationDurationMs": 7,
+            "memoryEstimateBytes": null,
+            "memoryEstimateMethod": "4x serialized classification rows; heuristic, not measured peak heap"
+          },
+          "maxActiveRequests": 1,
+          "sameResponseAsSequential": true
+        },
+        {
+          "scope": "evaluation",
+          "elapsedMs": 268.14537500000006,
+          "total": 35218,
+          "returnedCards": 24,
+          "availabilityCounts": {
+            "hiring": 12,
+            "evaluation": 35218
+          },
+          "diagnostics": {
+            "classifiedAgents": 35230,
+            "materializedBytes": null,
+            "classificationDurationMs": 256,
+            "jsClassificationDurationMs": 69,
+            "memoryEstimateBytes": null,
+            "memoryEstimateMethod": "4x serialized classification rows; heuristic, not measured peak heap"
+          },
+          "maxActiveRequests": 1,
+          "sameResponseAsSequential": true
+        },
+        {
+          "scope": "hiring",
+          "elapsedMs": 196.27687500000002,
+          "total": 12,
+          "returnedCards": 12,
+          "availabilityCounts": {
+            "hiring": 12,
+            "evaluation": 35218
+          },
+          "diagnostics": {
+            "classifiedAgents": 35230,
+            "materializedBytes": null,
+            "classificationDurationMs": 179,
+            "jsClassificationDurationMs": 4,
+            "memoryEstimateBytes": null,
+            "memoryEstimateMethod": "4x serialized classification rows; heuristic, not measured peak heap"
+          },
+          "maxActiveRequests": 1,
+          "sameResponseAsSequential": true
+        }
+      ]
+    },
+    {
+      "concurrency": 4,
+      "before": {
+        "usedSize": 23302116,
+        "totalSize": 58933248,
+        "embedderHeapUsedSize": 386904,
+        "backingStorageSize": 262808
+      },
+      "after": {
+        "usedSize": 32282836,
+        "totalSize": 80838656,
+        "embedderHeapUsedSize": 111136,
+        "backingStorageSize": 262808
+      },
+      "sampledMaxUsedHeapBytes": 44175016,
+      "heapSampleCount": 4,
+      "samplingIntervalRequestedUs": 1000,
+      "profileDurationUs": 930926,
+      "cpuSampleKinds": {
+        "idle": 2,
+        "program": 33,
+        "gc": 27,
+        "other": 159
+      },
+      "operations": [
+        {
+          "scope": "hiring",
+          "elapsedMs": 904.8162079999997,
+          "total": 12,
+          "returnedCards": 12,
+          "availabilityCounts": {
+            "hiring": 12,
+            "evaluation": 35218
+          },
+          "diagnostics": {
+            "classifiedAgents": 35230,
+            "materializedBytes": null,
+            "classificationDurationMs": 502,
+            "jsClassificationDurationMs": 8,
+            "memoryEstimateBytes": null,
+            "memoryEstimateMethod": "4x serialized classification rows; heuristic, not measured peak heap"
+          },
+          "maxActiveRequests": 4,
+          "sameResponseAsSequential": true
+        },
+        {
+          "scope": "evaluation",
+          "elapsedMs": 905.0451669999998,
+          "total": 35218,
+          "returnedCards": 24,
+          "availabilityCounts": {
+            "hiring": 12,
+            "evaluation": 35218
+          },
+          "diagnostics": {
+            "classifiedAgents": 35230,
+            "materializedBytes": null,
+            "classificationDurationMs": 571,
+            "jsClassificationDurationMs": 39,
+            "memoryEstimateBytes": null,
+            "memoryEstimateMethod": "4x serialized classification rows; heuristic, not measured peak heap"
+          },
+          "maxActiveRequests": 4,
+          "sameResponseAsSequential": true
+        },
+        {
+          "scope": "hiring",
+          "elapsedMs": 905.2420829999996,
+          "total": 12,
+          "returnedCards": 12,
+          "availabilityCounts": {
+            "hiring": 12,
+            "evaluation": 35218
+          },
+          "diagnostics": {
+            "classifiedAgents": 35230,
+            "materializedBytes": null,
+            "classificationDurationMs": 609,
+            "jsClassificationDurationMs": 5,
+            "memoryEstimateBytes": null,
+            "memoryEstimateMethod": "4x serialized classification rows; heuristic, not measured peak heap"
+          },
+          "maxActiveRequests": 4,
+          "sameResponseAsSequential": true
+        },
+        {
+          "scope": "evaluation",
+          "elapsedMs": 270.8936669999998,
+          "total": 35218,
+          "returnedCards": 24,
+          "availabilityCounts": {
+            "hiring": 12,
+            "evaluation": 35218
+          },
+          "diagnostics": {
+            "classifiedAgents": 35230,
+            "materializedBytes": null,
+            "classificationDurationMs": 260,
+            "jsClassificationDurationMs": 84,
+            "memoryEstimateBytes": null,
+            "memoryEstimateMethod": "4x serialized classification rows; heuristic, not measured peak heap"
+          },
+          "maxActiveRequests": 4,
+          "sameResponseAsSequential": true
+        }
+      ]
+    }
+  ],
+  "limitations": [
+    "Sampled heap maximum is not a proven peak; no forced garbage collection.",
+    "V8 sampling is local workerd evidence, not billed production CPU or Node CPU.",
+    "Inspector polling adds overhead; D1 runs in its separate local service.",
+    "Only the worker target created by this script was inspected.",
+    "Cardinalities match a sanitized aggregate; metadata/evidence are synthetic, not production payloads.",
+    "Only operational queries are profiled; registry retains its separate paged design."
+  ]
+}

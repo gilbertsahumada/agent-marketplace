@@ -121,14 +121,10 @@ describe("D1 read profile at catalogue scale", () => {
       const total = log.reduce((sum, entry) => sum + entry.rowsRead, 0);
       console.log(JSON.stringify({ route, rowsRead: total, queries: log.length }));
       if (route.includes("facets=true")) {
-        expect(log.filter(entry => entry.sql.startsWith('select count(*) from "catalog_agents"')).length).toBe(1);
         expect(log.some(entry => entry.sql.includes("SELECT declaration.agentKey")), REPORT.at(-1)).toBe(false);
-        expect({ rowsRead: total, queries: log.length }).toMatchInlineSnapshot(`
-          {
-            "queries": 12,
-            "rowsRead": 223687,
-          }
-        `);
+        // Retain A's frozen ceiling while allowing measured improvements.
+        expect(total).toBeLessThanOrEqual(223687);
+        expect(log.length).toBeLessThanOrEqual(12);
       }
       expect(total, `${route}\n${REPORT.at(-1)}`).toBeLessThanOrEqual(ceiling);
     }
@@ -148,12 +144,8 @@ describe("D1 read profile at catalogue scale", () => {
     } });
     expect(log.some(entry => entry.sql.includes("SELECT declaration.agentKey"))).toBe(false);
     expect(log.reduce((sum, entry) => sum + entry.rowsWritten, 0)).toBe(0);
-    expect({ rowsRead: log.reduce((sum, entry) => sum + entry.rowsRead, 0), queries: log.length }).toMatchInlineSnapshot(`
-      {
-        "queries": 12,
-        "rowsRead": 2182084,
-      }
-    `);
+    expect(log.reduce((sum, entry) => sum + entry.rowsRead, 0)).toBeLessThanOrEqual(2182084);
+    expect(log.length).toBeLessThanOrEqual(12);
     await seed();
   }, 120_000);
 
@@ -210,8 +202,9 @@ describe("D1 read profile at catalogue scale", () => {
         before: { requests: 4, ...metrics(legacyLog) },
         after: { requests: 3, ...metrics(nextLog) },
         facets: metrics(facetsLog), summary: metrics(summaryLog) }));
-      expect(facetsLog).toHaveLength(1);
-      expect(summaryLog).toHaveLength(1);
+      // Two bounded coverage lookups plus one shared compact classification.
+      expect(facetsLog).toHaveLength(3);
+      expect(summaryLog).toHaveLength(3);
       expect(rows(nextLog)).toBeLessThan(rows(legacyLog));
       expect(nextLog.reduce((sum,entry) => sum + entry.rowsWritten,0)).toBe(0);
     }

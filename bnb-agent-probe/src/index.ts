@@ -318,6 +318,14 @@ export function createWorker(dependencies: WorkerDependencies = {}): WorkerEntry
           catalogAgentsResponse(request, env.DB, now(), config.catalogV2ReadsEnabled ? 2 : 1, env.CATALOG_TESTNET_ENABLED === "1" && Boolean(env.BSC_TESTNET_RPC_URL?.trim()))
         ), fresh);
       }
+      if (request.method === 'GET' && url.pathname === '/catalog-combined') {
+        if (!config.catalogV2ReadsEnabled) return errorResponse('not_found', 404);
+        const { catalogCombinedResponse } = await import('./routes/catalog-combined');
+        const fresh = request.headers.get('x-marketplace-refresh') === '1' && Boolean(env.BUYER_OBSERVATION_SECRET)
+          && await bearerMatches(request.headers.get('authorization'), env.BUYER_OBSERVATION_SECRET!);
+        return cachedCatalogResponse(request, fresh ? 0 : config.catalogResponseCacheSeconds,
+          () => catalogCombinedResponse(request, env.DB, now(), env.CATALOG_TESTNET_ENABLED === '1' && Boolean(env.BSC_TESTNET_RPC_URL?.trim())), fresh);
+      }
       if (request.method === 'GET' && (url.pathname === '/catalog-summary' || url.pathname === '/catalog-facets')) {
         if (!config.catalogV2ReadsEnabled) return errorResponse('not_found', 404);
         const { catalogSummaryResponse, catalogFacetsResponse } = await import('./routes/catalog-agents');
