@@ -8,11 +8,22 @@ import { PrimaryNav } from "../components/marketplace/site-nav";
 import { renderToStaticMarkup } from "react-dom/server";
 import { highlightCode } from "../app/docs/highlight";
 import { DOC_PAGES } from "../app/docs/content";
+import { PageActions } from "../app/docs/page-actions";
 const navigation = DOC_PAGES.map(({ title, href, group }) => ({ title, href, group }));
 vi.mock("next/navigation", () => ({ usePathname: () => "/docs/api" }));
 vi.mock("../components/marketplace/wallet-connect-button", () => ({ WalletConnectButton: () => <button>Connect wallet</button> }));
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 const pages = [{ title: "HTTP API", href: "/docs/api", text: "jobs pagination chainId" }, { title: "MCP server", href: "/docs/mcp", text: "tools" }];
+it("groups agent actions without hiding the primary Markdown copy action", async () => {
+  render(<PageActions slug="jobs" markdown="# Jobs" />);
+  expect(screen.getByRole("button", { name: "Copy Markdown" })).toBeVisible();
+  expect(screen.queryByText("Open in Claude")).toBeNull();
+  fireEvent.keyDown(screen.getByRole("button", { name: "Use with AI" }), { key: "Enter" });
+  expect(await screen.findByRole("menuitem", { name: "View Markdown" })).toHaveAttribute("href", "/docs/md/jobs");
+  expect(screen.getByRole("menuitem", { name: "Open in ChatGPT" })).toHaveAttribute("target", "_blank");
+  fireEvent.keyDown(screen.getByRole("menuitem", { name: "Open in Claude" }), { key: "Escape" });
+  await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
+});
 it("searches documentation locally and builds the article index", () => {
   const fetch = vi.fn(); vi.stubGlobal("fetch", fetch);
   render(<DocsShell searchPages={pages} navigation={navigation}><h1>HTTP API</h1><h2 id="jobs">Read jobs</h2></DocsShell>);
