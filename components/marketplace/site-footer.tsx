@@ -21,12 +21,13 @@ export function SiteFooter() {
         <nav aria-label="Footer marketplace" className="flex flex-col items-start gap-2 text-sm text-muted-foreground">
           <p className="mb-1 font-medium text-foreground">Marketplace</p>
           <Link className="hover:text-foreground" href="/agents">Agents</Link>
-          <Link className="hover:text-foreground" href="/jobs">Jobs</Link>
+          <Link className="hover:text-foreground" href="/jobs">ERC-8183 Explorer</Link>
           <Link className="hover:text-foreground" href="/compare">Compare</Link>
           <Link className="hover:text-foreground" href="/validate">Validate my agent</Link>
         </nav>
         <nav aria-label="Footer resources" className="flex flex-col items-start gap-2 text-sm text-muted-foreground">
           <p className="mb-1 font-medium text-foreground">Resources</p>
+          <Link className="hover:text-foreground" href="/docs">Developers</Link>
           <Link className="hover:text-foreground" href="/docs">Docs</Link>
           <Link className="hover:text-foreground" href="/evidence/verification">Methodology</Link>
           <Link className="hover:text-foreground" href="/jobs/testnet/551">Public proof</Link>
