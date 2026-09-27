@@ -9,8 +9,13 @@ import {beginPublicCurrentBackfill,readPublicCurrentBackfillStatus,stepPublicCur
 
 export const RELEASE_LEDGER_KEY='public_projection_release_budget_v1';
 export const RELEASE_CAP=250_000_000;
-export const RELEASE_LIMITS={base:9_000_000,current:84_000_000,c:150_000_000,overhead:7_000_000} as const;
-export const PRIOR_CAPTURE_UNITS=986_144;
+// Lane ceilings are not additive allocations. Every admission also checks the
+// shared cap atomically. Confirmed savings in current work fund its controls;
+// the total cap and protected C allowance do not increase.
+export const RELEASE_LIMITS={base:9_000_000,current:84_000_000,c:150_000_000,overhead:12_000_000} as const;
+// Prior sizing 986144 + release preflight 48793 + 150 ledger/schema reads;
+// rounded up to cover further bounded metadata checks.
+export const PRIOR_CAPTURE_UNITS=1_050_000;
 // Frozen local 8000-observation / 2398-hot-key benchmark, with current triggers:
 // evidence 131480, metrics 21779, verify_evidence 98387, verify_metrics 3884.
 // These are admission estimates, not upper bounds on arbitrary live histories.
@@ -89,7 +94,7 @@ export default {async fetch(request:Request,env:ReleaseEnvironment):Promise<Resp
   // Every admitted request, including status, confirmation and denied work,
   // retains its control charge. Exhausted attempts still incur the initial
   // lookup: stop callers and disable this tool, not a hard billing guarantee.
-  const charged=await orm.statement(`UPDATE runtime_state SET textValue=json_set(textValue,'$.overhead',json_extract(textValue,'$.overhead')+?,'$.revision',json_extract(textValue,'$.revision')+1) WHERE key=? AND json_extract(textValue,'$.overhead')<=? RETURNING textValue`,[CONTROL_RESERVATION,RELEASE_LEDGER_KEY,RELEASE_LIMITS.overhead-CONTROL_RESERVATION]);
+  const charged=await orm.statement(`UPDATE runtime_state SET textValue=json_set(textValue,'$.overhead',json_extract(textValue,'$.overhead')+?,'$.revision',json_extract(textValue,'$.revision')+1) WHERE key=? AND json_extract(textValue,'$.overhead')<=? AND json_extract(textValue,'$.base')+json_extract(textValue,'$.current')+json_extract(textValue,'$.overhead')+json_extract(textValue,'$.cReserved')+?<=? RETURNING textValue`,[CONTROL_RESERVATION,RELEASE_LEDGER_KEY,RELEASE_LIMITS.overhead-CONTROL_RESERVATION,CONTROL_RESERVATION,RELEASE_CAP]);
   const chargedRow=charged.results?.[0] as {textValue:string}|undefined;
   if(!chargedRow)return response({error:'control_budget_exhausted'},409);
   const state=decode(chargedRow.textValue);
@@ -122,6 +127,9 @@ export default {async fetch(request:Request,env:ReleaseEnvironment):Promise<Resp
    lane='current';amount=checkpoint.state.phase==='verify'?PUBLIC_CURRENT_VERIFY_RESERVATION:PUBLIC_CURRENT_PAGE_RESERVATION;
   }
   if(controlled[lane]+amount>RELEASE_LIMITS[lane])return response({error:'lane_budget_exhausted',lane,requiredUnits:amount},409);
+  // Keep one confirmation charge available before source work. An abandoned
+  // reservation remains charged, and no work can borrow the C allocation.
+  if(controlled.base+controlled.current+controlled.overhead+controlled.cReserved+amount+CONTROL_RESERVATION>RELEASE_CAP)return response({error:'shared_budget_exhausted'},409);
   token=crypto.randomUUID();admittedLane=lane;
   const claimed:Ledger={...controlled,[lane]:controlled[lane]+amount,active:{token,lane,reservation:amount},revision:controlled.revision+1};
   fullCharge=claimed[lane];
