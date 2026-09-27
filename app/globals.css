@@ -1,4 +1,37 @@
 @import "tailwindcss";
+
+/* Documentation keeps Workmint's palette; syntax colors carry meaning. */
+.docs-shell {
+  --primary: var(--signal);
+  --ring: var(--signal);
+  --sidebar-primary: var(--signal);
+  --docs-string: #9de3bb;
+  --docs-keyword: #c8aff4;
+  --docs-comment: #9b9eac;
+}
+.docs-navigation { --primary: var(--signal); --ring: var(--signal); }
+.docs-code-string { color: var(--docs-string, #9de3bb); }
+.docs-code-keyword { color: var(--docs-keyword, #c8aff4); }
+.docs-code-comment { color: var(--docs-comment, #9b9eac); }
+.docs-toc-link[aria-current="location"] { color: var(--primary); border-color: var(--primary); }
+.docs-article { overflow-wrap: anywhere; }
+.docs-article > div { display: flex; flex-direction: column; gap: 2.75rem; }
+.docs-article > div > * { margin-block: 0; }
+.docs-article h1 { font-size: clamp(1.9rem, 3vw, 2.4rem); font-weight: 600; }
+.docs-article h2 { border: 0; padding-bottom: 0; font-weight: 500; scroll-margin-top: 7rem; }
+.docs-article section > div { line-height: 1.85; }
+.docs-article header > p:not(:first-child) { font-size: 1rem; line-height: 1.75; }
+.docs-article figure { background: var(--card); border-color: var(--border); border-radius: .75rem; }
+.docs-article figcaption { padding: .65rem 1rem; background: color-mix(in srgb, var(--muted) 40%, transparent); }
+.docs-article figcaption > span { color: var(--muted-foreground); }
+.docs-article table th { color: var(--foreground); padding-block: .85rem; white-space: nowrap; }
+.docs-article table td { padding-block: .85rem; vertical-align: top; }
+.docs-article table { min-width: 520px; }
+.docs-article pre { overflow-wrap: normal; }
+.docs-endpoint { display: flex; align-items: center; gap: 1rem; border: 1px solid var(--border); padding: .75rem 1rem; border-radius: .65rem; font-size: .85rem; }
+.docs-method { color: var(--docs-string); font-weight: 600; }
+.docs-article a:focus-visible, .docs-shell nav a:focus-visible { outline: 2px solid var(--primary); outline-offset: 3px; border-radius: 3px; }
+@media (prefers-reduced-motion: reduce) { .docs-shell * { scroll-behavior: auto; transition: none; animation: none; } }
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 
