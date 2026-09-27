@@ -12,7 +12,7 @@ export const RELEASE_CAP=250_000_000;
 // Lane ceilings are not additive allocations. Every admission also checks the
 // shared cap atomically. Confirmed savings in current work fund its controls;
 // the total cap and protected C allowance do not increase.
-export const RELEASE_LIMITS={base:9_000_000,current:84_000_000,c:150_000_000,overhead:12_000_000} as const;
+export const RELEASE_LIMITS={base:12_000_000,current:84_000_000,c:150_000_000,overhead:12_000_000} as const;
 // Prior sizing 986144 + release preflight 48793 + 150 ledger/schema reads;
 // rounded up to cover further bounded metadata checks.
 export const PRIOR_CAPTURE_UNITS=1_050_000;
