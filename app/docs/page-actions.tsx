@@ -30,6 +30,7 @@ export function PageActions({ slug, markdown }: { slug: string; markdown: string
   return (
     <div className="flex flex-wrap items-center gap-2">
       <CopyButton label="Copy Markdown" text={markdown} />
+      <a className={linkClassName} href={`/docs/md/${slug}`}>View Markdown</a>
       <a className={linkClassName} href={`https://chatgpt.com/?q=${prompt}`} rel="noreferrer" target="_blank">
         <OpenAiLogo />
         Open in ChatGPT
