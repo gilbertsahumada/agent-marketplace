@@ -1,11 +1,13 @@
 # Delivery B: release gates and rollback
 
-Status: local validation; **not deployed**. Delivery A remains the serving version.
+Status (2026-09-27): release authorized; additive migrations applied and bounded
+backfill underway. **B application readers are not deployed yet.** The serving
+Worker remains PR172, with A public reads and authorized ERC-8183 indexing.
 
 ## Evidence and scope
 
-- Worker complete integration suite, including daily scenarios: 66 files / 615 tests passed in 434 seconds; unit suite: 670 passed. Subsequent release-executor accounting correction: 13/13 focused tests and types passed; separate DDL measurements: 2/2 passed. These later cases have not been represented as a second complete suite run.
-- Frontend: 167 files / 1,557 tests passed, including four additional streaming cases. Types and production build passed. Test DOM attempted ordinary external link navigation, blocked by the sandbox; no seller requests or remote D1 load tests.
+- Integrated Worker suite: 67 files / 629 integration tests, 670 unit tests, types and dry runs passed. Subsequent release-executor corrections: 17 focused tests and types passed, including a complete 1,022-step rehearsal with confirmations.
+- Integrated frontend: 169 files / 1,569 tests, types and production build passed. No seller requests or remote D1 load tests.
 - Definitive recurring evidence: `bnb-agent-probe/test/prototypes/public-current-day-cost.{json,md}`. Production cold journey: `catalog-combined-production-cost-evidence.expanded.json` in the same folder. Earlier prototypes are historical, not release measurements.
 - Representative 20k daily weighted units: 176,622,270 → 12,473,955 (−92.9375%); same 96 mutation groups and cold traversals. Adverse write-heavy 20k: 49,374,814 → 56,824,894 (+15.0888%); same 1,536 mutation groups. This is B public traffic and source writes, **not C scheduler/consumer validation**.
 - Public cold 20k journeys improve 90.45–93.77%; cached responses retain zero D1 queries. No production invoice saving is inferred from fixtures.
@@ -21,7 +23,7 @@ Local browser verification (controlled six-second HTTP fixture, no remote D1): d
 3. Create and verify a recoverable backup/bookmark, recording sanitized metadata and restoration procedure outside Git. A successful export alone is not verified recovery. No destructive restore against the live database.
 4. Keep A serving. Apply additive migration 0036, then 0037; stop on any failure. Run authenticated, bounded migration steps through the separately reviewed temporary maintenance entrypoint, not the public application. It has no scheduled/queue handlers, seller calls or arbitrary SQL input. Admit DDL before executing it; the backfill ledger cannot retroactively authorize uncharged external operations.
 5. Verify both sparse and current coverage checkpoints are complete and equivalence checks passed. **Do this before deploying the B Worker**, not merely before the frontend: existing list/detail/counter routes also depend on the new projections and can return 503 if coverage is missing.
-6. Deploy the reviewed B Worker, preserving cron empty, paused queues, background pause flags and the exact remote `STAGING_MANUAL_RUN` value. Verify those controls again after deployment. Then publish the matching frontend through the existing Vercel integration. Do not deploy from the unrelated root working tree.
+6. Deploy the reviewed B Worker preserving the freshly verified configuration. Since the September 27 authorization, cron runs each minute for ERC-8183 indexing only: `BACKGROUND_INDEX_ONLY=1`, `BACKGROUND_INDEX_PAUSED=0`; its queue is active. Both older queues and jobs/maintenance remain paused, cost controls stay active, and the remote `STAGING_MANUAL_RUN` value is preserved (currently 0). Never restore the earlier all-paused configuration. Verify these controls again after deployment. Then publish the matching frontend through the existing Vercel integration. Do not deploy from the unrelated root working tree.
 7. Perform only bounded functional checks. Record exact Worker version and frontend commit, migration state, checks and timestamps. Disable/remove the temporary maintenance entrypoint after verified completion; retain its ledger and migration evidence.
 8. Update the existing read-only monitoring automation to the actual release versions. Compare 48 attributable hours using Analytics/logs, normalized by operations/cache/route mix. Inaccessible telemetry is a stated evidence blocker, never a zero or invented reduction. C and the full initiative remain open.
 
@@ -33,15 +35,27 @@ If B regresses, restore the prior frontend first (it does not require the combin
 
 ## Outstanding release gates
 
-**Current blocking admission decision:** after charging every authenticated status, confirmation and rejected control attempt, the original 7,000,000-unit overhead lane cannot cover approximately 1,022 work/confirmation pairs at 5,000 units per request (10,220,000 units, before other controls). The implementation must deny work rather than exceed that lane. A redistribution inside the unchanged 250,000,000-unit cap was requested explicitly: base 12m, measured/reconciled current work 60m, C 150m, overhead 28m. The separate inner current backfill reservation ceiling would remain 84m; it must not be conflated with the outer reconciled spending lane. **This redistribution is not yet approved or implemented.** No remote migration or deployment is authorized by the local test results alone.
+The earlier 7M overhead lane was disproved by a RED admission test. The final
+executor uses lane ceilings (base 12M, current 84M, overhead 12M) plus an atomic
+**shared 250M cap**, protecting C's 150M throughout. These ceilings are not
+additive allocations. Confirmed measured work releases unused reservations;
+unknown work does not. The inner current reservation ledger remains bounded
+at 84M. See `pr171-release-controls.md` for the measured complete rehearsal
+and the safely refused sparse page that motivated base-lane headroom.
 
 The new DDL-only local test measures 166 reads / 44 writes (44,166 weighted units), excluding the separately measured 8k-observation index (16,113 reads / 8,001 writes). A proposed 250,000-unit fixed-DDL/preflight allowance is conservative for that fixture, not a universal bound; see `public-projection-ddl-cost.{json,md}`. Fresh index cardinality, previous reads and external DDL must be admitted before execution, not retroactively.
 
-Metadata-only remote preflight at 2026-09-26 19:43 UTC confirmed A version `5b098a2f-46af-4b9d-8b64-1021716f674c`, D1 production storage, the expected DB binding, empty cron, both queues paused, both background pause flags set to 1, and `STAGING_MANUAL_RUN=0`. No D1 query was executed by this check. Recheck immediately before mutation; this is not migration/schema verification.
+September 27 preflight confirmed PR172 Worker version
+`9deb4de2-d382-4c5c-b982-586c34dcfb3a`, D1 production storage, expected binding,
+7,877 observations and 40,767 current endpoint tuples. Sizing/schema/ledger
+checks used 48,793 reads and no writes. Time Travel returned a recovery
+bookmark, recorded outside Git; no destructive restore was executed.
+Migrations 0036 then 0037 succeeded. External DDL/index work was conservatively
+precharged 8.1M units; prior reads 1.05M. Do not describe reserved units as an
+exact invoice or measured DDL cost.
 
-- Approve the requested reserve redistribution and explicit prior-read/external-DDL precharges, then rerun and independently review the final temporary migration executor.
-- Fresh remote preflight, backup verification and final construction admission.
-- PR/CI/review, merge, staged migrations/backfills, Worker and frontend publication.
+- Complete current backfill and exact coverage checks; preserve receipts.
+- Final CI/review, fresh configuration check, Worker publication, merge and frontend publication.
 - Attributable 48-hour production savings evidence; historical route/cache telemetry access has previously been unavailable.
 
 No pending gate is represented as completed by this document.
