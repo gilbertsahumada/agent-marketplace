@@ -5,12 +5,16 @@ import { usePathname } from "next/navigation";
 import { ChevronDown } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { WalletConnectButton } from "./wallet-connect-button";
+import { NavigationMenu, NavigationMenuList, NavigationMenuItem, NavigationMenuLink, NavigationMenuTrigger, NavigationMenuContent, navigationMenuTriggerStyle } from "@/components/ui/navigation-menu";
 
 const navigation = [
-  { href: "/ask", label: "Ask" },
   { href: "/agents", label: "Agents" },
+  { href: "/jobs", label: "Explorer" },
+  { href: "/docs", label: "Developers" },
+] as const;
+const tools = [
+  { href: "/ask", label: "Ask" },
   { href: "/compare", label: "Compare" },
-  { href: "/jobs", label: "Jobs" },
   { href: "/validate", label: "Validate" },
 ] as const;
 
@@ -28,21 +32,26 @@ function linkClassName(active: boolean, block: boolean): string {
 export function PrimaryNav() {
   const pathname = usePathname();
   return (
-    <nav aria-label="Primary navigation" className="hidden items-center gap-1 md:flex">
+    <NavigationMenu key={pathname} aria-label="Primary navigation" viewport={false} className="hidden md:flex">
+      <NavigationMenuList className="gap-1">
       {navigation.map((item) => {
         const active = isActive(pathname, item.href);
         return (
-          <Link
-            aria-current={active ? "page" : undefined}
-            className={linkClassName(active, false)}
-            href={item.href}
-            key={item.href}
-          >
-            {item.label}
-          </Link>
+          <NavigationMenuItem key={item.href}>
+            <NavigationMenuLink asChild active={active} className={navigationMenuTriggerStyle()}>
+              <Link href={item.href}>{item.label}</Link>
+            </NavigationMenuLink>
+          </NavigationMenuItem>
         );
       })}
-    </nav>
+      <NavigationMenuItem>
+        <NavigationMenuTrigger>Tools</NavigationMenuTrigger>
+        <NavigationMenuContent className="left-auto right-0 min-w-48">
+          {tools.map((item) => <NavigationMenuLink key={item.href} asChild active={isActive(pathname, item.href)}><Link href={item.href}>{item.label}</Link></NavigationMenuLink>)}
+        </NavigationMenuContent>
+      </NavigationMenuItem>
+      </NavigationMenuList>
+    </NavigationMenu>
   );
 }
 
@@ -102,6 +111,8 @@ export function MobileNav() {
               </Link>
             );
           })}
+          <p className="px-3 pt-3 pb-1 text-xs text-muted-foreground">Tools</p>
+          {tools.map((item) => <Link key={item.href} href={item.href} aria-current={isActive(pathname, item.href) ? "page" : undefined} className={linkClassName(isActive(pathname, item.href), true)}>{item.label}</Link>)}
           <div className="mt-2 border-t border-white/10 px-3 pt-3">
             <WalletConnectButton />
           </div>
