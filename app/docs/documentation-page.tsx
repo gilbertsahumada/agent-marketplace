@@ -31,7 +31,13 @@ export function DocumentationPage({ slug }: { slug: string }) {
   const page = DOC_PAGES.find(candidate => candidate.slug === slug);
   if (!page) throw new Error(`Unknown documentation page: ${slug}`);
   return <div className="flex flex-col gap-10">
-    <header><p className="font-eyebrow text-primary">Documentation · {page.group}</p><h1 className="mt-2 text-3xl font-semibold tracking-tight">{page.title}</h1><p className="mt-3 text-muted-foreground"><Inline text={page.summary} /></p><div className="mt-4"><PageActions slug={page.slug} markdown={pageMarkdown(page)} /></div></header>
+    <header>
+      <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
+        <h1 className="min-w-0 text-3xl font-semibold tracking-tight">{page.title}</h1>
+        <div className="ml-auto shrink-0"><PageActions slug={page.slug} markdown={pageMarkdown(page)} /></div>
+      </div>
+      <p className="mt-3 text-muted-foreground"><Inline text={page.summary} /></p>
+    </header>
     {page.sections.map(section => <div key={section.id} className="relative">
       {section.aliases?.map(alias => <span key={alias} id={alias} className="absolute top-0 scroll-mt-24" aria-hidden="true" />)}
       <DocsSection id={section.id} title={section.title}>{section.blocks.map((block, i) => <Block key={i} block={block} />)}</DocsSection>
