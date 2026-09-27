@@ -147,8 +147,10 @@ export function HireLedgerPage({ chainId, summary, page, activity = null, activi
       <Breadcrumb current="Jobs" trail={[{ href: "/", label: "Home" }]} />
       <div className="mb-7 flex flex-wrap items-center justify-between gap-6">
         <div>
-          <h1 className="text-3xl font-medium tracking-tight sm:text-[42px]">Jobs explorer</h1>
+          <h1 className="text-3xl font-medium tracking-tight sm:text-[42px]">ERC-8183 Explorer</h1>
+          <p className="mt-2 text-muted-foreground">Explore indexed jobs and their on-chain lifecycle on BNB Chain.</p>
         </div>
+        <Button asChild variant="outline" size="lg"><Link href="/docs/api#erc8183">API docs</Link></Button>
       </div>
 
       <div className="mt-6"><HireActivityWindow activity={activity} showUnavailable={summary !== null || page !== null} days={activityDays} chainId={chainId} pending={pending} networkSelector={networkSelector} periodHrefs={{

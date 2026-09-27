@@ -1,6 +1,9 @@
 "use client";
 
 import { CopyButton } from "./copy-button";
+import { ChevronDown, FileText, Bot } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 
 const ORIGIN = "https://workmint.trust8004.xyz";
 
@@ -25,19 +28,21 @@ export function PageActions({ slug, markdown }: { slug: string; markdown: string
   const prompt = encodeURIComponent(
     `Read ${markdownUrl} and help me integrate with Workmint (BSC agents, MCP tools, ERC-8183 hiring).`,
   );
-  const linkClassName =
-    "inline-flex items-center gap-1.5 rounded-md border border-white/10 px-2 py-1 text-[11px] text-zinc-400 transition-colors hover:border-white/25 hover:text-white";
   return (
-    <div className="flex flex-wrap items-center gap-2">
+    <div className="flex w-full flex-wrap items-center justify-end gap-2">
       <CopyButton label="Copy Markdown" text={markdown} />
-      <a className={linkClassName} href={`https://chatgpt.com/?q=${prompt}`} rel="noreferrer" target="_blank">
-        <OpenAiLogo />
-        Open in ChatGPT
-      </a>
-      <a className={linkClassName} href={`https://claude.ai/new?q=${prompt}`} rel="noreferrer" target="_blank">
-        <ClaudeLogo />
-        Open in Claude
-      </a>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild><Button variant="outline" size="sm" className="group"><Bot data-icon="inline-start" />Use with AI<ChevronDown data-icon="inline-end" className="transition-transform group-data-[state=open]:rotate-180 motion-reduce:transition-none" /></Button></DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="min-w-52">
+          <DropdownMenuGroup>
+            <DropdownMenuLabel>Read this page with an agent</DropdownMenuLabel>
+            <DropdownMenuItem asChild><a href={`https://chatgpt.com/?q=${prompt}`} rel="noreferrer" target="_blank"><OpenAiLogo />Open in ChatGPT</a></DropdownMenuItem>
+            <DropdownMenuItem asChild><a href={`https://claude.ai/new?q=${prompt}`} rel="noreferrer" target="_blank"><ClaudeLogo />Open in Claude</a></DropdownMenuItem>
+          </DropdownMenuGroup>
+          <DropdownMenuSeparator />
+          <DropdownMenuGroup><DropdownMenuItem asChild><a href={`/docs/md/${slug}`}><FileText />View Markdown</a></DropdownMenuItem></DropdownMenuGroup>
+        </DropdownMenuContent>
+      </DropdownMenu>
     </div>
   );
 }

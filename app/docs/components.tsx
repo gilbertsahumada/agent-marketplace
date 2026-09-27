@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { ArrowRight, Info, TriangleAlert } from "lucide-react";
 import { CopyButton } from "./copy-button";
-import { highlightJson } from "./highlight";
+import { highlightJson, highlightCode } from "./highlight";
 
 export function DocsSection({ id, title, children }: { id: string; title: string; children: ReactNode }) {
   return (
@@ -22,15 +22,15 @@ export function SubHeading({ id, children }: { id: string; children: ReactNode }
   );
 }
 
-export function CodeBlock({ title, lang, children }: { title?: string; lang?: "json"; children: string }) {
+export function CodeBlock({ title, lang, children }: { title?: string; lang?: "json" | "javascript" | "shell"; children: string }) {
   return (
     <figure className="overflow-hidden rounded-lg border border-white/10 bg-zinc-950">
       <figcaption className="flex items-center justify-between gap-2 border-b border-white/[0.06] py-1 pl-3 pr-1.5">
         <span className="min-w-0 truncate font-mono text-[11px] text-zinc-500">{title ?? (lang === "json" ? "json" : "")}</span>
         <CopyButton text={children} />
       </figcaption>
-      <pre className="overflow-x-auto p-3 text-xs leading-relaxed text-zinc-200">
-        <code>{lang === "json" ? highlightJson(children) : children}</code>
+      <pre tabIndex={0} aria-label={title ?? "Code example"} className="overflow-x-auto p-5 text-xs leading-7 text-zinc-200">
+        <code>{lang === "json" || (!lang && children.trim().startsWith("{")) ? highlightJson(children) : highlightCode(children)}</code>
       </pre>
     </figure>
   );

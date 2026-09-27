@@ -672,8 +672,9 @@ async function indexRange(
     } else if (hops >= MAX_REENQUEUE_HOPS) {
       logger?.info("commerce.index.remainder_dropped", { ...remainder, reason: "hop_limit" });
     } else {
-      if (env.WP2_QUEUE === undefined) throw new Error("WP2_QUEUE_BINDING_REQUIRED");
-      await env.WP2_QUEUE.send({ schemaVersion: 2, kind: "index_range", ...remainder, hops: hops + 1, enqueuedAt: now() });
+      const queue = env.COMMERCE_INDEX_QUEUE ?? env.WP2_QUEUE;
+      if (queue === undefined) throw new Error("WP2_QUEUE_BINDING_REQUIRED");
+      await queue.send({ schemaVersion: 2, kind: "index_range", ...remainder, hops: hops + 1, enqueuedAt: now() });
     }
   }
   return summary;

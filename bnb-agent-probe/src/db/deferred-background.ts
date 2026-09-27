@@ -69,11 +69,13 @@ export async function persistDeferred(db: D1DatabaseLike, message: DeferredMessa
  * The PK range isolates the lane; at most five due rows are claimed. A large
  * not-due backlog can still cost reads, so callers must pass a metered binding.
  */
-export async function replayDeferred(db: D1DatabaseLike, lane: DeferredLane, queue: { send(body: unknown): Promise<unknown> }, now: number): Promise<{sent:number;failed:number}> {
+export async function replayDeferred(db: D1DatabaseLike, lane: DeferredLane, queue: { send(body: unknown): Promise<unknown> }, now: number, indexOnly = false): Promise<{sent:number;failed:number}> {
   const start = prefix(lane, now);
   const orm = createDatabase(db);
   const rows = await query<{key:string;textValue:string}>(orm, sql`SELECT key,textValue FROM runtime_state
-    WHERE key>=${start} AND key<${start + "\uffff"} AND integerValue<=${now} ORDER BY key LIMIT 5`);
+    WHERE key>=${start} AND key<${start + "\uffff"} AND integerValue<=${now}
+      AND ${indexOnly ? sql`CASE WHEN json_valid(textValue) THEN json_extract(textValue,'$.body.kind') IN ('index_range','index_jobs') ELSE 0 END` : sql`1`}
+    ORDER BY key LIMIT 5`);
   let sent = 0;
   let failed = 0;
   for (const row of rows) {
