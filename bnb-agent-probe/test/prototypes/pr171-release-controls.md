@@ -32,3 +32,16 @@ the local integration suite alone took 454.51 seconds; CI had timed out twice.
 Remote preflight: version 9deb4de2-d382-4c5c-b982-586c34dcfb3a; only ERC-8183
 indexing active; 7,877 observations and 40,767 current declarations. Migrations
 0036 and 0037 are pending. This report does not claim production activation.
+
+## Remote bounded admission correction
+
+After the two additive migrations succeeded, sparse verification was safely
+refused at base charge 8,885,999 plus a 130,000 next-page reservation against
+the original 9M lane ceiling. No work ran for that refused page. The public
+Worker remained unchanged. This demonstrated a payload/distribution gap in
+the synthetic sparse fixture; it was not an exhausted shared budget.
+
+The base ceiling is now 12M, still subject to the same atomic 250M total and
+protected 150M C reserve. Regression coverage reproduces this admission and
+keeps the shared-cap refusal tests. All 17 release tests and types pass.
+Resume only after reviewing the durable ledger; never replay ambiguous work.
