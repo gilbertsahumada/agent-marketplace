@@ -42,19 +42,16 @@ function emptyPage(): MarketplaceAgentPage {
 }
 
 describe("concierge entry points", () => {
-  it("renders an Ask link to /ask first in the desktop nav", () => {
+  it("keeps Ask accessible through Tools in the desktop nav", () => {
     render(createElement(PrimaryNav));
-    const links = screen.getAllByRole("link");
-    expect(links[0]).toHaveAttribute("href", "/ask");
-    expect(links[0]).toHaveTextContent("Ask");
+    fireEvent.click(screen.getByRole("button", { name: "Tools" }));
+    expect(screen.getByRole("link", { name: "Ask" })).toHaveAttribute("href", "/ask");
   });
 
-  it("renders an Ask link to /ask first in the mobile nav", () => {
+  it("keeps Ask accessible in the mobile nav", () => {
     render(createElement(MobileNav));
     fireEvent.click(screen.getByRole("button", { name: "Menu" }));
-    const links = screen.getAllByRole("link");
-    expect(links[0]).toHaveAttribute("href", "/ask");
-    expect(links[0]).toHaveTextContent("Ask");
+    expect(screen.getByRole("link", { name: "Ask" })).toHaveAttribute("href", "/ask");
   });
 
   it("keeps the catalog focused on agents without a duplicate concierge form", async () => {

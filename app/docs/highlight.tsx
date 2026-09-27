@@ -1,5 +1,19 @@
 import type { ReactNode } from "react";
 
+export function highlightCode(code: string): ReactNode[] {
+  const pattern = /("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')|(\/\/[^\n]*)|\b(const|await|if|throw|new|return|curl|fetch|Error|URL)\b/g;
+  const nodes: ReactNode[] = [];
+  let cursor = 0;
+  for (const match of code.matchAll(pattern)) {
+    const index = match.index!;
+    nodes.push(code.slice(cursor, index));
+    nodes.push(<span key={index} className={match[1] ? "docs-code-string" : match[2] ? "docs-code-comment" : "docs-code-keyword"}>{match[0]}</span>);
+    cursor = index + match[0].length;
+  }
+  nodes.push(code.slice(cursor));
+  return nodes;
+}
+
 const JSON_TOKEN = /("(?:[^"\\]|\\.)*")(\s*:)?|(-?\d+(?:\.\d+)?)|\b(true|false|null)\b/g;
 
 export function highlightJson(code: string): ReactNode[] {

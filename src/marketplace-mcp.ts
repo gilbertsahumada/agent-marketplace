@@ -1,3 +1,4 @@
+import { MCP_TOOL_METADATA } from "./marketplace-mcp-metadata.ts";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import {
@@ -139,24 +140,7 @@ export function marketplaceMcpTools(options: MarketplaceMcpOptions = {}): Market
 
   return [
     {
-      name: "search_agents",
-      description: [
-        "Search the marketplace catalogue of BSC agents by outcome category, free text and availability.",
-        "MCP or A2A availability never implies ERC-8183 hireability; pass availability=hireable to list",
-        "only agents the marketplace can actually hire (verified quote path). Every fact in the response",
-        "carries its provenance (declared, observed, onchain or derived).",
-      ].join(" "),
-      inputSchema: {
-        type: "object",
-        properties: {
-          q: { type: "string", description: "Free-text search, max 120 characters" },
-          category: { type: "string", enum: [...CATEGORIES] },
-          availability: { type: "string", enum: [...AVAILABILITIES], description: "hireable = can be hired now; mcp_only = reachable via MCP but not hireable" },
-          page: { type: "integer", minimum: 1 },
-          limit: { type: "integer", minimum: 1, maximum: 24 },
-        },
-        additionalProperties: false,
-      },
+      ...MCP_TOOL_METADATA[0]!,
       handler: async (args) => {
         const params = new URLSearchParams({ view: "marketplace" });
         const q = args.q;
@@ -180,38 +164,14 @@ export function marketplaceMcpTools(options: MarketplaceMcpOptions = {}): Market
       },
     },
     {
-      name: "get_passport",
-      description: [
-        "Read an agent's Evidence Passport: provenance-labeled identity, endpoint, quote and job checks",
-        "plus its onchain track record. The passport is read-only evidence, not reputation or an",
-        "endorsement. State 'hireable' means an executable quote path exists; a fresh quote is still",
-        "validated before any signature.",
-      ].join(" "),
-      inputSchema: {
-        type: "object",
-        properties: { agentId: { type: "string", description: "Numeric BSC agent id" } },
-        required: ["agentId"],
-        additionalProperties: false,
-      },
+      ...MCP_TOOL_METADATA[1]!,
       handler: async (args) => {
         const agentId = agentIdString(requiredString(args, "agentId"), "agentId");
         return call(`/api/marketplace/agents/${agentId}/passport`);
       },
     },
     {
-      name: "compare_agents",
-      description: [
-        "Compare 2 or 3 agents' evidence side by side. The marketplace never declares a winner;",
-        "the comparison is provenance-labeled evidence only.",
-      ].join(" "),
-      inputSchema: {
-        type: "object",
-        properties: {
-          agentIds: { type: "array", items: { type: "string" }, minItems: 2, maxItems: 3, description: "2-3 numeric agent ids" },
-        },
-        required: ["agentIds"],
-        additionalProperties: false,
-      },
+      ...MCP_TOOL_METADATA[2]!,
       handler: async (args) => {
         const raw = args.agentIds;
         if (!Array.isArray(raw) || raw.length < 2 || raw.length > 3) {
@@ -226,20 +186,7 @@ export function marketplaceMcpTools(options: MarketplaceMcpOptions = {}): Market
       },
     },
     {
-      name: "request_quote",
-      description: [
-        "Request a fresh ERC-8183 quote from a compatible seller. The server validates the",
-        "quote against its allowlist (seller, contracts, token, budget ceiling, expiry) before returning",
-        "it. Keep the returned 'envelope' byte-identical: the hire prepare step re-verifies the seller's",
-        "signature over it. Requesting a quote is free and signs nothing. Returns 404",
-        "ERC8183_SPIKE_DISABLED when the flow is disabled by environment.",
-      ].join(" "),
-      inputSchema: {
-        type: "object",
-        properties: { network: { type: "string", enum: [...NETWORKS] } },
-        required: ["network"],
-        additionalProperties: false,
-      },
+      ...MCP_TOOL_METADATA[3]!,
       handler: async (args) => {
         const network = optionalEnum(args, "network", NETWORKS);
         if (!network) throw new Error(`network must be one of: ${NETWORKS.join(", ")}`);
@@ -248,20 +195,7 @@ export function marketplaceMcpTools(options: MarketplaceMcpOptions = {}): Market
       },
     },
     {
-      name: "get_job_status",
-      description: [
-        "Track an ERC-8183 job by id. State (OPEN, FUNDED, SUBMITTED, COMPLETED, REJECTED, EXPIRED),",
-        "budget, deadline and deliverable hash are resolved from chain, not from marketplace claims.",
-      ].join(" "),
-      inputSchema: {
-        type: "object",
-        properties: {
-          network: { type: "string", enum: [...NETWORKS] },
-          jobId: { type: "string", description: "Positive decimal job id" },
-        },
-        required: ["network", "jobId"],
-        additionalProperties: false,
-      },
+      ...MCP_TOOL_METADATA[4]!,
       handler: async (args) => {
         const network = optionalEnum(args, "network", NETWORKS);
         if (!network) throw new Error(`network must be one of: ${NETWORKS.join(", ")}`);
@@ -271,27 +205,7 @@ export function marketplaceMcpTools(options: MarketplaceMcpOptions = {}): Market
       },
     },
     {
-      name: "list_jobs",
-      description: [
-        "List ERC-8183 jobs indexed from the Commerce contract, newest first, optionally scoped to one",
-        "buyer wallet, one provider wallet or one marketplace agent id. Each job carries its on-chain",
-        "state (OPEN, FUNDED, SUBMITTED, COMPLETED, REJECTED, EXPIRED) and 'marketplace: true' when a",
-        "chain-verified hire event exists for it — it does not mean the marketplace verified the",
-        "deliverable. This is indexed activity, not a track record: a settled job proves the phase,",
-        "not the deliverable. Page with 'before' = the nextBefore of the previous page.",
-      ].join(" "),
-      inputSchema: {
-        type: "object",
-        properties: {
-          network: { type: "string", enum: [...NETWORKS] },
-          buyer: { type: "string", description: "Buyer wallet (EVM address). At most one of buyer, provider, agentId." },
-          provider: { type: "string", description: "Provider wallet (EVM address)" },
-          agentId: { type: "string", description: "Marketplace agent id (numeric); only jobs with a chain-verified hire event for it" },
-          before: { type: "string", description: "Positive decimal job id; returns older jobs" },
-        },
-        required: ["network"],
-        additionalProperties: false,
-      },
+      ...MCP_TOOL_METADATA[5]!,
       handler: async (args) => {
         const network = optionalEnum(args, "network", NETWORKS);
         if (!network) throw new Error(`network must be one of: ${NETWORKS.join(", ")}`);
@@ -299,23 +213,7 @@ export function marketplaceMcpTools(options: MarketplaceMcpOptions = {}): Market
       },
     },
     {
-      name: "my_jobs",
-      description: [
-        "List the jobs created by the caller's own wallet, newest first, with their on-chain state.",
-        "The marketplace has no session: pass the wallet address you sign with. Same ledger and",
-        "shape as list_jobs — indexed activity, not a track record: a settled job proves the phase,",
-        "not the deliverable.",
-      ].join(" "),
-      inputSchema: {
-        type: "object",
-        properties: {
-          network: { type: "string", enum: [...NETWORKS] },
-          buyer: { type: "string", description: "Your wallet (EVM address)" },
-          before: { type: "string", description: "Positive decimal job id; returns older jobs" },
-        },
-        required: ["network", "buyer"],
-        additionalProperties: false,
-      },
+      ...MCP_TOOL_METADATA[6]!,
       handler: async (args) => {
         const network = optionalEnum(args, "network", NETWORKS);
         if (!network) throw new Error(`network must be one of: ${NETWORKS.join(", ")}`);
