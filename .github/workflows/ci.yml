@@ -25,7 +25,9 @@ jobs:
 
   observation-worker:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # Full D1 fixture coverage takes >7 minutes locally, before dependency
+    # installation. Keep all economic scenarios; allow slower CI runners.
+    timeout-minutes: 25
     defaults:
       run:
         working-directory: bnb-agent-probe
