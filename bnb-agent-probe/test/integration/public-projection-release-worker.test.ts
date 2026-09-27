@@ -62,6 +62,16 @@ it('enforces the shared cap even when each lane still has room',async()=>{
  expect(await (await rawCall('status')).json()).toHaveProperty('ledger');
  expect(await (await rawCall('status')).json()).toMatchObject({error:'control_budget_exhausted'});
 });
+it('permits the observed sparse verification reservation without increasing the shared cap',async()=>{
+ await call('init');const state=await ledger();state.base=8_885_999;
+ await env.DB.prepare('UPDATE runtime_state SET textValue=? WHERE key=?').bind(JSON.stringify(state),RELEASE_LEDGER_KEY).run();
+ const original=await env.DB.prepare('SELECT textValue FROM runtime_state WHERE key=?').bind(PUBLIC_PROJECTION_CURSOR_KEY).first<{textValue:string}>();
+ try{
+  await env.DB.prepare('UPDATE runtime_state SET textValue=? WHERE key=?').bind(JSON.stringify({version:1,phase:'verify_evidence',agentKey:'',endpointScope:''}),PUBLIC_PROJECTION_CURSOR_KEY).run();
+  expect((await call('step',{target:'sparse'})).status).toBe(200);
+  expect((await ledger()).cap).toBe(250_000_000);expect((await ledger()).cReserved).toBe(150_000_000);
+ }finally{await env.DB.prepare('UPDATE runtime_state SET textValue=? WHERE key=?').bind(original!.textValue,PUBLIC_PROJECTION_CURSOR_KEY).run();}
+});
 it('initializes the shared cap, protects C and preserves existing current charges',async()=>{
  await env.DB.prepare('UPDATE runtime_state SET integerValue=123 WHERE key=?').bind(PUBLIC_CURRENT_BACKFILL_KEY).run();
  expect((await call('init')).status).toBe(200);const state=await ledger();
