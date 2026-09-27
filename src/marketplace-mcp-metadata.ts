@@ -132,4 +132,3 @@ export const MCP_TOOL_METADATA: McpToolMetadata[] = [
       },
   },
 ];
-
