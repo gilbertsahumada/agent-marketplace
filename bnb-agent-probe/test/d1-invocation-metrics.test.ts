@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { measureD1Invocation, publicOperation } from '../src/db/invocation-metrics';
+import { measureD1Invocation, publicOperation, backgroundOperation } from '../src/db/invocation-metrics';
 import type { D1Database } from '../src/types';
 
 function fixture(meta: unknown = { rows_read: 3, rows_written: 2 }) {
@@ -10,6 +10,15 @@ function fixture(meta: unknown = { rows_read: 3, rows_written: 2 }) {
 }
 
 describe('per-invocation D1 metrics', () => {
+  it('separates indexing from other background work without emitting payloads', () => {
+    expect(backgroundOperation('scheduled',true)).toEqual({operation:'index.producer',chainId:null});
+    expect(backgroundOperation('queue',true,[{kind:'index_range',chainId:56,private:'secret'}]))
+      .toEqual({operation:'index.consumer',chainId:56});
+    expect(backgroundOperation('queue',true,[{kind:'index_range',chainId:56},{kind:'index_jobs',chainId:97}]))
+      .toEqual({operation:'index.consumer',chainId:null});
+    expect(backgroundOperation('queue',true,[{kind:'private-name',chainId:56}]))
+      .toEqual({operation:'queue',chainId:null});
+  });
   it('classifies network and operation without recording IDs or private query parameters', () => {
     expect(publicOperation(new Request('https://worker.test/commerce-jobs/97/123?buyer=private')))
       .toEqual({ operation: 'jobs.detail', chainId: 97 });
