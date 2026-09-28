@@ -599,13 +599,13 @@ export function createWorker(dependencies: WorkerDependencies = {}): WorkerEntry
           headers: { "cache-control": "no-store", "x-content-type-options": "nosniff" },
         });
       }
-      if (request.method==='POST' && url.pathname==='/__admin/renewal-pilot/seed' && url.search==='') {
+      if (request.method==='POST' && ['/__admin/renewal-pilot/seed','/__admin/renewal-pilot/seed-expansion'].includes(url.pathname) && url.search==='') {
         if(env.CATALOG_PILOT_SEED_ENABLED!=='1'||env.CATALOG_PILOT_PAUSED!=='1'||!env.SHARED_SECRET||config.killSwitch||config.producerKillSwitch) return errorResponse('not_found',404);
         if(!await bearerMatches(request.headers.get('authorization'),env.SHARED_SECRET))return errorResponse('unauthorized',401);
         const meter=measureD1Invocation(env.DB),started=performance.now();
         let status=500;
         try {
-          const result=await seedRenewalPilot({...env,DB:meter.db},now());
+          const result=await seedRenewalPilot({...env,DB:meter.db},now(),url.pathname.endsWith('/seed-expansion')?'expansion':'original');
           status=result.status==='completed'?200:503;
           return Response.json(result,{status,headers:{'cache-control':'no-store'}});
         } finally {
