@@ -977,7 +977,33 @@ export const hireNotifications = sqliteTable("hire_notifications", {
   check("hire_notifications_chain", sql`${table.chainId} IN (56, 97)`),
 ]);
 
+export const catalogPilotDiscoveryWork = sqliteTable('catalog_pilot_discovery_work', {
+  workKey:text().primaryKey(), agentKey:text().notNull(), endpointKey:text().notNull(), originKey:text().notNull(),
+  chainId:integer().$type<56>().notNull(), transport:text().notNull(), contextVersion:text().notNull(),
+  generation:integer().notNull().default(1), cohort:text().notNull().default('initial'), priorityClass:integer().notNull().default(0),
+  state:text().notNull().default('scheduled'), nextAttemptAt:integer().notNull(), runId:text(),
+  executionFence:integer().notNull().default(0), executionToken:text(), deliveryAt:integer().notNull().default(0),
+  failures:integer().notNull().default(0),lastErrorCode:text(),updatedAt:integer().notNull(),
+},table=>[
+  check('pilot_agent_allowlist',sql`${table.agentKey} IN ('eip155:56:341565','eip155:56:341564','eip155:56:341563','eip155:56:303779','eip155:56:213378','eip155:56:213332','eip155:56:213053','eip155:56:212989','eip155:56:212840','eip155:56:208760','eip155:56:265375','eip155:56:269233','eip155:56:270213')`),
+  uniqueIndex('catalog_pilot_discovery_work_agent_endpoint').on(table.agentKey,table.endpointKey),
+  index('idx_pilot_discovery_origin_head').on(table.originKey,table.state,table.cohort,table.chainId,table.priorityClass,table.nextAttemptAt,table.workKey),
+  index('idx_pilot_discovery_delivery').on(table.state,table.deliveryAt,table.workKey),
+  check('pilot_discovery_chain',sql`${table.chainId} = 56`),
+  check('discovery_cohort',sql`${table.cohort} IN ('initial','refresh')`),
+  check('discovery_priority',sql`${table.priorityClass} BETWEEN 0 AND 3`),
+  check('discovery_state',sql`${table.state} IN ('scheduled','dispatch','running','suspended')`),
+]);
+export const catalogPilotOriginSchedule = sqliteTable('catalog_pilot_origin_schedule', {
+  originKey:text().primaryKey(),status:text().notNull().default('sleeping'),wakeAt:integer().notNull(),turn:integer().notNull().default(0),
+  revision:integer().notNull().default(0),minute:integer().notNull().default(-1),used:integer().notNull().default(0),
+  nextCohort:text().notNull().default('initial'),nextChain:integer().notNull().default(56),leaseToken:text(),leaseUntil:integer().notNull().default(0),
+  executionToken:text(),executionLeaseUntil:integer().notNull().default(0),executionMinute:integer().notNull().default(-1),executionUsed:integer().notNull().default(0),
+},table=>[index('idx_pilot_discovery_origin_agenda').on(table.wakeAt,table.turn,table.originKey)]);
+
 export const schema = {
+  catalogPilotDiscoveryWork,
+  catalogPilotOriginSchedule,
   hireNotifications,
   agentIdentities,
   probeTargets,
