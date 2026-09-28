@@ -12,6 +12,7 @@ import { bsc, bscTestnet } from "viem/chains";
 
 import type { D1DatabaseLike } from "../db/client";
 import { createDatabase } from "../db/orm";
+import { measuredFlatRead } from '../db/measured-table-read';
 import {
   catalogObservations,
   catalogQuoteRequests,
@@ -310,7 +311,7 @@ export async function hireEventsListResponse(request: Request, d1: D1Database): 
     return jsonResponse({ error: "invalid_request" }, 400);
   }
   const db = createDatabase(d1 as unknown as D1DatabaseLike);
-  const rows = await db.select({
+  const rows = await measuredFlatRead(db,db.select({
     phase: hireEvents.phase,
     jobId: hireEvents.jobId,
     txHash: hireEvents.txHash,
@@ -322,7 +323,7 @@ export async function hireEventsListResponse(request: Request, d1: D1Database): 
     eq(hireEvents.chainId, Number(chainId)),
     eq(hireEvents.agentId, agentId),
     eq(hireEvents.provenance, "chain_verified"),
-  )).orderBy(desc(hireEvents.occurredAt), desc(hireEvents.id)).limit(LIST_LIMIT);
+  )).orderBy(desc(hireEvents.occurredAt), desc(hireEvents.id)).limit(LIST_LIMIT));
   return Response.json({
     schemaVersion: 1,
     chainId: Number(chainId),
