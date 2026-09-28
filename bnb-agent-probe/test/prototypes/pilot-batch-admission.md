@@ -59,8 +59,11 @@ admission, auth/input, concurrent requests, capacity, idempotence, headroom,
 durable deferral, migration rollback and local discovery/renewal tests pass.
 The complete Worker run initially found six historical DDL/cost expectations;
 the affected 21-test rerun passed after explicit schema-accounting corrections.
-Final complete-suite rerun is required before release. Types and 677 unit tests
-passed; staging package dry run passed (no deployment).
+Final complete-suite rerun passed: 80 files / 691 Worker tests (576.77 seconds).
+The final safety/selection rerun also passed all 13 tests, including the added
+suspension and cross-network case. Types and 677 unit tests passed; staging
+package dry run passed (no deployment). CI on the final PR head remains a
+release gate; local success is not a deployment or remote admission.
 
 ## Candidate assessment and limitations
 
