@@ -985,7 +985,7 @@ export const catalogPilotDiscoveryWork = sqliteTable('catalog_pilot_discovery_wo
   executionFence:integer().notNull().default(0), executionToken:text(), deliveryAt:integer().notNull().default(0),
   failures:integer().notNull().default(0),lastErrorCode:text(),updatedAt:integer().notNull(),
 },table=>[
-  check('pilot_agent_allowlist',sql`${table.agentKey} IN ('eip155:56:341565','eip155:56:341564','eip155:56:341563','eip155:56:303779','eip155:56:213378','eip155:56:213332','eip155:56:213053','eip155:56:212989','eip155:56:212840','eip155:56:208760','eip155:56:265375','eip155:56:269233','eip155:56:270213')`),
+  check('pilot_agent_allowlist',sql`${table.agentKey} IN ('eip155:56:341565','eip155:56:341564','eip155:56:341563','eip155:56:303779','eip155:56:213378','eip155:56:213332','eip155:56:213053','eip155:56:212989','eip155:56:212840','eip155:56:208760','eip155:56:265375','eip155:56:269233','eip155:56:270213','eip155:56:204789','eip155:56:212769','eip155:56:212943','eip155:56:213036','eip155:56:213084','eip155:56:213432')`),
   uniqueIndex('catalog_pilot_discovery_work_agent_endpoint').on(table.agentKey,table.endpointKey),
   index('idx_pilot_discovery_origin_head').on(table.originKey,table.state,table.cohort,table.chainId,table.priorityClass,table.nextAttemptAt,table.workKey),
   index('idx_pilot_discovery_delivery').on(table.state,table.deliveryAt,table.workKey),
