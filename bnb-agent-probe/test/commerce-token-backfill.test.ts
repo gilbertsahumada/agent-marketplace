@@ -10,7 +10,10 @@ function database(rows: Partial<Record<56 | 97, number>>) {
       return {
         bind(...bound: unknown[]) { values = bound; return this; },
         async first<T>() { return null as T | null; },
-        async all<T>() { return { success: true, results: [] as T[] }; },
+        async all<T>() {
+          const marker=query.includes('from "runtime_state"') ? markers.get(String(values[0])) : undefined;
+          return { success:true, results:(marker ? [{key:String(values[0]),textValue:null,...marker}] : []) as T[] };
+        },
         async raw<T extends unknown[]>() {
           if (query.includes('from "commerce_jobs"')) {
             const jobId = rows[values[0] as 56 | 97];
