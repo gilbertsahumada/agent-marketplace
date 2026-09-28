@@ -55,6 +55,13 @@ it('spreads admissions across origins and rejects withdrawn declarations',async(
  await env.DB.prepare("UPDATE catalog_agent_endpoints SET declarationState='removed' WHERE endpointKey='100000'").run();
  expect(await admitPilotBatch(settings(),{batchId:'batch-fair',agentIds:['100000','100001','100002']},NOW)).toMatchObject({status:'completed',value:{admitted:['100001'],skipped:['100000','100002']}});
 });
+it('does not admit suspended capabilities or Testnet identities and retains future backoff',async()=>{
+ await env.DB.prepare("INSERT INTO catalog_seller_capabilities(agentKey,endpointKey,transport,state,nextProbeAt,createdAt,updatedAt) VALUES('eip155:56:100000','100000','a2a','suspended',0,0,0)").run();
+ await env.DB.prepare("INSERT INTO catalog_seller_capabilities(agentKey,endpointKey,transport,state,nextProbeAt,consecutiveFailures,createdAt,updatedAt) VALUES('eip155:56:100001','100001','a2a','failed',?,2,0,0)").bind(NOW+86400000).run();
+ await env.DB.prepare("UPDATE catalog_agents SET agentKey='eip155:97:100002',chainId=97 WHERE agentKey='eip155:56:100002'").run();
+ expect(await admitPilotBatch(settings(),{batchId:'batch-safety',agentIds:['100000','100001','100002']},NOW)).toMatchObject({status:'completed',value:{admitted:['100001'],skipped:['100000','100002']}});
+ expect(await env.DB.prepare('SELECT chainId,nextAttemptAt,failures FROM catalog_pilot_discovery_work').first()).toEqual({chainId:56,nextAttemptAt:NOW+86400000,failures:2});
+});
 it('does not close the renewal lane when discovery reaches its protected floor',async()=>{
  const day=new Date(NOW).toISOString().slice(0,10);
  await env.DB.prepare('INSERT INTO runtime_state(key,textValue,integerValue,updatedAt) VALUES(?,?,?,?)').bind(`background_budget:${day}:maintenance`,'granted',7_000_000,NOW).run();
