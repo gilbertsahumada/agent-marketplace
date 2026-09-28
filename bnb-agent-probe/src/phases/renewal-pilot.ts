@@ -2,7 +2,7 @@ import type { Env, QueueBatch } from '../types';
 import type { D1DatabaseLike } from '../db/client';
 import { BACKGROUND_LANE_NANO_USD, BACKGROUND_CONTROL_NANO_USD, runWithBackgroundBudget } from '../db/background-budget';
 import { discoveryAgendaHasDue, produceDiscoveryAgenda, parseDiscoveryMessage, upsertDiscoveryWork } from '../catalog/pilot-discovery-agenda';
-import { PILOT_AGENT_IDS, pilotRenewalDelay } from '../catalog/pilot-policy';
+import { ORIGINAL_PILOT_AGENT_IDS, PILOT_EXPANSION_AGENT_IDS, pilotRenewalDelay } from '../catalog/pilot-policy';
 import { runBackgroundWindow } from './background-cadence';
 import { runCatalogDiscovery, discoveryContextVersion, type DiscoveryDependencies } from './catalog-pilot-discovery';
 import { loadConfig } from '../config';
@@ -60,11 +60,11 @@ export async function consumeRenewalPilot(batch:QueueBatch,env:Env,now:()=>numbe
   return result;
 }
 /** Release-only, fixed-ID initialization. Never scans or backfills the catalogue. */
-export async function seedRenewalPilot(env:Env,now:number){
+export async function seedRenewalPilot(env:Env,now:number,cohort:'original'|'expansion'='original'){
   if(env.CATALOG_PILOT_PAUSED!=='1'||env.BACKGROUND_COST_CONTROLS_ENABLED!=='1')throw Error('PILOT_SEED_REQUIRES_PAUSE');
   return runWithBackgroundBudget(env.DB as unknown as D1DatabaseLike,'maintenance','pilot.seed',now,async db=>{
     let admitted=0,unavailable=0;
-    for(const id of PILOT_AGENT_IDS){
+    for(const id of cohort==='expansion'?PILOT_EXPANSION_AGENT_IDS:ORIGINAL_PILOT_AGENT_IDS){
       const agentKey=`eip155:56:${id}`;
       const row=await discoveryStatement(db,`SELECT e.endpointKey,COALESCE(e.originKey,e.endpointKey) originKey,e.endpoint,e.validationProtocol transport,
         ae.metadataVersion,c.compatibilityState,c.compatibilityCheckedAt,c.nextProbeAt,c.consecutiveFailures

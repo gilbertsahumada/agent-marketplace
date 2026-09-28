@@ -1,0 +1,10 @@
+{
+  "scope": "Local simulation only; no production activation",
+  "hours": 48,
+  "noiseFixtures": [2000, 20000],
+  "original": {"agents": 13, "completed": 39, "sellerRequests": 39, "quotes": 0, "queries": 12424, "reads": 23664, "writes": 1539, "weightedUnits": 1562664},
+  "expanded": {"agents": 19, "completed": 57, "sellerRequests": 57, "quotes": 0, "queries": 12830, "reads": 25582, "writes": 2247, "weightedUnits": 2272582},
+  "sixAgentSeed": {"queries": 20, "reads": 109, "writes": 29, "weightedUnits": 29109},
+  "thirteenTaskMigration": {"queries": 7, "reads": 873, "writes": 126, "weightedUnits": 126873},
+  "limitations": ["Fixtures do not prove seller availability today", "Recurring simulation excludes one-time installation and seed, reported separately", "Production rollout and live budget admission remain unverified", "Weighted units are not an invoice or internal conservative budget charge"]
+}
