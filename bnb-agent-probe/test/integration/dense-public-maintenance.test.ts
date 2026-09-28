@@ -82,8 +82,8 @@ it('records per-operation trigger costs and complete historical construction sep
  const expected=await rows();await refreshDenseAgents(metered(db,changes.backfill!),[key]);expect(await rows()).toEqual(expected);
  await dropDenseMaintenance(db);await constructDensePrototype(metered(db,changes.construction!));expect(await rows()).toEqual(expected);
  const costs=Object.fromEntries(Object.entries(changes).map(([name,log])=>[name,{reads:log.reduce((n,r)=>n+r.rowsRead,0),writes:log.reduce((n,r)=>n+r.rowsWritten,0)}]));
- // Only DDL construction reads six extra sqlite_master objects from the pilot.
- expect(costs).toEqual({agent:{reads:7,writes:3},capability:{reads:10,writes:4},observation:{reads:37,writes:11},sharedEndpoint:{reads:1,writes:2},backfill:{reads:5,writes:2},construction:{reads:146,writes:3}});
+ // DDL also reads the admission table and its unique index: +2, not runtime work.
+ expect(costs).toEqual({agent:{reads:7,writes:3},capability:{reads:10,writes:4},observation:{reads:37,writes:11},sharedEndpoint:{reads:1,writes:2},backfill:{reads:5,writes:2},construction:{reads:148,writes:3}});
 });
 
 it('does not rewrite public rows for scheduling or ingestion bookkeeping updates',async()=>{
@@ -143,5 +143,5 @@ it.each([2000,20000])('measures raw construction for %i current endpoints separa
  SELECT agentKey,agentKey,'a2a','discovered','pending',0,0,0 FROM catalog_agents`).run();
  const log:ReadRecord[]=[];await constructDensePrototype(metered(db,log));
  expect(await db.prepare(`SELECT COUNT(*) n FROM ${PROTOTYPE_TABLE}`).first()).toEqual({n:count});
- expect({count,reads:log.reduce((n,r)=>n+r.rowsRead,0),writes:log.reduce((n,r)=>n+r.rowsWritten,0)}).toEqual({count,reads:count*4+141,writes:count+2});
+ expect({count,reads:log.reduce((n,r)=>n+r.rowsRead,0),writes:log.reduce((n,r)=>n+r.rowsWritten,0)}).toEqual({count,reads:count*4+143,writes:count+2});
 });
