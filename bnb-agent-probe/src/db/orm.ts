@@ -3,6 +3,7 @@ import { drizzle, type DrizzleD1Database } from "drizzle-orm/d1";
 
 import type { D1DatabaseLike } from "./client";
 import type { D1Database } from "../types";
+import { measuredTableRead, measuredFlatRead } from './measured-table-read';
 import { readPublicAgentMetrics, readPublicEndpointEvidence, readPublicProjectedObservations } from "../catalog/public-projections";
 import {
   catalogAgents,
@@ -504,20 +505,20 @@ export async function readPublicCatalogAgentEvidence(
   const db = createDatabase(d1 as unknown as D1DatabaseLike);
   const agentKey = `eip155:${chainId}:${agentId}`;
   const [agents,declarations,ingestTasks,capabilities,metrics,endpointEvidence] = await Promise.all([
-    db.select().from(catalogAgents).where(eq(catalogAgents.agentKey,agentKey)).limit(1),
-    db.select().from(catalogAgentEndpoints).where(and(eq(catalogAgentEndpoints.agentKey,agentKey),eq(catalogAgentEndpoints.declarationState,"current")))
-      .orderBy(desc(catalogAgentEndpoints.priority),catalogAgentEndpoints.endpointKey),
-    db.select().from(catalogIngestTasks).where(eq(catalogIngestTasks.agentKey,agentKey)).limit(1),
-    db.select().from(catalogSellerCapabilities).where(eq(catalogSellerCapabilities.agentKey,agentKey)).orderBy(desc(catalogSellerCapabilities.updatedAt)),
+    measuredTableRead(db,catalogAgents,db.select().from(catalogAgents).where(eq(catalogAgents.agentKey,agentKey)).limit(1)),
+    measuredTableRead(db,catalogAgentEndpoints,db.select().from(catalogAgentEndpoints).where(and(eq(catalogAgentEndpoints.agentKey,agentKey),eq(catalogAgentEndpoints.declarationState,"current")))
+      .orderBy(desc(catalogAgentEndpoints.priority),catalogAgentEndpoints.endpointKey)),
+    measuredTableRead(db,catalogIngestTasks,db.select().from(catalogIngestTasks).where(eq(catalogIngestTasks.agentKey,agentKey)).limit(1)),
+    measuredTableRead(db,catalogSellerCapabilities,db.select().from(catalogSellerCapabilities).where(eq(catalogSellerCapabilities.agentKey,agentKey)).orderBy(desc(catalogSellerCapabilities.updatedAt))),
     readPublicAgentMetrics(d1,[agentKey]),
     readPublicEndpointEvidence(d1,[agentKey]),
   ]);
   const endpointKeys = declarations.map(row => row.endpointKey);
   const [endpoints,recentObservations,effectiveEndpointObservations,effectiveAgentObservations] = await Promise.all([
-    endpointKeys.length ? db.select().from(catalogEndpoints).where(inArray(catalogEndpoints.endpointKey,endpointKeys))
-      .orderBy(catalogEndpoints.protocol,catalogEndpoints.endpointKey) : Promise.resolve([]),
-    db.select().from(catalogObservations).where(eq(catalogObservations.agentKey,agentKey))
-      .orderBy(desc(catalogObservations.observedAt),desc(catalogObservations.id)).limit(observationLimit),
+    endpointKeys.length ? measuredTableRead(db,catalogEndpoints,db.select().from(catalogEndpoints).where(inArray(catalogEndpoints.endpointKey,endpointKeys))
+      .orderBy(catalogEndpoints.protocol,catalogEndpoints.endpointKey)) : Promise.resolve([]),
+    measuredTableRead(db,catalogObservations,db.select().from(catalogObservations).where(eq(catalogObservations.agentKey,agentKey))
+      .orderBy(desc(catalogObservations.observedAt),desc(catalogObservations.id)).limit(observationLimit)),
     readPublicProjectedObservations(d1,[agentKey],"platform",endpointKeys),
     readPublicProjectedObservations(d1,[agentKey],"agent"),
   ]);
@@ -734,11 +735,11 @@ export async function readRuntimeState(
 ): Promise<RuntimeStateRow | null> {
   assertRuntimeStateKey(key);
 
-  const rows = await db
+  const rows = await measuredTableRead(db,runtimeState,db
     .select()
     .from(runtimeState)
     .where(eq(runtimeState.key, key))
-    .limit(1);
+    .limit(1));
   return rows[0] ?? null;
 }
 
@@ -749,10 +750,10 @@ export async function readRuntimeStates(
   for (const key of keys) assertRuntimeStateKey(key);
   if (keys.length === 0) return [];
 
-  return db
+  return measuredTableRead(db,runtimeState,db
     .select()
     .from(runtimeState)
-    .where(inArray(runtimeState.key, [...keys]));
+    .where(inArray(runtimeState.key, [...keys])));
 }
 
 export async function writeRuntimeState(
@@ -833,13 +834,13 @@ export async function readObservationFeed(
     attemptStatsByTarget,
     lastSchedulerAttempts,
   ] = await Promise.all([
-    db.select().from(funnelSnapshots)
+    measuredTableRead(db,funnelSnapshots,db.select().from(funnelSnapshots)
       .orderBy(desc(funnelSnapshots.measuredAt), desc(funnelSnapshots.id))
-      .limit(1),
-    db.select().from(probeTargets)
+      .limit(1)),
+    measuredTableRead(db,probeTargets,db.select().from(probeTargets)
       .where(agentIds.length === 0 ? undefined : inArray(probeTargets.agentId, [...agentIds]))
-      .orderBy(probeTargets.agentId, probeTargets.transport, probeTargets.endpoint),
-    db.select({ ...getTableColumns(probeObservations) }).from(probeObservations)
+      .orderBy(probeTargets.agentId, probeTargets.transport, probeTargets.endpoint)),
+    measuredTableRead(db,probeObservations,db.select({ ...getTableColumns(probeObservations) }).from(probeObservations)
       .innerJoin(latestObservationTimes, and(
         eq(probeObservations.chainId, latestObservationTimes.chainId),
         eq(probeObservations.agentId, latestObservationTimes.agentId),
@@ -851,14 +852,14 @@ export async function readObservationFeed(
         ),
         eq(probeObservations.probedAt, latestObservationTimes.probedAt),
       ))
-      .orderBy(desc(probeObservations.probedAt), probeObservations.id),
-    db.select({
+      .orderBy(desc(probeObservations.probedAt), probeObservations.id)),
+    measuredFlatRead(db,db.select({
       agentId: probeObservations.agentId,
       chainId: probeObservations.chainId,
       transport: probeObservations.transport,
       endpoint: probeObservations.endpoint,
       probeCategory: probeObservations.probeCategory,
-      probedAt: max(probeObservations.probedAt),
+      probedAt: max(probeObservations.probedAt).as('probedAt'),
     }).from(probeObservations)
       .where(and(eq(probeObservations.outcome, "quote_verified"), scopedAgents))
       .groupBy(
@@ -867,15 +868,15 @@ export async function readObservationFeed(
         probeObservations.transport,
         probeObservations.endpoint,
         probeObservations.probeCategory,
-      ),
-    db.select({
+      )),
+    measuredFlatRead(db,db.select({
       agentId: probeObservations.agentId,
       chainId: probeObservations.chainId,
       transport: probeObservations.transport,
       endpoint: probeObservations.endpoint,
-      attemptCount: count(),
-      firstProbedAt: min(probeObservations.probedAt),
-      lastProbedAt: max(probeObservations.probedAt),
+      attemptCount: count().as('attemptCount'),
+      firstProbedAt: min(probeObservations.probedAt).as('firstProbedAt'),
+      lastProbedAt: max(probeObservations.probedAt).as('lastProbedAt'),
     }).from(probeObservations)
       .where(scopedAgents)
       .groupBy(
@@ -883,10 +884,10 @@ export async function readObservationFeed(
         probeObservations.agentId,
         probeObservations.transport,
         probeObservations.endpoint,
-      ),
-    db.select().from(schedulerAttempts)
+      )),
+    measuredTableRead(db,schedulerAttempts,db.select().from(schedulerAttempts)
       .orderBy(desc(schedulerAttempts.finishedAt), desc(schedulerAttempts.id))
-      .limit(1),
+      .limit(1)),
   ]);
 
   return {

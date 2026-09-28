@@ -69,7 +69,7 @@ class LeaseDatabase implements D1DatabaseLike {
           return {
             success: true,
             meta: { rows_read: 1, rows_written: 0 },
-            results: [{ key: "next_scheduler_phase", textValue: thisDb.nextPhase }] as Row[],
+            results: [{ key: "next_scheduler_phase", textValue: thisDb.nextPhase, integerValue: null, updatedAt: 0 }] as Row[],
           };
         }
         return { success: true, meta: {}, results: [] as Row[] };

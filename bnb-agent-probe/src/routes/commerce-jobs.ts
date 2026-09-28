@@ -2,6 +2,7 @@ import { and, asc, desc, eq, lt, sql } from "drizzle-orm";
 import { getAddress, isAddress } from "viem";
 
 import type { D1DatabaseLike } from "../db/client";
+import { measuredFlatRead, measuredTableRead } from '../db/measured-table-read';
 import { createDatabase, readRuntimeStates, type CommerceJobRow } from "../db/orm";
 import {
   commerceJobCounts,
@@ -125,15 +126,15 @@ export async function commerceJobsListResponse(request: Request, d1: D1Database,
   // Scope aggregates exclude pagination. Do not scan the global ledger on
   // every page: the global /commerce-summary uses the indexer's counters.
   const totals = buyer !== null || provider !== null || agentId !== null
-    ? await db.select({
-      total: sql<number>`count(*)`,
-      completed: sql<number>`coalesce(sum(case when ${commerceJobs.status} = 3 then 1 else 0 end), 0)`,
-      funded: sql<number>`coalesce(sum(case when ${commerceJobs.status} = 1 then 1 else 0 end), 0)`,
-      submitted: sql<number>`coalesce(sum(case when ${commerceJobs.status} = 2 then 1 else 0 end), 0)`,
-    }).from(commerceJobs).where(and(...conditions)).get()
+    ? (await measuredFlatRead(db,db.select({
+      total: sql<number>`count(*)`.as('total'),
+      completed: sql<number>`coalesce(sum(case when ${commerceJobs.status} = 3 then 1 else 0 end), 0)`.as('completed'),
+      funded: sql<number>`coalesce(sum(case when ${commerceJobs.status} = 1 then 1 else 0 end), 0)`.as('funded'),
+      submitted: sql<number>`coalesce(sum(case when ${commerceJobs.status} = 2 then 1 else 0 end), 0)`.as('submitted'),
+    }).from(commerceJobs).where(and(...conditions))))[0]
     : undefined;
   if (beforeJobId !== null) conditions.push(lt(commerceJobs.jobId, beforeJobId));
-  const rows = await db.select({
+  const rows = await measuredFlatRead(db,db.select({
     chainId: commerceJobs.chainId,
     jobId: commerceJobs.jobId,
     client: commerceJobs.client,
@@ -148,9 +149,9 @@ export async function commerceJobsListResponse(request: Request, d1: D1Database,
     deliverable: commerceJobs.deliverable,
     firstSeenAt: commerceJobs.firstSeenAt,
     updatedAt: commerceJobs.updatedAt,
-    marketplace: marketplaceFlag,
-    registeredAt: sql<number | null>`(SELECT min(e.blockTimestamp) FROM commerce_job_events e INDEXED BY idx_commerce_job_events_job WHERE e.chainId = commerce_jobs.chainId AND e.jobId = commerce_jobs.jobId AND e.phase = 'created')`,
-  }).from(commerceJobs).where(and(...conditions)).orderBy(desc(commerceJobs.jobId)).limit(limit + 1);
+    marketplace: marketplaceFlag.as('marketplace'),
+    registeredAt: sql<number | null>`(SELECT min(e.blockTimestamp) FROM commerce_job_events e INDEXED BY idx_commerce_job_events_job WHERE e.chainId = commerce_jobs.chainId AND e.jobId = commerce_jobs.jobId AND e.phase = 'created')`.as('registeredAt'),
+  }).from(commerceJobs).where(and(...conditions)).orderBy(desc(commerceJobs.jobId)).limit(limit + 1));
   const page = rows.slice(0, limit);
   const last = page[page.length - 1];
   return Response.json({
@@ -170,7 +171,7 @@ export async function commerceJobResponse(request: Request, d1: D1Database): Pro
   const jobId = jobIdParameter(match[2] ?? null);
   if (jobId === null) return invalidRequest();
   const db = createDatabase(d1 as unknown as D1DatabaseLike);
-  const [job] = await db.select({
+  const [job] = await measuredFlatRead(db,db.select({
     chainId: commerceJobs.chainId,
     jobId: commerceJobs.jobId,
     client: commerceJobs.client,
@@ -185,8 +186,8 @@ export async function commerceJobResponse(request: Request, d1: D1Database): Pro
     deliverable: commerceJobs.deliverable,
     firstSeenAt: commerceJobs.firstSeenAt,
     updatedAt: commerceJobs.updatedAt,
-    marketplace: marketplaceFlag,
-  }).from(commerceJobs).where(and(eq(commerceJobs.chainId, chainId), eq(commerceJobs.jobId, jobId))).limit(1);
+    marketplace: marketplaceFlag.as('marketplace'),
+  }).from(commerceJobs).where(and(eq(commerceJobs.chainId, chainId), eq(commerceJobs.jobId, jobId))).limit(1));
   if (job === undefined) {
     return Response.json({ error: "not_found" }, {
       status: 404,
@@ -194,10 +195,10 @@ export async function commerceJobResponse(request: Request, d1: D1Database): Pro
     });
   }
   const [events, verified] = await Promise.all([
-    db.select().from(commerceJobEvents)
+    measuredTableRead(db,commerceJobEvents,db.select().from(commerceJobEvents)
       .where(and(eq(commerceJobEvents.chainId, chainId), eq(commerceJobEvents.jobId, jobId)))
-      .orderBy(asc(commerceJobEvents.blockNumber), asc(commerceJobEvents.logIndex)),
-    db.select({
+      .orderBy(asc(commerceJobEvents.blockNumber), asc(commerceJobEvents.logIndex))),
+    measuredFlatRead(db,db.select({
       agentId: hireEvents.agentId,
       phase: hireEvents.phase,
       txHash: hireEvents.txHash,
@@ -208,7 +209,7 @@ export async function commerceJobResponse(request: Request, d1: D1Database): Pro
       eq(hireEvents.chainId, chainId),
       eq(hireEvents.jobId, String(jobId)),
       eq(hireEvents.provenance, "chain_verified"),
-    )).orderBy(asc(hireEvents.occurredAt), asc(hireEvents.id)),
+    )).orderBy(asc(hireEvents.occurredAt), asc(hireEvents.id))),
   ]);
   return Response.json({
     schemaVersion: 1,
@@ -341,7 +342,7 @@ export async function commerceSummaryResponse(request: Request, d1: D1Database):
   if (chainId === null) return invalidRequest();
   const db = createDatabase(d1 as unknown as D1DatabaseLike);
   const [counts, runtime] = await Promise.all([
-    db.select().from(commerceJobCounts).where(eq(commerceJobCounts.chainId, chainId)),
+    measuredTableRead(db,commerceJobCounts,db.select().from(commerceJobCounts).where(eq(commerceJobCounts.chainId, chainId))),
     readRuntimeStates(db, [commerceCursorKey(chainId), commerceSummaryKey(chainId)]),
   ]);
   const protocolRows = counts.map((row) => ({ status: row.status, total: row.protocolJobs }));

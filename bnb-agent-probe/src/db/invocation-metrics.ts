@@ -75,6 +75,17 @@ export function measureD1Invocation(source: D1Database) {
 export type InvocationCacheOutcome = 'hit' | 'miss' | 'bypass' | 'not_applicable';
 export const invocationCache = new WeakMap<Request, InvocationCacheOutcome>();
 
+/** Aggregate only fixed categories; never log message bodies or queue names. */
+export function backgroundOperation(kind: 'scheduled' | 'queue', indexOnly: boolean, bodies: readonly unknown[] = []) {
+  if (kind === 'scheduled') return { operation: indexOnly ? 'index.producer' : 'scheduled', chainId: null };
+  const work = bodies.map(body => body !== null && typeof body === 'object'
+    ? body as Record<string, unknown> : {});
+  const indexing = work.length > 0 && work.every(row => row.kind === 'index_range' || row.kind === 'index_jobs');
+  const chain = work[0]?.chainId;
+  return { operation: indexing ? 'index.consumer' : 'queue',
+    chainId: indexing && (chain === 56 || chain === 97) && work.every(row => row.chainId === chain) ? chain : null };
+}
+
 /** Closed vocabulary: never emit URL paths containing IDs or query text. */
 export function publicOperation(request: Request): { operation: string; chainId: 56 | 97 | null } | null {
   if (request.method !== 'GET') return null;
