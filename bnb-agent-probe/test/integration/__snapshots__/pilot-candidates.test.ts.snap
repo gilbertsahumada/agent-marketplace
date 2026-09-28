@@ -1,0 +1,25 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`bounds discovery sampling with 2000 capabilities including missing declarations 1`] = `
+{
+  "complete": true,
+  "knownRowsRead": 1498,
+  "knownRowsWritten": 0,
+  "queries": 1,
+  "rowsRead": 1498,
+  "rowsWritten": 0,
+  "unmeasuredQueries": 0,
+}
+`;
+
+exports[`bounds discovery sampling with 20000 capabilities including missing declarations 1`] = `
+{
+  "complete": true,
+  "knownRowsRead": 1498,
+  "knownRowsWritten": 0,
+  "queries": 1,
+  "rowsRead": 1498,
+  "rowsWritten": 0,
+  "unmeasuredQueries": 0,
+}
+`;

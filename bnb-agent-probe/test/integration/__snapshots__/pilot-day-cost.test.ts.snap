@@ -1,0 +1,25 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`48h pilot, 2000 unrelated agents, size=29 1`] = `
+{
+  "complete": true,
+  "knownRowsRead": 28773,
+  "knownRowsWritten": 3426,
+  "queries": 13609,
+  "rowsRead": 28773,
+  "rowsWritten": 3426,
+  "unmeasuredQueries": 0,
+}
+`;
+
+exports[`48h pilot, 20000 unrelated agents, size=29 1`] = `
+{
+  "complete": true,
+  "knownRowsRead": 28773,
+  "knownRowsWritten": 3426,
+  "queries": 13609,
+  "rowsRead": 28773,
+  "rowsWritten": 3426,
+  "unmeasuredQueries": 0,
+}
+`;

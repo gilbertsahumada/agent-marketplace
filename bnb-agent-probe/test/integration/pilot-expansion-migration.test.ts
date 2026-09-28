@@ -4,6 +4,8 @@ import {ORIGINAL_PILOT_AGENT_IDS} from '../../src/catalog/pilot-policy';
 import {measureD1Invocation} from '../../src/db/invocation-metrics';
 it('atomically upgrades thirteen tasks without resetting their state and measures installation separately',async()=>{
  await env.DB.prepare('DROP TABLE catalog_pilot_discovery_work').run();
+ // Freeze the historical 0038 -> 0039 schema, excluding the later registry.
+ await env.DB.prepare('DROP TABLE catalog_pilot_admissions').run();
  const original=env.TEST_MIGRATIONS.find(m=>m.name==='0038_catalog_pilot_discovery.sql')!;
  for(const query of original.queries.slice(0,4))await env.DB.prepare(query).run();
  for(const [i,id] of ORIGINAL_PILOT_AGENT_IDS.entries())await env.DB.prepare(`INSERT INTO catalog_pilot_discovery_work

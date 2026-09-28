@@ -57,10 +57,10 @@ it('seeds six only, preserves original tasks, and recovers public requestability
  expect(meter.snapshot()).toMatchInlineSnapshot(`
    {
      "complete": true,
-     "knownRowsRead": 109,
+     "knownRowsRead": 103,
      "knownRowsWritten": 29,
      "queries": 20,
-     "rowsRead": 109,
+     "rowsRead": 103,
      "rowsWritten": 29,
      "unmeasuredQueries": 0,
    }

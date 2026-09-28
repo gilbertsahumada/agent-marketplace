@@ -1,0 +1,13 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`admits ten atomically, is idempotent and refuses an eleventh without losing work > ten-agent admission 1`] = `
+{
+  "complete": true,
+  "knownRowsRead": 907,
+  "knownRowsWritten": 83,
+  "queries": 52,
+  "rowsRead": 907,
+  "rowsWritten": 83,
+  "unmeasuredQueries": 0,
+}
+`;

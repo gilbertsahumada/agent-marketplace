@@ -1,8 +1,8 @@
 import type { Env, QueueBatch } from '../types';
 import type { D1DatabaseLike } from '../db/client';
-import { BACKGROUND_LANE_NANO_USD, BACKGROUND_CONTROL_NANO_USD, runWithBackgroundBudget } from '../db/background-budget';
-import { discoveryAgendaHasDue, produceDiscoveryAgenda, parseDiscoveryMessage, upsertDiscoveryWork } from '../catalog/pilot-discovery-agenda';
-import { ORIGINAL_PILOT_AGENT_IDS, PILOT_EXPANSION_AGENT_IDS, pilotRenewalDelay } from '../catalog/pilot-policy';
+import { BACKGROUND_LANE_NANO_USD, BACKGROUND_CONTROL_NANO_USD, runWithBackgroundBudget,runBackgroundControl } from '../db/background-budget';
+import { discoveryAgendaHasDue, produceDiscoveryAgenda, parseDiscoveryMessage, upsertDiscoveryWork,deferInitialDiscovery } from '../catalog/pilot-discovery-agenda';
+import { ORIGINAL_PILOT_AGENT_IDS, PILOT_EXPANSION_AGENT_IDS, pilotRenewalDelay,PILOT_RENEWAL_HEADROOM } from '../catalog/pilot-policy';
 import { runBackgroundWindow } from './background-cadence';
 import { runCatalogDiscovery, discoveryContextVersion, type DiscoveryDependencies } from './catalog-pilot-discovery';
 import { loadConfig } from '../config';
@@ -54,8 +54,14 @@ export async function consumeRenewalPilot(batch:QueueBatch,env:Env,now:()=>numbe
   if(!pilotEnabled(env)){message.ack();return {status:'paused' as const};}
   const db=env.DB as unknown as D1DatabaseLike;
   if(!await preflight(db,now(),false)){message.ack();return {status:'deferred' as const};}
+  const task=await discoveryStatement(db,"SELECT cohort FROM catalog_pilot_discovery_work WHERE workKey=? AND generation=? AND runId=? AND state='dispatch'",
+    [work.workKey,work.generation,work.runId]).first<{cohort:string}>();
+  if(!task){message.ack();return {status:'obsolete' as const};}
   const result=await runWithBackgroundBudget(db,'maintenance','pilot.consumer',now(),async admitted=>
-    runCatalogDiscovery(work,{...env,DB:admitted as unknown as Env['DB']},loadConfig(env),{...dependencies,now}),{estimateNanoUsd:ESTIMATE});
+    runCatalogDiscovery(work,{...env,DB:admitted as unknown as Env['DB']},loadConfig(env),{...dependencies,now}),
+    {estimateNanoUsd:ESTIMATE,protectedNanoUsd:task.cohort==='initial'?PILOT_RENEWAL_HEADROOM:0});
+  if(result.status==='denied'&&task.cohort==='initial')await runBackgroundControl(db,'maintenance','pilot.defer',now(),
+    admitted=>deferInitialDiscovery(admitted,work,result.notBeforeMs,now()),{estimateNanoUsd:20_000});
   message.ack();
   return result;
 }

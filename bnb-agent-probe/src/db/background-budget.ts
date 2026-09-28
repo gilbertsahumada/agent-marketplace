@@ -13,7 +13,7 @@ export const BACKGROUND_CONTROL_NANO_USD = 5_000;
 // A denied existing-row admission measured 2 reads/1 write = 1002 nanoUSD.
 // It performs no settlement; leave headroom, and close on anomalous metadata.
 export const BACKGROUND_DENIED_CONTROL_NANO_USD = 2_000;
-export interface BackgroundBudgetOptions { readonly estimateNanoUsd?: number }
+export interface BackgroundBudgetOptions { readonly estimateNanoUsd?: number; readonly protectedNanoUsd?:number }
 export type BackgroundBudgetResult<T> =
   | { readonly status: "denied"; readonly lane: BackgroundLane; readonly unitKey: string; readonly notBeforeMs: number }
   | { readonly status: "completed"; readonly value: T; readonly observedNanoUsd: number; readonly chargedNanoUsd: number };
@@ -76,15 +76,19 @@ async function executeBackgroundUnit<T>(
   database:D1DatabaseLike,lane:BackgroundLane,unitKey:string,nowMs:number,
   callback:(database:D1DatabaseLike)=>Promise<T>,options:BackgroundBudgetOptions,controlOnly:boolean,
 ):Promise<BackgroundBudgetResult<T>> {
-  const limit = BACKGROUND_LANE_NANO_USD[lane];
+  const protectedAmount=options.protectedNanoUsd??0;
+  const limit = BACKGROUND_LANE_NANO_USD[lane]-protectedAmount;
   const estimate = options.estimateNanoUsd ?? (lane === "jobs" ? 50_000 : 150_000);
-  if (!limit || !unitKey.trim() || unitKey.length > 200 || !Number.isSafeInteger(nowMs) || nowMs < 0
+  if (!Number.isSafeInteger(protectedAmount)||protectedAmount<0||protectedAmount>=BACKGROUND_LANE_NANO_USD[lane]||!limit || !unitKey.trim() || unitKey.length > 200 || !Number.isSafeInteger(nowMs) || nowMs < 0
     || !Number.isSafeInteger(estimate) || estimate < 1 || estimate > limit - BACKGROUND_CONTROL_NANO_USD) {
     throw new Error("BACKGROUND_BUDGET_INVALID_INPUT");
   }
   const day = new Date(nowMs).toISOString().slice(0, 10);
   const key = `background_budget:${day}:${lane}`;
   const notBeforeMs = Date.parse(`${day}T00:00:00Z`) + 86_400_000;
+  // A discovery headroom denial must not latch the entire maintenance lane:
+  // renewals may still use its protected balance with the normal limit.
+  const deniedState=`${protectedAmount?'deferred':'denied'}:${notBeforeMs}`;
   const reserved = estimate + BACKGROUND_CONTROL_NANO_USD;
   let controls = 0;
   const closeLane = async () => {
@@ -110,11 +114,11 @@ async function executeBackgroundUnit<T>(
           AND COALESCE(runtime_state.textValue,'') NOT LIKE 'denied:%'
           AND COALESCE(runtime_state.integerValue,0)+?<=?) THEN ? ELSE ? END,
       updatedAt=excluded.updatedAt RETURNING CASE WHEN ?=1 THEN 'granted' ELSE textValue END AS textValue`)
-      .bind(key,reserved,nowMs,Number(controlOnly),reserved,limit,`denied:${notBeforeMs}`,Number(controlOnly),reserved,limit,reserved,BACKGROUND_DENIED_CONTROL_NANO_USD,Number(controlOnly))
+      .bind(key,reserved,nowMs,Number(controlOnly),reserved,limit,deniedState,Number(controlOnly),reserved,limit,reserved,BACKGROUND_DENIED_CONTROL_NANO_USD,Number(controlOnly))
       .all<{ textValue: string }>();
     controls += cost(admission);
     if (controls > BACKGROUND_CONTROL_NANO_USD || admission.results?.length !== 1
-      || !["granted",`denied:${notBeforeMs}`,`closed:${notBeforeMs}`].includes(admission.results[0]!.textValue)) throw new BackgroundBudgetError("metadata");
+      || !["granted",deniedState,`denied:${notBeforeMs}`,`closed:${notBeforeMs}`].includes(admission.results[0]!.textValue)) throw new BackgroundBudgetError("metadata");
     if (admission.results[0]!.textValue !== "granted" && controls > BACKGROUND_DENIED_CONTROL_NANO_USD) {
       throw new BackgroundBudgetError("metadata");
     }

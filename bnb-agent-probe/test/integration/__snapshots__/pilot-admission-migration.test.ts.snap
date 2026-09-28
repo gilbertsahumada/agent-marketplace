@@ -1,0 +1,13 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`migrates nineteen tasks atomically and preserves every execution field 1`] = `
+{
+  "complete": true,
+  "knownRowsRead": 938,
+  "knownRowsWritten": 192,
+  "queries": 9,
+  "rowsRead": 938,
+  "rowsWritten": 192,
+  "unmeasuredQueries": 0,
+}
+`;
