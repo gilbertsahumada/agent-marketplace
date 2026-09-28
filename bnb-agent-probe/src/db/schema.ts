@@ -977,15 +977,20 @@ export const hireNotifications = sqliteTable("hire_notifications", {
   check("hire_notifications_chain", sql`${table.chainId} IN (56, 97)`),
 ]);
 
+export const catalogPilotAdmissions = sqliteTable('catalog_pilot_admissions', {
+  slot:integer().primaryKey(),agentKey:text().notNull().unique(),batchId:text().notNull(),admittedAt:integer().notNull(),
+},table=>[
+  check('pilot_admission_limit',sql`${table.slot} BETWEEN 1 AND 29`),
+  check('pilot_admission_key',sql`${table.agentKey} GLOB 'eip155:56:[1-9]*' AND substr(${table.agentKey},11) NOT GLOB '*[^0-9]*' AND length(${table.agentKey}) BETWEEN 11 AND 88`),
+]);
 export const catalogPilotDiscoveryWork = sqliteTable('catalog_pilot_discovery_work', {
-  workKey:text().primaryKey(), agentKey:text().notNull(), endpointKey:text().notNull(), originKey:text().notNull(),
+  workKey:text().primaryKey(), agentKey:text().notNull().references(()=>catalogPilotAdmissions.agentKey), endpointKey:text().notNull(), originKey:text().notNull(),
   chainId:integer().$type<56>().notNull(), transport:text().notNull(), contextVersion:text().notNull(),
   generation:integer().notNull().default(1), cohort:text().notNull().default('initial'), priorityClass:integer().notNull().default(0),
   state:text().notNull().default('scheduled'), nextAttemptAt:integer().notNull(), runId:text(),
   executionFence:integer().notNull().default(0), executionToken:text(), deliveryAt:integer().notNull().default(0),
   failures:integer().notNull().default(0),lastErrorCode:text(),updatedAt:integer().notNull(),
 },table=>[
-  check('pilot_agent_allowlist',sql`${table.agentKey} IN ('eip155:56:341565','eip155:56:341564','eip155:56:341563','eip155:56:303779','eip155:56:213378','eip155:56:213332','eip155:56:213053','eip155:56:212989','eip155:56:212840','eip155:56:208760','eip155:56:265375','eip155:56:269233','eip155:56:270213','eip155:56:204789','eip155:56:212769','eip155:56:212943','eip155:56:213036','eip155:56:213084','eip155:56:213432')`),
   uniqueIndex('catalog_pilot_discovery_work_agent_endpoint').on(table.agentKey,table.endpointKey),
   index('idx_pilot_discovery_origin_head').on(table.originKey,table.state,table.cohort,table.chainId,table.priorityClass,table.nextAttemptAt,table.workKey),
   index('idx_pilot_discovery_delivery').on(table.state,table.deliveryAt,table.workKey),
@@ -1002,6 +1007,7 @@ export const catalogPilotOriginSchedule = sqliteTable('catalog_pilot_origin_sche
 },table=>[index('idx_pilot_discovery_origin_agenda').on(table.wakeAt,table.turn,table.originKey)]);
 
 export const schema = {
+  catalogPilotAdmissions,
   catalogPilotDiscoveryWork,
   catalogPilotOriginSchedule,
   hireNotifications,
