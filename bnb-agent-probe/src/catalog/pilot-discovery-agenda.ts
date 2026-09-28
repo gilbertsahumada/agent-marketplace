@@ -1,7 +1,7 @@
 import type { D1DatabaseLike } from '../db/client';
 import { discoveryStatement as statement, discoveryBatch, type DiscoveryStatement } from '../db/pilot-discovery-store';
 import {BackgroundBudgetError} from '../db/background-budget';
-import { isPilotAgent, pilotRenewalDelay } from './pilot-policy';
+import { isPilotAgentKey, pilotRenewalDelay } from './pilot-policy';
 
 export const DISCOVERY_INITIAL_DELAY_MS=60_000;
 export const DISCOVERY_REFRESH_MS=86_400_000;
@@ -50,17 +50,19 @@ export function upsertDiscoveryStatements(db:D1DatabaseLike,context:DiscoveryCon
 /** At most 96 bound values per work statement and 83 per origin statement.
  * Twelve declarations need three queries, not thirty-six. Include every
  * returned statement in the SAME source/cursor transaction. */
-export function upsertDiscoveryBatchStatements(db:D1DatabaseLike,contexts:readonly DiscoveryContext[],now:number,options:{scheduleOrigins?:boolean}={}):DiscoveryStatement[]{
+export function upsertDiscoveryBatchStatements(db:D1DatabaseLike,contexts:readonly DiscoveryContext[],now:number,options:{scheduleOrigins?:boolean;requireAdmission?:boolean}={}):DiscoveryStatement[]{
   const changed='contextVersion<>excluded.contextVersion OR transport<>excluded.transport OR originKey<>excluded.originKey';
   const writes:DiscoveryStatement[]=[];
-  for(const context of contexts)if(!isPilotAgent(context.agentKey)||!context.endpointKey||!context.originKey||!context.contextVersion
+  for(const context of contexts)if(!isPilotAgentKey(context.agentKey)||!context.endpointKey||!context.originKey||!context.contextVersion
     ||context.agentKey.split(':')[1]!==String(context.chainId)||!['a2a','mcp','erc8183_http'].includes(context.transport))throw new Error('DISCOVERY_CONTEXT_INVALID');
-  for(let offset=0;offset<contexts.length;offset+=8){
-    const page=contexts.slice(offset,offset+8),values=page.flatMap(context=>[
+  const workPageSize=options.requireAdmission?7:8;
+  for(let offset=0;offset<contexts.length;offset+=workPageSize){
+    const page=contexts.slice(offset,offset+workPageSize),values=page.flatMap(context=>[
       workKey(context),context.agentKey,context.endpointKey,context.originKey,context.chainId,context.transport,context.contextVersion,context.priorityClass??0,
-      Math.max(now+(context.initialDelayMs??DISCOVERY_INITIAL_DELAY_MS),context.notBeforeMs??0),now,context.initialCohort??'initial',context.previousFailures??0]);
+      Math.max(now+(context.initialDelayMs??DISCOVERY_INITIAL_DELAY_MS),context.notBeforeMs??0),now,context.initialCohort??'initial',context.previousFailures??0,
+      ...(options.requireAdmission?[context.agentKey]:[])]);
     writes.push(statement(db,`INSERT INTO catalog_pilot_discovery_work(workKey,agentKey,endpointKey,originKey,chainId,transport,contextVersion,priorityClass,nextAttemptAt,updatedAt,cohort,failures)
-      VALUES ${page.map(()=>'(?,?,?,?,?,?,?,?,?,?,?,?)').join(',')}
+      ${options.requireAdmission?page.map(()=>`SELECT ?,?,?,?,?,?,?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM catalog_pilot_admissions WHERE agentKey=?)`).join(' UNION ALL '):`VALUES ${page.map(()=>'(?,?,?,?,?,?,?,?,?,?,?,?)').join(',')}`}
       ON CONFLICT(workKey) DO UPDATE SET
       generation=generation+CASE WHEN ${changed} THEN 1 ELSE 0 END,
       state=CASE WHEN ${changed} THEN 'scheduled' ELSE state END,
@@ -86,6 +88,17 @@ export function upsertDiscoveryBatchStatements(db:D1DatabaseLike,contexts:readon
 export async function suspendDiscoveryWork(db:D1DatabaseLike,key:string,now:number):Promise<void>{
   await statement(db,`UPDATE catalog_pilot_discovery_work SET state='suspended',generation=generation+1,runId=NULL,updatedAt=?
     WHERE workKey=? AND state<>'suspended'`,[now,key]).run();
+}
+
+/** One durable deferral for an initial task; stale messages cannot move it. */
+export async function deferInitialDiscovery(db:D1DatabaseLike,work:DiscoveryMessage,until:number,now:number):Promise<void>{
+  await batch(db,[statement(db,`UPDATE catalog_pilot_discovery_work SET state='scheduled',runId=NULL,
+    nextAttemptAt=MAX(nextAttemptAt,?),deliveryAt=0,updatedAt=?
+    WHERE workKey=? AND generation=? AND runId=? AND state='dispatch' AND cohort='initial'`,
+    [until,now,work.workKey,work.generation,work.runId]),
+    statement(db,`UPDATE catalog_pilot_origin_schedule SET wakeAt=MIN(wakeAt,?),revision=revision+1
+      WHERE originKey=(SELECT originKey FROM catalog_pilot_discovery_work WHERE workKey=? AND generation=?
+        AND state='scheduled' AND runId IS NULL AND updatedAt=?)`,[until,work.workKey,work.generation,now])]);
 }
 
 /** Fixed set of index seeks, not a ranking over a provider's backlog. */
@@ -204,7 +217,7 @@ function message(row:DiscoveryRow,now:number):DiscoveryMessage{return{schemaVers
 
 export function parseDiscoveryMessage(value:unknown,now:number):DiscoveryMessage{
   if(!value||typeof value!=='object')throw new Error('DISCOVERY_MESSAGE_INVALID');const row=value as DiscoveryMessage;
-  if(row.schemaVersion!==3||row.kind!==DISCOVERY_WORK_KIND||typeof row.workKey!=='string'||row.workKey.length>256||!isPilotAgent(row.workKey.split('|')[0]??'')
+  if(row.schemaVersion!==3||row.kind!==DISCOVERY_WORK_KIND||typeof row.workKey!=='string'||row.workKey.length>256||!isPilotAgentKey(row.workKey.split('|')[0]??'')
     ||typeof row.runId!=='string'||!/^[\da-f-]{36}$/.test(row.runId)||!Number.isSafeInteger(row.generation)||row.generation<1
     ||!Number.isSafeInteger(row.enqueuedAt)||row.enqueuedAt<0||row.enqueuedAt>now+300_000)throw new Error('DISCOVERY_MESSAGE_INVALID');
   return{schemaVersion:3,kind:DISCOVERY_WORK_KIND,workKey:row.workKey,generation:row.generation,runId:row.runId,enqueuedAt:row.enqueuedAt};
@@ -240,7 +253,7 @@ export async function completeDiscoveryExecution(db:D1DatabaseLike,claim:Discove
   // Completion and the conservative wake are one transaction. A process may
   // stop immediately after this batch without hiding scheduled work forever.
   // Do not clear a concurrent producer's lease or overwrite its earlier wake.
-  const completed=await discoveryBatch(db,[...evidence,statement(db,`UPDATE catalog_pilot_discovery_work SET state='scheduled',cohort='refresh',nextAttemptAt=?,runId=NULL,failures=?,lastErrorCode=?,priorityClass=?,updatedAt=?
+  const completed=await discoveryBatch(db,[...evidence,statement(db,`UPDATE catalog_pilot_discovery_work SET state='scheduled',cohort=CASE WHEN cohort='initial' AND ${result.success?1:0}=0 THEN 'initial' ELSE 'refresh' END,nextAttemptAt=?,runId=NULL,failures=?,lastErrorCode=?,priorityClass=?,updatedAt=?
     WHERE ${fence.sql} ${sourceGuard?`AND (${sourceGuard.sql})`:''}`,[due,failures,result.deferUntil!==undefined?claim.lastErrorCode:result.errorCode??null,priority,now,...fence.values,...sourceGuard?.values??[]]),
     statement(db,`UPDATE catalog_pilot_origin_schedule SET wakeAt=MIN(wakeAt,?),revision=revision+1,executionToken=NULL,executionLeaseUntil=0
       WHERE originKey=? AND executionToken=? AND EXISTS(SELECT 1 FROM catalog_pilot_discovery_work
