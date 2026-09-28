@@ -50,8 +50,8 @@ it('measures a deterministic cardinality-matched 183506-agent distribution witho
  expect(counts).toEqual([{chainId:56,agents:183220,declarations:40588,sentinels:147990,maxFanout:12},{chainId:97,agents:286,declarations:179,sentinels:190,maxFanout:7}]);
  const construction:ReadRecord[]=[];await constructEndpointOnlyPrototype(metered(env.DB,construction));
  expect(await env.DB.prepare(`SELECT COUNT(*) n FROM ${ENDPOINT_ONLY_TABLE}`).first()).toEqual({n:40767});
- // DDL sees the six additive pilot schema objects; runtime thresholds stay fixed.
- expect(cost(construction)).toEqual({queries:3,reads:81677,writes:40769});
+ // Admission table/index add two DDL metadata reads; runtime thresholds stay fixed.
+ expect(cost(construction)).toEqual({queries:3,reads:81679,writes:40769});
  console.info('ENDPOINT_ONLY_CONSTRUCTION',JSON.stringify({fixture:'agent/declaration cardinalities matched; no capability or observation payloads; not a production replica',...cost(construction)}));
  for(const chain of [56,97]as const)for(const inventory of ['operational','registry']as const){
   const log:ReadRecord[]=[];const started=performance.now();
