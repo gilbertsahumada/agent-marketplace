@@ -3,6 +3,7 @@ import type { D1DatabaseLike } from "./db/client";
 import { measureD1Invocation, publicOperation, backgroundOperation, invocationCache } from './db/invocation-metrics';
 import {runMaintenanceWindow, runBackgroundWindow, JOBS_INTERVAL_MS, MAINTENANCE_INTERVAL_MS} from './phases/background-cadence';
 import {runWithBackgroundBudget,runBackgroundControl} from './db/background-budget';
+import { pilotEnabled, produceRenewalPilot, consumeRenewalPilot, seedRenewalPilot } from './phases/renewal-pilot';
 import type { CommerceIndexSummary, CommerceIndexWork } from "./phases/commerce-index";
 import type { CatalogCapabilityProbeSummary, CatalogCapabilityWork } from "./phases/catalog-capability";
 import type {
@@ -598,6 +599,20 @@ export function createWorker(dependencies: WorkerDependencies = {}): WorkerEntry
           headers: { "cache-control": "no-store", "x-content-type-options": "nosniff" },
         });
       }
+      if (request.method==='POST' && url.pathname==='/__admin/renewal-pilot/seed' && url.search==='') {
+        if(env.CATALOG_PILOT_SEED_ENABLED!=='1'||env.CATALOG_PILOT_PAUSED!=='1'||!env.SHARED_SECRET||config.killSwitch||config.producerKillSwitch) return errorResponse('not_found',404);
+        if(!await bearerMatches(request.headers.get('authorization'),env.SHARED_SECRET))return errorResponse('unauthorized',401);
+        const meter=measureD1Invocation(env.DB),started=performance.now();
+        let status=500;
+        try {
+          const result=await seedRenewalPilot({...env,DB:meter.db},now());
+          status=result.status==='completed'?200:503;
+          return Response.json(result,{status,headers:{'cache-control':'no-store'}});
+        } finally {
+          logger.info('d1.background.invocation',{operation:'pilot.seed',chainId:56,version:env.CF_VERSION_METADATA?.id??'unknown',
+            accountingScope:'invocation_total',cache:'not_applicable',status,result:status===200?'ok':'error',durationMs:Math.round(performance.now()-started),...meter.snapshot()});
+        }
+      }
       return errorResponse("not_found", 404);
     },
 
@@ -988,10 +1003,29 @@ export function createWorker(dependencies: WorkerDependencies = {}): WorkerEntry
   };
   return {
     ...worker,
-    scheduled: (controller, env, context) => measuredBackground(backgroundOperation('scheduled',env.BACKGROUND_INDEX_ONLY === '1'), env, context,
-      (measuredEnv, measuredContext) => worker.scheduled(controller, measuredEnv, measuredContext)),
-    queue: (batch, env, context) => measuredBackground(backgroundOperation('queue',env.BACKGROUND_INDEX_ONLY === '1',batch.messages.map(message=>message.body)), env, context,
-      (measuredEnv, measuredContext) => worker.queue(batch, measuredEnv, measuredContext)),
+    scheduled: async (controller, env, context) => {
+      // Isolated accounting: the index invocation does not include pilot work.
+      if(pilotEnabled(env)&&controller.cron==='* * * * *') {
+        try { await measuredBackground({operation:'pilot.producer',chainId:56},env,context,async measuredEnv=>{
+          const result=await produceRenewalPilot(measuredEnv,now());
+          logger.info('pilot.work',{operation:'producer',status:result.status});
+        }); } catch { logger.error('pilot.work',{operation:'producer',status:'error'}); }
+      }
+      return measuredBackground(backgroundOperation('scheduled',env.BACKGROUND_INDEX_ONLY === '1'),env,context,
+        (measuredEnv,measuredContext)=>worker.scheduled(controller,measuredEnv,measuredContext));
+    },
+    queue: (batch, env, context) => {
+      const body=batch.messages[0]?.body;
+      if(body!==null&&typeof body==='object'&&(body as {kind?:unknown}).kind==='catalog_pilot_discovery') {
+        return measuredBackground({operation:'pilot.consumer',chainId:56},env,context,async measuredEnv=>{
+          const result=await consumeRenewalPilot(batch,measuredEnv,now);
+          logger.info('pilot.work',{operation:'consumer',status:result.status,
+            ...(result.status==='completed'?{compatibilitySucceeded:result.value.compatibilitySucceeded??false,errorCode:result.value.errorCode}:{} )});
+        });
+      }
+      return measuredBackground(backgroundOperation('queue',env.BACKGROUND_INDEX_ONLY === '1',batch.messages.map(message=>message.body)),env,context,
+        (measuredEnv,measuredContext)=>worker.queue(batch,measuredEnv,measuredContext));
+    },
     async fetch(request, env, context) {
       const operation = publicOperation(request);
       if (!operation) return worker.fetch(request, env, context);
