@@ -22,6 +22,10 @@ export interface Env {
   WP2_QUEUE?: QueueProducer;
   /** Dedicated ERC-8183 queue; mandatory when index-only production is enabled. */
   COMMERCE_INDEX_QUEUE?: QueueProducer;
+  CATALOG_PILOT_QUEUE?: QueueProducer;
+  /** Pilot is off unless explicitly zero; cannot enable general maintenance. */
+  CATALOG_PILOT_PAUSED?: string;
+  CATALOG_PILOT_SEED_ENABLED?: string;
   /** Dedicated queue for seller capability/quote probes. */
   CATALOG_QUOTE_QUEUE?: QueueProducer;
   CATALOG_COMPATIBILITY_BOOTSTRAP_BATCH_SIZE?: string;

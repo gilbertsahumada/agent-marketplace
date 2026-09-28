@@ -1,0 +1,12 @@
+{
+  "environment": "local D1; deterministic clock; simulated seller network",
+  "durationHours": 48,
+  "scope": "producer, consumer, budget admission/reconciliation and queue acknowledgements; fixture setup excluded",
+  "before": {"pilotEnabled": false, "pilotCompleted": 0, "pilotReads": 0, "pilotWrites": 0},
+  "after": [
+    {"unrelatedAgents": 2000, "queries": 12424, "reads": 23664, "writes": 1539, "weightedUnits": 1562664, "completed": 39, "sellerRequests": 39, "automaticQuotes": 0, "freshAgentsAtEnd": 13, "complete": true},
+    {"unrelatedAgents": 20000, "queries": 12424, "reads": 23664, "writes": 1539, "weightedUnits": 1562664, "completed": 39, "sellerRequests": 39, "automaticQuotes": 0, "freshAgentsAtEnd": 13, "complete": true}
+  ],
+  "ddl": {"queries": 6, "reads": 10, "writes": 8, "weightedUnits": 8010},
+  "limitations": ["No savings percentage against a paused pilot", "Not a production bill forecast", "Seller failures and budget exhaustion may leave evidence expired", "Seed and release controls must be metered separately"]
+}

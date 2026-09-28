@@ -143,10 +143,13 @@ describe("WP1 Wrangler scaffold", () => {
     expect(staging?.vars?.KILL_SWITCH).toBe("0");
     expect(staging?.vars?.PRODUCER_KILL_SWITCH).toBe("0");
     expect(staging?.triggers).toEqual({ crons: ["* * * * *"] });
+    expect(staging?.vars?.CATALOG_PILOT_PAUSED).toBe("1");
+    expect(staging?.vars?.CATALOG_PILOT_SEED_ENABLED).toBe("0");
     expect(staging?.queues).toEqual({
       producers: [
         { binding: "WP2_QUEUE", queue: "bnb-agent-probe-staging" },
         { binding: "CATALOG_QUOTE_QUEUE", queue: "bnb-agent-catalog-quotes-staging" },
+        { binding: "CATALOG_PILOT_QUEUE", queue: "workmint-catalog-renewal-pilot" },
       ],
       consumers: [{
         queue: "bnb-agent-probe-staging",
@@ -161,6 +164,13 @@ describe("WP1 Wrangler scaffold", () => {
         max_batch_timeout: 1,
         max_retries: 3,
         max_concurrency: 2,
+        retry_delay: 60,
+      }, {
+        queue: "workmint-catalog-renewal-pilot",
+        max_batch_size: 1,
+        max_batch_timeout: 1,
+        max_retries: 3,
+        max_concurrency: 1,
         retry_delay: 60,
       }],
     });
