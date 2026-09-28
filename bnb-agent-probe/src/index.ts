@@ -4,6 +4,7 @@ import { measureD1Invocation, publicOperation, backgroundOperation, invocationCa
 import {runMaintenanceWindow, runBackgroundWindow, JOBS_INTERVAL_MS, MAINTENANCE_INTERVAL_MS} from './phases/background-cadence';
 import {runWithBackgroundBudget,runBackgroundControl} from './db/background-budget';
 import { pilotEnabled, produceRenewalPilot, consumeRenewalPilot, seedRenewalPilot } from './phases/renewal-pilot';
+import {admitPilotBatch,parsePilotAdmission} from './catalog/pilot-admission';
 import type { CommerceIndexSummary, CommerceIndexWork } from "./phases/commerce-index";
 import type { CatalogCapabilityProbeSummary, CatalogCapabilityWork } from "./phases/catalog-capability";
 import type {
@@ -599,17 +600,25 @@ export function createWorker(dependencies: WorkerDependencies = {}): WorkerEntry
           headers: { "cache-control": "no-store", "x-content-type-options": "nosniff" },
         });
       }
-      if (request.method==='POST' && ['/__admin/renewal-pilot/seed','/__admin/renewal-pilot/seed-expansion'].includes(url.pathname) && url.search==='') {
+      if (request.method==='POST' && ['/__admin/renewal-pilot/seed','/__admin/renewal-pilot/seed-expansion','/__admin/renewal-pilot/admit'].includes(url.pathname) && url.search==='') {
         if(env.CATALOG_PILOT_SEED_ENABLED!=='1'||env.CATALOG_PILOT_PAUSED!=='1'||!env.SHARED_SECRET||config.killSwitch||config.producerKillSwitch) return errorResponse('not_found',404);
         if(!await bearerMatches(request.headers.get('authorization'),env.SHARED_SECRET))return errorResponse('unauthorized',401);
+        let admission:ReturnType<typeof parsePilotAdmission>|undefined;
+        if(url.pathname.endsWith('/admit')){
+          try {
+            const body=await request.text();
+            if(body.length>4096)return errorResponse('invalid_request',400);
+            admission=parsePilotAdmission(JSON.parse(body));
+          }catch{return errorResponse('invalid_request',400);}
+        }
         const meter=measureD1Invocation(env.DB),started=performance.now();
         let status=500;
         try {
-          const result=await seedRenewalPilot({...env,DB:meter.db},now(),url.pathname.endsWith('/seed-expansion')?'expansion':'original');
+          const result=admission?await admitPilotBatch({...env,DB:meter.db},admission,now()):await seedRenewalPilot({...env,DB:meter.db},now(),url.pathname.endsWith('/seed-expansion')?'expansion':'original');
           status=result.status==='completed'?200:503;
           return Response.json(result,{status,headers:{'cache-control':'no-store'}});
         } finally {
-          logger.info('d1.background.invocation',{operation:'pilot.seed',chainId:56,version:env.CF_VERSION_METADATA?.id??'unknown',
+          logger.info('d1.background.invocation',{operation:admission?'pilot.admission':'pilot.seed',chainId:56,version:env.CF_VERSION_METADATA?.id??'unknown',
             accountingScope:'invocation_total',cache:'not_applicable',status,result:status===200?'ok':'error',durationMs:Math.round(performance.now()-started),...meter.snapshot()});
         }
       }
