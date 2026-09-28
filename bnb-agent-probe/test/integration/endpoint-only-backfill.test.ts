@@ -109,6 +109,7 @@ it('meters a complete bounded backfill for the observed declaration cardinalitie
  expect(status?.reserved).toBeLessThanOrEqual(90_000_000);
  console.info('ENDPOINT_BACKFILL_CARDINALITY',JSON.stringify({fixture:'observed agent/declaration counts only; no historic payload replica',setup:cost(setup),steps:cost(steps),calls,maxPageUnits,reserved:status?.reserved}));
  expect({setup:cost(setup),steps:cost(steps),calls,maxPageUnits,reserved:status?.reserved}).toEqual({
-  setup:{reads:137,writes:16,queries:28},steps:{reads:661468,writes:43833,queries:6131},calls:1022,maxPageUnits:43249,reserved:83680000,
+  // Six additional sqlite_master objects from the pilot affect DDL setup only.
+  setup:{reads:143,writes:16,queries:28},steps:{reads:661468,writes:43833,queries:6131},calls:1022,maxPageUnits:43249,reserved:83680000,
  });
 },120_000);
