@@ -14,6 +14,7 @@ import {
 } from "drizzle-orm";
 import type { D1DatabaseLike } from "../db/client";
 import { createDatabase } from "../db/orm";
+import { decodeTableRow, measuredTableRead } from '../db/measured-table-read';
 import { deriveCatalogEvidenceState, selectBestCapability, type CapabilityFact, type SellerCapabilityState } from "../catalog/evidence-policy";
 import { CATALOG_API_VERSION, publicCatalogObservation } from "../catalog/api-contract";
 import {
@@ -307,29 +308,34 @@ async function catalogReadResponse(
   const selectedKeys = JSON.parse(selection[0]?.pageKeys ?? "[]") as string[];
   const totals = [{ count: Number(selection[0]?.total ?? 0) }];
   // Fetch full agent payloads only after filtering, counting and pagination.
-  const pageRows = selectedKeys.length ? (await db.select().from(catalogAgents)
-    .where(inArray(catalogAgents.agentKey,selectedKeys)))
+  const pageRows = selectedKeys.length ? (await measuredTableRead(db,catalogAgents,db.select().from(catalogAgents)
+    .where(inArray(catalogAgents.agentKey,selectedKeys))))
     .sort((a,b) => selectedKeys.indexOf(a.agentKey)-selectedKeys.indexOf(b.agentKey)) : [];
   const hasNextPage = pageRows.length > limit;
   const agents = pageRows.slice(0, limit);
   const agentKeys = agents.map((agent) => agent.agentKey);
-  const declarations = agentKeys.length === 0 ? [] : await db.select({
-    agentKey: catalogAgentEndpoints.agentKey,
-    priority: catalogAgentEndpoints.priority,
-    endpoint: catalogEndpoints,
-  }).from(catalogAgentEndpoints)
-    .innerJoin(catalogEndpoints, eq(catalogEndpoints.endpointKey, catalogAgentEndpoints.endpointKey))
-    .where(and(
-      inArray(catalogAgentEndpoints.agentKey, agentKeys),
-      eq(catalogAgentEndpoints.declarationState, "current"),
-    ));
+  // Explicit aliases prevent a declaration's fields from shadowing endpoint
+  // columns while using all() (which exposes D1 metadata) instead of raw().
+  const declarationRows = agentKeys.length === 0 ? [] : await db.all<Record<string, unknown>>(sql`
+    SELECT ${catalogAgentEndpoints.agentKey} AS declarationAgentKey,
+      ${catalogAgentEndpoints.priority} AS declarationPriority, catalog_endpoints.*
+    FROM ${catalogAgentEndpoints} INNER JOIN ${catalogEndpoints}
+      ON ${catalogEndpoints.endpointKey} = ${catalogAgentEndpoints.endpointKey}
+    WHERE ${inArray(catalogAgentEndpoints.agentKey,agentKeys)}
+      AND ${catalogAgentEndpoints.declarationState} = 'current'
+  `);
+  const declarations = declarationRows.map(row => ({
+    agentKey: row.declarationAgentKey as string,
+    priority: row.declarationPriority as number,
+    endpoint: decodeTableRow(catalogEndpoints,row),
+  }));
   const endpointKeys = declarations
     .filter(({ endpoint }) => endpoint.role === "operational" && endpoint.eligibility === "eligible")
     .map((entry) => entry.endpoint.endpointKey);
   const [endpointEvidence, capabilities, metrics] = await Promise.all([
     readPublicEndpointEvidence(d1,agentKeys),
-    agentKeys.length === 0 ? Promise.resolve([]) : db.select().from(catalogSellerCapabilities)
-      .where(inArray(catalogSellerCapabilities.agentKey,agentKeys)).orderBy(desc(catalogSellerCapabilities.updatedAt)),
+    agentKeys.length === 0 ? Promise.resolve([]) : measuredTableRead(db,catalogSellerCapabilities,db.select().from(catalogSellerCapabilities)
+      .where(inArray(catalogSellerCapabilities.agentKey,agentKeys)).orderBy(desc(catalogSellerCapabilities.updatedAt))),
     readPublicAgentMetrics(d1,agentKeys),
   ]);
   const [browserObservations, effectiveEndpointObservations, effectiveAgentObservations] = endpointEvidence.length ? await Promise.all([
