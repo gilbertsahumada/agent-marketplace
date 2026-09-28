@@ -750,10 +750,12 @@ export async function readRuntimeStates(
   for (const key of keys) assertRuntimeStateKey(key);
   if (keys.length === 0) return [];
 
-  return measuredTableRead(db,runtimeState,db
-    .select()
-    .from(runtimeState)
-    .where(inArray(runtimeState.key, [...keys])));
+  // Stale statistics can turn this bounded key lookup into a full table scan.
+  // This primary-key index is created by the original runtime_state schema.
+  return measuredTableRead(db, runtimeState, sql`
+    SELECT ${sql.join(Object.values(getTableColumns(runtimeState)), sql`, `)}
+    FROM ${runtimeState} INDEXED BY sqlite_autoindex_runtime_state_1
+    WHERE ${inArray(runtimeState.key, [...keys])}`);
 }
 
 export async function writeRuntimeState(
