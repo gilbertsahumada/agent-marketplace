@@ -1,6 +1,6 @@
 import { ConfigError, loadConfig, type WorkerConfig } from "./config";
 import type { D1DatabaseLike } from "./db/client";
-import { measureD1Invocation, publicOperation, invocationCache } from './db/invocation-metrics';
+import { measureD1Invocation, publicOperation, backgroundOperation, invocationCache } from './db/invocation-metrics';
 import {runMaintenanceWindow, runBackgroundWindow, JOBS_INTERVAL_MS, MAINTENANCE_INTERVAL_MS} from './phases/background-cadence';
 import {runWithBackgroundBudget,runBackgroundControl} from './db/background-budget';
 import type { CommerceIndexSummary, CommerceIndexWork } from "./phases/commerce-index";
@@ -960,7 +960,7 @@ export function createWorker(dependencies: WorkerDependencies = {}): WorkerEntry
     },
   };
   const measuredBackground = async (
-    operation: 'scheduled' | 'queue', env: Env, context: ExecutionContext,
+    operation: ReturnType<typeof backgroundOperation>, env: Env, context: ExecutionContext,
     run: (measuredEnv: Env, measuredContext: ExecutionContext) => Promise<void>,
   ) => {
     const metrics = measureD1Invocation(env.DB);
@@ -977,7 +977,7 @@ export function createWorker(dependencies: WorkerDependencies = {}): WorkerEntry
       const finish = async () => {
         const results = await Promise.allSettled(pending);
         logger.info('d1.background.invocation', {
-          operation, version: env.CF_VERSION_METADATA?.id ?? 'unknown', chainId: null,
+          ...operation, version: env.CF_VERSION_METADATA?.id ?? 'unknown', accountingScope: 'invocation_total',
           cache: 'not_applicable', durationMs: Math.round(performance.now() - started),
           ...metrics.snapshot(), result: failed || results.some(result => result.status === 'rejected') ? 'error' : 'ok',
         });
@@ -988,9 +988,9 @@ export function createWorker(dependencies: WorkerDependencies = {}): WorkerEntry
   };
   return {
     ...worker,
-    scheduled: (controller, env, context) => measuredBackground('scheduled', env, context,
+    scheduled: (controller, env, context) => measuredBackground(backgroundOperation('scheduled',env.BACKGROUND_INDEX_ONLY === '1'), env, context,
       (measuredEnv, measuredContext) => worker.scheduled(controller, measuredEnv, measuredContext)),
-    queue: (batch, env, context) => measuredBackground('queue', env, context,
+    queue: (batch, env, context) => measuredBackground(backgroundOperation('queue',env.BACKGROUND_INDEX_ONLY === '1',batch.messages.map(message=>message.body)), env, context,
       (measuredEnv, measuredContext) => worker.queue(batch, measuredEnv, measuredContext)),
     async fetch(request, env, context) {
       const operation = publicOperation(request);
@@ -1005,6 +1005,7 @@ export function createWorker(dependencies: WorkerDependencies = {}): WorkerEntry
       } finally {
         logger.info('d1.public.invocation', {
           ...operation, version: env.CF_VERSION_METADATA?.id ?? 'unknown',
+          accountingScope: 'invocation_total',
           cache: invocationCache.get(request) ?? 'not_applicable',
           durationMs: Math.round(performance.now() - started), ...metrics.snapshot(),
           status, result: status === null ? 'error' : status < 400 ? 'ok' : 'rejected',
