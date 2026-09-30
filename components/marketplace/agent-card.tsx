@@ -41,7 +41,30 @@ function latestQuoteAttemptFailed(agent: AgentCardViewModel) {
     || agent.evidence.some((step) => step.kind === "quote" && step.status === "failed");
 }
 
+function currentlyRequestable(agent: AgentCardViewModel) {
+  return agent.quoteRequestAvailable === true
+    && agent.capabilityState !== "suspended"
+    && agent.capabilityState !== "unsupported"
+    && agent.buyerAction !== "unavailable"
+    && agent.buyerAction !== "check_availability";
+}
+
+export function availabilityHistory(agent:AgentCardViewModel):string|null {
+  if(!currentlyRequestable(agent))return null;
+  const failed=latestQuoteAttemptFailed(agent);
+  if(!failed&&agent.capabilityState!=='stale')return null;
+  const timestamp=failed ? agent.lastQuoteAttemptAt ?? agent.evidence.find(step=>step.kind==='quote'&&step.status==='failed')?.timestamp : agent.capabilityExpiresAt;
+  const date=timestamp ? formatObservationTime(timestamp) : null;
+  return `${failed ? 'Previous quote attempt failed' : 'Previous quote capability expired'}${date ? ` · ${date}` : ' · date unavailable'}. Current requirements allow a new quote request.`;
+}
+
 export function marketplaceStatus(agent: AgentCardViewModel, registry = false) {
+  if(agent.capabilityState==='suspended'||agent.capabilityState==='unsupported')return {
+    label:'Not available',className:'text-muted-foreground',icon:LockKeyhole,
+  };
+  if(currentlyRequestable(agent))return {
+    label:'Available to quote',className:'border-primary/40 bg-primary/10 text-primary',icon:FileCheck2,
+  };
   const connection = agent.evidence.find((step) => step.kind === "reachable");
   if (connection?.status === "failed") return {
     label: "Connection failed",
@@ -54,19 +77,19 @@ export function marketplaceStatus(agent: AgentCardViewModel, registry = false) {
     icon: Clock3,
   };
   const buyerAction = agent.buyerAction ?? (agent.quoteRequestAvailable === true ? "request_quote" : "unavailable");
+  if (agent.quoteRequestAvailable === false && buyerAction === "request_quote") return {
+    label: "Check availability",
+    className: "text-muted-foreground",
+    icon: Clock3,
+  };
   if (buyerAction === "prepare_hire") return {
-    label: "Ready to quote",
+    label: "Quote verified",
     className: "border-emerald-400/40 bg-emerald-400/10 text-emerald-300",
     icon: ShieldCheck,
   };
   if (buyerAction === "request_quote") {
     const failed = latestQuoteAttemptFailed(agent);
     const capabilityState = agent.capabilityState;
-    if (capabilityState === "suspended" || capabilityState === "unsupported") return {
-      label: "Not available",
-      className: "border-zinc-700 bg-zinc-900 text-zinc-400",
-      icon: LockKeyhole,
-    };
     if (capabilityState === "failed" || failed) return {
       label: "Quote failed",
       className: "border-red-400/35 bg-red-400/10 text-red-300",
@@ -146,7 +169,11 @@ export function agentJourneyAction(agent: AgentCardViewModel): { href: string; l
   const hireHref = `/hire/${agent.agentId}${agent.chainId === 97 ? "?network=testnet" : ""}`;
   const action = agent.buyerAction ?? (agent.quoteRequestAvailable === true ? "request_quote" : "unavailable");
   const connection = agent.evidence.find((step) => step.kind === "reachable");
-  if ((action === "prepare_hire" || action === "request_quote") && (connection?.status === "failed" || (agent.quoteRequestAvailable !== true && connection?.status !== "verified"))) {
+  if(agent.capabilityState==='suspended'||agent.capabilityState==='unsupported')return {href:hireHref,label:'Not available',disabled:true};
+  if (agent.quoteRequestAvailable === false && action === "request_quote") {
+    return { href: `${hireHref}#validation`, label: "Check availability" };
+  }
+  if (!currentlyRequestable(agent) && (action === "prepare_hire" || action === "request_quote") && (connection?.status === "failed" || (agent.quoteRequestAvailable !== true && connection?.status !== "verified"))) {
     return {
       href: `${hireHref}#validation`,
       label: connection?.status === "failed" ? "Retry availability" : "Check availability",
@@ -289,6 +316,7 @@ function platformObservation(agent: AgentCardViewModel): ObservationPresentation
 
 export function AgentCard({ agent, registry = false }: { agent: AgentCardViewModel; registry?: boolean }) {
   const status = marketplaceStatus(agent, registry);
+  const history = availabilityHistory(agent);
   const action = agentJourneyAction(agent);
   const ActionIcon = agentActionIcon(action.label);
   const observation = platformObservation(agent);
@@ -345,8 +373,8 @@ export function AgentCard({ agent, registry = false }: { agent: AgentCardViewMod
             className={status.className}
             title={status.label === "Reachable only"
               ? "The endpoint responds, but this agent is not enabled for marketplace quotes."
-              : status.label === "Ready to quote"
-                ? "This agent can return a fresh marketplace quote; requesting it sends no transaction."
+              : status.label === "Available to quote"
+                ? "Current requirements allow a quote request. Hiring still requires your own verified quote."
                 : status.label === "Quote failed"
                   ? "The last quote attempt failed. Retry the quote request to run the same bounded negotiation again."
                 : agent.monitoring?.state === "probed"
@@ -368,6 +396,7 @@ export function AgentCard({ agent, registry = false }: { agent: AgentCardViewMod
             </span>
           )}
         </div>
+        {history ? <p className="text-xs text-muted-foreground">{history}</p> : null}
       </CardHeader>
 
       <CardContent className="mt-auto space-y-3 px-5 pb-4 pt-2">

@@ -548,7 +548,7 @@ describe("marketplace presentation rules", () => {
       passportState: "registered",
     } }));
 
-    expect(screen.getByText("Ready to quote")).toBeInTheDocument();
+    expect(screen.getByText("Available to quote")).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /view profile/i })).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: /request quote/i })).toHaveAttribute("href", "/hire/303779#hire-flow");
     expect(screen.queryByRole("link", { name: /hire agent/i })).not.toBeInTheDocument();
@@ -570,7 +570,8 @@ describe("marketplace presentation rules", () => {
       passportState: "registered",
     } }));
 
-    expect(screen.getByText("Quote failed")).toBeInTheDocument();
+    expect(screen.getByText("Available to quote")).toBeInTheDocument();
+    expect(screen.getByText(/Previous quote attempt failed/)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /retry quote/i })).toHaveAttribute("href", "/hire/303779#hire-flow");
   });
 
@@ -578,14 +579,14 @@ describe("marketplace presentation rules", () => {
     render(createElement(AgentCard, { agent: {
       agentId: "334760", name: "Seller", description: "Agent",
       operator: "third_party", categories: [], href: "/hire/334760",
-      hireability: "listed_only", quoteRequestAvailable: true,
-      buyerAction: "request_quote", capabilityState: "ready",
+      hireability: "listed_only", quoteRequestAvailable: false,
+      buyerAction: "check_availability", capabilityState: "ready",
       evidence: evidence.map((step) => step.kind === "reachable" ? { ...step, status: "failed" as const } : step),
       passportState: "evaluated",
     } }));
     expect(screen.getByText("Connection failed")).toBeInTheDocument();
     expect(screen.queryByText("Ready to quote")).not.toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Retry availability" })).toHaveAttribute("href", "/hire/334760#validation");
+    expect(screen.getByRole("link", { name: "Check availability" })).toHaveAttribute("href", "/hire/334760#validation");
     expect(screen.queryByRole("link", { name: "Request quote" })).not.toBeInTheDocument();
   });
 
@@ -604,7 +605,7 @@ describe("marketplace presentation rules", () => {
       passportState: "hireable",
     } }));
 
-    expect(screen.getByText("Ready to quote")).toBeInTheDocument();
+    expect(screen.getByText("Available to quote")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /hire agent/i })).toHaveAttribute("href", "/hire/303779#hire-flow");
   });
 

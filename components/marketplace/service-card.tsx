@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Separator } from "@/components/ui/separator";
 import { AgentAvatar } from "./agent-avatar";
-import { agentActionIcon, agentJourneyAction, marketplaceStatus, trust8004AgentHref } from "./agent-card";
+import { agentActionIcon, agentJourneyAction, marketplaceStatus, availabilityHistory, trust8004AgentHref } from "./agent-card";
 import type { AgentCardViewModel } from "./presentation-types";
 import styles from "./service-cover.module.css";
 
@@ -57,6 +57,7 @@ function IdentityLink({ agent }: { agent: AgentCardViewModel }) {
 export function ServiceCard({ agent, registry = false }: { agent: AgentCardViewModel; registry?: boolean }) {
   const [open, setOpen] = useState(false);
   const status = marketplaceStatus(agent, registry);
+  const history = availabilityHistory(agent);
   const action = agentJourneyAction(agent);
   const ActionIcon = agentActionIcon(action.label);
   const description = agent.description.trim() || "No service description declared.";
@@ -74,6 +75,7 @@ export function ServiceCard({ agent, registry = false }: { agent: AgentCardViewM
       </div>
       <DialogTrigger asChild><button type="button" className="h-[4.5em] line-clamp-3 text-left text-base leading-normal font-medium wrap-anywhere hover:text-primary focus-visible:outline-2 focus-visible:outline-primary">{description}</button></DialogTrigger>
       <p className="flex items-center gap-1.5 text-xs text-muted-foreground"><status.icon aria-hidden="true" className="size-3.5" />{status.label}</p>
+      {history ? <p className="text-xs text-muted-foreground">{history}</p> : null}
       <Separator />
       <div className="flex flex-wrap items-center justify-between gap-2"><span className="text-xs text-muted-foreground">{agent.quoteRequestAvailable ? "Price after quotation" : "Quote unavailable"}</span><DialogTrigger asChild><Button variant="link">Explore service<ExternalLink aria-hidden="true" data-icon="inline-end" /></Button></DialogTrigger></div>
       <Link className="w-fit text-xs text-muted-foreground underline underline-offset-4 hover:text-primary" href={`/compare?network=${agent.chainId === 97 ? "testnet" : "mainnet"}&agentId=${agent.agentId}`}>Compare this service</Link>
@@ -108,7 +110,8 @@ export function ServiceCard({ agent, registry = false }: { agent: AgentCardViewM
         </section>
         <aside className="flex flex-col gap-4 rounded-xl border border-border p-5" aria-label="Request a quote">
           <h3 className="text-lg font-medium">Your job, your quote</h3><p className="text-xs text-muted-foreground">{status.label}</p>
-          <p className="text-sm text-muted-foreground">Describe what you need, then review the agent’s price and terms.</p>
+          {history ? <p className="text-xs text-muted-foreground">{history}</p> : null}
+          <p className="text-sm text-muted-foreground">Describe what you need, then review the agent’s price and terms. Hiring requires your own verified quote.</p>
           <div className="mt-auto flex justify-between gap-3 text-xs"><span>Price</span><span>{agent.quoteRequestAvailable ? "After quotation" : "Unavailable"}</span></div>
           {action.disabled ? <Button disabled>{action.label}</Button> : <Button asChild><Link href={action.href} prefetch={false}><ActionIcon aria-hidden="true" data-icon="inline-start" />{action.label}</Link></Button>}
           <p className="text-xs text-muted-foreground">Opening the service does not send a transaction.</p>
