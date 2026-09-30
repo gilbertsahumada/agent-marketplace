@@ -89,6 +89,24 @@ beforeEach(async () => {
 });
 
 describe("catalog signed quote evidence", () => {
+  it.each([
+    {name:'expired requirements and quote-derived gate',state:'ready',failures:0,next:NOW+3600000,expiry:NOW+3600000,compatibleUntil:NOW-1,expected:NOW},
+    {name:'fresh requirements',state:'ready',failures:0,next:NOW+3600000,expiry:NOW+3600000,compatibleUntil:NOW+86400000,expected:NOW+79200000},
+    {name:'vendor backoff',state:'failed',failures:2,next:NOW+3600000,expiry:NOW+3600000,compatibleUntil:NOW-1,expected:NOW+3600000},
+    {name:'execution lease',state:'discovered',failures:0,next:NOW+300000,expiry:NOW+3600000,compatibleUntil:NOW-1,expected:NOW+300000},
+    {name:'unexplained future gate',state:'ready',failures:0,next:NOW+7200000,expiry:NOW+3600000,compatibleUntil:NOW-1,expected:NOW+7200000},
+  ])('does not let a buyer quote postpone discovery: $name',async example=>{
+    await env.DB.prepare(`INSERT INTO catalog_seller_capabilities
+      (agentKey,endpointKey,transport,state,nextProbeAt,capabilityExpiresAt,consecutiveFailures,compatibilityState,compatibilityCheckedAt,compatibilityExpiresAt,createdAt,updatedAt)
+      VALUES('eip155:56:42',?,'a2a',?,?,?,?,'compatible',?,?,0,0)`)
+      .bind(ENDPOINT_KEY,example.state,example.next,example.expiry,example.failures,example.compatibleUntil-86400000,example.compatibleUntil).run();
+    const response=await catalogQuoteEvidenceResponse(request(acceptedEnvelope()),env.DB as unknown as D1Database,{
+      nowMs:NOW,timeoutMs:5000,dependencies:{readChainContext:async()=>context,verifyQuote:async()=>({valid:true as const,method:'eip191' as const,signer:PROVIDER}),clock:()=>10},
+    });
+    expect(response.status).toBe(201);
+    expect(await env.DB.prepare("SELECT nextProbeAt,compatibilityExpiresAt FROM catalog_seller_capabilities WHERE agentKey='eip155:56:42'").first())
+      .toEqual({nextProbeAt:example.expected,compatibilityExpiresAt:example.compatibleUntil});
+  });
   it("independently verifies, sanitizes and deduplicates an exact signed artifact", async () => {
     const verifyQuote = vi.fn(async () => ({ valid: true as const, method: "eip191" as const, signer: PROVIDER }));
     const options = {
