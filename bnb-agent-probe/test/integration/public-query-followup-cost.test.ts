@@ -32,8 +32,12 @@ it.each([2000,20000])('PR179 classification parity and cost with %i agents',asyn
     "SELECT d.agent_agentKey,e.role FROM catalog_public_current_endpoints d LEFT JOIN catalog_endpoints e ON e.endpointKey=d.endpointKey WHERE d.agent_chainId=56 AND d.agent_indexState='current'",
     "SELECT agentKey FROM catalog_public_agent_metrics WHERE projectionVersion=1 AND jobCompleted>0 AND agentKey>='eip155:56:' AND agentKey<'eip155:57:'",
   ]){const log:ReadRecord[]=[];await metered(env.DB,log).prepare(query).all();console.log('CLASSIFICATION_COMPONENT',JSON.stringify({query,...total(log)}));}
-  for(const statistics of ['absent','complete'] as const){
-    if(statistics==='complete')await env.DB.prepare('ANALYZE').run();
+  for(const statistics of ['absent','partial','complete'] as const){
+    await env.DB.prepare('ANALYZE').run();
+    if(statistics!=='complete'){
+      await env.DB.prepare(statistics==='absent' ? 'DELETE FROM sqlite_stat1' : "DELETE FROM sqlite_stat1 WHERE tbl<>'catalog_public_current_endpoints'").run();
+      await env.DB.prepare('ANALYZE sqlite_schema').run();
+    }
     for(const chain of [56,97] as const){
       const beforeLog:ReadRecord[]=[],afterLog:ReadRecord[]=[];
       const before=await reference(metered(env.DB,beforeLog),NOW,chain,true);
@@ -45,7 +49,7 @@ it.each([2000,20000])('PR179 classification parity and cost with %i agents',asyn
       console.log('PUBLIC_QUERY_FOLLOWUP',JSON.stringify({count,statistics,chain,baseline,candidate,plan}));
       expect(candidate.writes).toBe(0);
       expect(candidate.reads).toBeLessThanOrEqual(baseline.reads);
-      if(count===20000&&chain===56)expect(candidate.reads).toBeLessThanOrEqual(Math.floor(baseline.reads*.8));
+      if(count===20000&&chain===56)expect.soft(candidate.reads).toBeLessThanOrEqual(Math.floor(baseline.reads*.8));
     }
   }
 },600000);
