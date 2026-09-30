@@ -1,4 +1,5 @@
 import { effectiveCapabilityReadySql } from "../catalog/effective-capability";
+import {quoteDiscoverySchedule} from '../catalog/quote-discovery-schedule';
 import { and, asc, count, desc, eq, gt, inArray, lt, sql } from "drizzle-orm";
 import { NegotiationRequest, buildJobDescription, verifyQuoteSignature } from "@bnbagent/sdk/erc8183";
 import { formatUnits, parseAbi, type PublicClient } from "viem";
@@ -612,7 +613,7 @@ export async function persistQuoteResult(
     state: "ready",
     lastSuccessAt: nowMs,
     capabilityExpiresAt: nowMs + CAPABILITY_TTL_MS,
-    nextProbeAt: nowMs + CAPABILITY_TTL_MS,
+    nextProbeAt: nowMs,
     consecutiveFailures: 0,
     lastAttemptAt: nowMs,
     lastAttemptId: attemptId,
@@ -621,7 +622,7 @@ export async function persistQuoteResult(
     updatedAt: nowMs,
   }).onConflictDoUpdate({ target: [catalogSellerCapabilities.agentKey, catalogSellerCapabilities.endpointKey], set: {
     state: "ready", lastSuccessAt: nowMs, capabilityExpiresAt: nowMs + CAPABILITY_TTL_MS,
-    nextProbeAt: nowMs + CAPABILITY_TTL_MS, consecutiveFailures: 0,
+    nextProbeAt: quoteDiscoverySchedule(nowMs,nowMs+CAPABILITY_TTL_MS), consecutiveFailures: 0,
     lastAttemptAt: nowMs, lastAttemptId: attemptId, lastErrorCode: null, updatedAt: nowMs,
   }});
   const endpoint = (() => {
