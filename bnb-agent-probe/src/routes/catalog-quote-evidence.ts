@@ -1,4 +1,5 @@
 import { and, eq } from "drizzle-orm";
+import {quoteDiscoverySchedule} from '../catalog/quote-discovery-schedule';
 import { type PublicClient } from "viem";
 import type { QuoteSigVerdict, VerifyQuoteSignatureOpts } from "@bnbagent/sdk/erc8183";
 
@@ -322,7 +323,7 @@ export async function catalogQuoteEvidenceResponse(
         state: "ready",
         lastSuccessAt: options.nowMs,
         capabilityExpiresAt: options.nowMs + 24 * 60 * 60 * 1_000,
-        nextProbeAt: options.nowMs + 24 * 60 * 60 * 1_000,
+        nextProbeAt: options.nowMs,
         consecutiveFailures: 0,
         lastAttemptAt: options.nowMs,
         lastAttemptId: attemptId,
@@ -336,7 +337,7 @@ export async function catalogQuoteEvidenceResponse(
           state: "ready",
           lastSuccessAt: options.nowMs,
           capabilityExpiresAt: options.nowMs + 24 * 60 * 60 * 1_000,
-          nextProbeAt: options.nowMs + 24 * 60 * 60 * 1_000,
+          nextProbeAt: quoteDiscoverySchedule(options.nowMs,options.nowMs + 24 * 60 * 60 * 1_000),
           consecutiveFailures: 0,
           lastAttemptAt: options.nowMs,
           lastAttemptId: attemptId,
