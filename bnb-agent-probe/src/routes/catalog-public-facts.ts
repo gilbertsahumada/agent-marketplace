@@ -1,4 +1,5 @@
 import { sql, type SQL } from "drizzle-orm";
+import { manualCatalogueOfferSql } from '../catalog/manual-catalog';
 
 /** Current policy is joined at read time. Shared endpoint blocks/suspension and
  * expiration never wait for fan-out updates. Historical payloads are not scanned;
@@ -30,7 +31,8 @@ export function publicCataloguePolicy(now: number, chain: 56 | 97, enabled: bool
       AND ${columns.capability("consecutiveFailures")}=0 AND ${columns.capability("lastErrorCode")} IS NULL))`;
   const failure = sql`${columns.evidence("latestPlatformOutcome")} IN ('http_error','timeout','network_error','invalid_response','unsafe_url','quote_rejected','unreachable','error')`;
   const compatible = sql`${operational} AND e.validationProtocol IN ('a2a','mcp','erc8183_http')
-    AND ${columns.capability("compatibilityState")}='compatible' AND ${columns.capability("schemaHash")} IS NOT NULL AND ${columns.capability("compatibilityExpiresAt")}>${now}
+    AND ${columns.capability("compatibilityState")}='compatible' AND ${columns.capability("schemaHash")} IS NOT NULL
+    AND (${columns.capability("compatibilityExpiresAt")}>${now} OR ${manualCatalogueOfferSql(columns.capability)})
     AND NOT COALESCE((${failure} AND ${columns.evidence("latestPlatformObservedAt")}>${columns.capability("compatibilityCheckedAt")}),0)`;
   const requestable = chain === 56 || enabled
     ? sql`${compatible} AND ${columns.capability("state")} NOT IN ('unsupported','suspended')` : sql`0`;
