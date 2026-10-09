@@ -62,6 +62,7 @@ export async function catalogAgentResponse(
     observations: evidence.observations,
     admission: evidence.admission,
     capability: capabilityRow ? {
+      agentKey: evidence.agent.agentKey,
       compatibilityState: capabilityRow.compatibilityState,
       schemaHash: capabilityRow.schemaHash,
       compatibilityCheckedAt: capabilityRow.compatibilityCheckedAt,
