@@ -1,4 +1,5 @@
 import { effectiveCapability } from "./effective-capability";
+import { hasManualCatalogueOffer } from './manual-catalog';
 
 export type OperationalStatus =
   | "pending"
@@ -41,6 +42,7 @@ interface AdmissionFact {
 }
 
 export interface CapabilityFact {
+  agentKey?: string;
   endpointKey?: string;
   transport?: "a2a" | "mcp" | "erc8183_http";
   state: SellerCapabilityState;
@@ -247,7 +249,7 @@ export function deriveCatalogEvidenceState(input: {
   // but a declaration alone cannot promise a usable request form.
   const requirementsUsable = capability?.compatibilityState === "compatible"
     && Boolean(capability.schemaHash)
-    && (capability.compatibilityExpiresAt ?? 0) > input.nowMs
+    && ((capability.compatibilityExpiresAt ?? 0) > input.nowMs || hasManualCatalogueOffer(capability))
     && eligibleCommerce.some(endpoint => endpoint.endpointKey === capability.endpointKey);
   const latestNegotiationCheck = latestPlatformByEndpoint.get(capability?.endpointKey ?? "");
   const connectionFailed = latestNegotiationCheck !== undefined

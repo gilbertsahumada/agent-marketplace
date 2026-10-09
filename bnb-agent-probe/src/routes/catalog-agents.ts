@@ -375,6 +375,7 @@ async function catalogReadResponse(
     const capabilityRows: Array<CapabilityFact & { endpointKey: string; transport: "a2a" | "mcp" | "erc8183_http" }> = capabilities
       .filter((entry) => entry.agentKey === agent.agentKey)
       .map((entry) => ({
+        agentKey: entry.agentKey,
         endpointKey: entry.endpointKey,
         transport: entry.transport as "a2a" | "mcp" | "erc8183_http",
         state: entry.state as SellerCapabilityState,
@@ -401,6 +402,7 @@ async function catalogReadResponse(
         observations: agentObservations,
         admission,
         capability: capability ? {
+          agentKey: agent.agentKey,
           ...(capability.endpointKey ? { endpointKey: capability.endpointKey } : {}),
           ...(capability.transport ? { transport: capability.transport } : {}),
           state: capability.state as "unsupported" | "discovered" | "ready" | "stale" | "failed" | "suspended",
