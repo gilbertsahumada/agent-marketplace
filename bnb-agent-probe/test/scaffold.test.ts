@@ -110,7 +110,7 @@ describe("WP1 Wrangler scaffold", () => {
     expect(wrangler.env?.validation?.vars?.COMMERCE_TOKEN_BACKFILL_ENABLED).toBe("0");
   });
 
-  it("keeps product monitoring active only in the isolated staging environment", () => {
+  it("keeps automatic processing paused in the application environment", () => {
     const staging = wrangler.env?.staging;
 
     expect(staging).toMatchObject({
@@ -142,7 +142,8 @@ describe("WP1 Wrangler scaffold", () => {
     });
     expect(staging?.vars?.KILL_SWITCH).toBe("0");
     expect(staging?.vars?.PRODUCER_KILL_SWITCH).toBe("0");
-    expect(staging?.triggers).toEqual({ crons: ["* * * * *"] });
+    expect(staging?.triggers).toEqual({ crons: [] });
+    expect(staging?.vars?.BACKGROUND_INDEX_PAUSED).toBe("1");
     expect(staging?.vars?.CATALOG_PILOT_PAUSED).toBe("1");
     expect(staging?.vars?.CATALOG_PILOT_SEED_ENABLED).toBe("0");
     expect(staging?.queues).toEqual({
