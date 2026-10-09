@@ -36,10 +36,12 @@ it('keeps exactly the 18 offers eligible across clocks with SQL/TS parity and no
         CROSS JOIN (SELECT ${failure ? 'network_error' : 'protocol_valid'} AS latestPlatformOutcome,
           ${failure ? checked+1 : checked} AS latestPlatformObservedAt) p`;
       const q=new SQLiteAsyncDialect().sqlToQuery(query);
-      const result=await env.DB.prepare(q.sql).bind(...q.params).all<{requestable:number}>();
+      const reads:ReadRecord[]=[];
+      const result=await metered(env.DB,reads).prepare(q.sql).bind(...q.params).all<{requestable:number}>();
       expect(result.results?.[0]?.requestable,`${id}/${variant}/${delta}`).toBe(ts.canRequestQuote ? 1 : 0);
       expect(ts.canRequestQuote).toBe(variant==='valid');
-      expect(result.meta.rows_written).toBe(0);
+      expect(reads).toHaveLength(1);
+      expect(reads[0]!.rowsWritten).toBe(0);
       expect(ts.canPrepareHire).toBe(false);
     }
   }
